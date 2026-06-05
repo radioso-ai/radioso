@@ -8,6 +8,7 @@ import { isKnownModelForProvider } from "../../shared/infra/llm/knownModels.js";
 import type { LlmProviderName } from "../../shared/infra/llm/providerTypes.js";
 import type { AgentSurfaceExtensionRegistry } from "./surfaceExtensions.js";
 import type { AgentSkillSettingsRegistry } from "./skillSettings.js";
+import type { AuthoredDirective } from "./authoredDirectives.js";
 
 const AGENT_PROVIDER_NAMES: readonly LlmProviderName[] = [
   "openai",
@@ -163,6 +164,7 @@ export interface ConversationAgent extends Agent, AgentBehaviorSettings, AgentGr
   surfaceSettings: ConversationAgentSurfaceSettings;
   skillSettings: Record<string, unknown>;
   chatModelOverride: AgentChatModelOverride | null;
+  authoredDirectives?: AuthoredDirective[];
 }
 
 export type AgentRecord = ConversationAgent;

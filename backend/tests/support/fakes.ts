@@ -37,9 +37,12 @@ import type {
 import {
   mergeAgentSurfaceSettings,
   validateAgentInput,
+  authoredDirectiveInputSchema,
   type AgentInput,
   type AgentRecord,
   type AgentSkillSettingsRegistry,
+  type AuthoredDirective,
+  type AuthoredDirectiveInput,
 } from "../../src/modules/agents/public.js";
 import type {
   BootstrapGreetingCacheRecord,
@@ -843,6 +846,7 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepositoryPort {
 
 export class InMemoryAgentRepository implements AgentRepositoryPort {
   readonly items = new Map<string, AgentRecord>();
+  readonly directives = new Map<string, AuthoredDirective>();
   private defaultAgentIds = new Map<string, string>();
 
   constructor(private readonly skillSettings?: AgentSkillSettingsRegistry) {}
@@ -885,6 +889,80 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
     return [...this.items.values()]
       .filter((item) => item.workspaceId === workspaceId)
       .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id));
+  }
+
+  async listDirectives(agentId: string, workspaceId: string): Promise<AuthoredDirective[]> {
+    const agent = await this.findByIdAndWorkspaceId(agentId, workspaceId);
+    if (!agent) {
+      return [];
+    }
+    return [...this.directives.values()]
+      .filter((directive) => directive.agentId === agentId)
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id));
+  }
+
+  async createDirective(agentId: string, workspaceId: string, input: AuthoredDirectiveInput): Promise<AuthoredDirective> {
+    const agent = await this.findByIdAndWorkspaceId(agentId, workspaceId);
+    if (!agent) {
+      throw new Error(`Agent ${agentId} not found`);
+    }
+    const normalized = authoredDirectiveInputSchema.parse(input);
+    const now = new Date();
+    const directive: AuthoredDirective = {
+      id: randomUUID(),
+      agentId,
+      ...normalized,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.directives.set(directive.id, directive);
+    agent.authoredDirectives = await this.listDirectives(agentId, workspaceId);
+    return directive;
+  }
+
+  async updateDirective(
+    agentId: string,
+    workspaceId: string,
+    directiveId: string,
+    input: Partial<AuthoredDirectiveInput>,
+  ): Promise<AuthoredDirective> {
+    const existing = this.directives.get(directiveId);
+    const agent = await this.findByIdAndWorkspaceId(agentId, workspaceId);
+    if (!existing || !agent || existing.agentId !== agentId) {
+      throw new Error(`Directive ${directiveId} not found`);
+    }
+    const normalized = authoredDirectiveInputSchema.parse({
+      name: input.name ?? existing.name,
+      condition: input.condition ?? existing.condition,
+      action: input.action ?? existing.action,
+      priority: input.priority ?? existing.priority,
+      criticality: input.criticality ?? existing.criticality,
+      requiredCapabilities: input.requiredCapabilities ?? existing.requiredCapabilities,
+      dependsOn: input.dependsOn ?? existing.dependsOn,
+      excludes: input.excludes ?? existing.excludes,
+      routes: input.routes ?? existing.routes,
+      description: input.description ?? existing.description,
+      metadata: input.metadata ?? existing.metadata,
+    });
+    const updated: AuthoredDirective = {
+      ...existing,
+      ...normalized,
+      updatedAt: new Date(),
+    };
+    this.directives.set(directiveId, updated);
+    agent.authoredDirectives = await this.listDirectives(agentId, workspaceId);
+    return updated;
+  }
+
+  async deleteDirective(agentId: string, workspaceId: string, directiveId: string): Promise<boolean> {
+    const agent = await this.findByIdAndWorkspaceId(agentId, workspaceId);
+    const existing = this.directives.get(directiveId);
+    if (!agent || !existing || existing.agentId !== agentId) {
+      return false;
+    }
+    const deleted = this.directives.delete(directiveId);
+    agent.authoredDirectives = await this.listDirectives(agentId, workspaceId);
+    return deleted;
   }
 
   async update(agentId: string, workspaceId: string, input: AgentInput): Promise<AgentRecord> {

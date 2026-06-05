@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { Database } from "../../shared/infra/database.js";
+import { conflict, notFound } from "../../shared/domain/errors.js";
 import {
   mergeAgentSurfaceSettings,
   validateAgentInput,
@@ -17,6 +18,10 @@ import {
   type AgentSurfacePosition,
   type AgentContactRequestDelivery,
   type NormalizedAgentInput,
+  authoredDirectiveInputSchema,
+  type AuthoredDirective,
+  type AuthoredDirectiveInput,
+  type NormalizedAuthoredDirectiveInput,
 } from "../../modules/agents/public.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../modules/documents/contracts/index.js";
 import type { LlmProviderName } from "../../shared/infra/llm/providerTypes.js";
@@ -34,8 +39,46 @@ interface AgentRow {
   skill_settings: unknown;
   chat_provider: LlmProviderName | null;
   chat_model: string | null;
+  authored_directives: unknown;
   created_at: Date;
   updated_at: Date;
+}
+
+interface AgentDirectiveRow {
+  id: string;
+  agent_id: string;
+  name: string;
+  condition_kind: "always" | "contextual";
+  condition_description: string | null;
+  action: string;
+  priority: number | null;
+  criticality: "low" | "medium" | "high" | null;
+  required_capabilities: string[];
+  depends_on: string[];
+  excludes: string[];
+  routes: Array<AuthoredDirective["routes"][number]>;
+  description: string | null;
+  metadata: Record<string, unknown>;
+  created_at: Date;
+  updated_at: Date;
+}
+
+interface LoadedDirectiveJson {
+  id?: unknown;
+  name?: unknown;
+  conditionKind?: unknown;
+  conditionDescription?: unknown;
+  action?: unknown;
+  priority?: unknown;
+  criticality?: unknown;
+  requiredCapabilities?: unknown;
+  dependsOn?: unknown;
+  excludes?: unknown;
+  routes?: unknown;
+  description?: unknown;
+  metadata?: unknown;
+  createdAt?: unknown;
+  updatedAt?: unknown;
 }
 
 const agentColumns = `
@@ -61,6 +104,33 @@ const agentColumns = `
   skill_settings,
   chat_provider,
   chat_model,
+  COALESCE(
+    (
+      SELECT json_agg(
+        json_build_object(
+          'id', agent_directives.id::text,
+          'name', agent_directives.name,
+          'conditionKind', agent_directives.condition_kind,
+          'conditionDescription', agent_directives.condition_description,
+          'action', agent_directives.action,
+          'priority', agent_directives.priority,
+          'criticality', agent_directives.criticality,
+          'requiredCapabilities', agent_directives.required_capabilities,
+          'dependsOn', agent_directives.depends_on,
+          'excludes', agent_directives.excludes,
+          'routes', agent_directives.routes,
+          'description', agent_directives.description,
+          'metadata', agent_directives.metadata,
+          'createdAt', agent_directives.created_at,
+          'updatedAt', agent_directives.updated_at
+        )
+        ORDER BY agent_directives.created_at ASC, agent_directives.id ASC
+      )
+      FROM agent_directives
+      WHERE agent_directives.agent_id = agents.id
+    ),
+    '[]'::json
+  ) AS authored_directives,
   created_at,
   updated_at
 `;
@@ -83,6 +153,88 @@ const readStringArray = (record: Record<string, unknown>, key: string): string[]
   Array.isArray(record[key])
     ? (record[key] as unknown[]).filter((item): item is string => typeof item === "string")
     : undefined;
+
+const asMetadata = (value: unknown): Record<string, unknown> =>
+  value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+
+const readDate = (value: unknown): Date =>
+  value instanceof Date ? value : new Date(String(value));
+
+const mapDirectiveJson = (agentId: string, value: LoadedDirectiveJson): AuthoredDirective | null => {
+  if (
+    typeof value.id !== "string" ||
+    typeof value.name !== "string" ||
+    (value.conditionKind !== "always" && value.conditionKind !== "contextual") ||
+    typeof value.action !== "string"
+  ) {
+    return null;
+  }
+  const condition = value.conditionKind === "contextual"
+    ? {
+        kind: "contextual" as const,
+        description: typeof value.conditionDescription === "string" ? value.conditionDescription : "",
+      }
+    : { kind: "always" as const };
+  return {
+    id: value.id,
+    agentId,
+    name: value.name,
+    condition,
+    action: value.action,
+    priority: typeof value.priority === "number" ? value.priority : null,
+    criticality: value.criticality === "low" || value.criticality === "medium" || value.criticality === "high"
+      ? value.criticality
+      : null,
+    requiredCapabilities: Array.isArray(value.requiredCapabilities)
+      ? value.requiredCapabilities.filter((item): item is string => typeof item === "string")
+      : [],
+    dependsOn: Array.isArray(value.dependsOn)
+      ? value.dependsOn.filter((item): item is string => typeof item === "string")
+      : [],
+    excludes: Array.isArray(value.excludes)
+      ? value.excludes.filter((item): item is string => typeof item === "string")
+      : [],
+    routes: Array.isArray(value.routes)
+      ? value.routes.filter((item): item is AuthoredDirective["routes"][number] => typeof item === "string")
+      : [],
+    description: typeof value.description === "string" ? value.description : null,
+    metadata: asMetadata(value.metadata),
+    createdAt: readDate(value.createdAt),
+    updatedAt: readDate(value.updatedAt),
+  };
+};
+
+const mapLoadedDirectives = (agentId: string, value: unknown): AuthoredDirective[] =>
+  Array.isArray(value)
+    ? value
+        .map((entry) => mapDirectiveJson(agentId, asRecord(entry) as LoadedDirectiveJson))
+        .filter((entry): entry is AuthoredDirective => entry !== null)
+    : [];
+
+const mapDirectiveRow = (row: AgentDirectiveRow): AuthoredDirective => ({
+  id: row.id,
+  agentId: row.agent_id,
+  name: row.name,
+  condition: row.condition_kind === "contextual"
+    ? { kind: "contextual", description: row.condition_description ?? "" }
+    : { kind: "always" },
+  action: row.action,
+  priority: row.priority,
+  criticality: row.criticality,
+  requiredCapabilities: row.required_capabilities ?? [],
+  dependsOn: row.depends_on ?? [],
+  excludes: row.excludes ?? [],
+  routes: row.routes ?? [],
+  description: row.description,
+  metadata: asMetadata(row.metadata),
+  createdAt: new Date(row.created_at),
+  updatedAt: new Date(row.updated_at),
+});
+
+const hasOwn = <K extends PropertyKey>(value: object, key: K): value is object & Record<K, unknown> =>
+  Object.prototype.hasOwnProperty.call(value, key);
 
 const readContactRequestDelivery = (record: Record<string, unknown>): AgentContactRequestDelivery | undefined =>
   record.contactRequestDelivery && typeof record.contactRequestDelivery === "object" && !Array.isArray(record.contactRequestDelivery)
@@ -223,10 +375,15 @@ const mapAgent = (
     id: row.id,
     workspaceId: row.workspace_id,
     ...normalized,
+    authoredDirectives: mapLoadedDirectives(row.id, row.authored_directives),
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   };
 };
+
+export interface AgentUpdateOptions {
+  expectedUpdatedAt?: Date;
+}
 
 export interface AgentRepositoryPort {
   create(workspaceId: string, input: AgentInput): Promise<AgentRecord>;
@@ -235,7 +392,11 @@ export interface AgentRepositoryPort {
   findByAnonymousChatToken(token: string): Promise<AgentRecord | null>;
   findByWebsiteEmbedToken(token: string): Promise<AgentRecord | null>;
   listByWorkspaceId(workspaceId: string): Promise<AgentRecord[]>;
-  update(agentId: string, workspaceId: string, input: AgentInput): Promise<AgentRecord>;
+  update(agentId: string, workspaceId: string, input: AgentInput, options?: AgentUpdateOptions): Promise<AgentRecord>;
+  listDirectives(agentId: string, workspaceId: string): Promise<AuthoredDirective[]>;
+  createDirective(agentId: string, workspaceId: string, input: AuthoredDirectiveInput): Promise<AuthoredDirective>;
+  updateDirective(agentId: string, workspaceId: string, directiveId: string, input: Partial<AuthoredDirectiveInput>): Promise<AuthoredDirective>;
+  deleteDirective(agentId: string, workspaceId: string, directiveId: string): Promise<boolean>;
   setDefault(workspaceId: string, agentId: string): Promise<void>;
   deleteByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<boolean>;
   countByWorkspaceId(workspaceId: string): Promise<number>;
@@ -347,19 +508,21 @@ export class AgentRepository implements AgentRepositoryPort {
     return rows.map((row) => mapAgent(row, this.surfaceExtensions, this.skillSettings));
   }
 
-  async update(agentId: string, workspaceId: string, input: AgentInput): Promise<AgentRecord> {
+  async update(agentId: string, workspaceId: string, input: AgentInput, options: AgentUpdateOptions = {}): Promise<AgentRecord> {
     const current = await this.findByIdAndWorkspaceId(agentId, workspaceId);
     if (!current) {
       throw new Error(`Agent ${agentId} not found`);
     }
+    const { authoredDirectives: _authoredDirectives, ...currentAgentInput } = current;
     const normalized = validateAgentInput(
       {
-        ...current,
+        ...currentAgentInput,
         ...input,
         surfaceSettings: mergeAgentSurfaceSettings(current.surfaceSettings, input.surfaceSettings),
       },
       { extensions: this.surfaceExtensions, skillSettings: this.skillSettings },
     );
+    const expectedUpdatedAt = options.expectedUpdatedAt ?? current.updatedAt;
     return this.database.withTransaction(async (client) => {
       const result = await client.query<AgentRow>(
         `UPDATE agents
@@ -375,6 +538,7 @@ export class AgentRepository implements AgentRepositoryPort {
              updated_at = NOW()
          WHERE id = $10
            AND workspace_id = $11
+           AND date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', $12::timestamptz)
          RETURNING ${agentColumns}`,
         [
           normalized.name,
@@ -388,18 +552,176 @@ export class AgentRepository implements AgentRepositoryPort {
           normalized.chatModelOverride?.model ?? null,
           agentId,
           workspaceId,
+          expectedUpdatedAt,
         ],
       );
-      await this.replaceSourceScope(client, agentId, normalized.sourceScope);
       const row = result.rows[0];
       if (!row) {
-        throw new Error(`Agent ${agentId} not found`);
+        throw conflict("Agent was updated by another writer; reload before saving again");
       }
+      await this.replaceSourceScope(client, agentId, normalized.sourceScope);
       return mapAgent({
         ...row,
         source_ids: normalized.sourceScope.mode === "selected" ? normalized.sourceScope.sourceIds : [],
       }, this.surfaceExtensions, this.skillSettings);
     });
+  }
+
+  async listDirectives(agentId: string, workspaceId: string): Promise<AuthoredDirective[]> {
+    const rows = await this.database.query<AgentDirectiveRow>(
+      `SELECT agent_directives.*
+       FROM agent_directives
+       INNER JOIN agents ON agents.id = agent_directives.agent_id
+       WHERE agent_directives.agent_id = $1
+         AND agents.workspace_id = $2
+       ORDER BY agent_directives.created_at ASC, agent_directives.id ASC`,
+      [agentId, workspaceId],
+    );
+    return rows.map(mapDirectiveRow);
+  }
+
+  async createDirective(agentId: string, workspaceId: string, input: AuthoredDirectiveInput): Promise<AuthoredDirective> {
+    const directive: NormalizedAuthoredDirectiveInput = authoredDirectiveInputSchema.parse(input);
+    return this.database.withTransaction(async (client) => {
+      const result = await client.query<AgentDirectiveRow>(
+        `INSERT INTO agent_directives (
+           agent_id,
+           name,
+           condition_kind,
+           condition_description,
+           action,
+           priority,
+           criticality,
+           required_capabilities,
+           depends_on,
+           excludes,
+           routes,
+           description,
+           metadata
+         )
+         SELECT
+           agents.id,
+           $3,
+           $4,
+           $5,
+           $6,
+           $7,
+           $8,
+           $9::text[],
+           $10::text[],
+           $11::text[],
+           $12::text[],
+           $13,
+           $14::jsonb
+         FROM agents
+         WHERE agents.id = $1
+           AND agents.workspace_id = $2
+         RETURNING *`,
+        [
+          agentId,
+          workspaceId,
+          directive.name,
+          directive.condition.kind,
+          directive.condition.kind === "contextual" ? directive.condition.description : null,
+          directive.action,
+          directive.priority,
+          directive.criticality,
+          directive.requiredCapabilities,
+          directive.dependsOn,
+          directive.excludes,
+          directive.routes,
+          directive.description,
+          JSON.stringify(directive.metadata),
+        ],
+      );
+      const row = result.rows[0];
+      if (!row) {
+        throw notFound("Agent not found");
+      }
+      return mapDirectiveRow(row);
+    });
+  }
+
+  async updateDirective(
+    agentId: string,
+    workspaceId: string,
+    directiveId: string,
+    input: Partial<AuthoredDirectiveInput>,
+  ): Promise<AuthoredDirective> {
+    const existing = (await this.listDirectives(agentId, workspaceId)).find((directive) => directive.id === directiveId);
+    if (!existing) {
+      throw notFound("Directive not found");
+    }
+    const directive: NormalizedAuthoredDirectiveInput = authoredDirectiveInputSchema.parse({
+      name: input.name ?? existing.name,
+      condition: input.condition ?? existing.condition,
+      action: input.action ?? existing.action,
+      priority: hasOwn(input, "priority") ? input.priority : existing.priority,
+      criticality: hasOwn(input, "criticality") ? input.criticality : existing.criticality,
+      requiredCapabilities: input.requiredCapabilities ?? existing.requiredCapabilities,
+      dependsOn: input.dependsOn ?? existing.dependsOn,
+      excludes: input.excludes ?? existing.excludes,
+      routes: input.routes ?? existing.routes,
+      description: hasOwn(input, "description") ? input.description : existing.description,
+      metadata: input.metadata ?? existing.metadata,
+    });
+    const rows = await this.database.query<AgentDirectiveRow>(
+      `UPDATE agent_directives
+       SET name = $4,
+           condition_kind = $5,
+           condition_description = $6,
+           action = $7,
+           priority = $8,
+           criticality = $9,
+           required_capabilities = $10::text[],
+           depends_on = $11::text[],
+           excludes = $12::text[],
+           routes = $13::text[],
+           description = $14,
+           metadata = $15::jsonb,
+           updated_at = NOW()
+       FROM agents
+       WHERE agent_directives.id = $1
+         AND agent_directives.agent_id = $2
+         AND agents.id = agent_directives.agent_id
+         AND agents.workspace_id = $3
+       RETURNING agent_directives.*`,
+      [
+        directiveId,
+        agentId,
+        workspaceId,
+        directive.name,
+        directive.condition.kind,
+        directive.condition.kind === "contextual" ? directive.condition.description : null,
+        directive.action,
+        directive.priority,
+        directive.criticality,
+        directive.requiredCapabilities,
+        directive.dependsOn,
+        directive.excludes,
+        directive.routes,
+        directive.description,
+        JSON.stringify(directive.metadata),
+      ],
+    );
+    const row = rows[0];
+    if (!row) {
+      throw notFound("Directive not found");
+    }
+    return mapDirectiveRow(row);
+  }
+
+  async deleteDirective(agentId: string, workspaceId: string, directiveId: string): Promise<boolean> {
+    const affected = await this.database.execute(
+      `DELETE FROM agent_directives
+       USING agents
+       WHERE agent_directives.id = $1
+         AND agent_directives.agent_id = $2
+         AND agents.id = agent_directives.agent_id
+         AND agents.workspace_id = $3`,
+      [directiveId, agentId, workspaceId],
+    );
+    return affected > 0;
   }
 
   async setDefault(workspaceId: string, agentId: string): Promise<void> {

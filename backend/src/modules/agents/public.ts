@@ -53,3 +53,15 @@ export {
   type EmbedConfigCacheInvalidator,
 } from "./services/embedConfigCacheInvalidator.js";
 export type { ValidateAgentInputOptions } from "./domain.js";
+export {
+  authoredDirectiveInputSchema,
+  validateAuthoredDirectiveCapabilities,
+  AUTHORED_DIRECTIVE_LIMITS,
+  authoredDirectiveCriticalities,
+  authoredDirectiveRouteValues,
+  type AuthoredDirective,
+  type AuthoredDirectiveCapabilityValidationResult,
+  type AuthoredDirectiveCriticality,
+  type AuthoredDirectiveInput,
+  type NormalizedAuthoredDirectiveInput,
+} from "./authoredDirectives.js";

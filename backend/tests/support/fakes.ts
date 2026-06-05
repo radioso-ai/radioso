@@ -907,6 +907,7 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
       throw new Error(`Agent ${agentId} not found`);
     }
     const normalized = authoredDirectiveInputSchema.parse(input);
+    this.throwDirectiveNameConflict(agentId, normalized.name);
     const now = new Date();
     const directive: AuthoredDirective = {
       id: randomUUID(),
@@ -944,6 +945,7 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
       description: input.description ?? existing.description,
       metadata: input.metadata ?? existing.metadata,
     });
+    this.throwDirectiveNameConflict(agentId, normalized.name, directiveId);
     const updated: AuthoredDirective = {
       ...existing,
       ...normalized,
@@ -954,6 +956,17 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
     this.directives.set(directiveId, updated);
     agent.authoredDirectives = await this.listDirectives(agentId, workspaceId);
     return updated;
+  }
+
+  private throwDirectiveNameConflict(agentId: string, name: string, excludeDirectiveId?: string): void {
+    const duplicate = [...this.directives.values()].some((directive) =>
+      directive.agentId === agentId &&
+      directive.name === name &&
+      directive.id !== excludeDirectiveId
+    );
+    if (duplicate) {
+      throw conflict(`A directive named "${name}" already exists for this agent.`);
+    }
   }
 
   async deleteDirective(agentId: string, workspaceId: string, directiveId: string): Promise<boolean> {

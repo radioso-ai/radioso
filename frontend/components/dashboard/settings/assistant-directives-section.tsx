@@ -243,21 +243,29 @@ export function AssistantDirectivesSection({
 
   useEffect(() => {
     let active = true
-    void directivesApi.listDirectives(agentId)
-      .then((response) => {
-        if (!active) return
-        setDirectives(response.directives)
-        setBuiltIns(response.builtIns)
-        setError(null)
-      })
-      .catch((loadError) => {
-        if (!active) return
-        setError(getApiErrorMessage(loadError, 'Failed to load directives.'))
-      })
-      .finally(() => {
-        if (!active) return
-        setIsLoading(false)
-      })
+    queueMicrotask(() => {
+      if (!active) return
+      setIsLoading(true)
+      setDirectives([])
+      setBuiltIns([])
+      setCoherence(null)
+      setError(null)
+      void directivesApi.listDirectives(agentId)
+        .then((response) => {
+          if (!active) return
+          setDirectives(response.directives)
+          setBuiltIns(response.builtIns)
+          setError(null)
+        })
+        .catch((loadError) => {
+          if (!active) return
+          setError(getApiErrorMessage(loadError, 'Failed to load directives.'))
+        })
+        .finally(() => {
+          if (!active) return
+          setIsLoading(false)
+        })
+    })
     return () => {
       active = false
     }

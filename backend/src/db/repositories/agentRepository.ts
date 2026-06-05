@@ -81,6 +81,31 @@ interface LoadedDirectiveJson {
   updatedAt?: unknown;
 }
 
+const agentDirectiveNameUniqueConstraint = "agent_directives_agent_id_name_key";
+
+const isAgentDirectiveNameUniqueViolation = (error: unknown): boolean => {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const candidate = error as {
+    code?: unknown;
+    constraint?: unknown;
+    table?: unknown;
+    detail?: unknown;
+  };
+  return candidate.code === "23505" && (
+    candidate.constraint === agentDirectiveNameUniqueConstraint ||
+    (
+      candidate.table === "agent_directives" &&
+      typeof candidate.detail === "string" &&
+      candidate.detail.includes("(agent_id, name)")
+    )
+  );
+};
+
+const directiveNameConflict = (name: string) =>
+  conflict(`A directive named "${name}" already exists for this agent.`);
+
 const agentColumns = `
   id,
   workspace_id,
@@ -583,55 +608,63 @@ export class AgentRepository implements AgentRepositoryPort {
   async createDirective(agentId: string, workspaceId: string, input: AuthoredDirectiveInput): Promise<AuthoredDirective> {
     const directive: NormalizedAuthoredDirectiveInput = authoredDirectiveInputSchema.parse(input);
     return this.database.withTransaction(async (client) => {
-      const result = await client.query<AgentDirectiveRow>(
-        `INSERT INTO agent_directives (
-           agent_id,
-           name,
-           condition_kind,
-           condition_description,
-           action,
-           priority,
-           criticality,
-           required_capabilities,
-           depends_on,
-           excludes,
-           routes,
-           description,
-           metadata
-         )
-         SELECT
-           agents.id,
-           $3,
-           $4,
-           $5,
-           $6,
-           NULL,
-           NULL,
-           $7::text[],
-           $8::text[],
-           $9::text[],
-           $10::text[],
-           $11,
-           $12::jsonb
-         FROM agents
-         WHERE agents.id = $1
-           AND agents.workspace_id = $2
-         RETURNING *`,
-        [
-          agentId,
-          workspaceId,
-          directive.name,
-          directive.condition.kind,
-          directive.condition.kind === "contextual" ? directive.condition.description : null,
-          directive.action,
-          directive.requiredCapabilities,
-          directive.dependsOn,
-          directive.excludes,
-          directive.routes,
-          directive.description,
-          JSON.stringify(directive.metadata),
-        ],
-      );
+      let result: { rows: AgentDirectiveRow[] };
+      try {
+        result = await client.query<AgentDirectiveRow>(
+          `INSERT INTO agent_directives (
+             agent_id,
+             name,
+             condition_kind,
+             condition_description,
+             action,
+             priority,
+             criticality,
+             required_capabilities,
+             depends_on,
+             excludes,
+             routes,
+             description,
+             metadata
+           )
+           SELECT
+             agents.id,
+             $3,
+             $4,
+             $5,
+             $6,
+             NULL,
+             NULL,
+             $7::text[],
+             $8::text[],
+             $9::text[],
+             $10::text[],
+             $11,
+             $12::jsonb
+           FROM agents
+           WHERE agents.id = $1
+             AND agents.workspace_id = $2
+           RETURNING *`,
+          [
+            agentId,
+            workspaceId,
+            directive.name,
+            directive.condition.kind,
+            directive.condition.kind === "contextual" ? directive.condition.description : null,
+            directive.action,
+            directive.requiredCapabilities,
+            directive.dependsOn,
+            directive.excludes,
+            directive.routes,
+            directive.description,
+            JSON.stringify(directive.metadata),
+          ],
+        );
+      } catch (error) {
+        if (isAgentDirectiveNameUniqueViolation(error)) {
+          throw directiveNameConflict(directive.name);
+        }
+        throw error;
+      }
       const row = result.rows[0];
       if (!row) {
         throw notFound("Agent not found");
@@ -661,41 +694,49 @@ export class AgentRepository implements AgentRepositoryPort {
       description: hasOwn(input, "description") ? input.description : existing.description,
       metadata: input.metadata ?? existing.metadata,
     });
-    const rows = await this.database.query<AgentDirectiveRow>(
-      `UPDATE agent_directives
-       SET name = $4,
-           condition_kind = $5,
-           condition_description = $6,
-           action = $7,
-           required_capabilities = $8::text[],
-           depends_on = $9::text[],
-           excludes = $10::text[],
-           routes = $11::text[],
-           description = $12,
-           metadata = $13::jsonb,
-           updated_at = NOW()
-       FROM agents
-       WHERE agent_directives.id = $1
-         AND agent_directives.agent_id = $2
-         AND agents.id = agent_directives.agent_id
-         AND agents.workspace_id = $3
-       RETURNING agent_directives.*`,
-      [
-        directiveId,
-        agentId,
-        workspaceId,
-        directive.name,
-        directive.condition.kind,
-        directive.condition.kind === "contextual" ? directive.condition.description : null,
-        directive.action,
-        directive.requiredCapabilities,
-        directive.dependsOn,
-        directive.excludes,
-        directive.routes,
-        directive.description,
-        JSON.stringify(directive.metadata),
-      ],
-    );
+    let rows: AgentDirectiveRow[];
+    try {
+      rows = await this.database.query<AgentDirectiveRow>(
+        `UPDATE agent_directives
+         SET name = $4,
+             condition_kind = $5,
+             condition_description = $6,
+             action = $7,
+             required_capabilities = $8::text[],
+             depends_on = $9::text[],
+             excludes = $10::text[],
+             routes = $11::text[],
+             description = $12,
+             metadata = $13::jsonb,
+             updated_at = NOW()
+         FROM agents
+         WHERE agent_directives.id = $1
+           AND agent_directives.agent_id = $2
+           AND agents.id = agent_directives.agent_id
+           AND agents.workspace_id = $3
+         RETURNING agent_directives.*`,
+        [
+          directiveId,
+          agentId,
+          workspaceId,
+          directive.name,
+          directive.condition.kind,
+          directive.condition.kind === "contextual" ? directive.condition.description : null,
+          directive.action,
+          directive.requiredCapabilities,
+          directive.dependsOn,
+          directive.excludes,
+          directive.routes,
+          directive.description,
+          JSON.stringify(directive.metadata),
+        ],
+      );
+    } catch (error) {
+      if (isAgentDirectiveNameUniqueViolation(error)) {
+        throw directiveNameConflict(directive.name);
+      }
+      throw error;
+    }
     const row = rows[0];
     if (!row) {
       throw notFound("Directive not found");

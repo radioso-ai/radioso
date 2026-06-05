@@ -5715,6 +5715,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Directive name already exists for this agent */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     deleteAgentDirective: {
@@ -5801,6 +5810,15 @@ export interface operations {
             };
             /** @description Agent or directive not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Directive name already exists for this agent */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -63,12 +63,12 @@ test("agent directives settings create, edit, warn, delete, and persist", async 
   await page.getByRole("button", { name: "Delete conflict-tone" }).click();
   await page.getByRole("button", { name: "Delete directive" }).click();
 
-  await expect(page.getByText("conflict-tone")).toBeHidden();
+  await expect(page.locator("#directive-44444444-4444-4444-8444-000000000001")).toBeHidden();
   await expect.poll(() => directiveUpdates.length).toBe(3);
   expect(directiveUpdates[2]).toMatchObject({ method: "DELETE" });
 
   await page.reload();
-  await expect(page.getByText("conflict-tone")).toBeHidden();
+  await expect(page.locator("#directive-44444444-4444-4444-8444-000000000001")).toBeHidden();
 });
 
 test("agent directives settings can replace and restore a built-in directive", async ({ page }) => {

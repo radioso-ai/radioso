@@ -5,6 +5,8 @@ import { AuthoredDirectiveService } from "../../src/modules/agents/public.js";
 import type { AuthoredDirective, AuthoredDirectiveInput, AuthoredDirectiveServiceOptions } from "../../src/modules/agents/public.js";
 import { defaultAnswerDirectives } from "../../src/modules/directives/public.js";
 import type { Directive } from "../../src/modules/directives/public.js";
+import { AppError } from "../../src/shared/domain/errors.js";
+import { InMemoryAgentRepository } from "../support/fakes.js";
 import type { DirectiveCoherenceChecker, DirectiveCoherenceVerdict } from "@radioso/conversation-defaults";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -207,5 +209,34 @@ describe("AuthoredDirectiveService", () => {
 
     expect(repository.created).toHaveLength(1);
     expect(result.coherence).toEqual(conflictVerdict);
+  });
+});
+
+describe("InMemoryAgentRepository directive uniqueness", () => {
+  it("rejects duplicate directive creates with a conflict", async () => {
+    const repository = new InMemoryAgentRepository();
+    const agent = await repository.create(workspaceId, { name: "Test agent" });
+    await repository.createDirective(agent.id, workspaceId, directiveInput({ name: "formal-register" }));
+
+    await expect(repository.createDirective(agent.id, workspaceId, directiveInput({ name: "formal-register" })))
+      .rejects.toMatchObject({
+        statusCode: 409,
+        code: "conflict",
+        message: 'A directive named "formal-register" already exists for this agent.',
+      } as Partial<AppError>);
+  });
+
+  it("rejects directive renames to an existing name with a conflict", async () => {
+    const repository = new InMemoryAgentRepository();
+    const agent = await repository.create(workspaceId, { name: "Test agent" });
+    await repository.createDirective(agent.id, workspaceId, directiveInput({ name: "formal-register" }));
+    const second = await repository.createDirective(agent.id, workspaceId, directiveInput({ name: "handoff-tone" }));
+
+    await expect(repository.updateDirective(agent.id, workspaceId, second.id, { name: "formal-register" }))
+      .rejects.toMatchObject({
+        statusCode: 409,
+        code: "conflict",
+        message: 'A directive named "formal-register" already exists for this agent.',
+      } as Partial<AppError>);
   });
 });

@@ -101,12 +101,18 @@ describeIfDatabase("agent directives persistence", () => {
     await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
   });
 
-  it("enforces unique directive names per agent and cascades when the agent is deleted", async () => {
+  it("reports duplicate directive names as conflicts and cascades when the agent is deleted", async () => {
     const { account, workspace, agent } = await createAgent();
     await agentRepository.createDirective(agent.id, workspace.id, {
       name: "formal-register",
       condition: { kind: "always" },
       action: "Use a formal register.",
+      routes: ["retrieval"],
+    });
+    const handoff = await agentRepository.createDirective(agent.id, workspace.id, {
+      name: "handoff-tone",
+      condition: { kind: "always" },
+      action: "Use a calm handoff tone.",
       routes: ["retrieval"],
     });
 
@@ -115,7 +121,24 @@ describeIfDatabase("agent directives persistence", () => {
       condition: { kind: "always" },
       action: "Use a formal register.",
       routes: ["retrieval"],
-    })).rejects.toThrow();
+    })).rejects.toMatchObject({
+      statusCode: 409,
+      code: "conflict",
+      message: 'A directive named "formal-register" already exists for this agent.',
+    } as Partial<AppError>);
+
+    await expect(agentRepository.updateDirective(agent.id, workspace.id, handoff.id, {
+      name: "formal-register",
+    })).rejects.toMatchObject({
+      statusCode: 409,
+      code: "conflict",
+      message: 'A directive named "formal-register" already exists for this agent.',
+    } as Partial<AppError>);
+
+    const renamed = await agentRepository.updateDirective(agent.id, workspace.id, handoff.id, {
+      name: "handoff-confirmed",
+    });
+    expect(renamed.name).toBe("handoff-confirmed");
 
     await agentRepository.deleteByIdAndWorkspaceId(agent.id, workspace.id);
     const rows = await database.query<{ count: string }>(

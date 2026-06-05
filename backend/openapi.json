@@ -11610,6 +11610,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Directive name already exists for this agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -11689,6 +11699,16 @@
           },
           "404": {
             "description": "Agent or directive not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Directive name already exists for this agent",
             "content": {
               "application/json": {
                 "schema": {

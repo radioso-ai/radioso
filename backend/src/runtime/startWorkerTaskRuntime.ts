@@ -46,6 +46,8 @@ export const startWorkerTaskRuntime = async (options: StartWorkerTaskRuntimeOpti
 
   return {
     server: server as Server,
+    errorReporter: dependencies.errorReportingService,
+    logger: dependencies.logger,
     async shutdown(signal: string) {
       if (shuttingDown) {
         return;

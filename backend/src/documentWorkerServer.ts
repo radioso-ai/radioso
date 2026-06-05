@@ -1,6 +1,7 @@
 import { getEnv } from "./app/config/env.js";
 import { loadEnvFileIfPresent } from "./runtime/loadEnv.js";
 import { startWorkerTaskRuntime } from "./runtime/startWorkerTaskRuntime.js";
+import { installRuntimeProcessErrorHandlers } from "./runtime/processErrorHandlers.js";
 
 loadEnvFileIfPresent();
 
@@ -11,6 +12,8 @@ const runtime = await startWorkerTaskRuntime({
     OBSERVABILITY_SERVICE_NAME: "radioso-worker",
   },
 });
+
+installRuntimeProcessErrorHandlers(runtime, "worker-task");
 
 process.once("SIGINT", () => {
   void runtime.shutdown("SIGINT");

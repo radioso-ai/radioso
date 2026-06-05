@@ -51,6 +51,8 @@ export const startCrawlerWorkerTaskRuntime = async (
 
   return {
     server: server as Server,
+    errorReporter: dependencies.errorReportingService,
+    logger: dependencies.logger,
     async shutdown(signal: string) {
       if (shuttingDown) {
         return;

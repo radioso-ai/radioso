@@ -132,6 +132,7 @@ import {
   requireTransactionalUsageEventDatabase,
 } from "../../shared/infra/usage/durableUsageEventRecorder.js";
 import { ErrorReportingService } from "../../shared/errors/errorReportingService.js";
+import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
 import { Database } from "../../shared/infra/database.js";
 import { resolveLlmConfig } from "../../shared/infra/llm/providerConfig.js";
 import { LlmProviderRegistry } from "../../shared/infra/llm/providerRegistry.js";
@@ -431,6 +432,7 @@ export const buildDocumentServices = (input: {
   embeddingService: EmbeddingService;
   llmRegistry: LlmProviderRegistry;
   workspaceIngestionReprocessService?: WorkspaceIngestionReprocessService;
+  errorReporter: ErrorReporter;
 }) => {
   const {
     auditService,
@@ -503,6 +505,7 @@ export const buildDocumentServices = (input: {
     documentJobDispatcher,
     env.DOCUMENT_PROCESSING_JOB_LEASE_MS,
     telemetryService,
+    input.errorReporter,
   );
   const documentJobConsumer = composition.documentJobConsumer ?? createDefaultDocumentJobConsumer(
     env,
@@ -673,6 +676,7 @@ export const buildChatServices = (input: {
   usageLimitPolicy: ReturnType<typeof buildInfrastructure>["usageLimitPolicy"];
   workspaceRepository: WorkspaceRepository;
   assertPublicWebsiteUrl: (url: string) => Promise<void>;
+  errorReporter: ErrorReporter;
 }) => {
   const chatGateway = input.llmRegistry.createChatGateway(input.usageEventRecorder);
   const answerPresentationService = new AnswerPresentationService();
@@ -811,7 +815,7 @@ export const buildChatServices = (input: {
   );
   const actionDispatchWorker = new ActionDispatchWorker(
     new ActionDispatcher(actionOutbox, actionHandlerRegistry),
-    { logger: input.logger },
+    { logger: input.logger, errorReporter: input.errorReporter },
   );
   // Routine machinery (spec 070 / #520). The store + provider are passed to ChatService
   // only when a host registered routines; with none registered the provider is absent,

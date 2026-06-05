@@ -1,3 +1,4 @@
+import type { ErrorReporter } from "../../../shared/errors/errorReporter.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
 import { traceOperation } from "../../../shared/observability/tracing/operations.js";
@@ -60,6 +61,7 @@ export class DocumentProcessingWorker {
     private readonly jobDispatcher: DocumentJobDispatcherPort = new NoopDocumentJobDispatcher(),
     private readonly jobLeaseMs = DEFAULT_JOB_LEASE_MS,
     private readonly telemetryService?: TelemetryService,
+    private readonly errorReporter?: ErrorReporter,
   ) {}
 
   async start(): Promise<void> {
@@ -216,6 +218,16 @@ export class DocumentProcessingWorker {
         this.scheduleNextTick(processed ? 0 : this.pollIntervalMs);
       } catch (error) {
         this.logger.error({ error }, "Document processing worker tick failed");
+        // Fire-and-forget so the poll loop is never blocked by reporting, but the
+        // rejection must be caught — an unhandled rejection would now be process-fatal.
+        void this.errorReporter
+          ?.report({ errorType: "document.worker.tick_failed", error, severity: "error" })
+          .catch((reportError) => {
+            this.logger.error(
+              { err: reportError instanceof Error ? reportError.message : String(reportError) },
+              "Document processing worker error report failed",
+            );
+          });
         this.scheduleNextTick(this.pollIntervalMs);
       }
     }, delayMs);

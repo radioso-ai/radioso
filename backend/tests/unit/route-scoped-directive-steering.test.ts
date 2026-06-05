@@ -101,4 +101,107 @@ describe("route-scoped directive steering", () => {
       "Apply custom represent-organization steering.",
     ]);
   });
+
+  it("merges turn-provided authored directives into retrieval and social routes", async () => {
+    const authored = directive("agent-tone", "Use this agent's saved tone.");
+    const steering = createRouteScopedDirectiveSteering({
+      capabilityPolicy: allowAllCapabilities,
+      registrations: [
+        { directive: conciseReadableFormattingDirective },
+        { directive: representOrganizationDirective },
+        { directive: inlineSupportedLinksDirective },
+      ],
+    });
+
+    const retrieval = await steering.steer({
+      workspaceId: "w1",
+      turnContext: { route: "retrieval" },
+      additionalDirectives: [authored],
+    });
+    const social = await steering.steer({
+      workspaceId: "w1",
+      turnContext: { route: "social_only" },
+      additionalDirectives: [authored],
+    });
+
+    expect(retrieval.rules.map((rule) => rule.action)).toEqual([
+      inlineSupportedLinksDirective.action,
+      representOrganizationDirective.action,
+      conciseReadableFormattingDirective.action,
+      authored.action,
+    ]);
+    expect(social.rules.map((rule) => rule.action)).toEqual([
+      conciseReadableFormattingDirective.action,
+      authored.action,
+    ]);
+  });
+
+  it("orders turn-provided authored directives with a priority-50 steering default", async () => {
+    const authored = directive("agent-tone", "Use this agent's saved tone.");
+    const steering = createRouteScopedDirectiveSteering({
+      capabilityPolicy: allowAllCapabilities,
+      registrations: [{ directive: conciseReadableFormattingDirective }],
+    });
+
+    const result = await steering.steer({
+      workspaceId: "w1",
+      turnContext: { route: "retrieval" },
+      additionalDirectives: [{ ...authored, priority: 50 }],
+    });
+
+    expect(result.rules.map((rule) => rule.action)).toEqual([
+      conciseReadableFormattingDirective.action,
+      authored.action,
+    ]);
+  });
+
+  it("resolves authored relationships against the merged directive set", async () => {
+    const authored = {
+      ...directive("agent-tone", "Use this agent's saved tone."),
+      excludes: [conciseReadableFormattingDirective.name],
+      priority: 50,
+    };
+    const steering = createRouteScopedDirectiveSteering({
+      capabilityPolicy: allowAllCapabilities,
+      registrations: [{ directive: conciseReadableFormattingDirective }],
+    });
+
+    const result = await steering.steer({
+      workspaceId: "w1",
+      turnContext: { route: "retrieval" },
+      additionalDirectives: [authored],
+    });
+
+    expect(result.rules.map((rule) => rule.action)).toEqual([authored.action]);
+    expect(result.omissions).toEqual([{
+      directiveName: conciseReadableFormattingDirective.name,
+      reason: `excluded_by:${authored.name}`,
+    }]);
+  });
+
+  it("capability-filters turn-provided authored directives", async () => {
+    const authored = {
+      ...directive("agent-tone", "Use this agent's saved tone."),
+      requiredCapabilities: ["assistant.special"],
+    };
+    const steering = createRouteScopedDirectiveSteering({
+      capabilityPolicy: {
+        async can(input) {
+          return input.capability === "assistant.special"
+            ? { allowed: false, reason: "capability_denied" }
+            : { allowed: true };
+        },
+      },
+      registrations: [{ directive: conciseReadableFormattingDirective }],
+    });
+
+    const result = await steering.steer({
+      workspaceId: "w1",
+      turnContext: { route: "retrieval" },
+      additionalDirectives: [authored],
+    });
+
+    expect(result.rules.map((rule) => rule.action)).toEqual([conciseReadableFormattingDirective.action]);
+    expect(result.omissions).toEqual([{ directiveName: authored.name, reason: "capability_denied" }]);
+  });
 });

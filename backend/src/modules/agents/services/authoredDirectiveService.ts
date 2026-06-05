@@ -2,7 +2,7 @@ import type { DirectiveCoherenceChecker, DirectiveCoherenceVerdict } from "@radi
 
 import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
-import { defaultAnswerDirectives, type Directive } from "../../directives/public.js";
+import { defaultAnswerDirectives } from "../../directives/public.js";
 import {
   authoredDirectiveInputSchema,
   validateAuthoredDirectiveCapabilities,
@@ -10,6 +10,7 @@ import {
   type AuthoredDirectiveInput,
   type NormalizedAuthoredDirectiveInput,
 } from "../authoredDirectives.js";
+import { authoredDirectiveToDirective } from "../authoredDirectiveMapper.js";
 import type { AgentRecord } from "../domain.js";
 
 export interface AuthoredDirectiveSaveResult {
@@ -34,20 +35,6 @@ const coherenceUnavailableVerdict = (): DirectiveCoherenceVerdict => ({
   coherent: true,
   conflicts: [],
   rationale: "Coherence check unavailable.",
-});
-
-const authoredDirectiveToDirective = (directive: AuthoredDirective | NormalizedAuthoredDirectiveInput): Directive => ({
-  ...("id" in directive ? { id: directive.id } : {}),
-  name: directive.name,
-  condition: directive.condition,
-  action: directive.action,
-  ...(directive.priority === null ? {} : { priority: directive.priority }),
-  ...(directive.criticality === null ? {} : { criticality: directive.criticality }),
-  requiredCapabilities: directive.requiredCapabilities,
-  dependsOn: directive.dependsOn,
-  excludes: directive.excludes,
-  ...(directive.description === null ? {} : { description: directive.description }),
-  metadata: directive.metadata,
 });
 
 export class AuthoredDirectiveService {
@@ -147,7 +134,7 @@ export class AuthoredDirectiveService {
         },
         candidate: authoredDirectiveToDirective(candidate),
         existingDirectives: [
-          ...existingDirectives.map(authoredDirectiveToDirective),
+          ...existingDirectives.map((directive) => authoredDirectiveToDirective(directive)),
           ...defaultAnswerDirectives,
         ],
       });

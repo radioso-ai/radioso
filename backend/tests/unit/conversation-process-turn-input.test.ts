@@ -144,13 +144,17 @@ const composer: ConversationTurnComposer = {
 const routeScopedDirectiveRuntime = (directives: Directive[]): {
   runtime: RouteScopedDirectiveRuntime;
   matchedTurnContexts: Record<string, unknown>[];
+  directiveInputs: DirectiveSteerInput[];
 } => {
   const matchedTurnContexts: Record<string, unknown>[] = [];
+  const directiveInputs: DirectiveSteerInput[] = [];
   return {
     matchedTurnContexts,
+    directiveInputs,
     runtime: {
-      directivesFor() {
-        return directives;
+      directivesFor(input) {
+        directiveInputs.push(input);
+        return [...directives, ...(input.additionalDirectives ?? [])];
       },
       matcher: {
         async match(input: { turnContext: Record<string, unknown>; directives: Directive[] }): Promise<DirectiveMatch[]> {
@@ -283,6 +287,56 @@ describe("createChatProcessTurnInput", () => {
       matches: [expect.objectContaining({ directive })],
       omissions: [],
     });
+  });
+
+  it("adds the resolved agent's authored directives to the engine candidate catalog", () => {
+    const builtIn: Directive = {
+      name: "brief",
+      condition: { kind: "always" },
+      action: "Keep it brief.",
+      priority: 60,
+    };
+    const session = preparedSession();
+    session.directiveSteering = undefined;
+    session.agent = {
+      ...session.agent,
+      authoredDirectives: [{
+        id: "directive_1",
+        agentId: "agent_1",
+        name: "agent-tone",
+        condition: { kind: "always" },
+        action: "Use the saved agent tone.",
+        priority: null,
+        criticality: null,
+        requiredCapabilities: [],
+        dependsOn: [],
+        excludes: [],
+        routes: [],
+        description: null,
+        metadata: {},
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+        updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      }],
+    };
+    const { runtime, directiveInputs } = routeScopedDirectiveRuntime([builtIn]);
+
+    const input = createChatProcessTurnInput({
+      session,
+      directiveRuntime: runtime,
+      dispatcher,
+      selector,
+      composer,
+    });
+
+    expect(input.directives.map((directive) => ({
+      name: directive.name,
+      action: directive.action,
+      priority: directive.priority,
+    }))).toEqual([
+      { name: "brief", action: "Keep it brief.", priority: 60 },
+      { name: "agent-tone", action: "Use the saved agent tone.", priority: 50 },
+    ]);
+    expect(directiveInputs[0]?.additionalDirectives?.map((directive) => directive.name)).toEqual(["agent-tone"]);
   });
 
   it("fails closed when a caller tries to use the placeholder model gateway", async () => {

@@ -43,6 +43,12 @@ export {
   type AuthoredDirectiveServiceOptions,
 } from "./services/authoredDirectiveService.js";
 export {
+  AUTHORED_DIRECTIVE_STEERING_DEFAULT_PRIORITY,
+  authoredDirectiveToDirective,
+  authoredDirectiveToSteeringDirective,
+  type AuthoredDirectiveMappingOptions,
+} from "./authoredDirectiveMapper.js";
+export {
   AgentSurfaceExtensionRegistry,
   type AgentSurfaceExtension,
 } from "./surfaceExtensions.js";

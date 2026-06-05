@@ -24,6 +24,7 @@ import {
   toConversationInputEvent,
   toConversationMessages,
 } from "./conversationContractMappers.js";
+import { authoredDirectiveToSteeringDirective } from "../../agents/public.js";
 
 const missingModelGateway: ConversationModelGateway = {
   async complete(): Promise<{ text: string }> {
@@ -58,11 +59,15 @@ const directiveMatchesForSession = (session: PreparedSession): DirectiveMatch[] 
 const directivesForSession = (session: PreparedSession): Directive[] =>
   directiveMatchesForSession(session).map((match) => match.directive);
 
+const authoredDirectivesForSession = (session: PreparedSession): Directive[] =>
+  (session.agent.authoredDirectives ?? []).map(authoredDirectiveToSteeringDirective);
+
 const directiveSteerInputForSession = (
   session: PreparedSession,
   turn?: Pick<TurnContext, "inputEvent">,
 ) => ({
   workspaceId: session.agent.workspaceId,
+  additionalDirectives: authoredDirectivesForSession(session),
   turnContext: {
     query: turn?.inputEvent.content ?? session.userMessage.content,
     route: session.turnRoute,

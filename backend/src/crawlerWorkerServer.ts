@@ -3,6 +3,7 @@ import { createLogger } from "./shared/observability/logger.js";
 import { loadEnvFileIfPresent } from "./runtime/loadEnv.js";
 import { shouldRunCrawlerWorker } from "./runtime/crawlerWorkerStartup.js";
 import { startCrawlerWorkerTaskRuntime } from "./runtime/startCrawlerWorkerTaskRuntime.js";
+import { installRuntimeProcessErrorHandlers } from "./runtime/processErrorHandlers.js";
 
 loadEnvFileIfPresent();
 
@@ -18,6 +19,8 @@ const runtime = await startCrawlerWorkerTaskRuntime({
     OBSERVABILITY_SERVICE_NAME: "radioso-crawler-worker",
   },
 });
+
+installRuntimeProcessErrorHandlers(runtime, "crawler-worker-task");
 
 process.once("SIGINT", () => {
   void runtime.shutdown("SIGINT");

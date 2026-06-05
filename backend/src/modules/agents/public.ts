@@ -46,6 +46,16 @@ export {
   type AgentSkillSettingsEntry,
 } from "./skillSettings.js";
 export { freezeAgent, type AgentSnapshot } from "./agentSnapshot.js";
+export {
+  AGENT_CONFIG_FIELD_DESCRIPTORS,
+  AGENT_CONFIG_SCHEMA_VERSION,
+  serializeAgentConfig,
+  type AgentConfig,
+  type AgentConfigPortability,
+  type AgentConfigRefKind,
+  type AgentConfigRefPlaceholder,
+  type AgentConfigSecretPlaceholder,
+} from "./agentConfig.js";
 export { createWebsiteEmbedSurfaceExtension } from "./services/websiteEmbedSurfaceExtension.js";
 export {
   embedConfigCachePath,

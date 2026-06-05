@@ -3,6 +3,7 @@ import type {
   ConversationTrace,
   ConversationTraceStage,
 } from "@radioso/conversation-contract";
+import { getActiveTraceCorrelation } from "../../../shared/observability/tracing/operations.js";
 
 /**
  * Versioned envelope persisted per chat turn. The conversation spine is the root
@@ -55,7 +56,12 @@ export interface TurnTraceOpenTelemetryCorrelationReader {
   getActiveOpenTelemetryCorrelation(): TurnTraceOpenTelemetryCorrelation | undefined;
 }
 
-let openTelemetryCorrelationReader: TurnTraceOpenTelemetryCorrelationReader | undefined;
+const defaultOpenTelemetryCorrelationReader: TurnTraceOpenTelemetryCorrelationReader = {
+  getActiveOpenTelemetryCorrelation: getActiveTraceCorrelation,
+};
+
+let openTelemetryCorrelationReader: TurnTraceOpenTelemetryCorrelationReader | undefined =
+  defaultOpenTelemetryCorrelationReader;
 
 const TRACE_ID_PATTERN = /^[0-9a-f]{32}$/;
 const SPAN_ID_PATTERN = /^[0-9a-f]{16}$/;

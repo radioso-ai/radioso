@@ -1,6 +1,6 @@
 import type { RequestHandler } from "express";
 
-import { setActiveSpanAttributes, startActiveSpan } from "../../../shared/observability/tracing/index.js";
+import { setTraceAttributes, traceOperation } from "../../../shared/observability/tracing/operations.js";
 
 const routePath = (req: Parameters<RequestHandler>[0]): string | undefined => {
   const baseUrl = req.baseUrl || "";
@@ -15,16 +15,16 @@ const requestId = (req: Parameters<RequestHandler>[0]): string | undefined => {
 };
 
 export const createHttpTracingMiddleware = (): RequestHandler => (req, res, next) => {
-  void startActiveSpan(
-    "http.server.request",
-    {
+  void traceOperation({
+    name: "http.server.request",
+    attributes: {
       "http.request.method": req.method,
       "radioso.request_id": requestId(req),
     },
-    async () => {
+    async run() {
       await new Promise<void>((resolve) => {
         const finish = () => {
-          setActiveSpanAttributes({
+          setTraceAttributes({
             "http.response.status_code": res.statusCode,
             "http.route": routePath(req),
           });
@@ -35,5 +35,5 @@ export const createHttpTracingMiddleware = (): RequestHandler => (req, res, next
         next();
       });
     },
-  );
+  });
 };

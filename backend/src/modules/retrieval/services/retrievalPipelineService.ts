@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { IngestionSettingsService, RetrievalSettingsService } from "../../settings/contracts/services.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
-import { safeSpanAttributes, setActiveSpanAttributes, startActiveSpan } from "../../../shared/observability/tracing/index.js";
+import { traceOperation } from "../../../shared/observability/tracing/operations.js";
 import type { EmbeddingService } from "./embeddingService.js";
 import type { PromptBuildResult } from "./promptBuilder.js";
 import { CandidatePreparationService } from "./candidatePreparationService.js";
@@ -51,27 +51,12 @@ import type {
   TraceAttributes,
 } from "./retrievalPipelineStages.js";
 
-const traceActiveSpan = async <T>(
+const traceActiveSpan = <T>(
   name: string,
   attributes: TraceAttributes,
   run: () => Promise<T> | T,
   resultAttributes?: (result: T) => TraceAttributes,
-): Promise<T> => {
-  return startActiveSpan(name, attributes, async (span) => {
-    const result = await run();
-    const finalAttributes = resultAttributes?.(result);
-    if (finalAttributes) {
-      const safeFinalAttributes = safeSpanAttributes(finalAttributes);
-      const spanSink = span as { setAttributes?: (attributes: typeof safeFinalAttributes) => unknown } | undefined;
-      if (spanSink?.setAttributes) {
-        spanSink.setAttributes(safeFinalAttributes);
-      } else {
-        setActiveSpanAttributes(safeFinalAttributes);
-      }
-    }
-    return result;
-  }) as Promise<T>;
-};
+): Promise<T> => traceOperation({ name, attributes, run, resultAttributes });
 
 export interface RetrievalPipelineResult {
   rewrittenQuery: string;

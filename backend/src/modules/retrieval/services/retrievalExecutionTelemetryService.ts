@@ -12,7 +12,7 @@ import type {
 } from "../domain/retrievalPipelineTypes.js";
 import type { AppliedConstraint, ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
 import type { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
-import { startActiveSpan } from "../../../shared/observability/tracing/index.js";
+import { traceOperation } from "../../../shared/observability/tracing/operations.js";
 import { buildRetrievalAnswerSkillDiagnostic } from "./retrievalShapeResolver.js";
 import type { SkillCallerSurface } from "../../skills/public.js";
 import { RETRIEVAL_TRACE_SPAN_NAMES, type TraceAttributes } from "./retrievalPipelineStages.js";
@@ -21,9 +21,7 @@ const traceActiveSpan = async <T>(
   name: string,
   attributes: TraceAttributes,
   run: () => Promise<T> | T,
-): Promise<T> => {
-  return startActiveSpan(name, attributes, run) as Promise<T>;
-};
+): Promise<T> => traceOperation({ name, attributes, run });
 
 const toCallerSurface = (execution?: RetrievalExecutionMetadata): SkillCallerSurface => {
   if (execution?.surface === "assistant") {

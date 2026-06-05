@@ -1,6 +1,6 @@
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
-import { safeSpanAttributes, setActiveSpanAttributes, startActiveSpan } from "../../../shared/observability/tracing/index.js";
+import { traceOperation } from "../../../shared/observability/tracing/operations.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { DocumentRepositoryPort } from "./documentIngestionService.js";
 import type {
@@ -19,27 +19,12 @@ const RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const;
 
 type TraceAttributes = Record<string, unknown>;
 
-const traceActiveSpan = async <T>(
+const traceActiveSpan = <T>(
   name: string,
   attributes: TraceAttributes,
   run: () => Promise<T> | T,
   resultAttributes?: (result: T) => TraceAttributes,
-): Promise<T> => {
-  return startActiveSpan(name, attributes, async (span) => {
-    const result = await run();
-    const finalAttributes = resultAttributes?.(result);
-    if (finalAttributes) {
-      const safeFinalAttributes = safeSpanAttributes(finalAttributes);
-      const spanSink = span as { setAttributes?: (attributes: typeof safeFinalAttributes) => unknown } | undefined;
-      if (spanSink?.setAttributes) {
-        spanSink.setAttributes(safeFinalAttributes);
-      } else {
-        setActiveSpanAttributes(safeFinalAttributes);
-      }
-    }
-    return result;
-  }) as Promise<T>;
-};
+): Promise<T> => traceOperation({ name, attributes, run, resultAttributes });
 
 const compactTraceAttributes = (attributes: TraceAttributes): TraceAttributes =>
   Object.fromEntries(

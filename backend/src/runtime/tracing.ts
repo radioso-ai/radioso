@@ -1,8 +1,6 @@
 import type { Env } from "../app/config/env.js";
-import { setTurnTraceOpenTelemetryCorrelationReader } from "../modules/chat/services/turnTraceEnvelope.js";
 import type { AppLogger } from "../shared/observability/logger.js";
 import {
-  currentTraceCorrelation,
   initializeTracing,
   shutdownTracing,
   type RuntimeRole,
@@ -34,10 +32,6 @@ export const startRuntimeTracing = (
   logger: AppLogger,
   runtimeRole: RuntimeRole,
 ): void => {
-  setTurnTraceOpenTelemetryCorrelationReader({
-    getActiveOpenTelemetryCorrelation: currentTraceCorrelation,
-  });
-
   initializeTracing({
     enabled: Boolean(env.OTEL_ENABLED),
     environment: env.OBSERVABILITY_ENVIRONMENT ?? env.NODE_ENV ?? "development",
@@ -52,6 +46,5 @@ export const startRuntimeTracing = (
 };
 
 export const stopRuntimeTracing = async (): Promise<void> => {
-  setTurnTraceOpenTelemetryCorrelationReader(undefined);
   await shutdownTracing();
 };

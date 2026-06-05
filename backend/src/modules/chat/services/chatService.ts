@@ -1,5 +1,5 @@
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
-import { startActiveSpan, streamActiveSpan } from "../../../shared/observability/tracing/index.js";
+import { traceAsyncIterable, traceOperation } from "../../../shared/observability/tracing/operations.js";
 import type {
   ConversationEngine,
   ConversationModelGateway,
@@ -356,7 +356,11 @@ export class ChatService {
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
   }): Promise<ChatResponse> {
-    return startActiveSpan("chat.turn", chatTurnTraceAttributes(input), () => this.answerWithinTrace(input)) as Promise<ChatResponse>;
+    return traceOperation({
+      name: "chat.turn",
+      attributes: chatTurnTraceAttributes(input),
+      run: () => this.answerWithinTrace(input),
+    });
   }
 
   private async answerWithinTrace(input: {
@@ -455,7 +459,11 @@ export class ChatService {
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
   }): AsyncIterable<ChatStreamEvent> {
-    yield* streamActiveSpan("chat.turn", chatTurnTraceAttributes(input), () => this.streamAnswerWithinTrace(input));
+    yield* traceAsyncIterable({
+      name: "chat.turn",
+      attributes: chatTurnTraceAttributes(input),
+      createIterable: () => this.streamAnswerWithinTrace(input),
+    });
   }
 
   private async *streamAnswerWithinTrace(input: {

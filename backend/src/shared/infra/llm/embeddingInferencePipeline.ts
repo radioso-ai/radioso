@@ -1,5 +1,5 @@
 import type { ModelCallUsageContext } from "../../domain/modelCallUsageContext.js";
-import { setActiveSpanAttributes, startActiveSpan } from "../../observability/tracing/index.js";
+import { setTraceAttributes, traceOperation } from "../../observability/tracing/operations.js";
 import {
   NoopUsageEventRecorder,
   type UsageEventRecorder,
@@ -93,22 +93,22 @@ export class EmbeddingInferencePipelineService implements EmbeddingInferencePipe
   }
 
   async embedTexts(input: EmbeddingInferenceRequest): Promise<EmbeddingResult> {
-    return startActiveSpan(
-      "llm.provider.embedding",
-      providerTraceAttributes(this.delegate.metadata, input),
-      async () => this.embedTextsWithinTrace(input),
-    ) as Promise<EmbeddingResult>;
+    return traceOperation({
+      name: "llm.provider.embedding",
+      attributes: providerTraceAttributes(this.delegate.metadata, input),
+      run: () => this.embedTextsWithinTrace(input),
+    });
   }
 
   private async embedTextsWithinTrace(input: EmbeddingInferenceRequest): Promise<EmbeddingResult> {
     try {
       const result = await this.delegate.embedTexts(input.texts, { model: input.model });
       await this.recordUsage(input, "succeeded", result.usage);
-      setActiveSpanAttributes({ "llm.provider.outcome": "succeeded" });
+      setTraceAttributes({ "llm.provider.outcome": "succeeded" });
       return result;
     } catch (error) {
       await this.recordUsage(input, "failed", undefined, error);
-      setActiveSpanAttributes({ "llm.provider.outcome": "failed" });
+      setTraceAttributes({ "llm.provider.outcome": "failed" });
       throw error;
     }
   }

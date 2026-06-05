@@ -1,7 +1,7 @@
 import type { ModelCallUsageContext } from "../../domain/modelCallUsageContext.js";
 import { LLM_DEFAULTS } from "../../domain/behaviorConfig.js";
 import { payloadTooLarge } from "../../domain/errors.js";
-import { setActiveSpanAttributes, startActiveSpan, streamActiveSpan } from "../../observability/tracing/index.js";
+import { setTraceAttributes, traceAsyncIterable, traceOperation } from "../../observability/tracing/operations.js";
 import {
   NoopUsageEventRecorder,
   type UsageEventRecorder,
@@ -123,11 +123,11 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
   }
 
   async complete(input: ModelInferenceRequest): Promise<TextGenerationResult> {
-    return startActiveSpan(
-      "llm.provider.complete",
-      providerTraceAttributes(this.delegate.metadata, input.operation, { streaming: false }),
-      async () => this.completeWithinTrace(input),
-    ) as Promise<TextGenerationResult>;
+    return traceOperation({
+      name: "llm.provider.complete",
+      attributes: providerTraceAttributes(this.delegate.metadata, input.operation, { streaming: false }),
+      run: () => this.completeWithinTrace(input),
+    });
   }
 
   private async completeWithinTrace(input: ModelInferenceRequest): Promise<TextGenerationResult> {
@@ -144,7 +144,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
         status: "failed",
         error,
       });
-      setActiveSpanAttributes({ "llm.provider.outcome": "failed" });
+      setTraceAttributes({ "llm.provider.outcome": "failed" });
       throw error;
     }
 
@@ -159,7 +159,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
         providerUsage: result.usage,
         error,
       });
-      setActiveSpanAttributes({ "llm.provider.outcome": "failed" });
+      setTraceAttributes({ "llm.provider.outcome": "failed" });
       throw error;
     }
 
@@ -170,7 +170,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
       status: "succeeded",
       providerUsage: result.usage,
     });
-    setActiveSpanAttributes({ "llm.provider.outcome": "succeeded" });
+    setTraceAttributes({ "llm.provider.outcome": "succeeded" });
     return result;
   }
 
@@ -186,10 +186,10 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
         return undefined;
       }
     };
-    const textStream = streamActiveSpan(
-      "llm.provider.stream",
-      providerTraceAttributes(this.delegate.metadata, input.operation, { streaming: true }),
-      () => (async function* (pipeline: ModelInferencePipelineService) {
+    const textStream = traceAsyncIterable({
+      name: "llm.provider.stream",
+      attributes: providerTraceAttributes(this.delegate.metadata, input.operation, { streaming: true }),
+      createIterable: () => (async function* (pipeline: ModelInferencePipelineService) {
       try {
         for await (const chunk of result.textStream) {
           outputText += chunk;
@@ -202,7 +202,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
           status: "succeeded",
           providerUsage: await readUsage(),
         });
-        setActiveSpanAttributes({ "llm.provider.outcome": "succeeded" });
+        setTraceAttributes({ "llm.provider.outcome": "succeeded" });
       } catch (error) {
         await pipeline.recordUsage({
           operation: input.operation,
@@ -212,11 +212,11 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
           providerUsage: await readUsage(),
           error,
         });
-        setActiveSpanAttributes({ "llm.provider.outcome": "failed" });
+        setTraceAttributes({ "llm.provider.outcome": "failed" });
         throw error;
       }
     })(this),
-    );
+    });
 
     return { textStream, usage: result.usage };
   }

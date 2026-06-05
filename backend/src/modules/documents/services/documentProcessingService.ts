@@ -14,7 +14,7 @@ import {
 } from "../../retrieval/public.js";
 import type { IngestionSettingsRecord } from "../../settings/contracts/ingestion.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
-import { safeSpanAttributes, setActiveSpanAttributes, startActiveSpan } from "../../../shared/observability/tracing/index.js";
+import { traceOperation } from "../../../shared/observability/tracing/operations.js";
 import type {
   ChunkRecord,
   ChunkRepositoryPort,
@@ -66,27 +66,12 @@ const inlineDocumentSourceContentService: DocumentSourceContentServicePort = {
 
 type TraceAttributes = Record<string, unknown>;
 
-const traceActiveSpan = async <T>(
+const traceActiveSpan = <T>(
   name: string,
   attributes: TraceAttributes,
   run: () => Promise<T> | T,
   resultAttributes?: (result: T) => TraceAttributes,
-): Promise<T> => {
-  return startActiveSpan(name, attributes, async (span) => {
-    const result = await run();
-    const finalAttributes = resultAttributes?.(result);
-    if (finalAttributes) {
-      const safeFinalAttributes = safeSpanAttributes(finalAttributes);
-      const spanSink = span as { setAttributes?: (attributes: typeof safeFinalAttributes) => unknown } | undefined;
-      if (spanSink?.setAttributes) {
-        spanSink.setAttributes(safeFinalAttributes);
-      } else {
-        setActiveSpanAttributes(safeFinalAttributes);
-      }
-    }
-    return result;
-  }) as Promise<T>;
-};
+): Promise<T> => traceOperation({ name, attributes, run, resultAttributes });
 
 const boundedTraceCount = (value: number | undefined): number =>
   Math.min(1_000, Math.max(0, value ?? 0));

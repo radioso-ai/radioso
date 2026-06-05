@@ -29,4 +29,53 @@ describe("HTML processing helpers", () => {
       "https://example.com/base"
     )).toBe("Hello [Docs](https://example.com/docs)");
   });
+
+  it("uses a later contentful main element when the first main is empty", () => {
+    expect(extractStructuredTextFromHtml(
+      `
+        <html>
+          <body>
+            <main aria-hidden="true"><div><span></span></div></main>
+            <main>
+              <h1>Real page content</h1>
+              <p>Readable body copy should be extracted.</p>
+            </main>
+          </body>
+        </html>
+      `,
+      "https://example.com/"
+    )).toBe("# Real page content\n\nReadable body copy should be extracted.");
+  });
+
+  it("preserves main priority over a longer sibling article", () => {
+    expect(extractStructuredTextFromHtml(
+      `
+        <html>
+          <body>
+            <main><p>Primary page summary.</p></main>
+            <article>
+              <p>This longer article-like block belongs to a sibling card or teaser list.</p>
+              <p>It should not replace the explicit main content container.</p>
+            </article>
+          </body>
+        </html>
+      `,
+      "https://example.com/"
+    )).toBe("Primary page summary.");
+  });
+
+  it("matches role main containers case-insensitively", () => {
+    expect(extractStructuredTextFromHtml(
+      `
+        <html>
+          <body>
+            <div role="Main">
+              <p>Role main content is primary.</p>
+            </div>
+          </body>
+        </html>
+      `,
+      "https://example.com/"
+    )).toBe("Role main content is primary.");
+  });
 });

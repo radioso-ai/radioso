@@ -365,6 +365,34 @@ export const installDashboardApiMocks = async (
   const builtIns = options.builtIns ?? baseBuiltInDirectives();
   let nextDirectiveIndex = 1;
   const directiveUpdates = options.directiveUpdates;
+  const coherenceFor = (directive: AuthoredDirectiveFixture): ApiSchemas["DirectiveCoherenceVerdict"] => {
+    const hasConflict =
+      (directive.name.toLowerCase().includes("conflict") || directive.action.toLowerCase().includes("verbose")) &&
+      directive.excludes.length === 0;
+    if (!hasConflict) {
+      return {
+        coherent: true,
+        conflicts: [],
+        rationale: "No conflicts were detected.",
+      };
+    }
+
+    const authoredConflict = directives.find((item) => item.id !== directive.id);
+    return {
+      coherent: false,
+      conflicts: authoredConflict
+        ? [{
+            directiveId: authoredConflict.id,
+            directiveName: authoredConflict.name,
+            reason: "Both directives steer answer behavior in opposite directions.",
+          }]
+        : [{
+            directiveName: "concise-readable-formatting",
+            reason: "Both directives steer answer length in opposite directions.",
+          }],
+      rationale: "The saved directive may conflict with a formatting rule.",
+    };
+  };
   const historyList = options.historyList ?? {
     conversations: [],
     total: 0,
@@ -563,20 +591,9 @@ export const installDashboardApiMocks = async (
         });
         nextDirectiveIndex += 1;
         directives = [...directives, directive];
-        const hasConflict = directive.name.toLowerCase().includes("conflict") || directive.action.toLowerCase().includes("verbose");
         await json(route, {
           directive,
-          coherence: hasConflict
-            ? {
-                coherent: false,
-                conflicts: [{ directiveName: "concise-readable-formatting", reason: "Both directives steer answer length in opposite directions." }],
-                rationale: "The saved directive may conflict with a formatting rule.",
-              }
-            : {
-                coherent: true,
-                conflicts: [],
-                rationale: "No conflicts were detected.",
-              },
+          coherence: coherenceFor(directive),
         }, 201);
         return;
       }
@@ -600,20 +617,9 @@ export const installDashboardApiMocks = async (
           updatedAt: nowIso,
         };
         directives = directives.map((item) => item.id === directiveId ? directive : item);
-        const hasConflict = directive.name.toLowerCase().includes("conflict") || directive.action.toLowerCase().includes("verbose");
         await json(route, {
           directive,
-          coherence: hasConflict
-            ? {
-                coherent: false,
-                conflicts: [{ directiveName: "concise-readable-formatting", reason: "Both directives steer answer length in opposite directions." }],
-                rationale: "The saved directive may conflict with a formatting rule.",
-              }
-            : {
-                coherent: true,
-                conflicts: [],
-                rationale: "No conflicts were detected.",
-              },
+          coherence: coherenceFor(directive),
         });
         return;
       }

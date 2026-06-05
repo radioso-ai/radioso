@@ -496,9 +496,6 @@ export function AssistantDirectivesSection({
                   }
                   className="min-h-20"
                 />
-                <div className="rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground" role="note">
-                  <span className="font-medium text-foreground">Not active yet:</span> contextual conditions aren&apos;t evaluated yet, so this {overrideTarget ? 'override' : 'directive'} is saved but won&apos;t take effect until contextual matching is enabled.
-                </div>
               </div>
             ) : null}
             <div className="space-y-2">

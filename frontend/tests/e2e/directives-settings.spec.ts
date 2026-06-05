@@ -7,7 +7,7 @@ import {
   workspaceKey,
 } from "./dashboard-fixtures";
 
-test("agent directives settings create, edit, warn, delete, and persist", async ({ page }) => {
+test("agent directives settings create, edit, delete, and persist", async ({ page }) => {
   const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
 
   await seedDashboardStorage(page);
@@ -83,6 +83,7 @@ test("agent directives settings can replace and restore a built-in directive", a
   await expect(page.getByRole("heading", { name: 'Replace the default "inline-supported-links"' })).toBeVisible();
   await page.getByLabel("Scope").click();
   await page.getByRole("option", { name: "Only when condition matches" }).click();
+  await expect(page.getByText("Not active yet:")).toHaveCount(0);
   await page.getByLabel("Only when").fill("answering legal policy questions");
   await page.getByLabel("Action").fill("Use the agent's legal-source link policy instead of the default link style.");
   await page.getByRole("button", { name: "Save directive" }).click();

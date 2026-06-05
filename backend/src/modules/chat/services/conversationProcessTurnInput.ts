@@ -34,6 +34,7 @@ const missingModelGateway: ConversationModelGateway = {
 
 export interface ChatProcessTurnInputOptions {
   session: PreparedSession;
+  accountId?: string;
   skills?: SkillDefinition[];
   directives?: Directive[];
   dispatcher: ConversationSkillDispatcher;
@@ -64,18 +65,29 @@ const authoredDirectivesForSession = (session: PreparedSession): Directive[] =>
 
 const directiveSteerInputForSession = (
   session: PreparedSession,
+  accountId?: string,
   turn?: Pick<TurnContext, "inputEvent">,
 ) => ({
   workspaceId: session.agent.workspaceId,
+  accountId,
   additionalDirectives: authoredDirectivesForSession(session),
   turnContext: {
     query: turn?.inputEvent.content ?? session.userMessage.content,
     route: session.turnRoute,
   },
+  usageContext: {
+    accountId: accountId ?? null,
+    workspaceId: session.agent.workspaceId,
+    conversationId: session.conversation.id,
+    messageId: session.userMessage.id,
+    surface: "chat",
+    operation: "directive_match",
+    attemptKey: `${session.userMessage.id}:directive_match`,
+  },
 });
 
 export const createChatProcessTurnInput = (options: ChatProcessTurnInputOptions): ProcessTurnInput => {
-  const directiveSteerInput = directiveSteerInputForSession(options.session);
+  const directiveSteerInput = directiveSteerInputForSession(options.session, options.accountId);
   return {
     agent: toConversationAgentConfig(options.session.agent),
     sessionId: options.session.conversation.id,
@@ -101,12 +113,8 @@ export const createChatProcessTurnInput = (options: ChatProcessTurnInputOptions)
         if (!runtime) {
           return directiveMatchesForSession(options.session);
         }
-        const steerInput = directiveSteerInputForSession(options.session, turn);
-        const matches = await runtime.matcher.match({
-          turnContext: steerInput.turnContext,
-          directives,
-        });
-        const steering = await runtime.resolveMatches(steerInput, matches);
+        const steerInput = directiveSteerInputForSession(options.session, options.accountId, turn);
+        const steering = await runtime.matchAndResolve(steerInput, directives);
         options.session.directiveSteering = steering;
         return steering.matches;
       },

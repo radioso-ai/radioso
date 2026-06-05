@@ -90,6 +90,7 @@ export const runPreparedChatTurnWithConversationEngine = async (
   const renderers = buildTurnRendererRegistry(input.turnSkills);
   const processTurnInput = createChatProcessTurnInput({
     session: input.session,
+    accountId: input.accountId,
     skills: input.turnSkills.map((skill) => skill.definition),
     directiveRuntime: input.directiveRuntime,
     selector: {
@@ -139,6 +140,7 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
 
   const processTurnInput = createChatProcessTurnStreamInput({
     session: input.session,
+    accountId: input.accountId,
     skills: input.turnSkills.map((skill) => skill.definition),
     directiveRuntime: input.directiveRuntime,
     selector: {

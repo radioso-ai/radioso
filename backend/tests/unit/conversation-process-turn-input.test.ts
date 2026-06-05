@@ -177,13 +177,29 @@ const routeScopedDirectiveRuntime = (directives: Directive[]): {
           omissions: [],
         };
       },
+      async matchAndResolve(input: DirectiveSteerInput, directives: Directive[]): Promise<DirectiveSteeringResult> {
+        matchedTurnContexts.push(input.turnContext ?? {});
+        const matches = directives.map((directive) => ({
+          directive,
+          selectionMode: "deterministic" as const,
+          selectionReason: "test matcher",
+        }));
+        return {
+          rules: matches.map((match) => ({
+            action: match.directive.action,
+            source: "directive",
+            lifespan: "response",
+          })),
+          matches,
+          omissions: [],
+        };
+      },
       async steer(): Promise<DirectiveSteeringResult> {
         throw new Error("steer should not pre-resolve chat engine directives");
       },
     },
   };
 };
-
 describe("createChatProcessTurnInput", () => {
   it("projects a prepared chat session into reusable conversation engine input", async () => {
     const appended: ConversationEvent[] = [];
@@ -286,6 +302,81 @@ describe("createChatProcessTurnInput", () => {
       rules: [{ action: "Keep it brief.", source: "directive", lifespan: "response" }],
       matches: [expect.objectContaining({ directive })],
       omissions: [],
+    });
+  });
+
+  it("passes directive match usage context with the chat turn identifiers", async () => {
+    const directive: Directive = {
+      name: "brief",
+      condition: { kind: "always" },
+      action: "Keep it brief.",
+    };
+    const session = preparedSession();
+    session.directiveSteering = undefined;
+    const directiveInputs: DirectiveSteerInput[] = [];
+    const runtime: RouteScopedDirectiveRuntime = {
+      matcher: {
+        async match(): Promise<DirectiveMatch[]> {
+          throw new Error("chat turn adapter should use matchAndResolve");
+        },
+      },
+      directivesFor(input) {
+        directiveInputs.push(input);
+        return [directive];
+      },
+      async resolveMatches(): Promise<DirectiveSteeringResult> {
+        throw new Error("chat turn adapter should use matchAndResolve");
+      },
+      async matchAndResolve(input, directives): Promise<DirectiveSteeringResult> {
+        directiveInputs.push(input);
+        return {
+          rules: directives.map((candidate) => ({
+            action: candidate.action,
+            source: "directive",
+            lifespan: "response",
+          })),
+          matches: directives.map((candidate) => ({
+            directive: candidate,
+            selectionMode: "deterministic",
+            selectionReason: "test matcher",
+          })),
+          omissions: [],
+        };
+      },
+      async steer(): Promise<DirectiveSteeringResult> {
+        throw new Error("steer should not pre-resolve chat engine directives");
+      },
+    };
+    const input = createChatProcessTurnInput({
+      session,
+      directiveRuntime: runtime,
+      dispatcher,
+      selector,
+      composer,
+    });
+
+    await input.directiveMatcher.match({
+      turn: {
+        agent: input.agent,
+        sessionId: input.sessionId,
+        inputEvent: input.inputEvent,
+        history: [],
+        stagedContext: [],
+        steering: [],
+      },
+      directives: input.directives,
+    });
+
+    expect(directiveInputs.at(-1)).toMatchObject({
+      workspaceId: "workspace_1",
+      usageContext: {
+        workspaceId: "workspace_1",
+        conversationId: "conv_1",
+        messageId: "msg_1",
+        surface: "chat",
+        operation: "directive_match",
+        attemptKey: "msg_1:directive_match",
+      },
     });
   });
 

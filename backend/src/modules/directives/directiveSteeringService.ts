@@ -1,5 +1,6 @@
 import type { DirectiveCatalogRegistry, DirectiveMatcherPort } from "@radioso/conversation-defaults";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
+import type { ModelCallUsageContext } from "../../shared/domain/modelCallUsageContext.js";
 import { orderSteeringRules, type SteeringRule } from "../../shared/domain/steeringRule.js";
 
 import {
@@ -21,6 +22,8 @@ export interface DirectiveSteerInput {
   additionalDirectives?: Directive[];
   /** Turn signals passed through to the matcher. */
   turnContext?: Record<string, unknown>;
+  /** Usage-accounting context for contextual directive match model calls. */
+  usageContext?: ModelCallUsageContext;
 }
 
 export interface DirectiveSteeringResult {

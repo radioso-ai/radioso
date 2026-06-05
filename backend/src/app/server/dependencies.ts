@@ -200,6 +200,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     env,
     historyItemsRepository: repositories.historyItemsRepository,
     llmRegistry,
+    llmCapabilityResolver,
     logger,
     mailService: infrastructure.mailService,
     messageRepository: repositories.messageRepository,

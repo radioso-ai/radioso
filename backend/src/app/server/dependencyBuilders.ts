@@ -135,6 +135,8 @@ import { ErrorReportingService } from "../../shared/errors/errorReportingService
 import { Database } from "../../shared/infra/database.js";
 import { resolveLlmConfig } from "../../shared/infra/llm/providerConfig.js";
 import { LlmProviderRegistry } from "../../shared/infra/llm/providerRegistry.js";
+import { ContextualDirectiveMatchGatewayFactory } from "../../shared/infra/llm/contextualGateways.js";
+import { TextGenerationClientCache } from "../../shared/infra/llm/textClientFactory.js";
 import { createMailService } from "../../modules/mail/public.js";
 import { createLogger, type AppLogger } from "../../shared/observability/logger.js";
 import { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
@@ -664,6 +666,7 @@ export const buildChatServices = (input: {
   env: Env;
   historyItemsRepository: HistoryItemsRepository;
   llmRegistry: LlmProviderRegistry;
+  llmCapabilityResolver: LlmCapabilityResolver;
   logger: AppLogger;
   messageRepository: MessageRepository;
   productAnalyticsService: ProductAnalyticsService;
@@ -675,6 +678,14 @@ export const buildChatServices = (input: {
   assertPublicWebsiteUrl: (url: string) => Promise<void>;
 }) => {
   const chatGateway = input.llmRegistry.createChatGateway(input.usageEventRecorder);
+  const directiveMatchGatewayFactory = input.composition.directiveMatchGatewayFactory ??
+    new ContextualDirectiveMatchGatewayFactory(
+      {
+        resolver: input.llmCapabilityResolver,
+        clientCache: new TextGenerationClientCache(),
+      },
+      input.usageEventRecorder,
+    );
   const answerPresentationService = new AnswerPresentationService();
   const answerPresentation = {
     normalize: answerPresentationService.normalize.bind(answerPresentationService),
@@ -786,8 +797,8 @@ export const buildChatServices = (input: {
   const directiveSteering = createRouteScopedDirectiveSteering({
     capabilityPolicy: input.composition.capabilityPolicy,
     registrations: input.composition.directiveRegistrations,
-    // Composition may register a contextual matcher; defaults to always-match.
     matcher: input.composition.directiveMatcher,
+    directiveMatchGatewayFactory,
   });
   // Async conversation actions (spec 070). A routine action step enqueues an intent to
   // the outbox during the turn (`actionOutbox`); the worker drains and routes it to a
@@ -858,11 +869,8 @@ export const buildChatServices = (input: {
     agentService: input.agentService,
     // 067: behavioral steering. The standing set is supplied by application
     // composition; default answer behavior is registered by a built-in module.
-    // The probabilistic (contextual) matcher is intentionally not wired here: the
-    // LLM registry moved from a raw TextGenerationClient to usage-accounted
-    // ModelInferencePipelines (#473), so wiring it requires refactoring
-    // ModelDirectiveMatchGateway onto ModelInferencePipeline with a usage
-    // context — a follow-up to land before any contextual directive ships.
+    // Contextual matching is created per turn so the model call carries the
+    // current workspace/conversation/message usage context.
     directiveSteering,
     // Turn selection strategy comes from composition (default: retrieval/direct
     // terminal turn). Registerable so a host can swap it.

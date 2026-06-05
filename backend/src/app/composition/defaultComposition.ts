@@ -35,6 +35,7 @@ import { DefaultAllowCapabilityPolicy } from "../../shared/domain/capabilityPoli
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import { DefaultTurnSelectionStrategy, type TurnSelectionStrategy } from "../../modules/chat/composition.js";
 import type { DirectiveMatcherPort } from "../../modules/directives/public.js";
+import type { DirectiveMatchGatewayFactory } from "../../shared/infra/llm/contextualGateways.js";
 import {
   ApplicationModuleCoordinator,
   createApplicationExtensionRegistry,
@@ -88,6 +89,7 @@ export interface ApplicationComposition {
   directiveRegistrations: ApplicationDirectiveRegistration[];
   selectionStrategy: TurnSelectionStrategy;
   directiveMatcher?: DirectiveMatcherPort;
+  directiveMatchGatewayFactory?: DirectiveMatchGatewayFactory;
   skillCatalogRegistry: SkillCatalogRegistry<SkillCatalogEntryDefinition>;
   skillExecutorRegistry: SkillExecutorRegistry;
   chatActionSuggestionProviders: ReturnType<typeof createApplicationExtensionRegistry>["chatActionSuggestionProviders"];
@@ -142,6 +144,7 @@ export const createDefaultApplicationComposition = (options: {
     directiveRegistrations: registry.directiveRegistrations,
     selectionStrategy: registry.selectionStrategy ?? new DefaultTurnSelectionStrategy(),
     directiveMatcher: registry.directiveMatcher,
+    directiveMatchGatewayFactory: registry.directiveMatchGatewayFactory,
     skillCatalogRegistry: createDefaultSkillCatalogRegistry([
       ...registry.skillCatalogEntries,
       ...registry.skillDefinitions,

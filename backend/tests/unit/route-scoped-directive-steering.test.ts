@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createRouteScopedDirectiveSteering } from "../../src/modules/chat/services/routeScopedDirectiveSteering.js";
 import {
@@ -7,6 +7,9 @@ import {
   representOrganizationDirective,
   type Directive,
 } from "../../src/modules/directives/public.js";
+import { appendDirectiveSteeringStage } from "../../src/modules/chat/services/directiveTracePresenter.js";
+import { composeGroundedAnswerSystemPrompt } from "../../src/modules/chat/services/groundedAnswerPromptComposer.js";
+import type { ActivityTrace } from "../../src/modules/retrieval/public.js";
 import type { CapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 
 const allowAllCapabilities: CapabilityPolicy = {
@@ -19,6 +22,21 @@ const directive = (name: string, action = `Apply ${name}.`): Directive => ({
   name,
   condition: { kind: "always" },
   action,
+});
+
+const basePromptInput = {
+  baseSystemPrompt: "You are a helpful assistant.",
+  suggestedQuestionsEnabled: false,
+  suggestedQuestionsCount: 0,
+  hasRetrievedContexts: false,
+  conversationIntentSnapshot: { recentTurns: [] },
+};
+
+const baseTrace = (): ActivityTrace => ({
+  traceId: "trace-1",
+  startedAt: "2026-01-01T00:00:00.000Z",
+  stages: [{ stageId: "answer", kind: "answer_outcome" as const, label: "Answer outcome", status: "applied" as const }],
+  links: [],
 });
 
 describe("route-scoped directive steering", () => {
@@ -80,6 +98,117 @@ describe("route-scoped directive steering", () => {
 
     expect(matched).toContain("global");
     expect(result.matches).toEqual([]);
+  });
+
+  it("builds a per-turn contextual matcher from the directive match gateway factory", async () => {
+    const contextualDirective: Directive = {
+      name: "refund-tone",
+      condition: { kind: "contextual", description: "when the customer asks for a refund" },
+      action: "Use refund support tone.",
+    };
+    const gateway = {
+      match: vi.fn(async () => [{ name: contextualDirective.name, confidence: 0.92, reason: "refund request" }]),
+    };
+    const gatewayFactory = {
+      create: vi.fn(async () => gateway),
+    };
+    const steering = createRouteScopedDirectiveSteering({
+      capabilityPolicy: allowAllCapabilities,
+      registrations: [{ directive: contextualDirective }],
+      directiveMatchGatewayFactory: gatewayFactory,
+    });
+
+    const result = await steering.steer({
+      workspaceId: "w1",
+      turnContext: { route: "retrieval", query: "Can I get a refund?" },
+      usageContext: {
+        workspaceId: "w1",
+        conversationId: "conv-1",
+        messageId: "msg-1",
+        surface: "chat",
+        operation: "directive_match",
+        attemptKey: "msg-1:directive_match",
+      },
+    });
+
+    expect(gatewayFactory.create).toHaveBeenCalledWith({
+      workspaceContext: { workspaceId: "w1" },
+      usageContext: expect.objectContaining({
+        workspaceId: "w1",
+        conversationId: "conv-1",
+        messageId: "msg-1",
+        surface: "chat",
+        operation: "directive_match",
+      }),
+    });
+    expect(gateway.match).toHaveBeenCalledWith({
+      turnContext: { route: "retrieval", query: "Can I get a refund?" },
+      directives: [contextualDirective],
+    });
+    expect(result.rules.map((rule) => rule.action)).toEqual(["Use refund support tone."]);
+    expect(result.matches).toEqual([
+      expect.objectContaining({
+        directive: contextualDirective,
+        selectionMode: "probabilistic",
+        selectionConfidence: 0.92,
+        selectionReason: "refund request",
+      }),
+    ]);
+    const { systemPrompt } = composeGroundedAnswerSystemPrompt({
+      ...basePromptInput,
+      steering: result.rules,
+    });
+    expect(systemPrompt).toContain("Use refund support tone.");
+    const traced = appendDirectiveSteeringStage(baseTrace(), result);
+    expect(traced.stages.at(-1)).toMatchObject({
+      stageId: "directive_steering",
+      outputs: {
+        matched: [expect.objectContaining({ name: contextualDirective.name, selectionMode: "probabilistic" })],
+      },
+    });
+  });
+
+  it("omits contextual directives when the per-turn model classification is below threshold", async () => {
+    const contextualDirective: Directive = {
+      name: "refund-tone",
+      condition: { kind: "contextual", description: "when the customer asks for a refund" },
+      action: "Use refund support tone.",
+    };
+    const gatewayFactory = {
+      create: vi.fn(async () => ({
+        match: vi.fn(async () => [{ name: contextualDirective.name, confidence: 0.1 }]),
+      })),
+    };
+    const steering = createRouteScopedDirectiveSteering({
+      capabilityPolicy: allowAllCapabilities,
+      registrations: [
+        { directive: directive("always-on", "Always apply.") },
+        { directive: contextualDirective },
+      ],
+      directiveMatchGatewayFactory: gatewayFactory,
+    });
+
+    const result = await steering.steer({
+      workspaceId: "w1",
+      turnContext: { route: "retrieval", query: "Tell me about shipping." },
+      usageContext: {
+        workspaceId: "w1",
+        conversationId: "conv-1",
+        messageId: "msg-1",
+        surface: "chat",
+        operation: "directive_match",
+        attemptKey: "msg-1:directive_match",
+      },
+    });
+
+    expect(result.rules.map((rule) => rule.action)).toEqual(["Always apply."]);
+    expect(result.matches.map((match) => match.directive.name)).toEqual(["always-on"]);
+    const { systemPrompt } = composeGroundedAnswerSystemPrompt({
+      ...basePromptInput,
+      steering: result.rules,
+    });
+    expect(systemPrompt).toContain("Always apply.");
+    expect(systemPrompt).not.toContain("Use refund support tone.");
   });
 
   it("does not apply built-in route policy to unrelated directives with the same name", async () => {

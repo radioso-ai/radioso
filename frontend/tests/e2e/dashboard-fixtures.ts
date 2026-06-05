@@ -201,7 +201,6 @@ const buildDirective = (input: Partial<AuthoredDirectiveFixture> & Pick<Authored
   agentId: defaultAgentId,
   condition: { kind: "always" },
   priority: null,
-  criticality: null,
   requiredCapabilities: [],
   dependsOn: [],
   excludes: [],
@@ -219,7 +218,6 @@ const baseBuiltInDirectives = (): BuiltInDirectiveFixture[] => [
     condition: { kind: "always" },
     action: "Prefer short paragraphs and answer directly.",
     priority: 60,
-    criticality: "medium",
     description: "Default readable answer formatting for public assistant replies.",
   },
   {
@@ -227,7 +225,6 @@ const baseBuiltInDirectives = (): BuiltInDirectiveFixture[] => [
     condition: { kind: "always" },
     action: "Represent the organization as its assistant.",
     priority: 80,
-    criticality: "high",
     description: "Speak as the represented organization for grounded retrieval answers.",
   },
   {
@@ -235,7 +232,6 @@ const baseBuiltInDirectives = (): BuiltInDirectiveFixture[] => [
     condition: { kind: "always" },
     action: "Use available source URLs as inline links in grounded answers.",
     priority: 90,
-    criticality: "high",
     description: "Use available source URLs as inline links in grounded answers.",
   },
 ];

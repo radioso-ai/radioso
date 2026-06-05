@@ -56,12 +56,12 @@ describe("AlwaysMatchDirectiveMatcher", () => {
 describe("directiveToSteeringRule", () => {
   it("maps a match to a directive-sourced, response-lifespan SteeringRule", () => {
     const match: DirectiveMatch = {
-      directive: directive({ name: "d", action: "slow down", priority: 3, criticality: "high" }),
+      directive: directive({ name: "d", action: "slow down", priority: 3 }),
       selectionMode: "deterministic",
       selectionReason: "always",
     };
     const rule = directiveToSteeringRule(match);
-    expect(rule).toMatchObject({ action: "slow down", priority: 3, criticality: "high", source: "directive", lifespan: "response" });
+    expect(rule).toMatchObject({ action: "slow down", priority: 3, source: "directive", lifespan: "response" });
   });
 
   it("carries a contextual condition's description onto the rule", () => {
@@ -91,6 +91,30 @@ describe("DirectiveSteeringService", () => {
     expect(result.rules.map((r) => r.action)).toEqual(["high", "low"]);
     expect(result.matches).toHaveLength(2);
     expect(result.omissions).toHaveLength(0);
+  });
+
+  it("lets an authored directive supersede a built-in even when the built-in priority is higher", async () => {
+    const service = build([
+      directive({ name: "built-in-higher-priority", action: "Use the default behavior.", priority: 90 }),
+    ]);
+    const authored = directive({
+      name: "authored-replacement",
+      action: "Use the operator-authored replacement.",
+      priority: 50,
+      excludes: ["built-in-higher-priority"],
+    });
+
+    const result = await service.steer({
+      workspaceId: "w1",
+      additionalDirectives: [authored],
+    });
+
+    expect(result.matches.map((candidate) => candidate.directive.name)).toEqual(["authored-replacement"]);
+    expect(result.rules.map((rule) => rule.action)).toEqual(["Use the operator-authored replacement."]);
+    expect(result.omissions).toEqual([{
+      directiveName: "built-in-higher-priority",
+      reason: "excluded_by:authored-replacement",
+    }]);
   });
 
   it("omits a directive whose required capability is denied and records the omission", async () => {

@@ -13,7 +13,6 @@ describe("SteeringRule", () => {
       action: "confirm before acting",
       condition: "the request is irreversible",
       priority: 2,
-      criticality: "high",
       description: "irreversible actions need a confirm step",
     };
 
@@ -25,15 +24,15 @@ describe("SteeringRule", () => {
     expect(stripped.action).toBe("confirm before acting");
   });
 
-  it("orders rules by priority desc, then criticality high→low", () => {
+  it("orders rules by priority desc, then preserves input order for ties", () => {
     const rules: SteeringRule[] = [
-      { action: "a", priority: 1, criticality: "low", source: "directive", lifespan: "response" },
-      { action: "b", priority: 5, criticality: "low", source: "directive", lifespan: "response" },
-      { action: "c", priority: 1, criticality: "high", source: "directive", lifespan: "response" },
+      { action: "a", priority: 1, source: "directive", lifespan: "response" },
+      { action: "b", priority: 5, source: "directive", lifespan: "response" },
+      { action: "c", priority: 1, source: "directive", lifespan: "response" },
       { action: "d", source: "skill", lifespan: "response" },
     ];
 
-    expect(orderSteeringRules(rules).map((r) => r.action)).toEqual(["b", "c", "a", "d"]);
+    expect(orderSteeringRules(rules).map((r) => r.action)).toEqual(["b", "a", "c", "d"]);
   });
 
   it("does not mutate the input array", () => {

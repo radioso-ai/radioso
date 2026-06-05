@@ -8,7 +8,6 @@ import type {
 import type {
   AuthoredDirective,
   AuthoredDirectiveCondition,
-  AuthoredDirectiveCriticality,
 } from "./authoredDirectives.js";
 import type { ChatTurnRoute } from "../../shared/domain/chatTurnRoute.js";
 
@@ -63,7 +62,6 @@ export interface AuthoredDirectiveConfig {
   condition: AuthoredDirectiveCondition;
   action: string;
   priority: number | null;
-  criticality: AuthoredDirectiveCriticality | null;
   requiredCapabilities: string[];
   dependsOn: string[];
   excludes: string[];
@@ -182,7 +180,6 @@ const serializeAuthoredDirectives = (
     condition: cloneJson(directive.condition),
     action: directive.action,
     priority: directive.priority,
-    criticality: directive.criticality,
     requiredCapabilities: [...directive.requiredCapabilities],
     dependsOn: [...directive.dependsOn],
     excludes: [...directive.excludes],

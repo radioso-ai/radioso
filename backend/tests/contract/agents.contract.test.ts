@@ -629,7 +629,6 @@ describe("agents contract", () => {
         condition: { kind: "always" },
         action: "Use a formal register.",
         priority: null,
-        criticality: null,
         requiredCapabilities: [],
         routes: [],
       },
@@ -655,7 +654,6 @@ describe("agents contract", () => {
       condition: directive.condition,
       action: directive.action,
       priority: directive.priority ?? null,
-      criticality: directive.criticality ?? null,
       description: directive.description ?? null,
     })));
 

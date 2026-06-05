@@ -108,9 +108,6 @@ const parseDirective = (value: unknown): Directive | null => {
     condition: parsedCondition,
     action: value.action,
     priority: typeof value.priority === "number" ? value.priority : undefined,
-    criticality: value.criticality === "low" || value.criticality === "medium" || value.criticality === "high"
-      ? value.criticality
-      : undefined,
     requiredCapabilities: parseStringArray(value.requiredCapabilities),
     dependsOn: parseStringArray(value.dependsOn),
     excludes: parseStringArray(value.excludes),

@@ -37,7 +37,6 @@ const directiveMatchToSteering = (match: DirectiveMatch): SteeringRule => ({
     ? match.directive.condition.description
     : undefined,
   priority: match.directive.priority,
-  criticality: match.directive.criticality,
   description: match.directive.description,
   source: "directive",
   lifespan: "response",

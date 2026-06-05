@@ -88,7 +88,6 @@ const directivePayload = (directive: Directive): Record<string, unknown> => ({
   },
   action: directive.action,
   priority: directive.priority,
-  criticality: directive.criticality,
   requiredCapabilities: directive.requiredCapabilities,
   dependsOn: directive.dependsOn,
   excludes: directive.excludes,

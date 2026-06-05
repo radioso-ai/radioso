@@ -13,7 +13,6 @@ const directive = (overrides: Partial<Directive> & Pick<Directive, "name" | "act
   condition: overrides.condition ?? { kind: "always" },
   action: overrides.action,
   priority: overrides.priority,
-  criticality: overrides.criticality,
   requiredCapabilities: overrides.requiredCapabilities,
   dependsOn: overrides.dependsOn,
   excludes: overrides.excludes,

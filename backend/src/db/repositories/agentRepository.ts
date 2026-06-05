@@ -52,7 +52,6 @@ interface AgentDirectiveRow {
   condition_description: string | null;
   action: string;
   priority: number | null;
-  criticality: "low" | "medium" | "high" | null;
   required_capabilities: string[];
   depends_on: string[];
   excludes: string[];
@@ -70,7 +69,6 @@ interface LoadedDirectiveJson {
   conditionDescription?: unknown;
   action?: unknown;
   priority?: unknown;
-  criticality?: unknown;
   requiredCapabilities?: unknown;
   dependsOn?: unknown;
   excludes?: unknown;
@@ -139,7 +137,6 @@ const agentColumns = `
           'conditionDescription', agent_directives.condition_description,
           'action', agent_directives.action,
           'priority', agent_directives.priority,
-          'criticality', agent_directives.criticality,
           'requiredCapabilities', agent_directives.required_capabilities,
           'dependsOn', agent_directives.depends_on,
           'excludes', agent_directives.excludes,
@@ -209,9 +206,6 @@ const mapDirectiveJson = (agentId: string, value: LoadedDirectiveJson): Authored
     condition,
     action: value.action,
     priority: typeof value.priority === "number" ? value.priority : null,
-    criticality: value.criticality === "low" || value.criticality === "medium" || value.criticality === "high"
-      ? value.criticality
-      : null,
     requiredCapabilities: Array.isArray(value.requiredCapabilities)
       ? value.requiredCapabilities.filter((item): item is string => typeof item === "string")
       : [],
@@ -247,7 +241,6 @@ const mapDirectiveRow = (row: AgentDirectiveRow): AuthoredDirective => ({
     : { kind: "always" },
   action: row.action,
   priority: row.priority,
-  criticality: row.criticality,
   requiredCapabilities: row.required_capabilities ?? [],
   dependsOn: row.depends_on ?? [],
   excludes: row.excludes ?? [],
@@ -618,7 +611,6 @@ export class AgentRepository implements AgentRepositoryPort {
              condition_description,
              action,
              priority,
-             criticality,
              required_capabilities,
              depends_on,
              excludes,
@@ -632,7 +624,6 @@ export class AgentRepository implements AgentRepositoryPort {
              $4,
              $5,
              $6,
-             NULL,
              NULL,
              $7::text[],
              $8::text[],

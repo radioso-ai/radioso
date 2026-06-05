@@ -914,7 +914,6 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
       agentId,
       ...normalized,
       priority: null,
-      criticality: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -950,7 +949,6 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
       ...existing,
       ...normalized,
       priority: existing.priority,
-      criticality: existing.criticality,
       updatedAt: new Date(),
     };
     this.directives.set(directiveId, updated);

@@ -47,7 +47,6 @@ describe('directivesApi', () => {
         condition: { kind: 'always' },
         action: 'Prefer short paragraphs and answer directly.',
         priority: 60,
-        criticality: 'medium',
         description: 'Default readable answer formatting for public assistant replies.',
       }],
     }

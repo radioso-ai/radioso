@@ -78,11 +78,9 @@ export {
   authoredDirectiveInputSchema,
   validateAuthoredDirectiveCapabilities,
   AUTHORED_DIRECTIVE_LIMITS,
-  authoredDirectiveCriticalities,
   authoredDirectiveRouteValues,
   type AuthoredDirective,
   type AuthoredDirectiveCapabilityValidationResult,
-  type AuthoredDirectiveCriticality,
   type AuthoredDirectiveInput,
   type NormalizedAuthoredDirectiveInput,
 } from "./authoredDirectives.js";

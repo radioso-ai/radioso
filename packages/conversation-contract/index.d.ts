@@ -34,13 +34,10 @@ export type SteeringSource = "directive" | "skill" | "routine";
 
 export type SteeringLifespan = "response" | "session";
 
-export type SteeringCriticality = "low" | "medium" | "high";
-
 export interface SteeringRule {
   action: string;
   condition?: string;
   priority?: number;
-  criticality?: SteeringCriticality;
   description?: string;
   source: SteeringSource;
   lifespan: SteeringLifespan;
@@ -61,7 +58,6 @@ export interface Directive {
   condition: DirectiveCondition;
   action: string;
   priority?: number;
-  criticality?: SteeringCriticality;
   requiredCapabilities?: string[];
   dependsOn?: string[];
   excludes?: string[];

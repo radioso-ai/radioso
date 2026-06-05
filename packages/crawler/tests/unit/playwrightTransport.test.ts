@@ -3,6 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 type MockTransport = {
   fetchPageWithScreenshot: typeof import("../../src/transport/playwright.js").fetchPageWithScreenshot;
   head: ReturnType<typeof vi.fn>;
+  page: {
+    goto: ReturnType<typeof vi.fn>;
+    waitForLoadState: ReturnType<typeof vi.fn>;
+  };
 };
 
 const loadMockedTransport = async (
@@ -26,6 +30,7 @@ const loadMockedTransport = async (
     goto: vi.fn(async () => ({ status: () => 200 })),
     screenshot: vi.fn(async () => new Uint8Array([1, 2, 3])),
     title: vi.fn(async () => "Crawler page"),
+    waitForLoadState: vi.fn(async () => {}),
     url: vi.fn(() => "https://example.com/docs")
   };
   const browser = {
@@ -40,7 +45,7 @@ const loadMockedTransport = async (
   }));
 
   const { fetchPageWithScreenshot } = await import("../../src/transport/playwright.js");
-  return { fetchPageWithScreenshot, head };
+  return { fetchPageWithScreenshot, head, page: page as MockTransport["page"] };
 };
 
 describe("Playwright transport", () => {
@@ -78,5 +83,21 @@ describe("Playwright transport", () => {
 
     expect(head).toHaveBeenCalledWith("https://example.com/favicon.ico", { maxRedirects: 0 });
     expect(page.faviconUrl).toBe("https://example.com/favicon.ico");
+  });
+
+  it("uses domcontentloaded navigation and treats networkidle as a soft settle", async () => {
+    const { fetchPageWithScreenshot, page } = await loadMockedTransport();
+    page.waitForLoadState.mockRejectedValueOnce(new Error("networkidle timeout"));
+
+    await expect(fetchPageWithScreenshot("https://example.com/docs")).resolves.toMatchObject({
+      url: "https://example.com/docs",
+      title: "Crawler page"
+    });
+
+    expect(page.goto).toHaveBeenCalledWith("https://example.com/docs", {
+      waitUntil: "domcontentloaded",
+      timeout: 30_000
+    });
+    expect(page.waitForLoadState).toHaveBeenCalledWith("networkidle", { timeout: 8000 });
   });
 });

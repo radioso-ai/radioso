@@ -49,6 +49,7 @@ export const isPlaywrightAvailable = async (): Promise<boolean> => {
 };
 
 const NAVIGATION_TIMEOUT = 30_000;
+const NETWORK_SETTLE_TIMEOUT = 8_000;
 const VIEWPORT = { width: 1280, height: 800 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -231,9 +232,10 @@ const fetchWithPlaywright = async (
         let response: any;
         try {
           response = await page.goto(url, {
-            waitUntil: "networkidle",
+            waitUntil: "domcontentloaded",
             timeout: NAVIGATION_TIMEOUT
           });
+          await page.waitForLoadState("networkidle", { timeout: NETWORK_SETTLE_TIMEOUT }).catch(() => {});
         } catch (error) {
           if (validationError) {
             throw validationError;

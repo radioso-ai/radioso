@@ -1,9 +1,5 @@
-import { createHmac } from "node:crypto";
-
 import type { AgentContactRequestDelivery, AgentContactWebhook } from "../../../agents/public.js";
 import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js";
-
-const CONTACT_WEBHOOK_SIGNATURE_KEY_LABEL = "radioso/contact-webhook-signature/v1";
 
 /**
  * Narrow mail port this handler needs — a host adapts its real mail transport to it.
@@ -46,7 +42,7 @@ export interface ContactAgentLookup {
 export interface ContactWebhookHttpClient {
   post(request: {
     url: string;
-    /** The exact bytes to send — already serialized and signed, so what we sign is what we send. */
+    /** The exact bytes to send (already serialized). */
     rawBody: string;
     headers: Record<string, string>;
   }): Promise<void>;
@@ -58,10 +54,6 @@ export interface ContactWebhookHttpClient {
  * depend on the crawler. Throwing rejects the URL; the worker then retries/fails.
  */
 export type ContactWebhookUrlGuard = (url: string) => Promise<void>;
-
-export interface ContactWebhookSigner {
-  sign(value: string): string;
-}
 
 /** Narrow lookups the workspace-owner resolver needs (a `WorkspaceRepository` satisfies it). */
 export interface ContactWorkspaceLookup {
@@ -134,17 +126,6 @@ export class ConfiguredContactDeliveryResolver implements ContactRecipientResolv
   }
 }
 
-export class ContactWebhookHmacSigner implements ContactWebhookSigner {
-  constructor(private readonly signingKey: Buffer) {}
-
-  sign(rawBody: string): string {
-    return createHmac("sha256", this.signingKey).update(rawBody).digest("base64url");
-  }
-}
-
-export const deriveContactWebhookSigningKey = (workspaceTokenSecret: string): Buffer =>
-  createHmac("sha256", workspaceTokenSecret).update(CONTACT_WEBHOOK_SIGNATURE_KEY_LABEL).digest();
-
 /** Default per-request webhook timeout — a slow endpoint must not stall action dispatch. */
 const DEFAULT_WEBHOOK_TIMEOUT_MS = 10_000;
 /** A webhook should normally not redirect; allow a couple of hops but cap them. */
@@ -212,7 +193,6 @@ export class ContactSendActionHandler implements ActionHandler {
     private readonly recipients: ContactRecipientResolver,
     private readonly logger?: { warn(payload: Record<string, unknown>, message: string): void },
     private readonly webhookClient?: ContactWebhookHttpClient,
-    private readonly webhookSigner?: ContactWebhookSigner,
   ) {}
 
   async handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<void> {
@@ -266,23 +246,16 @@ export class ContactSendActionHandler implements ActionHandler {
     payload: Record<string, unknown>;
     idempotencyKey: string;
   }): Promise<void> {
-    if (!this.webhookClient || !this.webhookSigner) {
+    if (!this.webhookClient) {
       throw new Error("Contact webhook delivery is not configured");
     }
-    const rawBody = JSON.stringify(input.payload);
-    const timestamp = String(Date.now());
-    // Sign timestamp AND body together so a receiver can trust the timestamp for
-    // replay protection — altering it invalidates the signature. The signed bytes
-    // are exactly the bytes we send (rawBody), so receivers verify over the raw body.
-    const signature = this.webhookSigner.sign(`${timestamp}.${rawBody}`);
+    // No signature: receivers are expected to treat the URL itself as the shared
+    // secret (it is operator-configured and not exposed). The idempotency key lets a
+    // receiver de-duplicate at-least-once redeliveries.
     await this.webhookClient.post({
       url: input.webhook.url,
-      rawBody,
-      headers: {
-        "X-Radioso-Signature": signature,
-        "X-Radioso-Timestamp": timestamp,
-        "Idempotency-Key": input.idempotencyKey,
-      },
+      rawBody: JSON.stringify(input.payload),
+      headers: { "Idempotency-Key": input.idempotencyKey },
     });
   }
 }

@@ -1,4 +1,3 @@
-import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -78,10 +77,9 @@ describe("ContactSendActionHandler", () => {
     ]);
   });
 
-  it("posts configured webhooks with conversation metadata and a valid signature", async () => {
+  it("posts configured webhooks with conversation metadata and an idempotency key", async () => {
     const { mailer, sent } = recordingMailer();
     const { httpClient, requests } = recordingWebhookClient();
-    const signingKey = Buffer.from("derived-signing-key");
     const handler = new ContactSendActionHandler(
       mailer,
       {
@@ -92,7 +90,6 @@ describe("ContactSendActionHandler", () => {
       },
       undefined,
       httpClient,
-      { sign: (body) => createHmac("sha256", signingKey).update(body).digest("base64url") },
     );
 
     await handler.handle({
@@ -112,14 +109,9 @@ describe("ContactSendActionHandler", () => {
       conversationId: "conv_1",
       requestId: "request_1",
     });
-    // The signature authenticates the timestamp AND the body together, so a
-    // receiver can trust the timestamp for replay protection.
-    const rawBody = requests[0]!.rawBody;
-    const timestamp = requests[0]!.headers["X-Radioso-Timestamp"]!;
-    expect(timestamp).toMatch(/^\d+$/);
-    expect(requests[0]!.headers["X-Radioso-Signature"]).toBe(
-      createHmac("sha256", signingKey).update(`${timestamp}.${rawBody}`).digest("base64url"),
-    );
+    // Signing was dropped: no signature/timestamp headers are sent.
+    expect(requests[0]!.headers["X-Radioso-Signature"]).toBeUndefined();
+    expect(requests[0]!.headers["X-Radioso-Timestamp"]).toBeUndefined();
   });
 
   it("delivers email and webhook together when both are configured", async () => {
@@ -135,7 +127,6 @@ describe("ContactSendActionHandler", () => {
       },
       undefined,
       httpClient,
-      { sign: () => "signature" },
     );
 
     await handler.handle({ payload: { email: "alex@example.com", message: "hi" }, context });
@@ -153,7 +144,6 @@ describe("ContactSendActionHandler", () => {
       { resolve: async () => ({ emails: [], webhook: null }) },
       { warn },
       httpClient,
-      { sign: () => "signature" },
     );
 
     await handler.handle({ payload: { email: "alex@example.com", message: "hi" }, context });

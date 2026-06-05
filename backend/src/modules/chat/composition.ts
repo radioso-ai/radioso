@@ -19,10 +19,8 @@ export {
 export {
   ConfiguredContactDeliveryResolver,
   ContactSendActionHandler,
-  ContactWebhookHmacSigner,
   FetchContactWebhookHttpClient,
   WorkspaceOwnerContactRecipientResolver,
-  deriveContactWebhookSigningKey,
   type ContactNotificationMailer,
   type ContactRecipientResolver,
   type ContactWebhookHttpClient,

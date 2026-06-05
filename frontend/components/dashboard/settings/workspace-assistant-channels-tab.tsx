@@ -1131,7 +1131,7 @@ export function WorkspaceAssistantChannelsTab({
                       <p className="text-xs text-destructive">Enter a valid http(s) webhook URL.</p>
                     ) : (
                       <p className="text-xs text-muted-foreground">
-                        Optional. Radioso signs webhook requests server-side with the app key.
+                        Optional. Radioso POSTs each contact request to this URL. Keep the URL secret — treat it as the shared key.
                       </p>
                     )}
                   </div>

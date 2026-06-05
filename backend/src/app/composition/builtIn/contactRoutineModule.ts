@@ -7,11 +7,9 @@ import {
   CONTACT_INTENT_NAME,
   ConfiguredContactDeliveryResolver,
   ContactSendActionHandler,
-  ContactWebhookHmacSigner,
   FetchContactWebhookHttpClient,
   WorkspaceOwnerContactRecipientResolver,
   classifyContactIntent,
-  deriveContactWebhookSigningKey,
   type PublicChatActionAdvertiserPort,
   type PublicChatIntakeAction,
 } from "../../../modules/chat/composition.js";
@@ -85,7 +83,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
     context.registerRoutine({ routine: contactRoutine, activates: activatesOnContactIntent });
     context.registerActionHandler({
       type: CONTACT_SEND_ACTION_TYPE,
-      handler: ({ database, env, logger, mailService, assertPublicWebsiteUrl }) => {
+      handler: ({ database, logger, mailService, assertPublicWebsiteUrl }) => {
         const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
           new WorkspaceRepository(database),
           new AccountMembershipRepository(database),
@@ -101,9 +99,6 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
           // SSRF guard: every webhook hop is re-validated against the public-host
           // policy before the worker sends visitor data outbound.
           new FetchContactWebhookHttpClient(assertPublicWebsiteUrl),
-          env.WORKSPACE_TOKEN_SECRET
-            ? new ContactWebhookHmacSigner(deriveContactWebhookSigningKey(env.WORKSPACE_TOKEN_SECRET))
-            : undefined,
         );
       },
     });

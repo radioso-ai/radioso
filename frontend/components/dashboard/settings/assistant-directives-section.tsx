@@ -43,6 +43,8 @@ type DirectiveFormState = {
   action: string
 }
 
+type OverrideTarget = BuiltInDirective
+
 const emptyForm: DirectiveFormState = {
   name: '',
   conditionKind: 'always',
@@ -57,17 +59,26 @@ const directiveToForm = (directive: Directive): DirectiveFormState => ({
   action: directive.action,
 })
 
-const formToPayload = (form: DirectiveFormState): DirectiveCreateRequest => {
+const overrideNameFor = (builtInName: string): string => `Override: ${builtInName}`
+
+const formToPayload = (
+  form: DirectiveFormState,
+  options: { name?: string; excludes?: string[] } = {},
+): DirectiveCreateRequest => {
   const condition: DirectiveCondition =
     form.conditionKind === 'contextual'
       ? { kind: 'contextual', description: form.conditionDescription.trim() }
       : { kind: 'always' }
 
-  return {
-    name: form.name.trim(),
+  const payload: DirectiveCreateRequest = {
+    name: options.name ?? form.name.trim(),
     condition,
     action: form.action.trim(),
   }
+  if (options.excludes && options.excludes.length > 0) {
+    payload.excludes = options.excludes
+  }
+  return payload
 }
 
 const describeCondition = (condition: DirectiveCondition): string =>
@@ -102,36 +113,79 @@ function CoherencePanel({ coherence }: { coherence: DirectiveCoherence }) {
 }
 
 function DirectiveRow({
+  id,
   directive,
   readOnly = false,
+  replacedBy,
+  replaces,
   onEdit,
   onDelete,
+  onOverride,
+  onFocusReplacement,
 }: {
+  id?: string
   directive: Directive | BuiltInDirective
   readOnly?: boolean
+  replacedBy?: Directive
+  replaces?: string[]
   onEdit?: () => void
   onDelete?: () => void
+  onOverride?: () => void
+  onFocusReplacement?: () => void
 }) {
   return (
-    <div className="space-y-3 rounded-lg border border-border p-4">
+    <div
+      id={id}
+      tabIndex={id ? -1 : undefined}
+      className={`space-y-3 rounded-lg border border-border p-4 ${replacedBy ? 'bg-muted/40 text-muted-foreground' : ''}`}
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-medium text-foreground">{directive.name}</p>
+            <p className={`text-sm font-medium text-foreground ${replacedBy ? 'line-through decoration-muted-foreground/70' : ''}`}>
+              {directive.name}
+            </p>
             {readOnly ? (
               <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
                 Read-only
               </span>
             ) : null}
+            {replaces?.map((name) => (
+              <span key={name} className="rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                Replaces: {name}
+              </span>
+            ))}
           </div>
           <p className="text-xs text-muted-foreground">
             {describeCondition(directive.condition)}
           </p>
+          {replacedBy ? (
+            <p className="text-xs text-muted-foreground">
+              Replaced by{' '}
+              <button
+                type="button"
+                className="font-medium text-foreground underline-offset-4 hover:underline"
+                onClick={onFocusReplacement}
+              >
+                {replacedBy.name}
+              </button>
+            </p>
+          ) : null}
           {'description' in directive && directive.description ? (
             <p className="text-xs text-muted-foreground">{directive.description}</p>
           ) : null}
         </div>
-        {!readOnly ? (
+        {readOnly && !replacedBy ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onOverride}
+            aria-label={`Replace ${directive.name} for this agent`}
+          >
+            Override
+          </Button>
+        ) : !readOnly ? (
           <div className="flex shrink-0 items-center gap-1">
             <Button type="button" variant="ghost" size="sm" onClick={onEdit} aria-label={`Edit ${directive.name}`}>
               <Pencil className="h-4 w-4" />
@@ -142,7 +196,7 @@ function DirectiveRow({
           </div>
         ) : null}
       </div>
-      <p className="text-sm text-foreground">{directive.action}</p>
+      <p className={`text-sm ${replacedBy ? 'text-muted-foreground' : 'text-foreground'}`}>{directive.action}</p>
     </div>
   )
 }
@@ -161,19 +215,31 @@ export function AssistantDirectivesSection({
   const [error, setError] = useState<string | null>(null)
   const [coherence, setCoherence] = useState<DirectiveCoherence | null>(null)
   const [editingDirective, setEditingDirective] = useState<Directive | null>(null)
+  const [overrideTarget, setOverrideTarget] = useState<OverrideTarget | null>(null)
   const [deletingDirective, setDeletingDirective] = useState<Directive | null>(null)
   const [form, setForm] = useState<DirectiveFormState>(emptyForm)
   const [dialogOpen, setDialogOpen] = useState(false)
   const { beginSave, isCurrentSave, markError, markSaved } = useSettingsSaveStatus(onSaveStateChange)
+  const supersededBuiltIns = useMemo(() => {
+    const replacements = new Map<string, Directive>()
+    for (const directive of directives) {
+      for (const builtInName of directive.excludes ?? []) {
+        if (!replacements.has(builtInName)) {
+          replacements.set(builtInName, directive)
+        }
+      }
+    }
+    return replacements
+  }, [directives])
 
   const formError = useMemo(() => {
-    if (!form.name.trim()) return 'Name is required.'
+    if (!overrideTarget && !form.name.trim()) return 'Name is required.'
     if (!form.action.trim()) return 'Action is required.'
     if (form.conditionKind === 'contextual' && !form.conditionDescription.trim()) {
       return 'Contextual directives need a condition description.'
     }
     return null
-  }, [form])
+  }, [form, overrideTarget])
 
   useEffect(() => {
     let active = true
@@ -199,6 +265,7 @@ export function AssistantDirectivesSection({
 
   const openCreateDialog = () => {
     setEditingDirective(null)
+    setOverrideTarget(null)
     setForm(emptyForm)
     setError(null)
     setDialogOpen(true)
@@ -206,21 +273,43 @@ export function AssistantDirectivesSection({
 
   const openEditDialog = (directive: Directive) => {
     setEditingDirective(directive)
+    setOverrideTarget(null)
     setForm(directiveToForm(directive))
     setError(null)
     setDialogOpen(true)
+  }
+
+  const openOverrideDialog = (directive: BuiltInDirective) => {
+    setEditingDirective(null)
+    setOverrideTarget(directive)
+    setForm({
+      ...emptyForm,
+      name: overrideNameFor(directive.name),
+    })
+    setError(null)
+    setDialogOpen(true)
+  }
+
+  const focusDirective = (directiveId: string) => {
+    const element = document.getElementById(`directive-${directiveId}`)
+    element?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    element?.focus({ preventScroll: true })
   }
 
   const closeDialog = () => {
     if (isSaving) return
     setDialogOpen(false)
     setEditingDirective(null)
+    setOverrideTarget(null)
     setForm(emptyForm)
   }
 
   const handleSubmit = async () => {
     if (formError) return
-    const payload = formToPayload(form)
+    const payload = formToPayload(form, {
+      name: overrideTarget ? overrideNameFor(overrideTarget.name) : undefined,
+      excludes: overrideTarget ? [overrideTarget.name] : editingDirective?.excludes,
+    })
     const saveId = beginSave()
     setIsSaving(true)
     setError(null)
@@ -236,6 +325,7 @@ export function AssistantDirectivesSection({
       setCoherence(response.coherence)
       setDialogOpen(false)
       setEditingDirective(null)
+      setOverrideTarget(null)
       setForm(emptyForm)
       markSaved()
     } catch (saveError) {
@@ -306,7 +396,9 @@ export function AssistantDirectivesSection({
               {directives.map((directive) => (
                 <DirectiveRow
                   key={directive.id}
+                  id={`directive-${directive.id}`}
                   directive={directive}
+                  replaces={(directive.excludes ?? []).filter((name) => builtIns.some((builtIn) => builtIn.name === name))}
                   onEdit={() => openEditDialog(directive)}
                   onDelete={() => setDeletingDirective(directive)}
                 />
@@ -325,9 +417,19 @@ export function AssistantDirectivesSection({
             <p className="text-xs text-muted-foreground">Default Radioso behavior rules. They cannot be edited here.</p>
           </div>
           <div className="space-y-3">
-            {builtIns.map((directive) => (
-              <DirectiveRow key={directive.name} directive={directive} readOnly />
-            ))}
+            {builtIns.map((directive) => {
+              const replacedBy = supersededBuiltIns.get(directive.name)
+              return (
+                <DirectiveRow
+                  key={directive.name}
+                  directive={directive}
+                  readOnly
+                  replacedBy={replacedBy}
+                  onOverride={() => openOverrideDialog(directive)}
+                  onFocusReplacement={replacedBy ? () => focusDirective(replacedBy.id) : undefined}
+                />
+              )
+            })}
           </div>
         </div>
       </div>
@@ -335,24 +437,30 @@ export function AssistantDirectivesSection({
       <Dialog open={dialogOpen} onOpenChange={(open) => (open ? setDialogOpen(true) : closeDialog())}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{editingDirective ? 'Edit directive' : 'Create directive'}</DialogTitle>
+            <DialogTitle>
+              {overrideTarget ? `Replace the default "${overrideTarget.name}"` : editingDirective ? 'Edit directive' : 'Create directive'}
+            </DialogTitle>
             <DialogDescription>
-              Add a standing rule for this agent. Coherence checks are advisory and do not block saving.
+              {overrideTarget
+                ? 'Replace this default for the current agent. Coherence checks are advisory and do not block saving.'
+                : 'Add a standing rule for this agent. Coherence checks are advisory and do not block saving.'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="directiveName">Name</Label>
-              <Input
-                id="directiveName"
-                value={form.name}
-                onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                maxLength={120}
-              />
-            </div>
+            {overrideTarget ? null : (
+              <div className="space-y-2">
+                <Label htmlFor="directiveName">Name</Label>
+                <Input
+                  id="directiveName"
+                  value={form.name}
+                  onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                  maxLength={120}
+                />
+              </div>
+            )}
             <div className="space-y-2">
               <div className="space-y-2">
-                <Label htmlFor="directiveConditionKind">Condition</Label>
+                <Label htmlFor="directiveConditionKind">{overrideTarget ? 'Scope' : 'Condition'}</Label>
                 <Select
                   value={form.conditionKind}
                   onValueChange={(value) =>
@@ -364,14 +472,14 @@ export function AssistantDirectivesSection({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="always">Always</SelectItem>
-                    <SelectItem value="contextual">Contextual</SelectItem>
+                    <SelectItem value="contextual">{overrideTarget ? 'Only when condition matches' : 'Contextual'}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             {form.conditionKind === 'contextual' ? (
               <div className="space-y-2">
-                <Label htmlFor="directiveConditionDescription">Condition description</Label>
+                <Label htmlFor="directiveConditionDescription">{overrideTarget ? 'Only when' : 'Condition description'}</Label>
                 <Textarea
                   id="directiveConditionDescription"
                   value={form.conditionDescription}

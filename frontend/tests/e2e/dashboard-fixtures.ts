@@ -555,6 +555,11 @@ export const installDashboardApiMocks = async (
           name: body.name,
           condition: body.condition,
           action: body.action,
+          dependsOn: body.dependsOn ?? [],
+          excludes: body.excludes ?? [],
+          requiredCapabilities: body.requiredCapabilities ?? [],
+          description: body.description ?? null,
+          metadata: body.metadata ?? {},
         });
         nextDirectiveIndex += 1;
         directives = [...directives, directive];

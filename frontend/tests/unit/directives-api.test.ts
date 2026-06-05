@@ -93,6 +93,35 @@ describe('directivesApi', () => {
     )
   })
 
+  it('includes directive replacement relationships when creating agent directives', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      directive: { id: 'directive-1' },
+      coherence: { coherent: true, conflicts: [], rationale: 'ok' },
+    }, 201))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await directivesApi.createDirective('agent-1', {
+      name: 'Override: inline-supported-links',
+      condition: { kind: 'always' },
+      action: 'Use footnote-style source links.',
+      excludes: ['inline-supported-links'],
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/backend/api/v1/agents/agent-1/directives',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'omit',
+        body: JSON.stringify({
+          name: 'Override: inline-supported-links',
+          condition: { kind: 'always' },
+          action: 'Use footnote-style source links.',
+          excludes: ['inline-supported-links'],
+        }),
+      }),
+    )
+  })
+
   it('updates agent directives with PATCH', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
       directive: { id: 'directive-1' },

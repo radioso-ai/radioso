@@ -10,6 +10,8 @@ export interface AgentCreationHandoff {
   title: string;
   description: string;
   items: AgentCreationHandoffItem[];
+  detectedLocale: string | null;
+  detectedPrivacyPolicyUrl: string | null;
   createdAt: number;
 }
 
@@ -36,6 +38,8 @@ export const readAgentCreationHandoff = (agentId: string | undefined): AgentCrea
       items: parsed.items
         .filter((item): item is AgentCreationHandoffItem => Boolean(item) && typeof item.url === "string")
         .filter((item, index, items) => items.findIndex((candidate) => candidate.url === item.url) === index),
+      detectedLocale: typeof parsed.detectedLocale === "string" ? parsed.detectedLocale : null,
+      detectedPrivacyPolicyUrl: typeof parsed.detectedPrivacyPolicyUrl === "string" ? parsed.detectedPrivacyPolicyUrl : null,
       createdAt: typeof parsed.createdAt === "number" ? parsed.createdAt : Date.now(),
     };
   } catch {

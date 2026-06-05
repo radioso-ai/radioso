@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AGENT_CREATION_HANDOFF_STORAGE_KEY } from "./handoff";
 import { wizardApi } from "./api";
-import type { WizardProgressEvent, WizardStep } from "./types";
+import type { WizardAnalysisResult, WizardProgressEvent, WizardStep } from "./types";
 import { UrlInputStep } from "./steps/url-input-step";
 import { AnalyzingStep } from "./steps/analyzing-step";
 import { CreatingStep } from "./steps/creating-step";
+import { ReviewStep } from "./steps/review-step";
 
 const extractErrorMessage = (err: unknown): string | null => {
   if (err instanceof Error) return err.message;
@@ -31,13 +32,13 @@ export function WizardShell({ agentSettingsHrefBuilder }: WizardShellProps) {
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [progressEvents, setProgressEvents] = useState<WizardProgressEvent[]>([]);
+  const [analysisResult, setAnalysisResult] = useState<WizardAnalysisResult | null>(null);
   const analysisAbortRef = useRef<AbortController | null>(null);
   const progressEventsRef = useRef<WizardProgressEvent[]>([]);
 
   // Abort any in-flight analysis when the shell unmounts (which happens
   // when the dialog is closed via Esc, backdrop, or the X button). Without
-  // this, the pending promise can still resolve, call createFromWizard,
-  // and redirect the page to an agent the user dismissed.
+  // this, pending wizard work can still resolve and update abandoned state.
   useEffect(() => {
     return () => {
       analysisAbortRef.current?.abort();
@@ -52,9 +53,9 @@ export function WizardShell({ agentSettingsHrefBuilder }: WizardShellProps) {
     setUrl(submittedUrl);
     setStep("analyzing");
     setError(null);
+    setAnalysisResult(null);
     setProgressEvents([]);
     progressEventsRef.current = [];
-    let failureStep: WizardStep = "analyzing";
     try {
       const result = await wizardApi.analyzeWebsiteStream(submittedUrl, {
         signal: controller.signal,
@@ -68,8 +69,35 @@ export function WizardShell({ agentSettingsHrefBuilder }: WizardShellProps) {
       if (controller.signal.aborted) {
         return;
       }
-      setStep("creating");
-      failureStep = "creating";
+      setAnalysisResult(result);
+      setStep("review");
+    } catch (err: unknown) {
+      if (controller.signal.aborted) {
+        return;
+      }
+      const message = extractErrorMessage(err) ?? "Analysis failed";
+      setError(message);
+      setStep("analyzing");
+      if (analysisAbortRef.current === controller) {
+        analysisAbortRef.current = null;
+      }
+    }
+  }, []);
+
+  const handleCreateAssistant = useCallback(async (reviewed: {
+    name: string;
+    greetingInstruction: string;
+    privacyPolicyUrl: string | null;
+  }) => {
+    if (!analysisResult || !url) {
+      setStep("url-input");
+      return;
+    }
+    const controller = analysisAbortRef.current ?? new AbortController();
+    analysisAbortRef.current = controller;
+    setStep("creating");
+    setError(null);
+    try {
       // Re-check just before the network call: abort can fire after
       // setStep but before fetch is dispatched (microtask scheduling),
       // and there's no signal threaded into createFromWizard yet.
@@ -77,12 +105,15 @@ export function WizardShell({ agentSettingsHrefBuilder }: WizardShellProps) {
         return;
       }
       const createResult = await wizardApi.createFromWizard({
-        websiteUrl: submittedUrl,
-        name: result.suggestedName,
-        customInstruction: result.suggestedCustomInstruction,
-        greetingInstruction: result.suggestedGreetingMessage,
-        chunkingStrategy: result.suggestedChunkingStrategy.strategy,
-        faviconUrl: result.faviconUrl,
+        websiteUrl: url,
+        name: reviewed.name,
+        customInstruction: analysisResult.suggestedCustomInstruction,
+        greetingInstruction: reviewed.greetingInstruction,
+        chunkingStrategy: analysisResult.suggestedChunkingStrategy.strategy,
+        faviconUrl: analysisResult.faviconUrl,
+        assistantDefaultLocale: analysisResult.suggestedLocale,
+        privacyPolicyUrl: reviewed.privacyPolicyUrl,
+        contactEmail: analysisResult.suggestedContactEmail,
       });
       // Same guard for createFromWizard — if the user closed the dialog
       // mid-create, the agent gets created server-side but we skip the
@@ -93,8 +124,10 @@ export function WizardShell({ agentSettingsHrefBuilder }: WizardShellProps) {
       window.sessionStorage.setItem(AGENT_CREATION_HANDOFF_STORAGE_KEY, JSON.stringify({
         agentId: createResult.agentId,
         title: "Website analysis complete",
-        description: `Created from ${submittedUrl}. Review the pre-filled identity settings below.`,
-        items: result.pagesAnalyzed,
+        description: `Created from ${url}. Review the pre-filled identity settings below.`,
+        items: analysisResult.pagesAnalyzed,
+        detectedLocale: analysisResult.suggestedLocale,
+        detectedPrivacyPolicyUrl: reviewed.privacyPolicyUrl,
         createdAt: Date.now(),
       }));
       window.location.href = agentSettingsHrefBuilder(createResult.agentId);
@@ -102,19 +135,20 @@ export function WizardShell({ agentSettingsHrefBuilder }: WizardShellProps) {
       if (controller.signal.aborted) {
         return;
       }
-      const message = extractErrorMessage(err) ?? (failureStep === "creating" ? "Failed to create assistant" : "Analysis failed");
+      const message = extractErrorMessage(err) ?? "Failed to create assistant";
       setError(message);
-      setStep(failureStep);
+      setStep("creating");
     } finally {
       if (analysisAbortRef.current === controller) {
         analysisAbortRef.current = null;
       }
     }
-  }, [agentSettingsHrefBuilder]);
+  }, [agentSettingsHrefBuilder, analysisResult, url]);
 
   const handleCancelAnalysis = useCallback(() => {
     analysisAbortRef.current?.abort();
     analysisAbortRef.current = null;
+    setAnalysisResult(null);
     setProgressEvents([]);
     progressEventsRef.current = [];
     setError(null);
@@ -142,6 +176,14 @@ export function WizardShell({ agentSettingsHrefBuilder }: WizardShellProps) {
           progressEvents={progressEvents}
           onCancel={handleCancelAnalysis}
           onRetry={handleRetryAnalysis}
+        />
+      ) : null}
+
+      {step === "review" && analysisResult ? (
+        <ReviewStep
+          result={analysisResult}
+          onCancel={handleCancelAnalysis}
+          onCreate={(input) => void handleCreateAssistant(input)}
         />
       ) : null}
 

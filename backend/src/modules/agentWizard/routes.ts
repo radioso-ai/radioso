@@ -37,6 +37,9 @@ const createFromWizardSchema = z.object({
   greetingInstruction: z.string().max(200).default(""),
   chunkingStrategy: z.enum(["fixed_window", "structured_semantic"]).optional(),
   faviconUrl: httpUrlSchema.nullable().optional(),
+  assistantDefaultLocale: z.string().max(35).nullable().optional(),
+  privacyPolicyUrl: httpUrlSchema.nullable().optional(),
+  contactEmail: z.string().max(320).nullable().optional(),
 });
 
 const ANALYSIS_RATE_LIMIT = {

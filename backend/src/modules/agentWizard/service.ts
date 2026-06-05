@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { ModelCallUsageContext } from "../../shared/domain/modelCallUsageContext.js";
+import { normalizeLocaleTag } from "../../shared/domain/locale.js";
 import { renderPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 
 export interface AgentWizardAgentServicePort {
@@ -63,6 +64,9 @@ export interface WizardAnalysisResult {
   faviconUrl: string | null;
   pagesAnalyzed: Array<{ url: string; title: string | null }>;
   sourceUrl: string;
+  suggestedLocale: string | null;
+  suggestedPrivacyPolicyUrl: string | null;
+  suggestedContactEmail: string | null;
 }
 
 export interface WizardCreateInput {
@@ -72,6 +76,9 @@ export interface WizardCreateInput {
   greetingInstruction?: string;
   chunkingStrategy?: "fixed_window" | "structured_semantic";
   faviconUrl?: string | null;
+  assistantDefaultLocale?: string | null;
+  privacyPolicyUrl?: string | null;
+  contactEmail?: string | null;
 }
 
 export interface WizardCreateResult {
@@ -167,6 +174,8 @@ interface AgentWizardDependencies {
 
 const MAX_CONTENT_LENGTH = 30_000;
 const MAX_ANALYSIS_PAGES = 10;
+const MAX_CANDIDATE_LINKS = 80;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const selectKeyPageUrls = (links: string[], baseUrl: string, limit: number): string[] => {
   const baseOrigin = new URL(baseUrl).origin;
@@ -293,12 +302,68 @@ const createAnalysisSignal = (
 const sanitizeUrlForPrompt = (url: string): string =>
   url.replace(/[<>"]/g, "");
 
-const buildAnalysisPrompt = (websiteUrl: string, pageCount: number, content: string): string => {
+const buildAnalysisPrompt = (
+  websiteUrl: string,
+  pageCount: number,
+  content: string,
+  candidateLinks: string[],
+): string => {
   return renderPromptTemplate("agent-wizard/analyze-website.md", {
     website_url: sanitizeUrlForPrompt(websiteUrl),
     page_count: String(pageCount),
     website_content: content,
+    candidate_links: candidateLinks.map(sanitizeUrlForPrompt).join("\n"),
   });
+};
+
+const normalizeComparableUrl = (url: string): string | null => {
+  try {
+    return new URL(url).toString();
+  } catch {
+    return null;
+  }
+};
+
+const collectCandidateLinks = (
+  pages: Array<{ links?: string[] }>,
+  baseUrl: string,
+): string[] => {
+  const baseOrigin = new URL(baseUrl).origin;
+  const seen = new Set<string>();
+  const selected: string[] = [];
+  for (const page of pages) {
+    for (const rawLink of page.links ?? []) {
+      if (selected.length >= MAX_CANDIDATE_LINKS) return selected;
+      let parsed: URL;
+      try {
+        parsed = new URL(rawLink, baseUrl);
+      } catch {
+        continue;
+      }
+      if (parsed.origin !== baseOrigin) continue;
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") continue;
+      const normalized = parsed.toString();
+      if (seen.has(normalized)) continue;
+      seen.add(normalized);
+      selected.push(normalized);
+    }
+  }
+  return selected;
+};
+
+const normalizeOptionalLocale = (value: unknown): string | null => {
+  try {
+    return normalizeLocaleTag(value, "language");
+  } catch {
+    return null;
+  }
+};
+
+const normalizeOptionalEmail = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 320 || !EMAIL_PATTERN.test(trimmed)) return null;
+  return trimmed;
 };
 
 interface LlmAnalysisResponse {
@@ -308,6 +373,9 @@ interface LlmAnalysisResponse {
   contentType: string;
   chunkingStrategy: string;
   chunkingRationale: string;
+  language?: string | null;
+  privacyPolicyUrl?: string | null;
+  contactEmail?: string | null;
 }
 
 const parseLlmResponse = (raw: string): LlmAnalysisResponse | null => {
@@ -457,10 +525,15 @@ export class AgentWizardService {
       throwIfAborted();
 
       const allPages = [
-        { url: homepage.url, title: homepage.title, text: homepage.text },
+        { url: homepage.url, title: homepage.title, text: homepage.text, links: homepage.links },
         ...additionalPages
           .filter((p: { status: string; text: string }) => p.status === "success" && p.text)
-          .map((p: { url: string; title: string | null; text: string }) => ({ url: p.url, title: p.title, text: p.text })),
+          .map((p: { url: string; title: string | null; text: string; links?: string[] }) => ({
+            url: p.url,
+            title: p.title,
+            text: p.text,
+            links: p.links,
+          })),
       ];
 
       let combinedContent = "";
@@ -479,7 +552,11 @@ export class AgentWizardService {
       }
 
       input.onProgress?.({ type: "progress", step: "analyzing" });
-      const prompt = buildAnalysisPrompt(input.url, allPages.length, combinedContent.trim());
+      const candidateLinks = collectCandidateLinks([
+        { links: homepage.links },
+        ...additionalPages.map((page) => ({ links: page.links })),
+      ], baseForFollowUp);
+      const prompt = buildAnalysisPrompt(input.url, allPages.length, combinedContent.trim(), candidateLinks);
       input.onProgress?.({ type: "progress", step: "generating" });
       let analysis = await this.callLlm(prompt, analysisSignal.signal, {
         accountId: input.accountId ?? null,
@@ -515,6 +592,12 @@ export class AgentWizardService {
         : null;
 
       const chunkingStrategy = result.chunkingStrategy === "fixed_window" ? "fixed_window" as const : "structured_semantic" as const;
+      const suggestedLocale = normalizeOptionalLocale(result.language);
+      const suggestedPrivacyPolicyUrl = await this.validateSuggestedPrivacyPolicyUrl(
+        result.privacyPolicyUrl,
+        candidateLinks,
+      );
+      const suggestedContactEmail = normalizeOptionalEmail(result.contactEmail);
 
       await this.dependencies.auditService.record({
         accountId: input.accountId,
@@ -525,6 +608,9 @@ export class AgentWizardService {
           url: input.url,
           pagesAnalyzed: allPages.length,
           suggestedStrategy: chunkingStrategy,
+          detectedLocale: suggestedLocale !== null,
+          detectedPrivacyPolicy: suggestedPrivacyPolicyUrl !== null,
+          detectedContactEmail: suggestedContactEmail !== null,
         },
       }).catch(() => {});
 
@@ -541,6 +627,9 @@ export class AgentWizardService {
         faviconUrl: homepage.faviconUrl,
         pagesAnalyzed: allPages.map((p) => ({ url: p.url, title: p.title })),
         sourceUrl: input.url,
+        suggestedLocale,
+        suggestedPrivacyPolicyUrl,
+        suggestedContactEmail,
       };
       input.onProgress?.({ type: "progress", step: "complete" });
       return resultPayload;
@@ -561,6 +650,9 @@ export class AgentWizardService {
     if (input.config.faviconUrl) {
       await this.assertSafeUrl(input.config.faviconUrl);
     }
+    if (input.config.privacyPolicyUrl) {
+      await this.assertSafeUrl(input.config.privacyPolicyUrl);
+    }
 
     const agent = await this.dependencies.agentService.create(input.workspaceId, {
       name: input.config.name,
@@ -569,8 +661,32 @@ export class AgentWizardService {
       retrievalEnabled: true,
     });
 
+    const updatePayload: Record<string, unknown> = {};
     if (input.config.faviconUrl) {
-      await this.uploadFaviconAsLogo(input.workspaceId, agent.id, input.config.faviconUrl, input.signal).catch(() => {});
+      const logo = await this.uploadFaviconAsLogo(input.workspaceId, agent.id, input.config.faviconUrl, input.signal).catch(() => null);
+      if (logo) {
+        updatePayload.logo = logo;
+      }
+    }
+    const normalizedLocale = normalizeOptionalLocale(input.config.assistantDefaultLocale);
+    if (normalizedLocale) {
+      updatePayload.assistantDefaultLocale = normalizedLocale;
+    }
+    if (input.config.privacyPolicyUrl) {
+      updatePayload.branding = {
+        hidePoweredBy: false,
+        privacyPolicyUrl: new URL(input.config.privacyPolicyUrl).toString(),
+      };
+    }
+    const contactEmail = normalizeOptionalEmail(input.config.contactEmail);
+    if (contactEmail) {
+      updatePayload.contactRequestDelivery = {
+        recipientEmails: [contactEmail],
+        webhook: null,
+      };
+    }
+    if (Object.keys(updatePayload).length > 0) {
+      await this.dependencies.agentService.update(input.workspaceId, agent.id, updatePayload);
     }
 
     // The LLM-suggested chunking strategy is captured in the audit event
@@ -605,6 +721,9 @@ export class AgentWizardService {
         websiteUrl: input.config.websiteUrl,
         chunkingStrategy: input.config.chunkingStrategy,
         crawlJobId,
+        appliedLocale: normalizedLocale !== null,
+        appliedPrivacyPolicy: Boolean(input.config.privacyPolicyUrl),
+        appliedContactEmail: contactEmail !== null,
       },
     }).catch(() => {});
 
@@ -687,12 +806,29 @@ export class AgentWizardService {
     }
   }
 
+  private async validateSuggestedPrivacyPolicyUrl(
+    value: unknown,
+    candidateLinks: string[],
+  ): Promise<string | null> {
+    if (typeof value !== "string") return null;
+    const normalized = normalizeComparableUrl(value.trim());
+    if (!normalized) return null;
+    const candidateSet = new Set(candidateLinks.map(normalizeComparableUrl).filter((url): url is string => Boolean(url)));
+    if (!candidateSet.has(normalized)) return null;
+    try {
+      await this.assertSafeUrl(normalized);
+      return normalized;
+    } catch {
+      return null;
+    }
+  }
+
   private async uploadFaviconAsLogo(
     workspaceId: string,
     agentId: string,
     faviconUrl: string,
     signal?: AbortSignal,
-  ): Promise<void> {
+  ): Promise<Record<string, unknown> | null> {
     // Favicon hosts often redirect (CDNs, default /favicon.ico). We can't
     // use redirect:"follow" because the browser would issue a request to a
     // private host on a redirect before we get a chance to validate. Instead,
@@ -706,7 +842,7 @@ export class AgentWizardService {
       try {
         await this.assertSafeUrl(currentUrl);
       } catch {
-        return;
+        return null;
       }
       const timeoutSignal = AbortSignal.timeout(10_000);
       response = await fetchFn(currentUrl, {
@@ -715,24 +851,24 @@ export class AgentWizardService {
       });
       if (response.status >= 300 && response.status < 400) {
         const location = response.headers.get("location");
-        if (!location) return;
+        if (!location) return null;
         try {
           currentUrl = new URL(location, currentUrl).toString();
         } catch {
-          return;
+          return null;
         }
         continue;
       }
       break;
     }
-    if (!response || !response.ok) return;
+    if (!response || !response.ok) return null;
 
     const contentType = response.headers.get("content-type") ?? "image/png";
     const allowedTypes = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/x-icon", "image/vnd.microsoft.icon"];
-    if (!allowedTypes.some((t) => contentType.startsWith(t))) return;
+    if (!allowedTypes.some((t) => contentType.startsWith(t))) return null;
 
     const buffer = new Uint8Array(await response.arrayBuffer());
-    if (buffer.length === 0 || buffer.length > 1_048_576) return;
+    if (buffer.length === 0 || buffer.length > 1_048_576) return null;
 
     const extension = contentType.includes("png") ? "png"
       : contentType.includes("jpeg") ? "jpg"
@@ -748,15 +884,13 @@ export class AgentWizardService {
       buffer: Buffer.from(buffer),
     });
 
-    await this.dependencies.agentService.update(workspaceId, agentId, {
-      logo: {
-        bucket: uploadResult.bucket,
-        objectPath: uploadResult.objectPath,
-        generation: uploadResult.generation ?? null,
-        mimeType: contentType,
-        filename: `favicon.${extension}`,
-        sizeBytes: uploadResult.sizeBytes,
-      },
-    });
+    return {
+      bucket: uploadResult.bucket,
+      objectPath: uploadResult.objectPath,
+      generation: uploadResult.generation ?? null,
+      mimeType: contentType,
+      filename: `favicon.${extension}`,
+      sizeBytes: uploadResult.sizeBytes,
+    };
   }
 }

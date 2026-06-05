@@ -76,7 +76,6 @@ describeIfDatabase("agent directives persistence", () => {
 
     expect(created.id).toEqual(expect.any(String));
     expect(created.priority).toBeNull();
-    expect(created.criticality).toBeNull();
     const loaded = await agentRepository.findByIdAndWorkspaceId(agent.id, workspace.id);
     expect(loaded?.authoredDirectives ?? []).toHaveLength(1);
     expect((loaded?.authoredDirectives ?? [])[0]).toMatchObject({
@@ -93,7 +92,6 @@ describeIfDatabase("agent directives persistence", () => {
     });
     expect(updated.action).toBe("Use a precise formal register.");
     expect(updated.priority).toBeNull();
-    expect(updated.criticality).toBeNull();
 
     expect(await agentRepository.deleteDirective(agent.id, workspace.id, created.id)).toBe(true);
     expect(await agentRepository.listDirectives(agent.id, workspace.id)).toEqual([]);

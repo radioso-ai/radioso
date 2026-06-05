@@ -12,9 +12,6 @@ export const AUTHORED_DIRECTIVE_LIMITS = {
   capabilityName: 200,
 } as const;
 
-export const authoredDirectiveCriticalities = ["low", "medium", "high"] as const;
-export type AuthoredDirectiveCriticality = (typeof authoredDirectiveCriticalities)[number];
-
 export const authoredDirectiveRouteValues = Object.values(CHAT_TURN_ROUTE) as [ChatTurnRoute, ...ChatTurnRoute[]];
 
 const builtInDirectiveNames = new Set(defaultAnswerDirectives.map((directive) => directive.name));
@@ -78,7 +75,6 @@ export interface AuthoredDirective {
   condition: AuthoredDirectiveCondition;
   action: string;
   priority: number | null;
-  criticality: AuthoredDirectiveCriticality | null;
   requiredCapabilities: string[];
   dependsOn: string[];
   excludes: string[];

@@ -39,12 +39,12 @@ describe("authored directive domain validation", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects priority and criticality on authored input", () => {
+  it("rejects removed precedence fields on authored input", () => {
     expect(authoredDirectiveInputSchema.safeParse({
-      name: "bad-criticality",
+      name: "criticality-dial",
       condition: { kind: "always" },
       action: "Use the configured behavior.",
-      criticality: "urgent",
+      criticality: "high",
       routes: ["retrieval"],
     }).success).toBe(false);
 

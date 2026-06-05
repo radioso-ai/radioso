@@ -1,5 +1,4 @@
 export type {
-  SteeringCriticality,
   SteeringLifespan,
   SteeringRule,
   SteeringSource,

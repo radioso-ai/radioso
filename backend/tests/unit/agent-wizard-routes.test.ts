@@ -170,4 +170,33 @@ describe("agent wizard routes", () => {
     expect(response.text).toContain("event: complete");
     expect(response.text).toContain("\"suggestedName\":\"Example Support\"");
   });
+
+  it("accepts derived settings in the create request", async () => {
+    const service = createService();
+
+    await request(createApp(service))
+      .post("/api/v1/agent-wizard/create")
+      .set("Cookie", "radioso_session=valid-session")
+      .send({
+        websiteUrl: "https://example.com",
+        name: "Example Support",
+        customInstruction: "Help visitors understand Example.",
+        greetingInstruction: "Hi! I can help with Example.",
+        chunkingStrategy: "structured_semantic",
+        assistantDefaultLocale: "pt-BR",
+        privacyPolicyUrl: "https://example.com/privacy",
+        contactEmail: "support@example.com",
+      })
+      .expect(201);
+
+    expect(service.createAgentFromWizard).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      config: expect.objectContaining({
+        assistantDefaultLocale: "pt-BR",
+        privacyPolicyUrl: "https://example.com/privacy",
+        contactEmail: "support@example.com",
+      }),
+    }));
+  });
 });

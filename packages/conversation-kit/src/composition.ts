@@ -35,7 +35,7 @@ import {
   createDirectiveCoherenceGate,
   type DirectiveCoherenceGate,
   type DirectiveCoherenceGateOptions,
-} from "./coherence.js";
+} from "@radioso/conversation-defaults";
 import {
   TransientConversationKitAuthoringStore,
   type ConversationKitAuthoringStore,

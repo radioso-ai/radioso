@@ -17,7 +17,7 @@ import {
   createDirectiveCoherenceGate,
   DirectiveCoherenceError,
   type DirectiveCoherenceGate,
-} from "./coherence.js";
+} from "@radioso/conversation-defaults";
 import { createId } from "./ids.js";
 
 type MaybePromise<T> = T | Promise<T>;

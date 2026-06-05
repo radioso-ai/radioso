@@ -49,7 +49,7 @@ export {
   type DirectiveCoherenceGateOptions,
   type DirectiveCoherenceMode,
   type DirectiveCoherenceVerdict,
-} from "./coherence.js";
+} from "@radioso/conversation-defaults";
 export {
   createDefaultConversationDirectiveMatcher,
   createDefaultConversationSkillDispatcher,

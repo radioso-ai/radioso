@@ -1,5 +1,14 @@
 import type { Directive } from "./domain.js";
 
+export interface BuiltInDirectiveView {
+  name: string;
+  condition: Directive["condition"];
+  action: string;
+  priority: number | null;
+  criticality: NonNullable<Directive["criticality"]> | null;
+  description: string | null;
+}
+
 export const conciseReadableFormattingDirective: Directive = {
   name: "concise-readable-formatting",
   condition: { kind: "always" },
@@ -54,3 +63,12 @@ export const defaultAnswerDirectives: Directive[] = [
   representOrganizationDirective,
   inlineSupportedLinksDirective,
 ];
+
+export const builtInAnswerDirectiveViews: BuiltInDirectiveView[] = defaultAnswerDirectives.map((directive) => ({
+  name: directive.name,
+  condition: directive.condition,
+  action: directive.action,
+  priority: directive.priority ?? null,
+  criticality: directive.criticality ?? null,
+  description: directive.description ?? null,
+}));

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createDefaultAgentSkillSettingsRegistry } from "../../src/app/composition/skillSettingsResolver.js";
 import { AgentRepository } from "../../src/db/repositories/agentRepository.js";
+import { AppError } from "../../src/shared/domain/errors.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../src/modules/documents/contracts/index.js";
 import {
   AgentSurfaceExtensionRegistry,
@@ -32,6 +33,27 @@ const agentRow = (outputModes: Record<string, unknown>, overrides: Record<string
   greeting_settings: {},
   output_modes: outputModes,
   skill_settings: {},
+  authored_directives: [],
+  created_at: new Date("2026-01-01T00:00:00.000Z"),
+  updated_at: new Date("2026-01-01T00:00:00.000Z"),
+  ...overrides,
+});
+
+const directiveRow = (overrides: Record<string, unknown> = {}) => ({
+  id: "directive-1",
+  agent_id: "agent-1",
+  name: "formal-register",
+  condition_kind: "always",
+  condition_description: null,
+  action: "Use a formal register.",
+  priority: null,
+  criticality: null,
+  required_capabilities: [],
+  depends_on: [],
+  excludes: [],
+  routes: ["retrieval"],
+  description: null,
+  metadata: {},
   created_at: new Date("2026-01-01T00:00:00.000Z"),
   updated_at: new Date("2026-01-01T00:00:00.000Z"),
   ...overrides,
@@ -345,5 +367,166 @@ describe("AgentRepository", () => {
       expect.stringContaining("INSERT INTO agent_document_sources"),
       [expect.any(String), [null, realSourceId]],
     );
+  });
+
+  it("creates authored directives without touching agent settings blobs", async () => {
+    const query = vi.fn(async (text: string, _params?: unknown[]) => {
+      if (text.includes("INSERT INTO agent_directives")) {
+        return {
+          rows: [directiveRow()],
+        };
+      }
+      return { rows: [{ id: "agent-1" }] };
+    });
+    const repository = new AgentRepository({
+      withTransaction: async (callback: (client: { query: typeof query }) => Promise<unknown>) => callback({ query }),
+    } as never);
+
+    await repository.createDirective("agent-1", "workspace-1", {
+      name: "formal-register",
+      condition: { kind: "always" },
+      action: "Use a formal register.",
+      routes: ["retrieval"],
+    });
+
+    const insertCall = query.mock.calls.find(([text]) => text.includes("INSERT INTO agent_directives"));
+    expect(insertCall?.[0]).toContain("INSERT INTO agent_directives");
+    expect(insertCall?.[0]).toContain("name");
+    expect(insertCall?.[0]).toContain("condition_kind");
+    expect(insertCall?.[0]).toContain("required_capabilities");
+    expect(insertCall?.[0]).not.toMatch(/behavior_settings|skill_settings|greeting_settings|output_modes/);
+    expect(insertCall?.[1]).not.toContain("medium");
+  });
+
+  it("reports duplicate directive creates as conflicts", async () => {
+    const query = vi.fn(async (text: string, _params?: unknown[]) => {
+      if (text.includes("INSERT INTO agent_directives")) {
+        throw {
+          code: "23505",
+          constraint: "agent_directives_agent_id_name_key",
+        };
+      }
+      return { rows: [{ id: "agent-1" }] };
+    });
+    const repository = new AgentRepository({
+      withTransaction: async (callback: (client: { query: typeof query }) => Promise<unknown>) => callback({ query }),
+    } as never);
+
+    await expect(repository.createDirective("agent-1", "workspace-1", {
+      name: "formal-register",
+      condition: { kind: "always" },
+      action: "Use a formal register.",
+      routes: ["retrieval"],
+    })).rejects.toMatchObject({
+      statusCode: 409,
+      code: "conflict",
+      message: 'A directive named "formal-register" already exists for this agent.',
+    } as Partial<AppError>);
+  });
+
+  it("reports duplicate directive renames as conflicts", async () => {
+    const query = vi.fn(async (text: string, _params?: unknown[]) => {
+      if (text.includes("SELECT agent_directives")) {
+        return [directiveRow()];
+      }
+      if (text.includes("UPDATE agent_directives")) {
+        throw {
+          code: "23505",
+          constraint: "agent_directives_agent_id_name_key",
+        };
+      }
+      return [];
+    });
+    const repository = new AgentRepository({ query } as never);
+
+    await expect(repository.updateDirective("agent-1", "workspace-1", "directive-1", {
+      name: "handoff-tone",
+    })).rejects.toMatchObject({
+      statusCode: 409,
+      code: "conflict",
+      message: 'A directive named "handoff-tone" already exists for this agent.',
+    } as Partial<AppError>);
+  });
+
+  it("loads authored directives in the single agent query and maps them onto the agent record", async () => {
+    const queryOptional = vi.fn(async (_text: string, _params?: unknown[]) =>
+      agentRow({
+        authenticatedChat: { enabled: true },
+        anonymousChat: { enabled: false, token: null },
+        websiteEmbed: websiteEmbedDefaults(),
+      }, {
+        authored_directives: [{
+          id: "directive-1",
+          name: "formal-register",
+          conditionKind: "contextual",
+          conditionDescription: "When answering procurement questions",
+          action: "Use a formal register.",
+          priority: 50,
+          criticality: "medium",
+          requiredCapabilities: ["retrieval.answer"],
+          dependsOn: [],
+          excludes: [],
+          routes: ["retrieval"],
+          description: "Tone control",
+          metadata: { source: "test" },
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        }],
+      }));
+    const repository = new AgentRepository({ queryOptional } as never);
+
+    const agent = await repository.findByIdAndWorkspaceId("agent-1", "workspace-1");
+
+    expect(queryOptional.mock.calls[0]?.[0]).toContain("json_agg");
+    expect(queryOptional.mock.calls[0]?.[0]).toContain("agent_directives");
+    expect(agent?.authoredDirectives).toEqual([{
+      id: "directive-1",
+      agentId: "agent-1",
+      name: "formal-register",
+      condition: {
+        kind: "contextual",
+        description: "When answering procurement questions",
+      },
+      action: "Use a formal register.",
+      priority: 50,
+      criticality: "medium",
+      requiredCapabilities: ["retrieval.answer"],
+      dependsOn: [],
+      excludes: [],
+      routes: ["retrieval"],
+      description: "Tone control",
+      metadata: { source: "test" },
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+    }]);
+  });
+
+  it("uses an updated_at compare-and-set guard on update and reports stale writes as conflicts", async () => {
+    const currentUpdatedAt = new Date("2026-01-01T00:00:00.000Z");
+    const query = vi.fn(async (text: string, _params?: unknown[]) => {
+      if (text.includes("UPDATE agents")) {
+        return { rows: [] };
+      }
+      return { rows: [] };
+    });
+    const repository = new AgentRepository({
+      queryOptional: async () => agentRow({
+        authenticatedChat: { enabled: true },
+        anonymousChat: { enabled: false, token: null },
+        websiteEmbed: websiteEmbedDefaults(),
+      }, { updated_at: currentUpdatedAt }),
+      withTransaction: async (callback: (client: { query: typeof query }) => Promise<unknown>) => callback({ query }),
+    } as never);
+
+    await expect(repository.update("agent-1", "workspace-1", {
+      name: "Support stale",
+    }, { expectedUpdatedAt: currentUpdatedAt })).rejects.toMatchObject({
+      statusCode: 409,
+      code: "conflict",
+    } as Partial<AppError>);
+
+    const updateSql = query.mock.calls.find(([text]) => text.includes("UPDATE agents"))?.[0];
+    expect(updateSql).toContain("date_trunc('milliseconds', updated_at)");
+    expect(updateSql).toMatch(/WHERE id = \$\d+\s+AND workspace_id = \$\d+\s+AND date_trunc\('milliseconds', updated_at\)/);
   });
 });

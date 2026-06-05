@@ -11,6 +11,7 @@ import {
   MessageSquare,
   Plug,
   Plus,
+  ScrollText,
   SlidersHorizontal,
   Trash2,
   UserRound,
@@ -35,6 +36,7 @@ const AGENT_GROUPS: { label: string | null; items: AgentItem[] }[] = [
       { id: 'identity', label: 'Identity & appearance', icon: UserRound },
       { id: 'behavior', label: 'Behavior', icon: SlidersHorizontal },
       { id: 'skills', label: 'Skills', icon: Wrench },
+      { id: 'directives', label: 'Directives', icon: ScrollText },
     ],
   },
   {

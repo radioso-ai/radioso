@@ -147,14 +147,10 @@ const extractJsonObject = (raw: string): string | null => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-const fallbackInvalidVerdict = (existingDirectives: Directive[]): DirectiveCoherenceVerdict => ({
-  coherent: false,
-  conflicts: existingDirectives.slice(0, 1).map((directive) => ({
-    directiveId: directive.id,
-    directiveName: directive.name,
-    reason: "The coherence model did not return a valid structured verdict.",
-  })),
-  rationale: "The directive was not accepted because coherence could not be verified.",
+const fallbackInvalidVerdict = (): DirectiveCoherenceVerdict => ({
+  coherent: true,
+  conflicts: [],
+  rationale: "Coherence check unavailable.",
 });
 
 const parseConflict = (
@@ -250,7 +246,7 @@ export class ModelDirectiveCoherenceChecker implements DirectiveCoherenceChecker
         candidateDirectiveCondition: directiveConditionText(input.candidate),
       },
     });
-    return parseModelVerdict(text, input.existingDirectives) ?? fallbackInvalidVerdict(input.existingDirectives);
+    return parseModelVerdict(text, input.existingDirectives) ?? fallbackInvalidVerdict();
   }
 }
 

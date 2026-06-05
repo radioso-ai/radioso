@@ -81,7 +81,11 @@ export const createRouteScopedDirectiveSteering = (input: {
   return {
     matcher,
     directivesFor(steerInput: DirectiveSteerInput): Directive[] {
-      return serviceFor(steerInput).listDirectives();
+      const route = routeFromInput(steerInput);
+      return [
+        ...directivesForRoute(input.registrations, route, defaultRoutesForDirective),
+        ...(steerInput.additionalDirectives ?? []),
+      ];
     },
     resolveMatches(
       steerInput: DirectiveSteerInput,

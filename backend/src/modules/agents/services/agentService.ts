@@ -14,7 +14,7 @@ import {
   type AgentRecord,
 } from "../domain.js";
 
-export type AgentSettingsResource = AgentRecord & {
+export type AgentSettingsResource = Omit<AgentRecord, "authoredDirectives"> & {
   isDefault: boolean;
   assistantBootstrapActive: boolean;
 };
@@ -170,8 +170,9 @@ export class AgentService {
   }
 
   present(agent: AgentRecord, defaultAgentId?: string | null): AgentSettingsResource {
+    const { authoredDirectives: _authoredDirectives, ...publicAgent } = agent;
     return {
-      ...agent,
+      ...publicAgent,
       isDefault: defaultAgentId === agent.id,
       assistantBootstrapActive: isAgentBootstrapActive(agent),
     };

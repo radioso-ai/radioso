@@ -32,6 +32,16 @@ export interface OpenApiSchemaCatalog {
   AgentLogoSchema: z.ZodTypeAny;
   AgentParamsSchema: RouteParameterSchema;
   AgentSchema: z.ZodTypeAny;
+  AuthoredDirectiveConditionSchema: z.ZodTypeAny;
+  AuthoredDirectiveCreateRequestSchema: z.ZodTypeAny;
+  AuthoredDirectiveListResponseSchema: z.ZodTypeAny;
+  AuthoredDirectiveParamsSchema: RouteParameterSchema;
+  AuthoredDirectiveResponseSchema: z.ZodTypeAny;
+  AuthoredDirectiveSaveResponseSchema: z.ZodTypeAny;
+  AuthoredDirectiveUpdateRequestSchema: z.ZodTypeAny;
+  BuiltInDirectiveSchema: z.ZodTypeAny;
+  DirectiveCoherenceVerdictSchema: z.ZodTypeAny;
+  DirectiveListResponseSchema: z.ZodTypeAny;
   AnswerSegmentSchema: z.ZodTypeAny;
   AnswerFeedbackEntrySchema: z.ZodTypeAny;
   AnswerFeedbackRequestSchema: z.ZodTypeAny;

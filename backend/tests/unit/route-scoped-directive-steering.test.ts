@@ -101,4 +101,182 @@ describe("route-scoped directive steering", () => {
       "Apply custom represent-organization steering.",
     ]);
   });
+
+  it("merges turn-provided authored directives into retrieval and social routes", async () => {
+    const authored = directive("agent-tone", "Use this agent's saved tone.");
+    const steering = createRouteScopedDirectiveSteering({
+      capabilityPolicy: allowAllCapabilities,
+      registrations: [
+        { directive: conciseReadableFormattingDirective },
+        { directive: representOrganizationDirective },
+        { directive: inlineSupportedLinksDirective },
+      ],
+    });
+
+    const retrieval = await steering.steer({
+      workspaceId: "w1",
+      turnContext: { route: "retrieval" },
+      additionalDirectives: [authored],
+    });
+    const social = await steering.steer({
+      workspaceId: "w1",
+      turnContext: { route: "social_only" },
+      additionalDirectives: [authored],
+    });
+
+    expect(retrieval.rules.map((rule) => rule.action)).toEqual([
+      inlineSupportedLinksDirective.action,
+      representOrganizationDirective.action,
+      conciseReadableFormattingDirective.action,
+      authored.action,
+    ]);
+    expect(social.rules.map((rule) => rule.action)).toEqual([
+      conciseReadableFormattingDirective.action,
+      authored.action,
+    ]);
+  });
+
+  it("orders turn-provided authored directives with a priority-50 steering default", async () => {
+    const authored = directive("agent-tone", "Use this agent's saved tone.");
+    const steering = createRouteScopedDirectiveSteering({
+      capabilityPolicy: allowAllCapabilities,
+      registrations: [{ directive: conciseReadableFormattingDirective }],
+    });
+
+    const result = await steering.steer({
+      workspaceId: "w1",
+      turnContext: { route: "retrieval" },
+      additionalDirectives: [{ ...authored, priority: 50 }],
+    });
+
+    expect(result.rules.map((rule) => rule.action)).toEqual([
+      conciseReadableFormattingDirective.action,
+      authored.action,
+    ]);
+  });
+
+  it("resolves authored relationships against the merged directive set", async () => {
+    const authored = {
+      ...directive("agent-tone", "Use this agent's saved tone."),
+      excludes: [conciseReadableFormattingDirective.name],
+      priority: 50,
+    };
+    const steering = createRouteScopedDirectiveSteering({
+      capabilityPolicy: allowAllCapabilities,
+      registrations: [{ directive: conciseReadableFormattingDirective }],
+    });
+
+    const result = await steering.steer({
+      workspaceId: "w1",
+      turnContext: { route: "retrieval" },
+      additionalDirectives: [authored],
+    });
+
+    expect(result.rules.map((rule) => rule.action)).toEqual([authored.action]);
+    expect(result.omissions).toEqual([{
+      directiveName: conciseReadableFormattingDirective.name,
+      reason: `excluded_by:${authored.name}`,
+    }]);
+  });
+
+  it("lets an authored always directive replace a built-in answer directive", async () => {
+    const authored = {
+      ...directive("agent-inline-links", "Use this agent's custom source-link policy."),
+      excludes: [inlineSupportedLinksDirective.name],
+    };
+    const steering = createRouteScopedDirectiveSteering({
+      capabilityPolicy: allowAllCapabilities,
+      registrations: [
+        { directive: conciseReadableFormattingDirective },
+        { directive: representOrganizationDirective },
+        { directive: inlineSupportedLinksDirective },
+      ],
+    });
+
+    const result = await steering.steer({
+      workspaceId: "w1",
+      turnContext: { route: "retrieval" },
+      additionalDirectives: [authored],
+    });
+
+    expect(result.matches.map((match) => match.directive.name)).toContain(authored.name);
+    expect(result.matches.map((match) => match.directive.name)).not.toContain(inlineSupportedLinksDirective.name);
+    expect(result.omissions).toContainEqual({
+      directiveName: inlineSupportedLinksDirective.name,
+      reason: `excluded_by:${authored.name}`,
+    });
+  });
+
+  it("scopes contextual authored replacement to turns where the condition matches", async () => {
+    const contextualAuthored = {
+      ...directive("agent-contextual-links", "Use scoped source-link wording."),
+      condition: { kind: "contextual" as const, description: "when answering policy questions" },
+      excludes: [inlineSupportedLinksDirective.name],
+    };
+    const matcher = {
+      async match(input: { turnContext: Record<string, unknown>; directives: Directive[] }) {
+        return input.directives
+          .filter((candidate) =>
+            candidate.condition.kind === "always" ||
+            (candidate.name === contextualAuthored.name && input.turnContext.contextualOverrideApplies === true)
+          )
+          .map((candidate) => ({
+            directive: candidate,
+            selectionMode: candidate.condition.kind === "always" ? "deterministic" as const : "probabilistic" as const,
+            selectionReason: "test matcher",
+          }));
+      },
+    };
+    const steering = createRouteScopedDirectiveSteering({
+      capabilityPolicy: allowAllCapabilities,
+      registrations: [{ directive: inlineSupportedLinksDirective }],
+      matcher,
+    });
+
+    const matched = await steering.steer({
+      workspaceId: "w1",
+      turnContext: { route: "retrieval", contextualOverrideApplies: true },
+      additionalDirectives: [contextualAuthored],
+    });
+    const unmatched = await steering.steer({
+      workspaceId: "w1",
+      turnContext: { route: "retrieval", contextualOverrideApplies: false },
+      additionalDirectives: [contextualAuthored],
+    });
+
+    expect(matched.matches.map((match) => match.directive.name)).toContain(contextualAuthored.name);
+    expect(matched.matches.map((match) => match.directive.name)).not.toContain(inlineSupportedLinksDirective.name);
+    expect(matched.omissions).toContainEqual({
+      directiveName: inlineSupportedLinksDirective.name,
+      reason: `excluded_by:${contextualAuthored.name}`,
+    });
+    expect(unmatched.matches.map((match) => match.directive.name)).toEqual([inlineSupportedLinksDirective.name]);
+    expect(unmatched.omissions).toEqual([]);
+  });
+
+  it("capability-filters turn-provided authored directives", async () => {
+    const authored = {
+      ...directive("agent-tone", "Use this agent's saved tone."),
+      requiredCapabilities: ["assistant.special"],
+    };
+    const steering = createRouteScopedDirectiveSteering({
+      capabilityPolicy: {
+        async can(input) {
+          return input.capability === "assistant.special"
+            ? { allowed: false, reason: "capability_denied" }
+            : { allowed: true };
+        },
+      },
+      registrations: [{ directive: conciseReadableFormattingDirective }],
+    });
+
+    const result = await steering.steer({
+      workspaceId: "w1",
+      turnContext: { route: "retrieval" },
+      additionalDirectives: [authored],
+    });
+
+    expect(result.rules.map((rule) => rule.action)).toEqual([conciseReadableFormattingDirective.action]);
+    expect(result.omissions).toEqual([{ directiveName: authored.name, reason: "capability_denied" }]);
+  });
 });

@@ -6,7 +6,8 @@ import {
   createDefaultDocumentJobDispatcher,
   type ApplicationModule,
 } from "../composition/index.js";
-import { AgentService, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
+import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService } from "../../modules/agents/public.js";
+import { createDirectiveCoherenceChecker } from "@radioso/conversation-defaults";
 import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloudCdnEmbedConfigCacheInvalidator.js";
 import { PlatformSettingsService } from "../../modules/settings/composition.js";
 import type { AppDependencies } from "./types.js";
@@ -32,6 +33,7 @@ import {
   listSupportedEmbeddingModels,
 } from "./dependencyBuilders.js";
 import { resolveLlmConfig } from "../../shared/infra/llm/providerConfig.js";
+import { registeredCapabilityNames } from "../../shared/domain/capabilityPolicy.js";
 import { EmbeddingService } from "../../modules/retrieval/composition.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
@@ -46,10 +48,35 @@ import {
   EvalSnapshotService,
   RetrievalPipelineEvalRunner,
 } from "../../modules/eval/composition.js";
+import type { ConversationModelGateway } from "@radioso/conversation-contract";
+import type { ModelInferencePipeline } from "../../shared/infra/llm/modelInferencePipeline.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
 }
+
+const createConversationModelGateway = (pipeline: ModelInferencePipeline): ConversationModelGateway => ({
+  async complete(input) {
+    const { text } = await pipeline.complete({
+      prompt: input.messages.map((message) => `${message.role}: ${message.content}`).join("\n\n"),
+      systemPrompt: input.systemPrompt,
+      operation: {
+        workspaceId: "directive-coherence",
+        surface: "agents",
+        operation: "directive_coherence",
+        attemptKey: String(input.metadata?.candidateDirectiveName ?? "candidate"),
+      },
+    });
+    return {
+      text,
+      metadata: {
+        capability: pipeline.metadata.capability,
+        provider: pipeline.metadata.provider,
+        model: pipeline.metadata.model,
+      },
+    };
+  },
+});
 
 export const buildDependencies = (env: Env = getEnv(), options: BuildDependenciesOptions = {}): AppDependencies => {
   const logger = buildLogger();
@@ -240,6 +267,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   });
 
   const chatInferencePipeline = llmRegistry.createChatInferencePipeline(infrastructure.usageEventRecorder);
+  const authoredDirectiveService = new AuthoredDirectiveService({
+    repository: repositories.agentRepository,
+    coherenceChecker: createDirectiveCoherenceChecker({
+      modelGateway: createConversationModelGateway(chatInferencePipeline),
+    }),
+    registeredCapabilityNames,
+  });
 
   const evalRepository = new EvalRepository(infrastructure.database);
   const evalSnapshotService = new EvalSnapshotService(
@@ -318,6 +352,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     evalRunService,
     platformSettingsService,
     agentService,
+    authoredDirectiveService,
     agentSurfaceExtensions,
     skillCatalogService,
     accountRepository: repositories.accountRepository,

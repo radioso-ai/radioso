@@ -38,6 +38,17 @@ export {
   type AgentSettingsResource,
 } from "./services/agentService.js";
 export {
+  AuthoredDirectiveService,
+  type AuthoredDirectiveSaveResult,
+  type AuthoredDirectiveServiceOptions,
+} from "./services/authoredDirectiveService.js";
+export {
+  AUTHORED_DIRECTIVE_STEERING_DEFAULT_PRIORITY,
+  authoredDirectiveToDirective,
+  authoredDirectiveToSteeringDirective,
+  type AuthoredDirectiveMappingOptions,
+} from "./authoredDirectiveMapper.js";
+export {
   AgentSurfaceExtensionRegistry,
   type AgentSurfaceExtension,
 } from "./surfaceExtensions.js";
@@ -46,6 +57,16 @@ export {
   type AgentSkillSettingsEntry,
 } from "./skillSettings.js";
 export { freezeAgent, type AgentSnapshot } from "./agentSnapshot.js";
+export {
+  AGENT_CONFIG_FIELD_DESCRIPTORS,
+  AGENT_CONFIG_SCHEMA_VERSION,
+  serializeAgentConfig,
+  type AgentConfig,
+  type AgentConfigPortability,
+  type AgentConfigRefKind,
+  type AgentConfigRefPlaceholder,
+  type AgentConfigSecretPlaceholder,
+} from "./agentConfig.js";
 export { createWebsiteEmbedSurfaceExtension } from "./services/websiteEmbedSurfaceExtension.js";
 export {
   embedConfigCachePath,
@@ -53,3 +74,15 @@ export {
   type EmbedConfigCacheInvalidator,
 } from "./services/embedConfigCacheInvalidator.js";
 export type { ValidateAgentInputOptions } from "./domain.js";
+export {
+  authoredDirectiveInputSchema,
+  validateAuthoredDirectiveCapabilities,
+  AUTHORED_DIRECTIVE_LIMITS,
+  authoredDirectiveCriticalities,
+  authoredDirectiveRouteValues,
+  type AuthoredDirective,
+  type AuthoredDirectiveCapabilityValidationResult,
+  type AuthoredDirectiveCriticality,
+  type AuthoredDirectiveInput,
+  type NormalizedAuthoredDirectiveInput,
+} from "./authoredDirectives.js";

@@ -20,7 +20,7 @@ import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/ser
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
-import { AgentService, AgentSurfaceExtensionRegistry } from "../../src/modules/agents/public.js";
+import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService } from "../../src/modules/agents/public.js";
 import {
   type FallbackReplyComposer,
 } from "../../src/modules/chat/services/fallbackReplyComposer.js";
@@ -85,7 +85,7 @@ import {
 } from "../../src/modules/eval/composition.js";
 import { ApplicationModuleCoordinator, createApplicationExtensionRegistry } from "../../src/app/composition/applicationModule.js";
 import { createDefaultAgentSkillSettingsRegistry } from "../../src/app/composition/skillSettingsResolver.js";
-import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
+import { DefaultAllowCapabilityPolicy, registeredCapabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
 import {
   ChainedPublicChatActionAdvertiser,
@@ -633,6 +633,19 @@ export const createTestDependencies = (overrides: {
   const connectorDb = new InMemoryConnectorDatabase();
   const agentRepository = new InMemoryAgentRepository(createDefaultAgentSkillSettingsRegistry());
   const agentService = new AgentService(agentRepository, workspaceRepository, retrievalSettingsService, documentSourceRepository);
+  const authoredDirectiveService = new AuthoredDirectiveService({
+    repository: agentRepository,
+    coherenceChecker: {
+      async check() {
+        return {
+          coherent: true,
+          conflicts: [],
+          rationale: "The candidate can be followed with the existing directives.",
+        };
+      },
+    },
+    registeredCapabilityNames,
+  });
   const agentSurfaceExtensions = new AgentSurfaceExtensionRegistry();
   // Mimic an EE deployment for OSS contract/unit tests so the runtime gate on
   // embed-only routes (settingsRoutes, agentRoutes, publicChatRoutes) doesn't
@@ -829,6 +842,7 @@ export const createTestDependencies = (overrides: {
     ),
     platformSettingsService,
     agentService,
+    authoredDirectiveService,
     agentSurfaceExtensions,
     skillCatalogService,
     accountRepository,

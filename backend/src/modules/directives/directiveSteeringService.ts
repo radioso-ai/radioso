@@ -14,6 +14,11 @@ export interface DirectiveSteerInput {
   workspaceId: string;
   accountId?: string;
   subjectId?: string;
+  /**
+   * Caller-owned standing directives to evaluate together with this service's
+   * registered catalog for the current turn.
+   */
+  additionalDirectives?: Directive[];
   /** Turn signals passed through to the matcher. */
   turnContext?: Record<string, unknown>;
 }
@@ -60,7 +65,7 @@ export class DirectiveSteeringService implements DirectiveSteeringPort {
 
   async steer(input: DirectiveSteerInput): Promise<DirectiveSteeringResult> {
     const turnContext = input.turnContext ?? {};
-    const directives = this.listDirectives();
+    const directives = [...this.listDirectives(), ...(input.additionalDirectives ?? [])];
     const candidates = await this.matcher.match({
       turnContext,
       directives,

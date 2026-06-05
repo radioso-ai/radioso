@@ -29,6 +29,8 @@ const knownCapabilityNames = new Set<string>(
   Object.values(capabilityNames).flatMap((group) => Object.values(group)),
 );
 
+export const registeredCapabilityNames: ReadonlySet<string> = knownCapabilityNames;
+
 export interface CapabilityCheckInput {
   capability: CapabilityName | string;
   workspaceId?: string;

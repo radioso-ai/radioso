@@ -1,5 +1,6 @@
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
+import { safeSpanAttributes, setActiveSpanAttributes, startActiveSpan } from "../../../shared/observability/tracing/index.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { DocumentRepositoryPort } from "./documentIngestionService.js";
 import type {
@@ -15,6 +16,49 @@ const DEFAULT_POLL_INTERVAL_MS = 1_000;
 const DEFAULT_JOB_LEASE_MS = 300_000;
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const;
+
+type TraceAttributes = Record<string, unknown>;
+
+const traceActiveSpan = async <T>(
+  name: string,
+  attributes: TraceAttributes,
+  run: () => Promise<T> | T,
+  resultAttributes?: (result: T) => TraceAttributes,
+): Promise<T> => {
+  return startActiveSpan(name, attributes, async (span) => {
+    const result = await run();
+    const finalAttributes = resultAttributes?.(result);
+    if (finalAttributes) {
+      const safeFinalAttributes = safeSpanAttributes(finalAttributes);
+      const spanSink = span as { setAttributes?: (attributes: typeof safeFinalAttributes) => unknown } | undefined;
+      if (spanSink?.setAttributes) {
+        spanSink.setAttributes(safeFinalAttributes);
+      } else {
+        setActiveSpanAttributes(safeFinalAttributes);
+      }
+    }
+    return result;
+  }) as Promise<T>;
+};
+
+const compactTraceAttributes = (attributes: TraceAttributes): TraceAttributes =>
+  Object.fromEntries(
+    Object.entries(attributes).filter(([, value]) => value !== undefined && value !== null),
+  ) as TraceAttributes;
+
+export const buildDocumentWorkerJobTraceAttributes = (
+  job: Pick<DocumentProcessingJobRecord, "id" | "workspaceId" | "documentId" | "documentRevision" | "attemptCount" | "status">,
+  input: { outcome?: "completed" | "stale" | "deleted" | "retry_scheduled" | "failed" | "failed_permanent" | "processed" | "noop" | "busy" } = {},
+): TraceAttributes => compactTraceAttributes({
+  "radioso.workspace_id": job.workspaceId,
+  "radioso.document_id": job.documentId,
+  "radioso.job_id": job.id,
+  "document.revision": job.documentRevision,
+  "document.job.id": job.id,
+  "document.job.attempt_count": job.attemptCount,
+  "document.job.status": job.status,
+  "document.worker.outcome": input.outcome,
+});
 
 export class DocumentProcessingWorker {
   private timer: NodeJS.Timeout | null = null;
@@ -98,38 +142,40 @@ export class DocumentProcessingWorker {
   }
 
   async runJobById(jobId: string, now: Date = new Date()): Promise<"processed" | "noop" | "busy"> {
-    const existing = await this.jobRepository.findById(jobId);
-    if (!existing) {
-      return "noop";
-    }
-
-    if (existing.status === "completed" || existing.status === "failed" || existing.status === "skipped") {
-      return "noop";
-    }
-
-    if (existing.status === "processing") {
-      const claimedBefore = new Date(now.getTime() - this.jobLeaseMs);
-      const released = await this.jobRepository.releaseTimedOutClaim(jobId, claimedBefore, "claim_expired");
-      if (!released) {
-        return "busy";
+    return traceActiveSpan("document.worker.run_job_by_id", { "document.job.id": jobId }, async () => {
+      const existing = await this.jobRepository.findById(jobId);
+      if (!existing) {
+        return "noop";
       }
-    }
 
-    const claimed = await this.jobRepository.claimById(jobId, now);
-    if (!claimed) {
-      const current = await this.jobRepository.findById(jobId);
-      if (
-        current?.status === "processing"
-        && current.claimedAt
-        && current.claimedAt.getTime() > now.getTime() - this.jobLeaseMs
-      ) {
-        return "busy";
+      if (existing.status === "completed" || existing.status === "failed" || existing.status === "skipped") {
+        return "noop";
       }
-      return "noop";
-    }
 
-    await this.processClaimedJob(claimed);
-    return "processed";
+      if (existing.status === "processing") {
+        const claimedBefore = new Date(now.getTime() - this.jobLeaseMs);
+        const released = await this.jobRepository.releaseTimedOutClaim(jobId, claimedBefore, "claim_expired");
+        if (!released) {
+          return "busy";
+        }
+      }
+
+      const claimed = await this.jobRepository.claimById(jobId, now);
+      if (!claimed) {
+        const current = await this.jobRepository.findById(jobId);
+        if (
+          current?.status === "processing"
+          && current.claimedAt
+          && current.claimedAt.getTime() > now.getTime() - this.jobLeaseMs
+        ) {
+          return "busy";
+        }
+        return "noop";
+      }
+
+      await this.processClaimedJob(claimed);
+      return "processed";
+    }, (outcome) => ({ "document.worker.outcome": outcome }));
   }
 
   private async claimNextAvailableJob(now: Date): Promise<DocumentProcessingJobRecord | null> {
@@ -191,51 +237,86 @@ export class DocumentProcessingWorker {
   }
 
   private async processClaimedJob(job: DocumentProcessingJobRecord): Promise<void> {
-    const startedAt = Date.now();
+    return traceActiveSpan("document.worker.job", buildDocumentWorkerJobTraceAttributes(job), async () => {
+      const startedAt = Date.now();
 
-    try {
-      const outcome = await this.processingService.process(job);
-      if (outcome === "completed") {
-        await this.jobRepository.markCompleted(job.id);
-        await this.emitJobTelemetry("document.worker.job_completed", job, {
-          durationMs: Date.now() - startedAt,
-          outcome: "completed",
-        });
-      } else {
-        await this.jobRepository.markSkipped(job.id, outcome === "stale" ? "stale_revision" : "document_deleted");
-        await this.emitJobTelemetry("document.worker.job_skipped", job, {
-          durationMs: Date.now() - startedAt,
-          outcome,
-        });
+      try {
+        const outcome = await this.processingService.process(job);
+        if (outcome === "completed") {
+          await this.jobRepository.markCompleted(job.id);
+          await this.emitJobTelemetry("document.worker.job_completed", job, {
+            durationMs: Date.now() - startedAt,
+            outcome: "completed",
+          });
+        } else {
+          await this.jobRepository.markSkipped(job.id, outcome === "stale" ? "stale_revision" : "document_deleted");
+          await this.emitJobTelemetry("document.worker.job_skipped", job, {
+            durationMs: Date.now() - startedAt,
+            outcome,
+          });
+        }
+      } catch (error) {
+        await this.handleFailure(job, error, Date.now() - startedAt);
       }
-    } catch (error) {
-      await this.handleFailure(job, error, Date.now() - startedAt);
-    }
+    });
   }
 
   private async handleFailure(job: DocumentProcessingJobRecord, error: unknown, durationMs: number): Promise<void> {
-    const message = getProviderFailureReason(error);
-    const isPermanent = isPermanentProviderFailure(error);
-    const hasRetriesRemaining = !isPermanent && job.attemptCount < MAX_ATTEMPTS;
+    return traceActiveSpan("document.worker.job_failure", buildDocumentWorkerJobTraceAttributes(job), async () => {
+      const message = getProviderFailureReason(error);
+      const isPermanent = isPermanentProviderFailure(error);
+      const hasRetriesRemaining = !isPermanent && job.attemptCount < MAX_ATTEMPTS;
 
-    if (hasRetriesRemaining) {
-      const delayMs = RETRY_DELAYS_MS[Math.min(job.attemptCount - 1, RETRY_DELAYS_MS.length - 1)] ?? this.pollIntervalMs;
-      const nextAttemptAt = new Date(Date.now() + delayMs);
-      await this.jobRepository.reschedule(job.id, nextAttemptAt, message);
-      await this.documentRepository.setStatusIfRevisionMatches({
-        documentId: job.documentId,
-        workspaceId: job.workspaceId,
-        revision: job.documentRevision,
-        status: "queued",
-        failureReason: null,
-      });
-      await this.jobDispatcher.dispatch({
+      if (hasRetriesRemaining) {
+        const delayMs =
+          RETRY_DELAYS_MS[Math.min(job.attemptCount - 1, RETRY_DELAYS_MS.length - 1)] ?? this.pollIntervalMs;
+        const nextAttemptAt = new Date(Date.now() + delayMs);
+        await this.jobRepository.reschedule(job.id, nextAttemptAt, message);
+        await this.documentRepository.setStatusIfRevisionMatches({
+          documentId: job.documentId,
+          workspaceId: job.workspaceId,
+          revision: job.documentRevision,
+          status: "queued",
+          failureReason: null,
+        });
+        await this.jobDispatcher.dispatch({
+          jobId: job.id,
+          documentId: job.documentId,
+          workspaceId: job.workspaceId,
+          revision: job.documentRevision,
+          scheduleAt: nextAttemptAt,
+        });
+        await this.auditService.record({
+          workspaceId: job.workspaceId,
+          eventType: "document.process",
+          eventStatus: "failure",
+          metadata: {
+            documentId: job.documentId,
+            revision: job.documentRevision,
+            attemptCount: job.attemptCount,
+            retryScheduled: true,
+            reason: message,
+          },
+        });
+        await this.emitJobTelemetry("document.worker.job_failed", job, {
+          durationMs,
+          outcome: "retry_scheduled",
+          reason: message,
+        });
+        return;
+      }
+
+      const markedFailed = await this.jobRepository.markFailedIfDocumentMatches({
         jobId: job.id,
         documentId: job.documentId,
         workspaceId: job.workspaceId,
         revision: job.documentRevision,
-        scheduleAt: nextAttemptAt,
+        errorMessage: message,
       });
+      if (!markedFailed) {
+        const currentDocument = await this.documentRepository.findByIdAndWorkspaceId(job.documentId, job.workspaceId);
+        await this.jobRepository.markSkipped(job.id, currentDocument ? "stale_revision" : "document_deleted");
+      }
       await this.auditService.record({
         workspaceId: job.workspaceId,
         eventType: "document.process",
@@ -244,46 +325,16 @@ export class DocumentProcessingWorker {
           documentId: job.documentId,
           revision: job.documentRevision,
           attemptCount: job.attemptCount,
-          retryScheduled: true,
+          retryScheduled: false,
+          permanent: isPermanent,
           reason: message,
         },
       });
       await this.emitJobTelemetry("document.worker.job_failed", job, {
         durationMs,
-        outcome: "retry_scheduled",
+        outcome: isPermanent ? "failed_permanent" : "failed",
         reason: message,
       });
-      return;
-    }
-
-    const markedFailed = await this.jobRepository.markFailedIfDocumentMatches({
-      jobId: job.id,
-      documentId: job.documentId,
-      workspaceId: job.workspaceId,
-      revision: job.documentRevision,
-      errorMessage: message,
-    });
-    if (!markedFailed) {
-      const currentDocument = await this.documentRepository.findByIdAndWorkspaceId(job.documentId, job.workspaceId);
-      await this.jobRepository.markSkipped(job.id, currentDocument ? "stale_revision" : "document_deleted");
-    }
-    await this.auditService.record({
-      workspaceId: job.workspaceId,
-      eventType: "document.process",
-      eventStatus: "failure",
-      metadata: {
-        documentId: job.documentId,
-        revision: job.documentRevision,
-        attemptCount: job.attemptCount,
-        retryScheduled: false,
-        permanent: isPermanent,
-        reason: message,
-      },
-    });
-    await this.emitJobTelemetry("document.worker.job_failed", job, {
-      durationMs,
-      outcome: isPermanent ? "failed_permanent" : "failed",
-      reason: message,
     });
   }
 

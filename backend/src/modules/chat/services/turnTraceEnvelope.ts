@@ -37,12 +37,65 @@ export const LEGACY_TURN_TRACE_ENVELOPE_VERSION = 0;
 export interface TurnTraceEnvelope {
   version: number;
   spine: ConversationTrace;
+  openTelemetry?: TurnTraceOpenTelemetryCorrelation;
   /**
    * Optional cross-cutting roll-up the presenter/quality layer can read without
    * walking the spine. Kept generic so this stays free of capability types.
    */
   summary?: Record<string, unknown>;
 }
+
+export interface TurnTraceOpenTelemetryCorrelation {
+  traceId: string;
+  spanId: string;
+  sampled: boolean;
+}
+
+export interface TurnTraceOpenTelemetryCorrelationReader {
+  getActiveOpenTelemetryCorrelation(): TurnTraceOpenTelemetryCorrelation | undefined;
+}
+
+let openTelemetryCorrelationReader: TurnTraceOpenTelemetryCorrelationReader | undefined;
+
+const TRACE_ID_PATTERN = /^[0-9a-f]{32}$/;
+const SPAN_ID_PATTERN = /^[0-9a-f]{16}$/;
+
+export const setTurnTraceOpenTelemetryCorrelationReader = (
+  reader: TurnTraceOpenTelemetryCorrelationReader | undefined,
+): void => {
+  openTelemetryCorrelationReader = reader;
+};
+
+const normalizeOpenTelemetryCorrelation = (
+  value: TurnTraceOpenTelemetryCorrelation | undefined,
+): TurnTraceOpenTelemetryCorrelation | undefined => {
+  if (
+    !value ||
+    typeof value.traceId !== "string" ||
+    !TRACE_ID_PATTERN.test(value.traceId) ||
+    typeof value.spanId !== "string" ||
+    !SPAN_ID_PATTERN.test(value.spanId) ||
+    typeof value.sampled !== "boolean"
+  ) {
+    return undefined;
+  }
+
+  return {
+    traceId: value.traceId,
+    spanId: value.spanId,
+    sampled: value.sampled,
+  };
+};
+
+const readOpenTelemetryCorrelation = (): TurnTraceOpenTelemetryCorrelation | undefined => {
+  try {
+    return normalizeOpenTelemetryCorrelation(
+      openTelemetryCorrelationReader?.getActiveOpenTelemetryCorrelation(),
+    );
+  } catch {
+    return undefined;
+  }
+};
 
 /**
  * Hang a capability's sub-trace on the spine's `dispatch:<skillName>` stage.
@@ -94,8 +147,16 @@ export const buildTurnTraceEnvelope = (input: {
   spine: ConversationTrace;
   summary?: Record<string, unknown>;
   version?: number;
-}): TurnTraceEnvelope => ({
-  version: input.version ?? TURN_TRACE_ENVELOPE_VERSION,
-  spine: input.spine,
-  ...(input.summary ? { summary: input.summary } : {}),
-});
+}): TurnTraceEnvelope => {
+  const version = input.version ?? TURN_TRACE_ENVELOPE_VERSION;
+  const openTelemetry = version >= TURN_TRACE_ENVELOPE_VERSION
+    ? readOpenTelemetryCorrelation()
+    : undefined;
+
+  return {
+    version,
+    spine: input.spine,
+    ...(openTelemetry ? { openTelemetry } : {}),
+    ...(input.summary ? { summary: input.summary } : {}),
+  };
+};

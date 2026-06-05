@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { IngestionSettingsService, RetrievalSettingsService } from "../../settings/contracts/services.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
+import { safeSpanAttributes, setActiveSpanAttributes, startActiveSpan } from "../../../shared/observability/tracing/index.js";
 import type { EmbeddingService } from "./embeddingService.js";
 import type { PromptBuildResult } from "./promptBuilder.js";
 import { CandidatePreparationService } from "./candidatePreparationService.js";
@@ -26,6 +27,16 @@ import { RetrievalDiagnosticsStageService } from "./retrievalDiagnosticsStage.js
 import { RetrievalPipelineActivityTraceBuilder } from "./retrievalPipelineActivityTraceBuilder.js";
 import { MetadataRuleScoringService } from "./metadataRuleScoringService.js";
 import { selectRetrievalAnswerShape } from "./retrievalShapeResolver.js";
+import {
+  RETRIEVAL_TRACE_SPAN_NAMES,
+  buildCandidatePreparationTraceAttributes,
+  buildCandidateRetrievalTraceAttributes,
+  buildContextSelectionTraceAttributes,
+  buildPromptAssemblyTraceAttributes,
+  buildQueryInterpretationTraceAttributes,
+  buildRetrievalContextTraceAttributes,
+  buildRetrievalPipelineTraceAttributes,
+} from "./retrievalPipelineStages.js";
 import type {
   QueryInterpretationStageResult,
   CandidatePreparationStage,
@@ -37,7 +48,30 @@ import type {
   RetrievalContextStage,
   RetrievalPipelineRequest,
   RetrievalDiagnosticsStage,
+  TraceAttributes,
 } from "./retrievalPipelineStages.js";
+
+const traceActiveSpan = async <T>(
+  name: string,
+  attributes: TraceAttributes,
+  run: () => Promise<T> | T,
+  resultAttributes?: (result: T) => TraceAttributes,
+): Promise<T> => {
+  return startActiveSpan(name, attributes, async (span) => {
+    const result = await run();
+    const finalAttributes = resultAttributes?.(result);
+    if (finalAttributes) {
+      const safeFinalAttributes = safeSpanAttributes(finalAttributes);
+      const spanSink = span as { setAttributes?: (attributes: typeof safeFinalAttributes) => unknown } | undefined;
+      if (spanSink?.setAttributes) {
+        spanSink.setAttributes(safeFinalAttributes);
+      } else {
+        setActiveSpanAttributes(safeFinalAttributes);
+      }
+    }
+    return result;
+  }) as Promise<T>;
+};
 
 export interface RetrievalPipelineResult {
   rewrittenQuery: string;
@@ -132,129 +166,191 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
   }
 
   async run(input: RetrievalPipelineRequest): Promise<RetrievalPipelineResult> {
-    const interpretation = await this.interpret(input);
-    return this.runInterpreted(interpretation);
+    return traceActiveSpan(RETRIEVAL_TRACE_SPAN_NAMES.pipelineRun, buildRetrievalPipelineTraceAttributes(input), async () => {
+      const interpretation = await this.interpret(input);
+      return this.runInterpreted(interpretation);
+    });
   }
 
   async interpret(input: RetrievalPipelineRequest): Promise<RetrievalPipelineInterpretationResult> {
     const request = this.resolveRequest(input);
-    const traceStartedAtMs = Date.now();
-    const context = await this.measure(() => this.retrievalContextStage.execute(request));
-    const interpretation = await this.measure(() => this.queryInterpretationStage.execute(context.result));
+    return traceActiveSpan(RETRIEVAL_TRACE_SPAN_NAMES.pipelineInterpret, buildRetrievalPipelineTraceAttributes(request), async () => {
+      const traceStartedAtMs = Date.now();
+      const context = await this.measureTraced(
+        RETRIEVAL_TRACE_SPAN_NAMES.context,
+        buildRetrievalPipelineTraceAttributes(request),
+        () => this.retrievalContextStage.execute(request),
+        buildRetrievalContextTraceAttributes,
+      );
+      const interpretation = await this.measureTraced(
+        RETRIEVAL_TRACE_SPAN_NAMES.queryInterpretation,
+        buildRetrievalContextTraceAttributes(context.result),
+        () => this.queryInterpretationStage.execute(context.result),
+        buildQueryInterpretationTraceAttributes,
+      );
 
-    return {
-      request,
-      traceStartedAtMs,
-      context,
-      interpretation,
-    };
+      return {
+        request,
+        traceStartedAtMs,
+        context,
+        interpretation,
+      };
+    });
   }
 
   async runInterpreted(input: RetrievalPipelineInterpretationResult): Promise<RetrievalPipelineResult> {
-    const shapeSelection = this.shouldSelectRetrievalAnswerShape(input.request)
-      ? await this.measure(() => selectRetrievalAnswerShape({
-          query: input.request.query,
-          rewrittenQuery: input.interpretation.result.rewrittenQuery,
-        }))
-      : undefined;
-    const interpretation = {
-      ...input.interpretation,
-      result: {
-        ...input.interpretation.result,
-        request: input.request,
-        shapeSelection: shapeSelection?.result,
-      },
-    };
-    const retrieval = await this.measure(() => this.candidateRetrievalStage.execute(interpretation.result));
-    const prepared = await this.measure(() => this.candidatePreparationStage.execute(retrieval.result));
-    const selection = await this.measure(() => this.contextSelectionStage.execute(prepared.result));
-    const prompt = await this.measure(() => this.promptAssemblyStage.execute(selection.result));
-    const diagnostics = await this.measure(() => this.retrievalDiagnosticsStage.execute(prompt.result));
-    const trace = this.activityTraceBuilder.buildActivityTrace({
-      traceStartedAtMs: input.traceStartedAtMs,
-      context: input.context,
-      interpretation,
-      shapeSelection,
-      retrieval,
-      prepared,
-      selection,
-      prompt,
-      diagnostics,
-    });
+    return traceActiveSpan(RETRIEVAL_TRACE_SPAN_NAMES.pipelineRunInterpreted, buildRetrievalPipelineTraceAttributes(input.request), async () => {
+      const shapeSelection = this.shouldSelectRetrievalAnswerShape(input.request)
+        ? await this.measureTraced(
+            RETRIEVAL_TRACE_SPAN_NAMES.answerShapeSelection,
+            buildQueryInterpretationTraceAttributes(input.interpretation.result),
+            () => selectRetrievalAnswerShape({
+              query: input.request.query,
+              rewrittenQuery: input.interpretation.result.rewrittenQuery,
+            }),
+            (result) => ({
+              "retrieval.answer_shape.selection_mode": result.selectionMode,
+              "retrieval.answer_shape.skill": result.resolvedRun.skillName,
+            }),
+          )
+        : undefined;
+      const interpretation = {
+        ...input.interpretation,
+        result: {
+          ...input.interpretation.result,
+          request: input.request,
+          shapeSelection: shapeSelection?.result,
+        },
+      };
+      const retrieval = await this.measureTraced(
+        RETRIEVAL_TRACE_SPAN_NAMES.candidateRetrieval,
+        buildQueryInterpretationTraceAttributes(interpretation.result),
+        () => this.candidateRetrievalStage.execute(interpretation.result),
+        buildCandidateRetrievalTraceAttributes,
+      );
+      const prepared = await this.measureTraced(
+        RETRIEVAL_TRACE_SPAN_NAMES.candidatePreparation,
+        buildCandidateRetrievalTraceAttributes(retrieval.result),
+        () => this.candidatePreparationStage.execute(retrieval.result),
+        buildCandidatePreparationTraceAttributes,
+      );
+      const selection = await this.measureTraced(
+        RETRIEVAL_TRACE_SPAN_NAMES.contextSelection,
+        buildCandidatePreparationTraceAttributes(prepared.result),
+        () => this.contextSelectionStage.execute(prepared.result),
+        buildContextSelectionTraceAttributes,
+      );
+      const prompt = await this.measureTraced(
+        RETRIEVAL_TRACE_SPAN_NAMES.promptAssembly,
+        buildContextSelectionTraceAttributes(selection.result),
+        () => this.promptAssemblyStage.execute(selection.result),
+        buildPromptAssemblyTraceAttributes,
+      );
+      const diagnostics = await this.measureTraced(
+        RETRIEVAL_TRACE_SPAN_NAMES.diagnostics,
+        buildPromptAssemblyTraceAttributes(prompt.result),
+        () => this.retrievalDiagnosticsStage.execute(prompt.result),
+        (result) => ({
+          "retrieval.rewrite.status": result.rewriteStatus,
+          "retrieval.rerank.status": result.rerankStatus,
+          "retrieval.context.final.count": result.finalContextCount,
+          "retrieval.fallback.applied": result.fallbackApplied,
+          "retrieval.skipped": result.retrievalSkipped,
+        }),
+      );
+      const trace = this.activityTraceBuilder.buildActivityTrace({
+        traceStartedAtMs: input.traceStartedAtMs,
+        context: input.context,
+        interpretation,
+        shapeSelection,
+        retrieval,
+        prepared,
+        selection,
+        prompt,
+        diagnostics,
+      });
 
-    return {
-      rewrittenQuery: prompt.result.activeQuery,
-      contexts: prompt.result.contexts,
-      systemPrompt: prompt.result.systemPrompt,
-      prompt: prompt.result.prompt,
-      citations: prompt.result.citations,
-      responseIdentity: input.request.responseIdentity ?? null,
-      responseSettings: prompt.result.responseSettings,
-      diagnostics: diagnostics.result,
-      trace,
-    };
+      return {
+        rewrittenQuery: prompt.result.activeQuery,
+        contexts: prompt.result.contexts,
+        systemPrompt: prompt.result.systemPrompt,
+        prompt: prompt.result.prompt,
+        citations: prompt.result.citations,
+        responseIdentity: input.request.responseIdentity ?? null,
+        responseSettings: prompt.result.responseSettings,
+        diagnostics: diagnostics.result,
+        trace,
+      };
+    });
   }
 
   async runWithoutRetrieval(input: RetrievalPipelineInterpretationResult): Promise<RetrievalPipelineResult> {
-    const responseBehavior = input.request.responseBehavior;
-    const responseSettings = {
-      citationDisplayEnabled: responseBehavior?.citationDisplayEnabled ?? true,
-      suggestedQuestionsEnabled: input.context.result.settings.suggestedQuestionsEnabled,
-      suggestedQuestionsCount: input.context.result.settings.suggestedQuestionsCount,
-      customInstruction: responseBehavior?.customInstruction ?? input.context.result.settings.customInstruction,
-      responseLanguagePolicy: input.interpretation.result.rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
-    };
-    const diagnostics: RetrievalExecutionDiagnostics = {
-      execution: input.request.execution,
-      rewriteStatus: input.interpretation.result.rewrittenQuery.status,
-      rerankStatus: "skipped",
-      originalCandidateCount: 0,
-      rewrittenCandidateCount: 0,
-      lexicalCandidateCount: 0,
-      normalizedCandidateCount: 0,
-      finalContextCount: 0,
-      responseIntent: input.interpretation.result.responseIntent,
-      retrievalSkipped: true,
-      intentConfidence: input.interpretation.result.rewrittenQuery.confidence,
-      intentFallbackApplied: input.interpretation.result.rewrittenQuery.status === "fallback",
-      parsedQuery: input.interpretation.result.originalPreparedQuery,
-      candidateFallbackApplied: false,
-      fallbackApplied: false,
-      rewriteEligible: input.interpretation.result.rewrittenQuery.retrievalEligible,
-      rewriteRan: input.interpretation.result.rewrittenQuery.status !== "skipped",
-      materialDisagreement: false,
-      continuityDecision: input.interpretation.result.continuityDecision,
-      rewriteProposal: input.interpretation.result.rewrittenQuery.structuredResult,
-      responseLanguagePolicy: input.interpretation.result.rewrittenQuery.responseLanguagePolicy,
-      rejectionReason: input.interpretation.result.rewrittenQuery.rejectionReason,
-      fallbackReason: input.interpretation.result.rewrittenQuery.fallbackReason,
-      triggerAnalysis: {
-        status: "skipped_non_retrieval",
-        consideredRules: [],
-        matchedRuleIds: [],
-        unmatchedRuleIds: [],
-        matchCount: 0,
-        matcherVersion: "non_retrieval",
-      },
-    };
-    const trace = this.activityTraceBuilder.buildNonActivityTrace({
-      request: input.request,
-      traceStartedAtMs: input.traceStartedAtMs,
-      context: input.context,
-      interpretation: input.interpretation,
-    }, diagnostics);
+    return traceActiveSpan(
+      RETRIEVAL_TRACE_SPAN_NAMES.pipelineNoRetrieval,
+      buildRetrievalPipelineTraceAttributes(input.request),
+      async () => {
+        const responseBehavior = input.request.responseBehavior;
+        const responseSettings = {
+          citationDisplayEnabled: responseBehavior?.citationDisplayEnabled ?? true,
+          suggestedQuestionsEnabled: input.context.result.settings.suggestedQuestionsEnabled,
+          suggestedQuestionsCount: input.context.result.settings.suggestedQuestionsCount,
+          customInstruction: responseBehavior?.customInstruction ?? input.context.result.settings.customInstruction,
+          responseLanguagePolicy: input.interpretation.result.rewrittenQuery.responseLanguagePolicy ??
+            "match_user_question",
+        };
+        const diagnostics: RetrievalExecutionDiagnostics = {
+          execution: input.request.execution,
+          rewriteStatus: input.interpretation.result.rewrittenQuery.status,
+          rerankStatus: "skipped",
+          originalCandidateCount: 0,
+          rewrittenCandidateCount: 0,
+          lexicalCandidateCount: 0,
+          normalizedCandidateCount: 0,
+          finalContextCount: 0,
+          responseIntent: input.interpretation.result.responseIntent,
+          retrievalSkipped: true,
+          intentConfidence: input.interpretation.result.rewrittenQuery.confidence,
+          intentFallbackApplied: input.interpretation.result.rewrittenQuery.status === "fallback",
+          parsedQuery: input.interpretation.result.originalPreparedQuery,
+          candidateFallbackApplied: false,
+          fallbackApplied: false,
+          rewriteEligible: input.interpretation.result.rewrittenQuery.retrievalEligible,
+          rewriteRan: input.interpretation.result.rewrittenQuery.status !== "skipped",
+          materialDisagreement: false,
+          continuityDecision: input.interpretation.result.continuityDecision,
+          rewriteProposal: input.interpretation.result.rewrittenQuery.structuredResult,
+          responseLanguagePolicy: input.interpretation.result.rewrittenQuery.responseLanguagePolicy,
+          rejectionReason: input.interpretation.result.rewrittenQuery.rejectionReason,
+          fallbackReason: input.interpretation.result.rewrittenQuery.fallbackReason,
+          triggerAnalysis: {
+            status: "skipped_non_retrieval",
+            consideredRules: [],
+            matchedRuleIds: [],
+            unmatchedRuleIds: [],
+            matchCount: 0,
+            matcherVersion: "non_retrieval",
+          },
+        };
+        const trace = this.activityTraceBuilder.buildNonActivityTrace({
+          request: input.request,
+          traceStartedAtMs: input.traceStartedAtMs,
+          context: input.context,
+          interpretation: input.interpretation,
+        }, diagnostics);
 
-    return {
-      rewrittenQuery: input.request.query,
-      contexts: [],
-      systemPrompt: "",
-      prompt: "",
-      citations: [],
-      responseIdentity: input.request.responseIdentity ?? null,
-      responseSettings,
-      diagnostics,
-      trace,
-    };
+        return {
+          rewrittenQuery: input.request.query,
+          contexts: [],
+          systemPrompt: "",
+          prompt: "",
+          citations: [],
+          responseIdentity: input.request.responseIdentity ?? null,
+          responseSettings,
+          diagnostics,
+          trace,
+        };
+      },
+    );
   }
 
   private resolveRequest(input: RetrievalPipelineRequest): RetrievalPipelineRequest {
@@ -287,5 +383,14 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
       startedAt,
       durationMs: finishedAt - startedAt,
     };
+  }
+
+  private async measureTraced<T>(
+    name: string,
+    attributes: TraceAttributes,
+    runStage: () => Promise<T> | T,
+    resultAttributes?: (result: T) => TraceAttributes,
+  ): Promise<MeasuredStage<T>> {
+    return this.measure(() => traceActiveSpan(name, attributes, runStage, resultAttributes));
   }
 }

@@ -1,4 +1,5 @@
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
+import { startActiveSpan, streamActiveSpan } from "../../../shared/observability/tracing/index.js";
 import type {
   ConversationEngine,
   ConversationModelGateway,
@@ -69,6 +70,20 @@ import {
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
 export { BlankChatAnswerError } from "./chatAnswerErrors.js";
+
+const chatTurnTraceAttributes = (input: {
+  accountId?: string;
+  conversationId?: string;
+  sourceChannel?: string | null;
+  stream: boolean;
+  workspaceId: string;
+}): Record<string, unknown> => ({
+  "radioso.account_id": input.accountId,
+  "radioso.conversation_id": input.conversationId,
+  "radioso.workspace_id": input.workspaceId,
+  "chat.source_channel": input.sourceChannel ?? "assistant",
+  "chat.stream": input.stream,
+});
 
 export class ModelChatGateway implements ChatGateway {
   constructor(private readonly inference: ModelInferencePipeline) {}
@@ -341,6 +356,24 @@ export class ChatService {
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
   }): Promise<ChatResponse> {
+    return startActiveSpan("chat.turn", chatTurnTraceAttributes(input), () => this.answerWithinTrace(input)) as Promise<ChatResponse>;
+  }
+
+  private async answerWithinTrace(input: {
+    workspaceId: string;
+    agentId?: string | null;
+    accountId?: string;
+    conversationId?: string;
+    query: string;
+    stream: boolean;
+    userExpectedLocale?: string | null;
+    inputMetadata?: UserMessageInputMetadata;
+    metadataFilter?: Record<string, unknown>;
+    pageContext?: AssistantPageContext | null;
+    sourceChannel?: string | null;
+    anonymousSessionId?: string | null;
+    sourceOrigin?: string | null;
+  }): Promise<ChatResponse> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
@@ -408,6 +441,24 @@ export class ChatService {
   }
 
   async *streamAnswer(input: {
+    workspaceId: string;
+    agentId?: string | null;
+    accountId?: string;
+    conversationId?: string;
+    query: string;
+    stream: boolean;
+    userExpectedLocale?: string | null;
+    inputMetadata?: UserMessageInputMetadata;
+    metadataFilter?: Record<string, unknown>;
+    pageContext?: AssistantPageContext | null;
+    sourceChannel?: string | null;
+    anonymousSessionId?: string | null;
+    sourceOrigin?: string | null;
+  }): AsyncIterable<ChatStreamEvent> {
+    yield* streamActiveSpan("chat.turn", chatTurnTraceAttributes(input), () => this.streamAnswerWithinTrace(input));
+  }
+
+  private async *streamAnswerWithinTrace(input: {
     workspaceId: string;
     agentId?: string | null;
     accountId?: string;

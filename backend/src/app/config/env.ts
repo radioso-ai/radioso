@@ -21,6 +21,14 @@ const booleanish = (defaultValue: boolean) =>
   }, z.boolean());
 
 const mcpToolList = emptyStringToUndefined(z.string().min(1));
+const otelTraceSampler = emptyStringToUndefined(z.enum([
+  "always_on",
+  "always_off",
+  "traceidratio",
+  "parentbased_always_on",
+  "parentbased_always_off",
+  "parentbased_traceidratio",
+]));
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -34,6 +42,8 @@ const envSchema = z.object({
   METRICS_AUTH_TOKEN: emptyStringToUndefined(z.string().min(16)),
   OTEL_ENABLED: booleanish(false),
   OTEL_EXPORTER_OTLP_ENDPOINT: emptyStringToUndefined(z.string().url()),
+  OTEL_TRACES_SAMPLER: otelTraceSampler,
+  OTEL_TRACES_SAMPLER_ARG: emptyStringToUndefined(z.string().min(1)),
   PRODUCT_ANALYTICS_SINKS: z.string().min(1).default("audit"),
   ERROR_SINKS: z.string().min(1).default("audit"),
   GOOGLE_CLOUD_PROJECT: emptyStringToUndefined(z.string().min(1)),
@@ -150,6 +160,37 @@ const envSchema = z.object({
       path: ["METRICS_AUTH_TOKEN"],
       message: "METRICS_AUTH_TOKEN is required when METRICS_ENABLED is true",
     });
+  }
+
+  if (value.OTEL_ENABLED && !value.OTEL_EXPORTER_OTLP_ENDPOINT) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["OTEL_EXPORTER_OTLP_ENDPOINT"],
+      message: "OTEL_EXPORTER_OTLP_ENDPOINT is required when OTEL_ENABLED is true",
+    });
+  }
+
+  if (value.OTEL_ENABLED) {
+    const samplerNeedsRatio =
+      value.OTEL_TRACES_SAMPLER === "traceidratio" ||
+      value.OTEL_TRACES_SAMPLER === "parentbased_traceidratio";
+
+    if (samplerNeedsRatio) {
+      const ratio = Number(value.OTEL_TRACES_SAMPLER_ARG);
+      if (!value.OTEL_TRACES_SAMPLER_ARG || !Number.isFinite(ratio) || ratio < 0 || ratio > 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["OTEL_TRACES_SAMPLER_ARG"],
+          message: "OTEL_TRACES_SAMPLER_ARG must be a number from 0 to 1 for ratio samplers",
+        });
+      }
+    } else if (value.OTEL_TRACES_SAMPLER_ARG) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["OTEL_TRACES_SAMPLER_ARG"],
+        message: "OTEL_TRACES_SAMPLER_ARG is only supported with traceidratio samplers",
+      });
+    }
   }
 
   if (value.DOCUMENT_STORAGE_DRIVER === "gcs" && !value.DOCUMENT_STORAGE_BUCKET) {

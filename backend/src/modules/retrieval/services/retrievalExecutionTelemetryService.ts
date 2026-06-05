@@ -12,8 +12,18 @@ import type {
 } from "../domain/retrievalPipelineTypes.js";
 import type { AppliedConstraint, ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
 import type { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
+import { startActiveSpan } from "../../../shared/observability/tracing/index.js";
 import { buildRetrievalAnswerSkillDiagnostic } from "./retrievalShapeResolver.js";
 import type { SkillCallerSurface } from "../../skills/public.js";
+import { RETRIEVAL_TRACE_SPAN_NAMES, type TraceAttributes } from "./retrievalPipelineStages.js";
+
+const traceActiveSpan = async <T>(
+  name: string,
+  attributes: TraceAttributes,
+  run: () => Promise<T> | T,
+): Promise<T> => {
+  return startActiveSpan(name, attributes, run) as Promise<T>;
+};
 
 const toCallerSurface = (execution?: RetrievalExecutionMetadata): SkillCallerSurface => {
   if (execution?.surface === "assistant") {
@@ -82,53 +92,82 @@ export class RetrievalExecutionTelemetryService {
       fallbackApplied,
     };
 
-    await this.telemetryService?.emit({
-      eventType: "retrieval.pipeline.completed",
-      correlation: {
-        workspaceId: input.workspaceId,
-      },
-      metrics: {
-        originalCandidateCount: input.originalCandidateCount,
-        rewrittenCandidateCount: input.rewrittenCandidateCount,
-        lexicalCandidateCount: input.lexicalCandidateCount ?? 0,
-        normalizedCandidateCount: input.normalizedCandidateCount,
-        finalContextCount: input.finalContextCount,
-        queryEmbeddingDurationMs: input.queryEmbeddingDurationMs ?? 0,
-      },
-      metadata: {
-        appliedConstraintCount: input.appliedConstraints?.length ?? 0,
-        retrievalSubqueryCount: input.retrievalSubqueries?.length ?? 0,
-        rewriteEligible: input.rewriteEligible ?? false,
-        rewriteRan: input.rewriteRan ?? false,
-        responseIntent: input.responseIntent,
-        retrievalSkipped: input.retrievalSkipped ?? false,
-        rejectionReason: input.rejectionReason,
-        fallbackReason: input.fallbackReason,
-        triggerMatchCount: input.triggerAnalysis?.matchCount ?? 0,
-        triggerBackoffApplied: input.triggerBackoff?.applied ?? false,
-        executionSurface: input.execution?.surface,
-        executionPath: input.execution?.path,
-        retrievalInvoked: input.execution?.retrievalInvoked ?? input.retrievalSkipped !== true,
-        skillName: skillDiagnostic?.skillName,
-        shapeName: input.shapeSelection?.shapeName,
-        queryShape: input.shapeSelection?.queryShape,
-        selectionMode: input.shapeSelection?.selectionMode,
-        selectionReason: input.shapeSelection?.selectionReason,
-      },
-      tags: {
-        rewrite_status: input.rewriteStatus,
-        rerank_status: input.rerankStatus,
-        response_intent: input.responseIntent ?? "unknown",
-        fallback_applied: diagnostics.fallbackApplied ? "true" : "false",
-        execution_surface: input.execution?.surface ?? "unknown",
-        execution_path: input.execution?.path ?? "unknown",
-        skill_name: skillDiagnostic?.skillName ?? "unknown",
-        shape_name: input.shapeSelection?.shapeName ?? "unknown",
-        query_shape: input.shapeSelection?.queryShape ?? "unknown",
-        selection_mode: input.shapeSelection?.selectionMode ?? "unknown",
-      },
-    });
+    await traceActiveSpan(
+      RETRIEVAL_TRACE_SPAN_NAMES.telemetry,
+      buildRetrievalTelemetryTraceAttributes(input, diagnostics.fallbackApplied),
+      () => this.telemetryService?.emit({
+        eventType: "retrieval.pipeline.completed",
+        correlation: {
+          workspaceId: input.workspaceId,
+        },
+        metrics: {
+          originalCandidateCount: input.originalCandidateCount,
+          rewrittenCandidateCount: input.rewrittenCandidateCount,
+          lexicalCandidateCount: input.lexicalCandidateCount ?? 0,
+          normalizedCandidateCount: input.normalizedCandidateCount,
+          finalContextCount: input.finalContextCount,
+          queryEmbeddingDurationMs: input.queryEmbeddingDurationMs ?? 0,
+        },
+        metadata: {
+          appliedConstraintCount: input.appliedConstraints?.length ?? 0,
+          retrievalSubqueryCount: input.retrievalSubqueries?.length ?? 0,
+          rewriteEligible: input.rewriteEligible ?? false,
+          rewriteRan: input.rewriteRan ?? false,
+          responseIntent: input.responseIntent,
+          retrievalSkipped: input.retrievalSkipped ?? false,
+          rejectionReason: input.rejectionReason,
+          fallbackReason: input.fallbackReason,
+          triggerMatchCount: input.triggerAnalysis?.matchCount ?? 0,
+          triggerBackoffApplied: input.triggerBackoff?.applied ?? false,
+          executionSurface: input.execution?.surface,
+          executionPath: input.execution?.path,
+          retrievalInvoked: input.execution?.retrievalInvoked ?? input.retrievalSkipped !== true,
+          skillName: skillDiagnostic?.skillName,
+          shapeName: input.shapeSelection?.shapeName,
+          queryShape: input.shapeSelection?.queryShape,
+          selectionMode: input.shapeSelection?.selectionMode,
+          selectionReason: input.shapeSelection?.selectionReason,
+        },
+        tags: {
+          rewrite_status: input.rewriteStatus,
+          rerank_status: input.rerankStatus,
+          response_intent: input.responseIntent ?? "unknown",
+          fallback_applied: diagnostics.fallbackApplied ? "true" : "false",
+          execution_surface: input.execution?.surface ?? "unknown",
+          execution_path: input.execution?.path ?? "unknown",
+          skill_name: skillDiagnostic?.skillName ?? "unknown",
+          shape_name: input.shapeSelection?.shapeName ?? "unknown",
+          query_shape: input.shapeSelection?.queryShape ?? "unknown",
+          selection_mode: input.shapeSelection?.selectionMode ?? "unknown",
+        },
+      }),
+    );
 
     return diagnostics;
   }
 }
+
+const boundedTraceCount = (value: number | undefined): number =>
+  Math.min(1_000, Math.max(0, value ?? 0));
+
+const buildRetrievalTelemetryTraceAttributes = (
+  input: Parameters<RetrievalExecutionTelemetryService["create"]>[0],
+  fallbackApplied: boolean,
+): TraceAttributes => ({
+  "radioso.workspace_id": input.workspaceId,
+  "retrieval.execution.surface": input.execution?.surface,
+  "retrieval.execution.path": input.execution?.path,
+  "retrieval.execution.invoked": input.execution?.retrievalInvoked ?? input.retrievalSkipped !== true,
+  "retrieval.rewrite.status": input.rewriteStatus,
+  "retrieval.rerank.status": input.rerankStatus,
+  "retrieval.fallback.applied": fallbackApplied,
+  "retrieval.skipped": input.retrievalSkipped ?? false,
+  "retrieval.candidates.semantic_original.count": boundedTraceCount(input.originalCandidateCount),
+  "retrieval.candidates.semantic_rewritten.count": boundedTraceCount(input.rewrittenCandidateCount),
+  "retrieval.candidates.lexical.count": boundedTraceCount(input.lexicalCandidateCount),
+  "retrieval.candidates.normalized.count": boundedTraceCount(input.normalizedCandidateCount),
+  "retrieval.context.final.count": boundedTraceCount(input.finalContextCount),
+  "retrieval.constraint.count": boundedTraceCount(input.appliedConstraints?.length),
+  "retrieval.subquery.count": boundedTraceCount(input.retrievalSubqueries?.length),
+  "retrieval.response.intent": input.responseIntent,
+});

@@ -109,6 +109,11 @@ describe("chat presenter", () => {
           },
         ],
       },
+      openTelemetry: {
+        traceId: "4bf92f3577b34da6a3ce929d0e0e4736",
+        spanId: "00f067aa0ba902b7",
+        sampled: true,
+      },
     };
     const doneEvent: ChatStreamEvent = {
       type: "done",
@@ -134,6 +139,8 @@ describe("chat presenter", () => {
     const debugDone = withDebug.writes.find((entry) => entry.includes("\"answer\":\"Answer\""));
     expect(debugDone).toContain("\"turnTrace\":");
     expect(debugDone).toContain("\"namespace\":\"retrieval\"");
+    expect(debugDone).toContain("\"openTelemetry\":");
+    expect(debugDone).toContain("\"spanId\":\"00f067aa0ba902b7\"");
 
     const noDebug = createMockResponse();
     await sendChatSse(noDebug.response as never, (async function* () {
@@ -141,6 +148,7 @@ describe("chat presenter", () => {
     })());
     const publicDone = noDebug.writes.find((entry) => entry.includes("\"answer\":\"Answer\""));
     expect(publicDone).not.toContain("turnTrace");
+    expect(publicDone).not.toContain("openTelemetry");
     expect(publicDone).not.toContain("\"debug\"");
   });
 

@@ -178,7 +178,7 @@ export function PublicChatBubbleDisclaimer({
   }
 
   return (
-    <div className="@container mx-auto mt-1.5 max-w-3xl px-2">
+    <div className="@container mx-auto mt-1.5 w-full max-w-3xl px-2">
       <div
         className="flex flex-col items-center gap-y-1 text-[11px] leading-tight @sm:flex-row @sm:justify-between @sm:gap-x-3"
         style={{ color: theme.mutedForeground }}

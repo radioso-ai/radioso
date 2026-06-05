@@ -81,10 +81,40 @@ const formToPayload = (
   return payload
 }
 
+const directiveToPayload = (
+  directive: Directive,
+  options: { excludes?: string[] } = {},
+): DirectiveUpdateRequest => ({
+  name: directive.name,
+  condition: directive.condition,
+  action: directive.action,
+  requiredCapabilities: directive.requiredCapabilities,
+  dependsOn: directive.dependsOn,
+  excludes: options.excludes ?? directive.excludes,
+  description: directive.description,
+  metadata: directive.metadata,
+})
+
+const dedupeNames = (names: string[]): string[] => Array.from(new Set(names))
+
 const describeCondition = (condition: DirectiveCondition): string =>
   condition.kind === 'always' ? 'Always applies' : `When: ${condition.description}`
 
-function CoherencePanel({ coherence }: { coherence: DirectiveCoherence }) {
+function CoherenceResolver({
+  coherence,
+  directives,
+  subjectId,
+  onSupersede,
+  onMakeConditional,
+  isSaving,
+}: {
+  coherence: DirectiveCoherence
+  directives: Directive[]
+  subjectId: string | null
+  onSupersede: (winner: Directive, loser: Directive) => void
+  onMakeConditional: (directive: Directive) => void
+  isSaving: boolean
+}) {
   if (coherence.coherent) {
     return (
       <div className="rounded-xl border border-border bg-muted/40 p-4 text-sm text-muted-foreground" role="status">
@@ -93,6 +123,8 @@ function CoherencePanel({ coherence }: { coherence: DirectiveCoherence }) {
     )
   }
 
+  const subject = subjectId ? directives.find((directive) => directive.id === subjectId) : undefined
+
   return (
     <div className="space-y-3 rounded-xl border border-border bg-muted/50 p-4" role="status">
       <div>
@@ -100,13 +132,55 @@ function CoherencePanel({ coherence }: { coherence: DirectiveCoherence }) {
         <p className="text-sm text-muted-foreground">{coherence.rationale}</p>
       </div>
       {coherence.conflicts.length > 0 ? (
-        <ul className="space-y-2">
-          {coherence.conflicts.map((conflict) => (
-            <li key={`${conflict.directiveName}-${conflict.reason}`} className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{conflict.directiveName}:</span> {conflict.reason}
-            </li>
-          ))}
-        </ul>
+        <div className="space-y-3">
+          {coherence.conflicts.map((conflict) => {
+            const existing = directives.find((directive) =>
+              conflict.directiveId ? directive.id === conflict.directiveId : directive.name === conflict.directiveName
+            )
+            const canResolve = subject && existing && subject.id !== existing.id
+            return (
+              <div key={`${conflict.directiveName}-${conflict.reason}`} className="space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">{conflict.directiveName}:</span> {conflict.reason}
+                </p>
+                {subject && existing && canResolve ? (
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={isSaving}
+                      onClick={() => onSupersede(subject, existing)}
+                      aria-label={`${subject.name} supersedes ${existing.name}`}
+                    >
+                      {subject.name} supersedes {existing.name}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={isSaving}
+                      onClick={() => onSupersede(existing, subject)}
+                      aria-label={`${existing.name} supersedes ${subject.name}`}
+                    >
+                      {existing.name} supersedes {subject.name}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={isSaving}
+                      onClick={() => onMakeConditional(subject)}
+                      aria-label={`Make ${subject.name} apply only conditionally`}
+                    >
+                      Make {subject.name} apply only conditionally
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
       ) : null}
     </div>
   )
@@ -214,6 +288,7 @@ export function AssistantDirectivesSection({
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [coherence, setCoherence] = useState<DirectiveCoherence | null>(null)
+  const [coherenceSubjectId, setCoherenceSubjectId] = useState<string | null>(null)
   const [editingDirective, setEditingDirective] = useState<Directive | null>(null)
   const [overrideTarget, setOverrideTarget] = useState<OverrideTarget | null>(null)
   const [deletingDirective, setDeletingDirective] = useState<Directive | null>(null)
@@ -249,6 +324,7 @@ export function AssistantDirectivesSection({
       setDirectives([])
       setBuiltIns([])
       setCoherence(null)
+      setCoherenceSubjectId(null)
       setError(null)
       void directivesApi.listDirectives(agentId)
         .then((response) => {
@@ -287,6 +363,17 @@ export function AssistantDirectivesSection({
     setDialogOpen(true)
   }
 
+  const openConditionalEditDialog = (directive: Directive) => {
+    setEditingDirective(directive)
+    setOverrideTarget(null)
+    setForm({
+      ...directiveToForm(directive),
+      conditionKind: 'contextual',
+    })
+    setError(null)
+    setDialogOpen(true)
+  }
+
   const openOverrideDialog = (directive: BuiltInDirective) => {
     setEditingDirective(null)
     setOverrideTarget(directive)
@@ -312,6 +399,42 @@ export function AssistantDirectivesSection({
     setForm(emptyForm)
   }
 
+  const mergeSavedDirective = (savedDirective: Directive) => {
+    setDirectives((current) => {
+      const withoutSaved = current.filter((directive) => directive.id !== savedDirective.id)
+      return [...withoutSaved, savedDirective].sort((first, second) => first.name.localeCompare(second.name))
+    })
+  }
+
+  const handleSupersede = async (winner: Directive, loser: Directive) => {
+    const saveId = beginSave()
+    setIsSaving(true)
+    setError(null)
+    try {
+      const response = await directivesApi.updateDirective(
+        agentId,
+        winner.id,
+        directiveToPayload(winner, {
+          excludes: dedupeNames([...(winner.excludes ?? []), loser.name]),
+        }),
+      )
+      if (!isCurrentSave(saveId)) return
+      mergeSavedDirective(response.directive)
+      setCoherence(response.coherence)
+      setCoherenceSubjectId(response.directive.id)
+      markSaved()
+    } catch (saveError) {
+      if (!isCurrentSave(saveId)) return
+      const message = getApiErrorMessage(saveError, 'Failed to resolve directive conflict.')
+      setError(message)
+      markError(message)
+    } finally {
+      if (isCurrentSave(saveId)) {
+        setIsSaving(false)
+      }
+    }
+  }
+
   const handleSubmit = async () => {
     if (formError) return
     const payload = formToPayload(form, {
@@ -326,11 +449,9 @@ export function AssistantDirectivesSection({
         ? await directivesApi.updateDirective(agentId, editingDirective.id, payload satisfies DirectiveUpdateRequest)
         : await directivesApi.createDirective(agentId, payload)
       if (!isCurrentSave(saveId)) return
-      setDirectives((current) => {
-        const withoutSaved = current.filter((directive) => directive.id !== response.directive.id)
-        return [...withoutSaved, response.directive].sort((first, second) => first.name.localeCompare(second.name))
-      })
+      mergeSavedDirective(response.directive)
       setCoherence(response.coherence)
+      setCoherenceSubjectId(response.directive.id)
       setDialogOpen(false)
       setEditingDirective(null)
       setOverrideTarget(null)
@@ -359,6 +480,7 @@ export function AssistantDirectivesSection({
       setDirectives((current) => current.filter((directive) => directive.id !== deletingDirective.id))
       setDeletingDirective(null)
       setCoherence(null)
+      setCoherenceSubjectId(null)
       markSaved()
     } catch (deleteError) {
       if (!isCurrentSave(saveId)) return
@@ -387,7 +509,16 @@ export function AssistantDirectivesSection({
     >
       <div className="space-y-6">
         {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
-        {coherence ? <CoherencePanel coherence={coherence} /> : null}
+        {coherence ? (
+          <CoherenceResolver
+            coherence={coherence}
+            directives={directives}
+            subjectId={coherenceSubjectId}
+            onSupersede={(winner, loser) => void handleSupersede(winner, loser)}
+            onMakeConditional={openConditionalEditDialog}
+            isSaving={isSaving}
+          />
+        ) : null}
 
         <div className="space-y-3">
           <div className="space-y-1">
@@ -406,7 +537,7 @@ export function AssistantDirectivesSection({
                   key={directive.id}
                   id={`directive-${directive.id}`}
                   directive={directive}
-                  replaces={(directive.excludes ?? []).filter((name) => builtIns.some((builtIn) => builtIn.name === name))}
+                  replaces={directive.excludes ?? []}
                   onEdit={() => openEditDialog(directive)}
                   onDelete={() => setDeletingDirective(directive)}
                 />

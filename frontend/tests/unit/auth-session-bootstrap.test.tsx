@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { getStoredLastAccountId, readStoredAuthUser } from '@/lib/auth-context'
+import {
+  getStoredLastAccountId,
+  mergeStoredAccountOrganizationNames,
+  readStoredAuthUser,
+  storeAccountOrganizationName,
+} from '@/lib/auth-context'
 
 const createLocalStorage = (seed: Record<string, string> = {}) => {
   const store = new Map(Object.entries(seed))
@@ -23,7 +28,12 @@ describe('auth session bootstrap', () => {
 
   it('returns the stored auth user when bootstrap data is valid', () => {
     const localStorage = createLocalStorage({
-      'radioso.authUser': JSON.stringify({ userId: 'user-1', accountId: 'account-1', email: 'alice@example.com' }),
+      'radioso.authUser': JSON.stringify({
+        userId: 'user-1',
+        accountId: 'account-1',
+        email: 'alice@example.com',
+        organizationName: 'Coop Pank',
+      }),
     })
     vi.stubGlobal('window', { localStorage })
 
@@ -31,6 +41,7 @@ describe('auth session bootstrap', () => {
       userId: 'user-1',
       accountId: 'account-1',
       email: 'alice@example.com',
+      organizationName: 'Coop Pank',
     })
   })
 
@@ -52,6 +63,35 @@ describe('auth session bootstrap', () => {
     })
 
     expect(getStoredLastAccountId(localStorage)).toBe('account-42')
+  })
+
+  it('uses cached organization names to repair duplicated accessible account labels by account id', () => {
+    const localStorage = createLocalStorage()
+    storeAccountOrganizationName(localStorage, 'account-1', 'Coop Pank')
+    storeAccountOrganizationName(localStorage, 'account-2', 'Radioso')
+
+    expect(mergeStoredAccountOrganizationNames([
+      { accountId: 'account-1', organizationName: 'Radioso' },
+      { accountId: 'account-2', organizationName: 'Radioso' },
+      { accountId: 'account-3', organizationName: 'Migrevention' },
+    ], localStorage)).toEqual([
+      { accountId: 'account-1', organizationName: 'Coop Pank' },
+      { accountId: 'account-2', organizationName: 'Radioso' },
+      { accountId: 'account-3', organizationName: 'Migrevention' },
+    ])
+  })
+
+  it('keeps unique accessible account labels from the current account response', () => {
+    const localStorage = createLocalStorage()
+    storeAccountOrganizationName(localStorage, 'account-1', 'Old Name')
+
+    expect(mergeStoredAccountOrganizationNames([
+      { accountId: 'account-1', organizationName: 'New Name' },
+      { accountId: 'account-2', organizationName: 'Radioso' },
+    ], localStorage)).toEqual([
+      { accountId: 'account-1', organizationName: 'New Name' },
+      { accountId: 'account-2', organizationName: 'Radioso' },
+    ])
   })
 
   it('clears invalid auth bootstrap data and legacy workspace tokens', () => {

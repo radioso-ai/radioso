@@ -95,7 +95,7 @@ export function WorkspaceSwitcher({ accountId, currentView, routeState }: Worksp
       setPendingAccountSwitchId(targetAccountId)
       const response = await accountApi.switchAccount(targetAccountId, preferredWorkspaceId)
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
-      await login(user.email, response.userId, response.accountId)
+      await login(user.email, response.userId, response.accountId, response.organizationName)
       router.replace(buildDashboardHref(response.accountId, {
         section: currentView,
         workspaceId: response.workspaceId,
@@ -119,7 +119,7 @@ export function WorkspaceSwitcher({ accountId, currentView, routeState }: Worksp
       const response = await accountApi.createOrganization(trimmed)
       setPendingAccountSwitchId(response.accountId)
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
-      await login(user.email, response.userId, response.accountId)
+      await login(user.email, response.userId, response.accountId, response.organizationName)
       setNewOrganizationName('')
       setIsCreateOrganizationOpen(false)
       router.replace(buildDashboardHref(response.accountId, {
@@ -134,8 +134,14 @@ export function WorkspaceSwitcher({ accountId, currentView, routeState }: Worksp
     }
   }
 
-  const currentAccount = accounts.find((account) => account.accountId === accountId) ?? null
-  const otherAccounts = accounts.filter((account) => account.accountId !== accountId)
+  const displayedAccounts =
+    user?.accountId === accountId && user.organizationName
+      ? accounts.map((account) => account.accountId === accountId
+        ? { ...account, organizationName: user.organizationName ?? account.organizationName }
+        : account)
+      : accounts
+  const currentAccount = displayedAccounts.find((account) => account.accountId === accountId) ?? null
+  const otherAccounts = displayedAccounts.filter((account) => account.accountId !== accountId)
 
   return (
     <>
@@ -156,7 +162,7 @@ export function WorkspaceSwitcher({ accountId, currentView, routeState }: Worksp
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-72">
               {accountsLoaded ? (
-                accounts.length > 0 ? (
+                displayedAccounts.length > 0 ? (
                   <>
                     {currentAccount ? (
                       <>

@@ -40,6 +40,7 @@ import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { storeAccountOrganizationName } from '@/lib/auth-context'
 import { resolveAssistantRetrievalSettingsViewState } from '@/lib/assistant-retrieval-settings-view-state'
 import {
   accountApi,
@@ -745,6 +746,7 @@ export function WorkspaceAssistantChannelsTab({
         if (saveSequenceRef.current !== saveId) return
         setSavedOrganizationName(updated.organizationName)
         writeCachedOrganizationName(accountId, updated.organizationName)
+        storeAccountOrganizationName(window.localStorage, accountId, updated.organizationName)
         if (organizationDraftVersionRef.current === draftVersionAtRequestStart) {
           setOrganizationName(updated.organizationName)
           setSaveState('saved')

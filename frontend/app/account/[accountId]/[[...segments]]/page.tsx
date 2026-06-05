@@ -69,7 +69,7 @@ export default function LegacyAccountDashboardPage() {
         try {
           const response = await accountApi.switchAccount(routeAccountId, parsedRoute.workspaceId)
           seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
-          await auth.login(user.email, response.userId, response.accountId)
+          await auth.login(user.email, response.userId, response.accountId, response.organizationName)
           router.replace(buildDashboardHref(response.accountId, {
             ...parsedRoute,
             workspaceId: response.workspaceId,

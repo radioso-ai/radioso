@@ -50,7 +50,7 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
       if (!auth) {
         throw new Error('Login is unavailable outside the auth shell')
       }
-      await auth.login(email, response.userId, response.accountId)
+      await auth.login(email, response.userId, response.accountId, response.organizationName)
     } catch (error) {
       setError(getErrorMessage(error))
     } finally {

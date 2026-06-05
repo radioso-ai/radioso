@@ -7,7 +7,6 @@ export {
   type DirectiveMatch,
   type DirectiveOmission,
   type DirectiveSelectionMode,
-  type SteeringCriticality,
   type SteeringRule,
 } from "./domain.js";
 export { DirectiveCatalogRegistry } from "./directiveCatalogRegistry.js";

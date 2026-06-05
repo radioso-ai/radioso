@@ -45,7 +45,7 @@ export function InvitationAcceptForm({
     try {
       const response = await authApi.acceptInvitation(invitationToken, { email, password })
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
-      await login(email, response.userId, response.accountId)
+      await login(email, response.userId, response.accountId, response.organizationName)
       router.replace(buildDashboardHref(response.accountId, {
         section: 'agents',
         workspaceId: response.workspaceId,

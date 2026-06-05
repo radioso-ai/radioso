@@ -5,6 +5,7 @@ import { ensureNoPendingMigrations, type MigrationTimeoutOptions } from "../db/r
 import { createLogger, type AppLogger } from "../shared/observability/logger.js";
 import type { AppDependencies } from "../app/server/types.js";
 import type { RuntimeHandle } from "./types.js";
+import { startRuntimeTracing, stopRuntimeTracing } from "./tracing.js";
 
 export interface StartWorkerRuntimeOptions {
   env: Env;
@@ -20,6 +21,7 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
     lockTimeoutMs: options.env.DB_MIGRATION_LOCK_TIMEOUT_MS,
     statementTimeoutMs: options.env.DB_MIGRATION_STATEMENT_TIMEOUT_MS,
   });
+  startRuntimeTracing(options.env, logger, "document-worker");
 
   const dependencies = options.buildDependencies
     ? options.buildDependencies(options.env)
@@ -40,10 +42,14 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
       }
       shuttingDown = true;
       dependencies.logger.info({ role: "worker", signal }, "Radioso document worker shutting down");
-      await dependencies.actionDispatchWorker.stop();
-      await dependencies.documentJobConsumer?.stop();
-      await dependencies.documentProcessingWorker.stop();
-      await dependencies.applicationModules.shutdownAll();
+      try {
+        await dependencies.actionDispatchWorker.stop();
+        await dependencies.documentJobConsumer?.stop();
+        await dependencies.documentProcessingWorker.stop();
+        await dependencies.applicationModules.shutdownAll();
+      } finally {
+        await stopRuntimeTracing();
+      }
     },
   };
 };

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { DocumentProcessingWorker } from "../../src/modules/documents/services/documentProcessingWorker.js";
+import { buildDocumentWorkerJobTraceAttributes } from "../../src/modules/documents/services/documentProcessingWorker.js";
 import { ProviderHttpError } from "../../src/shared/infra/llm/providerErrors.js";
 import { startWorkerRuntime } from "../../src/runtime/startWorkerRuntime.js";
 import { startWorkerTaskRuntime } from "../../src/runtime/startWorkerTaskRuntime.js";
@@ -8,6 +9,30 @@ import { createAuditService, InMemoryDocumentProcessingJobRepository, InMemoryDo
 import { createTestDependencies } from "../support/testApp.js";
 
 describe("document processing worker runtime signals", () => {
+  it("builds privacy-safe worker job span attributes", () => {
+    const attributes = buildDocumentWorkerJobTraceAttributes({
+      id: "job-1",
+      workspaceId: "workspace-1",
+      documentId: "document-1",
+      documentRevision: 2,
+      attemptCount: 3,
+      status: "processing",
+    } as never, {
+      outcome: "retry_scheduled",
+    });
+
+    expect(attributes).toEqual({
+      "radioso.workspace_id": "workspace-1",
+      "radioso.document_id": "document-1",
+      "radioso.job_id": "job-1",
+      "document.revision": 2,
+      "document.job.id": "job-1",
+      "document.job.attempt_count": 3,
+      "document.job.status": "processing",
+      "document.worker.outcome": "retry_scheduled",
+    });
+  });
+
   it("logs the initial queue snapshot when the worker starts", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);

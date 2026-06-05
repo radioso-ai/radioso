@@ -1,6 +1,7 @@
 import type { ModelCallUsageContext } from "../../domain/modelCallUsageContext.js";
 import { LLM_DEFAULTS } from "../../domain/behaviorConfig.js";
 import { payloadTooLarge } from "../../domain/errors.js";
+import { setTraceAttributes, traceAsyncIterable, traceOperation } from "../../observability/tracing/operations.js";
 import {
   NoopUsageEventRecorder,
   type UsageEventRecorder,
@@ -95,6 +96,22 @@ const stripOperation = (input: ModelInferenceRequest): TextGenerationRequest => 
   };
 };
 
+const providerTraceAttributes = (
+  metadata: LlmProviderMetadata,
+  operation: ModelCallUsageContext,
+  input: { streaming: boolean },
+): Record<string, unknown> => ({
+  "llm.provider": metadata.provider,
+  "llm.model": metadata.model,
+  "llm.operation": operation.operation,
+  "llm.streaming": input.streaming,
+  "radioso.account_id": operation.accountId,
+  "radioso.conversation_id": operation.conversationId,
+  "radioso.message_id": operation.messageId,
+  "radioso.request_id": operation.requestId,
+  "radioso.workspace_id": operation.workspaceId,
+});
+
 export class ModelInferencePipelineService implements ModelInferencePipeline {
   readonly metadata;
 
@@ -106,6 +123,14 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
   }
 
   async complete(input: ModelInferenceRequest): Promise<TextGenerationResult> {
+    return traceOperation({
+      name: "llm.provider.complete",
+      attributes: providerTraceAttributes(this.delegate.metadata, input.operation, { streaming: false }),
+      run: () => this.completeWithinTrace(input),
+    });
+  }
+
+  private async completeWithinTrace(input: ModelInferenceRequest): Promise<TextGenerationResult> {
     const request = stripOperation(input);
     this.enforceInputBudget(input, request);
     let result: TextGenerationResult;
@@ -119,6 +144,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
         status: "failed",
         error,
       });
+      setTraceAttributes({ "llm.provider.outcome": "failed" });
       throw error;
     }
 
@@ -133,6 +159,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
         providerUsage: result.usage,
         error,
       });
+      setTraceAttributes({ "llm.provider.outcome": "failed" });
       throw error;
     }
 
@@ -143,6 +170,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
       status: "succeeded",
       providerUsage: result.usage,
     });
+    setTraceAttributes({ "llm.provider.outcome": "succeeded" });
     return result;
   }
 
@@ -158,7 +186,10 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
         return undefined;
       }
     };
-    const textStream = (async function* (pipeline: ModelInferencePipelineService) {
+    const textStream = traceAsyncIterable({
+      name: "llm.provider.stream",
+      attributes: providerTraceAttributes(this.delegate.metadata, input.operation, { streaming: true }),
+      createIterable: () => (async function* (pipeline: ModelInferencePipelineService) {
       try {
         for await (const chunk of result.textStream) {
           outputText += chunk;
@@ -171,6 +202,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
           status: "succeeded",
           providerUsage: await readUsage(),
         });
+        setTraceAttributes({ "llm.provider.outcome": "succeeded" });
       } catch (error) {
         await pipeline.recordUsage({
           operation: input.operation,
@@ -180,9 +212,11 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
           providerUsage: await readUsage(),
           error,
         });
+        setTraceAttributes({ "llm.provider.outcome": "failed" });
         throw error;
       }
-    })(this);
+    })(this),
+    });
 
     return { textStream, usage: result.usage };
   }

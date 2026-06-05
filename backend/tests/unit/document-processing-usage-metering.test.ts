@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
-import { DocumentProcessingService } from "../../src/modules/documents/services/documentProcessingService.js";
+import {
+  DocumentProcessingService,
+  buildDocumentProcessingTraceAttributes,
+} from "../../src/modules/documents/services/documentProcessingService.js";
 import type { ChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/chunkingStrategy.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { EmbeddingService, ModelEmbeddingGateway } from "../../src/modules/retrieval/services/embeddingService.js";
@@ -78,6 +81,35 @@ const createProcessingService = (input: {
   );
 
 describe("document processing usage metering", () => {
+  it("builds privacy-safe document processing span attributes with bounded counts", () => {
+    const attributes = buildDocumentProcessingTraceAttributes({
+      id: "job-1",
+      workspaceId: "workspace-1",
+      documentId: "document-1",
+      documentRevision: 4,
+      attemptCount: 2,
+      status: "processing",
+    } as never, {
+      stage: "embedding",
+      outcome: "completed",
+      chunkCount: 1_500,
+    });
+
+    expect(attributes).toEqual({
+      "radioso.workspace_id": "workspace-1",
+      "radioso.document_id": "document-1",
+      "radioso.job_id": "job-1",
+      "document.revision": 4,
+      "document.job.id": "job-1",
+      "document.job.attempt_count": 2,
+      "document.job.status": "processing",
+      "document.processing.stage": "embedding",
+      "document.processing.outcome": "completed",
+      "document.processing.item.count": 1_000,
+    });
+    expect(JSON.stringify(attributes)).not.toContain("Content");
+  });
+
   it("records successful embedding usage with provider identity and chunk-scoped idempotency", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);

@@ -1,4 +1,5 @@
 import type { ModelCallUsageContext } from "../../domain/modelCallUsageContext.js";
+import { setTraceAttributes, traceOperation } from "../../observability/tracing/operations.js";
 import {
   NoopUsageEventRecorder,
   type UsageEventRecorder,
@@ -63,6 +64,23 @@ const buildUsageIdempotencyKey = (
   status,
 ].join(":");
 
+const providerTraceAttributes = (
+  metadata: LlmProviderMetadata,
+  input: EmbeddingInferenceRequest,
+): Record<string, unknown> => ({
+  "llm.provider": metadata.provider,
+  "llm.model": input.model ?? metadata.model,
+  "llm.operation": input.operation.operation,
+  "llm.embedding.vector.count": input.texts.length,
+  "radioso.account_id": input.operation.accountId,
+  "radioso.conversation_id": input.operation.conversationId,
+  "radioso.document_id": input.documentId,
+  "radioso.job_id": input.jobId,
+  "radioso.message_id": input.operation.messageId,
+  "radioso.request_id": input.operation.requestId,
+  "radioso.workspace_id": input.operation.workspaceId,
+});
+
 export class EmbeddingInferencePipelineService implements EmbeddingInferencePipeline {
   readonly metadata;
 
@@ -75,12 +93,22 @@ export class EmbeddingInferencePipelineService implements EmbeddingInferencePipe
   }
 
   async embedTexts(input: EmbeddingInferenceRequest): Promise<EmbeddingResult> {
+    return traceOperation({
+      name: "llm.provider.embedding",
+      attributes: providerTraceAttributes(this.delegate.metadata, input),
+      run: () => this.embedTextsWithinTrace(input),
+    });
+  }
+
+  private async embedTextsWithinTrace(input: EmbeddingInferenceRequest): Promise<EmbeddingResult> {
     try {
       const result = await this.delegate.embedTexts(input.texts, { model: input.model });
       await this.recordUsage(input, "succeeded", result.usage);
+      setTraceAttributes({ "llm.provider.outcome": "succeeded" });
       return result;
     } catch (error) {
       await this.recordUsage(input, "failed", undefined, error);
+      setTraceAttributes({ "llm.provider.outcome": "failed" });
       throw error;
     }
   }

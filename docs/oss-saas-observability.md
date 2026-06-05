@@ -312,12 +312,52 @@ METRICS_AUTH_TOKEN=replace-with-a-long-random-bearer-token
 
 OTEL_ENABLED=false
 OTEL_EXPORTER_OTLP_ENDPOINT=
+OTEL_TRACES_SAMPLER=
+OTEL_TRACES_SAMPLER_ARG=
 
 PRODUCT_ANALYTICS_SINKS=audit
 ERROR_SINKS=audit
 ```
 
 `OBSERVABILITY_ENVIRONMENT` falls back to `NODE_ENV` when unset. `METRICS_ENABLED=true` requires `METRICS_AUTH_TOKEN`, and the backend serves `/metrics` only to callers that present `Authorization: Bearer <token>`.
+
+Set `OTEL_ENABLED=true` and `OTEL_EXPORTER_OTLP_ENDPOINT` to an OTLP/HTTP
+collector endpoint, for example `http://localhost:4318/v1/traces`, to export
+backend traces. Tracing is disabled by default and is not required for local
+development.
+
+Sampling uses standard OpenTelemetry sampler names. Leave
+`OTEL_TRACES_SAMPLER` empty for the default parent-based always-on behavior
+when tracing is enabled. Use `parentbased_traceidratio` with
+`OTEL_TRACES_SAMPLER_ARG=0.25` to sample roughly 25% of root traces while
+respecting upstream sampling decisions.
+
+Trace attributes follow the backend privacy policy. Raw prompts, completions,
+document bodies, retrieved chunks, connector secrets, cookies, access tokens,
+database credentials, and connection strings are redacted or omitted. URLs are
+exported without query strings, fragments, usernames, or passwords.
+
+Current backend tracing covers API and worker-task HTTP requests, chat turns,
+retrieval stages, model and embedding provider calls, document worker jobs, and
+document processing stages. Runtime roles are attached as trace resource
+metadata, and workers use role-specific service names unless
+`OBSERVABILITY_SERVICE_NAME` is explicitly overridden.
+
+The backend adds primitive OpenTelemetry correlation to debug turn traces when
+an active span exists:
+
+```json
+{
+  "openTelemetry": {
+    "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "spanId": "00f067aa0ba902b7",
+    "sampled": true
+  }
+}
+```
+
+This field is debug-only. It does not embed SDK span objects or raw trace data
+inside product diagnostics.
 
 Enterprise SaaS examples:
 

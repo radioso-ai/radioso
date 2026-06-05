@@ -3236,10 +3236,20 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** @description Debug-only OpenTelemetry correlation. Contains primitive trace identity only; no SDK span objects or payload data are embedded. */
+        TurnTraceOpenTelemetryCorrelation: {
+            /** @description Active OpenTelemetry trace id for correlating this product diagnostic turn with exported traces. */
+            traceId: string;
+            /** @description Active OpenTelemetry span id at the point the turn trace envelope was built. */
+            spanId: string;
+            /** @description Whether the active OpenTelemetry span context was sampled. */
+            sampled: boolean;
+        };
         TurnTraceEnvelope: {
             /** @description Envelope generation marker. 0 = synthesized from a legacy turn; >=1 = engine-emitted spine. */
             version: number;
             spine: components["schemas"]["ConversationTrace"];
+            openTelemetry?: components["schemas"]["TurnTraceOpenTelemetryCorrelation"];
             summary?: {
                 [key: string]: unknown;
             };

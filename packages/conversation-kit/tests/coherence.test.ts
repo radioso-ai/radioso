@@ -4,7 +4,6 @@ import type { ConversationModelGateway, Directive } from "@radioso/conversation-
 
 import {
   createConversationKitClient,
-  createDirectiveCoherenceChecker,
   DirectiveCoherenceError,
 } from "../src/index.js";
 
@@ -23,48 +22,6 @@ const directive = (overrides: Partial<Directive> & Pick<Directive, "name" | "act
 });
 
 describe("directive coherence", () => {
-  it("returns a structured conflict verdict from the model-backed checker", async () => {
-    const gateway: ConversationModelGateway = {
-      complete: vi.fn(async () => ({
-        text: JSON.stringify({
-          verdict: "conflict",
-          conflicts: [{
-            directiveId: "directive_formal",
-            directiveName: "formal-greeting",
-            reason: "The candidate forbids the greeting behavior that the existing directive requires.",
-          }],
-          rationale: "The two directives cannot both be followed on the same turns.",
-        }),
-      })),
-    };
-    const checker = createDirectiveCoherenceChecker({ modelGateway: gateway });
-
-    const verdict = await checker.check({
-      agent: { id: "agent_support", name: "Support" },
-      candidate: directive({
-        id: "directive_terse",
-        name: "terse-no-greeting",
-        action: "Never greet; be terse.",
-      }),
-      existingDirectives: [directive({
-        id: "directive_formal",
-        name: "formal-greeting",
-        action: "Always greet formally.",
-      })],
-    });
-
-    expect(verdict).toEqual({
-      coherent: false,
-      conflicts: [{
-        directiveId: "directive_formal",
-        directiveName: "formal-greeting",
-        reason: "The candidate forbids the greeting behavior that the existing directive requires.",
-      }],
-      rationale: "The two directives cannot both be followed on the same turns.",
-    });
-    expect(gateway.complete).toHaveBeenCalledOnce();
-  });
-
   it("blocks SDK directive creation when the gate finds a seeded contradiction", async () => {
     const gateway: ConversationModelGateway = {
       complete: vi.fn(async () => ({

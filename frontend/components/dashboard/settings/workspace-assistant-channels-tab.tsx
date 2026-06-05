@@ -6,6 +6,7 @@ import { Building2, ChevronLeft, DatabaseZap, ExternalLink, FolderOpen, Globe, K
 
 import { ApiChannelCard } from '@/components/dashboard/settings/api-channel-card'
 import { AssistantBehaviorSection } from '@/components/dashboard/settings/assistant-behavior-section'
+import { AssistantDirectivesSection } from '@/components/dashboard/settings/assistant-directives-section'
 import { AssistantIdentityAppearanceSection } from '@/components/dashboard/settings/assistant-identity-appearance-section'
 import { AssistantPreviewRail } from '@/components/dashboard/settings/assistant-preview-rail'
 import { AssistantRetrievalSkillSettingsSection } from '@/components/dashboard/settings/assistant-retrieval-skill-settings-section'
@@ -1181,6 +1182,12 @@ export function WorkspaceAssistantChannelsTab({
                 </p>
               )}
             </SettingsCard>
+          </section>
+          ) : null}
+
+          {mode === 'assistant' && agentId && showSection('directives') ? (
+          <section id="assistant-directives" className="space-y-6 scroll-mt-24">
+            <AssistantDirectivesSection agentId={agentId} onSaveStateChange={onSaveStateChange} />
           </section>
           ) : null}
 

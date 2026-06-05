@@ -54,6 +54,9 @@ const createService = (overrides: {
     create: vi.fn().mockResolvedValue({ id: "agent-1", name: "Example Support" }),
     update: vi.fn().mockResolvedValue({ id: "agent-1" }),
   };
+  const documentStorage = {
+    upload: vi.fn().mockResolvedValue({ bucket: "logos", objectPath: "logo-key", sizeBytes: 128 }),
+  };
   const auditService = {
     record: vi.fn().mockResolvedValue(undefined),
   };
@@ -61,9 +64,7 @@ const createService = (overrides: {
   const service = new AgentWizardService({
     textGenerationClient: { complete },
     agentService,
-    documentStorage: {
-      upload: vi.fn().mockResolvedValue({ bucket: "logos", objectPath: "logo-key", sizeBytes: 128 }),
-    },
+    documentStorage,
     websiteCrawlJobService: {
       enqueue: vi.fn().mockResolvedValue({ jobId: "crawl-1", sourceId: null }),
     },
@@ -74,8 +75,27 @@ const createService = (overrides: {
     fetchImpl: overrides.fetchImpl,
   });
 
-  return { agentService, auditService, complete, service };
+  return { agentService, auditService, complete, documentStorage, service };
 };
+
+const faviconResponse = (input: {
+  ok: boolean;
+  status: number;
+  contentType?: string | null;
+  body?: number[];
+  location?: string | null;
+}) => ({
+  ok: input.ok,
+  status: input.status,
+  headers: {
+    get: (name: string) => {
+      if (name.toLowerCase() === "content-type") return input.contentType ?? null;
+      if (name.toLowerCase() === "location") return input.location ?? null;
+      return null;
+    },
+  },
+  arrayBuffer: async () => new Uint8Array(input.body ?? []).buffer,
+});
 
 describe("AgentWizardService", () => {
   it("analyzes a website with crawled pages and LLM suggestions", async () => {
@@ -344,6 +364,97 @@ describe("AgentWizardService", () => {
 
     expect(result).toEqual({ agentId: "agent-1", crawlJobId: "crawl-1" });
     expect(agentService.create).toHaveBeenCalledOnce();
+    expect(agentService.update).not.toHaveBeenCalled();
+  });
+
+  it("falls back to origin favicon.ico when the declared favicon is not an allowed raster image", async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(faviconResponse({
+        ok: true,
+        status: 200,
+        contentType: "image/svg+xml",
+        body: [60, 115, 118, 103, 62],
+      }))
+      .mockResolvedValueOnce(faviconResponse({
+        ok: true,
+        status: 200,
+        contentType: "image/x-icon",
+        body: [1, 2, 3],
+      })) as unknown as typeof fetch;
+    const { agentService, service } = createService({ fetchImpl });
+
+    await service.createAgentFromWizard({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      config: {
+        websiteUrl: "https://example.com/docs",
+        name: "Example Support",
+        faviconUrl: "https://cdn.example.com/icon.svg",
+      },
+    });
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(1, "https://cdn.example.com/icon.svg", expect.any(Object));
+    expect(fetchImpl).toHaveBeenNthCalledWith(2, "https://example.com/favicon.ico", expect.any(Object));
+    expect(agentService.update).toHaveBeenCalledWith("workspace-1", "agent-1", {
+      logo: expect.objectContaining({
+        filename: "favicon.ico",
+        mimeType: "image/x-icon",
+      }),
+    });
+  });
+
+  it("does not fetch favicon.ico when the declared favicon is an allowed raster image", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(faviconResponse({
+      ok: true,
+      status: 200,
+      contentType: "image/png",
+      body: [1, 2, 3],
+    })) as unknown as typeof fetch;
+    const { service } = createService({ fetchImpl });
+
+    await service.createAgentFromWizard({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      config: {
+        websiteUrl: "https://example.com/docs",
+        name: "Example Support",
+        faviconUrl: "https://cdn.example.com/icon.png",
+      },
+    });
+
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(fetchImpl).toHaveBeenCalledWith("https://cdn.example.com/icon.png", expect.any(Object));
+  });
+
+  it("creates an agent without a logo when neither favicon candidate yields an allowed raster image", async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(faviconResponse({
+        ok: true,
+        status: 200,
+        contentType: "image/svg+xml",
+        body: [60, 115, 118, 103, 62],
+      }))
+      .mockResolvedValueOnce(faviconResponse({
+        ok: false,
+        status: 404,
+        contentType: "text/html",
+        body: [60, 104, 116, 109, 108, 62],
+      })) as unknown as typeof fetch;
+    const { agentService, documentStorage, service } = createService({ fetchImpl });
+
+    const result = await service.createAgentFromWizard({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      config: {
+        websiteUrl: "https://example.com/docs",
+        name: "Example Support",
+        faviconUrl: "https://cdn.example.com/icon.svg",
+      },
+    });
+
+    expect(result).toEqual({ agentId: "agent-1", crawlJobId: "crawl-1" });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(documentStorage.upload).not.toHaveBeenCalled();
     expect(agentService.update).not.toHaveBeenCalled();
   });
 

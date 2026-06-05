@@ -662,8 +662,16 @@ export class AgentWizardService {
     });
 
     const updatePayload: Record<string, unknown> = {};
-    if (input.config.faviconUrl) {
-      const logo = await this.uploadFaviconAsLogo(input.workspaceId, agent.id, input.config.faviconUrl, input.signal).catch(() => null);
+    if (input.config.faviconUrl || input.config.websiteUrl) {
+      const logo = await this.uploadFaviconAsLogo(
+        input.workspaceId,
+        agent.id,
+        {
+          faviconUrl: input.config.faviconUrl ?? null,
+          websiteUrl: input.config.websiteUrl,
+        },
+        input.signal,
+      ).catch(() => null);
       if (logo) {
         updatePayload.logo = logo;
       }
@@ -824,6 +832,48 @@ export class AgentWizardService {
   }
 
   private async uploadFaviconAsLogo(
+    workspaceId: string,
+    agentId: string,
+    input: {
+      faviconUrl?: string | null;
+      websiteUrl: string;
+    },
+    signal?: AbortSignal,
+  ): Promise<Record<string, unknown> | null> {
+    const candidates = this.buildFaviconCandidates(input);
+    for (const candidateUrl of candidates) {
+      const logo = await this.uploadFaviconCandidateAsLogo(workspaceId, agentId, candidateUrl, signal);
+      if (logo) {
+        return logo;
+      }
+    }
+    return null;
+  }
+
+  private buildFaviconCandidates(input: {
+    faviconUrl?: string | null;
+    websiteUrl: string;
+  }): string[] {
+    const candidates: string[] = [];
+    if (input.faviconUrl) {
+      candidates.push(input.faviconUrl);
+    }
+    try {
+      candidates.push(new URL("/favicon.ico", input.websiteUrl).toString());
+    } catch {
+      // websiteUrl is validated before agent creation; this is defensive.
+    }
+
+    const seen = new Set<string>();
+    return candidates.filter((candidate) => {
+      const normalized = normalizeComparableUrl(candidate);
+      if (!normalized || seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    });
+  }
+
+  private async uploadFaviconCandidateAsLogo(
     workspaceId: string,
     agentId: string,
     faviconUrl: string,

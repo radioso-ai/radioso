@@ -87,7 +87,10 @@ export const installProcessErrorHandlers = (
 
     void (async () => {
       try {
-        await flushWithTimeout(reporter.report({ errorType, error, severity: "error" }), flushTimeoutMs);
+        await flushWithTimeout(
+          reporter.report({ errorType, error, severity: "error", tags: { role } }),
+          flushTimeoutMs,
+        );
       } catch (reportError) {
         logger.error(
           { role, errorType, err: reportError instanceof Error ? reportError.message : String(reportError) },

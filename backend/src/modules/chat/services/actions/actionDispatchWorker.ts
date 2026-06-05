@@ -67,11 +67,16 @@ export class ActionDispatchWorker {
         { err: error instanceof Error ? error.message : String(error) },
         "Action dispatch drain failed",
       );
-      void this.options.errorReporter?.report({
-        errorType: "action.dispatch.drain_failed",
-        error,
-        severity: "error",
-      });
+      // Fire-and-forget so the poll loop is never blocked by reporting, but the
+      // rejection must be caught — an unhandled rejection would now be process-fatal.
+      void this.options.errorReporter
+        ?.report({ errorType: "action.dispatch.drain_failed", error, severity: "error" })
+        .catch((reportError) => {
+          this.options.logger.error(
+            { err: reportError instanceof Error ? reportError.message : String(reportError) },
+            "Action dispatch error report failed",
+          );
+        });
       return null;
     } finally {
       this.draining = false;

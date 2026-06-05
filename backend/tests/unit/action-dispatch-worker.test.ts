@@ -69,4 +69,27 @@ describe("ActionDispatchWorker", () => {
       }),
     );
   });
+
+  it("swallows a rejecting error reporter so it cannot become an unhandled rejection", async () => {
+    const dispatchPending = vi.fn(async () => {
+      throw new Error("db unreachable");
+    });
+    const report = vi.fn().mockRejectedValue(new Error("sink down"));
+    const logger = { error: vi.fn(), debug: vi.fn() };
+    const worker = new ActionDispatchWorker(
+      { dispatchPending },
+      { logger, errorReporter: { report } },
+    );
+
+    const result = await worker.drain();
+    // Let the fire-and-forget report rejection settle.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(result).toBeNull();
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: "sink down" }),
+      "Action dispatch error report failed",
+    );
+  });
 });

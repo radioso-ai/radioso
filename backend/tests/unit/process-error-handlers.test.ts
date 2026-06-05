@@ -34,6 +34,7 @@ describe("installProcessErrorHandlers", () => {
         errorType: "process.uncaughtException",
         error,
         severity: "error",
+        tags: { role: "api" },
       }),
     );
     expect(logger.error).toHaveBeenCalled();
@@ -58,7 +59,11 @@ describe("installProcessErrorHandlers", () => {
     await flushMicrotasks();
 
     expect(report).toHaveBeenCalledWith(
-      expect.objectContaining({ errorType: "process.unhandledRejection", error: reason }),
+      expect.objectContaining({
+        errorType: "process.unhandledRejection",
+        error: reason,
+        tags: { role: "worker" },
+      }),
     );
     expect(exit).toHaveBeenCalledWith(1);
   });

@@ -13,5 +13,6 @@ export interface ErrorReporter {
     error?: unknown;
     severity?: ErrorSeverity;
     metadata?: Record<string, unknown>;
+    tags?: Record<string, string>;
   }): Promise<unknown>;
 }

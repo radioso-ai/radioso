@@ -61,9 +61,9 @@ Example agent update fragment:
 }
 ```
 
-### Webhook payload and signature
+### Webhook payload
 
-The webhook receives a JSON body:
+The webhook receives a `POST` with a JSON body:
 
 ```json
 {
@@ -76,21 +76,9 @@ The webhook receives a JSON body:
 }
 ```
 
-Two headers let you verify the request:
+There is no request signature. Treat the webhook URL itself as a secret: keep it private and use a hard-to-guess path so only Radioso knows where to post.
 
-- `X-Radioso-Signature`: a base64url HMAC-SHA256 over the timestamp and the raw body.
-- `X-Radioso-Timestamp`: the send time in epoch milliseconds.
-
-The timestamp is part of the signed value, so it cannot be changed without breaking the signature. You can use it for replay protection — for example, reject requests older than a few minutes.
-
-The signing key is not the raw deployment secret. It is derived once from the deployment's `WORKSPACE_TOKEN_SECRET` so the secret itself never leaves the server:
-
-```text
-signingKey = HMAC_SHA256(WORKSPACE_TOKEN_SECRET, "radioso/contact-webhook-signature/v1")
-expected   = base64url(HMAC_SHA256(signingKey, timestamp + "." + rawBody))
-```
-
-To verify, read the `X-Radioso-Timestamp` header and the exact raw bytes of the body, compute `expected`, and compare it to `X-Radioso-Signature` with a constant-time check. Read the raw body before parsing it as JSON, because re-serializing can change the bytes and break the comparison.
+Each request carries an `Idempotency-Key` header. Delivery is at-least-once, so the same request may arrive more than once on retries. Use the key to de-duplicate.
 
 Radioso sends the request with `POST`, follows redirects only to publicly routable hosts, and applies a short delivery timeout. Point the webhook at a stable public endpoint.
 

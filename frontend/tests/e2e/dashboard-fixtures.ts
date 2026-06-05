@@ -11,6 +11,7 @@ export const defaultAgentId = "67acb0c8-caad-4a1b-9fef-70cbca3f7d12";
 export const nowIso = "2026-04-26T12:00:00.000Z";
 
 type AuthoredDirectiveFixture = ApiSchemas["AuthoredDirective"];
+type BuiltInDirectiveFixture = ApiSchemas["BuiltInDirective"];
 type DirectiveMutationFixture = {
   method: "POST" | "PATCH" | "DELETE";
   directiveId?: string;
@@ -212,31 +213,31 @@ const buildDirective = (input: Partial<AuthoredDirectiveFixture> & Pick<Authored
   ...input,
 });
 
-const baseBuiltInDirectives = (): AuthoredDirectiveFixture[] => [
-  buildDirective({
-    id: "11111111-1111-4111-8111-111111111111",
+const baseBuiltInDirectives = (): BuiltInDirectiveFixture[] => [
+  {
     name: "concise-readable-formatting",
+    condition: { kind: "always" },
     action: "Prefer short paragraphs and answer directly.",
     priority: 60,
     criticality: "medium",
     description: "Default readable answer formatting for public assistant replies.",
-  }),
-  buildDirective({
-    id: "22222222-2222-4222-8222-222222222222",
+  },
+  {
     name: "represent-organization",
+    condition: { kind: "always" },
     action: "Represent the organization as its assistant.",
     priority: 80,
     criticality: "high",
     description: "Speak as the represented organization for grounded retrieval answers.",
-  }),
-  buildDirective({
-    id: "33333333-3333-4333-8333-333333333333",
+  },
+  {
     name: "inline-supported-links",
+    condition: { kind: "always" },
     action: "Use available source URLs as inline links in grounded answers.",
     priority: 90,
     criticality: "high",
     description: "Use available source URLs as inline links in grounded answers.",
-  }),
+  },
 ];
 
 export const baseDocumentSources = (): ApiSchemas["DocumentSourceListResponse"] => ({
@@ -324,6 +325,7 @@ export const installDashboardApiMocks = async (
     agentUpdates?: unknown[];
     directiveUpdates?: DirectiveMutationFixture[];
     directives?: AuthoredDirectiveFixture[];
+    builtIns?: BuiltInDirectiveFixture[];
     requestLog?: string[];
     providerEncryptionConfigured?: boolean;
     providerCredentialUpdates?: Array<{ method: "PUT" | "DELETE"; provider: string; body?: unknown }>;
@@ -359,7 +361,8 @@ export const installDashboardApiMocks = async (
   const settingsUpdates = options.settingsUpdates;
   const ingestionSettingsUpdates = options.ingestionSettingsUpdates;
   const agentUpdates = options.agentUpdates;
-  let directives = options.directives ?? baseBuiltInDirectives();
+  let directives = options.directives ?? [];
+  const builtIns = options.builtIns ?? baseBuiltInDirectives();
   let nextDirectiveIndex = 1;
   const directiveUpdates = options.directiveUpdates;
   const historyList = options.historyList ?? {
@@ -540,7 +543,7 @@ export const installDashboardApiMocks = async (
 
     if (path === `/agents/${defaultAgentId}/directives`) {
       if (request.method() === "GET") {
-        await json(route, { directives });
+        await json(route, { directives, builtIns });
         return;
       }
 

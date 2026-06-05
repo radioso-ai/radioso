@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../src/modules/documents/contracts/index.js";
+import { defaultAnswerDirectives } from "../../src/modules/directives/public.js";
 import { RESPONSE_INTENT, REWRITE_TURN_KIND } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
 import { adminSessionHeaders, createTestApp, issueTestToken } from "../support/testApp.js";
 
@@ -648,6 +649,14 @@ describe("agents contract", () => {
       id: create.body.directive.id,
       name: "operator-formality",
     });
+    expect(list.body.builtIns).toEqual(defaultAnswerDirectives.map((directive) => ({
+      name: directive.name,
+      condition: directive.condition,
+      action: directive.action,
+      priority: directive.priority ?? null,
+      criticality: directive.criticality ?? null,
+      description: directive.description ?? null,
+    })));
 
     const update = await request(app)
       .patch(`/api/v1/agents/${agent.body.id}/directives/${create.body.directive.id}`)

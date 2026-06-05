@@ -30,9 +30,11 @@ export {
   type DirectiveSteeringResult,
 } from "./directiveSteeringService.js";
 export {
+  builtInAnswerDirectiveViews,
   conciseReadableFormattingDirective,
   defaultAnswerDirectives,
   inlineSupportedLinksDirective,
   representOrganizationDirective,
+  type BuiltInDirectiveView,
 } from "./defaultAnswerDirectives.js";
 export { createDirectiveMatcher, createDirectiveSteering } from "./composition.js";

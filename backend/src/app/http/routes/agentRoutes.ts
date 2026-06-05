@@ -12,6 +12,7 @@ import {
   agentSurfacePositions,
   authoredDirectiveInputSchema,
 } from "../../../modules/agents/public.js";
+import { builtInAnswerDirectiveViews } from "../../../modules/directives/public.js";
 import {
   ASSISTANT_LOGO_MIME_TYPES,
   assistantThemeSchema,
@@ -149,7 +150,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsed = agentParamsSchema.parse(req.params);
       const directives = await dependencies.authoredDirectiveService.list(workspaceId, parsed.agentId);
-      res.status(200).json({ directives });
+      res.status(200).json({ directives, builtIns: builtInAnswerDirectiveViews });
     } catch (error) {
       next(error);
     }

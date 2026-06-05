@@ -49,11 +49,12 @@ export type AgentContactRequestDelivery = ApiSchemas['AgentContactRequestDeliver
 export type DirectiveCondition = ApiSchemas['AuthoredDirectiveCondition']
 export type DirectiveCriticality = NonNullable<ApiSchemas['AuthoredDirective']['criticality']>
 export type Directive = ApiSchemas['AuthoredDirective']
+export type BuiltInDirective = ApiSchemas['BuiltInDirective']
 export type DirectiveCreateRequest = ApiSchemas['AuthoredDirectiveCreateRequest']
 export type DirectiveUpdateRequest = ApiSchemas['AuthoredDirectiveUpdateRequest']
 export type DirectiveCoherence = ApiSchemas['DirectiveCoherenceVerdict']
 export type DirectiveMutationResponse = ApiSchemas['AuthoredDirectiveSaveResponse']
-export type DirectiveListResponse = ApiSchemas['AuthoredDirectiveListResponse']
+export type DirectiveListResponse = ApiSchemas['DirectiveListResponse']
 
 export type AssistantBehaviorSettings = Pick<
   RetrievalSettings,

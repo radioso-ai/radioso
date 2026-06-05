@@ -3958,6 +3958,51 @@
           "updatedAt"
         ]
       },
+      "BuiltInDirective": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "condition": {
+            "$ref": "#/components/schemas/AuthoredDirectiveCondition"
+          },
+          "action": {
+            "type": "string"
+          },
+          "priority": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "criticality": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "condition",
+          "action",
+          "priority",
+          "criticality",
+          "description"
+        ]
+      },
       "DirectiveCoherenceVerdict": {
         "type": "object",
         "properties": {
@@ -3995,7 +4040,7 @@
           "rationale"
         ]
       },
-      "AuthoredDirectiveListResponse": {
+      "DirectiveListResponse": {
         "type": "object",
         "properties": {
           "directives": {
@@ -4003,10 +4048,17 @@
             "items": {
               "$ref": "#/components/schemas/AuthoredDirective"
             }
+          },
+          "builtIns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BuiltInDirective"
+            }
           }
         },
         "required": [
-          "directives"
+          "directives",
+          "builtIns"
         ]
       },
       "AuthoredDirectiveSaveResponse": {
@@ -11469,7 +11521,7 @@
         "tags": [
           "Agents"
         ],
-        "summary": "List authored directives for an agent",
+        "summary": "List directives for an agent",
         "operationId": "listAgentDirectives",
         "security": [
           {
@@ -11493,7 +11545,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AuthoredDirectiveListResponse"
+                  "$ref": "#/components/schemas/DirectiveListResponse"
                 }
               }
             }

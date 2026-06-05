@@ -40,10 +40,21 @@ describe('directivesApi', () => {
   })
 
   it('lists agent directives with workspace bearer auth', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ directives: [] }))
+    const listResponse = {
+      directives: [],
+      builtIns: [{
+        name: 'concise-readable-formatting',
+        condition: { kind: 'always' },
+        action: 'Prefer short paragraphs and answer directly.',
+        priority: 60,
+        criticality: 'medium',
+        description: 'Default readable answer formatting for public assistant replies.',
+      }],
+    }
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(listResponse))
     vi.stubGlobal('fetch', fetchMock)
 
-    await directivesApi.listDirectives('agent-1')
+    await expect(directivesApi.listDirectives('agent-1')).resolves.toEqual(listResponse)
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/backend/api/v1/agents/agent-1/directives',

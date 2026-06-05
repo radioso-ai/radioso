@@ -2594,6 +2594,35 @@ components:
         - metadata
         - createdAt
         - updatedAt
+    BuiltInDirective:
+      type: object
+      properties:
+        name:
+          type: string
+        condition:
+          $ref: "#/components/schemas/AuthoredDirectiveCondition"
+        action:
+          type: string
+        priority:
+          type:
+            - integer
+            - "null"
+        criticality:
+          type:
+            - string
+            - "null"
+          enum: *a12
+        description:
+          type:
+            - string
+            - "null"
+      required:
+        - name
+        - condition
+        - action
+        - priority
+        - criticality
+        - description
     DirectiveCoherenceVerdict:
       type: object
       properties:
@@ -2619,15 +2648,20 @@ components:
         - coherent
         - conflicts
         - rationale
-    AuthoredDirectiveListResponse:
+    DirectiveListResponse:
       type: object
       properties:
         directives:
           type: array
           items:
             $ref: "#/components/schemas/AuthoredDirective"
+        builtIns:
+          type: array
+          items:
+            $ref: "#/components/schemas/BuiltInDirective"
       required:
         - directives
+        - builtIns
     AuthoredDirectiveSaveResponse:
       type: object
       properties:
@@ -7527,7 +7561,7 @@ paths:
     get:
       tags:
         - Agents
-      summary: List authored directives for an agent
+      summary: List directives for an agent
       operationId: listAgentDirectives
       security:
         - bearerAuth: []
@@ -7544,7 +7578,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AuthoredDirectiveListResponse"
+                $ref: "#/components/schemas/DirectiveListResponse"
         "401":
           description: Authentication required
           content:

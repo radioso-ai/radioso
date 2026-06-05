@@ -653,7 +653,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List authored directives for an agent */
+        /** List directives for an agent */
         get: operations["listAgentDirectives"];
         put?: never;
         /** Create an authored directive for an agent */
@@ -2375,6 +2375,15 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        BuiltInDirective: {
+            name: string;
+            condition: components["schemas"]["AuthoredDirectiveCondition"];
+            action: string;
+            priority: number | null;
+            /** @enum {string|null} */
+            criticality: "low" | "medium" | "high" | null;
+            description: string | null;
+        };
         DirectiveCoherenceVerdict: {
             coherent: boolean;
             conflicts: {
@@ -2384,8 +2393,9 @@ export interface components {
             }[];
             rationale: string;
         };
-        AuthoredDirectiveListResponse: {
+        DirectiveListResponse: {
             directives: components["schemas"]["AuthoredDirective"][];
+            builtIns: components["schemas"]["BuiltInDirective"][];
         };
         AuthoredDirectiveSaveResponse: {
             directive: components["schemas"]["AuthoredDirective"];
@@ -5637,7 +5647,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AuthoredDirectiveListResponse"];
+                    "application/json": components["schemas"]["DirectiveListResponse"];
                 };
             };
             /** @description Authentication required */

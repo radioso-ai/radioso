@@ -256,6 +256,18 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }),
   );
 
+  const BuiltInDirectiveSchema = registry.register(
+    "BuiltInDirective",
+    z.object({
+      name: z.string(),
+      condition: AuthoredDirectiveConditionSchema,
+      action: z.string(),
+      priority: z.number().int().nullable(),
+      criticality: z.enum(authoredDirectiveCriticalities).nullable(),
+      description: z.string().nullable(),
+    }),
+  );
+
   const DirectiveCoherenceVerdictSchema = registry.register(
     "DirectiveCoherenceVerdict",
     z.object({
@@ -269,12 +281,14 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }),
   );
 
-  const AuthoredDirectiveListResponseSchema = registry.register(
-    "AuthoredDirectiveListResponse",
+  const DirectiveListResponseSchema = registry.register(
+    "DirectiveListResponse",
     z.object({
       directives: z.array(AuthoredDirectiveResponseSchema),
+      builtIns: z.array(BuiltInDirectiveSchema),
     }),
   );
+  const AuthoredDirectiveListResponseSchema = DirectiveListResponseSchema;
 
   const AuthoredDirectiveSaveResponseSchema = registry.register(
     "AuthoredDirectiveSaveResponse",
@@ -349,7 +363,9 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     AuthoredDirectiveResponseSchema,
     AuthoredDirectiveSaveResponseSchema,
     AuthoredDirectiveUpdateRequestSchema,
+    BuiltInDirectiveSchema,
     DirectiveCoherenceVerdictSchema,
+    DirectiveListResponseSchema,
     PublicChatSessionResponseSchema,
     PublicChatSessionRequestSchema,
     WorkspaceIngestionReprocessResponseSchema,

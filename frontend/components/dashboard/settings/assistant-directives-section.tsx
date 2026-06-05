@@ -28,6 +28,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
   directivesApi,
+  type BuiltInDirective,
   type Directive,
   type DirectiveCoherence,
   type DirectiveCondition,
@@ -45,16 +46,6 @@ type DirectiveFormState = {
   priority: string
 }
 
-type BuiltInDirective = {
-  id: string
-  name: string
-  condition: DirectiveCondition
-  action: string
-  priority: number
-  criticality: DirectiveCriticality
-  description: string
-}
-
 const emptyForm: DirectiveFormState = {
   name: '',
   conditionKind: 'always',
@@ -63,40 +54,6 @@ const emptyForm: DirectiveFormState = {
   criticality: 'none',
   priority: '',
 }
-
-const builtInDirectives: BuiltInDirective[] = [
-  {
-    id: 'built-in-concise-readable-formatting',
-    name: 'concise-readable-formatting',
-    condition: { kind: 'always' },
-    priority: 60,
-    criticality: 'medium',
-    description: 'Default readable answer formatting for public assistant replies.',
-    action:
-      'Prefer short paragraphs and answer directly. Use bullets for options or steps and bold inline labels when they aid scanning.',
-  },
-  {
-    id: 'built-in-represent-organization',
-    name: 'represent-organization',
-    condition: { kind: 'always' },
-    priority: 80,
-    criticality: 'high',
-    description: 'Speak as the represented organization for grounded retrieval answers.',
-    action:
-      "Represent the organization as its assistant, not as an outsider reading documents. State supported facts plainly in the organization's voice.",
-  },
-  {
-    id: 'built-in-inline-supported-links',
-    name: 'inline-supported-links',
-    condition: { kind: 'always' },
-    priority: 90,
-    criticality: 'high',
-    description: 'Use available source URLs as inline links in grounded answers.',
-    action:
-      "When a named page, resource, course, event, or video has a supported URL in retrieved findings, link the resource's own name inline. Never invent links.",
-  },
-]
-const builtInDirectiveNames = new Set(builtInDirectives.map((directive) => directive.name))
 
 const directiveToForm = (directive: Directive): DirectiveFormState => ({
   name: directive.name,
@@ -210,6 +167,7 @@ export function AssistantDirectivesSection({
   onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
 }) {
   const [directives, setDirectives] = useState<Directive[]>([])
+  const [builtIns, setBuiltIns] = useState<BuiltInDirective[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -231,10 +189,6 @@ export function AssistantDirectivesSection({
     }
     return null
   }, [form])
-  const authoredDirectives = useMemo(
-    () => directives.filter((directive) => !builtInDirectiveNames.has(directive.name)),
-    [directives],
-  )
 
   useEffect(() => {
     let active = true
@@ -242,6 +196,7 @@ export function AssistantDirectivesSection({
       .then((response) => {
         if (!active) return
         setDirectives(response.directives)
+        setBuiltIns(response.builtIns)
         setError(null)
       })
       .catch((loadError) => {
@@ -361,9 +316,9 @@ export function AssistantDirectivesSection({
               <Spinner className="h-4 w-4" />
               Loading directives...
             </div>
-          ) : authoredDirectives.length > 0 ? (
+          ) : directives.length > 0 ? (
             <div className="space-y-3">
-              {authoredDirectives.map((directive) => (
+              {directives.map((directive) => (
                 <DirectiveRow
                   key={directive.id}
                   directive={directive}
@@ -385,8 +340,8 @@ export function AssistantDirectivesSection({
             <p className="text-xs text-muted-foreground">Default Radioso behavior rules. They cannot be edited here.</p>
           </div>
           <div className="space-y-3">
-            {builtInDirectives.map((directive) => (
-              <DirectiveRow key={directive.id} directive={directive} readOnly />
+            {builtIns.map((directive) => (
+              <DirectiveRow key={directive.name} directive={directive} readOnly />
             ))}
           </div>
         </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { type Dispatch, type MutableRefObject, type SetStateAction, useEffect, useMemo, useState } from 'react'
+import { type Dispatch, type MutableRefObject, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, Code2, ExternalLink, Globe, RefreshCw } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -107,6 +107,23 @@ function WebsiteEmbedSettingsPanel({
   const [websiteEmbedCopyLocale, setWebsiteEmbedCopyLocale] = useState('en')
   const [isPreparingWebsiteEmbedDemo, setIsPreparingWebsiteEmbedDemo] = useState(false)
   const [websiteEmbedDemoError, setWebsiteEmbedDemoError] = useState<string | null>(null)
+
+  // The locale field only selects which saved copy pack is being edited; it is not
+  // a persisted setting. Once settings load, open the editor on a locale that already
+  // has overrides so saved translations stay visible across refresh instead of the
+  // selector always snapping back to the empty 'en' pack.
+  const didInitCopyLocaleRef = useRef(false)
+  useEffect(() => {
+    if (didInitCopyLocaleRef.current || !anonSettings) {
+      return
+    }
+    didInitCopyLocaleRef.current = true
+    const savedLocales = Object.keys(anonSettings.websiteEmbedCopy ?? {})
+    const firstSavedLocale = savedLocales[0]
+    if (firstSavedLocale && !savedLocales.includes('en')) {
+      setWebsiteEmbedCopyLocale(firstSavedLocale)
+    }
+  }, [anonSettings])
 
   const setWebsiteEmbedOrigins = (value: string) => {
     setWebsiteEmbedOriginsDraft({ savedOrigins: savedWebsiteEmbedOrigins, value })

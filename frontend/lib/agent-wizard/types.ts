@@ -2,6 +2,9 @@ export interface WizardAnalysisResult {
   suggestedName: string;
   suggestedCustomInstruction: string;
   suggestedGreetingMessage: string;
+  suggestedLocale: string | null;
+  suggestedPrivacyPolicyUrl: string | null;
+  suggestedContactEmail: string | null;
   suggestedChunkingStrategy: {
     strategy: "fixed_window" | "structured_semantic";
     reasoning: string;
@@ -31,6 +34,9 @@ export interface WizardCreateInput {
   greetingInstruction?: string;
   chunkingStrategy?: "fixed_window" | "structured_semantic";
   faviconUrl?: string | null;
+  assistantDefaultLocale?: string | null;
+  privacyPolicyUrl?: string | null;
+  contactEmail?: string | null;
 }
 
 export interface WizardCreateResult {
@@ -38,4 +44,4 @@ export interface WizardCreateResult {
   crawlJobId: string | null;
 }
 
-export type WizardStep = "url-input" | "analyzing" | "creating";
+export type WizardStep = "url-input" | "analyzing" | "review" | "creating";

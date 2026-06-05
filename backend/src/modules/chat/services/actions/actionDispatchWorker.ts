@@ -1,3 +1,4 @@
+import type { ErrorReporter } from "../../../../shared/errors/errorReporter.js";
 import type { AppLogger } from "../../../../shared/observability/logger.js";
 
 /** The drain surface the worker polls — satisfied by {@link ActionDispatcher}. */
@@ -9,6 +10,8 @@ export interface ActionDispatchWorkerOptions {
   logger: Pick<AppLogger, "error" | "debug">;
   intervalMs?: number;
   batchSize?: number;
+  /** Optional sink for unexpected drain failures (e.g. a downstream outage), so they reach error tracking. */
+  errorReporter?: ErrorReporter;
 }
 
 /**
@@ -64,6 +67,11 @@ export class ActionDispatchWorker {
         { err: error instanceof Error ? error.message : String(error) },
         "Action dispatch drain failed",
       );
+      void this.options.errorReporter?.report({
+        errorType: "action.dispatch.drain_failed",
+        error,
+        severity: "error",
+      });
       return null;
     } finally {
       this.draining = false;

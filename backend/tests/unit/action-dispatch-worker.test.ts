@@ -47,4 +47,26 @@ describe("ActionDispatchWorker", () => {
     expect(result).toBeNull();
     expect(logger.error).toHaveBeenCalled();
   });
+
+  it("reports a drain error to the error reporter when one is configured", async () => {
+    const error = new Error("db unreachable");
+    const dispatchPending = vi.fn(async () => {
+      throw error;
+    });
+    const report = vi.fn().mockResolvedValue(undefined);
+    const worker = new ActionDispatchWorker(
+      { dispatchPending },
+      { logger: silentLogger, errorReporter: { report } },
+    );
+
+    await worker.drain();
+
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({
+        errorType: "action.dispatch.drain_failed",
+        error,
+        severity: "error",
+      }),
+    );
+  });
 });

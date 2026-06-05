@@ -4,6 +4,7 @@ import { loadEnvFileIfPresent } from "./runtime/loadEnv.js";
 import { loadConfiguredApplicationModules } from "./runtime/loadApplicationModules.js";
 import { shouldRunCrawlerWorker } from "./runtime/crawlerWorkerStartup.js";
 import { startCrawlerWorkerRuntime } from "./runtime/startCrawlerWorkerRuntime.js";
+import { installRuntimeProcessErrorHandlers } from "./runtime/processErrorHandlers.js";
 
 loadEnvFileIfPresent();
 
@@ -23,6 +24,8 @@ const runtime = await startCrawlerWorkerRuntime({
   logger,
   applicationModules,
 });
+
+installRuntimeProcessErrorHandlers(runtime, "crawler-worker");
 
 process.once("SIGINT", () => {
   void runtime.shutdown("SIGINT");

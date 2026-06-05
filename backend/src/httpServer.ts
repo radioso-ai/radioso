@@ -3,6 +3,7 @@ import { createLogger } from "./shared/observability/logger.js";
 import { loadEnvFileIfPresent } from "./runtime/loadEnv.js";
 import { loadConfiguredApplicationModules } from "./runtime/loadApplicationModules.js";
 import { startApiRuntime } from "./runtime/startApiRuntime.js";
+import { installRuntimeProcessErrorHandlers } from "./runtime/processErrorHandlers.js";
 
 loadEnvFileIfPresent();
 
@@ -14,6 +15,8 @@ const runtime = await startApiRuntime({
   logger,
   applicationModules,
 });
+
+installRuntimeProcessErrorHandlers(runtime, "api");
 
 process.once("SIGINT", () => {
   void runtime.shutdown("SIGINT");

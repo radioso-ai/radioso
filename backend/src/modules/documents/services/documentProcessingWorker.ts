@@ -1,3 +1,4 @@
+import type { ErrorReporter } from "../../../shared/errors/errorReporter.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
 import { traceOperation } from "../../../shared/observability/tracing/operations.js";
@@ -60,6 +61,7 @@ export class DocumentProcessingWorker {
     private readonly jobDispatcher: DocumentJobDispatcherPort = new NoopDocumentJobDispatcher(),
     private readonly jobLeaseMs = DEFAULT_JOB_LEASE_MS,
     private readonly telemetryService?: TelemetryService,
+    private readonly errorReporter?: ErrorReporter,
   ) {}
 
   async start(): Promise<void> {
@@ -216,6 +218,11 @@ export class DocumentProcessingWorker {
         this.scheduleNextTick(processed ? 0 : this.pollIntervalMs);
       } catch (error) {
         this.logger.error({ error }, "Document processing worker tick failed");
+        void this.errorReporter?.report({
+          errorType: "document.worker.tick_failed",
+          error,
+          severity: "error",
+        });
         this.scheduleNextTick(this.pollIntervalMs);
       }
     }, delayMs);

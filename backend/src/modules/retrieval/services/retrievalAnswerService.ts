@@ -21,6 +21,7 @@ import type { AuditPort } from "../../audit/contracts/index.js";
 import type { RetrievalExecutionDiagnostics } from "../domain/retrievalPipelineTypes.js";
 import type { DirectiveSteeringPort } from "../../directives/public.js";
 import { appendSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
+import { appendDirectiveSteeringStage } from "../../chat/services/directiveTracePresenter.js";
 
 const RETRIEVAL_DIRECTIVE_ROUTE = "retrieval";
 
@@ -106,6 +107,11 @@ export class RetrievalAnswerService {
         route: RETRIEVAL_DIRECTIVE_ROUTE,
         surface: execution.surface,
       },
+      usageContext: {
+        ...usageContext,
+        operation: "directive_match",
+        attemptKey: "directive_match",
+      },
     });
     const systemPrompt = appendSteeringBlock(retrieval.systemPrompt, directiveSteering?.rules ?? []);
     const activitySummary = this.activitySummaryPresenter.present(retrieval.diagnostics, {
@@ -141,7 +147,7 @@ export class RetrievalAnswerService {
         citations: evidence,
       });
       const presented = this.presentAnswer(rawAnswer, normalized, evidence);
-      const activityTrace = this.activityTracePresenter.appendAnswerOutcome({
+      const activityTrace = appendDirectiveSteeringStage(this.activityTracePresenter.appendAnswerOutcome({
         trace: retrieval.trace,
         summary: activitySummary,
         outcome: {
@@ -151,7 +157,7 @@ export class RetrievalAnswerService {
           retrievalSkipped: false,
           durationMs: Date.now() - answerStartedAt,
         },
-      });
+      }), directiveSteering);
       const resolvedActivitySummary = activityTrace.summary ?? activitySummary;
 
       await usageReservation.commit();

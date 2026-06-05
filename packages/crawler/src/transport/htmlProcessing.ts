@@ -45,27 +45,39 @@ export const normalizeText = (value: string): string =>
     .replace(/\n\n(?=- )/g, "\n")
     .trim();
 
-export const extractMainContentHtml = (html: string): string => {
-  const cleaned = html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ");
-
-  const main = cleaned.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1];
-  if (main) return main;
-
-  const article = cleaned.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1];
-  if (article) return article;
-
-  return cleaned.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1] ?? cleaned;
-};
-
 export const stripTags = (html: string): string =>
   html
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+
+const firstContentfulMatch = (html: string, pattern: RegExp): string | null => {
+  pattern.lastIndex = 0;
+  for (const match of html.matchAll(pattern)) {
+    const content = match[match.length - 1] ?? "";
+    if (normalizeText(stripTags(content))) {
+      return content;
+    }
+  }
+  return null;
+};
+
+export const extractMainContentHtml = (html: string): string => {
+  const cleaned = html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ");
+
+  return firstContentfulMatch(cleaned, /<main\b[^>]*>([\s\S]*?)<\/main>/gi) ??
+    firstContentfulMatch(cleaned, /<article\b[^>]*>([\s\S]*?)<\/article>/gi) ??
+    firstContentfulMatch(
+      cleaned,
+      /<([a-z][\w:-]*)\b(?=[^>]*\brole\s*=\s*["']main["'])[^>]*>([\s\S]*?)<\/\1>/gi
+    ) ??
+    cleaned.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1] ??
+    cleaned;
+};
 
 const renderBlockquote = (html: string): string => {
   const text = stripTags(html);

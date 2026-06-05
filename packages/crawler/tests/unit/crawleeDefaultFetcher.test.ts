@@ -89,6 +89,54 @@ describe("default Crawlee fetcher", () => {
     );
   });
 
+  it("extracts the later contentful main when an earlier streamed main is empty", async () => {
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end(`
+          <html>
+            <head><title>Streaming App</title></head>
+            <body>
+              <main aria-hidden="true"><div><span></span></div></main>
+              <main>
+                <h1>Contentful app page</h1>
+                <p>The crawler should not stop at the empty shell.</p>
+                <p>This page contains enough general body copy to represent a normal rendered marketing page, documentation page, or product page.</p>
+                <p>The important behavior is independent of the domain: when a streamed application leaves an empty primary container before the real one, extraction should select the primary container that actually contains readable text.</p>
+                <p>That keeps server-rendered content crawlable without requiring Playwright, cookies, or site-specific selectors.</p>
+              </main>
+            </body>
+          </html>
+        `);
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 1
+    });
+
+    expect(pages[0]).toEqual(expect.objectContaining({
+      status: "success",
+      text: [
+        "# Contentful app page",
+        "",
+        "The crawler should not stop at the empty shell.",
+        "",
+        "This page contains enough general body copy to represent a normal rendered marketing page, documentation page, or product page.",
+        "",
+        "The important behavior is independent of the domain: when a streamed application leaves an empty primary container before the real one, extraction should select the primary container that actually contains readable text.",
+        "",
+        "That keeps server-rendered content crawlable without requiring Playwright, cookies, or site-specific selectors."
+      ].join("\n"),
+      skipReason: null
+    }));
+  });
+
   it("falls back to a plain fetch when the Crawlee HTTP client connection is reset before a response", async () => {
     let pageAttempts = 0;
     const { server, baseUrl } = await listen((req, res) => {

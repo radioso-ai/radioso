@@ -1,4 +1,5 @@
 import type { LlmCapabilityResolver, LlmCapabilityResolveInput } from "./capabilityResolver.js";
+import { ModelDirectiveMatchGateway, type DirectiveMatchGateway } from "@radioso/conversation-defaults";
 import type { LlmCapabilityConfig, TextGenerationClient } from "./providerTypes.js";
 import { ModelInferencePipelineService, type ModelInferencePipeline } from "./modelInferencePipeline.js";
 import { TextGenerationClientCache, createTextGenerationClient } from "./textClientFactory.js";
@@ -27,6 +28,8 @@ import {
 import { createOpenAIClient } from "./openaiProvider.js";
 import type { AppLogger } from "../../observability/logger.js";
 import type { UsageEventRecorder } from "../../domain/usageEventRecorder.js";
+import type { ModelCallUsageContext } from "../../domain/modelCallUsageContext.js";
+import { loadPromptTemplate } from "../prompts/promptLoader.js";
 
 interface ContextualGatewayDependencies {
   resolver: LlmCapabilityResolver;
@@ -51,6 +54,42 @@ const toInferencePipeline = (
   recorder?: UsageEventRecorder,
 ): ModelInferencePipeline =>
   new ModelInferencePipelineService(client, recorder);
+
+export interface DirectiveMatchGatewayFactory {
+  create(input: {
+    workspaceContext: LlmCapabilityResolveInput;
+    usageContext: ModelCallUsageContext;
+  }): Promise<DirectiveMatchGateway>;
+}
+
+export class ContextualDirectiveMatchGatewayFactory implements DirectiveMatchGatewayFactory {
+  private readonly cache: TextGenerationClientCache;
+
+  constructor(
+    private readonly deps: ContextualGatewayDependencies,
+    private readonly usageEventRecorder?: UsageEventRecorder,
+  ) {
+    this.cache = deps.clientCache ?? new TextGenerationClientCache();
+  }
+
+  async create(input: {
+    workspaceContext: LlmCapabilityResolveInput;
+    usageContext: ModelCallUsageContext;
+  }): Promise<DirectiveMatchGateway> {
+    const client = await resolveClient(this.cache, this.deps.resolver, "chat", input.workspaceContext);
+    const inference = toInferencePipeline(client, this.usageEventRecorder);
+    return new ModelDirectiveMatchGateway({
+      complete(request) {
+        return inference.complete({
+          ...request,
+          operation: input.usageContext,
+        });
+      },
+    }, {
+      systemPrompt: loadPromptTemplate("chat/directive-match.md"),
+    });
+  }
+}
 
 export class ContextualChatGateway implements ChatGateway {
   private readonly cache: TextGenerationClientCache;

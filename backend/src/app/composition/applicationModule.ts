@@ -28,6 +28,7 @@ import type {
   TurnSelectionStrategy,
 } from "../../modules/chat/composition.js";
 import type { DirectiveMatcherPort } from "../../modules/directives/public.js";
+import type { DirectiveMatchGatewayFactory } from "../../shared/infra/llm/contextualGateways.js";
 import type { AppDependencies } from "../server/types.js";
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import type { AuditService } from "../../modules/audit/contracts/index.js";
@@ -198,9 +199,12 @@ export interface ApplicationExtensionRegistry {
   // `selectionStrategy` is defaulted by composition when unregistered (mirroring
   // `capabilityPolicy`). `directiveMatcher` stays optional through composition; its
   // default (always-match) is applied downstream in `createDirectiveSteering`, so a
-  // missing registration flows through as `undefined`.
+  // missing registration flows through as `undefined`. Contextual directive model
+  // matching is built per turn through `directiveMatchGatewayFactory` so usage
+  // context never hides on a singleton matcher.
   selectionStrategy?: TurnSelectionStrategy;
   directiveMatcher?: DirectiveMatcherPort;
+  directiveMatchGatewayFactory?: DirectiveMatchGatewayFactory;
   agentSurfaceExtensions: AgentSurfaceExtension[];
   chatActionSuggestionProviders: ApplicationChatActionSuggestionProviderRegistration[];
 }
@@ -233,6 +237,7 @@ export interface ApplicationModuleRegistrationContext {
   registerDirective(directive: Directive, options?: { routes?: string[] }): void;
   registerSelectionStrategy(strategy: TurnSelectionStrategy): void;
   registerDirectiveMatcher(matcher: DirectiveMatcherPort): void;
+  registerDirectiveMatchGatewayFactory(factory: DirectiveMatchGatewayFactory): void;
   registerAgentSurfaceExtension(extension: AgentSurfaceExtension): void;
   registerChatActionSuggestionProvider(provider: ApplicationChatActionSuggestionProviderRegistration): void;
 }
@@ -347,6 +352,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerDirectiveMatcher(matcher) {
     registry.directiveMatcher = matcher;
+  },
+  registerDirectiveMatchGatewayFactory(factory) {
+    registry.directiveMatchGatewayFactory = factory;
   },
   registerAgentSurfaceExtension(extension) {
     registry.agentSurfaceExtensions.push(extension);

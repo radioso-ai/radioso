@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ContextualChatGateway,
+  ContextualDirectiveMatchGatewayFactory,
   ContextualQueryRewriteGateway,
   ContextualRerankGateway,
 } from "../../src/shared/infra/llm/contextualGateways.js";
@@ -21,6 +22,7 @@ import type {
   LlmCapabilityConfig,
   LlmCapabilityName,
 } from "../../src/shared/infra/llm/providerTypes.js";
+import type { ModelUsageEvent, UsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
 import { streamResult, textResult } from "../support/llmStubs.js";
 
 const usageContext = {
@@ -140,6 +142,94 @@ describe("ContextualQueryRewriteGateway", () => {
     await gateway.rewrite({ query: "q", contextMessages: [], usageContext });
 
     expect(fallback.calls).toBe(1);
+  });
+});
+
+describe("ContextualDirectiveMatchGatewayFactory", () => {
+  it("builds a usage-accounted directive match gateway for the workspace client", async () => {
+    const usageEvents: ModelUsageEvent[] = [];
+    const recorder: UsageEventRecorder = {
+      async recordEmbedding() {},
+      async recordModelCall(event) {
+        usageEvents.push(event);
+      },
+    };
+    const completeCalls: Array<{ apiKey: string; prompt: string; systemPrompt?: string }> = [];
+    const config: LlmCapabilityConfig = {
+      capability: "chat",
+      provider: "openai",
+      model: "gpt-test",
+      apiKey: "ws-key-1",
+    };
+    const cache = new TextGenerationClientCache();
+    cache.getOrCreate = ((cfg) => ({
+      metadata: { capability: cfg.capability, provider: cfg.provider, model: cfg.model },
+      async complete(req) {
+        completeCalls.push({ apiKey: cfg.apiKey, prompt: req.prompt, systemPrompt: req.systemPrompt });
+        return textResult('[{"name":"refund-tone","confidence":0.91}]', {
+          inputTokens: 12,
+          outputTokens: 4,
+          totalTokens: 16,
+          providerRequestId: "provider-req-1",
+          quality: "actual",
+        });
+      },
+      stream() {
+        return streamResult([]);
+      },
+    })) as TextGenerationClientCache["getOrCreate"];
+
+    const factory = new ContextualDirectiveMatchGatewayFactory(
+      { resolver: buildResolver({ chat: config }), clientCache: cache },
+      recorder,
+    );
+
+    const gateway = await factory.create({
+      workspaceContext: { workspaceId: "ws-1" },
+      usageContext: {
+        accountId: "acct-1",
+        workspaceId: "ws-1",
+        conversationId: "conv-1",
+        messageId: "msg-1",
+        surface: "chat",
+        operation: "directive_match",
+        attemptKey: "msg-1:directive_match",
+      },
+    });
+    const matches = await gateway.match({
+      turnContext: { query: "Can I get a refund?" },
+      directives: [{
+        name: "refund-tone",
+        condition: { kind: "contextual", description: "Refund request" },
+        action: "Use refund support tone.",
+      }],
+    });
+
+    expect(matches).toEqual([{ name: "refund-tone", confidence: 0.91 }]);
+    expect(completeCalls).toEqual([
+      expect.objectContaining({
+        apiKey: "ws-key-1",
+        prompt: expect.stringContaining("refund-tone"),
+        systemPrompt: expect.any(String),
+      }),
+    ]);
+    expect(usageEvents).toHaveLength(1);
+    expect(usageEvents[0]).toMatchObject({
+      accountId: "acct-1",
+      workspaceId: "ws-1",
+      conversationId: "conv-1",
+      messageId: "msg-1",
+      surface: "chat",
+      operation: "directive_match",
+      provider: "openai",
+      model: "gpt-test",
+      inputTokens: 12,
+      outputTokens: 4,
+      totalTokens: 16,
+      usageQuality: "actual",
+      providerRequestId: "provider-req-1",
+      status: "succeeded",
+    });
   });
 });
 

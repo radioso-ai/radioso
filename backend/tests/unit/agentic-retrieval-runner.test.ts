@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AgenticCapabilityRunner,
   DefaultAgentRuntime,
   type ModelToolCall,
   type ModelToolCallRequest,
@@ -79,7 +80,8 @@ const buildDeps = (overrides: {
     },
   };
   const runtime = new DefaultAgentRuntime({ gateway: overrides.gateway ?? makeGateway([{ say: "done" }]) });
-  return { runtime, embeddings, vectorSearch, lexicalSearch, queryRewrite, rerankGateway };
+  const capabilityRunner = new AgenticCapabilityRunner({ runtime });
+  return { capabilityRunner, embeddings, vectorSearch, lexicalSearch, queryRewrite, rerankGateway };
 };
 
 const buildRunner = (overrides: Parameters<typeof buildDeps>[0] = {}) => new AgenticRetrievalRunner(buildDeps(overrides));
@@ -269,6 +271,63 @@ describe("AgenticRetrievalRunner", () => {
     expect(result.rationale).toBe("insufficient_evidence");
   });
 
+  it("preserves the assembled retrieval result and trace shape through the shared capability runner", async () => {
+    const gateway = makeGateway([
+      { say: "semantic", tools: [call("semantic_search", { query: "q" }, "c1")] },
+      { say: "lexical", tools: [call("lexical_search", { query: "q" }, "c2")] },
+      { say: "rerank", tools: [call("rerank", { query: "q", chunkIds: ["s1", "l1"] }, "c3")] },
+      { say: "finalizing", tools: [call("finalize", { chunkIds: ["l1", "s1"], rationale: "best evidence" }, "c4")] },
+      { say: "done" },
+    ]);
+    const runner = buildRunner({
+      gateway,
+      vectorResults: [chunk({ chunkId: "s1" })],
+      lexicalResults: [chunk({ chunkId: "l1" }), chunk({ chunkId: "s1" })],
+    });
+
+    const result = await runner.run({
+      workspaceId: "ws-1",
+      query: "q",
+      systemPrompt: "sys",
+      budgets: { maxSteps: 8 },
+    });
+
+    expect(result.terminatedReason).toBe("completed");
+    expect(result.stepsTaken).toBe(5);
+    expect(result.selectedChunks.map((c) => c.chunkId)).toEqual(["l1", "s1"]);
+    expect(result.rationale).toBe("best evidence");
+    expect(result.searchStats).toEqual({
+      semanticCandidateCount: 1,
+      lexicalCandidateCount: 2,
+      mergedCandidateCount: 2,
+      rerankInvoked: true,
+    });
+    expect(result.trace.summary?.agentic).toMatchObject({
+      terminatedReason: "completed",
+      stepsTaken: 5,
+      finalRationale: "best evidence",
+      selectedChunkIds: ["l1", "s1"],
+      resolvedBudgets: { maxSteps: 8, maxToolResultTokens: 12000, maxWallTimeMs: 30000 },
+    });
+    expect(result.trace.stages.map((stage) => stage.inputs?.toolName)).toEqual([
+      "semantic_search",
+      "lexical_search",
+      "rerank",
+      "finalize",
+    ]);
+    expect(result.trace.stages.map((stage) => stage.kind)).toEqual([
+      "agent_tool_call",
+      "agent_tool_call",
+      "agent_tool_call",
+      "agent_tool_call",
+    ]);
+    expect(result.trace.links).toEqual([
+      { fromStageId: "agent_step_0_c1", toStageId: "agent_step_1_c2", kind: "sequence" },
+      { fromStageId: "agent_step_1_c2", toStageId: "agent_step_2_c3", kind: "sequence" },
+      { fromStageId: "agent_step_2_c3", toStageId: "agent_step_3_c4", kind: "sequence" },
+    ]);
+  });
+
   it("supports a multi-hop run: first search yields nothing, agent rewrites and searches again", async () => {
     const calls: Array<{ query: string }> = [];
     const dynamicEmbedDeps = buildDeps();
@@ -288,7 +347,11 @@ describe("AgenticRetrievalRunner", () => {
       { say: "finalizing", tools: [call("finalize", { chunkIds: ["second-hop"] }, "c4")] },
       { say: "done" },
     ]);
-    const runner = new AgenticRetrievalRunner({ ...dynamicEmbedDeps, runtime: new DefaultAgentRuntime({ gateway }), vectorSearch });
+    const runner = new AgenticRetrievalRunner({
+      ...dynamicEmbedDeps,
+      capabilityRunner: new AgenticCapabilityRunner({ runtime: new DefaultAgentRuntime({ gateway }) }),
+      vectorSearch,
+    });
 
     const result = await runner.run({ workspaceId: "ws-1", query: "ambiguous", systemPrompt: "sys" });
 

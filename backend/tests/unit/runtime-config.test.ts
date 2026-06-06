@@ -109,6 +109,7 @@ describe("runtime configuration", () => {
     for (const manifest of [
       "packages/conversation-contract/package.json",
       "packages/conversation-engine/package.json",
+      "packages/conversation-defaults/package.json",
       "packages/connector-api/package.json",
       "packages/crawler/package.json",
       "packages/document-parser/package.json",
@@ -122,7 +123,12 @@ describe("runtime configuration", () => {
     expect(entrypoint).toContain("backend_modules_ready");
     expect(entrypoint).toContain("module_is_ready_from");
     expect(entrypoint).toContain("zod/package.json");
+    expect(dockerfile).toContain("COPY packages/conversation-defaults ./packages/conversation-defaults");
+    expect(dockerfile).toContain("@radioso/conversation-defaults...");
     expect(entrypoint).toContain("backend/node_modules/@radioso/conversation-engine");
+    expect(entrypoint).toContain("backend/node_modules/@radioso/conversation-defaults");
+    expect(entrypoint).toContain("packages/conversation-defaults/node_modules/@radioso/conversation-contract/package.json");
+    expect(entrypoint).toContain("@radioso/conversation-defaults...");
   });
 
   it("clears incomplete frontend Next dev caches with missing vendor chunks", async () => {

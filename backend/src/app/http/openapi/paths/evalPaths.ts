@@ -114,6 +114,14 @@ export const registerEvalPaths = (
           },
         },
       },
+      429: {
+        description: "Workbench replay rate limit exceeded",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
     },
   });
 };

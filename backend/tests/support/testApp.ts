@@ -257,12 +257,13 @@ export const createTestDependencies = (overrides: {
   publicChatActionAdvertiser?: PublicChatActionAdvertiserPort;
   applicationRouteMounts?: ApplicationRouteMount[];
   workbenchReplayRunner?: Pick<WorkbenchReplayRunner, "run">;
+  logger?: AppDependencies["logger"];
 } = {}): { dependencies: AppDependencies; repositories: TestRepositories } => {
   const env = {
     ...createTestEnv(),
     ...overrides.envOverrides,
   } satisfies Env;
-  const logger = createLogger("silent");
+  const logger = overrides.logger ?? createLogger("silent");
   const { metricsRegistry, sinks: telemetrySinks } = buildTelemetrySinks(env);
   const telemetryService = new TelemetryService({
     enabled: env.OBSERVABILITY_ENABLED,
@@ -868,6 +869,7 @@ export const createTestDependencies = (overrides: {
         },
       },
       workbenchReplayRunner as any,
+      logger,
     ),
     platformSettingsService,
     agentService,
@@ -942,6 +944,7 @@ export const createTestApp = (overrides: {
   publicChatActionAdvertiser?: PublicChatActionAdvertiserPort;
   applicationRouteMounts?: ApplicationRouteMount[];
   workbenchReplayRunner?: Pick<WorkbenchReplayRunner, "run">;
+  logger?: AppDependencies["logger"];
 } = {}) => {
   const { dependencies, repositories } = createTestDependencies(overrides);
   const app = createApp(dependencies);

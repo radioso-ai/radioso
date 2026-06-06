@@ -46,6 +46,10 @@ export interface EvalRunOutcome {
   case: EvalCase | null;
 }
 
+export interface EvalReplayLoggerPort {
+  info(fields: Record<string, unknown>, message: string): void;
+}
+
 const caseStatusFromRun = (runStatus: EvalRun["status"]): EvalCaseStatus | null => {
   switch (runStatus) {
     case "pass":
@@ -73,12 +77,18 @@ const resolveSnapshotReplayAgent = (snapshot: EvalSnapshot) => {
   return snapshot.originalAgent;
 };
 
+const overrideKeyNames = (
+  override: NonNullable<EvalRunOverrides["agentConfigOverride"]> | undefined,
+): string[] =>
+  override ? Object.keys(override).sort() : [];
+
 export class EvalRunService {
   constructor(
     private readonly repository: EvalRepositoryPort,
     private readonly retrievalRunner: EvalRetrievalRunnerPort,
     private readonly judge: EvalLlmJudgePort,
     private readonly workbenchReplayRunner?: EvalWorkbenchReplayRunnerPort,
+    private readonly logger?: EvalReplayLoggerPort,
   ) {}
 
   async execute(input: EvalRunInput): Promise<EvalRunOutcome> {
@@ -233,6 +243,7 @@ export class EvalRunService {
   }
 
   async executeWorkbenchReplay(input: EvalRunInput): Promise<EvalRunOutcome> {
+    const startedAtMs = Date.now();
     if (!this.workbenchReplayRunner) {
       throw badRequest("Workbench replay runner is not configured");
     }
@@ -343,6 +354,21 @@ export class EvalRunService {
       outcomeReason: aggregate.reason,
       completedAt: new Date(),
     });
+
+    this.logger?.info(
+      {
+        workspaceId: input.workspaceId,
+        accountId: input.accountId ?? null,
+        agentId: snapshot.sourceAgentId,
+        snapshotId: snapshot.id,
+        runId: run.id,
+        status: run.status,
+        outcome: aggregate.status,
+        latencyMs: Date.now() - startedAtMs,
+        overrideKeys: overrideKeyNames(overrides.agentConfigOverride),
+      },
+      "Workbench replay eval run completed",
+    );
 
     let updatedCase: EvalCase | null = evalCase;
     if (evalCase) {

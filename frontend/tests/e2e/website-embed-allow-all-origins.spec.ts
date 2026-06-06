@@ -23,7 +23,7 @@ test("operator can toggle website embed allow-all origins", async ({ page }) => 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=website-embed`);
 
   await expect(page.getByRole("heading", { name: "Website chat widget" })).toBeVisible();
-  await expect(page.getByLabel("Allowed websites")).toBeVisible();
+  await expect(page.getByLabel("Specific websites")).toBeVisible();
 
   await page.locator("#websiteEmbedWildcardOrigin").click();
 

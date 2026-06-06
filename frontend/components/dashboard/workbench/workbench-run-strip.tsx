@@ -12,16 +12,20 @@ export function WorkbenchRunStrip({
   isRunning,
   disabled,
   onRun,
+  conversationId,
   conversationMessages,
   assistantMessageId,
+  userQueryPreview,
   onOpenDocument,
 }: {
   runs: WorkbenchRunCardData[]
   isRunning: boolean
   disabled: boolean
   onRun: () => void
+  conversationId?: string
   conversationMessages?: ChatConversationTurn[]
   assistantMessageId?: string
+  userQueryPreview?: string
   onOpenDocument: (documentId: string) => void
 }) {
   return (
@@ -46,8 +50,10 @@ export function WorkbenchRunStrip({
             <WorkbenchRunCard
               key={run.id}
               run={run}
+              conversationId={conversationId}
               conversationMessages={conversationMessages}
               assistantMessageId={assistantMessageId}
+              userQueryPreview={userQueryPreview}
               onOpenDocument={onOpenDocument}
             />
           ))

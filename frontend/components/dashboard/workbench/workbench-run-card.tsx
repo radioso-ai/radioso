@@ -6,6 +6,7 @@ import { Activity, GitBranch, Loader2 } from 'lucide-react'
 import { ActivityTraceDetail } from '@/components/dashboard/activity-trace-detail'
 import { ActivityTraceGraph } from '@/components/dashboard/activity-trace-graph'
 import { AssistantMessageContent } from '@/components/dashboard/chat-citations'
+import { SendToEvalAction } from '@/components/dashboard/send-to-eval-action'
 import { TurnFlowOverlay } from '@/components/dashboard/turn-flow-overlay'
 import { Button } from '@/components/ui/button'
 import { getPrimaryLeafTrace } from '@/lib/turn-trace'
@@ -14,13 +15,17 @@ import type { WorkbenchRunCard as WorkbenchRunCardData } from './use-workbench-s
 
 export function WorkbenchRunCard({
   run,
+  conversationId,
   conversationMessages = [],
   assistantMessageId,
+  userQueryPreview,
   onOpenDocument,
 }: {
   run: WorkbenchRunCardData
+  conversationId?: string
   conversationMessages?: ChatConversationTurn[]
   assistantMessageId?: string
+  userQueryPreview?: string
   onOpenDocument: (documentId: string) => void
 }) {
   const [selectedStageId, setSelectedStageId] = useState<string | undefined>(
@@ -40,12 +45,25 @@ export function WorkbenchRunCard({
             {run.status} · {run.completedAt ? new Date(run.completedAt).toLocaleString() : 'running'}
           </p>
         </div>
-        {canOpenFlow ? (
-          <Button type="button" size="sm" variant="outline" className="gap-1.5" onClick={() => setFlowOpen(true)}>
-            <GitBranch className="h-3.5 w-3.5" />
-            Flow
-          </Button>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          {conversationId && assistantMessageId ? (
+            <SendToEvalAction
+              conversationId={conversationId}
+              assistantMessageId={assistantMessageId}
+              userQueryPreview={userQueryPreview}
+              originalAnswer={run.answer}
+              agentConfigOverride={run.agentConfigOverride}
+              label="Save as eval case"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            />
+          ) : null}
+          {canOpenFlow ? (
+            <Button type="button" size="sm" variant="outline" className="gap-1.5" onClick={() => setFlowOpen(true)}>
+              <GitBranch className="h-3.5 w-3.5" />
+              Flow
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <div className="rounded-md border border-border bg-background p-3">
@@ -67,7 +85,6 @@ export function WorkbenchRunCard({
         )}
       </div>
 
-      {/* TODO(eval-promotion): add promote-to-eval affordance once slice C owns the eval handoff. */}
       {run.turnTrace ? (
         <p className="text-xs text-muted-foreground">
           Open Flow to inspect the replay turn graph.

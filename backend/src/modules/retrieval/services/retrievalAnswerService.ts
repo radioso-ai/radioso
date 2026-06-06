@@ -21,7 +21,7 @@ import type { AuditPort } from "../../audit/contracts/index.js";
 import type { RetrievalExecutionDiagnostics } from "../domain/retrievalPipelineTypes.js";
 import type { DirectiveSteeringPort } from "../../directives/public.js";
 import { appendSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
-import { appendDirectiveSteeringStage } from "../../chat/services/directiveTracePresenter.js";
+import { appendDirectiveSteeringStage } from "../../chat/retrievalSupport.js";
 
 const RETRIEVAL_DIRECTIVE_ROUTE = "retrieval";
 

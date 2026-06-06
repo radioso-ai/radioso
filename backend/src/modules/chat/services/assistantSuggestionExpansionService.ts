@@ -28,6 +28,8 @@ interface PlannedSuggestion {
   contextIndex: number;
 }
 
+const MAX_RESPONSE_SUGGESTIONS = 3;
+
 const normalizeWhitespace = (value: string): string => value.replace(/\s+/g, " ").trim();
 
 const normalizeComparableText = (value: string): string =>
@@ -138,7 +140,7 @@ export class AssistantSuggestionExpansionService {
       return {};
     }
 
-    const maxSuggestions = input.suggestedQuestionsCount;
+    const maxSuggestions = Math.min(input.suggestedQuestionsCount, MAX_RESPONSE_SUGGESTIONS);
     if (maxSuggestions <= 0) {
       return {};
     }

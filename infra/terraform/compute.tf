@@ -443,6 +443,10 @@ resource "google_cloud_run_v2_service" "document_worker" {
 
       command = ["npm", "run", "start:worker-server"]
 
+      resources {
+        cpu_idle = true
+      }
+
       env {
         name  = "NODE_ENV"
         value = "production"
@@ -711,6 +715,10 @@ resource "google_cloud_run_v2_service" "crawler_worker" {
       image = var.backend_image
 
       command = ["npm", "run", "start:crawler-worker-server"]
+
+      resources {
+        cpu_idle = true
+      }
 
       env {
         name  = "NODE_ENV"

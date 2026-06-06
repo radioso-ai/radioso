@@ -218,14 +218,10 @@ describe("public chat contract", () => {
       .set("x-radioso-public-session", publicSession.publicSessionToken)
       .send({ message: "test", stream: false });
 
-    const cookies = chat.headers["set-cookie"];
-    const anonCookie = findAnonymousCookie(cookies);
-
     // List conversations
     const list = await request(app)
       .get(`/api/v1/public/chat/${chatToken}`)
-      .set("x-radioso-public-session", publicSession.publicSessionToken)
-      .set("Cookie", anonCookie!);
+      .set("x-radioso-public-session", publicSession.publicSessionToken);
 
     expect(list.status).toBe(200);
     expect(list.body.assistantBootstrapActive).toBe(false);

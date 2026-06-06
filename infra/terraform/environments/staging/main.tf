@@ -61,6 +61,8 @@ module "radioso" {
   worker_task_max_concurrent_dispatches = var.worker_task_max_concurrent_dispatches
   document_processing_job_lease_ms      = var.document_processing_job_lease_ms
   website_crawl_job_lease_ms            = var.website_crawl_job_lease_ms
+  document_worker_recovery_schedule     = var.document_worker_recovery_schedule
+  crawler_worker_recovery_schedule      = var.crawler_worker_recovery_schedule
   document_storage_bucket_name          = var.document_storage_bucket_name
   document_upload_max_bytes             = var.document_upload_max_bytes
   openai_api_key                        = var.openai_api_key

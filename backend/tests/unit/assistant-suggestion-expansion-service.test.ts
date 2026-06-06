@@ -100,6 +100,23 @@ describe("AssistantSuggestionExpansionService", () => {
     expect(result.suggestions?.some((s) => s.kind === "broader")).toBe(true);
   });
 
+  it("caps returned suggestions at three even when settings request four", () => {
+    const result = service.apply({
+      ...baseInput,
+      suggestedQuestionsCount: 4,
+      plannedSuggestions: [
+        { text: "What rules apply at the studio?", kind: "deeper", contextIndex: 1 },
+        { text: "What instructors are available?", kind: "deeper", contextIndex: 2 },
+        { text: "How does yoga compare to pilates?", kind: "broader", contextIndex: 2 },
+        { text: "What schedule options exist?", kind: "broader", contextIndex: 1 },
+      ],
+    });
+
+    expect(result.suggestions).toHaveLength(3);
+    expect(result.suggestions?.some((s) => s.kind === "deeper")).toBe(true);
+    expect(result.suggestions?.some((s) => s.kind === "broader")).toBe(true);
+  });
+
   it("returns nothing when grounded answer is not supported", () => {
     const result = service.apply({
       ...baseInput,

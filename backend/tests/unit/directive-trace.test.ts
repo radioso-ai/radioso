@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { appendDirectiveSteeringStage } from "../../src/modules/chat/services/directiveTracePresenter.js";
+import { appendDirectiveSteeringStage } from "../../src/modules/chat/contracts/index.js";
 import type { ActivityTrace } from "../../src/modules/retrieval/public.js";
 import type { DirectiveSteeringResult } from "../../src/modules/directives/public.js";
 

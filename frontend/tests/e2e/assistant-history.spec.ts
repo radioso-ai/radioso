@@ -231,7 +231,8 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
   // The retrieval capability path streams out as its own nodes.
   await expect(page.getByText("Context", { exact: true }).first()).toBeVisible();
 
-  // The skill node is selected by default → its dispatch detail is shown.
+  // Selecting the skill node shows the dispatch detail.
+  await page.getByText("Retrieval", { exact: true }).first().click();
   await expect(page.getByText("Dispatch", { exact: true }).first()).toBeVisible();
 
   // Selecting the engine node swaps the detail pane to the selection stage.

@@ -272,9 +272,9 @@ The Terraform configuration provisions two Cloud Run services:
 
 The dispatcher reads `WORKER_TASKS_CRAWL_SERVICE_URL` to know where website crawl Cloud Tasks pushes should land. When unset it falls back to `WORKER_TASKS_SERVICE_URL`, so a single-worker deployment still works. Terraform discovers the crawler worker URL automatically by referencing `google_cloud_run_v2_service.crawler_worker.uri` from the backend and document worker — no override variable is needed. The document worker URL still needs `worker_tasks_service_url_override` on the second apply because the document worker self-references its own URI for retry dispatch.
 
-Scaling defaults are independent: `worker_min_instances` / `worker_max_instances` for the document worker, `crawler_worker_min_instances` / `crawler_worker_max_instances` for the crawler. In Cloud Tasks driven environments, both worker services can use `min_instances = 0` and request-based CPU so they scale to zero when idle. The task-server runtimes process explicit Cloud Tasks deliveries by job ID. They do not start the continuous database polling loops.
+Scaling defaults are independent: `worker_min_instances` / `worker_max_instances` for the document worker, `crawler_worker_min_instances` / `crawler_worker_max_instances` for the crawler. In Cloud Tasks driven environments, both worker services use `min_instances = 0` and request-based CPU so they can scale to zero when idle. The task-server runtimes process explicit Cloud Tasks deliveries by job ID. They do not start the continuous database polling loops.
 
-Terraform also provisions Cloud Scheduler recovery jobs for both workers. Each recovery request performs a bounded `runOnce` pass over queued or stale jobs. This keeps missed-dispatch recovery available without keeping a Cloud Run instance warm continuously.
+Terraform also provisions Cloud Scheduler recovery jobs for both workers. Each recovery request performs a bounded `runOnce` pass over queued or stale jobs. Document recovery defaults to hourly (`document_worker_recovery_schedule = "0 * * * *"`). Crawler recovery defaults to daily (`crawler_worker_recovery_schedule = "0 3 * * *"`) because normal crawls are delivered through Cloud Tasks and the crawler is usually idle. This keeps missed-dispatch recovery available without using a frequent recovery request as a keepalive.
 
 ### Rollout ordering
 

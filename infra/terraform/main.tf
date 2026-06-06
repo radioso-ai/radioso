@@ -13,6 +13,16 @@ locals {
   # the backend and document worker reference google_cloud_run_v2_service.crawler_worker
   # directly, and the crawler worker itself does not enqueue crawl tasks.
   worker_tasks_service_url = coalesce(var.worker_tasks_service_url_override, "https://example.invalid")
+  document_worker_recovery_schedule = coalesce(
+    var.document_worker_recovery_schedule,
+    var.worker_recovery_schedule,
+    "0 * * * *",
+  )
+  crawler_worker_recovery_schedule = coalesce(
+    var.crawler_worker_recovery_schedule,
+    var.worker_recovery_schedule,
+    "0 3 * * *",
+  )
   public_chat_base_url = (
     var.public_chat_base_url_override != null
     ? var.public_chat_base_url_override

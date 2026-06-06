@@ -8,7 +8,7 @@ resource "google_cloud_scheduler_job" "document_worker_recovery" {
   count    = var.deploy_services ? 1 : 0
   name     = "${local.resource_name_prefix}-document-worker-recovery"
   region   = var.region
-  schedule = var.worker_recovery_schedule
+  schedule = local.document_worker_recovery_schedule
 
   http_target {
     http_method = "POST"
@@ -30,7 +30,7 @@ resource "google_cloud_scheduler_job" "crawler_worker_recovery" {
   count    = var.deploy_services ? 1 : 0
   name     = "${local.resource_name_prefix}-crawler-worker-recovery"
   region   = var.region
-  schedule = var.worker_recovery_schedule
+  schedule = local.crawler_worker_recovery_schedule
 
   http_target {
     http_method = "POST"

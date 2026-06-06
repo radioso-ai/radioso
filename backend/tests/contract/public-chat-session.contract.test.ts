@@ -93,7 +93,8 @@ describe("public chat session contract", () => {
   });
 
   it("keeps approved website embed assistant errors browser-readable", async () => {
-    const { app } = createTestApp();
+    const { app, dependencies } = createTestApp();
+    dependencies.assistantChatService.answer = async () => null;
     const session = await issueTestSession(app, "public-embed-empty-error-cors@example.com");
     const token = await enableWebsiteEmbed(app, session);
     const origin = "https://example.com";
@@ -103,7 +104,7 @@ describe("public chat session contract", () => {
       .post(`/api/v1/public/chat/${token}`)
       .set("Origin", origin)
       .set("x-radioso-public-session", publicSession.body.publicSessionToken)
-      .send({ startConversation: true, stream: false });
+      .send({ message: "Hello", stream: false });
 
     expect(response.status).toBe(503);
     expect(response.headers["access-control-allow-origin"]).toBe(origin);
@@ -119,7 +120,7 @@ describe("public chat session contract", () => {
       .post(`/api/v1/public/chat/${token}`)
       .set("Origin", "https://not-approved.example.com")
       .set("x-radioso-public-session", publicSession.body.publicSessionToken)
-      .send({ startConversation: true, stream: false });
+      .send({ message: "Hello", stream: false });
 
     expect(denied.status).toBe(404);
     expect(denied.headers["access-control-allow-origin"]).toBeUndefined();

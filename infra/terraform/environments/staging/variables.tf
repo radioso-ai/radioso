@@ -88,6 +88,18 @@ variable "document_processing_job_lease_ms" {
   default     = 300000
 }
 
+variable "document_worker_recovery_schedule" {
+  description = "Optional override for staging document worker recovery. Null uses the root module default."
+  type        = string
+  default     = null
+}
+
+variable "crawler_worker_recovery_schedule" {
+  description = "Optional override for staging crawler worker recovery. Null uses the root module default."
+  type        = string
+  default     = null
+}
+
 variable "document_storage_bucket_name" {
   description = "Optional override for the staging document bucket."
   type        = string

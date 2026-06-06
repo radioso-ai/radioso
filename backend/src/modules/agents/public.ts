@@ -60,12 +60,19 @@ export { freezeAgent, type AgentSnapshot } from "./agentSnapshot.js";
 export {
   AGENT_CONFIG_FIELD_DESCRIPTORS,
   AGENT_CONFIG_SCHEMA_VERSION,
+  materializeAgentFromConfig,
+  projectInternalAgentConfig,
   serializeAgentConfig,
   type AgentConfig,
   type AgentConfigPortability,
   type AgentConfigRefKind,
   type AgentConfigRefPlaceholder,
   type AgentConfigSecretPlaceholder,
+  type InternalAgentConfig,
+  type InternalAgentLogoConfig,
+  type InternalAgentSourceScopeConfig,
+  type InternalAgentSurfaceConfig,
+  type InternalWebsiteEmbedSurfaceConfig,
 } from "./agentConfig.js";
 export { createWebsiteEmbedSurfaceExtension } from "./services/websiteEmbedSurfaceExtension.js";
 export {

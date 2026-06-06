@@ -7,17 +7,21 @@ import { Button } from '@/components/ui/button'
 import type { ActivityTrace, ConversationTraceStage, TurnTraceEnvelope } from '@/lib/api'
 import { envelopeToFlowGraph, type TurnFlowNode } from '@/lib/turn-flow'
 import { ActivityTraceDetail } from './activity-trace-detail'
-import { SpineStageDetail } from './spine-stage-detail'
+import { SpineStageDetail, type ConversationMessageRecord } from './spine-stage-detail'
 import { TurnFlowGraph } from './turn-flow-graph'
 
 function NodeDetail({
   node,
   spineStages,
   leafTrace,
+  messages,
+  assistantMessageId,
 }: {
   node: TurnFlowNode | null
   spineStages: ConversationTraceStage[]
   leafTrace?: ActivityTrace
+  messages?: ConversationMessageRecord[]
+  assistantMessageId?: string
 }) {
   if (!node) {
     return (
@@ -30,7 +34,11 @@ function NodeDetail({
     const { spineStageId } = node.detail
     const stage = spineStages.find((candidate) => candidate.id === spineStageId)
     return stage ? (
-      <SpineStageDetail stage={stage} />
+      <SpineStageDetail
+        stage={stage}
+        messages={messages}
+        assistantMessageId={assistantMessageId}
+      />
     ) : (
       <p className="text-sm text-muted-foreground">No recorded detail for this stage.</p>
     )
@@ -58,16 +66,31 @@ export function TurnFlowOverlay({
   envelope,
   leafTrace,
   onClose,
+  messages,
+  assistantMessageId,
 }: {
   open: boolean
   envelope: TurnTraceEnvelope
   leafTrace?: ActivityTrace
   onClose: () => void
+  /**
+   * The drawer's already-loaded conversation messages. The trace carries only
+   * structural references (event/message IDs, role, length); the spine detail
+   * renderers join back to these records to show the actual user/history/answer
+   * text, so raw content stays out of audit/debug surfaces.
+   */
+  messages?: ConversationMessageRecord[]
+  /** The assistant message this turn produced, used to resolve the compose answer. */
+  assistantMessageId?: string
 }) {
   const graph = useMemo(() => envelopeToFlowGraph(envelope), [envelope])
+  // The canvas opens centered on the first node (Message), so default the
+  // detail pane to that node too — the user lands looking at the message
+  // they typed, with the rest of the turn flowing beneath it.
   const initialNode = useMemo(
     () =>
-      graph.nodes.find((node) => node.nodeKind === 'skill') ??
+      graph.nodes.find((node) => node.id === 'input:message') ??
+      graph.nodes.find((node) => node.nodeKind === 'input') ??
       graph.nodes.find((node) => node.nodeKind === 'engine') ??
       null,
     [graph.nodes],
@@ -96,7 +119,7 @@ export function TurnFlowOverlay({
           Close
         </Button>
       </div>
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(360px,520px)]">
         <div className="min-h-0">
           <TurnFlowGraph
             graph={graph}
@@ -106,7 +129,13 @@ export function TurnFlowOverlay({
           />
         </div>
         <div className="min-h-0 overflow-y-auto border-l border-border p-4">
-          <NodeDetail node={activeNode} spineStages={envelope.spine.stages} leafTrace={leafTrace} />
+          <NodeDetail
+            node={activeNode}
+            spineStages={envelope.spine.stages}
+            leafTrace={leafTrace}
+            messages={messages}
+            assistantMessageId={assistantMessageId}
+          />
         </div>
       </div>
     </div>

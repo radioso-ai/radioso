@@ -31,6 +31,54 @@ const stage = (input: Omit<ConversationTraceStage, "startedAt" | "completedAt">)
   };
 };
 
+const HISTORY_TAIL_LIMIT = 12;
+
+const summarizeDirectiveMatch = (match: DirectiveMatch): Record<string, unknown> => ({
+  // Directive copy is authored config (not user/assistant content), so keeping
+  // it in the trace is safe and lets the UI render the matched rules in full.
+  id: match.directive.id,
+  name: match.directive.name,
+  action: match.directive.action,
+  description: match.directive.description,
+  priority: match.directive.priority,
+  condition: match.directive.condition.kind === "always"
+    ? "always"
+    : match.directive.condition.description,
+  selectionMode: match.selectionMode,
+  selectionReason: match.selectionReason,
+  selectionConfidence: match.selectionConfidence,
+});
+
+/**
+ * Conversation text (user input, prior turns, assistant answer) never goes
+ * into the trace — the trace lands in audit/debug metadata, and CLAUDE.md
+ * forbids raw prompts/completions there. The trace only records structural
+ * references (event/message IDs, role, length, status); the dashboard joins
+ * back to the already-authorized message records to show the actual text.
+ */
+const summarizeOutcomeForCompose = (outcome: TurnOutcome): Record<string, unknown> => ({
+  skillName: outcome.skillName,
+  status: outcome.outcome.status,
+  errorCode: outcome.outcome.error?.code,
+  errorMessage: outcome.outcome.error?.message,
+  answerLength: outcome.outcome.answer?.length ?? 0,
+});
+
+const composeOutputsFor = (
+  response: RenderableTurn,
+  outcomes: TurnOutcome[],
+  options: { streamed: boolean },
+): Record<string, unknown> => ({
+  // Length only — the assistant message itself is persisted on the chat
+  // message record and is read back from there by authorized callers.
+  answerLength: response.answer.length,
+  citationCount: Array.isArray(response.citations) ? response.citations.length : 0,
+  suggestionCount: Array.isArray(response.suggestions) ? response.suggestions.length : 0,
+  outcomeCount: outcomes.length,
+  streamed: options.streamed,
+  outcomes: outcomes.map(summarizeOutcomeForCompose),
+});
+
 const directiveMatchToSteering = (match: DirectiveMatch): SteeringRule => ({
   action: match.directive.action,
   condition: match.directive.condition.kind === "contextual"
@@ -150,11 +198,39 @@ export class DefaultConversationEngine implements ConversationEngine {
       stagedContext: [],
       steering: [],
     };
+    // Record a structural reference to the input event so the debug UI can
+    // resolve the actual text from the chat message record. The content itself
+    // never lands in the trace (audit/debug surface).
+    stages.push(stage({
+      id: "message",
+      kind: "message",
+      status: "applied",
+      outputs: {
+        eventId: input.inputEvent.id,
+        kind: input.inputEvent.kind,
+        contentLength: input.inputEvent.content.length,
+        locale: input.inputEvent.locale ?? undefined,
+      },
+    }));
+
+    // Tail of the loaded history as structural references — role/id/length only,
+    // no message text. The UI resolves text from the conversation's authorized
+    // message list when rendering the gather detail.
+    const historyRefs = history.slice(-HISTORY_TAIL_LIMIT).map((entry, index, slice) => ({
+      index: history.length - slice.length + index,
+      role: entry.role,
+      messageId: entry.id,
+      contentLength: entry.content?.length ?? 0,
+      createdAt: entry.createdAt,
+    }));
     stages.push(stage({
       id: "gather",
       kind: "gather",
       status: "applied",
-      outputs: { historyCount: history.length },
+      outputs: {
+        historyCount: history.length,
+        history: historyRefs,
+      },
     }));
 
     const directiveMatches = await input.directiveMatcher.match({
@@ -166,7 +242,15 @@ export class DefaultConversationEngine implements ConversationEngine {
       id: "directives",
       kind: "directive_match",
       status: directiveMatches.length > 0 ? "applied" : "skipped",
-      outputs: { matchCount: directiveMatches.length },
+      outputs: {
+        matchCount: directiveMatches.length,
+        // Full matched directive metadata so the side panel can list them by
+        // title and let the user read each rule, not just count them.
+        directives: directiveMatches.map(summarizeDirectiveMatch),
+        // Total directives considered (matched + not matched) for context on the
+        // selection.
+        candidateCount: input.directives.length,
+      },
     }));
 
     const selectedTurn: TurnContext = {
@@ -185,6 +269,15 @@ export class DefaultConversationEngine implements ConversationEngine {
       outputs: {
         selectedSkills: decision.selected.map((selected) => selected.skillName),
         reason: decision.reason,
+        // The full candidate pool the selector chose from (every skill it
+        // looked at), so the user can see what was *not* selected.
+        candidates: input.skills.map((skill) => ({
+          name: skill.name,
+          description: skill.description,
+          selected: decision.selected.some((picked) => picked.skillName === skill.name),
+        })),
+        // Per-candidate rationale when the selector recorded it.
+        considered: decision.considered,
       },
     }));
 
@@ -317,17 +410,41 @@ export class DefaultConversationEngine implements ConversationEngine {
     await input.stores.appendEvent(responseEvent);
     events.push(responseEvent);
 
+    const messageStage = stage({
+      id: "message",
+      kind: "message",
+      status: "applied",
+      outputs: {
+        eventId: input.inputEvent.id,
+        kind: input.inputEvent.kind,
+        contentLength: input.inputEvent.content.length,
+        locale: input.inputEvent.locale ?? undefined,
+      },
+    });
+    const historyRefs = history.slice(-HISTORY_TAIL_LIMIT).map((entry, index, slice) => ({
+      index: history.length - slice.length + index,
+      role: entry.role,
+      messageId: entry.id,
+      contentLength: entry.content?.length ?? 0,
+      createdAt: entry.createdAt,
+    }));
     const gatherStage = stage({
       id: "gather",
       kind: "gather",
       status: "applied",
-      outputs: { historyCount: history.length },
+      outputs: { historyCount: history.length, history: historyRefs },
     });
     const routineStage = stage({
       id: `routine:${state.routineId}`,
       kind: resuming ? "routine_resume" : "routine_activate",
       status: "applied",
-      outputs: { routineId: state.routineId, completed: result.nextState === null },
+      outputs: {
+        routineId: state.routineId,
+        completed: result.nextState === null,
+        // Length only — the assistant's reply lives on the chat message record
+        // and the UI joins back to it from there.
+        answerLength: result.response.answer.length,
+      },
     });
 
     return createProcessTurnResult({
@@ -340,7 +457,7 @@ export class DefaultConversationEngine implements ConversationEngine {
       outcomes: result.outcomes ?? [],
       response: result.response,
       actions: result.actions,
-      trace: createTrace([gatherStage, routineStage]),
+      trace: createTrace([messageStage, gatherStage, routineStage]),
     });
   }
 
@@ -359,7 +476,7 @@ export class DefaultConversationEngine implements ConversationEngine {
       id: "compose",
       kind: "compose",
       status: "applied",
-      outputs: { outcomeCount: prepared.outcomes.length },
+      outputs: composeOutputsFor(response, prepared.outcomes, { streamed: false }),
     }));
 
     const responseEvent = createResponseEvent(input.sessionId, response);
@@ -418,7 +535,7 @@ export class DefaultConversationEngine implements ConversationEngine {
       id: "compose",
       kind: "compose",
       status: "applied",
-      outputs: { outcomeCount: prepared.outcomes.length, streamed: true },
+      outputs: composeOutputsFor(response, prepared.outcomes, { streamed: true }),
     }));
 
     const responseEvent = createResponseEvent(input.sessionId, response);

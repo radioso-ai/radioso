@@ -95,8 +95,10 @@ export function WorkbenchView({
                 isRunning={state.isRunning}
                 disabled={!state.seedTurn || state.isDeltaEmpty}
                 onRun={state.runReplay}
+                conversationId={state.seedTurn?.conversation.conversationId}
                 conversationMessages={state.seedTurn?.conversation.messages}
                 assistantMessageId={state.seedTurn?.assistantTurn?.id}
+                userQueryPreview={state.seedTurn?.userTurn.content}
                 onOpenDocument={onOpenDocument}
               />
             </div>

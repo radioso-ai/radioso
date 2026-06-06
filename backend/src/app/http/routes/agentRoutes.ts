@@ -7,7 +7,7 @@ import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../m
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { validateBody } from "../middleware/validate.js";
-import { badRequest } from "../../../shared/domain/errors.js";
+import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import {
   agentSurfacePositions,
   authoredDirectiveInputSchema,
@@ -18,6 +18,7 @@ import {
   assistantThemeSchema,
   createAssistantLogoUploadHandler,
 } from "../shared/assistantIdentity.js";
+import { resolvePublicLaunchLifecycle } from "../../../modules/accessGrants/public.js";
 
 const agentParamsSchema = z.object({
   agentId: z.string().uuid(),
@@ -85,6 +86,8 @@ const contactRequestDeliverySchema = z.object({
 }).optional();
 
 export const agentBodySchema = z.object({
+  revokeAnonymousChatToken: z.boolean().optional(),
+  revokeWebsiteEmbedToken: z.boolean().optional(),
   name: z.string().max(200).optional(),
   customInstruction: z.string().max(2000).optional(),
   suggestedQuestionsEnabled: z.boolean().optional(),
@@ -106,7 +109,28 @@ export const agentBodySchema = z.object({
 
 export { llmProviderNames as agentLlmProviderNames, chatModelOverrideSchema as agentChatModelOverrideSchema };
 
-type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "accountAccessService" | "agentService" | "authoredDirectiveService" | "agentSurfaceExtensions" | "documentStorage" | "logger">;
+type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "authoredDirectiveService" | "agentSurfaceExtensions" | "documentStorage" | "logger">;
+
+const revokeCurrentPublicLaunchGrant = async (
+  dependencies: AgentRouteDependencies,
+  token: string | null,
+  accountId?: string | null,
+): Promise<void> => {
+  if (!token) {
+    return;
+  }
+
+  const grant = await dependencies.accessGrantService.resolvePublicLaunchGrant(token);
+  if (!grant || grant.revokedAt) {
+    return;
+  }
+
+  await dependencies.accessGrantService.revokeGrant({
+    grantId: grant.id,
+    accountId,
+    reason: "operator_revoked",
+  });
+};
 
 export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router => {
   const router = Router();
@@ -140,6 +164,26 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
       const parsed = agentParamsSchema.parse(req.params);
       const agent = await dependencies.agentService.get(workspaceId, parsed.agentId);
       res.status(200).json(agent);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/:agentId/channels/lifecycle", workspaceSession, agentRead, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const parsed = agentParamsSchema.parse(req.params);
+      const agent = await dependencies.agentRepository.findByIdAndWorkspaceId(parsed.agentId, workspaceId);
+      if (!agent) {
+        throw notFound("Agent not found");
+      }
+
+      const [anonymousChat, websiteEmbed] = await Promise.all([
+        resolvePublicLaunchLifecycle(agent.surfaceSettings.anonymousChat.token, dependencies.accessGrantService),
+        resolvePublicLaunchLifecycle(agent.surfaceSettings.websiteEmbed.token, dependencies.accessGrantService),
+      ]);
+
+      res.status(200).json({ anonymousChat, websiteEmbed });
     } catch (error) {
       next(error);
     }
@@ -208,13 +252,26 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
 
   router.put("/:agentId", workspaceSession, agentManage, validateBody(agentBodySchema), async (req, res, next) => {
     try {
-      const { workspaceId } = res.locals as { workspaceId: string };
+      const { accountId, workspaceId } = res.locals as { accountId?: string | null; workspaceId: string };
       const parsed = agentParamsSchema.parse(req.params);
       const current = await dependencies.agentService.resolve(workspaceId, parsed.agentId);
+      const {
+        revokeAnonymousChatToken,
+        revokeWebsiteEmbedToken,
+        ...agentPatch
+      } = req.body;
+      await Promise.all([
+        revokeAnonymousChatToken
+          ? revokeCurrentPublicLaunchGrant(dependencies, current.surfaceSettings.anonymousChat.token, accountId)
+          : undefined,
+        revokeWebsiteEmbedToken
+          ? revokeCurrentPublicLaunchGrant(dependencies, current.surfaceSettings.websiteEmbed.token, accountId)
+          : undefined,
+      ]);
       const agent = await dependencies.agentService.update(
         workspaceId,
         parsed.agentId,
-        dependencies.agentService.withRotatedTokens(current, req.body),
+        dependencies.agentService.withRotatedTokens(current, agentPatch),
       );
       res.status(200).json(agent);
     } catch (error) {

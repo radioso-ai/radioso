@@ -44,6 +44,20 @@ describe("access grants contract", () => {
     const touchedEmbedGrant = await dependencies.accessGrantService.resolvePublicLaunchGrant(embedToken);
     expect(touchedEmbedGrant?.lastUsedAt).toBeInstanceOf(Date);
 
+    const defaultAgent = await dependencies.agentService.resolve(session.workspaceId);
+    const agentLifecycle = await request(app)
+      .get(`/api/v1/agents/${defaultAgent.id}/channels/lifecycle`)
+      .set(adminSessionHeaders(session));
+    expect(agentLifecycle.status).toBe(200);
+    expect(agentLifecycle.body.websiteEmbed).toEqual({
+      lastUsedAt: touchedEmbedGrant?.lastUsedAt?.toISOString(),
+      status: "active",
+    });
+    expect(agentLifecycle.body.anonymousChat).toEqual({
+      lastUsedAt: null,
+      status: "active",
+    });
+
     const afterTouchSettings = await request(app)
       .get("/api/v1/settings/general")
       .set(adminSessionHeaders(session));

@@ -1,5 +1,5 @@
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
-import type { AccessGrant, AccessGrantService } from "../../accessGrants/public.js";
+import type { AccessGrantService } from "../../accessGrants/public.js";
 import type { AgentRecord, AgentService } from "../../agents/public.js";
 import { getWebsiteEmbedSurfaceSettings, isAgentBootstrapActive } from "../../agents/public.js";
 import { buildPublicAssistantLogoUrl } from "../../../app/http/shared/assistantLogoUrl.js";
@@ -22,6 +22,7 @@ import type {
   PlatformSettingsResource,
 } from "../domain/platformSettings.js";
 import type { RetrievalSettingsService } from "../contracts/services.js";
+import { resolvePublicLaunchLifecycle } from "../../accessGrants/public.js";
 
 export interface PlatformSettingsServiceDependencies {
   workspaceRepository: Pick<WorkspaceRepositoryPort, "findById">;
@@ -352,8 +353,8 @@ export class PlatformSettingsService {
     const anonymousChat = agent.surfaceSettings.anonymousChat;
     const websiteEmbed = agent.surfaceSettings.websiteEmbed;
     const [anonymousChatLifecycle, websiteEmbedLifecycle] = await Promise.all([
-      this.resolvePublicLaunchLifecycle(anonymousChat.token),
-      this.resolvePublicLaunchLifecycle(websiteEmbed.token),
+      resolvePublicLaunchLifecycle(anonymousChat.token, this.dependencies.accessGrantService),
+      resolvePublicLaunchLifecycle(websiteEmbed.token, this.dependencies.accessGrantService),
     ]);
     return {
       anonymousChatEnabled: anonymousChat.enabled,
@@ -380,32 +381,6 @@ export class PlatformSettingsService {
         websiteEmbedLauncherLabel: websiteEmbed.launcherLabel,
         websiteEmbedLauncherPosition: websiteEmbed.launcherPosition,
       }),
-    };
-  }
-
-  private async resolvePublicLaunchLifecycle(token: string | null): Promise<{
-    lastUsedAt: string | null;
-    status: "active" | "revoked" | null;
-  }> {
-    if (!token || !this.dependencies.accessGrantService) {
-      return { lastUsedAt: null, status: null };
-    }
-
-    const grant = await this.dependencies.accessGrantService.resolvePublicLaunchGrant(token);
-    return this.presentPublicLaunchLifecycle(grant);
-  }
-
-  private presentPublicLaunchLifecycle(grant: AccessGrant | null): {
-    lastUsedAt: string | null;
-    status: "active" | "revoked" | null;
-  } {
-    if (!grant) {
-      return { lastUsedAt: null, status: null };
-    }
-
-    return {
-      lastUsedAt: grant.lastUsedAt?.toISOString() ?? null,
-      status: grant.revokedAt ? "revoked" : "active",
     };
   }
 

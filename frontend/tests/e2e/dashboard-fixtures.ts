@@ -12,6 +12,14 @@ export const nowIso = "2026-04-26T12:00:00.000Z";
 
 type AuthoredDirectiveFixture = ApiSchemas["AuthoredDirective"];
 type BuiltInDirectiveFixture = ApiSchemas["BuiltInDirective"];
+type ChannelLifecycleFixture = {
+  lastUsedAt: string | null;
+  status: "active" | "revoked" | null;
+};
+type ChannelsLifecycleFixture = {
+  anonymousChat: ChannelLifecycleFixture;
+  websiteEmbed: ChannelLifecycleFixture;
+};
 type DirectiveMutationFixture = {
   method: "POST" | "PATCH" | "DELETE";
   directiveId?: string;
@@ -141,6 +149,17 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   },
   createdAt: nowIso,
   updatedAt: nowIso,
+});
+
+const buildDefaultChannelsLifecycle = (settings: PlatformSettingsFixture): ChannelsLifecycleFixture => ({
+  anonymousChat: {
+    lastUsedAt: settings.channels.anonymousChatLastUsedAt,
+    status: settings.channels.anonymousChatStatus,
+  },
+  websiteEmbed: {
+    lastUsedAt: settings.channels.websiteEmbedLastUsedAt,
+    status: settings.channels.websiteEmbedStatus,
+  },
 });
 
 export const seedDashboardStorage = async (page: Page) => {
@@ -341,6 +360,7 @@ export const installDashboardApiMocks = async (
   let platformSettings = options.platformSettings ?? basePlatformSettings();
   let ingestionSettings = options.ingestionSettings ?? baseIngestionSettings();
   let agentSettings = buildDefaultAgentSettings(platformSettings);
+  let channelsLifecycle = buildDefaultChannelsLifecycle(platformSettings);
   const providerEncryptionConfigured = options.providerEncryptionConfigured ?? true;
   const providerCredentials: Record<string, { updatedAt: string } | null> = {
     openai: null,
@@ -506,6 +526,51 @@ export const installDashboardApiMocks = async (
       return;
     }
 
+    if (request.method() === "GET" && path === `/agents/${defaultAgentId}/channels/lifecycle`) {
+      await json(route, channelsLifecycle);
+      return;
+    }
+
+    if (request.method() === "POST" && path === `/agents/${defaultAgentId}/anonymous-chat-token/rotate`) {
+      agentSettings = {
+        ...agentSettings,
+        surfaceSettings: {
+          ...agentSettings.surfaceSettings,
+          anonymousChat: {
+            ...agentSettings.surfaceSettings.anonymousChat,
+            token: "public-token-rotated",
+          },
+        },
+        updatedAt: nowIso,
+      };
+      channelsLifecycle = {
+        ...channelsLifecycle,
+        anonymousChat: { lastUsedAt: null, status: "active" },
+      };
+      await json(route, agentSettings);
+      return;
+    }
+
+    if (request.method() === "POST" && path === `/agents/${defaultAgentId}/website-embed-token/rotate`) {
+      agentSettings = {
+        ...agentSettings,
+        surfaceSettings: {
+          ...agentSettings.surfaceSettings,
+          websiteEmbed: {
+            ...agentSettings.surfaceSettings.websiteEmbed,
+            token: "embed-token-rotated",
+          },
+        },
+        updatedAt: nowIso,
+      };
+      channelsLifecycle = {
+        ...channelsLifecycle,
+        websiteEmbed: { lastUsedAt: null, status: "active" },
+      };
+      await json(route, agentSettings);
+      return;
+    }
+
     if (path === `/agents/${defaultAgentId}`) {
       if (request.method() === "GET") {
         await json(route, agentSettings);
@@ -519,23 +584,34 @@ export const installDashboardApiMocks = async (
             anonymousChat?: Partial<typeof agentSettings.surfaceSettings.anonymousChat>;
             websiteEmbed?: Partial<typeof agentSettings.surfaceSettings.websiteEmbed>;
           };
+          revokeAnonymousChatToken?: boolean;
+          revokeWebsiteEmbedToken?: boolean;
         };
+        const { revokeAnonymousChatToken, revokeWebsiteEmbedToken, ...agentPatch } = body;
         agentUpdates?.push(body);
+        channelsLifecycle = {
+          anonymousChat: revokeAnonymousChatToken
+            ? { ...channelsLifecycle.anonymousChat, status: "revoked" }
+            : channelsLifecycle.anonymousChat,
+          websiteEmbed: revokeWebsiteEmbedToken
+            ? { ...channelsLifecycle.websiteEmbed, status: "revoked" }
+            : channelsLifecycle.websiteEmbed,
+        };
         agentSettings = {
           ...agentSettings,
-          ...body,
+          ...agentPatch,
           surfaceSettings: {
             authenticatedChat: {
               ...agentSettings.surfaceSettings.authenticatedChat,
-              ...(body.surfaceSettings?.authenticatedChat ?? {}),
+              ...(agentPatch.surfaceSettings?.authenticatedChat ?? {}),
             },
             anonymousChat: {
               ...agentSettings.surfaceSettings.anonymousChat,
-              ...(body.surfaceSettings?.anonymousChat ?? {}),
+              ...(agentPatch.surfaceSettings?.anonymousChat ?? {}),
             },
             websiteEmbed: {
               ...agentSettings.surfaceSettings.websiteEmbed,
-              ...(body.surfaceSettings?.websiteEmbed ?? {}),
+              ...(agentPatch.surfaceSettings?.websiteEmbed ?? {}),
             },
           },
           updatedAt: nowIso,

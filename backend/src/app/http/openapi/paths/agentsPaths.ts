@@ -59,6 +59,24 @@ export const registerAgentsPaths = (
   });
 
   registry.registerPath({
+    method: "get",
+    path: "/api/v1/agents/{agentId}/channels/lifecycle",
+    tags: ["Agents"],
+    summary: "Get public channel lifecycle for an agent",
+    operationId: "getAgentChannelsLifecycle",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.AgentParamsSchema },
+    responses: {
+      200: {
+        description: "Channel lifecycle returned",
+        content: { "application/json": { schema: schemas.AgentChannelsLifecycleResponseSchema } },
+      },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
     method: "put",
     path: "/api/v1/agents/{agentId}",
     tags: ["Agents"],

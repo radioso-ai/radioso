@@ -22,6 +22,27 @@ import type {
 } from './api-types'
 import { writeRetrievalSkillSettingsOverride } from './retrieval-skill-settings'
 
+type ChannelLifecycle = {
+  lastUsedAt: string | null
+  status: 'active' | 'revoked' | null
+}
+
+export type ChannelsLifecycle = {
+  anonymousChat: ChannelLifecycle
+  websiteEmbed: ChannelLifecycle
+}
+
+export const mergeChannelsLifecycle = (
+  general: GeneralSettings,
+  lifecycle: ChannelsLifecycle,
+): GeneralSettings => ({
+  ...general,
+  anonymousChatLastUsedAt: lifecycle.anonymousChat.lastUsedAt,
+  anonymousChatStatus: lifecycle.anonymousChat.status,
+  websiteEmbedLastUsedAt: lifecycle.websiteEmbed.lastUsedAt,
+  websiteEmbedStatus: lifecycle.websiteEmbed.status,
+})
+
 export const settingsApi = {
   async getRetrievalSettings(options: { auth?: 'apiToken' | 'session' } = {}): Promise<RetrievalSettings> {
     const settings = await request<PlatformSettings>("/settings", {
@@ -199,6 +220,12 @@ export const agentsApi = {
     }, { withApiToken: true })
   },
 
+  async getChannelsLifecycle(agentId: string): Promise<ChannelsLifecycle> {
+    return request<ChannelsLifecycle>(`/agents/${agentId}/channels/lifecycle`, {
+      method: 'GET',
+    }, { withApiToken: true })
+  },
+
   async updateAgent(agentId: string, data: AgentSettingsUpdate): Promise<AgentSettings> {
     return request<AgentSettings>(`/agents/${agentId}`, {
       method: 'PUT',
@@ -219,11 +246,17 @@ export const agentsApi = {
   },
 
   async getGeneralSettings(agentId: string): Promise<GeneralSettings> {
-    return agentToGeneralSettings(await this.getAgent(agentId))
+    const [agent, lifecycle] = await Promise.all([
+      this.getAgent(agentId),
+      this.getChannelsLifecycle(agentId),
+    ])
+    return mergeChannelsLifecycle(agentToGeneralSettings(agent), lifecycle)
   },
 
   async updateGeneralSettings(agentId: string, data: Parameters<typeof generalSettingsApi.updateGeneralSettings>[0]): Promise<GeneralSettings> {
-    return agentToGeneralSettings(await this.updateAgent(agentId, {
+    const agent = await this.updateAgent(agentId, {
+      revokeAnonymousChatToken: data.revokeAnonymousChatToken,
+      revokeWebsiteEmbedToken: data.revokeWebsiteEmbedToken,
       surfaceSettings: {
         anonymousChat: {
           enabled: data.anonymousChatEnabled,
@@ -242,19 +275,22 @@ export const agentsApi = {
       greetingInstruction: data.greetingInstruction,
       assistantDefaultLocale: data.assistantDefaultLocale,
       proactiveGreetingEnabled: data.proactiveGreetingEnabled,
-    }))
+    })
+    return mergeChannelsLifecycle(agentToGeneralSettings(agent), await this.getChannelsLifecycle(agentId))
   },
 
   async rotateAnonymousChatToken(agentId: string): Promise<GeneralSettings> {
-    return agentToGeneralSettings(await request<AgentSettings>(`/agents/${agentId}/anonymous-chat-token/rotate`, {
+    const agent = await request<AgentSettings>(`/agents/${agentId}/anonymous-chat-token/rotate`, {
       method: 'POST',
-    }, { withApiToken: true }))
+    }, { withApiToken: true })
+    return mergeChannelsLifecycle(agentToGeneralSettings(agent), await this.getChannelsLifecycle(agentId))
   },
 
   async rotateWebsiteEmbedToken(agentId: string): Promise<GeneralSettings> {
-    return agentToGeneralSettings(await request<AgentSettings>(`/agents/${agentId}/website-embed-token/rotate`, {
+    const agent = await request<AgentSettings>(`/agents/${agentId}/website-embed-token/rotate`, {
       method: 'POST',
-    }, { withApiToken: true }))
+    }, { withApiToken: true })
+    return mergeChannelsLifecycle(agentToGeneralSettings(agent), await this.getChannelsLifecycle(agentId))
   },
 
   async uploadAssistantLogo(agentId: string, file: File): Promise<GeneralSettings> {

@@ -8,7 +8,7 @@ import {
 } from "./dashboard-fixtures";
 
 test("operator can see and revoke the public chat link grant lifecycle", async ({ page }) => {
-  const settingsUpdates: unknown[] = [];
+  const agentUpdates: unknown[] = [];
   const platformSettings = basePlatformSettings();
   platformSettings.channels.anonymousChatEnabled = true;
   platformSettings.channels.anonymousChatLastUsedAt = "2026-04-26T11:45:00.000Z";
@@ -18,24 +18,23 @@ test("operator can see and revoke the public chat link grant lifecycle", async (
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     platformSettings,
-    settingsUpdates,
+    agentUpdates,
   });
 
   await page.goto(`/w/${workspaceKey}/agents?tab=channels&anchor=public-chat-link`);
+  const publicChatSection = page.getByRole("main").locator("#public-chat-link");
 
-  await expect(page.getByRole("heading", { name: "Public chat link" })).toBeVisible();
-  await expect(page.getByText("Active")).toBeVisible();
-  await expect(page.getByText("Last used: 15 minutes ago")).toBeVisible();
+  await expect(publicChatSection.getByRole("heading", { name: "Public chat link" })).toBeVisible();
+  await expect(publicChatSection.getByText("Active")).toBeVisible();
+  await expect(publicChatSection.getByText("Last used: 15 minutes ago")).toBeVisible();
 
-  await page.getByRole("button", { name: "Revoke" }).click();
+  await publicChatSection.getByRole("button", { name: "Revoke" }).click();
   await expect(page.getByRole("heading", { name: "Revoke public chat link credential" })).toBeVisible();
   await page.getByRole("button", { name: "Revoke" }).last().click();
 
-  await expect.poll(() => settingsUpdates.length).toBeGreaterThanOrEqual(1);
-  expect(settingsUpdates.at(-1)).toMatchObject({
-    channels: {
-      revokeAnonymousChatToken: true,
-    },
+  await expect.poll(() => agentUpdates.length).toBeGreaterThanOrEqual(1);
+  expect(agentUpdates.at(-1)).toMatchObject({
+    revokeAnonymousChatToken: true,
   });
-  await expect(page.getByText("Revoked — rotate to issue a new credential.")).toBeVisible();
+  await expect(publicChatSection.getByText("Revoked — rotate to issue a new credential.")).toBeVisible();
 });

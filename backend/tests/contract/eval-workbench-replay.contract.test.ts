@@ -2,6 +2,7 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 
 import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
+import { WORKBENCH_REPLAY_RATE_LIMIT } from "../../src/modules/eval/routes/workbenchReplayRateLimit.js";
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 
 const countMessages = (items: Map<string, unknown[]>): number =>
@@ -143,5 +144,75 @@ describe("eval Workbench replay contract", () => {
       message: "Invalid request body",
     });
     expect(JSON.stringify(response.body.error.details)).toContain("mysteryField");
+  });
+
+  it("rate limits Workbench replay runs per workspace", async () => {
+    const { app } = createTestApp({
+      workbenchReplayRunner: {
+        async run() {
+          return {
+            answer: "Replay answer.",
+            citations: [],
+            answerSegments: [],
+            turnTrace: {
+              version: 1,
+              spine: {
+                traceId: "trace-workbench-replay",
+                startedAt: new Date(0).toISOString(),
+                stages: [],
+              },
+            },
+            resolvedConfig: {
+              composedInstructions: "resolved replay instructions",
+              modelProvider: "openai",
+              modelId: "gpt-5-mini",
+              retrievedChunks: [],
+            },
+          };
+        },
+      },
+    });
+    const session = await issueTestSession(app, "eval-workbench-rate-limit@example.com");
+    const headers = adminSessionHeaders(session);
+
+    const chat = await request(app)
+      .post("/api/v1/assistant/chat")
+      .set(headers)
+      .send({ message: "What is the refund policy?", stream: false })
+      .expect(200);
+    const snapshot = await request(app)
+      .post("/api/v1/evals/snapshots")
+      .set(headers)
+      .send({ conversationId: chat.body.conversationId })
+      .expect(201);
+
+    const body = {
+      snapshotId: snapshot.body.id,
+      mode: "full_assistant",
+      agentConfigOverride: {
+        customInstruction: "Use a replay override.",
+      },
+    };
+
+    for (let i = 0; i < WORKBENCH_REPLAY_RATE_LIMIT.limit; i += 1) {
+      await request(app)
+        .post("/api/v1/evals/runs")
+        .set(headers)
+        .send(body)
+        .expect(201);
+    }
+
+    const blocked = await request(app)
+      .post("/api/v1/evals/runs")
+      .set(headers)
+      .send(body)
+      .expect(429);
+
+    expect(blocked.body.error).toMatchObject({
+      code: "rate_limit_exceeded",
+      details: expect.objectContaining({
+        retryAfterSeconds: expect.any(Number),
+      }),
+    });
   });
 });

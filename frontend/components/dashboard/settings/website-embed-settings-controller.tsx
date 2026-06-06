@@ -555,7 +555,7 @@ function WebsiteEmbedSettingsPanel({
                   className="min-h-[132px]"
                 />
                 <p className="text-xs text-muted-foreground">
-                  The chat widget will only appear on these websites. List one address per line, starting with <code>https://</code>.
+                  The chat widget will only appear on these websites. List one address per line, starting with <code>https://</code>. To allow every website, use “Allow all origins” above instead.
                 </p>
               </div>
             ) : null}

@@ -76,10 +76,14 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       return null;
     }
   };
+  // No Origin header means a same-origin request (the embed widget omits Origin
+  // when it is same-origin to the API proxy — see #609→#612), which is allowed.
+  // Endpoints that genuinely require an Origin (e.g. website-embed session
+  // creation, which binds it) reject the missing header upstream before this runs.
   const websiteEmbedOriginAllowed = (
     websiteEmbed: ReturnType<typeof getWebsiteEmbedSurfaceSettings>,
     origin: string | null,
-  ) => Boolean(origin) && isAllowedWebsiteEmbedOrigin(websiteEmbed.allowedOrigins, origin!);
+  ) => origin === null || isAllowedWebsiteEmbedOrigin(websiteEmbed.allowedOrigins, origin);
   const buildAssistantLogoUrl = (req: { get(name: string): string | undefined }, token: string, hasLogo: boolean) =>
     buildPublicAssistantLogoUrl({
       token,
@@ -160,7 +164,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         return;
       }
       if (grant) {
-        const evaluation = dependencies.accessGrantService.evaluate(grant, { origin: origin ?? undefined });
+        const evaluation = dependencies.accessGrantService.evaluate(grant, { origin });
         if (!evaluation.allowed) {
           await dependencies.accessGrantService.recordAuthFailure({
             grant,
@@ -219,7 +223,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         const websiteEmbed = getWebsiteEmbedSurfaceSettings(agent);
         const grant = await dependencies.accessGrantService.resolvePublicLaunchGrant(launchToken);
         const originAllowed = grant
-          ? dependencies.accessGrantService.evaluate(grant, { origin: origin ?? undefined }).allowed
+          ? dependencies.accessGrantService.evaluate(grant, { origin }).allowed
           : websiteEmbedOriginAllowed(websiteEmbed, origin);
         if (websiteEmbed.enabled && originAllowed) {
           res.setHeader("Access-Control-Allow-Origin", origin);

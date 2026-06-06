@@ -177,9 +177,13 @@ export class AccessGrantService {
     if (grant.expiresAt && grant.expiresAt.getTime() <= (input.now ?? new Date()).getTime()) {
       return { allowed: false, reason: "expired" };
     }
+    // A null/undefined origin means "no Origin to enforce" (a same-origin request;
+    // the embed widget omits Origin when same-origin to the proxy — #609→#612) and
+    // is allowed for the origin dimension. Callers that require an Origin reject its
+    // absence upstream. Only a *present* origin is matched against the constraint.
     if (
       grant.originConstraint.mode !== "allow-all" &&
-      input.origin !== undefined &&
+      input.origin != null &&
       !this.dependencies.originMatcher.matches(grant.originConstraint, input.origin)
     ) {
       return { allowed: false, reason: "origin_denied" };

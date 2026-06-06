@@ -96,4 +96,27 @@ describe("access grant origin constraints", () => {
       .send({ message: "hello", stream: false })
       .expect(200);
   });
+
+  it("admits an embed-config request with no Origin header (same-origin widget) but enforces a present origin", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "grant-origin-embed-config@example.com");
+    const token = await enableWebsiteEmbed(app, session, {
+      allowedOrigins: ["https://a.example"],
+    });
+
+    // No Origin header — the embed widget omits it when same-origin to the proxy
+    // (#609→#612). Must be allowed, not denied.
+    await request(app).get(`/api/v1/public/chat/${token}/embed-config`).expect(200);
+
+    // A present, listed origin is allowed; an unlisted one is rejected.
+    await request(app)
+      .get(`/api/v1/public/chat/${token}/embed-config`)
+      .set("Origin", "https://a.example")
+      .expect(200);
+
+    await request(app)
+      .get(`/api/v1/public/chat/${token}/embed-config`)
+      .set("Origin", "https://b.example")
+      .expect(400);
+  });
 });

@@ -47,8 +47,12 @@ export const basePlatformSettings = (): ApiSchemas["PlatformSettingsResponse"] =
   channels: {
     anonymousChatEnabled: false,
     anonymousChatUrl: "http://localhost:3000/chat/public-token",
+    anonymousChatLastUsedAt: null,
+    anonymousChatStatus: "active",
     websiteEmbedEnabled: false,
     websiteEmbedToken: "embed-token",
+    websiteEmbedLastUsedAt: null,
+    websiteEmbedStatus: "active",
     websiteEmbedScriptUrl: "http://localhost:3000/embed.js",
     websiteEmbedSnippet: "<script src=\"http://localhost:3000/embed.js\"></script>",
     websiteEmbedAllowedOrigins: [],
@@ -721,6 +725,10 @@ export const installDashboardApiMocks = async (
     if (request.method() === "PUT" && path === "/settings") {
       const body = request.postDataJSON() as Partial<PlatformSettingsFixture>;
       settingsUpdates?.push(body);
+      const channelPatch = body.channels as (Partial<PlatformSettingsFixture["channels"]> & {
+        revokeAnonymousChatToken?: boolean;
+        revokeWebsiteEmbedToken?: boolean;
+      }) | undefined;
       platformSettings = {
         assistant: {
           ...platformSettings.assistant,
@@ -732,7 +740,13 @@ export const installDashboardApiMocks = async (
         },
         channels: {
           ...platformSettings.channels,
-          ...(body.channels ?? {}),
+          ...(channelPatch ?? {}),
+          anonymousChatStatus: channelPatch?.revokeAnonymousChatToken
+            ? "revoked"
+            : channelPatch?.anonymousChatStatus ?? platformSettings.channels.anonymousChatStatus,
+          websiteEmbedStatus: channelPatch?.revokeWebsiteEmbedToken
+            ? "revoked"
+            : channelPatch?.websiteEmbedStatus ?? platformSettings.channels.websiteEmbedStatus,
         },
       };
       await json(route, platformSettings);

@@ -743,6 +743,7 @@ export const createTestDependencies = (overrides: {
     retrievalSettingsService,
     auditService,
     agentService,
+    accessGrantService,
     publicChatBaseUrl: env.PUBLIC_CHAT_BASE_URL,
   });
   const dependencies: AppDependencies = {

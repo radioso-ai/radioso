@@ -215,6 +215,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const platformSettingsService = new PlatformSettingsService({
     workspaceRepository: repositories.workspaceRepository,
     agentService,
+    accessGrantService: access.accessGrantService,
     retrievalSettingsService: settings.retrievalSettingsService,
     auditService: infrastructure.auditService,
     publicChatBaseUrl: env.PUBLIC_CHAT_BASE_URL,

@@ -1,4 +1,5 @@
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
+import type { AccessGrant, AccessGrantService } from "../../accessGrants/public.js";
 import type { AgentRecord, AgentService } from "../../agents/public.js";
 import { getWebsiteEmbedSurfaceSettings, isAgentBootstrapActive } from "../../agents/public.js";
 import { buildPublicAssistantLogoUrl } from "../../../app/http/shared/assistantLogoUrl.js";
@@ -25,6 +26,7 @@ import type { RetrievalSettingsService } from "../contracts/services.js";
 export interface PlatformSettingsServiceDependencies {
   workspaceRepository: Pick<WorkspaceRepositoryPort, "findById">;
   agentService: Pick<AgentService, "resolve" | "update" | "withRotatedTokens">;
+  accessGrantService?: Pick<AccessGrantService, "resolvePublicLaunchGrant" | "revokeGrant">;
   retrievalSettingsService: Pick<
     RetrievalSettingsService,
     "getForWorkspace" | "listMetadataFieldSuggestions" | "updateForWorkspace"
@@ -61,7 +63,7 @@ export class PlatformSettingsService {
     return {
       assistant: this.buildAssistantSection(agent),
       retrieval: this.buildRetrievalSection(retrievalSettings, metadataFieldSuggestions),
-      channels: this.buildChannelsSection(agent, workspace),
+      channels: await this.buildChannelsSection(agent, workspace),
     };
   }
 
@@ -83,6 +85,7 @@ export class PlatformSettingsService {
     let currentRetrievalSettings = retrievalSettings;
 
     if (patch.assistant || patch.channels) {
+      await this.revokeRequestedSurfaceGrants(currentAgent, patch.channels ?? {}, context);
       currentAgent = await this.updateAgentSections(workspaceId, currentAgent, workspace, patch, context);
     }
 
@@ -99,7 +102,7 @@ export class PlatformSettingsService {
     return {
       assistant: this.buildAssistantSection(currentAgent),
       retrieval: this.buildRetrievalSection(currentRetrievalSettings, metadataFieldSuggestions),
-      channels: this.buildChannelsSection(currentAgent, workspace),
+      channels: await this.buildChannelsSection(currentAgent, workspace),
     };
   }
 
@@ -115,6 +118,8 @@ export class PlatformSettingsService {
     const anonymousChat = agent.surfaceSettings.anonymousChat;
     const websiteEmbed = agent.surfaceSettings.websiteEmbed;
     const anonymousChatEnabled = channels.anonymousChatEnabled ?? anonymousChat.enabled;
+    const rotateAnonymousChatToken = channels.revokeAnonymousChatToken ? false : channels.rotateAnonymousChatToken;
+    const rotateWebsiteEmbedToken = channels.revokeWebsiteEmbedToken ? false : channels.rotateWebsiteEmbedToken;
 
     let normalizedWebsiteEmbed;
     try {
@@ -150,7 +155,7 @@ export class PlatformSettingsService {
           expertOverrides: normalizedWebsiteEmbed.websiteEmbedExpertOverrides,
         },
       },
-      rotateAnonymousChatToken: channels.rotateAnonymousChatToken,
+      rotateAnonymousChatToken,
       name: assistant.assistantName ?? agent.name,
       greetingInstruction: assistant.greetingInstruction ?? agent.greetingInstruction,
       assistantDefaultLocale:
@@ -160,7 +165,7 @@ export class PlatformSettingsService {
       proactiveGreetingEnabled: assistant.proactiveGreetingEnabled ?? agent.proactiveGreetingEnabled,
       suggestedQuestionsEnabled: assistant.suggestedQuestionsEnabled ?? agent.suggestedQuestionsEnabled,
       customInstruction: assistant.customInstruction ?? agent.customInstruction,
-      rotateWebsiteEmbedToken: channels.rotateWebsiteEmbedToken,
+      rotateWebsiteEmbedToken,
     }));
 
     await this.recordChannelAuditEvents({
@@ -168,11 +173,11 @@ export class PlatformSettingsService {
       workspaceId,
       previousAgent: agent,
       anonymousChatEnabled,
-      rotateAnonymousChatToken: channels.rotateAnonymousChatToken ?? false,
+      rotateAnonymousChatToken: rotateAnonymousChatToken ?? false,
       websiteEmbedEnabled: normalizedWebsiteEmbed.websiteEmbedEnabled,
       websiteEmbedAllowedOrigins: normalizedWebsiteEmbed.websiteEmbedAllowedOrigins,
       websiteEmbedLauncherPosition: normalizedWebsiteEmbed.websiteEmbedLauncherPosition,
-      rotateWebsiteEmbedToken: channels.rotateWebsiteEmbedToken ?? false,
+      rotateWebsiteEmbedToken: rotateWebsiteEmbedToken ?? false,
     });
 
     return updated;
@@ -241,6 +246,45 @@ export class PlatformSettingsService {
     }
   }
 
+  private async revokeRequestedSurfaceGrants(
+    agent: AgentRecord,
+    channels: NonNullable<PlatformSettingsPatch["channels"]>,
+    context: PlatformSettingsUpdateContext,
+  ): Promise<void> {
+    if (!this.dependencies.accessGrantService) {
+      return;
+    }
+
+    await Promise.all([
+      channels.revokeAnonymousChatToken
+        ? this.revokeCurrentPublicLaunchGrant(agent.surfaceSettings.anonymousChat.token, context)
+        : undefined,
+      channels.revokeWebsiteEmbedToken
+        ? this.revokeCurrentPublicLaunchGrant(agent.surfaceSettings.websiteEmbed.token, context)
+        : undefined,
+    ]);
+  }
+
+  private async revokeCurrentPublicLaunchGrant(
+    token: string | null,
+    context: PlatformSettingsUpdateContext,
+  ): Promise<void> {
+    if (!token || !this.dependencies.accessGrantService) {
+      return;
+    }
+
+    const grant = await this.dependencies.accessGrantService.resolvePublicLaunchGrant(token);
+    if (!grant || grant.revokedAt) {
+      return;
+    }
+
+    await this.dependencies.accessGrantService.revokeGrant({
+      grantId: grant.id,
+      accountId: context.accountId,
+      reason: "operator_revoked",
+    });
+  }
+
   private async updateRetrievalSections(
     workspaceId: string,
     existing: RetrievalSettingsRecord,
@@ -304,14 +348,22 @@ export class PlatformSettingsService {
     };
   }
 
-  private buildChannelsSection(agent: AgentRecord, workspace: WorkspaceRecord): PlatformChannelsSettingsSection {
+  private async buildChannelsSection(agent: AgentRecord, workspace: WorkspaceRecord): Promise<PlatformChannelsSettingsSection> {
     const anonymousChat = agent.surfaceSettings.anonymousChat;
     const websiteEmbed = agent.surfaceSettings.websiteEmbed;
+    const [anonymousChatLifecycle, websiteEmbedLifecycle] = await Promise.all([
+      this.resolvePublicLaunchLifecycle(anonymousChat.token),
+      this.resolvePublicLaunchLifecycle(websiteEmbed.token),
+    ]);
     return {
       anonymousChatEnabled: anonymousChat.enabled,
       anonymousChatUrl: this.buildAnonymousChatUrl(anonymousChat.token, anonymousChat.enabled),
+      anonymousChatLastUsedAt: anonymousChatLifecycle.lastUsedAt,
+      anonymousChatStatus: anonymousChatLifecycle.status,
       websiteEmbedEnabled: websiteEmbed.enabled,
       websiteEmbedToken: websiteEmbed.token,
+      websiteEmbedLastUsedAt: websiteEmbedLifecycle.lastUsedAt,
+      websiteEmbedStatus: websiteEmbedLifecycle.status,
       websiteEmbedAllowedOrigins: websiteEmbed.allowedOrigins,
       websiteEmbedLauncherLabel: websiteEmbed.launcherLabel,
       websiteEmbedLauncherPosition: websiteEmbed.launcherPosition,
@@ -328,6 +380,32 @@ export class PlatformSettingsService {
         websiteEmbedLauncherLabel: websiteEmbed.launcherLabel,
         websiteEmbedLauncherPosition: websiteEmbed.launcherPosition,
       }),
+    };
+  }
+
+  private async resolvePublicLaunchLifecycle(token: string | null): Promise<{
+    lastUsedAt: string | null;
+    status: "active" | "revoked" | null;
+  }> {
+    if (!token || !this.dependencies.accessGrantService) {
+      return { lastUsedAt: null, status: null };
+    }
+
+    const grant = await this.dependencies.accessGrantService.resolvePublicLaunchGrant(token);
+    return this.presentPublicLaunchLifecycle(grant);
+  }
+
+  private presentPublicLaunchLifecycle(grant: AccessGrant | null): {
+    lastUsedAt: string | null;
+    status: "active" | "revoked" | null;
+  } {
+    if (!grant) {
+      return { lastUsedAt: null, status: null };
+    }
+
+    return {
+      lastUsedAt: grant.lastUsedAt?.toISOString() ?? null,
+      status: grant.revokedAt ? "revoked" : "active",
     };
   }
 

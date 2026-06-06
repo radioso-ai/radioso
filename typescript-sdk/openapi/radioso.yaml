@@ -1228,6 +1228,8 @@ components:
       properties:
         anonymousChatEnabled:
           type: boolean
+        revokeAnonymousChatToken:
+          type: boolean
         assistantName:
           type: string
           maxLength: 200
@@ -1242,6 +1244,8 @@ components:
         proactiveGreetingEnabled:
           type: boolean
         websiteEmbedEnabled:
+          type: boolean
+        revokeWebsiteEmbedToken:
           type: boolean
         websiteEmbedAllowedOrigins:
           type: array
@@ -1293,6 +1297,18 @@ components:
           type:
             - string
             - "null"
+        anonymousChatLastUsedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        anonymousChatStatus:
+          type:
+            - string
+            - "null"
+          enum:
+            - active
+            - revoked
         assistantName:
           type: string
         greetingInstruction:
@@ -1315,6 +1331,18 @@ components:
           type:
             - string
             - "null"
+        websiteEmbedLastUsedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        websiteEmbedStatus:
+          type:
+            - string
+            - "null"
+          enum:
+            - active
+            - revoked
         websiteEmbedScriptUrl:
           type:
             - string
@@ -1361,6 +1389,8 @@ components:
       required:
         - anonymousChatEnabled
         - anonymousChatUrl
+        - anonymousChatLastUsedAt
+        - anonymousChatStatus
         - assistantName
         - greetingInstruction
         - assistantDefaultLocale
@@ -1369,6 +1399,8 @@ components:
         - assistantLogoUrl
         - websiteEmbedEnabled
         - websiteEmbedToken
+        - websiteEmbedLastUsedAt
+        - websiteEmbedStatus
         - websiteEmbedScriptUrl
         - websiteEmbedSnippet
         - websiteEmbedAllowedOrigins
@@ -1545,12 +1577,36 @@ components:
           type:
             - string
             - "null"
+        anonymousChatLastUsedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        anonymousChatStatus:
+          type:
+            - string
+            - "null"
+          enum:
+            - active
+            - revoked
         websiteEmbedEnabled:
           type: boolean
         websiteEmbedToken:
           type:
             - string
             - "null"
+        websiteEmbedLastUsedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        websiteEmbedStatus:
+          type:
+            - string
+            - "null"
+          enum:
+            - active
+            - revoked
         websiteEmbedAllowedOrigins:
           type: array
           items:
@@ -1597,8 +1653,12 @@ components:
       required:
         - anonymousChatEnabled
         - anonymousChatUrl
+        - anonymousChatLastUsedAt
+        - anonymousChatStatus
         - websiteEmbedEnabled
         - websiteEmbedToken
+        - websiteEmbedLastUsedAt
+        - websiteEmbedStatus
         - websiteEmbedAllowedOrigins
         - websiteEmbedLauncherLabel
         - websiteEmbedLauncherPosition
@@ -1737,7 +1797,11 @@ components:
           properties:
             anonymousChatEnabled:
               type: boolean
+            revokeAnonymousChatToken:
+              type: boolean
             websiteEmbedEnabled:
+              type: boolean
+            revokeWebsiteEmbedToken:
               type: boolean
             websiteEmbedAllowedOrigins:
               type: array

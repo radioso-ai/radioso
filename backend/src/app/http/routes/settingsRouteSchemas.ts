@@ -55,11 +55,13 @@ export const updateSettingsSchema = z.object({
 
 export const updateGeneralSettingsSchema = z.object({
   anonymousChatEnabled: z.boolean().optional(),
+  revokeAnonymousChatToken: z.boolean().optional(),
   assistantName: z.string().max(200).optional(),
   greetingInstruction: z.string().max(200).optional(),
   assistantDefaultLocale: z.string().max(35).nullable().optional(),
   proactiveGreetingEnabled: z.boolean().optional(),
   websiteEmbedEnabled: z.boolean().optional(),
+  revokeWebsiteEmbedToken: z.boolean().optional(),
   websiteEmbedAllowedOrigins: z.array(z.string().max(200)).max(20).optional(),
   websiteEmbedLauncherLabel: z.string().max(80).optional(),
   websiteEmbedLauncherPosition: z.enum(websiteEmbedLauncherPositions).optional(),
@@ -91,7 +93,9 @@ export const updatePlatformSettingsSchema = z.object({
   }).optional(),
   channels: z.object({
     anonymousChatEnabled: z.boolean().optional(),
+    revokeAnonymousChatToken: z.boolean().optional(),
     websiteEmbedEnabled: z.boolean().optional(),
+    revokeWebsiteEmbedToken: z.boolean().optional(),
     websiteEmbedAllowedOrigins: z.array(z.string().max(200)).max(20).optional(),
     websiteEmbedLauncherLabel: z.string().max(80).optional(),
     websiteEmbedLauncherPosition: z.enum(websiteEmbedLauncherPositions).optional(),

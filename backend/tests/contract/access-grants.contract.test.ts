@@ -44,6 +44,13 @@ describe("access grants contract", () => {
     const touchedEmbedGrant = await dependencies.accessGrantService.resolvePublicLaunchGrant(embedToken);
     expect(touchedEmbedGrant?.lastUsedAt).toBeInstanceOf(Date);
 
+    const afterTouchSettings = await request(app)
+      .get("/api/v1/settings/general")
+      .set(adminSessionHeaders(session));
+    expect(afterTouchSettings.status).toBe(200);
+    expect(afterTouchSettings.body.websiteEmbedLastUsedAt).toBe(touchedEmbedGrant?.lastUsedAt?.toISOString());
+    expect(afterTouchSettings.body.websiteEmbedStatus).toBe("active");
+
     const rotated = await request(app)
       .post("/api/v1/settings/general/website-embed-token/rotate")
       .set(adminSessionHeaders(session))
@@ -94,5 +101,50 @@ describe("access grants contract", () => {
         expect.objectContaining({ id: grant?.id, revokedAt: expect.any(Date) }),
       ]),
     );
+  });
+
+  it("revokes a public launch grant through settings without rotating the current token", async () => {
+    const { app, dependencies } = createTestApp();
+    const session = await issueTestSession(app, "access-grants-settings-revoke@example.com");
+
+    const enabled = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        anonymousChatEnabled: true,
+      });
+
+    expect(enabled.status).toBe(200);
+    expect(enabled.body.anonymousChatStatus).toBe("active");
+    const anonymousUrl = enabled.body.anonymousChatUrl as string;
+    const anonymousToken = extractToken(anonymousUrl);
+    const grant = await dependencies.accessGrantService.resolvePublicLaunchGrant(anonymousToken);
+    expect(grant).not.toBeNull();
+
+    const revoked = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        revokeAnonymousChatToken: true,
+      });
+
+    expect(revoked.status).toBe(200);
+    expect(revoked.body.anonymousChatUrl).toBe(anonymousUrl);
+    expect(revoked.body.anonymousChatStatus).toBe("revoked");
+
+    const laterSave = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        assistantName: "Support",
+      });
+
+    expect(laterSave.status).toBe(200);
+    expect(laterSave.body.anonymousChatUrl).toBe(anonymousUrl);
+    expect(laterSave.body.anonymousChatStatus).toBe("revoked");
+
+    const currentGrant = await dependencies.accessGrantService.resolvePublicLaunchGrant(anonymousToken);
+    expect(currentGrant?.id).toBe(grant?.id);
+    expect(currentGrant?.revokedAt).toBeInstanceOf(Date);
   });
 });

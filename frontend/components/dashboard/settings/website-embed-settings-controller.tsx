@@ -1,10 +1,19 @@
 'use client'
 
 import { type Dispatch, type MutableRefObject, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, Code2, ExternalLink, Globe, RefreshCw } from 'lucide-react'
+import { ChevronDown, Code2, ExternalLink, Globe, RefreshCw, ShieldAlert } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { CodeBlock } from '@/components/markdown/code-block'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
@@ -32,6 +41,7 @@ type WebsiteEmbedSettingsControllerProps = {
   setIsAnonSaving: Dispatch<SetStateAction<boolean>>
   updateGeneralSettings?: typeof generalSettingsApi.updateGeneralSettings
   rotateWebsiteEmbedToken?: () => Promise<GeneralSettings>
+  revokeWebsiteEmbedToken?: () => Promise<GeneralSettings>
   anonDraftVersionRef: MutableRefObject<number>
   saveSequenceRef: MutableRefObject<number>
   setSaveState: (state: SaveState) => void
@@ -72,6 +82,43 @@ const DISPLAY_MODES: { value: 'bubble' | 'panel'; label: string; description: st
   },
 ]
 
+const formatLastUsed = (value: string | null | undefined) => {
+  if (!value) {
+    return 'Never used'
+  }
+  const timestamp = new Date(value).getTime()
+  if (!Number.isFinite(timestamp)) {
+    return 'Last used: Unknown'
+  }
+  const diffSeconds = Math.round((timestamp - Date.now()) / 1000)
+  const absoluteSeconds = Math.abs(diffSeconds)
+  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+    ['year', 60 * 60 * 24 * 365],
+    ['month', 60 * 60 * 24 * 30],
+    ['week', 60 * 60 * 24 * 7],
+    ['day', 60 * 60 * 24],
+    ['hour', 60 * 60],
+    ['minute', 60],
+  ]
+  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+  for (const [unit, unitSeconds] of units) {
+    if (absoluteSeconds >= unitSeconds) {
+      return `Last used: ${formatter.format(Math.round(diffSeconds / unitSeconds), unit)}`
+    }
+  }
+  return `Last used: ${formatter.format(diffSeconds, 'second')}`
+}
+
+const lifecycleBadgeClassName = (status: GeneralSettings['websiteEmbedStatus']) =>
+  status === 'revoked'
+    ? 'bg-destructive/10 text-destructive'
+    : status === 'active'
+      ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+      : 'bg-muted text-muted-foreground'
+
+const lifecycleBadgeLabel = (status: GeneralSettings['websiteEmbedStatus']) =>
+  status === 'revoked' ? 'Revoked' : status === 'active' ? 'Active' : 'No credential'
+
 export function WebsiteEmbedSettingsController(props: WebsiteEmbedSettingsControllerProps) {
   if (!editionController.shouldRenderWebsiteEmbedSettings(props.mode)) {
     return null
@@ -89,6 +136,7 @@ function WebsiteEmbedSettingsPanel({
   setIsAnonSaving,
   updateGeneralSettings = generalSettingsApi.updateGeneralSettings,
   rotateWebsiteEmbedToken = () => generalSettingsApi.rotateWebsiteEmbedToken({ auth: 'session' }),
+  revokeWebsiteEmbedToken = () => generalSettingsApi.updateGeneralSettings({ revokeWebsiteEmbedToken: true }, { auth: 'session' }),
   anonDraftVersionRef,
   saveSequenceRef,
   setSaveState,
@@ -107,6 +155,8 @@ function WebsiteEmbedSettingsPanel({
   const [websiteEmbedCopyLocale, setWebsiteEmbedCopyLocale] = useState('en')
   const [isPreparingWebsiteEmbedDemo, setIsPreparingWebsiteEmbedDemo] = useState(false)
   const [websiteEmbedDemoError, setWebsiteEmbedDemoError] = useState<string | null>(null)
+  const [revokeDialogOpen, setRevokeDialogOpen] = useState(false)
+  const [revokeError, setRevokeError] = useState<string | null>(null)
 
   // The locale field only selects which saved copy pack is being edited; it is not
   // a persisted setting. Once settings load, open the editor on a locale that already
@@ -374,6 +424,27 @@ function WebsiteEmbedSettingsPanel({
     }
   }
 
+  const handleWebsiteEmbedTokenRevoke = async () => {
+    if (!anonSettings) return
+    setIsAnonSaving(true)
+    setRevokeError(null)
+    try {
+      const updated = await revokeWebsiteEmbedToken()
+      setAnonSettings(updated)
+      setSavedAnonSettings(updated)
+      setRevokeDialogOpen(false)
+      setSaveState('saved')
+    } catch (error) {
+      const message = getApiErrorMessage(error, 'Could not revoke the install code. Please try again.')
+      console.error('Failed to revoke website embed token:', message, error)
+      setRevokeError(message)
+      setSaveState('error')
+      setSaveError(message)
+    } finally {
+      setIsAnonSaving(false)
+    }
+  }
+
   return (
     <section id="website-embed" className="space-y-6 scroll-mt-24">
       {anonSettings ? (
@@ -384,9 +455,19 @@ function WebsiteEmbedSettingsPanel({
                 <Globe className="h-5 w-5 text-primary" />
               </div>
               <div className="min-w-0">
-                <h3 className="font-medium text-foreground">Website chat widget</h3>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="font-medium text-foreground">Website chat widget</h3>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${lifecycleBadgeClassName(anonSettings.websiteEmbedStatus)}`}>
+                    {lifecycleBadgeLabel(anonSettings.websiteEmbedStatus)}
+                  </span>
+                </div>
                 <p className="text-sm text-muted-foreground">
                   Add a chat button to your website so visitors can ask the assistant questions.
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {anonSettings.websiteEmbedStatus === 'revoked'
+                    ? 'Revoked — rotate to issue a new credential.'
+                    : formatLastUsed(anonSettings.websiteEmbedLastUsedAt)}
                 </p>
               </div>
             </div>
@@ -697,6 +778,45 @@ function WebsiteEmbedSettingsPanel({
                   {isAnonSaving ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                   Generate new code
                 </Button>
+                <Dialog
+                  open={revokeDialogOpen}
+                  onOpenChange={(open) => {
+                    setRevokeDialogOpen(open)
+                    if (!open) {
+                      setRevokeError(null)
+                    }
+                  }}
+                >
+                  <DialogTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={isAnonSaving || anonSettings.websiteEmbedStatus !== 'active'}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <ShieldAlert className="mr-2 h-4 w-4" />
+                      Revoke
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Revoke website chat widget credential</DialogTitle>
+                      <DialogDescription>
+                        The current install code will stop launching new chats immediately. Rotate the code later to issue a new credential.
+                      </DialogDescription>
+                    </DialogHeader>
+                    {revokeError ? <p className="text-sm text-destructive">{revokeError}</p> : null}
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setRevokeDialogOpen(false)} disabled={isAnonSaving}>
+                        Cancel
+                      </Button>
+                      <Button variant="destructive" onClick={handleWebsiteEmbedTokenRevoke} disabled={isAnonSaving}>
+                        {isAnonSaving ? <Spinner className="mr-2 h-4 w-4" /> : <ShieldAlert className="mr-2 h-4 w-4" />}
+                        Revoke
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
                 <Button
                   variant="default"
                   onClick={handleOpenWebsiteEmbedDemo}

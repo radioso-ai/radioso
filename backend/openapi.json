@@ -1866,6 +1866,9 @@
           "anonymousChatEnabled": {
             "type": "boolean"
           },
+          "revokeAnonymousChatToken": {
+            "type": "boolean"
+          },
           "assistantName": {
             "type": "string",
             "maxLength": 200
@@ -1885,6 +1888,9 @@
             "type": "boolean"
           },
           "websiteEmbedEnabled": {
+            "type": "boolean"
+          },
+          "revokeWebsiteEmbedToken": {
             "type": "boolean"
           },
           "websiteEmbedAllowedOrigins": {
@@ -1958,6 +1964,23 @@
               "null"
             ]
           },
+          "anonymousChatLastUsedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "anonymousChatStatus": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "active",
+              "revoked"
+            ]
+          },
           "assistantName": {
             "type": "string"
           },
@@ -1989,6 +2012,23 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "websiteEmbedLastUsedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "websiteEmbedStatus": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "active",
+              "revoked"
             ]
           },
           "websiteEmbedScriptUrl": {
@@ -2061,6 +2101,8 @@
         "required": [
           "anonymousChatEnabled",
           "anonymousChatUrl",
+          "anonymousChatLastUsedAt",
+          "anonymousChatStatus",
           "assistantName",
           "greetingInstruction",
           "assistantDefaultLocale",
@@ -2069,6 +2111,8 @@
           "assistantLogoUrl",
           "websiteEmbedEnabled",
           "websiteEmbedToken",
+          "websiteEmbedLastUsedAt",
+          "websiteEmbedStatus",
           "websiteEmbedScriptUrl",
           "websiteEmbedSnippet",
           "websiteEmbedAllowedOrigins",
@@ -2351,6 +2395,23 @@
               "null"
             ]
           },
+          "anonymousChatLastUsedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "anonymousChatStatus": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "active",
+              "revoked"
+            ]
+          },
           "websiteEmbedEnabled": {
             "type": "boolean"
           },
@@ -2358,6 +2419,23 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "websiteEmbedLastUsedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "websiteEmbedStatus": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "active",
+              "revoked"
             ]
           },
           "websiteEmbedAllowedOrigins": {
@@ -2430,8 +2508,12 @@
         "required": [
           "anonymousChatEnabled",
           "anonymousChatUrl",
+          "anonymousChatLastUsedAt",
+          "anonymousChatStatus",
           "websiteEmbedEnabled",
           "websiteEmbedToken",
+          "websiteEmbedLastUsedAt",
+          "websiteEmbedStatus",
           "websiteEmbedAllowedOrigins",
           "websiteEmbedLauncherLabel",
           "websiteEmbedLauncherPosition",
@@ -2663,7 +2745,13 @@
               "anonymousChatEnabled": {
                 "type": "boolean"
               },
+              "revokeAnonymousChatToken": {
+                "type": "boolean"
+              },
               "websiteEmbedEnabled": {
+                "type": "boolean"
+              },
+              "revokeWebsiteEmbedToken": {
                 "type": "boolean"
               },
               "websiteEmbedAllowedOrigins": {

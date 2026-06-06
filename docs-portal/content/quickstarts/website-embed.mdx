@@ -151,6 +151,8 @@ Open the approved origin, confirm the launcher appears, open the widget, and con
 
 The browser sends its `Origin` header to the frontend session route. The frontend forwards that origin to the backend, which decides whether the launch is allowed.
 
+After a successful launch, the channels settings screen shows when the website embed credential was last used. If an install code is exposed, revoke it to stop new launches immediately. Revocation does not create a replacement code; rotate the credential when you are ready to install a new one.
+
 ### Test the blocked path
 
 Open the blocked origin and confirm the launcher cannot establish a valid embedded session there.

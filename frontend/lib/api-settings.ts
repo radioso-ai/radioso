@@ -100,11 +100,13 @@ export const generalSettingsApi = {
 
   async updateGeneralSettings(data: {
     anonymousChatEnabled?: boolean
+    revokeAnonymousChatToken?: boolean
     assistantName?: string
     greetingInstruction?: string
     assistantDefaultLocale?: string | null
     proactiveGreetingEnabled?: boolean
     websiteEmbedEnabled?: boolean
+    revokeWebsiteEmbedToken?: boolean
     websiteEmbedToken?: string | null
     websiteEmbedScriptUrl?: string | null
     websiteEmbedSnippet?: string | null
@@ -126,7 +128,9 @@ export const generalSettingsApi = {
         },
         channels: {
           anonymousChatEnabled: data.anonymousChatEnabled,
+          revokeAnonymousChatToken: data.revokeAnonymousChatToken,
           websiteEmbedEnabled: data.websiteEmbedEnabled,
+          revokeWebsiteEmbedToken: data.revokeWebsiteEmbedToken,
           websiteEmbedAllowedOrigins: data.websiteEmbedAllowedOrigins,
           websiteEmbedLauncherLabel: data.websiteEmbedLauncherLabel,
           websiteEmbedLauncherPosition: data.websiteEmbedLauncherPosition,

@@ -1866,11 +1866,13 @@ export interface components {
         };
         UpdateGeneralSettingsRequest: {
             anonymousChatEnabled?: boolean;
+            revokeAnonymousChatToken?: boolean;
             assistantName?: string;
             greetingInstruction?: string;
             assistantDefaultLocale?: string | null;
             proactiveGreetingEnabled?: boolean;
             websiteEmbedEnabled?: boolean;
+            revokeWebsiteEmbedToken?: boolean;
             websiteEmbedAllowedOrigins?: string[];
             websiteEmbedLauncherLabel?: string;
             /** @enum {string} */
@@ -1893,6 +1895,10 @@ export interface components {
         GeneralSettingsResponse: {
             anonymousChatEnabled: boolean;
             anonymousChatUrl: string | null;
+            /** Format: date-time */
+            anonymousChatLastUsedAt: string | null;
+            /** @enum {string|null} */
+            anonymousChatStatus: "active" | "revoked" | null;
             assistantName: string;
             greetingInstruction: string;
             assistantDefaultLocale: string | null;
@@ -1901,6 +1907,10 @@ export interface components {
             assistantLogoUrl: string | null;
             websiteEmbedEnabled: boolean;
             websiteEmbedToken: string | null;
+            /** Format: date-time */
+            websiteEmbedLastUsedAt: string | null;
+            /** @enum {string|null} */
+            websiteEmbedStatus: "active" | "revoked" | null;
             websiteEmbedScriptUrl: string | null;
             websiteEmbedSnippet: string | null;
             websiteEmbedAllowedOrigins: string[];
@@ -1988,8 +1998,16 @@ export interface components {
         PlatformChannelsSettingsSection: {
             anonymousChatEnabled: boolean;
             anonymousChatUrl: string | null;
+            /** Format: date-time */
+            anonymousChatLastUsedAt: string | null;
+            /** @enum {string|null} */
+            anonymousChatStatus: "active" | "revoked" | null;
             websiteEmbedEnabled: boolean;
             websiteEmbedToken: string | null;
+            /** Format: date-time */
+            websiteEmbedLastUsedAt: string | null;
+            /** @enum {string|null} */
+            websiteEmbedStatus: "active" | "revoked" | null;
             websiteEmbedAllowedOrigins: string[];
             websiteEmbedLauncherLabel: string;
             /** @enum {string} */
@@ -2065,7 +2083,9 @@ export interface components {
             };
             channels?: {
                 anonymousChatEnabled?: boolean;
+                revokeAnonymousChatToken?: boolean;
                 websiteEmbedEnabled?: boolean;
+                revokeWebsiteEmbedToken?: boolean;
                 websiteEmbedAllowedOrigins?: string[];
                 websiteEmbedLauncherLabel?: string;
                 /** @enum {string} */

@@ -27,6 +27,8 @@ export const presentGeneralSettings = (
 ) => ({
   anonymousChatEnabled: settings.channels.anonymousChatEnabled,
   anonymousChatUrl: settings.channels.anonymousChatUrl,
+  anonymousChatLastUsedAt: settings.channels.anonymousChatLastUsedAt,
+  anonymousChatStatus: settings.channels.anonymousChatStatus,
   assistantName: settings.assistant.assistantName,
   greetingInstruction: settings.assistant.greetingInstruction,
   assistantDefaultLocale: settings.assistant.assistantDefaultLocale,
@@ -35,6 +37,8 @@ export const presentGeneralSettings = (
   assistantLogoUrl: settings.assistant.assistantLogoUrl,
   websiteEmbedEnabled: settings.channels.websiteEmbedEnabled,
   websiteEmbedToken: settings.channels.websiteEmbedToken,
+  websiteEmbedLastUsedAt: settings.channels.websiteEmbedLastUsedAt,
+  websiteEmbedStatus: settings.channels.websiteEmbedStatus,
   websiteEmbedScriptUrl: settings.channels.websiteEmbedScriptUrl,
   websiteEmbedSnippet: settings.channels.websiteEmbedSnippet,
   websiteEmbedAllowedOrigins: settings.channels.websiteEmbedAllowedOrigins,

@@ -12,6 +12,7 @@ export interface RetrievalSkillSettingsOverride {
   suggestedQuestionsCount?: number
   retrievalStrategy?: RetrievalStrategy
   vectorTopK?: number
+  similarityThreshold?: number
   rerankEnabled?: boolean
   rerankTopK?: number
   metadataRules?: RetrievalMetadataRule[]
@@ -27,6 +28,7 @@ const knownRetrievalSkillFields = [
   'suggestedQuestionsCount',
   'retrievalStrategy',
   'vectorTopK',
+  'similarityThreshold',
   'rerankEnabled',
   'rerankTopK',
   'metadataRules',
@@ -57,6 +59,9 @@ export const readRetrievalSkillSettingsOverride = (
     next.retrievalStrategy = raw.retrievalStrategy as RetrievalStrategy
   }
   if (typeof raw.vectorTopK === 'number' && Number.isInteger(raw.vectorTopK)) next.vectorTopK = raw.vectorTopK
+  if (typeof raw.similarityThreshold === 'number' && raw.similarityThreshold >= 0 && raw.similarityThreshold <= 1) {
+    next.similarityThreshold = raw.similarityThreshold
+  }
   if (typeof raw.rerankEnabled === 'boolean') next.rerankEnabled = raw.rerankEnabled
   if (typeof raw.rerankTopK === 'number' && Number.isInteger(raw.rerankTopK)) next.rerankTopK = raw.rerankTopK
   if (Array.isArray(raw.metadataRules)) next.metadataRules = raw.metadataRules as RetrievalMetadataRule[]

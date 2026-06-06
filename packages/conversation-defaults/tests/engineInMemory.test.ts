@@ -74,6 +74,7 @@ describe("in-memory defaults with DefaultConversationEngine", () => {
 
     expect(result.response.answer).toBe("Echo: hello");
     expect(result.trace.stages.map((stage) => stage.kind)).toEqual([
+      "message",
       "gather",
       "directive_match",
       "skill_selection",

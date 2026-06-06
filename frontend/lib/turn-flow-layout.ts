@@ -2,8 +2,8 @@ import dagre from 'dagre'
 
 import type { TurnFlowGraph } from './turn-flow'
 
-export const FLOW_NODE_WIDTH = 176
-export const FLOW_NODE_HEIGHT = 58
+export const FLOW_NODE_WIDTH = 220
+export const FLOW_NODE_HEIGHT = 64
 
 export interface NodeBox {
   x: number
@@ -13,13 +13,13 @@ export interface NodeBox {
 }
 
 /**
- * Left-to-right dagre layout for the turn flow. Returns top-left positions keyed
+ * Top-to-bottom dagre layout for the turn flow. Returns top-left positions keyed
  * by node id (dagre reports centers; React Flow wants the corner). Pure: the draw
  * layer stays free of geometry math.
  */
 export const layoutTurnFlow = (graph: TurnFlowGraph): Map<string, NodeBox> => {
   const g = new dagre.graphlib.Graph()
-  g.setGraph({ rankdir: 'LR', nodesep: 24, ranksep: 52, marginx: 24, marginy: 24 })
+  g.setGraph({ rankdir: 'TB', nodesep: 28, ranksep: 36, marginx: 28, marginy: 28 })
   g.setDefaultEdgeLabel(() => ({}))
 
   for (const node of graph.nodes) {

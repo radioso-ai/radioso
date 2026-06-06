@@ -38,6 +38,7 @@ describe("createConversationKit", () => {
     expect(result.response.answer).toBe("reply:Hello kit");
     expect(result.response.metadata).toMatchObject({ sawDirective: true });
     expect(result.trace.stages.map((stage) => stage.kind)).toEqual([
+      "message",
       "gather",
       "directive_match",
       "skill_selection",

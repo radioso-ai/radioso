@@ -147,6 +147,7 @@ describe("conversation-nlp kit wiring", () => {
       reasoning_effort: "medium",
     });
     expect(result.trace.stages.map((stage) => stage.kind)).toEqual([
+      "message",
       "gather",
       "directive_match",
       "skill_selection",

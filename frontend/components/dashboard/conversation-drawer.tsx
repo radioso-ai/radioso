@@ -557,6 +557,11 @@ export function ConversationDrawer({
               envelope={activeEnvelope}
               leafTrace={activeTrace}
               onClose={() => setFlowOpen(false)}
+              // Pass the drawer's already-authorized conversation messages so the
+              // overlay can show user/history/answer text without the trace
+              // envelope embedding raw content.
+              messages={conversationDetail?.messages}
+              assistantMessageId={selectedDiagnosticsAssistantMessage?.id}
             />
           ) : null}
         </DrawerContent>

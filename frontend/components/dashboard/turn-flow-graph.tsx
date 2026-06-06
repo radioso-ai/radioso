@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import {
   Background,
   Controls,
@@ -11,6 +11,7 @@ import {
   type Edge,
   type Node,
   type NodeProps,
+  type ReactFlowInstance,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 
@@ -51,7 +52,7 @@ function FlowCard({ data }: NodeProps<Node<FlowNodeData>>) {
         KIND_ACCENT[data.nodeKind]
       } ${selected ? 'ring-2 ring-primary' : ''}`}
     >
-      <Handle type="target" position={Position.Left} className="!h-1.5 !w-1.5 !border-0 !bg-border" />
+      <Handle type="target" position={Position.Top} className="!h-1.5 !w-1.5 !border-0 !bg-border" />
       <div className="flex items-center gap-1.5">
         {data.status ? <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT[data.status]}`} /> : null}
         <span className="truncate text-xs font-medium text-foreground">{data.label}</span>
@@ -59,14 +60,14 @@ function FlowCard({ data }: NodeProps<Node<FlowNodeData>>) {
       {data.sublabel ? (
         <span className="mt-0.5 truncate text-[11px] text-muted-foreground">{data.sublabel}</span>
       ) : null}
-      <Handle type="source" position={Position.Right} className="!h-1.5 !w-1.5 !border-0 !bg-border" />
+      <Handle type="source" position={Position.Bottom} className="!h-1.5 !w-1.5 !border-0 !bg-border" />
     </div>
   )
 }
 
 function LaneCard({ data }: NodeProps<Node<LaneData>>) {
   return (
-    <div className="pointer-events-none h-full w-full rounded-xl border border-dashed border-sky-500/30 bg-sky-500/[0.04]">
+    <div className="pointer-events-none relative h-full w-full rounded-xl border border-dashed border-sky-500/30 bg-sky-500/[0.04]">
       <span className="absolute left-3 top-1.5 text-[10px] font-medium uppercase tracking-wide text-sky-600/80">
         {data.label} path
       </span>
@@ -172,19 +173,50 @@ export function TurnFlowGraph({
     return { nodes: [...laneNodes, ...flowNodes], edges: flowEdges }
   }, [graph, selectedNodeId])
 
+  // Center the canvas on the first node (the topmost flow node by layout y) so the
+  // user lands zoomed in on the start of the turn rather than the whole graph
+  // shrunk to fit. They can scroll/pan downstream from there.
+  const firstNodeId = useMemo(() => {
+    const flowNodes = nodes.filter((node) => node.type === 'flowCard')
+    if (!flowNodes.length) return undefined
+    return flowNodes.reduce((earliest, current) =>
+      current.position.y < earliest.position.y ? current : earliest,
+    ).id
+  }, [nodes])
+
+  const handleInit = useCallback(
+    (instance: ReactFlowInstance) => {
+      if (!firstNodeId) {
+        instance.fitView({ padding: 0.25 })
+        return
+      }
+      const node = instance.getNode(firstNodeId)
+      if (!node) {
+        instance.fitView({ padding: 0.25 })
+        return
+      }
+      const width = node.measured?.width ?? (node.width ?? FLOW_NODE_WIDTH)
+      const height = node.measured?.height ?? (node.height ?? FLOW_NODE_HEIGHT)
+      instance.setCenter(node.position.x + width / 2, node.position.y + height + 24, {
+        zoom: 1.2,
+        duration: 0,
+      })
+    },
+    [firstNodeId],
+  )
+
   return (
     <ReactFlow
       nodes={nodes}
       edges={edges}
       nodeTypes={nodeTypes}
       colorMode={resolvedTheme}
-      fitView
-      fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
       minZoom={0.2}
       maxZoom={1.75}
       nodesDraggable={false}
       nodesConnectable={false}
       proOptions={{ hideAttribution: true }}
+      onInit={handleInit}
       onNodeClick={(_event, node) => {
         const original = byId.get(node.id)
         if (original) onSelectNode(original)

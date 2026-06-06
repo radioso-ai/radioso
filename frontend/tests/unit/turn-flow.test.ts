@@ -23,8 +23,19 @@ const envelope = (): TurnTraceEnvelope => ({
     traceId: 'conversation-turn-1',
     startedAt: '2026-01-01T00:00:00.000Z',
     stages: [
+      {
+        id: 'message',
+        kind: 'message',
+        status: 'applied',
+        outputs: { kind: 'user.chat', eventId: 'msg_user_1', contentLength: 18 },
+      },
       { id: 'gather', kind: 'gather', status: 'applied', outputs: { historyCount: 2 } },
-      { id: 'directives', kind: 'directive_match', status: 'applied', outputs: { matchCount: 1 } },
+      {
+        id: 'directives',
+        kind: 'directive_match',
+        status: 'applied',
+        outputs: { matchCount: 1, candidateCount: 3 },
+      },
       {
         id: 'selection',
         kind: 'skill_selection',
@@ -80,6 +91,10 @@ describe('envelopeToFlowGraph', () => {
   it('carries detail resolution: spine stages vs leaf stages', () => {
     const graph = envelopeToFlowGraph(envelope())
     expect(graph.nodes.find((n) => n.id === 'engine')?.detail).toEqual({ kind: 'spine', spineStageId: 'selection' })
+    expect(graph.nodes.find((n) => n.id === 'input:message')?.detail).toEqual({
+      kind: 'spine',
+      spineStageId: 'message',
+    })
     expect(graph.nodes.find((n) => n.id === 'stage:semantic')?.detail).toEqual({ kind: 'leaf', leafStageId: 'semantic' })
   })
 

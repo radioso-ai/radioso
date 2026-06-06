@@ -120,9 +120,15 @@ export class ActivityTracePresenter {
           : "No relevant contexts were available for grounded answer generation.",
     };
     const hasGenerationStage = baseTrace.stages.some((stage) => stage.stageId === generationStage.stageId);
-    const previousStageId = baseTrace.stages.some((stage) => stage.stageId === "diagnostics")
-      ? "diagnostics"
-      : baseTrace.stages.at(-1)?.stageId;
+    // Prefer the dispatch wrapper when it has already been appended (post-pipeline)
+    // so the flow reads diagnostics → skill_dispatch → generation → answer instead
+    // of branching diagnostics → generation in parallel with a dangling
+    // diagnostics → skill_dispatch that the debug graph would render as a dead end.
+    const previousStageId = baseTrace.stages.some((stage) => stage.stageId === "skill_dispatch")
+      ? "skill_dispatch"
+      : baseTrace.stages.some((stage) => stage.stageId === "diagnostics")
+        ? "diagnostics"
+        : baseTrace.stages.at(-1)?.stageId;
     const generationLink = previousStageId && !hasGenerationStage
       ? [{ fromStageId: previousStageId, toStageId: generationStage.stageId, kind: "sequence" as const }]
       : [];

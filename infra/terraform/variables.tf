@@ -189,9 +189,21 @@ variable "website_crawl_job_lease_ms" {
 }
 
 variable "worker_recovery_schedule" {
-  description = "Cron schedule for bounded worker recovery requests that process jobs missed by Cloud Tasks dispatch."
+  description = "Deprecated fallback cron schedule for both worker recovery jobs. Prefer document_worker_recovery_schedule and crawler_worker_recovery_schedule."
   type        = string
-  default     = "*/15 * * * *"
+  default     = null
+}
+
+variable "document_worker_recovery_schedule" {
+  description = "Optional cron schedule for bounded document worker recovery requests that process jobs missed by Cloud Tasks dispatch."
+  type        = string
+  default     = null
+}
+
+variable "crawler_worker_recovery_schedule" {
+  description = "Optional cron schedule for bounded crawler worker recovery requests. Crawls are Cloud Tasks driven, so this can usually be much less frequent than document recovery."
+  type        = string
+  default     = null
 }
 
 variable "worker_recovery_max_jobs" {

@@ -60,6 +60,7 @@ export { freezeAgent, type AgentSnapshot } from "./agentSnapshot.js";
 export {
   AGENT_CONFIG_FIELD_DESCRIPTORS,
   AGENT_CONFIG_SCHEMA_VERSION,
+  applyAgentConfigOverride,
   materializeAgentFromConfig,
   projectInternalAgentConfig,
   serializeAgentConfig,

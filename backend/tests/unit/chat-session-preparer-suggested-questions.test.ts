@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import type { ConversationRecord } from "../../src/db/repositories/conversationRepository.js";
+import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
 import { ChatSessionPreparer } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import type { RetrievalTurnPort } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { RESPONSE_INTENT } from "../../src/modules/retrieval/public.js";
@@ -121,5 +123,98 @@ describe("ChatSessionPreparer suggested-question settings", () => {
     });
     expect(capturedRequest.responseBehavior).not.toHaveProperty("suggestedQuestionsEnabled");
     expect(capturedRequest.responseBehavior).not.toHaveProperty("suggestedQuestionsCount");
+  });
+
+  it("uses pre-resolved agent and history without resolving the agent or loading repository history", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const agentRepository = new InMemoryAgentRepository();
+    const agent = await agentRepository.create("ws-1", {
+      name: "Replay Bot",
+      customInstruction: "Replay instructions.",
+    });
+    const history: MessageRecord[] = [{
+      id: "history-1",
+      conversationId: "conv-1",
+      workspaceId: "ws-1",
+      role: "user",
+      content: "Earlier question",
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    }];
+    const persistedConversation: ConversationRecord = {
+      id: "conv-ephemeral",
+      workspaceId: "ws-1",
+      agentId: agent.id,
+      agentName: agent.name,
+      sourceChannel: "workbench_replay",
+      sourceOrigin: null,
+      anonymousSessionId: null,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    };
+    const createConversation = vi
+      .spyOn(conversationRepository, "create")
+      .mockResolvedValue(persistedConversation);
+    const createMessage = vi
+      .spyOn(messageRepository, "create")
+      .mockImplementation(async (input) => ({
+        id: "user-ephemeral",
+        conversationId: input.conversationId,
+        workspaceId: input.workspaceId,
+        role: input.role,
+        content: input.content,
+        inputMetadata: input.inputMetadata,
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      }));
+    const listRecent = vi.spyOn(messageRepository, "listRecentByConversationId");
+    const resolve = vi.fn(async () => {
+      throw new Error("agent resolve should not be called");
+    });
+    let capturedRequest: RetrievalPipelineRequest | undefined;
+    const retrievalTurn: RetrievalTurnPort = {
+      async interpret(request: RetrievalPipelineRequest) {
+        capturedRequest = request;
+        return {
+          request,
+          traceStartedAtMs: Date.now(),
+          context: { result: {} as never, startedAt: Date.now(), durationMs: 0 },
+          interpretation: {
+            result: {
+              responseIntent: RESPONSE_INTENT.RETRIEVAL,
+            },
+            startedAt: Date.now(),
+            durationMs: 0,
+          },
+        };
+      },
+      async dispatch(input) {
+        return fixedRetrievalResult(input.interpreted.request);
+      },
+    };
+    const preparer = new ChatSessionPreparer(
+      conversationRepository,
+      messageRepository,
+      retrievalTurn,
+      createAuditService(),
+      undefined,
+      { resolve },
+    );
+
+    const session = await preparer.prepare({
+      workspaceId: "ws-1",
+      agentId: "ignored-agent",
+      query: "Replay this",
+    }, {
+      preResolvedAgent: agent,
+      preResolvedHistory: history,
+    });
+
+    expect(resolve).not.toHaveBeenCalled();
+    expect(listRecent).not.toHaveBeenCalled();
+    expect(createConversation).toHaveBeenCalledOnce();
+    expect(createMessage).toHaveBeenCalledOnce();
+    expect(session.agent).toBe(agent);
+    expect(session.history).toBe(history);
+    expect(capturedRequest?.history).toBe(history);
   });
 });

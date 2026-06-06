@@ -88,6 +88,18 @@ variable "document_processing_job_lease_ms" {
   default     = 300000
 }
 
+variable "document_worker_recovery_schedule" {
+  description = "Optional override for live document worker recovery. Null uses the root module default."
+  type        = string
+  default     = null
+}
+
+variable "crawler_worker_recovery_schedule" {
+  description = "Optional override for live crawler worker recovery. Null uses the root module default."
+  type        = string
+  default     = null
+}
+
 variable "document_storage_bucket_name" {
   description = "Optional override for the live document bucket."
   type        = string

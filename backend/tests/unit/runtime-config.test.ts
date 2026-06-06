@@ -361,7 +361,9 @@ describe("runtime configuration", () => {
     const schedulerTf = await readFile(new URL("../../../infra/terraform/scheduler.tf", import.meta.url), "utf8");
     const registryTf = await readFile(new URL("../../../infra/terraform/registry.tf", import.meta.url), "utf8");
     const stagingEnv = await readFile(new URL("../../../infra/terraform/environments/staging/main.tf", import.meta.url), "utf8");
+    const stagingEnvVariables = await readFile(new URL("../../../infra/terraform/environments/staging/variables.tf", import.meta.url), "utf8");
     const liveEnv = await readFile(new URL("../../../infra/terraform/environments/live/main.tf", import.meta.url), "utf8");
+    const liveEnvVariables = await readFile(new URL("../../../infra/terraform/environments/live/variables.tf", import.meta.url), "utf8");
 
     expect(computeTf).toContain('name  = "OBSERVABILITY_ENVIRONMENT"');
     expect(computeTf).toContain('value = var.environment');
@@ -383,6 +385,7 @@ describe("runtime configuration", () => {
     expect(computeTf).toContain('network_interfaces {');
     expect(computeTf).toContain('secret  = google_secret_manager_secret.secrets["database-url"].secret_id');
     expect(computeTf).not.toContain("cpu_idle = false");
+    expect((computeTf.match(/cpu_idle = true/g) ?? [])).toHaveLength(2);
     expect(computeTf).not.toContain('name  = "MAIL_DRIVER"');
     expect(computeTf).toContain('for_each = var.resend_mail_api_key != null ? [google_secret_manager_secret.secrets["resend-mail-api-key"].secret_id] : []');
     expect(computeTf).toContain('name = "RESEND_MAIL_API_KEY"');
@@ -405,11 +408,16 @@ describe("runtime configuration", () => {
     expect(terraformMain).toContain('app_base_url = coalesce(var.app_base_url_override, "https://example.invalid")');
     expect(terraformVariables).toContain('app_base_url_override must be set when radioso_edition is enterprise.');
     expect(terraformVariables).toContain('variable "mail_from_email"');
-    expect(terraformVariables).toContain('default     = "*/15 * * * *"');
+    expect(terraformVariables).toContain('variable "document_worker_recovery_schedule"');
+    expect(terraformVariables).toContain('variable "crawler_worker_recovery_schedule"');
+    expect(terraformMain).toContain('"0 * * * *"');
+    expect(terraformMain).toContain('"0 3 * * *"');
     expect(terraformApis).toContain('"cloudscheduler.googleapis.com"');
     expect(terraformApis).not.toContain('"vpcaccess.googleapis.com"');
     expect(schedulerTf).toContain('resource "google_cloud_scheduler_job" "document_worker_recovery"');
+    expect(schedulerTf).toContain("schedule = local.document_worker_recovery_schedule");
     expect(schedulerTf).toContain('resource "google_cloud_scheduler_job" "crawler_worker_recovery"');
+    expect(schedulerTf).toContain("schedule = local.crawler_worker_recovery_schedule");
     expect(registryTf).toContain('id     = "delete-untagged-older-than-7-days"');
     expect(registryTf).toContain('id     = "delete-tagged-older-than-30-days"');
     expect(terraformWorkflow).toContain("TF_VAR_resend_mail_api_key: ${{ secrets.RESEND_MAIL_API_KEY }}");
@@ -425,12 +433,24 @@ describe("runtime configuration", () => {
     expect(stagingEnv).toContain("resend_mail_api_key");
     expect(stagingEnv).toContain("mail_from_email");
     expect(stagingEnv).toContain("mail_from_name");
+    expect(stagingEnv).toContain("document_worker_recovery_schedule");
+    expect(stagingEnv).toContain("crawler_worker_recovery_schedule");
+    expect(stagingEnvVariables).toContain('variable "document_worker_recovery_schedule"');
+    expect(stagingEnvVariables).toContain('variable "crawler_worker_recovery_schedule"');
+    expect(stagingEnvVariables).not.toContain('default     = "0 * * * *"');
+    expect(stagingEnvVariables).not.toContain('default     = "0 3 * * *"');
     expect(liveEnv).not.toContain("mail_driver");
     expect(liveEnv).toContain("resend_mail_api_key");
     expect(liveEnv).toContain("mail_from_email");
     expect(liveEnv).toContain("mail_from_name");
-    expect(stagingEnv).toMatch(/environment\s+= "staging"/);
-    expect(liveEnv).toMatch(/environment\s+= "live"/);
+    expect(liveEnv).toContain("document_worker_recovery_schedule");
+    expect(liveEnv).toContain("crawler_worker_recovery_schedule");
+    expect(liveEnvVariables).toContain('variable "document_worker_recovery_schedule"');
+    expect(liveEnvVariables).toContain('variable "crawler_worker_recovery_schedule"');
+    expect(liveEnvVariables).not.toContain('default     = "0 * * * *"');
+    expect(liveEnvVariables).not.toContain('default     = "0 3 * * *"');
+    expect(stagingEnvVariables).toMatch(/default\s+= "staging"/);
+    expect(liveEnvVariables).toMatch(/default\s+= "live"/);
   });
 
   it("defaults worker entrypoints to the worker observability service name", async () => {

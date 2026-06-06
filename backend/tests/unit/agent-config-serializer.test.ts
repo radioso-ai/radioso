@@ -132,6 +132,7 @@ describe("serializeAgentConfig", () => {
     const config = serializeAgentConfig(fullyConfiguredAgent());
 
     expect(config.schemaVersion).toBe(AGENT_CONFIG_SCHEMA_VERSION);
+    expect(config.schemaVersion).toBe(2);
     expect(config.name).toBe("Support Bot");
     expect(config.customInstruction).toBe("Answer with precise procurement guidance.");
     expect(config.contactRequestsEnabled).toBe(true);
@@ -158,13 +159,15 @@ describe("serializeAgentConfig", () => {
         settings: {
           vectorTopK: 9,
           suggestedQuestionsCount: 4,
-          sourceScope: {
-            mode: "selected",
-            sourceIds: [{ __ref: "documentSource" }, { __ref: "documentSource" }],
+          __agentRetrievalDefaults: {
+            sourceScope: {
+              mode: "selected",
+              sourceIds: [{ __ref: "documentSource" }, { __ref: "documentSource" }],
+            },
+            suggestedQuestionsEnabled: false,
+            citationDisplayEnabled: false,
+            assistantLinkUtmEnabled: false,
           },
-          suggestedQuestionsEnabled: false,
-          citationDisplayEnabled: false,
-          assistantLinkUtmEnabled: false,
         },
       },
     });
@@ -217,7 +220,7 @@ describe("serializeAgentConfig", () => {
     expect(config.portability["authoredDirectives"]).toBe("portable");
     expect(config.portability["surfaceSettings.anonymousChat.token"]).toBe("secret");
     expect(config.portability["surfaceSettings.websiteEmbed.token"]).toBe("secret");
-    expect(config.portability["skillSettings.retrieval.answer.settings.sourceScope.sourceIds"]).toBe("ref");
+    expect(config.portability["skillSettings[\"retrieval.answer\"].settings.__agentRetrievalDefaults.sourceScope.sourceIds"]).toBe("ref");
     expect(config.portability["logo.bucket"]).toBe("ref");
     expect(config.portability["logo.objectPath"]).toBe("ref");
     expect(config.portability["logo.generation"]).toBe("ref");
@@ -275,13 +278,15 @@ describe("serializeAgentConfig", () => {
       settings: {
         vectorTopK: 9,
         suggestedQuestionsCount: 4,
-        sourceScope: {
-          mode: "selected",
-          sourceIds: ["raw-source-1", "raw-source-2"],
+        __agentRetrievalDefaults: {
+          sourceScope: {
+            mode: "selected",
+            sourceIds: ["raw-source-1", "raw-source-2"],
+          },
+          suggestedQuestionsEnabled: false,
+          citationDisplayEnabled: false,
+          assistantLinkUtmEnabled: false,
         },
-        suggestedQuestionsEnabled: false,
-        citationDisplayEnabled: false,
-        assistantLinkUtmEnabled: false,
       },
     });
     expect(config.logo).toEqual({
@@ -333,5 +338,50 @@ describe("serializeAgentConfig", () => {
       createdAt: new Date(0),
       updatedAt: new Date(0),
     }]);
+  });
+
+  it("round-trips divergent agent-level and retrieval skill suggested question flags", () => {
+    const agent: ConversationAgent = {
+      ...fullyConfiguredAgent(),
+      suggestedQuestionsEnabled: true,
+      skillSettings: {
+        "retrieval.answer": {
+          vectorTopK: 11,
+          suggestedQuestionsEnabled: false,
+        },
+      },
+    };
+
+    const config = projectInternalAgentConfig(agent);
+    const retrievalEnvelope = config.skillSettings["retrieval.answer"];
+
+    expect(retrievalEnvelope).toEqual({
+      enabled: true,
+      settings: {
+        vectorTopK: 11,
+        suggestedQuestionsEnabled: false,
+        __agentRetrievalDefaults: {
+          sourceScope: {
+            mode: "selected",
+            sourceIds: ["raw-source-1", "raw-source-2"],
+          },
+          suggestedQuestionsEnabled: true,
+          citationDisplayEnabled: false,
+          assistantLinkUtmEnabled: false,
+        },
+      },
+    });
+
+    const materialized = materializeAgentFromConfig(config, { agentId: agent.id, workspaceId: agent.workspaceId });
+
+    expect(materialized).toEqual(agent);
+    expect(materialized.suggestedQuestionsEnabled).toBe(true);
+    expect(materialized.skillSettings["retrieval.answer"]).toEqual({
+      vectorTopK: 11,
+      suggestedQuestionsEnabled: false,
+    });
+    expect(
+      (materialized.skillSettings["retrieval.answer"] as Record<string, unknown>).suggestedQuestionsEnabled,
+    ).toBe(false);
   });
 });

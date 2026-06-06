@@ -1,2 +1,2 @@
 ALTER TABLE agent_directives
-  DROP COLUMN criticality;
+  DROP COLUMN IF EXISTS criticality;

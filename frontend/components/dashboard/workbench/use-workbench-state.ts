@@ -66,6 +66,7 @@ export interface WorkbenchRunCard {
   turnTrace?: TurnTraceEnvelope
   activityTrace?: ActivityTrace
   resolvedConfig: Record<string, unknown>
+  agentConfigOverride?: AgentConfigOverrideInput
   status: WorkbenchReplayRunResponse['run']['status']
   startedAt: string
   completedAt: string | null
@@ -216,6 +217,7 @@ export const mapReplayResultToRunCard = (
   turnTrace: result.turnTrace ?? result.run.observedOutput.turnTrace,
   activityTrace: result.run.observedOutput.activityTrace,
   resolvedConfig: result.resolvedConfig ?? result.run.resolvedConfig,
+  agentConfigOverride: result.run.overrides.agentConfigOverride as AgentConfigOverrideInput | undefined,
   status: result.run.status,
   startedAt: result.run.startedAt,
   completedAt: result.run.completedAt,

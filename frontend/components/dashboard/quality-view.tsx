@@ -8,6 +8,7 @@ import {
   Clock,
   FileSearch,
   MessageSquareWarning,
+  SquareArrowOutUpRight,
   SlidersHorizontal,
   ThumbsDown,
   ThumbsUp,
@@ -63,6 +64,7 @@ import {
   type QualityStatusFilter,
   type QualityTriageFilter,
 } from '@/lib/dashboard-routes'
+import { buildQualityTurnWorkbenchRoute } from '@/lib/workbench-handoffs'
 import { useWorkspace } from '@/lib/workspace-context'
 import {
   activeQualitySignal,
@@ -952,6 +954,16 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       assistantMessageId: turn.assistantMessageId,
     })
 
+  const openWorkbench = (turn: LowQualityTurn) => {
+    if (!turn.agentId) {
+      return
+    }
+    router.push(buildDashboardHref(accountId, buildQualityTurnWorkbenchRoute(turn, {
+      workspaceId: activeWorkspaceId ?? routeState.workspaceId,
+      workspacePublicRouteKey: routeState.workspacePublicRouteKey,
+    })))
+  }
+
   // Optimistically reflect the new state on the row and refresh the active
   // backlog counts; a failed update reverts and surfaces an error.
   const updateTriageState = async (turn: LowQualityTurn, next: QualityTriageState) => {
@@ -1114,6 +1126,20 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                         <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                           {turn.answerPreview}
                         </p>
+                        {turn.agentId ? (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              openWorkbench(turn)
+                            }}
+                            className="mt-2 inline-flex items-center gap-1.5 rounded-md text-xs font-medium text-primary hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                            aria-label={`Open ${turn.agentName ?? 'agent'} turn in Workbench`}
+                          >
+                            <SquareArrowOutUpRight className="h-3.5 w-3.5" />
+                            Open in Workbench
+                          </button>
+                        ) : null}
                       </DashboardTableCell>
                       <DashboardTableCell className="w-40">
                         {actionLabel ? (

@@ -16,9 +16,10 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { evalsApi } from '@/lib/api'
-import type { EvalAssertion } from '@/lib/api-eval'
+import type { AgentConfigOverrideInput } from '@/lib/api-eval'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
+import { buildEvalPromotionPayload } from '@/lib/workbench-handoffs'
 import { useAuth } from '@/lib/auth-context'
 import { useWorkspace } from '@/lib/workspace-context'
 
@@ -32,6 +33,9 @@ interface SendToEvalActionProps {
   // pre-seeded with one LLM-judge expectation using this text as the
   // reference answer. Operator can run immediately without configuring.
   originalAnswer?: string
+  agentConfigOverride?: AgentConfigOverrideInput
+  label?: string
+  ariaLabel?: string
   className?: string
 }
 
@@ -40,6 +44,9 @@ export function SendToEvalAction({
   assistantMessageId,
   userQueryPreview,
   originalAnswer,
+  agentConfigOverride,
+  label,
+  ariaLabel,
   className,
 }: SendToEvalActionProps) {
   const [open, setOpen] = useState(false)
@@ -53,10 +60,11 @@ export function SendToEvalAction({
           className ??
           'inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground'
         }
-        aria-label="Send to eval"
-        title="Send to eval"
+        aria-label={ariaLabel ?? label ?? 'Send to eval'}
+        title={label ?? ariaLabel ?? 'Send to eval'}
       >
         <FlaskConical className="size-3.5" />
+        {label ? <span>{label}</span> : null}
       </button>
       {open ? (
         <SendToEvalDialog
@@ -64,6 +72,7 @@ export function SendToEvalAction({
           assistantMessageId={assistantMessageId}
           userQueryPreview={userQueryPreview}
           originalAnswer={originalAnswer}
+          agentConfigOverride={agentConfigOverride}
           onClose={() => setOpen(false)}
         />
       ) : null}
@@ -76,6 +85,7 @@ interface SendToEvalDialogProps {
   assistantMessageId: string
   userQueryPreview?: string
   originalAnswer?: string
+  agentConfigOverride?: AgentConfigOverrideInput
   onClose: () => void
 }
 
@@ -98,6 +108,7 @@ function SendToEvalDialog({
   assistantMessageId,
   userQueryPreview,
   originalAnswer,
+  agentConfigOverride,
   onClose,
 }: SendToEvalDialogProps) {
   const router = useRouter()
@@ -126,22 +137,23 @@ function SendToEvalDialog({
     setError(null)
     setSubmitting(true)
     try {
-      const snapshot = await evalsApi.captureSnapshot({
+      const captureInput = {
         conversationId,
         messageId: assistantMessageId,
-      })
-      // Pre-seed the case with one LLM-judge expectation using the original
-      // answer as the reference. Most "send this to eval" turns translate to
-      // "the assistant should keep answering this way" — operator can run
-      // immediately, or edit/replace the expectation in the editor.
-      const seededAssertions: EvalAssertion[] = originalAnswer && originalAnswer.trim()
-        ? [{ type: 'llm_judge', expectedAnswer: originalAnswer.trim() }]
-        : []
-      const created = await evalsApi.createCase({
+      }
+      const snapshot = await evalsApi.captureSnapshot(captureInput)
+      const payload = buildEvalPromotionPayload({
+        conversationId,
+        assistantMessageId,
         snapshotId: snapshot.id,
         name: name.trim() || defaultCaseName(userQueryPreview),
-        assertions: seededAssertions,
+        originalAnswer,
+        agentConfigOverride,
       })
+      const created = await evalsApi.createCase(payload.createCase)
+      if (payload.runCase) {
+        await evalsApi.runCase(created.id, payload.runCase)
+      }
 
       if (user) {
         const target: DashboardRouteState = {
@@ -160,6 +172,7 @@ function SendToEvalDialog({
     }
   }, [
     activeWorkspaceId,
+    agentConfigOverride,
     assistantMessageId,
     conversationId,
     name,

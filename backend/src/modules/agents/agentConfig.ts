@@ -11,7 +11,7 @@ import type {
 } from "./authoredDirectives.js";
 import type { ChatTurnRoute } from "../../shared/domain/chatTurnRoute.js";
 
-export const AGENT_CONFIG_SCHEMA_VERSION = 1;
+export const AGENT_CONFIG_SCHEMA_VERSION = 2;
 
 export type AgentConfigPortability = "portable" | "ref" | "secret";
 
@@ -78,17 +78,48 @@ export type InternalWebsiteEmbedSurfaceConfig = WebsiteEmbedSurfaceSettings;
 
 export type InternalAgentSurfaceConfig = ConversationAgentSurfaceSettings;
 
+export interface AgentSkillEnvelope<Settings> {
+  enabled: boolean;
+  settings: Settings;
+}
+
+interface AgentRetrievalDefaultsConfig {
+  sourceScope: AgentSourceScopeConfig;
+  suggestedQuestionsEnabled: boolean;
+  citationDisplayEnabled: boolean;
+  assistantLinkUtmEnabled: boolean;
+}
+
+interface RetrievalAnswerSkillSettingsConfig extends Record<string, unknown> {
+  __agentRetrievalDefaults: AgentRetrievalDefaultsConfig;
+}
+
+interface AgentSkillSettingsConfig extends Record<string, unknown> {
+  "retrieval.answer": AgentSkillEnvelope<RetrievalAnswerSkillSettingsConfig>;
+}
+
+interface InternalAgentSkillSettingsConfig extends Record<string, unknown> {
+  "retrieval.answer": AgentSkillEnvelope<InternalRetrievalAnswerSkillSettingsConfig>;
+}
+
+interface InternalAgentRetrievalDefaultsConfig {
+  sourceScope: InternalAgentSourceScopeConfig;
+  suggestedQuestionsEnabled: boolean;
+  citationDisplayEnabled: boolean;
+  assistantLinkUtmEnabled: boolean;
+}
+
+interface InternalRetrievalAnswerSkillSettingsConfig extends Record<string, unknown> {
+  __agentRetrievalDefaults: InternalAgentRetrievalDefaultsConfig;
+}
+
 export interface AgentConfig {
   schemaVersion: typeof AGENT_CONFIG_SCHEMA_VERSION;
   portability: Record<string, AgentConfigPortability>;
   name: string;
   customInstruction: string;
-  suggestedQuestionsEnabled: boolean;
-  assistantLinkUtmEnabled: boolean;
-  citationDisplayEnabled: boolean;
   contactRequestsEnabled: boolean;
   contactRequestDelivery: ConversationAgent["contactRequestDelivery"];
-  retrievalEnabled: boolean;
   logo: AgentLogoConfig | null;
   theme: ConversationAgent["theme"];
   branding: ConversationAgent["branding"];
@@ -96,34 +127,20 @@ export interface AgentConfig {
   assistantDefaultLocale: string | null;
   proactiveGreetingEnabled: boolean;
   surfaceSettings: AgentSurfaceConfig;
-  skillSettings: Record<string, unknown>;
-  sourceScope: AgentSourceScopeConfig;
+  skillSettings: AgentSkillSettingsConfig;
   chatModelOverride: ConversationAgent["chatModelOverride"];
   authoredDirectives: AuthoredDirectiveConfig[];
 }
 
-export interface InternalAgentConfig {
-  schemaVersion: typeof AGENT_CONFIG_SCHEMA_VERSION;
-  portability: Record<string, AgentConfigPortability>;
-  name: string;
-  customInstruction: string;
-  suggestedQuestionsEnabled: boolean;
-  assistantLinkUtmEnabled: boolean;
-  citationDisplayEnabled: boolean;
-  contactRequestsEnabled: boolean;
-  contactRequestDelivery: ConversationAgent["contactRequestDelivery"];
-  retrievalEnabled: boolean;
+type InternalAgentConfigValueField =
+  | "logo"
+  | "surfaceSettings"
+  | "skillSettings";
+
+export interface InternalAgentConfig extends Omit<AgentConfig, InternalAgentConfigValueField> {
   logo: InternalAgentLogoConfig | null;
-  theme: ConversationAgent["theme"];
-  branding: ConversationAgent["branding"];
-  greetingInstruction: string;
-  assistantDefaultLocale: string | null;
-  proactiveGreetingEnabled: boolean;
   surfaceSettings: InternalAgentSurfaceConfig;
-  skillSettings: Record<string, unknown>;
-  sourceScope: InternalAgentSourceScopeConfig;
-  chatModelOverride: ConversationAgent["chatModelOverride"];
-  authoredDirectives: AuthoredDirectiveConfig[];
+  skillSettings: InternalAgentSkillSettingsConfig;
 }
 
 type AgentConfigFieldName = Exclude<keyof AgentConfig, "schemaVersion" | "portability">;
@@ -139,6 +156,12 @@ const secretPlaceholder = (): AgentConfigSecretPlaceholder => ({ __redacted: "se
 const refPlaceholder = (kind: AgentConfigRefKind): AgentConfigRefPlaceholder => ({ __ref: kind });
 
 const cloneJson = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
+const RETRIEVAL_ANSWER_SKILL_KEY = "retrieval.answer";
+const AGENT_RETRIEVAL_DEFAULTS_KEY = "__agentRetrievalDefaults";
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
 const serializeLogo = (logo: AgentLogo | null): AgentLogoConfig | null => {
   if (!logo) {
@@ -164,6 +187,121 @@ const serializeSourceScope = (sourceScope: AgentSourceScope): AgentSourceScopeCo
   };
 };
 
+const cloneRetrievalAnswerTuning = (agent: ConversationAgent): Record<string, unknown> => {
+  const existingSettings = agent.skillSettings[RETRIEVAL_ANSWER_SKILL_KEY];
+  return isRecord(existingSettings) ? cloneJson(existingSettings) : {};
+};
+
+const projectSkillSettings = (agent: ConversationAgent, sourceScope: AgentSourceScopeConfig): AgentSkillSettingsConfig => {
+  const settings: RetrievalAnswerSkillSettingsConfig = {
+    ...cloneRetrievalAnswerTuning(agent),
+    [AGENT_RETRIEVAL_DEFAULTS_KEY]: {
+      sourceScope,
+      suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
+      citationDisplayEnabled: agent.citationDisplayEnabled,
+      assistantLinkUtmEnabled: agent.assistantLinkUtmEnabled,
+    },
+  };
+  return {
+    ...cloneJson(agent.skillSettings),
+    [RETRIEVAL_ANSWER_SKILL_KEY]: {
+      enabled: agent.retrievalEnabled,
+      settings,
+    },
+  };
+};
+
+const projectInternalSkillSettings = (
+  agent: ConversationAgent,
+  sourceScope: InternalAgentSourceScopeConfig,
+): InternalAgentSkillSettingsConfig => {
+  const settings: InternalRetrievalAnswerSkillSettingsConfig = {
+    ...cloneRetrievalAnswerTuning(agent),
+    [AGENT_RETRIEVAL_DEFAULTS_KEY]: {
+      sourceScope,
+      suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
+      citationDisplayEnabled: agent.citationDisplayEnabled,
+      assistantLinkUtmEnabled: agent.assistantLinkUtmEnabled,
+    },
+  };
+  return {
+    ...cloneJson(agent.skillSettings),
+    [RETRIEVAL_ANSWER_SKILL_KEY]: {
+      enabled: agent.retrievalEnabled,
+      settings,
+    },
+  };
+};
+
+const isSkillEnvelope = (value: unknown): value is AgentSkillEnvelope<Record<string, unknown>> =>
+  isRecord(value) && typeof value.enabled === "boolean" && isRecord(value.settings);
+
+const isInternalSourceScope = (value: unknown): value is InternalAgentSourceScopeConfig => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (value.mode === "all") {
+    return true;
+  }
+  return value.mode === "selected" && Array.isArray(value.sourceIds)
+    && value.sourceIds.every((sourceId) => typeof sourceId === "string");
+};
+
+const optionalBoolean = (value: unknown, fallback: boolean): boolean =>
+  typeof value === "boolean" ? value : fallback;
+
+const isInternalRetrievalDefaults = (value: unknown): value is InternalAgentRetrievalDefaultsConfig =>
+  isRecord(value);
+
+const splitRetrievalAnswerEnvelope = (skillSettings: InternalAgentSkillSettingsConfig): {
+  retrievalEnabled: boolean;
+  sourceScope: InternalAgentSourceScopeConfig;
+  suggestedQuestionsEnabled: boolean;
+  citationDisplayEnabled: boolean;
+  assistantLinkUtmEnabled: boolean;
+  skillSettings: Record<string, unknown>;
+} => {
+  const nextSkillSettings: Record<string, unknown> = cloneJson(skillSettings);
+  const envelope = nextSkillSettings[RETRIEVAL_ANSWER_SKILL_KEY];
+  if (!isSkillEnvelope(envelope)) {
+    return {
+      retrievalEnabled: true,
+      sourceScope: { mode: "all" },
+      suggestedQuestionsEnabled: true,
+      citationDisplayEnabled: true,
+      assistantLinkUtmEnabled: true,
+      skillSettings: nextSkillSettings,
+    };
+  }
+
+  const defaults = envelope.settings[AGENT_RETRIEVAL_DEFAULTS_KEY];
+  const remainingSettings = cloneJson(envelope.settings);
+  delete remainingSettings[AGENT_RETRIEVAL_DEFAULTS_KEY];
+  const remainingKeys = Object.keys(remainingSettings);
+  if (remainingKeys.length > 0) {
+    nextSkillSettings[RETRIEVAL_ANSWER_SKILL_KEY] = remainingSettings;
+  } else {
+    delete nextSkillSettings[RETRIEVAL_ANSWER_SKILL_KEY];
+  }
+
+  return {
+    retrievalEnabled: envelope.enabled,
+    sourceScope: isInternalRetrievalDefaults(defaults) && isInternalSourceScope(defaults.sourceScope)
+      ? cloneJson(defaults.sourceScope)
+      : { mode: "all" },
+    suggestedQuestionsEnabled: isInternalRetrievalDefaults(defaults)
+      ? optionalBoolean(defaults.suggestedQuestionsEnabled, true)
+      : true,
+    citationDisplayEnabled: isInternalRetrievalDefaults(defaults)
+      ? optionalBoolean(defaults.citationDisplayEnabled, true)
+      : true,
+    assistantLinkUtmEnabled: isInternalRetrievalDefaults(defaults)
+      ? optionalBoolean(defaults.assistantLinkUtmEnabled, true)
+      : true,
+    skillSettings: nextSkillSettings,
+  };
+};
+
 const serializeWebsiteEmbed = (websiteEmbed: WebsiteEmbedSurfaceSettings): WebsiteEmbedSurfaceConfig => ({
   enabled: websiteEmbed.enabled,
   token: websiteEmbed.token ? secretPlaceholder() : null,
@@ -174,9 +312,6 @@ const serializeWebsiteEmbed = (websiteEmbed: WebsiteEmbedSurfaceSettings): Websi
   copy: cloneJson(websiteEmbed.copy),
   expertOverrides: cloneJson(websiteEmbed.expertOverrides),
 });
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
 const serializeSurfaceExtensions = (extensions: Record<string, unknown>): Record<string, unknown> => {
   const next = cloneJson(extensions);
@@ -236,18 +371,6 @@ export const AGENT_CONFIG_FIELD_DESCRIPTORS = {
     portability: "portable",
     serialize: (agent) => agent.customInstruction,
   }),
-  suggestedQuestionsEnabled: descriptor({
-    portability: "portable",
-    serialize: (agent) => agent.suggestedQuestionsEnabled,
-  }),
-  assistantLinkUtmEnabled: descriptor({
-    portability: "portable",
-    serialize: (agent) => agent.assistantLinkUtmEnabled,
-  }),
-  citationDisplayEnabled: descriptor({
-    portability: "portable",
-    serialize: (agent) => agent.citationDisplayEnabled,
-  }),
   contactRequestsEnabled: descriptor({
     portability: "portable",
     serialize: (agent) => agent.contactRequestsEnabled,
@@ -255,10 +378,6 @@ export const AGENT_CONFIG_FIELD_DESCRIPTORS = {
   contactRequestDelivery: descriptor({
     portability: "portable",
     serialize: (agent) => cloneJson(agent.contactRequestDelivery),
-  }),
-  retrievalEnabled: descriptor({
-    portability: "portable",
-    serialize: (agent) => agent.retrievalEnabled,
   }),
   logo: descriptor({
     portability: "portable",
@@ -302,12 +421,8 @@ export const AGENT_CONFIG_FIELD_DESCRIPTORS = {
   }),
   skillSettings: descriptor({
     portability: "portable",
-    serialize: (agent) => cloneJson(agent.skillSettings),
-  }),
-  sourceScope: descriptor({
-    portability: "portable",
-    nestedPortability: [["sourceScope.sourceIds", "ref"]],
-    serialize: (agent) => serializeSourceScope(agent.sourceScope),
+    nestedPortability: [["skillSettings[\"retrieval.answer\"].settings.__agentRetrievalDefaults.sourceScope.sourceIds", "ref"]],
+    serialize: (agent) => projectSkillSettings(agent, serializeSourceScope(agent.sourceScope)),
   }),
   chatModelOverride: descriptor({
     portability: "portable",
@@ -350,12 +465,8 @@ export const projectInternalAgentConfig = (agent: ConversationAgent): InternalAg
   portability: buildPortabilityMap(),
   name: agent.name,
   customInstruction: agent.customInstruction,
-  suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
-  assistantLinkUtmEnabled: agent.assistantLinkUtmEnabled,
-  citationDisplayEnabled: agent.citationDisplayEnabled,
   contactRequestsEnabled: agent.contactRequestsEnabled,
   contactRequestDelivery: cloneJson(agent.contactRequestDelivery),
-  retrievalEnabled: agent.retrievalEnabled,
   logo: agent.logo ? cloneJson(agent.logo) : null,
   theme: cloneJson(agent.theme),
   branding: cloneJson(agent.branding),
@@ -363,8 +474,7 @@ export const projectInternalAgentConfig = (agent: ConversationAgent): InternalAg
   assistantDefaultLocale: agent.assistantDefaultLocale,
   proactiveGreetingEnabled: agent.proactiveGreetingEnabled,
   surfaceSettings: cloneJson(agent.surfaceSettings),
-  skillSettings: cloneJson(agent.skillSettings),
-  sourceScope: cloneJson(agent.sourceScope),
+  skillSettings: projectInternalSkillSettings(agent, cloneJson(agent.sourceScope)),
   chatModelOverride: agent.chatModelOverride ? cloneJson(agent.chatModelOverride) : null,
   authoredDirectives: serializeAuthoredDirectives(agent.authoredDirectives),
 });
@@ -396,26 +506,28 @@ export const materializeAgentFromConfig = (
   config: InternalAgentConfig,
   identity: { agentId: string; workspaceId: string },
 ): ConversationAgent => {
+  const retrievalAnswer = splitRetrievalAnswerEnvelope(config.skillSettings);
+
   return {
     id: identity.agentId,
     workspaceId: identity.workspaceId,
     name: config.name,
     customInstruction: config.customInstruction,
-    suggestedQuestionsEnabled: config.suggestedQuestionsEnabled,
-    assistantLinkUtmEnabled: config.assistantLinkUtmEnabled,
-    citationDisplayEnabled: config.citationDisplayEnabled,
+    suggestedQuestionsEnabled: retrievalAnswer.suggestedQuestionsEnabled,
+    assistantLinkUtmEnabled: retrievalAnswer.assistantLinkUtmEnabled,
+    citationDisplayEnabled: retrievalAnswer.citationDisplayEnabled,
     contactRequestsEnabled: config.contactRequestsEnabled,
     contactRequestDelivery: cloneJson(config.contactRequestDelivery),
-    retrievalEnabled: config.retrievalEnabled,
+    retrievalEnabled: retrievalAnswer.retrievalEnabled,
     logo: config.logo ? cloneJson(config.logo) : null,
     theme: cloneJson(config.theme),
     branding: cloneJson(config.branding),
     greetingInstruction: config.greetingInstruction,
     assistantDefaultLocale: config.assistantDefaultLocale,
     proactiveGreetingEnabled: config.proactiveGreetingEnabled,
-    sourceScope: cloneJson(config.sourceScope),
+    sourceScope: cloneJson(retrievalAnswer.sourceScope),
     surfaceSettings: cloneJson(config.surfaceSettings),
-    skillSettings: cloneJson(config.skillSettings),
+    skillSettings: retrievalAnswer.skillSettings,
     chatModelOverride: config.chatModelOverride ? cloneJson(config.chatModelOverride) : null,
     authoredDirectives: materializeAuthoredDirectives(config.authoredDirectives, identity),
     createdAt: new Date(INTERNAL_CONFIG_DATE.getTime()),

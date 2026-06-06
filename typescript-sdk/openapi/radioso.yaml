@@ -9867,6 +9867,196 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/evals/runs:
+    post:
+      tags:
+        - Evals
+      summary: Run a one-off eval snapshot replay
+      operationId: createEvalRun
+      security:
+        - sessionCookie: []
+          workspaceSelection: []
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                snapshotId:
+                  type: string
+                  format: uuid
+                mode:
+                  type: string
+                  enum:
+                    - retrieval_only
+                    - full_assistant
+                  default: retrieval_only
+                overrides:
+                  type: object
+                  properties:
+                    modelOverride:
+                      type: object
+                      properties:
+                        provider:
+                          type: string
+                          enum:
+                            - openai
+                            - openai-compatible
+                            - gemini
+                            - claude
+                        model:
+                          type: string
+                      required:
+                        - provider
+                        - model
+                    assistantInstructionsOverride:
+                      type: object
+                      properties:
+                        customInstruction:
+                          type: string
+                    retrievalSettingsOverride:
+                      type: object
+                      additionalProperties: {}
+                    agentConfigOverride:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        customInstruction:
+                          type: string
+                        contactRequestsEnabled:
+                          type: boolean
+                        contactRequestDelivery: {}
+                        logo: {}
+                        theme:
+                          type: object
+                          additionalProperties: {}
+                        branding:
+                          type: object
+                          additionalProperties: {}
+                        greetingInstruction:
+                          type: string
+                        assistantDefaultLocale:
+                          type:
+                            - string
+                            - "null"
+                        proactiveGreetingEnabled:
+                          type: boolean
+                        surfaceSettings:
+                          type: object
+                          additionalProperties: {}
+                        skillSettings:
+                          type: object
+                          additionalProperties: {}
+                        chatModelOverride:
+                          type:
+                            - object
+                            - "null"
+                          properties:
+                            provider:
+                              type: string
+                              enum: &a21
+                                - openai
+                                - openai-compatible
+                                - gemini
+                                - claude
+                            model:
+                              type: string
+                          required:
+                            - provider
+                            - model
+                        authoredDirectives:
+                          type: array
+                          items:
+                            type: object
+                            additionalProperties: {}
+                      additionalProperties: false
+                  additionalProperties: false
+                agentConfigOverride:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    customInstruction:
+                      type: string
+                    contactRequestsEnabled:
+                      type: boolean
+                    contactRequestDelivery: {}
+                    logo: {}
+                    theme:
+                      type: object
+                      additionalProperties: {}
+                    branding:
+                      type: object
+                      additionalProperties: {}
+                    greetingInstruction:
+                      type: string
+                    assistantDefaultLocale:
+                      type:
+                        - string
+                        - "null"
+                    proactiveGreetingEnabled:
+                      type: boolean
+                    surfaceSettings:
+                      type: object
+                      additionalProperties: {}
+                    skillSettings:
+                      type: object
+                      additionalProperties: {}
+                    chatModelOverride:
+                      type:
+                        - object
+                        - "null"
+                      properties:
+                        provider:
+                          type: string
+                          enum: *a21
+                        model:
+                          type: string
+                      required:
+                        - provider
+                        - model
+                    authoredDirectives:
+                      type: array
+                      items:
+                        type: object
+                        additionalProperties: {}
+                  additionalProperties: false
+              required:
+                - snapshotId
+      responses:
+        "201":
+          description: Eval run recorded. Workbench replay runs also include answer, citations, turnTrace, and resolvedConfig at the top level.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run: {}
+                  case: {}
+                  answer:
+                    type: string
+                  citations:
+                    type: array
+                    items: {}
+                  answerSegments:
+                    type: array
+                    items: {}
+                  turnTrace: {}
+                  resolvedConfig: {}
+        "400":
+          description: Invalid snapshot, mode, or override payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/public/chat/{token}:
     post:
       tags:

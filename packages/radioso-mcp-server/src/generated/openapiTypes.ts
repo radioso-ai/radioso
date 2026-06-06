@@ -1363,6 +1363,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/evals/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run a one-off eval snapshot replay */
+        post: operations["createEvalRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/public/chat/{token}": {
         parameters: {
             query?: never;
@@ -8084,6 +8101,137 @@ export interface operations {
             };
             /** @description Assistant turn not found in this workspace */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createEvalRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    snapshotId: string;
+                    /**
+                     * @default retrieval_only
+                     * @enum {string}
+                     */
+                    mode?: "retrieval_only" | "full_assistant";
+                    overrides?: {
+                        modelOverride?: {
+                            /** @enum {string} */
+                            provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                            model: string;
+                        };
+                        assistantInstructionsOverride?: {
+                            customInstruction?: string;
+                        };
+                        retrievalSettingsOverride?: {
+                            [key: string]: unknown;
+                        };
+                        agentConfigOverride?: {
+                            name?: string;
+                            customInstruction?: string;
+                            contactRequestsEnabled?: boolean;
+                            contactRequestDelivery?: unknown;
+                            logo?: unknown;
+                            theme?: {
+                                [key: string]: unknown;
+                            };
+                            branding?: {
+                                [key: string]: unknown;
+                            };
+                            greetingInstruction?: string;
+                            assistantDefaultLocale?: string | null;
+                            proactiveGreetingEnabled?: boolean;
+                            surfaceSettings?: {
+                                [key: string]: unknown;
+                            };
+                            skillSettings?: {
+                                [key: string]: unknown;
+                            };
+                            chatModelOverride?: {
+                                /** @enum {string} */
+                                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                                model: string;
+                            } | null;
+                            authoredDirectives?: {
+                                [key: string]: unknown;
+                            }[];
+                        };
+                    };
+                    agentConfigOverride?: {
+                        name?: string;
+                        customInstruction?: string;
+                        contactRequestsEnabled?: boolean;
+                        contactRequestDelivery?: unknown;
+                        logo?: unknown;
+                        theme?: {
+                            [key: string]: unknown;
+                        };
+                        branding?: {
+                            [key: string]: unknown;
+                        };
+                        greetingInstruction?: string;
+                        assistantDefaultLocale?: string | null;
+                        proactiveGreetingEnabled?: boolean;
+                        surfaceSettings?: {
+                            [key: string]: unknown;
+                        };
+                        skillSettings?: {
+                            [key: string]: unknown;
+                        };
+                        chatModelOverride?: {
+                            /** @enum {string} */
+                            provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                            model: string;
+                        } | null;
+                        authoredDirectives?: {
+                            [key: string]: unknown;
+                        }[];
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Eval run recorded. Workbench replay runs also include answer, citations, turnTrace, and resolvedConfig at the top level. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        run?: unknown;
+                        case?: unknown;
+                        answer?: string;
+                        citations?: unknown[];
+                        answerSegments?: unknown[];
+                        turnTrace?: unknown;
+                        resolvedConfig?: unknown;
+                    };
+                };
+            };
+            /** @description Invalid snapshot, mode, or override payload */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

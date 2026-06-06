@@ -1375,9 +1375,93 @@ export class InMemoryIngestionSettingsRepository implements IngestionSettingsRep
 export class InMemoryConnectorDatabase {
   readonly configs = new Map<string, InMemoryConnectorConfigRecord>();
   readonly syncStates = new Map<string, InMemoryConnectorSyncStateRecord>();
+  readonly evalSnapshots = new Map<string, Record<string, unknown>>();
+  readonly evalRuns = new Map<string, Record<string, unknown>>();
 
   async query<T>(text: string, params: unknown[] = []): Promise<T[]> {
     const sql = text.replace(/\s+/g, " ").trim();
+
+    if (sql.startsWith("INSERT INTO eval_snapshots")) {
+      const [
+        id,
+        workspaceId,
+        sourceConversationId,
+        sourceMessageId,
+        fidelity,
+        messages,
+        originalInstructionBlock,
+        originalModelId,
+        originalRetrievalSettings,
+        originalRetrievalResult,
+        originalAgent,
+        originalAgentConfig,
+        sourceAgentId,
+        capturedBy,
+      ] = params as unknown[];
+      const row = {
+        id,
+        workspace_id: workspaceId,
+        source_conversation_id: sourceConversationId,
+        source_message_id: sourceMessageId,
+        fidelity,
+        messages: typeof messages === "string" ? JSON.parse(messages) : messages,
+        original_instruction_block:
+          typeof originalInstructionBlock === "string" ? JSON.parse(originalInstructionBlock) : originalInstructionBlock,
+        original_model_id: originalModelId,
+        original_retrieval_settings:
+          typeof originalRetrievalSettings === "string" ? JSON.parse(originalRetrievalSettings) : originalRetrievalSettings,
+        original_retrieval_result:
+          typeof originalRetrievalResult === "string" ? JSON.parse(originalRetrievalResult) : originalRetrievalResult,
+        original_agent: typeof originalAgent === "string" ? JSON.parse(originalAgent) : originalAgent,
+        original_agent_config:
+          typeof originalAgentConfig === "string" ? JSON.parse(originalAgentConfig) : originalAgentConfig,
+        source_agent_id: sourceAgentId,
+        captured_at: new Date(),
+        captured_by: capturedBy,
+      };
+      this.evalSnapshots.set(id as string, row);
+      return [row as T];
+    }
+
+    if (sql.startsWith("SELECT id, workspace_id, source_conversation_id, source_message_id, fidelity, messages") && sql.includes("FROM eval_snapshots")) {
+      const [workspaceId, id] = params as [string, string];
+      const row = this.evalSnapshots.get(id);
+      return row?.workspace_id === workspaceId ? [row as T] : [];
+    }
+
+    if (sql.startsWith("INSERT INTO eval_runs")) {
+      const [
+        id,
+        workspaceId,
+        snapshotId,
+        caseId,
+        mode,
+        overrides,
+        resolvedConfig,
+        observedOutput,
+        assertionVerdicts,
+        status,
+        outcomeReason,
+        completedAt,
+      ] = params as unknown[];
+      const row = {
+        id,
+        workspace_id: workspaceId,
+        snapshot_id: snapshotId,
+        case_id: caseId,
+        mode,
+        overrides: typeof overrides === "string" ? JSON.parse(overrides) : overrides,
+        resolved_config: typeof resolvedConfig === "string" ? JSON.parse(resolvedConfig) : resolvedConfig,
+        observed_output: typeof observedOutput === "string" ? JSON.parse(observedOutput) : observedOutput,
+        assertion_verdicts: typeof assertionVerdicts === "string" ? JSON.parse(assertionVerdicts) : assertionVerdicts,
+        status,
+        outcome_reason: outcomeReason,
+        started_at: new Date(),
+        completed_at: completedAt,
+      };
+      this.evalRuns.set(id as string, row);
+      return [row as T];
+    }
 
     if (sql.startsWith("SELECT connector_id, enabled, error_status FROM connector_configs WHERE workspace_id = $1")) {
       const [workspaceId] = params as [string];

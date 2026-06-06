@@ -3,6 +3,7 @@ import { createLogger } from "./shared/observability/logger.js";
 import { loadEnvFileIfPresent } from "./runtime/loadEnv.js";
 import { loadConfiguredApplicationModules } from "./runtime/loadApplicationModules.js";
 import { startWorkerRuntime } from "./runtime/startWorkerRuntime.js";
+import { installRuntimeProcessErrorHandlers } from "./runtime/processErrorHandlers.js";
 
 loadEnvFileIfPresent();
 
@@ -17,6 +18,8 @@ const runtime = await startWorkerRuntime({
   logger,
   applicationModules,
 });
+
+installRuntimeProcessErrorHandlers(runtime, "worker");
 
 process.once("SIGINT", () => {
   void runtime.shutdown("SIGINT");

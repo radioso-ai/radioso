@@ -127,6 +127,7 @@ describe("DefaultConversationEngine", () => {
     expect(result.response.answer).toBe("Your order ships tomorrow.");
     expect(result.events).toHaveLength(2);
     expect(result.trace.stages.map((stage) => stage.kind)).toEqual([
+      "message",
       "gather",
       "directive_match",
       "skill_selection",
@@ -235,6 +236,7 @@ describe("DefaultConversationEngine", () => {
     expect(input.stores.appendEvent).toHaveBeenCalledTimes(2);
     expect(input.composer.compose).not.toHaveBeenCalled();
     expect(final?.type === "final" ? final.result.trace.stages.map((stage) => stage.kind) : []).toEqual([
+      "message",
       "gather",
       "directive_match",
       "skill_selection",
@@ -288,7 +290,11 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     expect(input.routineStore!.clear).not.toHaveBeenCalled();
     expect(input.stores.appendEvent).toHaveBeenCalledTimes(2);
     expect(result.response.answer).toBe("What's your message?");
-    expect(result.trace.stages.map((stage) => stage.kind)).toEqual(["gather", "routine_resume"]);
+    expect(result.trace.stages.map((stage) => stage.kind)).toEqual([
+      "message",
+      "gather",
+      "routine_resume",
+    ]);
   });
 
   it("clears routine state when the routine completes (null next state)", async () => {
@@ -314,6 +320,7 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     expect(input.selector.select).toHaveBeenCalled();
     expect(input.composer.compose).toHaveBeenCalled();
     expect(result.trace.stages.map((stage) => stage.kind)).toEqual([
+      "message",
       "gather",
       "directive_match",
       "skill_selection",
@@ -373,7 +380,11 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     });
     expect(input.routineStore!.save).toHaveBeenCalledWith(started);
     expect(input.selector.select).not.toHaveBeenCalled();
-    expect(result.trace.stages.map((stage) => stage.kind)).toEqual(["gather", "routine_activate"]);
+    expect(result.trace.stages.map((stage) => stage.kind)).toEqual([
+      "message",
+      "gather",
+      "routine_activate",
+    ]);
   });
 
   it("declines activation and runs the normal turn when the activator returns null", async () => {

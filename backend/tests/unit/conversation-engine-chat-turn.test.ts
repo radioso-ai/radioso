@@ -362,6 +362,27 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
           omissions: [],
         };
       },
+      async matchAndResolve(input: DirectiveSteerInput, directives): Promise<DirectiveSteeringResult> {
+        matched.push({
+          turnContext: input.turnContext ?? {},
+          directives: directives.map((candidate) => candidate.name),
+        });
+        const matches = directives.map((candidate) => ({
+          directive: candidate,
+          selectionMode: "deterministic" as const,
+          selectionReason: "Directive condition is unconditional (always).",
+        }));
+        return {
+          rules: matches.map((match) => ({
+            action: match.directive.action,
+            priority: match.directive.priority,
+            source: "directive",
+            lifespan: "response",
+          })),
+          matches,
+          omissions: [],
+        };
+      },
       async steer(): Promise<DirectiveSteeringResult> {
         throw new Error("steer should not pre-resolve chat engine directives");
       },
@@ -409,6 +430,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
       expect.objectContaining({ action: "Keep it brief.", source: "directive", lifespan: "response" }),
     ]);
     expect(result.trace.stages.map((stage) => stage.kind)).toEqual([
+      "message",
       "gather",
       "directive_match",
       "skill_selection",

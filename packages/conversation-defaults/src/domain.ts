@@ -2,7 +2,6 @@ import type {
   Directive,
   DirectiveMatch,
   DirectiveSelectionMode,
-  SteeringCriticality,
   SteeringRule,
 } from "@radioso/conversation-contract";
 
@@ -11,7 +10,6 @@ export type {
   DirectiveCondition,
   DirectiveMatch,
   DirectiveSelectionMode,
-  SteeringCriticality,
   SteeringRule,
 } from "@radioso/conversation-contract";
 
@@ -27,7 +25,6 @@ export const directiveToSteeringRule = (match: DirectiveMatch): SteeringRule => 
     ? match.directive.condition.description
     : undefined,
   priority: match.directive.priority,
-  criticality: match.directive.criticality,
   description: match.directive.description,
   source: "directive",
   lifespan: "response",
@@ -77,18 +74,11 @@ export const resolveDirectiveRelationships = (
   return { kept: survivors, omissions };
 };
 
-const CRITICALITY_RANK: Record<SteeringCriticality, number> = {
-  high: 3,
-  medium: 2,
-  low: 1,
-};
-
 export const orderSteeringRules = (rules: SteeringRule[]): SteeringRule[] =>
   [...rules].sort((a, b) => {
     const priorityDelta = (b.priority ?? 0) - (a.priority ?? 0);
     if (priorityDelta !== 0) {
       return priorityDelta;
     }
-    return (b.criticality ? CRITICALITY_RANK[b.criticality] : 0) -
-      (a.criticality ? CRITICALITY_RANK[a.criticality] : 0);
+    return 0;
   });

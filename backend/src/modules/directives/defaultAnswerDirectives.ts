@@ -5,7 +5,6 @@ export interface BuiltInDirectiveView {
   condition: Directive["condition"];
   action: string;
   priority: number | null;
-  criticality: NonNullable<Directive["criticality"]> | null;
   description: string | null;
 }
 
@@ -13,7 +12,6 @@ export const conciseReadableFormattingDirective: Directive = {
   name: "concise-readable-formatting",
   condition: { kind: "always" },
   priority: 60,
-  criticality: "medium",
   description: "Default readable answer formatting for public assistant replies.",
   action: [
     "Prefer short paragraphs and answer directly.",
@@ -29,7 +27,6 @@ export const representOrganizationDirective: Directive = {
   name: "represent-organization",
   condition: { kind: "always" },
   priority: 80,
-  criticality: "high",
   description: "Speak as the represented organization for grounded retrieval answers.",
   action: [
     "Represent the organization as its assistant, not as an outsider reading documents.",
@@ -41,7 +38,6 @@ export const inlineSupportedLinksDirective: Directive = {
   name: "inline-supported-links",
   condition: { kind: "always" },
   priority: 90,
-  criticality: "high",
   description: "Use available source URLs as inline links in grounded answers.",
   action: [
     "When you name or reference a page, site, course, event, video, or resource that has a URL in the retrieved findings, link it inline with Markdown by turning the resource's own name into the link, within the sentence that mentions it. Never invent links.",
@@ -69,6 +65,5 @@ export const builtInAnswerDirectiveViews: BuiltInDirectiveView[] = defaultAnswer
   condition: directive.condition,
   action: directive.action,
   priority: directive.priority ?? null,
-  criticality: directive.criticality ?? null,
   description: directive.description ?? null,
 }));

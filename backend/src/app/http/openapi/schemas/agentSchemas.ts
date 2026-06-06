@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { publicChatSessionSchema } from "../../routes/publicChatRouteSchemas.js";
-import { agentSurfacePositions, authoredDirectiveCriticalities } from "../../../../modules/agents/public.js";
+import { agentSurfacePositions } from "../../../../modules/agents/public.js";
 import { skillDisplayMetadataSchema } from "../../../../modules/skills/public.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
@@ -260,7 +260,6 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       condition: AuthoredDirectiveConditionSchema,
       action: z.string(),
       priority: z.number().int().nullable(),
-      criticality: z.enum(authoredDirectiveCriticalities).nullable(),
       requiredCapabilities: z.array(z.string()),
       dependsOn: z.array(z.string()),
       excludes: z.array(z.string()),
@@ -279,7 +278,6 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       condition: AuthoredDirectiveConditionSchema,
       action: z.string(),
       priority: z.number().int().nullable(),
-      criticality: z.enum(authoredDirectiveCriticalities).nullable(),
       description: z.string().nullable(),
     }),
   );

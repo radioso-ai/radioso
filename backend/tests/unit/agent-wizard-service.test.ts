@@ -14,7 +14,7 @@ const createCrawler = (overrides: Partial<CrawlerPort> = {}): CrawlerPort => ({
     url: "https://example.com",
     title: "Example",
     text: "Example builds useful support software for complex customer workflows.",
-    links: ["https://example.com/product", "https://example.com/contact"],
+    links: ["https://example.com/product", "https://example.com/contact", "https://example.com/privacy"],
     screenshot: new Uint8Array([1, 2, 3]),
     faviconUrl: "https://example.com/favicon.ico",
   }),
@@ -22,8 +22,9 @@ const createCrawler = (overrides: Partial<CrawlerPort> = {}): CrawlerPort => ({
     {
       url: "https://example.com/product",
       title: "Product",
-      text: "Product details, implementation guidance, and deployment information.",
+      text: "Product details, implementation guidance, and deployment information. Contact support@example.com for help.",
       status: "success",
+      links: ["https://example.com/privacy", "https://cdn.example.net/privacy"],
     },
   ]),
   isBrowserTransportAvailable: vi.fn().mockResolvedValue(true),
@@ -44,38 +45,62 @@ const createService = (overrides: {
     contentType: "marketing",
     chunkingStrategy: "structured_semantic",
     chunkingRationale: "The pages include structured product and deployment content.",
+    language: "en-US",
+    privacyPolicyUrl: "https://example.com/privacy",
+    contactEmail: "support@example.com",
   }));
 
   const agentService = {
     create: vi.fn().mockResolvedValue({ id: "agent-1", name: "Example Support" }),
     update: vi.fn().mockResolvedValue({ id: "agent-1" }),
   };
+  const documentStorage = {
+    upload: vi.fn().mockResolvedValue({ bucket: "logos", objectPath: "logo-key", sizeBytes: 128 }),
+  };
+  const auditService = {
+    record: vi.fn().mockResolvedValue(undefined),
+  };
 
   const service = new AgentWizardService({
     textGenerationClient: { complete },
     agentService,
-    documentStorage: {
-      upload: vi.fn().mockResolvedValue({ bucket: "logos", objectPath: "logo-key", sizeBytes: 128 }),
-    },
+    documentStorage,
     websiteCrawlJobService: {
       enqueue: vi.fn().mockResolvedValue({ jobId: "crawl-1", sourceId: null }),
     },
     crawlerProvider: overrides.crawlerProvider ?? createCrawler(),
     assertPublicWebsiteUrl: overrides.assertPublicWebsiteUrl ?? (async () => {}),
     crawlerLimits: overrides.crawlerLimits ?? { defaultLimit: 100, maxLimit: 1000 },
-    auditService: {
-      record: vi.fn().mockResolvedValue(undefined),
-    },
+    auditService,
     fetchImpl: overrides.fetchImpl,
   });
 
-  return { agentService, complete, service };
+  return { agentService, auditService, complete, documentStorage, service };
 };
+
+const faviconResponse = (input: {
+  ok: boolean;
+  status: number;
+  contentType?: string | null;
+  body?: number[];
+  location?: string | null;
+}) => ({
+  ok: input.ok,
+  status: input.status,
+  headers: {
+    get: (name: string) => {
+      if (name.toLowerCase() === "content-type") return input.contentType ?? null;
+      if (name.toLowerCase() === "location") return input.location ?? null;
+      return null;
+    },
+  },
+  arrayBuffer: async () => new Uint8Array(input.body ?? []).buffer,
+});
 
 describe("AgentWizardService", () => {
   it("analyzes a website with crawled pages and LLM suggestions", async () => {
     const crawler = createCrawler();
-    const { complete, service } = createService({ crawlerProvider: crawler });
+    const { auditService, complete, service } = createService({ crawlerProvider: crawler });
     const events: string[] = [];
 
     const result = await service.analyzeWebsite({
@@ -95,6 +120,9 @@ describe("AgentWizardService", () => {
         { url: "https://example.com/product", title: "Product" },
       ],
       screenshotUnavailableReason: null,
+      suggestedLocale: "en-US",
+      suggestedPrivacyPolicyUrl: "https://example.com/privacy",
+      suggestedContactEmail: "support@example.com",
     });
     expect(result.screenshotBase64).toBe(Buffer.from([1, 2, 3]).toString("base64"));
     expect(crawler.fetchPageWithScreenshot).toHaveBeenCalledWith("https://example.com", expect.objectContaining({
@@ -106,6 +134,14 @@ describe("AgentWizardService", () => {
       signal: expect.any(AbortSignal),
     }));
     expect(complete).toHaveBeenCalledOnce();
+    expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "agent_wizard.analyze_website",
+      metadata: expect.objectContaining({
+        detectedLocale: true,
+        detectedPrivacyPolicy: true,
+        detectedContactEmail: true,
+      }),
+    }));
     expect(events).toEqual(expect.arrayContaining(["crawling", "analyzing", "generating", "complete"]));
   });
 
@@ -119,6 +155,9 @@ describe("AgentWizardService", () => {
         contentType: "mixed",
         chunkingStrategy: "fixed_window",
         chunkingRationale: "Mostly prose.",
+        language: "fr",
+        privacyPolicyUrl: "https://example.com/privacy",
+        contactEmail: "bonjour@example.com",
       }));
     const { service } = createService({ complete });
 
@@ -130,6 +169,28 @@ describe("AgentWizardService", () => {
     expect(complete).toHaveBeenCalledTimes(2);
     expect(result.suggestedName).toBe("Retry Support");
     expect(result.suggestedChunkingStrategy.strategy).toBe("fixed_window");
+    expect(result.suggestedLocale).toBe("fr");
+  });
+
+  it("treats missing optional LLM-derived wizard fields as null", async () => {
+    const complete = vi.fn<AgentWizardTextGenerationPort["complete"]>().mockResolvedValue(JSON.stringify({
+      agentName: "Legacy Support",
+      customInstruction: "Use the legacy result.",
+      greetingMessage: "Hi from legacy.",
+      contentType: "mixed",
+      chunkingStrategy: "structured_semantic",
+      chunkingRationale: "Structured content.",
+    }));
+    const { service } = createService({ complete });
+
+    const result = await service.analyzeWebsite({
+      url: "https://example.com",
+      workspaceId: "workspace-1",
+    });
+
+    expect(result.suggestedLocale).toBeNull();
+    expect(result.suggestedPrivacyPolicyUrl).toBeNull();
+    expect(result.suggestedContactEmail).toBeNull();
   });
 
   it("asks the LLM to extract verified company contact paths", async () => {
@@ -144,6 +205,71 @@ describe("AgentWizardService", () => {
     expect(prompt).toContain("how visitors can contact the organization");
     expect(prompt).toContain("Do not invent contact details");
     expect(prompt).toContain("verified contact path");
+  });
+
+  it("passes same-origin candidate links to the LLM without keyword filtering", async () => {
+    const crawler = createCrawler({
+      fetchPageWithScreenshot: vi.fn().mockResolvedValue({
+        url: "https://example.com",
+        title: "Example",
+        text: "Example helps support teams resolve customer questions across many channels. ".repeat(20),
+        links: [
+          "https://example.com/datenschutz",
+          "https://example.com/contact",
+          "https://other.example/privacy",
+          "mailto:support@example.com",
+        ],
+        screenshot: null,
+        faviconUrl: null,
+      }),
+      crawlSite: vi.fn().mockResolvedValue([
+        {
+          url: "https://example.com/datenschutz",
+          title: "Datenschutz",
+          text: "Datenschutz information and support@example.com contact details.",
+          status: "success",
+          links: ["https://example.com/impressum", "https://other.example/legal"],
+        },
+      ]),
+    });
+    const { complete, service } = createService({ crawlerProvider: crawler });
+
+    await service.analyzeWebsite({
+      url: "https://example.com",
+      workspaceId: "workspace-1",
+    });
+
+    const prompt = complete.mock.calls[0]?.[0]?.prompt as string;
+    expect(prompt).toContain("<candidate_links>");
+    expect(prompt).toContain("https://example.com/datenschutz");
+    expect(prompt).toContain("https://example.com/contact");
+    expect(prompt).toContain("https://example.com/impressum");
+    expect(prompt).not.toContain("https://other.example/privacy");
+    expect(prompt).not.toContain("mailto:support@example.com");
+  });
+
+  it("drops hallucinated privacy URLs, invalid locales, and invalid contact emails", async () => {
+    const complete = vi.fn<AgentWizardTextGenerationPort["complete"]>().mockResolvedValue(JSON.stringify({
+      agentName: "Example Support",
+      customInstruction: "Help visitors understand Example.",
+      greetingMessage: "Hi! I can help with Example.",
+      contentType: "marketing",
+      chunkingStrategy: "structured_semantic",
+      chunkingRationale: "Structured content.",
+      language: "not a locale",
+      privacyPolicyUrl: "https://example.com/not-crawled",
+      contactEmail: "not an email",
+    }));
+    const { service } = createService({ complete });
+
+    const result = await service.analyzeWebsite({
+      url: "https://example.com",
+      workspaceId: "workspace-1",
+    });
+
+    expect(result.suggestedLocale).toBeNull();
+    expect(result.suggestedPrivacyPolicyUrl).toBeNull();
+    expect(result.suggestedContactEmail).toBeNull();
   });
 
   it("skips the browser transport when Playwright is not available", async () => {
@@ -239,6 +365,138 @@ describe("AgentWizardService", () => {
     expect(result).toEqual({ agentId: "agent-1", crawlJobId: "crawl-1" });
     expect(agentService.create).toHaveBeenCalledOnce();
     expect(agentService.update).not.toHaveBeenCalled();
+  });
+
+  it("falls back to origin favicon.ico when the declared favicon is not an allowed raster image", async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(faviconResponse({
+        ok: true,
+        status: 200,
+        contentType: "image/svg+xml",
+        body: [60, 115, 118, 103, 62],
+      }))
+      .mockResolvedValueOnce(faviconResponse({
+        ok: true,
+        status: 200,
+        contentType: "image/x-icon",
+        body: [1, 2, 3],
+      })) as unknown as typeof fetch;
+    const { agentService, service } = createService({ fetchImpl });
+
+    await service.createAgentFromWizard({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      config: {
+        websiteUrl: "https://example.com/docs",
+        name: "Example Support",
+        faviconUrl: "https://cdn.example.com/icon.svg",
+      },
+    });
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(1, "https://cdn.example.com/icon.svg", expect.any(Object));
+    expect(fetchImpl).toHaveBeenNthCalledWith(2, "https://example.com/favicon.ico", expect.any(Object));
+    expect(agentService.update).toHaveBeenCalledWith("workspace-1", "agent-1", {
+      logo: expect.objectContaining({
+        filename: "favicon.ico",
+        mimeType: "image/x-icon",
+      }),
+    });
+  });
+
+  it("does not fetch favicon.ico when the declared favicon is an allowed raster image", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(faviconResponse({
+      ok: true,
+      status: 200,
+      contentType: "image/png",
+      body: [1, 2, 3],
+    })) as unknown as typeof fetch;
+    const { service } = createService({ fetchImpl });
+
+    await service.createAgentFromWizard({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      config: {
+        websiteUrl: "https://example.com/docs",
+        name: "Example Support",
+        faviconUrl: "https://cdn.example.com/icon.png",
+      },
+    });
+
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(fetchImpl).toHaveBeenCalledWith("https://cdn.example.com/icon.png", expect.any(Object));
+  });
+
+  it("creates an agent without a logo when neither favicon candidate yields an allowed raster image", async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(faviconResponse({
+        ok: true,
+        status: 200,
+        contentType: "image/svg+xml",
+        body: [60, 115, 118, 103, 62],
+      }))
+      .mockResolvedValueOnce(faviconResponse({
+        ok: false,
+        status: 404,
+        contentType: "text/html",
+        body: [60, 104, 116, 109, 108, 62],
+      })) as unknown as typeof fetch;
+    const { agentService, documentStorage, service } = createService({ fetchImpl });
+
+    const result = await service.createAgentFromWizard({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      config: {
+        websiteUrl: "https://example.com/docs",
+        name: "Example Support",
+        faviconUrl: "https://cdn.example.com/icon.svg",
+      },
+    });
+
+    expect(result).toEqual({ agentId: "agent-1", crawlJobId: "crawl-1" });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(documentStorage.upload).not.toHaveBeenCalled();
+    expect(agentService.update).not.toHaveBeenCalled();
+  });
+
+  it("applies derived locale, privacy policy, contact email, and favicon logo in one update", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: (name: string) => name === "content-type" ? "image/png" : null },
+      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+    }) as unknown as typeof fetch;
+    const { agentService, service } = createService({ fetchImpl });
+
+    await service.createAgentFromWizard({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      config: {
+        websiteUrl: "https://example.com",
+        name: "Example Support",
+        faviconUrl: "https://example.com/favicon.ico",
+        assistantDefaultLocale: "de",
+        privacyPolicyUrl: "https://example.com/privacy",
+        contactEmail: "support@example.com",
+      },
+    });
+
+    expect(agentService.update).toHaveBeenCalledOnce();
+    expect(agentService.update).toHaveBeenCalledWith("workspace-1", "agent-1", {
+      assistantDefaultLocale: "de",
+      branding: {
+        hidePoweredBy: false,
+        privacyPolicyUrl: "https://example.com/privacy",
+      },
+      contactRequestDelivery: {
+        recipientEmails: ["support@example.com"],
+        webhook: null,
+      },
+      logo: expect.objectContaining({
+        bucket: "logos",
+        objectPath: "logo-key",
+        mimeType: "image/png",
+      }),
+    });
   });
 
   it("clamps the crawl limit to the server-side max", async () => {

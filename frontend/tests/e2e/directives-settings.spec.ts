@@ -7,7 +7,7 @@ import {
   workspaceKey,
 } from "./dashboard-fixtures";
 
-test("agent directives settings create, edit, warn, delete, and persist", async ({ page }) => {
+test("agent directives settings create, edit, delete, and persist", async ({ page }) => {
   const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
 
   await seedDashboardStorage(page);
@@ -83,6 +83,7 @@ test("agent directives settings can replace and restore a built-in directive", a
   await expect(page.getByRole("heading", { name: 'Replace the default "inline-supported-links"' })).toBeVisible();
   await page.getByLabel("Scope").click();
   await page.getByRole("option", { name: "Only when condition matches" }).click();
+  await expect(page.getByText("Not active yet:")).toHaveCount(0);
   await page.getByLabel("Only when").fill("answering legal policy questions");
   await page.getByLabel("Action").fill("Use the agent's legal-source link policy instead of the default link style.");
   await page.getByRole("button", { name: "Save directive" }).click();
@@ -109,4 +110,66 @@ test("agent directives settings can replace and restore a built-in directive", a
   await expect(page.getByRole("button", { name: "Replace inline-supported-links for this agent" })).toBeVisible();
   await expect.poll(() => directiveUpdates.length).toBe(2);
   expect(directiveUpdates[1]).toMatchObject({ method: "DELETE" });
+});
+
+test("agent directives settings can resolve a conflict by superseding another directive", async ({ page }) => {
+  const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { directiveUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-directives`);
+
+  await page.getByRole("button", { name: "New directive" }).click();
+  await page.getByLabel("Name").fill("brief-tone");
+  await page.getByLabel("Action").fill("Keep replies short and direct.");
+  await page.getByRole("button", { name: "Save directive" }).click();
+
+  await page.getByRole("button", { name: "New directive" }).click();
+  await page.getByLabel("Name").fill("conflict-tone");
+  await page.getByLabel("Action").fill("Always be verbose, expansive, and include long explanations.");
+  await page.getByRole("button", { name: "Save directive" }).click();
+
+  await expect(page.getByText("Potential directive conflicts")).toBeVisible();
+  await expect(page.getByRole("button", { name: "conflict-tone supersedes brief-tone" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "brief-tone supersedes conflict-tone" })).toBeVisible();
+
+  await page.getByRole("button", { name: "conflict-tone supersedes brief-tone" }).click();
+
+  await expect(page.getByText("Replaces: brief-tone")).toBeVisible();
+  await expect(page.getByText("No directive conflicts were found.")).toBeVisible();
+  await expect.poll(() => directiveUpdates.length).toBe(3);
+  expect(directiveUpdates[2]).toMatchObject({
+    method: "PATCH",
+    body: {
+      name: "conflict-tone",
+      excludes: ["brief-tone"],
+    },
+  });
+});
+
+test("agent directives settings can open a conflicting directive as contextual", async ({ page }) => {
+  const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { directiveUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-directives`);
+
+  await page.getByRole("button", { name: "New directive" }).click();
+  await page.getByLabel("Name").fill("brief-tone");
+  await page.getByLabel("Action").fill("Keep replies short and direct.");
+  await page.getByRole("button", { name: "Save directive" }).click();
+
+  await page.getByRole("button", { name: "New directive" }).click();
+  await page.getByLabel("Name").fill("conflict-tone");
+  await page.getByLabel("Action").fill("Always be verbose, expansive, and include long explanations.");
+  await page.getByRole("button", { name: "Save directive" }).click();
+
+  await page.getByRole("button", { name: "Make conflict-tone apply only conditionally" }).click();
+
+  await expect(page.getByRole("heading", { name: "Edit directive" })).toBeVisible();
+  await expect(page.getByLabel("Name")).toHaveValue("conflict-tone");
+  await expect(page.getByRole("combobox", { name: "Condition" })).toContainText("Contextual");
+  await expect(page.getByLabel("Condition description")).toBeVisible();
 });

@@ -89,6 +89,20 @@ function AgentCreationHandoffBanner({
               <p className="text-sm font-medium">{summary.title}</p>
               <p className="mt-1 truncate text-sm text-muted-foreground">{summary.description}</p>
             </div>
+            {summary.detectedLocale || summary.detectedPrivacyPolicyUrl ? (
+              <div className="flex flex-wrap gap-2">
+                {summary.detectedLocale ? (
+                  <span className="rounded-md bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+                    Language: {summary.detectedLocale}
+                  </span>
+                ) : null}
+                {summary.detectedPrivacyPolicyUrl ? (
+                  <span className="max-w-full truncate rounded-md bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+                    Privacy policy detected
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
             <div className="h-2 overflow-hidden rounded-full bg-muted">
               <div className="h-full rounded-full bg-primary" style={{ width: '100%' }} />
             </div>

@@ -157,6 +157,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     usageEventRecorder: infrastructure.usageEventRecorder,
     llmRegistry,
     workspaceIngestionReprocessService,
+    errorReporter: infrastructure.errorReportingService,
   });
   const retrieval = buildRetrievalServices({
     auditService: infrastructure.auditService,
@@ -202,6 +203,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     env,
     historyItemsRepository: repositories.historyItemsRepository,
     llmRegistry,
+    llmCapabilityResolver,
     logger,
     mailService: infrastructure.mailService,
     messageRepository: repositories.messageRepository,
@@ -211,6 +213,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     usageLimitPolicy: infrastructure.usageLimitPolicy,
     workspaceRepository: repositories.workspaceRepository,
     assertPublicWebsiteUrl,
+    errorReporter: infrastructure.errorReportingService,
   });
   const platformSettingsService = new PlatformSettingsService({
     workspaceRepository: repositories.workspaceRepository,

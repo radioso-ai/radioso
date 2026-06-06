@@ -23,6 +23,16 @@ export {
 } from "./types.js";
 export { DefaultAgentRuntime, type DefaultAgentRuntimeDeps } from "./defaultAgentRuntime.js";
 export {
+  AgenticCapabilityRunner,
+  resolveAgenticCapabilityBudgetProfile,
+  type AgenticCapabilityDefinition,
+  type AgenticCapabilityFallbackInput,
+  type AgenticCapabilityResult,
+  type AgenticCapabilityRunnerDeps,
+  type AgenticCapabilityRunInput,
+  type AgenticCapabilityTraceInput,
+} from "./agenticCapability.js";
+export {
   TextRoutedToolCallingGateway,
   compactTranscript,
   parseModelResponse,

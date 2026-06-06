@@ -1,11 +1,9 @@
 import {
-  AGENT_BUDGET_DEFAULTS,
   type AgentBudgets,
-  type AgentRuntime,
+  type AgenticCapabilityRunner,
   type AgentTool,
   type AgentTraceEvent,
   type TerminatedReason,
-  type TraceSink,
 } from "../../../shared/agent-runtime/index.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
@@ -32,7 +30,7 @@ import {
 const DEFAULT_FALLBACK_CHUNK_LIMIT = 8;
 
 export interface AgenticRetrievalRunnerDeps {
-  readonly runtime: AgentRuntime;
+  readonly capabilityRunner: AgenticCapabilityRunner;
   readonly embeddings: EmbeddingGateway;
   readonly vectorSearch: VectorSearchPort;
   readonly lexicalSearch: LexicalSearchPort;
@@ -82,18 +80,6 @@ export interface AgenticRetrievalRunResult {
   readonly searchStats: AgenticRetrievalSearchStats;
 }
 
-// `?? default` does not catch NaN (NaN is neither null nor undefined), and a
-// NaN budget makes `stepIndex >= NaN` always false → an unbounded loop. Treat
-// any non-positive or non-finite override as absent and fall back to default.
-const positiveOr = (value: number | undefined, fallback: number): number =>
-  typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
-
-const resolveBudgets = (overrides?: Partial<AgentBudgets>): AgentBudgets => ({
-  maxSteps: positiveOr(overrides?.maxSteps, AGENT_BUDGET_DEFAULTS.maxSteps),
-  maxToolResultTokens: positiveOr(overrides?.maxToolResultTokens, AGENT_BUDGET_DEFAULTS.maxToolResultTokens),
-  maxWallTimeMs: positiveOr(overrides?.maxWallTimeMs, AGENT_BUDGET_DEFAULTS.maxWallTimeMs),
-});
-
 export class AgenticRetrievalRunner {
   constructor(private readonly deps: AgenticRetrievalRunnerDeps) {}
 
@@ -142,52 +128,40 @@ export class AgenticRetrievalRunner {
       }) as AgentTool,
     ];
 
-    const events: AgentTraceEvent[] = [];
-    const sink: TraceSink = {
-      emit: (event) => {
-        events.push(event);
-      },
-    };
-
-    const budgets = resolveBudgets(input.budgets);
-    const now = input.now ?? (() => Date.now());
-    const traceStartedAtMs = now();
-
-    const runResult = await this.deps.runtime.run(
-      { systemPrompt: input.systemPrompt, userMessage: input.query },
-      tools,
-      budgets,
+    const fallbackLimit = input.fallbackChunkLimit ?? DEFAULT_FALLBACK_CHUNK_LIMIT;
+    const capabilityResult = await this.deps.capabilityRunner.run(
       {
+        systemPrompt: input.systemPrompt,
+        userMessage: input.query,
         signal: input.signal,
-        traceSink: sink,
         now: input.now,
         usageContext: input.usageContext,
       },
+      {
+        tools,
+        budgetProfile: input.budgets,
+        getFinalization: () => finalized,
+        mapFinalizationToSelection: (selection) => registry.resolve(selection.chunkIds),
+        selectFallback: ({ events }) => computeFallbackSelection(events, registry, fallbackLimit),
+        mapTrace: ({ events, runResult, selection, finalization, traceStartedAtMs, budgetProfile }) =>
+          buildAgenticActivityTrace({
+            events,
+            runResult,
+            selectedChunkIds: selection.map((chunk) => chunk.chunkId),
+            finalRationale: finalization?.rationale ?? null,
+            traceStartedAtMs,
+            fallbackBudgets: budgetProfile,
+          }),
+      },
     );
 
-    const fallbackLimit = input.fallbackChunkLimit ?? DEFAULT_FALLBACK_CHUNK_LIMIT;
-    const finalizedSelection = finalized as FinalizedSelection | null;
-    const selectedChunks: RegisteredChunk[] = finalizedSelection
-      ? registry.resolve(finalizedSelection.chunkIds)
-      : computeFallbackSelection(events, registry, fallbackLimit);
-    const rationale = finalizedSelection?.rationale ?? null;
-
-    const trace = buildAgenticActivityTrace({
-      events,
-      runResult,
-      selectedChunkIds: selectedChunks.map((chunk) => chunk.chunkId),
-      finalRationale: rationale,
-      traceStartedAtMs,
-      fallbackBudgets: budgets,
-    });
-
     return {
-      selectedChunks,
-      rationale,
-      trace,
-      terminatedReason: runResult.terminatedReason,
-      stepsTaken: runResult.stepsTaken,
-      searchStats: computeSearchStats(events),
+      selectedChunks: capabilityResult.selection,
+      rationale: capabilityResult.finalization?.rationale ?? null,
+      trace: capabilityResult.trace,
+      terminatedReason: capabilityResult.terminatedReason,
+      stepsTaken: capabilityResult.stepsTaken,
+      searchStats: computeSearchStats(capabilityResult.events),
     };
   }
 }

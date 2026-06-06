@@ -20,6 +20,7 @@ describe("shared domain primitives", () => {
 
   it("normalizes website embed origins for shared surface checks", () => {
     expect(normalizeWebsiteEmbedOrigin(" https://example.com/docs ")).toBe("https://example.com");
+    expect(normalizeWebsiteEmbedOrigin(" * ")).toBe("*");
     expect(normalizeWebsiteEmbedOrigin("not a url")).toBeNull();
     expect(isAllowedWebsiteEmbedOrigin(["https://example.com"], "https://example.com/docs")).toBe(true);
     expect(isAllowedWebsiteEmbedOrigin(["https://example.com"], "https://evil.example.com")).toBe(false);

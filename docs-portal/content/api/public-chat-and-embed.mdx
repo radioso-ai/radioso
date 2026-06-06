@@ -45,7 +45,7 @@ For a public link:
 }
 ```
 
-For an Enterprise website embed, call the route from an approved origin:
+For an Enterprise website embed, call the route from an origin admitted by the website embed origin setting:
 
 ```json
 {
@@ -53,10 +53,11 @@ For an Enterprise website embed, call the route from an approved origin:
 }
 ```
 
-Browser clients must keep using that same approved `Origin` on later chat,
-history, and feedback requests. Radioso checks the signed public session against
-the current website embed allowlist each time, so removing an origin from the
-allowlist stops existing browser sessions from sending new messages.
+Browser clients must keep using that same origin on later chat, history, and
+feedback requests. Radioso checks the signed public session against the current
+website embed origin setting each time. Removing an origin from the list stops
+existing browser sessions from sending new messages. If the list contains `*`,
+any origin is admitted. If the list is empty, no origin is admitted.
 
 To resume an existing visitor session, include the previous response's `resumeToken`:
 
@@ -156,7 +157,7 @@ Use `GET /api/v1/public/chat/{token}/history/{conversationId}` to fetch one conv
 
 ## Common failure modes
 
-- `403` on a website embed session usually means the origin is not in the allowlist.
+- `403` on a website embed session usually means the origin is not admitted by the website embed origin setting.
 - `404` usually means the public token is unknown or not active.
 - `503` on a public chat message means Radioso accepted the public session but could not produce a response body.
 - `429` on public chat means the optional server-side public chat rate limit has been reached.

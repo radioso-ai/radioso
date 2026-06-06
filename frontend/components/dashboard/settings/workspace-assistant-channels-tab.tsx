@@ -94,6 +94,33 @@ const DEFAULT_CONTACT_REQUEST_DELIVERY = {
   webhook: null,
 } satisfies NonNullable<AssistantBehaviorSettings['contactRequestDelivery']>
 
+const formatLastUsed = (value: string | null | undefined) => {
+  if (!value) {
+    return 'Never used'
+  }
+  const timestamp = new Date(value).getTime()
+  if (!Number.isFinite(timestamp)) {
+    return 'Last used: Unknown'
+  }
+  const diffSeconds = Math.round((timestamp - Date.now()) / 1000)
+  const absoluteSeconds = Math.abs(diffSeconds)
+  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+    ['year', 60 * 60 * 24 * 365],
+    ['month', 60 * 60 * 24 * 30],
+    ['week', 60 * 60 * 24 * 7],
+    ['day', 60 * 60 * 24],
+    ['hour', 60 * 60],
+    ['minute', 60],
+  ]
+  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+  for (const [unit, unitSeconds] of units) {
+    if (absoluteSeconds >= unitSeconds) {
+      return `Last used: ${formatter.format(Math.round(diffSeconds / unitSeconds), unit)}`
+    }
+  }
+  return `Last used: ${formatter.format(diffSeconds, 'second')}`
+}
+
 const parseContactRequestEmails = (value: string): string[] =>
   value
     .split(/[\n,;\s]+/)
@@ -1259,6 +1286,11 @@ export function WorkspaceAssistantChannelsTab({
                   />
                 }
               >
+                <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-muted-foreground">
+                    {formatLastUsed(anonSettings.anonymousChatLastUsedAt)}
+                  </span>
+                </div>
                 {anonSettings.anonymousChatEnabled && anonSettings.anonymousChatUrl ? (
                   <div className="space-y-3 rounded-xl bg-muted/50 p-4">
                     <div className="flex items-center gap-2 text-foreground">
@@ -1303,7 +1335,7 @@ export function WorkspaceAssistantChannelsTab({
 
 
           {mode !== 'channels' || (!isAnonLoading && resolvedChannel === 'website-embed') ? (
-          <WebsiteEmbedSettingsController
+            <WebsiteEmbedSettingsController
             mode={mode}
             anonSettings={anonSettings}
             savedAnonSettings={savedAnonSettings}

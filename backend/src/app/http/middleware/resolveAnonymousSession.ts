@@ -6,6 +6,7 @@ import { AppError, notFound } from "../../../shared/domain/errors.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
 import type { AgentRecord, AgentService } from "../../../modules/agents/public.js";
+import type { AccessGrant, AccessGrantService } from "../../../modules/accessGrants/public.js";
 import { defaultAgentBrandingSettings, getWebsiteEmbedSurfaceSettings, isAgentBootstrapActive } from "../../../modules/agents/public.js";
 import {
   resolveAssistantDisplayName,
@@ -131,6 +132,7 @@ const publicSessionMatchesCurrentOrigin = (
   sourceChannel: "anonymous" | "website_embed",
   sourceOrigin: string | null,
   appOrigin: string | null,
+  originAllowed?: (origin: string) => boolean,
 ) => {
   if (sourceChannel !== "website_embed") {
     return true;
@@ -149,7 +151,7 @@ const publicSessionMatchesCurrentOrigin = (
   // host as the API and browsers omit the Origin header on its same-origin
   // requests.
   const boundOrigin = sourceOrigin ? normalizeWebsiteEmbedOrigin(sourceOrigin) : null;
-  if (!boundOrigin || !isAllowedWebsiteEmbedOrigin(websiteEmbed.allowedOrigins, boundOrigin)) {
+  if (!boundOrigin || !(originAllowed?.(boundOrigin) ?? (websiteEmbed.allowedOrigins.includes("*") || isAllowedWebsiteEmbedOrigin(websiteEmbed.allowedOrigins, boundOrigin)))) {
     return false;
   }
 
@@ -216,8 +218,12 @@ export const resolveAnonymousSession = (
   workspaceRepository: Pick<WorkspaceRepositoryPort, "findById" | "findByAnonymousChatToken" | "findByWebsiteEmbedToken">,
   publicChatSessionSecret: string | undefined,
   anonymousRateLimitCookieSecret: string | undefined = publicChatSessionSecret,
-  agentRepository?: Pick<AgentRepositoryPort, "findByAnonymousChatToken" | "findByWebsiteEmbedToken">,
+  agentRepository?: Pick<AgentRepositoryPort, "findByAnonymousChatToken" | "findByWebsiteEmbedToken" | "findByIdAndWorkspaceId">,
   agentService?: Pick<AgentService, "resolve">,
+  accessGrantService?: Pick<
+    AccessGrantService,
+    "resolvePublicLaunchGrant" | "evaluate" | "touchGrant" | "recordAuthFailure"
+  >,
 ): RequestHandler => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -230,9 +236,16 @@ export const resolveAnonymousSession = (
 
       const { token } = parsedParams.data;
       const publicSession = verifyPublicChatSession(req.get(PUBLIC_CHAT_SESSION_HEADER), publicChatSessionSecret);
+      const grantByToken = accessGrantService
+        ? await accessGrantService.resolvePublicLaunchGrant(token)
+        : null;
       const firstAgentByToken = async () => {
         if (!agentRepository) {
           return null;
+        }
+
+        if (grantByToken) {
+          return agentRepository.findByIdAndWorkspaceId(grantByToken.agentId, grantByToken.workspaceId);
         }
 
         if (publicSession?.sourceChannel === "website_embed") {
@@ -246,6 +259,8 @@ export const resolveAnonymousSession = (
       const agentByToken = await firstAgentByToken();
       const workspace = publicSession
         ? await workspaceRepository.findById(publicSession.workspaceId)
+        : grantByToken
+          ? await workspaceRepository.findById(grantByToken.workspaceId)
         : agentByToken
           ? await workspaceRepository.findById(agentByToken.workspaceId)
           : await workspaceRepository.findByAnonymousChatToken(token)
@@ -262,6 +277,13 @@ export const resolveAnonymousSession = (
         }
       }
       agent = agent ?? agentByToken ?? (!agentService ? legacyWorkspaceAgent(workspace) : null);
+      const grantEvaluation = grantByToken
+        ? accessGrantService?.evaluate(grantByToken, {
+            origin: publicSession?.sourceChannel === "website_embed" ? publicSession.sourceOrigin : null,
+          })
+        : null;
+      const grantAllowsOrigin = (grant: AccessGrant) => (origin: string) =>
+        accessGrantService?.evaluate(grant, { origin }).allowed ?? false;
       const hasValidPublicSession = Boolean(
         publicSession &&
         workspace &&
@@ -270,12 +292,35 @@ export const resolveAnonymousSession = (
         agent.workspaceId === workspace.id &&
         publicChatSessionMatchesLaunchToken(publicSession, publicChatSessionSecret, token) &&
         publicSessionMatchesAgentSurface(agent, token, publicSession.sourceChannel) &&
-        publicSessionMatchesCurrentOrigin(agent, req.get("origin"), publicSession.sourceChannel, publicSession.sourceOrigin, resolveRequestAppOrigin(req)),
+        (!grantByToken || (
+          grantByToken.workspaceId === workspace.id &&
+          grantByToken.agentId === agent.id &&
+          grantEvaluation?.allowed
+        )) &&
+        publicSessionMatchesCurrentOrigin(
+          agent,
+          req.get("origin"),
+          publicSession.sourceChannel,
+          publicSession.sourceOrigin,
+          resolveRequestAppOrigin(req),
+          grantByToken && publicSession.sourceChannel === "website_embed" ? grantAllowsOrigin(grantByToken) : undefined,
+        ),
       );
 
       if (!workspace || !agent || !publicSession || !hasValidPublicSession) {
+        if (grantByToken && grantEvaluation && !grantEvaluation.allowed) {
+          await accessGrantService?.recordAuthFailure({
+            grant: grantByToken,
+            reason: grantEvaluation.reason,
+            surface: publicSession?.sourceChannel === "website_embed" ? "website-embed" : "anonymous-chat",
+          });
+        }
         next(notFound("Not found"));
         return;
+      }
+
+      if (grantByToken) {
+        await accessGrantService?.touchGrant(grantByToken.id);
       }
 
       if (publicSession.sourceChannel === "website_embed") {
@@ -325,7 +370,7 @@ export const resolveAnonymousSession = (
       res.locals.sourceOrigin = publicSession?.sourceOrigin ?? null;
       res.locals.authPrincipal = {
         type: "public_chat_session",
-        role: "public_chat",
+        role: "public",
         workspaceId: workspace.id,
         agentId: agent.id,
         publicSessionId: sessionId,

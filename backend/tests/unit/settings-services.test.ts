@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { defaultAssistantBootstrapSettings, validateAssistantBootstrapSettings } from "../../src/modules/settings/domain/assistantBootstrapSettings.js";
+import type { AccessGrant } from "../../src/modules/accessGrants/public.js";
 import type { AgentRecord } from "../../src/modules/agents/public.js";
 import { defaultIngestionSettings } from "../../src/modules/settings/domain/ingestionSettings.js";
 import { defaultRetrievalSettings } from "../../src/modules/settings/domain/retrievalSettings.js";
@@ -106,6 +107,25 @@ describe("settings services", () => {
       updatedAt: new Date("2026-01-02T00:00:00.000Z"),
     })),
     withRotatedTokens: vi.fn((_agent: AgentRecord, input: Partial<AgentRecord>) => input),
+  });
+
+  const createPublicLaunchGrant = (overrides: Partial<AccessGrant> = {}): AccessGrant => ({
+    id: "grant-1",
+    agentId: "workspace-1-agent",
+    workspaceId: "workspace-1",
+    label: "website-embed",
+    principalKind: "public-launch",
+    role: "public",
+    tokenPrefix: "",
+    tokenHash: "hash",
+    encryptedToken: "encrypted",
+    originConstraint: { mode: "allow-all", origins: [] },
+    enabled: true,
+    expiresAt: null,
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    lastUsedAt: null,
+    revokedAt: null,
+    ...overrides,
   });
 
   it("aggregates assistant-owned behavior separately from retrieval-owned tuning", async () => {
@@ -267,6 +287,68 @@ describe("settings services", () => {
       websiteEmbedToken: "embed-token",
       websiteEmbedLauncherLabel: "Ask Nora",
     }));
+  });
+
+  it("surfaces public launch grant last-used timestamps and lifecycle status by current surface token", async () => {
+    const workspace = {
+      id: "workspace-1",
+      name: "Workspace",
+      assistantName: "Nora",
+      greetingInstruction: "",
+      assistantDefaultLocale: null,
+      proactiveGreetingEnabled: false,
+      anonymousChatEnabled: true,
+      anonymousChatToken: "anonymous-token",
+      anonymousRateLimit: 10,
+      websiteEmbedEnabled: true,
+      websiteEmbedToken: "embed-token",
+      websiteEmbedAllowedOrigins: ["https://example.com"],
+      websiteEmbedLauncherLabel: "Ask Nora",
+      websiteEmbedLauncherPosition: "bottom-left" as const,
+    };
+    const anonymousGrant = createPublicLaunchGrant({
+      id: "anonymous-grant",
+      label: "anonymous-chat",
+      lastUsedAt: new Date("2026-02-03T04:05:06.000Z"),
+    });
+    const websiteEmbedGrant = createPublicLaunchGrant({
+      id: "embed-grant",
+      label: "website-embed",
+      revokedAt: new Date("2026-02-04T04:05:06.000Z"),
+    });
+    const accessGrantService = {
+      resolvePublicLaunchGrant: vi.fn(async (token: string) =>
+        token === "anonymous-token"
+          ? anonymousGrant
+          : token === "embed-token"
+            ? websiteEmbedGrant
+            : null,
+      ),
+      revokeGrant: vi.fn(),
+    };
+    const service = new PlatformSettingsService({
+      workspaceRepository: {
+        findById: vi.fn().mockResolvedValue(workspace),
+        updateGeneralSettings: vi.fn(),
+      },
+      agentService: createAgentService(createAgent(workspace)),
+      accessGrantService,
+      retrievalSettingsService: {
+        getForWorkspace: vi.fn().mockResolvedValue(defaultRetrievalSettings("workspace-1")),
+        listMetadataFieldSuggestions: vi.fn().mockResolvedValue([]),
+        updateForWorkspace: vi.fn(),
+      },
+      publicChatBaseUrl: "http://localhost:3000/chat",
+    } as never);
+
+    const result = await service.getForWorkspace("workspace-1");
+
+    expect(accessGrantService.resolvePublicLaunchGrant).toHaveBeenCalledWith("anonymous-token");
+    expect(accessGrantService.resolvePublicLaunchGrant).toHaveBeenCalledWith("embed-token");
+    expect(result.channels).toMatchObject({
+      anonymousChatLastUsedAt: "2026-02-03T04:05:06.000Z",
+      websiteEmbedLastUsedAt: null,
+    });
   });
 
   it("emits channel audit events from the shared settings update path", async () => {

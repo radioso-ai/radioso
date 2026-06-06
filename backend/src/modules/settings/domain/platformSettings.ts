@@ -30,8 +30,10 @@ export interface PlatformRetrievalSettingsSection {
 export interface PlatformChannelsSettingsSection {
   anonymousChatEnabled: boolean;
   anonymousChatUrl: string | null;
+  anonymousChatLastUsedAt: string | null;
   websiteEmbedEnabled: boolean;
   websiteEmbedToken: string | null;
+  websiteEmbedLastUsedAt: string | null;
   websiteEmbedAllowedOrigins: string[];
   websiteEmbedLauncherLabel: string;
   websiteEmbedLauncherPosition: WebsiteEmbedLauncherPosition;

@@ -12,6 +12,13 @@ export const nowIso = "2026-04-26T12:00:00.000Z";
 
 type AuthoredDirectiveFixture = ApiSchemas["AuthoredDirective"];
 type BuiltInDirectiveFixture = ApiSchemas["BuiltInDirective"];
+type ChannelLifecycleFixture = {
+  lastUsedAt: string | null;
+};
+type ChannelsLifecycleFixture = {
+  anonymousChat: ChannelLifecycleFixture;
+  websiteEmbed: ChannelLifecycleFixture;
+};
 type DirectiveMutationFixture = {
   method: "POST" | "PATCH" | "DELETE";
   directiveId?: string;
@@ -47,8 +54,10 @@ export const basePlatformSettings = (): ApiSchemas["PlatformSettingsResponse"] =
   channels: {
     anonymousChatEnabled: false,
     anonymousChatUrl: "http://localhost:3000/chat/public-token",
+    anonymousChatLastUsedAt: null,
     websiteEmbedEnabled: false,
     websiteEmbedToken: "embed-token",
+    websiteEmbedLastUsedAt: null,
     websiteEmbedScriptUrl: "http://localhost:3000/embed.js",
     websiteEmbedSnippet: "<script src=\"http://localhost:3000/embed.js\"></script>",
     websiteEmbedAllowedOrigins: [],
@@ -137,6 +146,15 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   },
   createdAt: nowIso,
   updatedAt: nowIso,
+});
+
+const buildDefaultChannelsLifecycle = (settings: PlatformSettingsFixture): ChannelsLifecycleFixture => ({
+  anonymousChat: {
+    lastUsedAt: settings.channels.anonymousChatLastUsedAt,
+  },
+  websiteEmbed: {
+    lastUsedAt: settings.channels.websiteEmbedLastUsedAt,
+  },
 });
 
 export const seedDashboardStorage = async (page: Page) => {
@@ -333,6 +351,7 @@ export const installDashboardApiMocks = async (
   let platformSettings = options.platformSettings ?? basePlatformSettings();
   let ingestionSettings = options.ingestionSettings ?? baseIngestionSettings();
   let agentSettings = buildDefaultAgentSettings(platformSettings);
+  let channelsLifecycle = buildDefaultChannelsLifecycle(platformSettings);
   const providerEncryptionConfigured = options.providerEncryptionConfigured ?? true;
   const providerCredentials: Record<string, { updatedAt: string } | null> = {
     openai: null,
@@ -523,6 +542,51 @@ export const installDashboardApiMocks = async (
 
     if (request.method() === "GET" && path === "/agents") {
       await json(route, { agents: [agentSettings] });
+      return;
+    }
+
+    if (request.method() === "GET" && path === `/agents/${defaultAgentId}/channels/lifecycle`) {
+      await json(route, channelsLifecycle);
+      return;
+    }
+
+    if (request.method() === "POST" && path === `/agents/${defaultAgentId}/anonymous-chat-token/rotate`) {
+      agentSettings = {
+        ...agentSettings,
+        surfaceSettings: {
+          ...agentSettings.surfaceSettings,
+          anonymousChat: {
+            ...agentSettings.surfaceSettings.anonymousChat,
+            token: "public-token-rotated",
+          },
+        },
+        updatedAt: nowIso,
+      };
+      channelsLifecycle = {
+        ...channelsLifecycle,
+        anonymousChat: { lastUsedAt: null },
+      };
+      await json(route, agentSettings);
+      return;
+    }
+
+    if (request.method() === "POST" && path === `/agents/${defaultAgentId}/website-embed-token/rotate`) {
+      agentSettings = {
+        ...agentSettings,
+        surfaceSettings: {
+          ...agentSettings.surfaceSettings,
+          websiteEmbed: {
+            ...agentSettings.surfaceSettings.websiteEmbed,
+            token: "embed-token-rotated",
+          },
+        },
+        updatedAt: nowIso,
+      };
+      channelsLifecycle = {
+        ...channelsLifecycle,
+        websiteEmbed: { lastUsedAt: null },
+      };
+      await json(route, agentSettings);
       return;
     }
 

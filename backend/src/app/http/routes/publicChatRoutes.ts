@@ -49,6 +49,7 @@ type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & Pick<
   | "logger"
   | "workspaceRepository"
   | "accountAccessService"
+  | "accessGrantService"
 >;
 
 export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies): Router => {
@@ -60,6 +61,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     dependencies.env.SESSION_COOKIE_SECRET,
     dependencies.agentRepository,
     dependencies.agentService,
+    dependencies.accessGrantService,
   );
   const rateLimitAnonymousChat = anonymousRateLimiters(dependencies);
   const rateLimitPublicChatSessionExchange = publicChatSessionExchangeRateLimiter(dependencies);
@@ -74,6 +76,14 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       return null;
     }
   };
+  // No Origin header means a same-origin request (the embed widget omits Origin
+  // when it is same-origin to the API proxy — see #609→#612), which is allowed.
+  // Endpoints that genuinely require an Origin (e.g. website-embed session
+  // creation, which binds it) reject the missing header upstream before this runs.
+  const websiteEmbedOriginAllowed = (
+    websiteEmbed: ReturnType<typeof getWebsiteEmbedSurfaceSettings>,
+    origin: string | null,
+  ) => origin === null || isAllowedWebsiteEmbedOrigin(websiteEmbed.allowedOrigins, origin);
   const buildAssistantLogoUrl = (req: { get(name: string): string | undefined }, token: string, hasLogo: boolean) =>
     buildPublicAssistantLogoUrl({
       token,
@@ -82,6 +92,15 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       forwardedPrefix: req.get("x-forwarded-prefix"),
     });
   const resolveAgentForPublicLogo = async (launchToken: string) => {
+    const grant = await dependencies.accessGrantService.resolvePublicLaunchGrant(launchToken);
+    if (grant) {
+      const agent = await dependencies.agentRepository.findByIdAndWorkspaceId(grant.agentId, grant.workspaceId);
+      if (!agent) {
+        return null;
+      }
+      const evaluation = dependencies.accessGrantService.evaluate(grant, {});
+      return evaluation.allowed ? agent : null;
+    }
     const anonymousAgent = await dependencies.agentRepository.findByAnonymousChatToken(launchToken);
     if (anonymousAgent?.surfaceSettings.anonymousChat.enabled) {
       return anonymousAgent;
@@ -135,13 +154,36 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     try {
       const launchToken = String(req.params.token);
       const origin = resolveOrigin(req.header("origin"));
-      const agent = await dependencies.agentRepository.findByWebsiteEmbedToken(launchToken);
+      const grant = await dependencies.accessGrantService.resolvePublicLaunchGrant(launchToken);
+      const agent = grant
+        ? await dependencies.agentRepository.findByIdAndWorkspaceId(grant.agentId, grant.workspaceId)
+        : await dependencies.agentRepository.findByWebsiteEmbedToken(launchToken);
       const websiteEmbed = agent ? getWebsiteEmbedSurfaceSettings(agent) : null;
       if (!agent || !websiteEmbed?.enabled) {
         next(notFound("Not found"));
         return;
       }
-      if (origin && !isAllowedWebsiteEmbedOrigin(websiteEmbed.allowedOrigins, origin)) {
+      if (grant) {
+        const evaluation = dependencies.accessGrantService.evaluate(grant, { origin });
+        if (!evaluation.allowed) {
+          await dependencies.accessGrantService.recordAuthFailure({
+            grant,
+            reason: evaluation.reason,
+            surface: "website-embed",
+          });
+          if (evaluation.reason === "origin_denied") {
+            throw badRequest("This website is not approved to host the embedded assistant.");
+          }
+          next(notFound("Not found"));
+          return;
+        }
+        await dependencies.accessGrantService.touchGrant(grant.id);
+      } else if (!websiteEmbedOriginAllowed(websiteEmbed, origin)) {
+        await dependencies.accessGrantService.recordAuthFailure({
+          workspaceId: agent.workspaceId,
+          reason: "origin_denied",
+          surface: "website-embed",
+        });
         throw badRequest("This website is not approved to host the embedded assistant.");
       }
 
@@ -179,7 +221,11 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       if (origin) {
         res.vary("Origin");
         const websiteEmbed = getWebsiteEmbedSurfaceSettings(agent);
-        if (websiteEmbed.enabled && isAllowedWebsiteEmbedOrigin(websiteEmbed.allowedOrigins, origin)) {
+        const grant = await dependencies.accessGrantService.resolvePublicLaunchGrant(launchToken);
+        const originAllowed = grant
+          ? dependencies.accessGrantService.evaluate(grant, { origin }).allowed
+          : websiteEmbedOriginAllowed(websiteEmbed, origin);
+        if (websiteEmbed.enabled && originAllowed) {
           res.setHeader("Access-Control-Allow-Origin", origin);
         }
       }
@@ -217,12 +263,23 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       }
 
       if (req.body.channel === "anonymous_link") {
-        const agentByToken = await dependencies.agentRepository.findByAnonymousChatToken(launchToken);
+        const grant = await dependencies.accessGrantService.resolvePublicLaunchGrant(launchToken);
+        const agentByToken = grant
+          ? await dependencies.agentRepository.findByIdAndWorkspaceId(grant.agentId, grant.workspaceId)
+          : await dependencies.agentRepository.findByAnonymousChatToken(launchToken);
         const workspace = agentByToken
           ? await dependencies.workspaceRepository.findById(agentByToken.workspaceId)
           : await dependencies.workspaceRepository.findByAnonymousChatToken(launchToken);
         const agent = agentByToken ?? (workspace ? await dependencies.agentService.resolve(workspace.id) : null);
-        if (!workspace || !agent || !agent.surfaceSettings.anonymousChat.enabled) {
+        const grantEvaluation = grant ? dependencies.accessGrantService.evaluate(grant, {}) : null;
+        if (!workspace || !agent || !agent.surfaceSettings.anonymousChat.enabled || grantEvaluation?.allowed === false) {
+          if (grant && grantEvaluation && !grantEvaluation.allowed) {
+            await dependencies.accessGrantService.recordAuthFailure({
+              grant,
+              reason: grantEvaluation.reason,
+              surface: "anonymous-chat",
+            });
+          }
           res.status(404).json({
             error: {
               code: "not_found",
@@ -257,6 +314,9 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           sourceChannel: "anonymous",
           sourceOrigin: null,
         });
+        if (grant) {
+          await dependencies.accessGrantService.touchGrant(grant.id);
+        }
         const resumeSession = issuePublicChatResumeToken(sessionSecret, {
           workspaceId: workspace.id,
           agentId: agent.id,
@@ -292,7 +352,10 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         return;
       }
 
-      const agentByToken = await dependencies.agentRepository.findByWebsiteEmbedToken(launchToken);
+      const grant = await dependencies.accessGrantService.resolvePublicLaunchGrant(launchToken);
+      const agentByToken = grant
+        ? await dependencies.agentRepository.findByIdAndWorkspaceId(grant.agentId, grant.workspaceId)
+        : await dependencies.agentRepository.findByWebsiteEmbedToken(launchToken);
       const workspace = agentByToken
         ? await dependencies.workspaceRepository.findById(agentByToken.workspaceId)
         : await dependencies.workspaceRepository.findByWebsiteEmbedToken(launchToken);
@@ -335,7 +398,33 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       }
 
       const websiteEmbed = getWebsiteEmbedSurfaceSettings(agent);
-      if (!isAllowedWebsiteEmbedOrigin(websiteEmbed.allowedOrigins, origin)) {
+      const grantEvaluation = grant
+        ? dependencies.accessGrantService.evaluate(grant, { origin })
+        : null;
+      if (grant && grantEvaluation && !grantEvaluation.allowed && grantEvaluation.reason !== "origin_denied") {
+        await dependencies.accessGrantService.recordAuthFailure({
+          grant,
+          reason: grantEvaluation.reason,
+          surface: "website-embed",
+        });
+        res.status(404).json({
+          error: {
+            code: "not_found",
+            message: "Public chat not found",
+          },
+        });
+        return;
+      }
+      const originAllowed = grant
+        ? grantEvaluation?.allowed === true
+        : websiteEmbedOriginAllowed(websiteEmbed, origin);
+      if (!originAllowed) {
+        await dependencies.accessGrantService.recordAuthFailure({
+          grant,
+          workspaceId: workspace.id,
+          reason: grantEvaluation && !grantEvaluation.allowed ? grantEvaluation.reason : "origin_denied",
+          surface: "website-embed",
+        });
         await dependencies.auditService.record(websiteEmbedLaunchDeniedAuditEvent({
           accountId: workspace.accountId,
           workspaceId: workspace.id,
@@ -408,6 +497,9 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         sourceChannel: "website_embed",
         sourceOrigin: origin,
       });
+      if (grant) {
+        await dependencies.accessGrantService.touchGrant(grant.id);
+      }
 
       res.status(200).json(presentPublicChatSession({
         agent,

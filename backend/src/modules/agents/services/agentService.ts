@@ -1,8 +1,8 @@
-import { randomBytes } from "node:crypto";
-
 import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
 import type { DocumentSourceRepositoryPort } from "../../../db/repositories/documentSourceRepository.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
+import type { AccessGrantService } from "../../accessGrants/public.js";
+import { generateApiToken } from "../../auth/contracts/index.js";
 import type { RetrievalSettingsService } from "../../settings/contracts/services.js";
 import type { EmbedConfigCacheInvalidator } from "./embedConfigCacheInvalidator.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../documents/contracts/index.js";
@@ -29,6 +29,7 @@ export class AgentService {
       "findExistingIdsByWorkspaceId" | "countDocumentsWithoutSource"
     >,
     private readonly embedConfigCacheInvalidator?: EmbedConfigCacheInvalidator,
+    private readonly accessGrantService?: AccessGrantService,
   ) {}
 
   async list(workspaceId: string): Promise<AgentSettingsResource[]> {
@@ -70,6 +71,7 @@ export class AgentService {
       ? await this.agentRepository.findByIdAndWorkspaceId(workspace.defaultAgentId, workspaceId)
       : await this.agentRepository.findDefaultByWorkspaceId(workspaceId);
     const agent = await this.agentRepository.create(workspaceId, input);
+    await this.syncPublicLaunchGrants(null, agent);
     if (!existingDefault) {
       await this.agentRepository.setDefault(workspaceId, agent.id);
     }
@@ -84,6 +86,7 @@ export class AgentService {
       throw notFound("Agent not found");
     }
     const updated = await this.agentRepository.update(agentId, workspaceId, input);
+    await this.syncPublicLaunchGrants(existing, updated);
     if (workspace.defaultAgentId === agentId) {
       await this.syncLegacyWorkspaceDefaults(workspace, updated);
     }
@@ -165,6 +168,7 @@ export class AgentService {
         },
       },
     });
+    await this.syncPublicLaunchGrants(null, agent);
     await this.agentRepository.setDefault(workspaceId, agent.id);
     return agent;
   }
@@ -189,18 +193,18 @@ export class AgentService {
     const websiteEmbedEnabled = inputSurfaceSettings.websiteEmbed?.enabled ?? currentWebsiteEmbed.enabled;
     const publicChatTokenRequired = anonymousChatEnabled || websiteEmbedEnabled;
     const anonymousChatToken = input.rotateAnonymousChatToken
-      ? randomBytes(16).toString("base64url")
+      ? generateApiToken()
       : inputSurfaceSettings.anonymousChat?.token !== undefined
         ? inputSurfaceSettings.anonymousChat.token
         : publicChatTokenRequired && !currentAnonymousChat.token
-          ? randomBytes(16).toString("base64url")
+          ? generateApiToken()
           : currentAnonymousChat.token;
     const websiteEmbedToken = input.rotateWebsiteEmbedToken
-      ? randomBytes(16).toString("base64url")
+      ? generateApiToken()
       : inputSurfaceSettings.websiteEmbed?.token !== undefined
         ? inputSurfaceSettings.websiteEmbed.token
         : websiteEmbedEnabled && !currentWebsiteEmbed.token
-          ? randomBytes(16).toString("base64url")
+          ? generateApiToken()
           : currentWebsiteEmbed.token;
 
     return {
@@ -275,5 +279,72 @@ export class AgentService {
       websiteEmbedLauncherLabel: websiteEmbed.launcherLabel,
       websiteEmbedLauncherPosition: websiteEmbed.launcherPosition,
     });
+  }
+
+  private async syncPublicLaunchGrants(previous: AgentRecord | null, current: AgentRecord): Promise<void> {
+    if (!this.accessGrantService) {
+      return;
+    }
+
+    await this.syncPublicLaunchGrant({
+      previousToken: previous?.surfaceSettings.anonymousChat.token ?? null,
+      currentToken: current.surfaceSettings.anonymousChat.token,
+      workspaceId: current.workspaceId,
+      agentId: current.id,
+      label: "anonymous-chat",
+      originConstraint: { mode: "allow-all", origins: [] },
+    });
+
+    const previousWebsiteEmbed = previous ? getWebsiteEmbedSurfaceSettings(previous) : null;
+    const currentWebsiteEmbed = getWebsiteEmbedSurfaceSettings(current);
+    await this.syncPublicLaunchGrant({
+      previousToken: previousWebsiteEmbed?.token ?? null,
+      currentToken: currentWebsiteEmbed.token,
+      workspaceId: current.workspaceId,
+      agentId: current.id,
+      label: "website-embed",
+      originConstraint: currentWebsiteEmbed.allowedOrigins.includes("*")
+        ? { mode: "allow-all", origins: [] }
+        : { mode: "list", origins: currentWebsiteEmbed.allowedOrigins },
+    });
+  }
+
+  private async syncPublicLaunchGrant(input: {
+    previousToken: string | null;
+    currentToken: string | null;
+    workspaceId: string;
+    agentId: string;
+    label: string;
+    originConstraint: { mode: "allow-all"; origins: [] } | { mode: "list"; origins: string[] };
+  }): Promise<void> {
+    if (!this.accessGrantService || !input.currentToken) {
+      return;
+    }
+
+    if (input.previousToken && input.previousToken !== input.currentToken) {
+      const previousGrant = await this.accessGrantService.resolvePublicLaunchGrant(input.previousToken);
+      if (previousGrant) {
+        await this.accessGrantService.revokeGrant({
+          grantId: previousGrant.id,
+          reason: "surface_token_rotated",
+        });
+      }
+    }
+
+    const grant = await this.accessGrantService.resolveOrCreatePublicLaunchGrant({
+      workspaceId: input.workspaceId,
+      agentId: input.agentId,
+      label: input.label,
+      token: input.currentToken,
+      originConstraint: input.originConstraint,
+    });
+    if (!grant.revokedAt) {
+      await this.accessGrantService.updateGrantConstraints({
+        grantId: grant.id,
+        label: input.label,
+        originConstraint: input.originConstraint,
+        enabled: true,
+      });
+    }
   }
 }

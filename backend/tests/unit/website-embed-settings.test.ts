@@ -41,6 +41,27 @@ describe("website embed settings", () => {
     });
   });
 
+  it('preserves "*" as the allow-all origin entry', () => {
+    expect(
+      validateWebsiteEmbedSettings({
+        websiteEmbedEnabled: true,
+        websiteEmbedAllowedOrigins: [" * ", "*"],
+      }),
+    ).toMatchObject({
+      websiteEmbedEnabled: true,
+      websiteEmbedAllowedOrigins: ["*"],
+    });
+  });
+
+  it('round-trips ["*"] as the allow-all origin list', () => {
+    expect(
+      validateWebsiteEmbedSettings({
+        websiteEmbedEnabled: true,
+        websiteEmbedAllowedOrigins: ["*"],
+      }).websiteEmbedAllowedOrigins,
+    ).toEqual(["*"]);
+  });
+
   it("preserves an explicitly empty launcher label", () => {
     expect(
       validateWebsiteEmbedSettings({
@@ -49,13 +70,22 @@ describe("website embed settings", () => {
     ).toBe("");
   });
 
-  it("rejects enabling website embed without an allowed origin", () => {
+  it("rejects enabling website embed with an empty origin list", () => {
     expect(() =>
       validateWebsiteEmbedSettings({
         websiteEmbedEnabled: true,
         websiteEmbedAllowedOrigins: [],
       }),
-    ).toThrow("At least one allowed origin is required");
+    ).toThrow('At least one allowed origin is required when website embed is enabled (use "*" to allow all)');
+  });
+
+  it("allows an empty origin list when website embed is disabled", () => {
+    expect(
+      validateWebsiteEmbedSettings({
+        websiteEmbedEnabled: false,
+        websiteEmbedAllowedOrigins: [],
+      }),
+    ).toMatchObject({ websiteEmbedEnabled: false, websiteEmbedAllowedOrigins: [] });
   });
 
   it("matches approved origins by normalized origin only", () => {

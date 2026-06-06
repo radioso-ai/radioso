@@ -32,4 +32,14 @@ describe("agent route schema", () => {
       }),
     ).toThrow();
   });
+
+  it("drops operator-facing public launch revoke flags", () => {
+    const parsed = agentBodySchema.parse({
+      revokeAnonymousChatToken: true,
+      revokeWebsiteEmbedToken: true,
+    });
+
+    expect(parsed).not.toHaveProperty("revokeAnonymousChatToken");
+    expect(parsed).not.toHaveProperty("revokeWebsiteEmbedToken");
+  });
 });

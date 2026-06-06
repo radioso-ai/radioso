@@ -44,14 +44,16 @@ Key points:
 
 ## Per-origin caching
 
-The embed config is gated: the backend only returns it to allow-listed origins
-and reflects the request origin back in the CORS headers. The response therefore
-varies by origin and declares `Vary: Origin`.
+The embed config is gated: the backend only returns it to origins admitted by
+the website embed origin setting and reflects the request origin back in the
+CORS headers. An explicit list admits only listed origins. A `*` entry admits
+any origin. An empty list admits no origins.
+The response therefore varies by origin and declares `Vary: Origin`.
 
 To cache a response that varies by origin, Cloud CDN must include `Origin` in the
 cache key. The CDN backend sets `cache_key_policy.include_http_headers = ["Origin"]`,
-so the config is cached per `(token, origin)`. A non-allow-listed origin is
-rejected with `no-store` and never cached, so it cannot pollute the cache.
+so the config is cached per `(token, origin)`. A rejected origin gets `no-store`
+and is never cached, so it cannot pollute the cache.
 
 `/radioso-embed.js` is a classic `<script>` load that sends no `Origin` header,
 so it resolves to a single shared cache entry.

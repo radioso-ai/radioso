@@ -1,4 +1,5 @@
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
+import type { AccessGrantService } from "../../accessGrants/public.js";
 import type { AgentRecord, AgentService } from "../../agents/public.js";
 import { getWebsiteEmbedSurfaceSettings, isAgentBootstrapActive } from "../../agents/public.js";
 import { buildPublicAssistantLogoUrl } from "../../../app/http/shared/assistantLogoUrl.js";
@@ -21,10 +22,12 @@ import type {
   PlatformSettingsResource,
 } from "../domain/platformSettings.js";
 import type { RetrievalSettingsService } from "../contracts/services.js";
+import { resolvePublicLaunchLifecycle } from "../../accessGrants/public.js";
 
 export interface PlatformSettingsServiceDependencies {
   workspaceRepository: Pick<WorkspaceRepositoryPort, "findById">;
   agentService: Pick<AgentService, "resolve" | "update" | "withRotatedTokens">;
+  accessGrantService?: Pick<AccessGrantService, "resolvePublicLaunchGrant">;
   retrievalSettingsService: Pick<
     RetrievalSettingsService,
     "getForWorkspace" | "listMetadataFieldSuggestions" | "updateForWorkspace"
@@ -61,7 +64,7 @@ export class PlatformSettingsService {
     return {
       assistant: this.buildAssistantSection(agent),
       retrieval: this.buildRetrievalSection(retrievalSettings, metadataFieldSuggestions),
-      channels: this.buildChannelsSection(agent, workspace),
+      channels: await this.buildChannelsSection(agent, workspace),
     };
   }
 
@@ -99,7 +102,7 @@ export class PlatformSettingsService {
     return {
       assistant: this.buildAssistantSection(currentAgent),
       retrieval: this.buildRetrievalSection(currentRetrievalSettings, metadataFieldSuggestions),
-      channels: this.buildChannelsSection(currentAgent, workspace),
+      channels: await this.buildChannelsSection(currentAgent, workspace),
     };
   }
 
@@ -115,6 +118,8 @@ export class PlatformSettingsService {
     const anonymousChat = agent.surfaceSettings.anonymousChat;
     const websiteEmbed = agent.surfaceSettings.websiteEmbed;
     const anonymousChatEnabled = channels.anonymousChatEnabled ?? anonymousChat.enabled;
+    const rotateAnonymousChatToken = channels.rotateAnonymousChatToken;
+    const rotateWebsiteEmbedToken = channels.rotateWebsiteEmbedToken;
 
     let normalizedWebsiteEmbed;
     try {
@@ -150,7 +155,7 @@ export class PlatformSettingsService {
           expertOverrides: normalizedWebsiteEmbed.websiteEmbedExpertOverrides,
         },
       },
-      rotateAnonymousChatToken: channels.rotateAnonymousChatToken,
+      rotateAnonymousChatToken,
       name: assistant.assistantName ?? agent.name,
       greetingInstruction: assistant.greetingInstruction ?? agent.greetingInstruction,
       assistantDefaultLocale:
@@ -160,7 +165,7 @@ export class PlatformSettingsService {
       proactiveGreetingEnabled: assistant.proactiveGreetingEnabled ?? agent.proactiveGreetingEnabled,
       suggestedQuestionsEnabled: assistant.suggestedQuestionsEnabled ?? agent.suggestedQuestionsEnabled,
       customInstruction: assistant.customInstruction ?? agent.customInstruction,
-      rotateWebsiteEmbedToken: channels.rotateWebsiteEmbedToken,
+      rotateWebsiteEmbedToken,
     }));
 
     await this.recordChannelAuditEvents({
@@ -168,11 +173,11 @@ export class PlatformSettingsService {
       workspaceId,
       previousAgent: agent,
       anonymousChatEnabled,
-      rotateAnonymousChatToken: channels.rotateAnonymousChatToken ?? false,
+      rotateAnonymousChatToken: rotateAnonymousChatToken ?? false,
       websiteEmbedEnabled: normalizedWebsiteEmbed.websiteEmbedEnabled,
       websiteEmbedAllowedOrigins: normalizedWebsiteEmbed.websiteEmbedAllowedOrigins,
       websiteEmbedLauncherPosition: normalizedWebsiteEmbed.websiteEmbedLauncherPosition,
-      rotateWebsiteEmbedToken: channels.rotateWebsiteEmbedToken ?? false,
+      rotateWebsiteEmbedToken: rotateWebsiteEmbedToken ?? false,
     });
 
     return updated;
@@ -304,14 +309,20 @@ export class PlatformSettingsService {
     };
   }
 
-  private buildChannelsSection(agent: AgentRecord, workspace: WorkspaceRecord): PlatformChannelsSettingsSection {
+  private async buildChannelsSection(agent: AgentRecord, workspace: WorkspaceRecord): Promise<PlatformChannelsSettingsSection> {
     const anonymousChat = agent.surfaceSettings.anonymousChat;
     const websiteEmbed = agent.surfaceSettings.websiteEmbed;
+    const [anonymousChatLifecycle, websiteEmbedLifecycle] = await Promise.all([
+      resolvePublicLaunchLifecycle(anonymousChat.token, this.dependencies.accessGrantService),
+      resolvePublicLaunchLifecycle(websiteEmbed.token, this.dependencies.accessGrantService),
+    ]);
     return {
       anonymousChatEnabled: anonymousChat.enabled,
       anonymousChatUrl: this.buildAnonymousChatUrl(anonymousChat.token, anonymousChat.enabled),
+      anonymousChatLastUsedAt: anonymousChatLifecycle.lastUsedAt,
       websiteEmbedEnabled: websiteEmbed.enabled,
       websiteEmbedToken: websiteEmbed.token,
+      websiteEmbedLastUsedAt: websiteEmbedLifecycle.lastUsedAt,
       websiteEmbedAllowedOrigins: websiteEmbed.allowedOrigins,
       websiteEmbedLauncherLabel: websiteEmbed.launcherLabel,
       websiteEmbedLauncherPosition: websiteEmbed.launcherPosition,

@@ -28,6 +28,9 @@ export const normalizeWebsiteEmbedOrigin = (origin: string): string | null => {
   if (!trimmed) {
     return null;
   }
+  if (trimmed === "*") {
+    return "*";
+  }
 
   try {
     return new URL(trimmed).origin;
@@ -43,6 +46,12 @@ export const isAllowedWebsiteEmbedOrigin = (
   const normalizedOrigin = normalizeWebsiteEmbedOrigin(origin);
   if (!normalizedOrigin) {
     return false;
+  }
+
+  // `*` is the allow-all wildcard: any valid request origin is approved. This is
+  // the single source of truth for the wildcard so callers never re-encode it.
+  if (allowedOrigins.includes("*")) {
+    return true;
   }
 
   return allowedOrigins.includes(normalizedOrigin);

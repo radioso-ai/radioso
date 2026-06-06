@@ -42,6 +42,8 @@ export type AccountPermission =
   | "workspace.token.rotate";
 
 export type WorkspaceApiTokenRole = "admin" | "member";
+export type PublicAccessRole = "public";
+export type PrincipalAccessRole = WorkspaceApiTokenRole | PublicAccessRole;
 
 export type PublicChatPermission =
   | "public_chat.turn.create"
@@ -70,7 +72,7 @@ export type AuthenticatedPrincipal =
   }
   | {
     type: "public_chat_session";
-    role: "public_chat";
+    role: PublicAccessRole;
     workspaceId: string;
     agentId?: string | null;
     publicSessionId: string;
@@ -413,11 +415,11 @@ export class AccountAccessService {
     workspaceId?: string | null;
   }): Promise<boolean> {
     if (input.principal?.type === "public_chat_session") {
-      return PUBLIC_CHAT_PERMISSIONS.has(input.permission as PublicChatPermission);
+      return this.principalRoleAllows(input.principal.role, input.permission);
     }
 
     if (input.principal?.type === "workspace_api_token") {
-      return this.tokenRoleAllows(input.principal.role, input.permission);
+      return this.principalRoleAllows(input.principal.role, input.permission);
     }
 
     const userId = input.principal?.type === "session_user" ? input.principal.userId : input.userId;
@@ -505,6 +507,14 @@ export class AccountAccessService {
       "workspace.documents.read",
       "workspace.token.read",
     ].includes(permission);
+  }
+
+  private principalRoleAllows(role: PrincipalAccessRole, permission: Permission): boolean {
+    if (role === "public") {
+      return PUBLIC_CHAT_PERMISSIONS.has(permission as PublicChatPermission);
+    }
+
+    return this.tokenRoleAllows(role, permission);
   }
 
   private tokenRoleAllows(role: WorkspaceApiTokenRole, permission: Permission): boolean {

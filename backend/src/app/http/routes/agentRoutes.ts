@@ -7,7 +7,7 @@ import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../m
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { validateBody } from "../middleware/validate.js";
-import { badRequest } from "../../../shared/domain/errors.js";
+import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import {
   agentSurfacePositions,
   authoredDirectiveInputSchema,
@@ -18,6 +18,7 @@ import {
   assistantThemeSchema,
   createAssistantLogoUploadHandler,
 } from "../shared/assistantIdentity.js";
+import { resolvePublicLaunchLifecycle } from "../../../modules/accessGrants/public.js";
 
 const agentParamsSchema = z.object({
   agentId: z.string().uuid(),
@@ -106,7 +107,7 @@ export const agentBodySchema = z.object({
 
 export { llmProviderNames as agentLlmProviderNames, chatModelOverrideSchema as agentChatModelOverrideSchema };
 
-type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "accountAccessService" | "agentService" | "authoredDirectiveService" | "agentSurfaceExtensions" | "documentStorage" | "logger">;
+type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "authoredDirectiveService" | "agentSurfaceExtensions" | "documentStorage" | "logger">;
 
 export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router => {
   const router = Router();
@@ -140,6 +141,26 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
       const parsed = agentParamsSchema.parse(req.params);
       const agent = await dependencies.agentService.get(workspaceId, parsed.agentId);
       res.status(200).json(agent);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/:agentId/channels/lifecycle", workspaceSession, agentRead, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const parsed = agentParamsSchema.parse(req.params);
+      const agent = await dependencies.agentRepository.findByIdAndWorkspaceId(parsed.agentId, workspaceId);
+      if (!agent) {
+        throw notFound("Agent not found");
+      }
+
+      const [anonymousChat, websiteEmbed] = await Promise.all([
+        resolvePublicLaunchLifecycle(agent.surfaceSettings.anonymousChat.token, dependencies.accessGrantService),
+        resolvePublicLaunchLifecycle(agent.surfaceSettings.websiteEmbed.token, dependencies.accessGrantService),
+      ]);
+
+      res.status(200).json({ anonymousChat, websiteEmbed });
     } catch (error) {
       next(error);
     }

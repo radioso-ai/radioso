@@ -102,11 +102,15 @@ POST /api/v1/settings/ingestion/reprocess
 This payload covers user-facing workspace behavior such as:
 
 - `anonymousChatEnabled`
+- `anonymousChatLastUsedAt`
+- `anonymousChatStatus`
 - `assistantName`
 - `greetingInstruction`
 - `assistantDefaultLocale`
 - `proactiveGreetingEnabled`
 - `websiteEmbedEnabled`
+- `websiteEmbedLastUsedAt`
+- `websiteEmbedStatus`
 - `websiteEmbedAllowedOrigins`
 - `websiteEmbedLauncherLabel`
 - `websiteEmbedLauncherPosition`
@@ -122,6 +126,8 @@ Public link and embed token rotation use explicit endpoints:
 POST /api/v1/settings/general/anonymous-chat-token/rotate
 POST /api/v1/settings/general/website-embed-token/rotate
 ```
+
+To revoke the current public launch credential without issuing a replacement, send a settings update with `channels.revokeAnonymousChatToken` or `channels.revokeWebsiteEmbedToken` set to `true`. Revocation is separate from the enabled toggle. The current link or install code stops launching new sessions until it is rotated.
 
 ## Provider credentials
 

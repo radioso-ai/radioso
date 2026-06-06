@@ -132,23 +132,15 @@ export interface AgentConfig {
   authoredDirectives: AuthoredDirectiveConfig[];
 }
 
-export interface InternalAgentConfig {
-  schemaVersion: typeof AGENT_CONFIG_SCHEMA_VERSION;
-  portability: Record<string, AgentConfigPortability>;
-  name: string;
-  customInstruction: string;
-  contactRequestsEnabled: boolean;
-  contactRequestDelivery: ConversationAgent["contactRequestDelivery"];
+type InternalAgentConfigValueField =
+  | "logo"
+  | "surfaceSettings"
+  | "skillSettings";
+
+export interface InternalAgentConfig extends Omit<AgentConfig, InternalAgentConfigValueField> {
   logo: InternalAgentLogoConfig | null;
-  theme: ConversationAgent["theme"];
-  branding: ConversationAgent["branding"];
-  greetingInstruction: string;
-  assistantDefaultLocale: string | null;
-  proactiveGreetingEnabled: boolean;
   surfaceSettings: InternalAgentSurfaceConfig;
   skillSettings: InternalAgentSkillSettingsConfig;
-  chatModelOverride: ConversationAgent["chatModelOverride"];
-  authoredDirectives: AuthoredDirectiveConfig[];
 }
 
 type AgentConfigFieldName = Exclude<keyof AgentConfig, "schemaVersion" | "portability">;

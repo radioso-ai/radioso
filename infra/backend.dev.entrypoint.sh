@@ -87,6 +87,7 @@ backend_modules_ready() {
 
   for workspace_package in \
     "backend/node_modules/@radioso/conversation-engine" \
+    "backend/node_modules/@radioso/conversation-defaults" \
     "backend/node_modules/@radioso/crawler"
   do
     [ -f "$workspace_package/package.json" ] || return 1
@@ -97,7 +98,8 @@ backend_modules_ready() {
     module_is_ready "$required_module" || return 1
   done
 
-  module_is_ready_from "tsx/package.json" "$ESBUILD_PLATFORM_PACKAGE/package.json"
+  module_is_ready_from "tsx/package.json" "$ESBUILD_PLATFORM_PACKAGE/package.json" || return 1
+  [ -f packages/conversation-defaults/node_modules/@radioso/conversation-contract/package.json ]
 }
 
 backend_dependencies_ready() {
@@ -110,7 +112,7 @@ backend_dependencies_ready() {
 
 install_backend_dependencies() {
   echo "Installing backend workspace dependencies..."
-  pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler... --filter @radioso/mcp-server... --filter @radioso/conversation-engine...
+  pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler... --filter @radioso/mcp-server... --filter @radioso/conversation-engine... --filter @radioso/conversation-defaults...
   mkdir -p node_modules
   mkdir -p backend/node_modules
   backend_modules_ready || return 1

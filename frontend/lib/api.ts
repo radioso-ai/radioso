@@ -51,6 +51,7 @@ export type {
 export { connectorsApi } from './api-connectors'
 export { documentsApi } from './api-documents'
 export { evalsApi } from './api-eval'
+export { workbenchApi } from './api-workbench'
 export { publicChatApi } from './api-public-chat'
 export { agentsApi, generalSettingsApi, settingsApi } from './api-settings'
 export { workspaceApi } from './api-workspace'

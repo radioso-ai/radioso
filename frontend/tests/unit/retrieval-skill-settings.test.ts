@@ -47,6 +47,7 @@ describe('retrieval skill settings adapter', () => {
       ],
       suggestedQuestionsCount: 4,
       retrievalStrategy: 'reasoning',
+      similarityThreshold: 0.9,
     })
   })
 

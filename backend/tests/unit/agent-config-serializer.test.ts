@@ -281,8 +281,10 @@ describe("serializeAgentConfig", () => {
       sizeBytes: 12345,
     });
 
-    const materialized = materializeAgentFromConfig(config);
+    const materialized = materializeAgentFromConfig(config, { agentId: agent.id, workspaceId: agent.workspaceId });
 
+    expect(materialized.id).toBe(agent.id);
+    expect(materialized.workspaceId).toBe(agent.workspaceId);
     expect(materialized.name).toBe(agent.name);
     expect(materialized.customInstruction).toBe(agent.customInstruction);
     expect(materialized.greetingInstruction).toBe(agent.greetingInstruction);
@@ -300,9 +302,11 @@ describe("serializeAgentConfig", () => {
     expect(materialized.theme).toEqual(agent.theme);
     expect(materialized.branding).toEqual(agent.branding);
     expect(materialized.surfaceSettings).toEqual(agent.surfaceSettings);
-    expect(materialized.authoredDirectives).toEqual([{
-      id: "internal-config-directive-0",
-      agentId: "internal-config-agent",
+    const materializedDirectives = materialized.authoredDirectives ?? [];
+    expect(materializedDirectives[0]?.agentId).toBe(agent.id);
+    expect(materializedDirectives).toEqual([{
+      id: `${agent.id}:directive:0`,
+      agentId: agent.id,
       name: "procurement-tone",
       condition: { kind: "contextual", description: "When answering procurement questions" },
       action: "Use the procurement team's preferred tone.",

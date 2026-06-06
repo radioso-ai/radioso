@@ -220,8 +220,6 @@ const serializeAuthoredDirectives = (
     metadata: cloneJson(directive.metadata),
   }));
 
-const serializeInternalAuthoredDirectives = serializeAuthoredDirectives;
-
 const descriptor = <FieldName extends AgentConfigFieldName>(
   field: AgentConfigFieldDescriptor<FieldName>,
 ): AgentConfigFieldDescriptor<FieldName> => field;
@@ -368,19 +366,18 @@ export const projectInternalAgentConfig = (agent: ConversationAgent): InternalAg
   skillSettings: cloneJson(agent.skillSettings),
   sourceScope: cloneJson(agent.sourceScope),
   chatModelOverride: agent.chatModelOverride ? cloneJson(agent.chatModelOverride) : null,
-  authoredDirectives: serializeInternalAuthoredDirectives(agent.authoredDirectives),
+  authoredDirectives: serializeAuthoredDirectives(agent.authoredDirectives),
 });
 
-const INTERNAL_CONFIG_AGENT_ID = "internal-config-agent";
-const INTERNAL_CONFIG_WORKSPACE_ID = "internal-config-workspace";
 const INTERNAL_CONFIG_DATE = new Date(0);
 
 const materializeAuthoredDirectives = (
   directives: readonly AuthoredDirectiveConfig[],
+  identity: { agentId: string },
 ): AuthoredDirective[] =>
   directives.map((directive, index) => ({
-    id: `internal-config-directive-${index}`,
-    agentId: INTERNAL_CONFIG_AGENT_ID,
+    id: `${identity.agentId}:directive:${index}`,
+    agentId: identity.agentId,
     name: directive.name,
     condition: cloneJson(directive.condition),
     action: directive.action,
@@ -395,10 +392,13 @@ const materializeAuthoredDirectives = (
     updatedAt: new Date(INTERNAL_CONFIG_DATE.getTime()),
   }));
 
-export const materializeAgentFromConfig = (config: InternalAgentConfig): ConversationAgent => {
+export const materializeAgentFromConfig = (
+  config: InternalAgentConfig,
+  identity: { agentId: string; workspaceId: string },
+): ConversationAgent => {
   return {
-    id: INTERNAL_CONFIG_AGENT_ID,
-    workspaceId: INTERNAL_CONFIG_WORKSPACE_ID,
+    id: identity.agentId,
+    workspaceId: identity.workspaceId,
     name: config.name,
     customInstruction: config.customInstruction,
     suggestedQuestionsEnabled: config.suggestedQuestionsEnabled,
@@ -417,7 +417,7 @@ export const materializeAgentFromConfig = (config: InternalAgentConfig): Convers
     surfaceSettings: cloneJson(config.surfaceSettings),
     skillSettings: cloneJson(config.skillSettings),
     chatModelOverride: config.chatModelOverride ? cloneJson(config.chatModelOverride) : null,
-    authoredDirectives: materializeAuthoredDirectives(config.authoredDirectives),
+    authoredDirectives: materializeAuthoredDirectives(config.authoredDirectives, identity),
     createdAt: new Date(INTERNAL_CONFIG_DATE.getTime()),
     updatedAt: new Date(INTERNAL_CONFIG_DATE.getTime()),
   };

@@ -2,7 +2,7 @@ import type { AgentRepositoryPort } from "../../../db/repositories/agentReposito
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort, MessageRecord } from "../../../db/repositories/messageRepository.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
-import { freezeAgent } from "../../agents/public.js";
+import { projectInternalAgentConfig } from "../../agents/public.js";
 import type { AnswerSegment, ChatCitation } from "../../chat/contracts/answerTypes.js";
 import { freezeRetrievalSettings } from "../../settings/contracts/retrieval.js";
 import type { RetrievalSettingsService } from "../../settings/contracts/services.js";
@@ -188,9 +188,9 @@ export class EvalSnapshotService {
 
     const fidelity = determineFidelity(assistantTurn, retrieval);
 
-    const agentSnapshot = conversation.agentId
+    const agentConfig = conversation.agentId
       ? await this.agents.findByIdAndWorkspaceId(conversation.agentId, input.workspaceId)
-          .then((agent) => (agent ? freezeAgent(agent) : null))
+          .then((agent) => (agent ? projectInternalAgentConfig(agent) : null))
       : null;
 
     const settingsSnapshot = await this.retrievalSettings
@@ -207,7 +207,9 @@ export class EvalSnapshotService {
       originalModelId: modelId,
       originalRetrievalSettings: settingsSnapshot,
       originalRetrievalResult: retrieval,
-      originalAgent: agentSnapshot,
+      originalAgent: null,
+      originalAgentConfig: agentConfig,
+      sourceAgentId: agentConfig ? conversation.agentId : null,
       capturedBy: input.capturedBy ?? null,
     });
   }

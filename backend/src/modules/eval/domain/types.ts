@@ -1,4 +1,4 @@
-import type { AgentSnapshot } from "../../agents/public.js";
+import type { AgentSnapshot, InternalAgentConfig } from "../../agents/public.js";
 import type { AnswerSegment, ChatCitation } from "../../chat/contracts/answerTypes.js";
 import type { LlmCapabilityOverride } from "../../../shared/infra/llm/workspaceContext.js";
 import type {
@@ -43,6 +43,10 @@ export interface EvalSnapshot {
   // Agent snapshot is OWNED by the agents module. Eval just references the
   // value type. Same reuse intent as above.
   originalAgent: AgentSnapshot | null;
+  // Full non-redacted internal config captured for replay. Prefer this over
+  // originalAgent when present; originalAgent remains readable for legacy rows.
+  originalAgentConfig: InternalAgentConfig | null;
+  sourceAgentId: string | null;
   originalRetrievalResult: EvalSnapshotOriginalRetrievalChunk[] | null;
   capturedAt: string;
   capturedBy: string | null;

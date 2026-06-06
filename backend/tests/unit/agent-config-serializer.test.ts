@@ -4,6 +4,8 @@ import type { ConversationAgent } from "../../src/modules/agents/domain.js";
 import {
   AGENT_CONFIG_FIELD_DESCRIPTORS,
   AGENT_CONFIG_SCHEMA_VERSION,
+  materializeAgentFromConfig,
+  projectInternalAgentConfig,
   serializeAgentConfig,
 } from "../../src/modules/agents/agentConfig.js";
 
@@ -56,7 +58,7 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
   },
   chatModelOverride: {
     provider: "openai",
-    model: "gpt-4.1-mini",
+    model: "gpt-5-mini",
   },
   surfaceSettings: {
     authenticatedChat: { enabled: true },
@@ -162,7 +164,7 @@ describe("serializeAgentConfig", () => {
     });
     expect(config.chatModelOverride).toEqual({
       provider: "openai",
-      model: "gpt-4.1-mini",
+      model: "gpt-5-mini",
     });
     expect(config.surfaceSettings.authenticatedChat).toEqual({ enabled: true });
     expect(config.surfaceSettings.extensions).toEqual({
@@ -257,5 +259,66 @@ describe("serializeAgentConfig", () => {
       .sort();
 
     expect(configSettingFields).toEqual(Object.keys(AGENT_CONFIG_FIELD_DESCRIPTORS).sort());
+  });
+
+  it("round-trips behavioral fields through the non-redacting internal projection", () => {
+    const agent = fullyConfiguredAgent();
+    const config = projectInternalAgentConfig(agent);
+
+    expect(config.surfaceSettings.anonymousChat.token).toBe("raw-anonymous-token");
+    expect(config.surfaceSettings.websiteEmbed.token).toBe("raw-embed-token");
+    expect(config.surfaceSettings.websiteEmbed.allowedOrigins).toEqual(["https://raw-origin.example.com"]);
+    expect(config.sourceScope).toEqual({
+      mode: "selected",
+      sourceIds: ["raw-source-1", "raw-source-2"],
+    });
+    expect(config.logo).toEqual({
+      bucket: "raw-logo-bucket",
+      objectPath: "raw/logo/object.png",
+      generation: "raw-generation-1",
+      mimeType: "image/png",
+      filename: "logo.png",
+      sizeBytes: 12345,
+    });
+
+    const materialized = materializeAgentFromConfig(config, { agentId: agent.id, workspaceId: agent.workspaceId });
+
+    expect(materialized.id).toBe(agent.id);
+    expect(materialized.workspaceId).toBe(agent.workspaceId);
+    expect(materialized.name).toBe(agent.name);
+    expect(materialized.customInstruction).toBe(agent.customInstruction);
+    expect(materialized.greetingInstruction).toBe(agent.greetingInstruction);
+    expect(materialized.sourceScope).toEqual(agent.sourceScope);
+    expect(materialized.retrievalEnabled).toBe(agent.retrievalEnabled);
+    expect(materialized.assistantDefaultLocale).toBe(agent.assistantDefaultLocale);
+    expect(materialized.skillSettings).toEqual(agent.skillSettings);
+    expect(materialized.chatModelOverride).toEqual(agent.chatModelOverride);
+    expect(materialized.suggestedQuestionsEnabled).toBe(agent.suggestedQuestionsEnabled);
+    expect(materialized.citationDisplayEnabled).toBe(agent.citationDisplayEnabled);
+    expect(materialized.contactRequestsEnabled).toBe(agent.contactRequestsEnabled);
+    expect(materialized.proactiveGreetingEnabled).toBe(agent.proactiveGreetingEnabled);
+    expect(materialized.assistantLinkUtmEnabled).toBe(agent.assistantLinkUtmEnabled);
+    expect(materialized.logo).toEqual(agent.logo);
+    expect(materialized.theme).toEqual(agent.theme);
+    expect(materialized.branding).toEqual(agent.branding);
+    expect(materialized.surfaceSettings).toEqual(agent.surfaceSettings);
+    const materializedDirectives = materialized.authoredDirectives ?? [];
+    expect(materializedDirectives[0]?.agentId).toBe(agent.id);
+    expect(materializedDirectives).toEqual([{
+      id: `${agent.id}:directive:0`,
+      agentId: agent.id,
+      name: "procurement-tone",
+      condition: { kind: "contextual", description: "When answering procurement questions" },
+      action: "Use the procurement team's preferred tone.",
+      priority: 50,
+      requiredCapabilities: ["retrieval.answer"],
+      dependsOn: ["represent-organization"],
+      excludes: [],
+      routes: ["retrieval"],
+      description: "Operator-authored behavior rule.",
+      metadata: { owner: "ops" },
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    }]);
   });
 });

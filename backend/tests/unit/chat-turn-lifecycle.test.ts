@@ -6,6 +6,7 @@ import type { AuditService } from "../../src/modules/audit/contracts/index.js";
 import type { ConversationRepositoryPort } from "../../src/db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../src/db/repositories/messageRepository.js";
 import {
+  buildTurnTraceForPresentation,
   ChatTurnLifecycle,
   type AssistantTurnPersistencePort,
 } from "../../src/modules/chat/services/chatTurnLifecycle.js";
@@ -84,6 +85,36 @@ const engineTrace = (): ConversationTrace => ({
 });
 
 describe("ChatTurnLifecycle — engine turn envelope", () => {
+  it("builds the same turn trace envelope through the extracted presentation helper", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:02.000Z"));
+    const { lifecycle, records } = harness();
+    const prepared = session();
+    const presented = presentation();
+    const answerStartedAt = Date.now() - 1000;
+
+    await lifecycle.completeAssistantTurn({
+      workspaceId: "workspace_1",
+      session: prepared,
+      presentation: presented,
+      answerStartedAt,
+      stream: false,
+      engineTrace: engineTrace(),
+    });
+    const extracted = buildTurnTraceForPresentation({
+      workspaceId: "workspace_1",
+      session: prepared,
+      presentation: presented,
+      answerStartedAt,
+      stream: false,
+      engineTrace: engineTrace(),
+    });
+
+    expect(records[0].metadata.turnTrace).toEqual(extracted.turnTrace);
+    expect(records[0].metadata.activityTrace).toEqual(extracted.activityTrace);
+    vi.useRealTimers();
+  });
+
   it("uses the transaction port for assistant message, action outbox, routine state, touch, and success audit", async () => {
     const records: RecordedAudit[] = [];
     const auditService = {

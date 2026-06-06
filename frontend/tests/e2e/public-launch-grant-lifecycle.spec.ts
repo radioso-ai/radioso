@@ -25,7 +25,8 @@ test("operator can see and revoke the public chat link grant lifecycle", async (
   const publicChatSection = page.getByRole("main").locator("#public-chat-link");
 
   await expect(publicChatSection.getByRole("heading", { name: "Public chat link" })).toBeVisible();
-  await expect(publicChatSection.getByText("Active")).toBeVisible();
+  // No "Active" badge — a channel is self-evidently active when its toggle is on.
+  await expect(publicChatSection.getByText("Active")).toHaveCount(0);
   await expect(publicChatSection.getByText("Last used: 15 minutes ago")).toBeVisible();
 
   await publicChatSection.getByRole("button", { name: "Revoke" }).click();

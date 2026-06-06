@@ -1326,9 +1326,11 @@ export function WorkspaceAssistantChannelsTab({
                 }
               >
                 <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-                  <span className={`rounded-full px-2 py-0.5 font-medium ${lifecycleBadgeClassName(anonSettings.anonymousChatStatus)}`}>
-                    {lifecycleBadgeLabel(anonSettings.anonymousChatStatus)}
-                  </span>
+                  {anonSettings.anonymousChatStatus === 'revoked' && (
+                    <span className={`rounded-full px-2 py-0.5 font-medium ${lifecycleBadgeClassName('revoked')}`}>
+                      {lifecycleBadgeLabel('revoked')}
+                    </span>
+                  )}
                   <span className="text-muted-foreground">
                     {anonSettings.anonymousChatStatus === 'revoked'
                       ? 'Revoked — rotate to issue a new credential.'

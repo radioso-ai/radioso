@@ -457,9 +457,11 @@ function WebsiteEmbedSettingsPanel({
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-medium text-foreground">Website chat widget</h3>
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${lifecycleBadgeClassName(anonSettings.websiteEmbedStatus)}`}>
-                    {lifecycleBadgeLabel(anonSettings.websiteEmbedStatus)}
-                  </span>
+                  {anonSettings.websiteEmbedStatus === 'revoked' && (
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${lifecycleBadgeClassName('revoked')}`}>
+                      {lifecycleBadgeLabel('revoked')}
+                    </span>
+                  )}
                 </div>
                 <p className="text-sm text-muted-foreground">
                   Add a chat button to your website so visitors can ask the assistant questions.

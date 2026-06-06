@@ -8,8 +8,8 @@ import type { EvalCaseService } from "../services/evalCaseService.js";
 import type { EvalRunService } from "../services/evalRunService.js";
 import type { EvalSnapshotService } from "../services/evalSnapshotService.js";
 import type { InternalAgentConfig } from "../../agents/public.js";
-import type { AppLogger } from "../../../shared/observability/logger.js";
 import { badRequest } from "../../../shared/domain/errors.js";
+import { workbenchReplayRateLimiter, type WorkbenchReplayRateLimitDependencies } from "./workbenchReplayRateLimit.js";
 
 const captureSnapshotSchema = z.object({
   conversationId: z.string().uuid(),
@@ -159,20 +159,19 @@ const presentWorkbenchReplayRun = (result: Awaited<ReturnType<EvalRunService["ex
   },
 });
 
-const overrideKeyNames = (override: Partial<InternalAgentConfig> | undefined): string[] =>
-  override ? Object.keys(override).sort() : [];
-
 export interface EvalRouteDependencies extends WorkspaceSessionDependencies {
   snapshotService: EvalSnapshotService;
   caseService: EvalCaseService;
   runService: EvalRunService;
-  logger: AppLogger;
+  abuseControlService: WorkbenchReplayRateLimitDependencies["abuseControlService"];
+  auditService: WorkbenchReplayRateLimitDependencies["auditService"];
 }
 
 export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
   const requireQuery = requireWorkspacePermission(dependencies, "workspace.retrieval.query");
+  const rateLimitWorkbenchReplay = workbenchReplayRateLimiter(dependencies);
 
   router.post(
     "/snapshots",
@@ -321,6 +320,7 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
     workspaceSession,
     requireQuery,
     validateBody(oneOffRunSchema),
+    rateLimitWorkbenchReplay,
     async (req, res, next) => {
       try {
         const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
@@ -341,17 +341,6 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
               agentConfigOverride,
             },
           });
-          dependencies.logger.info(
-            {
-              workspaceId,
-              accountId: accountId ?? null,
-              snapshotId: req.body.snapshotId,
-              runId: result.run.id,
-              status: result.run.status,
-              overrideKeys: overrideKeyNames(agentConfigOverride),
-            },
-            "Workbench replay eval run completed",
-          );
           res.status(201).json(presentWorkbenchReplayRun(result));
           return;
         }

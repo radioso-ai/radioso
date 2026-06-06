@@ -70,6 +70,14 @@ export interface AuthoredDirectiveConfig {
   metadata: Record<string, unknown>;
 }
 
+export type InternalAgentLogoConfig = AgentLogo;
+
+export type InternalAgentSourceScopeConfig = AgentSourceScope;
+
+export type InternalWebsiteEmbedSurfaceConfig = WebsiteEmbedSurfaceSettings;
+
+export type InternalAgentSurfaceConfig = ConversationAgentSurfaceSettings;
+
 export interface AgentConfig {
   schemaVersion: typeof AGENT_CONFIG_SCHEMA_VERSION;
   portability: Record<string, AgentConfigPortability>;
@@ -90,6 +98,30 @@ export interface AgentConfig {
   surfaceSettings: AgentSurfaceConfig;
   skillSettings: Record<string, unknown>;
   sourceScope: AgentSourceScopeConfig;
+  chatModelOverride: ConversationAgent["chatModelOverride"];
+  authoredDirectives: AuthoredDirectiveConfig[];
+}
+
+export interface InternalAgentConfig {
+  schemaVersion: typeof AGENT_CONFIG_SCHEMA_VERSION;
+  portability: Record<string, AgentConfigPortability>;
+  name: string;
+  customInstruction: string;
+  suggestedQuestionsEnabled: boolean;
+  assistantLinkUtmEnabled: boolean;
+  citationDisplayEnabled: boolean;
+  contactRequestsEnabled: boolean;
+  contactRequestDelivery: ConversationAgent["contactRequestDelivery"];
+  retrievalEnabled: boolean;
+  logo: InternalAgentLogoConfig | null;
+  theme: ConversationAgent["theme"];
+  branding: ConversationAgent["branding"];
+  greetingInstruction: string;
+  assistantDefaultLocale: string | null;
+  proactiveGreetingEnabled: boolean;
+  surfaceSettings: InternalAgentSurfaceConfig;
+  skillSettings: Record<string, unknown>;
+  sourceScope: InternalAgentSourceScopeConfig;
   chatModelOverride: ConversationAgent["chatModelOverride"];
   authoredDirectives: AuthoredDirectiveConfig[];
 }
@@ -187,6 +219,8 @@ const serializeAuthoredDirectives = (
     description: directive.description,
     metadata: cloneJson(directive.metadata),
   }));
+
+const serializeInternalAuthoredDirectives = serializeAuthoredDirectives;
 
 const descriptor = <FieldName extends AgentConfigFieldName>(
   field: AgentConfigFieldDescriptor<FieldName>,
@@ -311,4 +345,80 @@ export const serializeAgentConfig = (agent: ConversationAgent): AgentConfig => {
   }
 
   return config as AgentConfig;
+};
+
+export const projectInternalAgentConfig = (agent: ConversationAgent): InternalAgentConfig => ({
+  schemaVersion: AGENT_CONFIG_SCHEMA_VERSION,
+  portability: buildPortabilityMap(),
+  name: agent.name,
+  customInstruction: agent.customInstruction,
+  suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
+  assistantLinkUtmEnabled: agent.assistantLinkUtmEnabled,
+  citationDisplayEnabled: agent.citationDisplayEnabled,
+  contactRequestsEnabled: agent.contactRequestsEnabled,
+  contactRequestDelivery: cloneJson(agent.contactRequestDelivery),
+  retrievalEnabled: agent.retrievalEnabled,
+  logo: agent.logo ? cloneJson(agent.logo) : null,
+  theme: cloneJson(agent.theme),
+  branding: cloneJson(agent.branding),
+  greetingInstruction: agent.greetingInstruction,
+  assistantDefaultLocale: agent.assistantDefaultLocale,
+  proactiveGreetingEnabled: agent.proactiveGreetingEnabled,
+  surfaceSettings: cloneJson(agent.surfaceSettings),
+  skillSettings: cloneJson(agent.skillSettings),
+  sourceScope: cloneJson(agent.sourceScope),
+  chatModelOverride: agent.chatModelOverride ? cloneJson(agent.chatModelOverride) : null,
+  authoredDirectives: serializeInternalAuthoredDirectives(agent.authoredDirectives),
+});
+
+const INTERNAL_CONFIG_AGENT_ID = "internal-config-agent";
+const INTERNAL_CONFIG_WORKSPACE_ID = "internal-config-workspace";
+const INTERNAL_CONFIG_DATE = new Date(0);
+
+const materializeAuthoredDirectives = (
+  directives: readonly AuthoredDirectiveConfig[],
+): AuthoredDirective[] =>
+  directives.map((directive, index) => ({
+    id: `internal-config-directive-${index}`,
+    agentId: INTERNAL_CONFIG_AGENT_ID,
+    name: directive.name,
+    condition: cloneJson(directive.condition),
+    action: directive.action,
+    priority: directive.priority,
+    requiredCapabilities: [...directive.requiredCapabilities],
+    dependsOn: [...directive.dependsOn],
+    excludes: [...directive.excludes],
+    routes: [...directive.routes],
+    description: directive.description,
+    metadata: cloneJson(directive.metadata),
+    createdAt: new Date(INTERNAL_CONFIG_DATE.getTime()),
+    updatedAt: new Date(INTERNAL_CONFIG_DATE.getTime()),
+  }));
+
+export const materializeAgentFromConfig = (config: InternalAgentConfig): ConversationAgent => {
+  return {
+    id: INTERNAL_CONFIG_AGENT_ID,
+    workspaceId: INTERNAL_CONFIG_WORKSPACE_ID,
+    name: config.name,
+    customInstruction: config.customInstruction,
+    suggestedQuestionsEnabled: config.suggestedQuestionsEnabled,
+    assistantLinkUtmEnabled: config.assistantLinkUtmEnabled,
+    citationDisplayEnabled: config.citationDisplayEnabled,
+    contactRequestsEnabled: config.contactRequestsEnabled,
+    contactRequestDelivery: cloneJson(config.contactRequestDelivery),
+    retrievalEnabled: config.retrievalEnabled,
+    logo: config.logo ? cloneJson(config.logo) : null,
+    theme: cloneJson(config.theme),
+    branding: cloneJson(config.branding),
+    greetingInstruction: config.greetingInstruction,
+    assistantDefaultLocale: config.assistantDefaultLocale,
+    proactiveGreetingEnabled: config.proactiveGreetingEnabled,
+    sourceScope: cloneJson(config.sourceScope),
+    surfaceSettings: cloneJson(config.surfaceSettings),
+    skillSettings: cloneJson(config.skillSettings),
+    chatModelOverride: config.chatModelOverride ? cloneJson(config.chatModelOverride) : null,
+    authoredDirectives: materializeAuthoredDirectives(config.authoredDirectives),
+    createdAt: new Date(INTERNAL_CONFIG_DATE.getTime()),
+    updatedAt: new Date(INTERNAL_CONFIG_DATE.getTime()),
+  };
 };

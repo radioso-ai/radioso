@@ -9,7 +9,7 @@ import { Callout, Steps } from 'nextra/components'
 
 Use this path when you want the hosted Radioso website widget on a public site.
 
-The important idea is that Radioso does not trust any site that knows the embed token. The launch also has to come from an approved origin.
+The important idea is that Radioso does not trust any site that knows the embed token. By default, the launch also has to come from an approved origin.
 
 ## The happy path
 
@@ -26,9 +26,9 @@ The embed script launches a widget, asks the frontend for an embed session, and 
 
 1. the workspace embed token exists
 2. website embed is enabled for that workspace
-3. the browser origin exactly matches one of the allowed origins
+3. the origin setting admits the browser origin
 
-If those checks pass, Radioso issues a short-lived embed session token tied to the workspace, anonymous session, and source origin.
+The origin setting is a single list. An explicit list admits only matching origins. A `*` entry admits any browser origin that has the install code. An empty list admits no origins. If the checks pass, Radioso issues a short-lived embed session token tied to the workspace, anonymous session, and source origin.
 
 ## What you are trying to prove
 
@@ -95,7 +95,7 @@ If your site already runs PostHog, add a listener that forwards Radioso events i
 
 The origin check is a safety guard for production pages with multiple embedded frames. The example derives it from the installed Radioso script, so you do not need to hard-code the widget host.
 
-The `embed-config` response can be served from a CDN. It is the same for every visitor on a given site, regardless of browser language, so a CDN caches it per allow-listed origin. The origin allowlist still applies: a site that is not allow-listed is rejected and never cached. The launcher fetches this config once on page load; caching it keeps that request off your origin. After an operator changes embed settings, invalidate the cached config so the change appears immediately; otherwise it appears once the cached copy expires.
+The `embed-config` response can be served from a CDN. It is the same for every visitor on a given site, regardless of browser language, so a CDN caches it per admitted origin. The origin setting still applies: a site that is not admitted is rejected and never cached. The launcher fetches this config once on page load; caching it keeps that request off your origin. After an operator changes embed settings, invalidate the cached config so the change appears immediately; otherwise it appears once the cached copy expires.
 
 Current embed analytics events:
 
@@ -138,6 +138,8 @@ The embed flow depends on workspace public-chat capability. If website embed is 
 ### Set the exact allowed origins
 
 Add the full origin, including protocol, host, and port. `http://127.0.0.1:4321` and `http://localhost:4321` are different origins.
+
+Use **Allow all origins** only when the widget should launch from any site that has the install code. In settings this is stored as `*` in the allowed-origin list. Leaving the origin list empty is a deny-all state.
 
 ### Install the launcher snippet
 

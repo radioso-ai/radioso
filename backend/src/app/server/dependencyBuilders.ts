@@ -2,6 +2,7 @@ import { AccountInvitationRepository } from "../../db/repositories/accountInvita
 import { AccountMembershipRepository } from "../../db/repositories/accountMembershipRepository.js";
 import { AccountRepository } from "../../db/repositories/accountRepository.js";
 import { ActionRequestRepository } from "../../db/repositories/actionRequestRepository.js";
+import { AccessGrantRepository } from "../../db/repositories/accessGrantRepository.js";
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
 import { createConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
@@ -26,6 +27,7 @@ import { WorkspaceRepository } from "../../db/repositories/workspaceRepository.j
 import { WorkspaceTokenRepository } from "../../db/repositories/workspaceTokenRepository.js";
 import { PostgresAssistantTurnPersistence } from "../../modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { AccountAccessService, AccountInvitationService } from "../../modules/account/public.js";
+import { AccessGrantService, DefaultOriginMatcher } from "../../modules/accessGrants/public.js";
 import { AgentService } from "../../modules/agents/public.js";
 import { AuditService } from "../../modules/audit/composition.js";
 import type { AuditPort } from "../../modules/audit/contracts/index.js";
@@ -234,6 +236,7 @@ export const buildRepositories = (
 ) => ({
   accountMembershipRepository: new AccountMembershipRepository(database),
   accountRepository: new AccountRepository(database),
+  accessGrantRepository: new AccessGrantRepository(database),
   agentRepository: new AgentRepository(database, options.agentSurfaceExtensions, options.agentSkillSettings),
   bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database),
   chunkRepository: new ChunkRepository(database, new PgVectorChunkStorage()),
@@ -260,9 +263,16 @@ export const buildRepositories = (
 
 export const buildAccessServices = (input: {
   auditService: AuditService;
+  env: Pick<Env, "WORKSPACE_TOKEN_SECRET">;
   repositories: ReturnType<typeof buildRepositories>;
 }) => {
-  const { auditService, repositories } = input;
+  const { auditService, env, repositories } = input;
+  const accessGrantService = new AccessGrantService({
+    repository: repositories.accessGrantRepository,
+    originMatcher: new DefaultOriginMatcher(),
+    workspaceTokenSecret: env.WORKSPACE_TOKEN_SECRET,
+    auditService,
+  });
   const accountAccessService = new AccountAccessService(
     repositories.accountMembershipRepository,
     auditService,
@@ -277,6 +287,7 @@ export const buildAccessServices = (input: {
   );
 
   return {
+    accessGrantService,
     accountAccessService,
     accountInvitationService,
   };

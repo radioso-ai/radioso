@@ -7,6 +7,7 @@ import { createMailService } from "../../src/modules/mail/public.js";
 import { randomUUID } from "node:crypto";
 
 import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
+import { AccessGrantService, DefaultOriginMatcher } from "../../src/modules/accessGrants/public.js";
 import { AccountInvitationService } from "../../src/modules/account/services/accountInvitationService.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { EmailVerificationService } from "../../src/modules/auth/services/emailVerificationService.js";
@@ -127,6 +128,7 @@ import {
   InMemoryAgentRepository,
   InMemoryConnectorDatabase,
   InMemoryAbuseControlRepository,
+  InMemoryAccessGrantRepository,
   InMemoryWorkspaceProviderCredentialsRepository,
 } from "./fakes.js";
 
@@ -218,6 +220,7 @@ export const createTestEnv = (): Env => ({
 
 interface TestRepositories {
   auditEventRepository: InMemoryAuditEventRepository;
+  accessGrantRepository: InMemoryAccessGrantRepository;
   userRepository: InMemoryUserRepository;
   ingestionSettingsRepository: InMemoryIngestionSettingsRepository;
   retrievalSettingsRepository: InMemoryRetrievalSettingsRepository;
@@ -267,6 +270,7 @@ export const createTestDependencies = (overrides: {
     version: env.OBSERVABILITY_VERSION,
   });
   const auditEventRepository = new InMemoryAuditEventRepository();
+  const accessGrantRepository = new InMemoryAccessGrantRepository();
   const auditService = createAuditService(auditEventRepository);
   const productAnalyticsService = new ProductAnalyticsService({
     enabled: env.OBSERVABILITY_ENABLED,
@@ -632,7 +636,20 @@ export const createTestDependencies = (overrides: {
   connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY!);
   const connectorDb = new InMemoryConnectorDatabase();
   const agentRepository = new InMemoryAgentRepository(createDefaultAgentSkillSettingsRegistry());
-  const agentService = new AgentService(agentRepository, workspaceRepository, retrievalSettingsService, documentSourceRepository);
+  const accessGrantService = new AccessGrantService({
+    repository: accessGrantRepository,
+    originMatcher: new DefaultOriginMatcher(),
+    workspaceTokenSecret: env.WORKSPACE_TOKEN_SECRET,
+    auditService,
+  });
+  const agentService = new AgentService(
+    agentRepository,
+    workspaceRepository,
+    retrievalSettingsService,
+    documentSourceRepository,
+    undefined,
+    accessGrantService,
+  );
   const authoredDirectiveService = new AuthoredDirectiveService({
     repository: agentRepository,
     coherenceChecker: {
@@ -763,6 +780,7 @@ export const createTestDependencies = (overrides: {
       accountAccessService,
       accountInvitationService,
     }),
+    accessGrantService,
     passwordResetService: new PasswordResetService({
       env,
       auditService,
@@ -884,6 +902,7 @@ export const createTestDependencies = (overrides: {
     dependencies,
     repositories: {
       auditEventRepository,
+      accessGrantRepository,
       userRepository,
       ingestionSettingsRepository,
       retrievalSettingsRepository,

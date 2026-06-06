@@ -1,1 +1,8 @@
-export { normalizeEmail, sha256 } from "../domain/authPrimitives.js";
+export {
+  decryptSecret,
+  encryptSecret,
+  generateApiToken,
+  normalizeEmail,
+  sha256,
+  tokenPrefix,
+} from "../domain/authPrimitives.js";

@@ -60,7 +60,7 @@ describe("requirePublicChatPermission", () => {
     );
     const principal = {
       type: "public_chat_session" as const,
-      role: "public_chat" as const,
+      role: "public" as const,
       workspaceId: "workspace-1",
       agentId: "agent-1",
       publicSessionId: "session-1",

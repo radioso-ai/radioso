@@ -296,6 +296,9 @@ const normalizeWebsiteEmbedOrigin = (origin: string): string | null => {
   if (!trimmed) {
     return null;
   }
+  if (trimmed === "*") {
+    return "*";
+  }
 
   try {
     return new URL(trimmed).origin;
@@ -656,9 +659,6 @@ export const normalizeWebsiteEmbedSurfaceSettings = (
   const record = input as Record<string, unknown>;
   const enabled = Boolean(record.enabled);
   const allowedOrigins = normalizeWebsiteEmbedAllowedOrigins(record.allowedOrigins);
-  if (enabled && allowedOrigins.length === 0) {
-    throw badRequest("At least one allowed origin is required when website embed is enabled");
-  }
 
   return {
     enabled,

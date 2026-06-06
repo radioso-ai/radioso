@@ -94,6 +94,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const repositories = buildRepositories(infrastructure.database, { agentSurfaceExtensions, agentSkillSettings });
   const access = buildAccessServices({
     auditService: infrastructure.auditService,
+    env,
     repositories,
   });
   const workspaceProviderCredentialsService = buildWorkspaceProviderCredentialsService({
@@ -188,6 +189,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       urlMap: env.RADIOSO_CDN_URL_MAP,
       logger,
     }),
+    access.accessGrantService,
   );
   const chat = buildChatServices({
     agentService,
@@ -310,6 +312,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     applicationRouteMounts: composition.routeMounts,
     applicationModules: composition.lifecycle,
     authService,
+    accessGrantService: access.accessGrantService,
     passwordResetService,
     emailVerificationService,
     accountAccessService: access.accountAccessService,

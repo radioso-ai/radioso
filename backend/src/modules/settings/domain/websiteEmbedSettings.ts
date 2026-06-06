@@ -75,8 +75,12 @@ export const validateWebsiteEmbedSettings = (
   const uniqueOrigins = [...new Set(origins)];
   const websiteEmbedEnabled = input.websiteEmbedEnabled ?? defaults.websiteEmbedEnabled;
 
+  // An enabled embed with no listed origin is allow-none: it would reject every
+  // site and silently never load. `*` counts as the allow-all origin entry.
   if (websiteEmbedEnabled && uniqueOrigins.length === 0) {
-    throw new Error("At least one allowed origin is required when website embed is enabled");
+    throw new Error(
+      'At least one allowed origin is required when website embed is enabled (use "*" to allow all)',
+    );
   }
 
   return {

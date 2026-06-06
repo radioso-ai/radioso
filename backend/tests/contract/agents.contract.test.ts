@@ -988,7 +988,7 @@ describe("agents contract", () => {
       .expect(200);
   });
 
-  it("rejects enabled website embed settings without an allowed origin", async () => {
+  it("preserves enabled website embed settings with empty listed origins as allow-none", async () => {
     const { app } = createTestApp();
     const { token } = await issueTestToken(app, "agents-embed-validation@example.com");
     const authorization = `Bearer ${token}`;
@@ -1010,7 +1010,7 @@ describe("agents contract", () => {
           },
         },
       })
-      .expect(400);
+      .expect(200);
   });
 
   it("preserves an explicitly empty website embed launcher label in public config", async () => {

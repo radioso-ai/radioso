@@ -18,6 +18,8 @@ import type {
   WorkspaceGrantRepositoryPort,
   WorkspaceGrantRole,
 } from "../../src/db/repositories/workspaceGrantRepository.js";
+import type { AccessGrantRepositoryPort } from "../../src/db/repositories/accessGrantRepository.js";
+import type { AccessGrant, AccessGrantRole, GrantPrincipalKind, OriginConstraint } from "../../src/modules/accessGrants/public.js";
 import type {
   AccountRecord,
   AccountRepositoryPort,
@@ -256,6 +258,109 @@ export class InMemoryUserRepository implements UserRepositoryPort {
 
   async deleteById(id: string): Promise<boolean> {
     return this.items.delete(id);
+  }
+}
+
+export class InMemoryAccessGrantRepository implements AccessGrantRepositoryPort {
+  readonly items: AccessGrant[] = [];
+
+  async findById(grantId: string): Promise<AccessGrant | null> {
+    return this.items.find((item) => item.id === grantId) ?? null;
+  }
+
+  async findByTokenHash(tokenHash: string): Promise<AccessGrant | null> {
+    return this.items.find((item) => item.tokenHash === tokenHash) ?? null;
+  }
+
+  async listByAgent(agentId: string): Promise<AccessGrant[]> {
+    return this.items.filter((item) => item.agentId === agentId);
+  }
+
+  async save(params: {
+    agentId: string;
+    workspaceId: string;
+    label?: string | null;
+    principalKind: GrantPrincipalKind;
+    role: AccessGrantRole;
+    tokenPrefix: string;
+    tokenHash: string;
+    encryptedToken: string;
+    originConstraint: OriginConstraint;
+    enabled?: boolean;
+    expiresAt?: Date | null;
+  }): Promise<AccessGrant> {
+    const existing = await this.findByTokenHash(params.tokenHash);
+    if (existing) {
+      return existing;
+    }
+    const now = new Date();
+    const grant: AccessGrant = {
+      id: randomUUID(),
+      agentId: params.agentId,
+      workspaceId: params.workspaceId,
+      label: params.label ?? null,
+      principalKind: params.principalKind,
+      role: params.role,
+      tokenPrefix: params.tokenPrefix,
+      tokenHash: params.tokenHash,
+      encryptedToken: params.encryptedToken,
+      originConstraint: params.originConstraint,
+      enabled: params.enabled ?? true,
+      expiresAt: params.expiresAt ?? null,
+      createdAt: now,
+      lastUsedAt: null,
+      revokedAt: null,
+    };
+    this.items.push(grant);
+    return grant;
+  }
+
+  async rotate(grantId: string, params: {
+    tokenPrefix: string;
+    tokenHash: string;
+    encryptedToken: string;
+  }): Promise<AccessGrant | null> {
+    const grant = await this.findById(grantId);
+    if (!grant) {
+      return null;
+    }
+    grant.tokenPrefix = params.tokenPrefix;
+    grant.tokenHash = params.tokenHash;
+    grant.encryptedToken = params.encryptedToken;
+    grant.lastUsedAt = null;
+    grant.revokedAt = null;
+    return grant;
+  }
+
+  async revoke(grantId: string, revokedAt: Date): Promise<AccessGrant | null> {
+    const grant = await this.findById(grantId);
+    if (!grant) {
+      return null;
+    }
+    grant.revokedAt = revokedAt;
+    return grant;
+  }
+
+  async touch(grantId: string, lastUsedAt: Date): Promise<void> {
+    const grant = await this.findById(grantId);
+    if (grant && !grant.revokedAt) {
+      grant.lastUsedAt = lastUsedAt;
+    }
+  }
+
+  async updateConstraints(grantId: string, params: {
+    originConstraint?: OriginConstraint;
+    enabled?: boolean;
+    label?: string | null;
+  }): Promise<AccessGrant | null> {
+    const grant = await this.findById(grantId);
+    if (!grant) {
+      return null;
+    }
+    grant.originConstraint = params.originConstraint ?? grant.originConstraint;
+    grant.enabled = params.enabled ?? grant.enabled;
+    grant.label = params.label === undefined ? grant.label : params.label;
+    return grant;
   }
 }
 

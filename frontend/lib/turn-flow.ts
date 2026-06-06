@@ -72,9 +72,23 @@ const selectionSummary = (stage: ConversationTraceStage): string | undefined => 
 }
 
 const directiveSummary = (stage: ConversationTraceStage): string | undefined => {
-  const count = (stage.outputs ?? {}).matchCount
-  if (typeof count === 'number') return count === 0 ? 'none matched' : `${count} matched`
+  const outputs = (stage.outputs ?? {}) as { matchCount?: unknown; candidateCount?: unknown }
+  const matched = typeof outputs.matchCount === 'number' ? outputs.matchCount : undefined
+  const considered = typeof outputs.candidateCount === 'number' ? outputs.candidateCount : undefined
+  if (matched === 0) return 'none matched'
+  if (typeof matched === 'number' && typeof considered === 'number')
+    return `${matched} of ${considered} matched`
+  if (typeof matched === 'number') return `${matched} matched`
   return stage.status === 'skipped' ? 'none matched' : undefined
+}
+
+const messageSummary = (stage: ConversationTraceStage): string | undefined => {
+  // The trace carries only structural references (event id, length); the
+  // actual message text lives on the conversation message record and is shown
+  // when the user opens the Message node. A simple "N chars" sublabel keeps
+  // the node informative without duplicating user input here.
+  const length = (stage.outputs ?? {}).contentLength
+  return typeof length === 'number' && length > 0 ? `${length} chars` : undefined
 }
 
 const deriveOutcome = (
@@ -129,11 +143,18 @@ export const envelopeToFlowGraph = (envelope: TurnTraceEnvelope): TurnFlowGraph 
   const nodes: TurnFlowNode[] = []
   const edges: TurnFlowEdge[] = []
 
+  const message = findStage(spine, 'message')
   const gather = findStage(spine, 'gather')
   const directives = findStage(spine, 'directive_match')
   const selection = findStage(spine, 'skill_selection')
   const dispatch = spine.stages.find((stage) => stage.kind === 'skill_dispatch')
   const compose = findStage(spine, 'compose')
+  // Routine turns never run compose; their assistant reply is carried on the
+  // routine stage itself, so fall back to it for the Outcome detail.
+  const routine = spine.stages.find(
+    (stage) => stage.kind === 'routine_resume' || stage.kind === 'routine_activate',
+  )
+  const outcomeDetailStage = compose ?? routine
 
   // Engine hub — the selection decision everything converges on.
   const engineId = 'engine'
@@ -151,7 +172,12 @@ export const envelopeToFlowGraph = (envelope: TurnTraceEnvelope): TurnFlowGraph 
     nodes.push({ id, nodeKind: 'input', label, sublabel, detail })
     edges.push({ id: `fan:${id}`, source: id, target: engineId, kind: 'fan-in' })
   }
-  addInput('input:message', 'Message', undefined, { kind: 'none' })
+  addInput(
+    'input:message',
+    'Message',
+    message ? messageSummary(message) : undefined,
+    message ? { kind: 'spine', spineStageId: message.id } : { kind: 'none' },
+  )
   const historyCount = gather && typeof gather.outputs?.historyCount === 'number' ? gather.outputs.historyCount : 0
   if (historyCount > 0 && gather) {
     addInput('input:history', 'History', `${historyCount} prior`, { kind: 'spine', spineStageId: gather.id })
@@ -213,7 +239,9 @@ export const envelopeToFlowGraph = (envelope: TurnTraceEnvelope): TurnFlowGraph 
     label: 'Outcome',
     sublabel: outcome.label,
     status: outcome.status,
-    detail: compose ? { kind: 'spine', spineStageId: compose.id } : { kind: 'none' },
+    detail: outcomeDetailStage
+      ? { kind: 'spine', spineStageId: outcomeDetailStage.id }
+      : { kind: 'none' },
   })
   edges.push({ id: `e:${tailId}->outcome`, source: tailId, target: outcomeId, kind: 'sequence' })
 

@@ -61,6 +61,7 @@ import {
   RoutineNextStepSelector,
   RoutineStepRenderer,
   SkillRetrievalTurnDispatch,
+  WorkbenchReplayRunner,
 } from "../../modules/chat/composition.js";
 import {
   createDefaultConnectorRegistry,
@@ -861,20 +862,22 @@ export const buildChatServices = (input: {
             }),
           ),
       };
+  const retrievalTurn = new RetrievalTurnController(
+    input.retrievalPipeline,
+    new SkillRetrievalTurnDispatch(
+      input.composition.skillExecutorRegistry,
+      retrievalAnswerSkillDefinition,
+      input.composition.capabilityPolicy,
+    ),
+  );
+  const conversationEngine = createConversationEngine();
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
     messageRepository: input.messageRepository,
     // 066 slice 3: chat reaches retrieval only through a narrow turn port —
     // interpret via the controller, execute via the dispatched retrieval.answer
     // skill. ChatService carries no RetrievalPipelineService reference.
-    retrievalTurn: new RetrievalTurnController(
-      input.retrievalPipeline,
-      new SkillRetrievalTurnDispatch(
-        input.composition.skillExecutorRegistry,
-        retrievalAnswerSkillDefinition,
-        input.composition.capabilityPolicy,
-      ),
-    ),
+    retrievalTurn,
     chatGateway,
     auditService: input.auditService,
     turnRuntime: chatTurnRuntime,
@@ -893,7 +896,7 @@ export const buildChatServices = (input: {
     // The reusable conversation engine is the chat turn spine in every
     // environment. ChatService keeps an engine-less path for tests, but
     // composition always wires it.
-    conversationEngine: createConversationEngine(),
+    conversationEngine,
     // Turn-emitted action intents land here, persisted to the outbox and
     // dispatched out of band by `actionDispatchWorker` in the worker process.
     actionOutbox,
@@ -926,6 +929,14 @@ export const buildChatServices = (input: {
     auditService: input.auditService,
     directiveSteering,
   });
+  const workbenchReplayRunner = new WorkbenchReplayRunner({
+    retrievalTurn,
+    auditService: input.auditService,
+    turnSkills: chatTurnRuntime.turnSkills,
+    directiveSteering,
+    selectionStrategy: input.composition.selectionStrategy,
+    conversationEngine,
+  });
 
   return {
     abuseControlService,
@@ -937,6 +948,7 @@ export const buildChatServices = (input: {
     chatGateway,
     chatHistoryService,
     chatService,
+    workbenchReplayRunner,
     contactHistoryProvider,
     retrievalAnswerService,
     actionDispatchWorker,

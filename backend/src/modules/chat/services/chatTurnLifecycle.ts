@@ -145,6 +145,137 @@ interface AssistantTurnSuccessInput {
   stream: boolean;
 }
 
+export interface BuildTurnTraceForPresentationInput {
+  workspaceId: string;
+  accountId?: string;
+  session: PreparedSession;
+  presentation: ChatPresentedAnswer;
+  answerStartedAt: number;
+  stream: boolean;
+  engineTrace?: ConversationTrace;
+}
+
+export interface TurnTracePresentation {
+  route: ChatRoute;
+  skillTurnOutcome: SkillTurnOutcome;
+  activityTrace: ActivityTrace;
+  turnTrace?: TurnTraceEnvelope;
+  resolvedActivitySummary: NonNullable<ActivityTrace["summary"]>;
+  assistantMessage: MessageCreateInput;
+  successInput: AssistantTurnSuccessInput;
+}
+
+export const buildTurnTraceForPresentation = (
+  input: BuildTurnTraceForPresentationInput,
+): TurnTracePresentation => {
+  const activitySummaryPresenter = new ActivitySummaryPresenter();
+  const activityTracePresenter = new ActivityTracePresenter();
+  const route = getChatTurnRoute(input.session);
+  const skillTurnOutcome = toPresentationSkillTurnOutcome(input.presentation);
+  const activitySummary = activitySummaryPresenter.present(input.session.retrieval.diagnostics, {
+    execution: {
+      surface: "assistant",
+      path: route.type === "direct" ? "assistant_direct" : "assistant_retrieval",
+      retrievalInvoked: route.type === "retrieval",
+    },
+  });
+  const activityTrace = appendDirectiveSteeringStage(
+    activityTracePresenter.appendAnswerOutcome({
+      trace: input.session.retrieval.trace,
+      summary: activitySummary,
+      outcome: {
+        answer: input.presentation.answer,
+        stream: input.stream,
+        hadContexts: input.session.retrieval.contexts.length > 0,
+        retrievalSkipped: input.session.retrieval.diagnostics.retrievalSkipped,
+        durationMs: Date.now() - input.answerStartedAt,
+        answerOutcome: input.presentation.answerOutcome,
+        skillName: skillTurnOutcome.skillName,
+        skillOutcome: skillTurnOutcome.outcome,
+        skillStatus: skillTurnOutcome.status,
+      },
+    }),
+    input.session.directiveSteering,
+  );
+  const resolvedActivitySummary = activityTrace.summary ?? activitySummary;
+  // The conversation spine is the root span; retrieval rides as a typed leaf on
+  // its dispatch stage. Engine always runs the assistant turn, so engineTrace is
+  // present — but stay defensive: no spine means no envelope this turn.
+  const turnTrace = input.engineTrace
+    ? buildTurnTraceEnvelope({
+        spine: attachRetrievalActivityTrace(input.engineTrace, activityTrace),
+      })
+    : undefined;
+
+  const assistantMessageId = randomUUID();
+  const assistantMessage: MessageCreateInput = {
+    id: assistantMessageId,
+    conversationId: input.session.conversation.id,
+    workspaceId: input.workspaceId,
+    role: "assistant",
+    content: input.presentation.answer,
+    skillName: skillTurnOutcome.skillName,
+    skillOutcome: skillTurnOutcome.outcome,
+    skillStatus: skillTurnOutcome.status,
+    metadata: {
+      skillTurn: skillTurnOutcome,
+      // Per-turn context required for full-fidelity eval snapshot capture.
+      // The eval module reads these fields back when an operator sends the
+      // turn to eval, so the snapshot can carry the actual retrieval
+      // baseline and composed system prompt this answer was generated
+      // from (not just messages_only fidelity).
+      retrievedChunks: input.session.retrieval.contexts.map((ctx, index) => ({
+        chunkId: ctx.chunkId,
+        documentId: ctx.documentId,
+        title: ctx.title,
+        rank: typeof ctx.promptPosition === "number" ? ctx.promptPosition : index,
+        similarity: typeof ctx.similarity === "number" ? ctx.similarity : undefined,
+      })),
+      composedInstructions: input.session.retrieval.systemPrompt,
+      // Best-effort: agent-level chat model override is what we know at
+      // this layer. The workspace default chat model (when no override) is
+      // not threaded through, so future snapshots from those turns will
+      // have a null modelId — acceptable; the eval run record captures the
+      // actual model resolved at run time.
+      modelProvider: input.session.agent.chatModelOverride?.provider,
+      modelId: input.session.agent.chatModelOverride?.model,
+      citations: input.presentation.citations ?? [],
+      answerSegments: input.presentation.answerSegments,
+      // Raw model grounding verdict, retained for observability even when the
+      // grounded-miss path reclassifies the skill outcome.
+      groundingVerdict: input.presentation.grounding,
+    },
+  };
+  const successInput: AssistantTurnSuccessInput = {
+    workspaceId: input.workspaceId,
+    accountId: input.accountId,
+    conversationId: input.session.conversation.id,
+    userMessageId: input.session.userMessage.id,
+    assistantMessageId,
+    skillTurnOutcome,
+    answerOutcome: input.presentation.answerOutcome,
+    citations: input.presentation.citations ?? [],
+    answerSegments: input.presentation.answerSegments,
+    suggestions: input.presentation.suggestions,
+    priorRewriteContinuityState: input.session.priorRewriteContinuityState,
+    diagnostics: input.session.retrieval.diagnostics,
+    activityTrace,
+    turnTrace,
+    route,
+    stream: input.stream,
+  };
+
+  return {
+    route,
+    skillTurnOutcome,
+    activityTrace,
+    turnTrace,
+    resolvedActivitySummary,
+    assistantMessage,
+    successInput,
+  };
+};
+
 export class ChatTurnLifecycle {
   private readonly activitySummaryPresenter = new ActivitySummaryPresenter();
   private readonly activityTracePresenter = new ActivityTracePresenter();
@@ -206,103 +337,18 @@ export class ChatTurnLifecycle {
     commitRoutineState?: () => Promise<void>;
     routineStateTransition?: CapturedRoutineTransition | null;
   }): Promise<CompletedAssistantTurn> {
-    const route = getChatTurnRoute(input.session);
-    const skillTurnOutcome = toPresentationSkillTurnOutcome(input.presentation);
-    const activitySummary = this.activitySummaryPresenter.present(input.session.retrieval.diagnostics, {
-      execution: {
-        surface: "assistant",
-        path: route.type === "direct" ? "assistant_direct" : "assistant_retrieval",
-        retrievalInvoked: route.type === "retrieval",
-      },
-    });
-    const activityTrace = appendDirectiveSteeringStage(
-      this.activityTracePresenter.appendAnswerOutcome({
-        trace: input.session.retrieval.trace,
-        summary: activitySummary,
-        outcome: {
-          answer: input.presentation.answer,
-          stream: input.stream,
-          hadContexts: input.session.retrieval.contexts.length > 0,
-          retrievalSkipped: input.session.retrieval.diagnostics.retrievalSkipped,
-          durationMs: Date.now() - input.answerStartedAt,
-          answerOutcome: input.presentation.answerOutcome,
-          skillName: skillTurnOutcome.skillName,
-          skillOutcome: skillTurnOutcome.outcome,
-          skillStatus: skillTurnOutcome.status,
-        },
-      }),
-      input.session.directiveSteering,
-    );
-    const resolvedActivitySummary = activityTrace.summary ?? activitySummary;
-    // The conversation spine is the root span; retrieval rides as a typed leaf on
-    // its dispatch stage. Engine always runs the assistant turn, so engineTrace is
-    // present — but stay defensive: no spine means no envelope this turn.
-    const turnTrace = input.engineTrace
-      ? buildTurnTraceEnvelope({
-          spine: attachRetrievalActivityTrace(input.engineTrace, activityTrace),
-        })
-      : undefined;
-
-    const assistantMessageId = randomUUID();
-    const assistantMessageInput: MessageCreateInput = {
-      id: assistantMessageId,
-      conversationId: input.session.conversation.id,
-      workspaceId: input.workspaceId,
-      role: "assistant",
-      content: input.presentation.answer,
-      skillName: skillTurnOutcome.skillName,
-      skillOutcome: skillTurnOutcome.outcome,
-      skillStatus: skillTurnOutcome.status,
-      metadata: {
-        skillTurn: skillTurnOutcome,
-        // Per-turn context required for full-fidelity eval snapshot capture.
-        // The eval module reads these fields back when an operator sends the
-        // turn to eval, so the snapshot can carry the actual retrieval
-        // baseline and composed system prompt this answer was generated
-        // from (not just messages_only fidelity).
-        retrievedChunks: input.session.retrieval.contexts.map((ctx, index) => ({
-          chunkId: ctx.chunkId,
-          documentId: ctx.documentId,
-          title: ctx.title,
-          rank: typeof ctx.promptPosition === "number" ? ctx.promptPosition : index,
-          similarity: typeof ctx.similarity === "number" ? ctx.similarity : undefined,
-        })),
-        composedInstructions: input.session.retrieval.systemPrompt,
-        // Best-effort: agent-level chat model override is what we know at
-        // this layer. The workspace default chat model (when no override) is
-        // not threaded through, so future snapshots from those turns will
-        // have a null modelId — acceptable; the eval run record captures the
-        // actual model resolved at run time.
-        modelProvider: input.session.agent.chatModelOverride?.provider,
-        modelId: input.session.agent.chatModelOverride?.model,
-        citations: input.presentation.citations ?? [],
-        answerSegments: input.presentation.answerSegments,
-        // Raw model grounding verdict, retained for observability even when the
-        // grounded-miss path reclassifies the skill outcome.
-        groundingVerdict: input.presentation.grounding,
-      },
-    };
-    const successInput: AssistantTurnSuccessInput = {
+    const presentation = buildTurnTraceForPresentation({
       workspaceId: input.workspaceId,
       accountId: input.accountId,
-      conversationId: input.session.conversation.id,
-      userMessageId: input.session.userMessage.id,
-      assistantMessageId,
-      skillTurnOutcome,
-      answerOutcome: input.presentation.answerOutcome,
-      citations: input.presentation.citations ?? [],
-      answerSegments: input.presentation.answerSegments,
-      suggestions: input.presentation.suggestions,
-      priorRewriteContinuityState: input.session.priorRewriteContinuityState,
-      diagnostics: input.session.retrieval.diagnostics,
-      activityTrace,
-      turnTrace,
-      route,
+      session: input.session,
+      presentation: input.presentation,
+      answerStartedAt: input.answerStartedAt,
       stream: input.stream,
-    };
+      engineTrace: input.engineTrace,
+    });
 
     let assistantMessage: MessageRecord;
-    const successAuditEvent = this.buildAssistantTurnSuccessAuditEvent(successInput);
+    const successAuditEvent = this.buildAssistantTurnSuccessAuditEvent(presentation.successInput);
     if (this.assistantTurnPersistence) {
       assistantMessage = await this.assistantTurnPersistence.completeAssistantTurn({
         workspaceId: input.workspaceId,
@@ -310,11 +356,11 @@ export class ChatTurnLifecycle {
         conversationId: input.session.conversation.id,
         actions: input.actions,
         routineStateTransition: input.routineStateTransition,
-        assistantMessage: assistantMessageInput,
+        assistantMessage: presentation.assistantMessage,
         auditEvent: successAuditEvent,
       });
       this.auditService.logRecorded?.(successAuditEvent);
-      await this.trackAssistantTurnCompleted(successInput);
+      await this.trackAssistantTurnCompleted(presentation.successInput);
     } else {
       // Fallback for tests and non-DB hosts. Production wires a transaction port so
       // outbox enqueue, routine state, assistant message, touch, and audit commit together.
@@ -325,8 +371,8 @@ export class ChatTurnLifecycle {
         conversationId: input.session.conversation.id,
       });
       await input.commitRoutineState?.();
-      assistantMessage = await this.messageRepository.create(assistantMessageInput);
-      await this.finalizeAssistantTurn(successInput);
+      assistantMessage = await this.messageRepository.create(presentation.assistantMessage);
+      await this.finalizeAssistantTurn(presentation.successInput);
     }
 
     return {
@@ -336,14 +382,14 @@ export class ChatTurnLifecycle {
         agentId: input.session.agent.id,
         agentName: input.session.agent.name,
         assistantMessageId: assistantMessage.id,
-        route,
+        route: presentation.route,
         answer: input.presentation.answer,
         citations: input.presentation.citations,
         answerSegments: input.presentation.answerSegments,
         suggestions: input.presentation.suggestions,
-        activitySummary: resolvedActivitySummary,
-        activityTrace,
-        turnTrace,
+        activitySummary: presentation.resolvedActivitySummary,
+        activityTrace: presentation.activityTrace,
+        turnTrace: presentation.turnTrace,
       },
     };
   }

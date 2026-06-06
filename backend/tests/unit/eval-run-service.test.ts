@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ConversationAgent } from "../../src/modules/agents/domain.js";
 import { projectInternalAgentConfig } from "../../src/modules/agents/agentConfig.js";
-import { EvalRunService } from "../../src/modules/eval/services/evalRunService.js";
+import { EvalRunService, type EvalWorkbenchReplayRunnerPort } from "../../src/modules/eval/services/evalRunService.js";
 import type {
   CreateCaseInput,
   CreateRunInput,
@@ -18,6 +18,7 @@ import type {
   EvalSnapshot,
 } from "../../src/modules/eval/domain/types.js";
 import type { AnswerSegment, ChatCitation } from "../../src/modules/chat/contracts/answerTypes.js";
+import type { WorkbenchReplayResult } from "../../src/modules/chat/composition.js";
 import type { EvalRetrievalRunnerPort } from "../../src/modules/eval/services/evalRunner.js";
 import type { EvalLlmJudgePort } from "../../src/modules/eval/services/evalJudge.js";
 
@@ -297,6 +298,33 @@ class StubRunner implements EvalRetrievalRunnerPort {
       answer: this.answerText ?? "",
       citations: this.citations,
       answerSegments: this.answerSegments,
+    };
+  }
+}
+
+class StubWorkbenchReplayRunner implements EvalWorkbenchReplayRunnerPort {
+  public calls: Array<Parameters<EvalWorkbenchReplayRunnerPort["run"]>[0]> = [];
+
+  async run(input: Parameters<EvalWorkbenchReplayRunnerPort["run"]>[0]): Promise<WorkbenchReplayResult> {
+    this.calls.push(input);
+    return {
+      answer: "Replay answer.",
+      citations: [{ documentId: "doc-refund", chunkId: "chunk-1", title: "Refund Policy" }],
+      answerSegments: [{ text: "Replay answer.", citationIndices: [0] }],
+      turnTrace: {
+        version: 1,
+        spine: {
+          traceId: "engine-trace",
+          startedAt: fixedDate,
+          stages: [{ id: "compose", kind: "compose", status: "applied" as const }],
+        },
+      },
+      resolvedConfig: {
+        composedInstructions: "Resolved replay instructions.",
+        modelProvider: "openai",
+        modelId: "gpt-5-mini",
+        retrievedChunks: [{ chunkId: "chunk-1", documentId: "doc-refund", title: "Refund Policy", rank: 0 }],
+      },
     };
   }
 }
@@ -691,6 +719,61 @@ describe("EvalRunService.execute (retrieval_only)", () => {
     expect(run.observedOutput.answerSegments).toEqual([
       { text: "Our refund window is 30 days from purchase.", citationIndices: [0] },
     ]);
+    expect(run.status).toBe("pass");
+  });
+
+  it("runs the Workbench engine replay entry point and translates turn trace into the run record", async () => {
+    const agent = configuredAgent();
+    const snapshot = makeSnapshot({
+      sourceAgentId: agent.id,
+      originalAgentConfig: projectInternalAgentConfig(agent),
+    });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const evalCase = await repo.createCase({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      name: "workbench replay case",
+      assertions: [refundIncludes],
+    });
+    const workbench = new StubWorkbenchReplayRunner();
+    const service = new EvalRunService(repo, new StubRunner([]), passJudge(), workbench);
+
+    const { run } = await service.executeWorkbenchReplay({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      caseId: evalCase.id,
+      mode: "full_assistant",
+      overrides: {
+        agentConfigOverride: {
+          customInstruction: "Workbench override.",
+        },
+      },
+    });
+
+    expect(workbench.calls).toHaveLength(1);
+    expect(workbench.calls[0]).toMatchObject({
+      workspaceId: "ws-1",
+      sourceAgentId: "agent-full",
+      query: "what is the refund policy?",
+      agentConfigOverride: {
+        customInstruction: "Workbench override.",
+      },
+    });
+    expect(run.observedOutput).toMatchObject({
+      retrievedChunks: [{ chunkId: "chunk-1", documentId: "doc-refund", title: "Refund Policy", rank: 0 }],
+      answer: "Replay answer.",
+      citations: [{ documentId: "doc-refund", chunkId: "chunk-1", title: "Refund Policy" }],
+      answerSegments: [{ text: "Replay answer.", citationIndices: [0] }],
+      turnTrace: {
+        version: 1,
+        spine: { traceId: "engine-trace" },
+      },
+    });
+    expect(run.resolvedConfig).toEqual({
+      composedInstructions: "Resolved replay instructions.",
+      modelProvider: "openai",
+      modelId: "gpt-5-mini",
+    });
     expect(run.status).toBe("pass");
   });
 

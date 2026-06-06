@@ -163,6 +163,52 @@ const AGENT_RETRIEVAL_DEFAULTS_KEY = "__agentRetrievalDefaults";
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
+const mergeConfigValue = (baseline: unknown, override: unknown): unknown => {
+  if (override === undefined) {
+    return cloneJson(baseline);
+  }
+  if (override === null || Array.isArray(override) || !isRecord(override)) {
+    return cloneJson(override);
+  }
+  if (!isRecord(baseline)) {
+    return cloneJson(override);
+  }
+
+  const next: Record<string, unknown> = cloneJson(baseline);
+  for (const [key, value] of Object.entries(override)) {
+    if (value === undefined) {
+      continue;
+    }
+    next[key] = mergeConfigValue(next[key], value);
+  }
+  return next;
+};
+
+export function applyAgentConfigOverride(
+  baseline: InternalAgentConfig,
+  override: Partial<InternalAgentConfig>,
+): InternalAgentConfig;
+export function applyAgentConfigOverride(
+  baseline: AgentConfig,
+  override: Partial<AgentConfig>,
+): AgentConfig;
+export function applyAgentConfigOverride(
+  baseline: AgentConfig | InternalAgentConfig,
+  override: Partial<AgentConfig> | Partial<InternalAgentConfig>,
+): AgentConfig | InternalAgentConfig {
+  const next = cloneJson(baseline) as unknown as Record<string, unknown>;
+  const overrideRecord = override as Record<string, unknown>;
+  for (const fieldName of Object.keys(AGENT_CONFIG_FIELD_DESCRIPTORS) as AgentConfigFieldName[]) {
+    if (!(fieldName in overrideRecord) || overrideRecord[fieldName] === undefined) {
+      continue;
+    }
+    next[fieldName] = mergeConfigValue(next[fieldName], overrideRecord[fieldName]);
+  }
+  next.schemaVersion = baseline.schemaVersion;
+  next.portability = cloneJson(baseline.portability);
+  return next as unknown as AgentConfig | InternalAgentConfig;
+}
+
 const serializeLogo = (logo: AgentLogo | null): AgentLogoConfig | null => {
   if (!logo) {
     return null;

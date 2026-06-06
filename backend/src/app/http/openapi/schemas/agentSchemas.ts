@@ -127,8 +127,6 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
   const ConversationAgentRequestSchema = registry.register(
     "ConversationAgentRequest",
     z.object({
-      revokeAnonymousChatToken: z.boolean().optional(),
-      revokeWebsiteEmbedToken: z.boolean().optional(),
       name: z.string().max(200).optional(),
       customInstruction: z.string().max(2000).optional(),
       suggestedQuestionsEnabled: z.boolean().optional(),
@@ -200,7 +198,6 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     "AgentChannelLifecycle",
     z.object({
       lastUsedAt: z.string().datetime().nullable(),
-      status: z.enum(["active", "revoked"]).nullable(),
     }),
   );
 

@@ -1866,9 +1866,6 @@
           "anonymousChatEnabled": {
             "type": "boolean"
           },
-          "revokeAnonymousChatToken": {
-            "type": "boolean"
-          },
           "assistantName": {
             "type": "string",
             "maxLength": 200
@@ -1888,9 +1885,6 @@
             "type": "boolean"
           },
           "websiteEmbedEnabled": {
-            "type": "boolean"
-          },
-          "revokeWebsiteEmbedToken": {
             "type": "boolean"
           },
           "websiteEmbedAllowedOrigins": {
@@ -1971,16 +1965,6 @@
             ],
             "format": "date-time"
           },
-          "anonymousChatStatus": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "active",
-              "revoked"
-            ]
-          },
           "assistantName": {
             "type": "string"
           },
@@ -2020,16 +2004,6 @@
               "null"
             ],
             "format": "date-time"
-          },
-          "websiteEmbedStatus": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "active",
-              "revoked"
-            ]
           },
           "websiteEmbedScriptUrl": {
             "type": [
@@ -2102,7 +2076,6 @@
           "anonymousChatEnabled",
           "anonymousChatUrl",
           "anonymousChatLastUsedAt",
-          "anonymousChatStatus",
           "assistantName",
           "greetingInstruction",
           "assistantDefaultLocale",
@@ -2112,7 +2085,6 @@
           "websiteEmbedEnabled",
           "websiteEmbedToken",
           "websiteEmbedLastUsedAt",
-          "websiteEmbedStatus",
           "websiteEmbedScriptUrl",
           "websiteEmbedSnippet",
           "websiteEmbedAllowedOrigins",
@@ -2402,16 +2374,6 @@
             ],
             "format": "date-time"
           },
-          "anonymousChatStatus": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "active",
-              "revoked"
-            ]
-          },
           "websiteEmbedEnabled": {
             "type": "boolean"
           },
@@ -2427,16 +2389,6 @@
               "null"
             ],
             "format": "date-time"
-          },
-          "websiteEmbedStatus": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "active",
-              "revoked"
-            ]
           },
           "websiteEmbedAllowedOrigins": {
             "type": "array",
@@ -2509,11 +2461,9 @@
           "anonymousChatEnabled",
           "anonymousChatUrl",
           "anonymousChatLastUsedAt",
-          "anonymousChatStatus",
           "websiteEmbedEnabled",
           "websiteEmbedToken",
           "websiteEmbedLastUsedAt",
-          "websiteEmbedStatus",
           "websiteEmbedAllowedOrigins",
           "websiteEmbedLauncherLabel",
           "websiteEmbedLauncherPosition",
@@ -2745,13 +2695,7 @@
               "anonymousChatEnabled": {
                 "type": "boolean"
               },
-              "revokeAnonymousChatToken": {
-                "type": "boolean"
-              },
               "websiteEmbedEnabled": {
-                "type": "boolean"
-              },
-              "revokeWebsiteEmbedToken": {
                 "type": "boolean"
               },
               "websiteEmbedAllowedOrigins": {
@@ -3529,12 +3473,6 @@
       "ConversationAgentRequest": {
         "type": "object",
         "properties": {
-          "revokeAnonymousChatToken": {
-            "type": "boolean"
-          },
-          "revokeWebsiteEmbedToken": {
-            "type": "boolean"
-          },
           "name": {
             "type": "string",
             "maxLength": 200
@@ -3776,21 +3714,10 @@
               "null"
             ],
             "format": "date-time"
-          },
-          "status": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "active",
-              "revoked"
-            ]
           }
         },
         "required": [
-          "lastUsedAt",
-          "status"
+          "lastUsedAt"
         ]
       },
       "AgentChannelsLifecycleResponse": {

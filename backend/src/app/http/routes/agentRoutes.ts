@@ -86,8 +86,6 @@ const contactRequestDeliverySchema = z.object({
 }).optional();
 
 export const agentBodySchema = z.object({
-  revokeAnonymousChatToken: z.boolean().optional(),
-  revokeWebsiteEmbedToken: z.boolean().optional(),
   name: z.string().max(200).optional(),
   customInstruction: z.string().max(2000).optional(),
   suggestedQuestionsEnabled: z.boolean().optional(),
@@ -110,27 +108,6 @@ export const agentBodySchema = z.object({
 export { llmProviderNames as agentLlmProviderNames, chatModelOverrideSchema as agentChatModelOverrideSchema };
 
 type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "authoredDirectiveService" | "agentSurfaceExtensions" | "documentStorage" | "logger">;
-
-const revokeCurrentPublicLaunchGrant = async (
-  dependencies: AgentRouteDependencies,
-  token: string | null,
-  accountId?: string | null,
-): Promise<void> => {
-  if (!token) {
-    return;
-  }
-
-  const grant = await dependencies.accessGrantService.resolvePublicLaunchGrant(token);
-  if (!grant || grant.revokedAt) {
-    return;
-  }
-
-  await dependencies.accessGrantService.revokeGrant({
-    grantId: grant.id,
-    accountId,
-    reason: "operator_revoked",
-  });
-};
 
 export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router => {
   const router = Router();
@@ -252,26 +229,13 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
 
   router.put("/:agentId", workspaceSession, agentManage, validateBody(agentBodySchema), async (req, res, next) => {
     try {
-      const { accountId, workspaceId } = res.locals as { accountId?: string | null; workspaceId: string };
+      const { workspaceId } = res.locals as { workspaceId: string };
       const parsed = agentParamsSchema.parse(req.params);
       const current = await dependencies.agentService.resolve(workspaceId, parsed.agentId);
-      const {
-        revokeAnonymousChatToken,
-        revokeWebsiteEmbedToken,
-        ...agentPatch
-      } = req.body;
-      await Promise.all([
-        revokeAnonymousChatToken
-          ? revokeCurrentPublicLaunchGrant(dependencies, current.surfaceSettings.anonymousChat.token, accountId)
-          : undefined,
-        revokeWebsiteEmbedToken
-          ? revokeCurrentPublicLaunchGrant(dependencies, current.surfaceSettings.websiteEmbed.token, accountId)
-          : undefined,
-      ]);
       const agent = await dependencies.agentService.update(
         workspaceId,
         parsed.agentId,
-        dependencies.agentService.withRotatedTokens(current, agentPatch),
+        dependencies.agentService.withRotatedTokens(current, req.body),
       );
       res.status(200).json(agent);
     } catch (error) {

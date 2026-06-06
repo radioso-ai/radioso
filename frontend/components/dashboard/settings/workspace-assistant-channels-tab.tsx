@@ -121,16 +121,6 @@ const formatLastUsed = (value: string | null | undefined) => {
   return `Last used: ${formatter.format(diffSeconds, 'second')}`
 }
 
-const lifecycleBadgeClassName = (status: GeneralSettings['anonymousChatStatus']) =>
-  status === 'revoked'
-    ? 'bg-destructive/10 text-destructive'
-    : status === 'active'
-      ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
-      : 'bg-muted text-muted-foreground'
-
-const lifecycleBadgeLabel = (status: GeneralSettings['anonymousChatStatus']) =>
-  status === 'revoked' ? 'Revoked' : status === 'active' ? 'Active' : 'No credential'
-
 const parseContactRequestEmails = (value: string): string[] =>
   value
     .split(/[\n,;\s]+/)
@@ -294,8 +284,6 @@ export function WorkspaceAssistantChannelsTab({
   const [apiToken, setApiToken] = useState<string | null>(null)
   const [apiTokenError, setApiTokenError] = useState<string | null>(null)
   const [isApiTokenLoading, setIsApiTokenLoading] = useState(false)
-  const [revokeAnonymousChatDialogOpen, setRevokeAnonymousChatDialogOpen] = useState(false)
-  const [revokeAnonymousChatError, setRevokeAnonymousChatError] = useState<string | null>(null)
   const [selectedChannel, setSelectedChannel] = useState<ChannelId | null>(null)
   // When the second column drives selection, render exactly one section and
   // skip the in-page channel index/back affordance.
@@ -324,10 +312,6 @@ export function WorkspaceAssistantChannelsTab({
   const rotateWebsiteEmbedToken = useCallback(async () => {
     return agentId ? agentsApi.rotateWebsiteEmbedToken(agentId) : generalSettingsApi.rotateWebsiteEmbedToken({ auth: 'session' })
   }, [agentId])
-
-  const revokeWebsiteEmbedToken = useCallback(async () => {
-    return updateGeneralSettings({ revokeWebsiteEmbedToken: true })
-  }, [updateGeneralSettings])
 
   const uploadAssistantLogo = useCallback(async (file: File) => {
     return agentId ? agentsApi.uploadAssistantLogo(agentId, file) : generalSettingsApi.uploadAssistantLogo(file, { auth: 'session' })
@@ -957,29 +941,6 @@ export function WorkspaceAssistantChannelsTab({
     }
   }
 
-  const handleAnonymousChatTokenRevoke = async () => {
-    if (!anonSettings) return
-    setIsAnonSaving(true)
-    setRevokeAnonymousChatError(null)
-    try {
-      const updated = await updateGeneralSettings({
-        revokeAnonymousChatToken: true,
-      })
-      setAnonSettings(updated)
-      setSavedAnonSettings(updated)
-      setRevokeAnonymousChatDialogOpen(false)
-      setSaveState('saved')
-    } catch (error) {
-      const message = getApiErrorMessage(error, 'Failed to revoke the public chat link.')
-      console.error('Failed to revoke anonymous chat token:', error)
-      setRevokeAnonymousChatError(message)
-      setSaveState('error')
-      setSaveError(message)
-    } finally {
-      setIsAnonSaving(false)
-    }
-  }
-
   return (
     <SettingsTabShell>
       <div className="space-y-8">
@@ -1326,15 +1287,8 @@ export function WorkspaceAssistantChannelsTab({
                 }
               >
                 <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-                  {anonSettings.anonymousChatStatus === 'revoked' && (
-                    <span className={`rounded-full px-2 py-0.5 font-medium ${lifecycleBadgeClassName('revoked')}`}>
-                      {lifecycleBadgeLabel('revoked')}
-                    </span>
-                  )}
                   <span className="text-muted-foreground">
-                    {anonSettings.anonymousChatStatus === 'revoked'
-                      ? 'Revoked — rotate to issue a new credential.'
-                      : formatLastUsed(anonSettings.anonymousChatLastUsedAt)}
+                    {formatLastUsed(anonSettings.anonymousChatLastUsedAt)}
                   </span>
                 </div>
                 {anonSettings.anonymousChatEnabled && anonSettings.anonymousChatUrl ? (
@@ -1363,51 +1317,6 @@ export function WorkspaceAssistantChannelsTab({
                         {isAnonSaving ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                         Generate new link
                       </Button>
-                      <Dialog
-                        open={revokeAnonymousChatDialogOpen}
-                        onOpenChange={(open) => {
-                          setRevokeAnonymousChatDialogOpen(open)
-                          if (!open) {
-                            setRevokeAnonymousChatError(null)
-                          }
-                        }}
-                      >
-                        <DialogTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={isAnonSaving || anonSettings.anonymousChatStatus !== 'active'}
-                            className="text-destructive hover:text-destructive"
-                          >
-                            <ShieldAlert className="mr-2 h-4 w-4" />
-                            Revoke
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Revoke public chat link credential</DialogTitle>
-                            <DialogDescription>
-                              The current public chat link will stop launching new chats immediately. Rotate the link later to issue a new credential.
-                            </DialogDescription>
-                          </DialogHeader>
-                          {revokeAnonymousChatError ? (
-                            <p className="text-sm text-destructive">{revokeAnonymousChatError}</p>
-                          ) : null}
-                          <DialogFooter>
-                            <Button
-                              variant="outline"
-                              onClick={() => setRevokeAnonymousChatDialogOpen(false)}
-                              disabled={isAnonSaving}
-                            >
-                              Cancel
-                            </Button>
-                            <Button variant="destructive" onClick={handleAnonymousChatTokenRevoke} disabled={isAnonSaving}>
-                              {isAnonSaving ? <Spinner className="mr-2 h-4 w-4" /> : <ShieldAlert className="mr-2 h-4 w-4" />}
-                              Revoke
-                            </Button>
-                          </DialogFooter>
-                        </DialogContent>
-                      </Dialog>
                       <Button asChild variant="default">
                         <a href={anonSettings.anonymousChatUrl} target="_blank" rel="noreferrer">
                           <ExternalLink className="mr-2 h-4 w-4" />
@@ -1426,7 +1335,7 @@ export function WorkspaceAssistantChannelsTab({
 
 
           {mode !== 'channels' || (!isAnonLoading && resolvedChannel === 'website-embed') ? (
-          <WebsiteEmbedSettingsController
+            <WebsiteEmbedSettingsController
             mode={mode}
             anonSettings={anonSettings}
             savedAnonSettings={savedAnonSettings}
@@ -1436,7 +1345,6 @@ export function WorkspaceAssistantChannelsTab({
             setIsAnonSaving={setIsAnonSaving}
             updateGeneralSettings={updateGeneralSettings}
             rotateWebsiteEmbedToken={rotateWebsiteEmbedToken}
-            revokeWebsiteEmbedToken={revokeWebsiteEmbedToken}
             anonDraftVersionRef={anonDraftVersionRef}
             saveSequenceRef={saveSequenceRef}
             setSaveState={setSaveState}

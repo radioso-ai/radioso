@@ -27,7 +27,7 @@ import { resolvePublicLaunchLifecycle } from "../../accessGrants/public.js";
 export interface PlatformSettingsServiceDependencies {
   workspaceRepository: Pick<WorkspaceRepositoryPort, "findById">;
   agentService: Pick<AgentService, "resolve" | "update" | "withRotatedTokens">;
-  accessGrantService?: Pick<AccessGrantService, "resolvePublicLaunchGrant" | "revokeGrant">;
+  accessGrantService?: Pick<AccessGrantService, "resolvePublicLaunchGrant">;
   retrievalSettingsService: Pick<
     RetrievalSettingsService,
     "getForWorkspace" | "listMetadataFieldSuggestions" | "updateForWorkspace"
@@ -86,7 +86,6 @@ export class PlatformSettingsService {
     let currentRetrievalSettings = retrievalSettings;
 
     if (patch.assistant || patch.channels) {
-      await this.revokeRequestedSurfaceGrants(currentAgent, patch.channels ?? {}, context);
       currentAgent = await this.updateAgentSections(workspaceId, currentAgent, workspace, patch, context);
     }
 
@@ -119,8 +118,8 @@ export class PlatformSettingsService {
     const anonymousChat = agent.surfaceSettings.anonymousChat;
     const websiteEmbed = agent.surfaceSettings.websiteEmbed;
     const anonymousChatEnabled = channels.anonymousChatEnabled ?? anonymousChat.enabled;
-    const rotateAnonymousChatToken = channels.revokeAnonymousChatToken ? false : channels.rotateAnonymousChatToken;
-    const rotateWebsiteEmbedToken = channels.revokeWebsiteEmbedToken ? false : channels.rotateWebsiteEmbedToken;
+    const rotateAnonymousChatToken = channels.rotateAnonymousChatToken;
+    const rotateWebsiteEmbedToken = channels.rotateWebsiteEmbedToken;
 
     let normalizedWebsiteEmbed;
     try {
@@ -247,45 +246,6 @@ export class PlatformSettingsService {
     }
   }
 
-  private async revokeRequestedSurfaceGrants(
-    agent: AgentRecord,
-    channels: NonNullable<PlatformSettingsPatch["channels"]>,
-    context: PlatformSettingsUpdateContext,
-  ): Promise<void> {
-    if (!this.dependencies.accessGrantService) {
-      return;
-    }
-
-    await Promise.all([
-      channels.revokeAnonymousChatToken
-        ? this.revokeCurrentPublicLaunchGrant(agent.surfaceSettings.anonymousChat.token, context)
-        : undefined,
-      channels.revokeWebsiteEmbedToken
-        ? this.revokeCurrentPublicLaunchGrant(agent.surfaceSettings.websiteEmbed.token, context)
-        : undefined,
-    ]);
-  }
-
-  private async revokeCurrentPublicLaunchGrant(
-    token: string | null,
-    context: PlatformSettingsUpdateContext,
-  ): Promise<void> {
-    if (!token || !this.dependencies.accessGrantService) {
-      return;
-    }
-
-    const grant = await this.dependencies.accessGrantService.resolvePublicLaunchGrant(token);
-    if (!grant || grant.revokedAt) {
-      return;
-    }
-
-    await this.dependencies.accessGrantService.revokeGrant({
-      grantId: grant.id,
-      accountId: context.accountId,
-      reason: "operator_revoked",
-    });
-  }
-
   private async updateRetrievalSections(
     workspaceId: string,
     existing: RetrievalSettingsRecord,
@@ -360,11 +320,9 @@ export class PlatformSettingsService {
       anonymousChatEnabled: anonymousChat.enabled,
       anonymousChatUrl: this.buildAnonymousChatUrl(anonymousChat.token, anonymousChat.enabled),
       anonymousChatLastUsedAt: anonymousChatLifecycle.lastUsedAt,
-      anonymousChatStatus: anonymousChatLifecycle.status,
       websiteEmbedEnabled: websiteEmbed.enabled,
       websiteEmbedToken: websiteEmbed.token,
       websiteEmbedLastUsedAt: websiteEmbedLifecycle.lastUsedAt,
-      websiteEmbedStatus: websiteEmbedLifecycle.status,
       websiteEmbedAllowedOrigins: websiteEmbed.allowedOrigins,
       websiteEmbedLauncherLabel: websiteEmbed.launcherLabel,
       websiteEmbedLauncherPosition: websiteEmbed.launcherPosition,

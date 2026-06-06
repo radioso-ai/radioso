@@ -14,7 +14,6 @@ type AuthoredDirectiveFixture = ApiSchemas["AuthoredDirective"];
 type BuiltInDirectiveFixture = ApiSchemas["BuiltInDirective"];
 type ChannelLifecycleFixture = {
   lastUsedAt: string | null;
-  status: "active" | "revoked" | null;
 };
 type ChannelsLifecycleFixture = {
   anonymousChat: ChannelLifecycleFixture;
@@ -56,11 +55,9 @@ export const basePlatformSettings = (): ApiSchemas["PlatformSettingsResponse"] =
     anonymousChatEnabled: false,
     anonymousChatUrl: "http://localhost:3000/chat/public-token",
     anonymousChatLastUsedAt: null,
-    anonymousChatStatus: "active",
     websiteEmbedEnabled: false,
     websiteEmbedToken: "embed-token",
     websiteEmbedLastUsedAt: null,
-    websiteEmbedStatus: "active",
     websiteEmbedScriptUrl: "http://localhost:3000/embed.js",
     websiteEmbedSnippet: "<script src=\"http://localhost:3000/embed.js\"></script>",
     websiteEmbedAllowedOrigins: [],
@@ -154,11 +151,9 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
 const buildDefaultChannelsLifecycle = (settings: PlatformSettingsFixture): ChannelsLifecycleFixture => ({
   anonymousChat: {
     lastUsedAt: settings.channels.anonymousChatLastUsedAt,
-    status: settings.channels.anonymousChatStatus,
   },
   websiteEmbed: {
     lastUsedAt: settings.channels.websiteEmbedLastUsedAt,
-    status: settings.channels.websiteEmbedStatus,
   },
 });
 
@@ -569,7 +564,7 @@ export const installDashboardApiMocks = async (
       };
       channelsLifecycle = {
         ...channelsLifecycle,
-        anonymousChat: { lastUsedAt: null, status: "active" },
+        anonymousChat: { lastUsedAt: null },
       };
       await json(route, agentSettings);
       return;
@@ -589,7 +584,7 @@ export const installDashboardApiMocks = async (
       };
       channelsLifecycle = {
         ...channelsLifecycle,
-        websiteEmbed: { lastUsedAt: null, status: "active" },
+        websiteEmbed: { lastUsedAt: null },
       };
       await json(route, agentSettings);
       return;
@@ -608,34 +603,23 @@ export const installDashboardApiMocks = async (
             anonymousChat?: Partial<typeof agentSettings.surfaceSettings.anonymousChat>;
             websiteEmbed?: Partial<typeof agentSettings.surfaceSettings.websiteEmbed>;
           };
-          revokeAnonymousChatToken?: boolean;
-          revokeWebsiteEmbedToken?: boolean;
         };
-        const { revokeAnonymousChatToken, revokeWebsiteEmbedToken, ...agentPatch } = body;
         agentUpdates?.push(body);
-        channelsLifecycle = {
-          anonymousChat: revokeAnonymousChatToken
-            ? { ...channelsLifecycle.anonymousChat, status: "revoked" }
-            : channelsLifecycle.anonymousChat,
-          websiteEmbed: revokeWebsiteEmbedToken
-            ? { ...channelsLifecycle.websiteEmbed, status: "revoked" }
-            : channelsLifecycle.websiteEmbed,
-        };
         agentSettings = {
           ...agentSettings,
-          ...agentPatch,
+          ...body,
           surfaceSettings: {
             authenticatedChat: {
               ...agentSettings.surfaceSettings.authenticatedChat,
-              ...(agentPatch.surfaceSettings?.authenticatedChat ?? {}),
+              ...(body.surfaceSettings?.authenticatedChat ?? {}),
             },
             anonymousChat: {
               ...agentSettings.surfaceSettings.anonymousChat,
-              ...(agentPatch.surfaceSettings?.anonymousChat ?? {}),
+              ...(body.surfaceSettings?.anonymousChat ?? {}),
             },
             websiteEmbed: {
               ...agentSettings.surfaceSettings.websiteEmbed,
-              ...(agentPatch.surfaceSettings?.websiteEmbed ?? {}),
+              ...(body.surfaceSettings?.websiteEmbed ?? {}),
             },
           },
           updatedAt: nowIso,
@@ -803,10 +787,6 @@ export const installDashboardApiMocks = async (
     if (request.method() === "PUT" && path === "/settings") {
       const body = request.postDataJSON() as Partial<PlatformSettingsFixture>;
       settingsUpdates?.push(body);
-      const channelPatch = body.channels as (Partial<PlatformSettingsFixture["channels"]> & {
-        revokeAnonymousChatToken?: boolean;
-        revokeWebsiteEmbedToken?: boolean;
-      }) | undefined;
       platformSettings = {
         assistant: {
           ...platformSettings.assistant,
@@ -818,13 +798,7 @@ export const installDashboardApiMocks = async (
         },
         channels: {
           ...platformSettings.channels,
-          ...(channelPatch ?? {}),
-          anonymousChatStatus: channelPatch?.revokeAnonymousChatToken
-            ? "revoked"
-            : channelPatch?.anonymousChatStatus ?? platformSettings.channels.anonymousChatStatus,
-          websiteEmbedStatus: channelPatch?.revokeWebsiteEmbedToken
-            ? "revoked"
-            : channelPatch?.websiteEmbedStatus ?? platformSettings.channels.websiteEmbedStatus,
+          ...(body.channels ?? {}),
         },
       };
       await json(route, platformSettings);

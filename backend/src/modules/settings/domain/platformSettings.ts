@@ -31,11 +31,9 @@ export interface PlatformChannelsSettingsSection {
   anonymousChatEnabled: boolean;
   anonymousChatUrl: string | null;
   anonymousChatLastUsedAt: string | null;
-  anonymousChatStatus: "active" | "revoked" | null;
   websiteEmbedEnabled: boolean;
   websiteEmbedToken: string | null;
   websiteEmbedLastUsedAt: string | null;
-  websiteEmbedStatus: "active" | "revoked" | null;
   websiteEmbedAllowedOrigins: string[];
   websiteEmbedLauncherLabel: string;
   websiteEmbedLauncherPosition: WebsiteEmbedLauncherPosition;
@@ -67,10 +65,8 @@ export interface PlatformRetrievalSettingsPatch {
 export interface PlatformChannelsSettingsPatch {
   anonymousChatEnabled?: boolean;
   rotateAnonymousChatToken?: boolean;
-  revokeAnonymousChatToken?: boolean;
   websiteEmbedEnabled?: boolean;
   rotateWebsiteEmbedToken?: boolean;
-  revokeWebsiteEmbedToken?: boolean;
   websiteEmbedAllowedOrigins?: string[];
   websiteEmbedLauncherLabel?: string;
   websiteEmbedLauncherPosition?: WebsiteEmbedLauncherPosition;

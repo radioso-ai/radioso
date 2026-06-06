@@ -24,7 +24,6 @@ import { writeRetrievalSkillSettingsOverride } from './retrieval-skill-settings'
 
 type ChannelLifecycle = {
   lastUsedAt: string | null
-  status: 'active' | 'revoked' | null
 }
 
 export type ChannelsLifecycle = {
@@ -38,9 +37,7 @@ export const mergeChannelsLifecycle = (
 ): GeneralSettings => ({
   ...general,
   anonymousChatLastUsedAt: lifecycle.anonymousChat.lastUsedAt,
-  anonymousChatStatus: lifecycle.anonymousChat.status,
   websiteEmbedLastUsedAt: lifecycle.websiteEmbed.lastUsedAt,
-  websiteEmbedStatus: lifecycle.websiteEmbed.status,
 })
 
 export const settingsApi = {
@@ -121,13 +118,11 @@ export const generalSettingsApi = {
 
   async updateGeneralSettings(data: {
     anonymousChatEnabled?: boolean
-    revokeAnonymousChatToken?: boolean
     assistantName?: string
     greetingInstruction?: string
     assistantDefaultLocale?: string | null
     proactiveGreetingEnabled?: boolean
     websiteEmbedEnabled?: boolean
-    revokeWebsiteEmbedToken?: boolean
     websiteEmbedToken?: string | null
     websiteEmbedScriptUrl?: string | null
     websiteEmbedSnippet?: string | null
@@ -149,9 +144,7 @@ export const generalSettingsApi = {
         },
         channels: {
           anonymousChatEnabled: data.anonymousChatEnabled,
-          revokeAnonymousChatToken: data.revokeAnonymousChatToken,
           websiteEmbedEnabled: data.websiteEmbedEnabled,
-          revokeWebsiteEmbedToken: data.revokeWebsiteEmbedToken,
           websiteEmbedAllowedOrigins: data.websiteEmbedAllowedOrigins,
           websiteEmbedLauncherLabel: data.websiteEmbedLauncherLabel,
           websiteEmbedLauncherPosition: data.websiteEmbedLauncherPosition,
@@ -255,8 +248,6 @@ export const agentsApi = {
 
   async updateGeneralSettings(agentId: string, data: Parameters<typeof generalSettingsApi.updateGeneralSettings>[0]): Promise<GeneralSettings> {
     const agent = await this.updateAgent(agentId, {
-      revokeAnonymousChatToken: data.revokeAnonymousChatToken,
-      revokeWebsiteEmbedToken: data.revokeWebsiteEmbedToken,
       surfaceSettings: {
         anonymousChat: {
           enabled: data.anonymousChatEnabled,

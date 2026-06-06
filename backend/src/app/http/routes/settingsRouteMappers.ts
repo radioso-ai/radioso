@@ -40,9 +40,7 @@ export const toGeneralSettingsPatch = (
   },
   channels: {
     anonymousChatEnabled: body.anonymousChatEnabled,
-    revokeAnonymousChatToken: body.revokeAnonymousChatToken,
     websiteEmbedEnabled: body.websiteEmbedEnabled,
-    revokeWebsiteEmbedToken: body.revokeWebsiteEmbedToken,
     websiteEmbedAllowedOrigins: body.websiteEmbedAllowedOrigins,
     websiteEmbedLauncherLabel: body.websiteEmbedLauncherLabel,
     websiteEmbedLauncherPosition: body.websiteEmbedLauncherPosition,

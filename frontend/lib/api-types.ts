@@ -496,7 +496,6 @@ export const agentToGeneralSettings = (agent: AgentSettings): GeneralSettings =>
       ? `${window.location.origin}/chat/${agent.surfaceSettings.anonymousChat.token}`
       : null,
   anonymousChatLastUsedAt: null,
-  anonymousChatStatus: null,
   assistantName: agent.name,
   greetingInstruction: agent.greetingInstruction,
   assistantDefaultLocale: agent.assistantDefaultLocale,
@@ -506,7 +505,6 @@ export const agentToGeneralSettings = (agent: AgentSettings): GeneralSettings =>
   websiteEmbedEnabled: agent.surfaceSettings.websiteEmbed.enabled,
   websiteEmbedToken: agent.surfaceSettings.websiteEmbed.token,
   websiteEmbedLastUsedAt: null,
-  websiteEmbedStatus: null,
   websiteEmbedScriptUrl: typeof window !== 'undefined' ? `${window.location.origin}/radioso-embed.js` : null,
   websiteEmbedSnippet: null,
   websiteEmbedAllowedOrigins: agent.surfaceSettings.websiteEmbed.allowedOrigins,

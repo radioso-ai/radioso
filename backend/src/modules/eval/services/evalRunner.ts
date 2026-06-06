@@ -1,5 +1,5 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type { AgentSnapshot } from "../../agents/public.js";
+import type { AgentSnapshot, ConversationAgent } from "../../agents/public.js";
 import type { AnswerSegment, ChatCitation } from "../../chat/contracts/answerTypes.js";
 import type { RetrievalSettingsRecord, RetrievalSettingsSnapshot } from "../../settings/contracts/retrieval.js";
 import type { EvalRunModelOverride, EvalRunRetrievedChunk, EvalSnapshot, EvalSnapshotMessage } from "../domain/types.js";
@@ -18,9 +18,9 @@ import type { EvalRunModelOverride, EvalRunRetrievedChunk, EvalSnapshot, EvalSna
  * directly — only on this port shape.
  */
 export interface EvalReplayContext {
-  /** Frozen agent snapshot to apply during replay: persona, custom
-   * instruction, source scope, suggested-question behavior. */
-  agent?: AgentSnapshot | null;
+  /** Agent baseline to apply during replay: legacy thin snapshots are passed
+   * through unchanged; full config snapshots are materialized first. */
+  agent?: AgentSnapshot | ConversationAgent | null;
   /** Custom-instruction override that takes precedence over the agent's
    * baked-in customInstruction. Plumbed from EvalRunOverrides. */
   customInstructionOverride?: string;

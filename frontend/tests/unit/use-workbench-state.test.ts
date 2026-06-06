@@ -103,6 +103,7 @@ describe('workbench run-card mapping', () => {
         status: 'recorded',
         startedAt: '2026-06-01T10:00:00.000Z',
         completedAt: '2026-06-01T10:00:02.000Z',
+        overrides: { agentConfigOverride: { customInstruction: 'Replay tone' } },
         resolvedConfig: { modelId: 'older' },
         observedOutput: {
           retrievedChunks: [],
@@ -118,6 +119,7 @@ describe('workbench run-card mapping', () => {
       answer: 'Top-level answer',
       turnTrace: result.turnTrace,
       resolvedConfig: { modelId: 'gpt-5.4' },
+      agentConfigOverride: { customInstruction: 'Replay tone' },
     })
   })
 
@@ -134,6 +136,7 @@ describe('workbench run-card mapping', () => {
         status: 'recorded',
         startedAt: '2026-06-01T10:00:00.000Z',
         completedAt: null,
+        overrides: {},
         resolvedConfig: {},
         observedOutput: {
           retrievedChunks: [],

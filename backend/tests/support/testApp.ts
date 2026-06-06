@@ -13,6 +13,7 @@ import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { EmailVerificationService } from "../../src/modules/auth/services/emailVerificationService.js";
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
+import type { WorkbenchReplayRunner } from "../../src/modules/chat/composition.js";
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import { ActionDispatchWorker } from "../../src/modules/chat/services/actions/actionDispatchWorker.js";
 import { createConversationEngine } from "@radioso/conversation-engine";
@@ -229,6 +230,7 @@ interface TestRepositories {
   chunkRepository: InMemoryChunkRepository;
   documentProcessingJobRepository: InMemoryDocumentProcessingJobRepository;
   conversationRepository: InMemoryConversationRepository;
+  messageRepository: InMemoryMessageRepository;
   agentRepository: InMemoryAgentRepository;
 }
 
@@ -254,6 +256,7 @@ export const createTestDependencies = (overrides: {
   answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
   publicChatActionAdvertiser?: PublicChatActionAdvertiserPort;
   applicationRouteMounts?: ApplicationRouteMount[];
+  workbenchReplayRunner?: Pick<WorkbenchReplayRunner, "run">;
 } = {}): { dependencies: AppDependencies; repositories: TestRepositories } => {
   const env = {
     ...createTestEnv(),
@@ -558,6 +561,11 @@ export const createTestDependencies = (overrides: {
     await drainDocumentProcessingQueue();
     return result;
   };
+  const workbenchReplayRunner = overrides.workbenchReplayRunner ?? {
+    async run() {
+      throw new Error("Workbench replay runner is not configured in test app.");
+    },
+  };
   const originalReprocess = documentIngestionService.reprocess.bind(documentIngestionService);
   documentIngestionService.reprocess = async (input) => {
     const result = await originalReprocess(input);
@@ -830,11 +838,7 @@ export const createTestDependencies = (overrides: {
     documentDeletionService,
     documentStorage,
     chatService,
-    workbenchReplayRunner: {
-      async run() {
-        throw new Error("Workbench replay runner is not configured in test app.");
-      },
-    } as any,
+    workbenchReplayRunner: workbenchReplayRunner as any,
     actionDispatchWorker,
     chatBootstrapService,
     chatHistoryService,
@@ -863,6 +867,7 @@ export const createTestDependencies = (overrides: {
           return { assertion, status: "error" as const, reason: "Judge is not configured in test app." };
         },
       },
+      workbenchReplayRunner as any,
     ),
     platformSettingsService,
     agentService,
@@ -917,6 +922,7 @@ export const createTestDependencies = (overrides: {
       chunkRepository,
       documentProcessingJobRepository,
       conversationRepository,
+      messageRepository,
       agentRepository,
     },
   };
@@ -935,6 +941,7 @@ export const createTestApp = (overrides: {
   answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
   publicChatActionAdvertiser?: PublicChatActionAdvertiserPort;
   applicationRouteMounts?: ApplicationRouteMount[];
+  workbenchReplayRunner?: Pick<WorkbenchReplayRunner, "run">;
 } = {}) => {
   const { dependencies, repositories } = createTestDependencies(overrides);
   const app = createApp(dependencies);

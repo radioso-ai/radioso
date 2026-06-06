@@ -19,6 +19,7 @@ import { registerDocumentsPaths } from "./paths/documentsPaths.js";
 import { registerHistoryPaths } from "./paths/historyPaths.js";
 import { registerConnectorsPaths } from "./paths/connectorsPaths.js";
 import { registerQualityPaths } from "./paths/qualityPaths.js";
+import { registerEvalPaths } from "./paths/evalPaths.js";
 
 export const registerOpenApiPaths = (
   registry: OpenAPIRegistry,
@@ -42,5 +43,6 @@ export const registerOpenApiPaths = (
   registerHistoryPaths(registry, schemas, security);
   registerConnectorsPaths(registry, schemas, security);
   registerQualityPaths(registry, schemas, security);
+  registerEvalPaths(registry, schemas, security);
   registerAssistantPublicChatPaths(registry, schemas, security);
 };

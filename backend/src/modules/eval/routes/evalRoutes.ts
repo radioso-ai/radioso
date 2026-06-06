@@ -7,6 +7,9 @@ import { validateBody } from "../../../app/http/middleware/validate.js";
 import type { EvalCaseService } from "../services/evalCaseService.js";
 import type { EvalRunService } from "../services/evalRunService.js";
 import type { EvalSnapshotService } from "../services/evalSnapshotService.js";
+import type { InternalAgentConfig } from "../../agents/public.js";
+import type { AppLogger } from "../../../shared/observability/logger.js";
+import { badRequest } from "../../../shared/domain/errors.js";
 
 const captureSnapshotSchema = z.object({
   conversationId: z.string().uuid(),
@@ -79,6 +82,32 @@ const overridesSchema = z
       })
       .strict()
       .optional(),
+    agentConfigOverride: z.lazy(() => agentConfigOverrideSchema).optional(),
+  })
+  .strict();
+
+const agentConfigOverrideSchema = z
+  .object({
+    name: z.string().min(1).max(200).optional(),
+    customInstruction: z.string().max(4000).optional(),
+    contactRequestsEnabled: z.boolean().optional(),
+    contactRequestDelivery: z.unknown().optional(),
+    logo: z.unknown().nullable().optional(),
+    theme: z.record(z.string(), z.unknown()).optional(),
+    branding: z.record(z.string(), z.unknown()).optional(),
+    greetingInstruction: z.string().max(4000).optional(),
+    assistantDefaultLocale: z.string().max(64).nullable().optional(),
+    proactiveGreetingEnabled: z.boolean().optional(),
+    surfaceSettings: z.record(z.string(), z.unknown()).optional(),
+    skillSettings: z.record(z.string(), z.unknown()).optional(),
+    chatModelOverride: z
+      .object({
+        provider: z.enum(["openai", "openai-compatible", "gemini", "claude"]),
+        model: z.string().min(1).max(200),
+      })
+      .nullable()
+      .optional(),
+    authoredDirectives: z.array(z.record(z.string(), z.unknown())).optional(),
   })
   .strict();
 
@@ -107,12 +136,37 @@ const oneOffRunSchema = z.object({
   snapshotId: z.string().uuid(),
   mode: z.enum(["retrieval_only", "full_assistant"]).default("retrieval_only"),
   overrides: overridesSchema.optional(),
+  agentConfigOverride: agentConfigOverrideSchema.optional(),
+}).superRefine((input, ctx) => {
+  if (input.agentConfigOverride && input.overrides?.agentConfigOverride) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Provide agentConfigOverride either at the top level or inside overrides, not both",
+      path: ["agentConfigOverride"],
+    });
+  }
 });
+
+const presentWorkbenchReplayRun = (result: Awaited<ReturnType<EvalRunService["executeWorkbenchReplay"]>>) => ({
+  ...result,
+  answer: result.run.observedOutput.answer,
+  citations: result.run.observedOutput.citations,
+  answerSegments: result.run.observedOutput.answerSegments,
+  turnTrace: result.run.observedOutput.turnTrace,
+  resolvedConfig: {
+    ...result.run.resolvedConfig,
+    retrievedChunks: result.run.observedOutput.retrievedChunks,
+  },
+});
+
+const overrideKeyNames = (override: Partial<InternalAgentConfig> | undefined): string[] =>
+  override ? Object.keys(override).sort() : [];
 
 export interface EvalRouteDependencies extends WorkspaceSessionDependencies {
   snapshotService: EvalSnapshotService;
   caseService: EvalCaseService;
   runService: EvalRunService;
+  logger: AppLogger;
 }
 
 export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router => {
@@ -270,6 +324,37 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
     async (req, res, next) => {
       try {
         const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
+        const agentConfigOverride = (req.body.agentConfigOverride ?? req.body.overrides?.agentConfigOverride) as
+          | Partial<InternalAgentConfig>
+          | undefined;
+        if (agentConfigOverride && req.body.mode !== "full_assistant") {
+          throw badRequest("agentConfigOverride requires full_assistant mode");
+        }
+        if (agentConfigOverride) {
+          const result = await dependencies.runService.executeWorkbenchReplay({
+            workspaceId,
+            accountId: accountId ?? null,
+            snapshotId: req.body.snapshotId,
+            mode: req.body.mode,
+            overrides: {
+              ...req.body.overrides,
+              agentConfigOverride,
+            },
+          });
+          dependencies.logger.info(
+            {
+              workspaceId,
+              accountId: accountId ?? null,
+              snapshotId: req.body.snapshotId,
+              runId: result.run.id,
+              status: result.run.status,
+              overrideKeys: overrideKeyNames(agentConfigOverride),
+            },
+            "Workbench replay eval run completed",
+          );
+          res.status(201).json(presentWorkbenchReplayRun(result));
+          return;
+        }
         const result = await dependencies.runService.execute({
           workspaceId,
           accountId: accountId ?? null,

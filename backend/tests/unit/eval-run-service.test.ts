@@ -777,6 +777,69 @@ describe("EvalRunService.execute (retrieval_only)", () => {
     expect(run.status).toBe("pass");
   });
 
+  it("emits one sanitized Workbench replay observability record", async () => {
+    const agent = configuredAgent();
+    const snapshot = makeSnapshot({
+      sourceAgentId: agent.id,
+      originalAgentConfig: projectInternalAgentConfig(agent),
+    });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const workbench = new StubWorkbenchReplayRunner();
+    const logs: Array<{ fields: Record<string, unknown>; message: string }> = [];
+    const service = new EvalRunService(
+      repo,
+      new StubRunner([]),
+      passJudge(),
+      workbench,
+      {
+        info(fields: Record<string, unknown>, message: string) {
+          logs.push({ fields: fields as Record<string, unknown>, message });
+        },
+      },
+    );
+
+    const { run } = await service.executeWorkbenchReplay({
+      workspaceId: "ws-1",
+      accountId: "acct-1",
+      snapshotId: snapshot.id,
+      mode: "full_assistant",
+      overrides: {
+        agentConfigOverride: {
+          customInstruction: "Sensitive override instruction that must not be logged.",
+          skillSettings: {
+            "retrieval.answer": {
+              settings: {
+                vectorTopK: 7,
+              },
+            },
+          } as any,
+        },
+      },
+    });
+
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({
+      message: "Workbench replay eval run completed",
+      fields: {
+        workspaceId: "ws-1",
+        accountId: "acct-1",
+        agentId: "agent-full",
+        snapshotId: "snap-1",
+        runId: run.id,
+        status: "recorded",
+        outcome: "recorded",
+        overrideKeys: ["customInstruction", "skillSettings"],
+      },
+    });
+    expect(logs[0]!.fields.latencyMs).toEqual(expect.any(Number));
+    const serialized = JSON.stringify(logs);
+    expect(serialized).not.toContain("Sensitive override instruction");
+    expect(serialized).not.toContain("vectorTopK");
+    expect(serialized).not.toContain("Replay answer");
+    expect(serialized).not.toContain("Refund Policy");
+    expect(serialized).not.toContain("what is the refund policy?");
+  });
+
   it("delegates llm_judge assertions to the judge port and records its verdict", async () => {
     const snapshot = makeSnapshot();
     const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });

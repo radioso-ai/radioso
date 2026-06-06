@@ -15591,6 +15591,16 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Workbench replay rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }

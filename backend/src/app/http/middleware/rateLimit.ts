@@ -1,10 +1,19 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 
-import type { AbuseControlService } from "../../../modules/security/services/abuseControlService.js";
 import type { AuditService } from "../../../modules/audit/contracts/index.js";
 
+export interface RateLimitAbuseControlPort {
+  enforce(input: {
+    scope: string;
+    subjectKey: string;
+    limit: number;
+    windowMs: number;
+    blockMs?: number;
+  }): Promise<unknown>;
+}
+
 interface CreateRateLimitMiddlewareInput {
-  service: AbuseControlService;
+  service: RateLimitAbuseControlPort;
   auditService: AuditService;
   scope: string;
   limit: number | ((req: Request, res: Response) => number);

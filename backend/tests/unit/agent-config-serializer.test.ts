@@ -4,6 +4,7 @@ import type { ConversationAgent } from "../../src/modules/agents/domain.js";
 import {
   AGENT_CONFIG_FIELD_DESCRIPTORS,
   AGENT_CONFIG_SCHEMA_VERSION,
+  applyAgentConfigOverride,
   materializeAgentFromConfig,
   projectInternalAgentConfig,
   serializeAgentConfig,
@@ -125,6 +126,101 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
     createdAt: new Date(0),
     updatedAt: new Date(0),
   }],
+});
+
+describe("applyAgentConfigOverride", () => {
+  it("deep-merges object fields while preserving undefined and applying null", () => {
+    const baseline = projectInternalAgentConfig(fullyConfiguredAgent());
+
+    const merged = applyAgentConfigOverride(baseline, {
+      name: "Replay Bot",
+      logo: null,
+      branding: {
+        privacyPolicyUrl: undefined,
+      },
+      theme: {
+        brand: "#abcdef",
+      },
+      chatModelOverride: null,
+    } as unknown as Partial<typeof baseline>);
+
+    expect(merged.name).toBe("Replay Bot");
+    expect(merged.logo).toBeNull();
+    expect(merged.branding).toEqual(baseline.branding);
+    expect(merged.theme).toEqual({
+      ...baseline.theme,
+      brand: "#abcdef",
+    });
+    expect(merged.chatModelOverride).toBeNull();
+    expect(baseline.logo).not.toBeNull();
+  });
+
+  it("deep-merges skill settings per skill envelope without wiping sibling settings", () => {
+    const baseline = projectInternalAgentConfig(fullyConfiguredAgent());
+
+    const merged = applyAgentConfigOverride(baseline, {
+      skillSettings: {
+        "retrieval.answer": {
+          settings: {
+            vectorTopK: 3,
+            __agentRetrievalDefaults: {
+              sourceScope: {
+                mode: "selected",
+                sourceIds: ["replacement-source"],
+              },
+            },
+          },
+        },
+      },
+    } as unknown as Partial<typeof baseline>);
+
+    expect(merged.skillSettings["retrieval.answer"]).toEqual({
+      enabled: true,
+      settings: {
+        vectorTopK: 3,
+        suggestedQuestionsCount: 4,
+        __agentRetrievalDefaults: {
+          sourceScope: {
+            mode: "selected",
+            sourceIds: ["replacement-source"],
+          },
+          suggestedQuestionsEnabled: false,
+          citationDisplayEnabled: false,
+          assistantLinkUtmEnabled: false,
+        },
+      },
+    });
+  });
+
+  it("replaces arrays wholesale and never lets overrides change schemaVersion or portability", () => {
+    const baseline = projectInternalAgentConfig(fullyConfiguredAgent());
+
+    const merged = applyAgentConfigOverride(baseline, {
+      schemaVersion: 999,
+      portability: { name: "secret" },
+      authoredDirectives: [],
+      skillSettings: {
+        "retrieval.answer": {
+          settings: {
+            __agentRetrievalDefaults: {
+              sourceScope: {
+                mode: "selected",
+                sourceIds: ["only-source"],
+              },
+            },
+          },
+        },
+      },
+    } as unknown as Partial<typeof baseline>);
+
+    expect(merged.authoredDirectives).toEqual([]);
+    expect(merged.skillSettings["retrieval.answer"].settings.__agentRetrievalDefaults.sourceScope).toEqual({
+      mode: "selected",
+      sourceIds: ["only-source"],
+    });
+    expect(merged.schemaVersion).toBe(baseline.schemaVersion);
+    expect(merged.portability).toEqual(baseline.portability);
+  });
 });
 
 describe("serializeAgentConfig", () => {

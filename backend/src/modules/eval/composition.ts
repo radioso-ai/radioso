@@ -41,6 +41,7 @@ export {
   EvalRunService,
   type EvalRunInput,
   type EvalRunOutcome,
+  type EvalWorkbenchReplayRunnerPort,
 } from "./services/evalRunService.js";
 export {
   findLastUserMessage,

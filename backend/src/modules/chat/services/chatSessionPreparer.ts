@@ -66,6 +66,8 @@ export interface PrepareChatSessionInput {
 
 export interface PrepareChatSessionOptions {
   skipRetrieval?: boolean;
+  preResolvedAgent?: AgentRecord;
+  preResolvedHistory?: MessageRecord[];
 }
 
 export class ChatSessionPreparer {
@@ -84,19 +86,19 @@ export class ChatSessionPreparer {
     const conversation = input.conversationId
       ? await this.ensureConversation(input.conversationId, input.workspaceId, input.anonymousSessionId)
       : null;
-    const agent = this.agentService
+    const agent = options.preResolvedAgent ?? (this.agentService
       ? await this.agentService.resolve(input.workspaceId, input.agentId ?? conversation?.agentId ?? null)
-      : await this.resolveLegacyAgent(input.workspaceId);
+      : await this.resolveLegacyAgent(input.workspaceId));
     if (conversation?.agentId && conversation.agentId !== agent.id) {
       throw notFound("Conversation not found");
     }
-    const history = conversation
+    const history = options.preResolvedHistory ?? (conversation
       ? await this.messageRepository.listRecentByConversationId(
           input.workspaceId,
           conversation.id,
           RETRIEVAL_BEHAVIOR.rewriteConversationContextMaxMessages,
         )
-      : [];
+      : []);
     const rewriteContinuityState = conversation
       ? await this.loadRewriteContinuityState(input.workspaceId, conversation.id)
       : undefined;

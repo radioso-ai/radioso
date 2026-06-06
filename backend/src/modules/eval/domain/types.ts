@@ -1,5 +1,5 @@
 import type { AgentSnapshot, InternalAgentConfig } from "../../agents/public.js";
-import type { AnswerSegment, ChatCitation } from "../../chat/contracts/answerTypes.js";
+import type { AnswerSegment, ChatCitation, TurnTraceEnvelope } from "../../chat/contracts/index.js";
 import type { LlmCapabilityOverride } from "../../../shared/infra/llm/workspaceContext.js";
 import type {
   RetrievalSettingsRecord,
@@ -120,6 +120,7 @@ export interface EvalRunOverrides {
   // captured "what was used" values use originalRetrievalSettings on the
   // snapshot or resolvedConfig on the run.
   retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
+  agentConfigOverride?: Partial<InternalAgentConfig>;
 }
 
 export interface EvalRunRetrievedChunk {
@@ -135,6 +136,7 @@ export interface EvalRunObservedOutput {
   answer?: string;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
+  turnTrace?: TurnTraceEnvelope;
   error?: { message: string; code?: string };
 }
 

@@ -830,6 +830,11 @@ export const createTestDependencies = (overrides: {
     documentDeletionService,
     documentStorage,
     chatService,
+    workbenchReplayRunner: {
+      async run() {
+        throw new Error("Workbench replay runner is not configured in test app.");
+      },
+    } as any,
     actionDispatchWorker,
     chatBootstrapService,
     chatHistoryService,

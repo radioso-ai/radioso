@@ -300,6 +300,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       chat.answerPresentation,
     ),
     new ChatGatewayLlmJudge(chat.chatGateway),
+    chat.workbenchReplayRunner,
   );
 
   return {
@@ -347,6 +348,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentDeletionService: documents.documentDeletionService,
     documentStorage: documents.documentStorage,
     chatService: chat.chatService,
+    workbenchReplayRunner: chat.workbenchReplayRunner,
     chatBootstrapService: chat.chatBootstrapService,
     chatHistoryService: chat.chatHistoryService,
     assistantChatService: chat.assistantChatService,

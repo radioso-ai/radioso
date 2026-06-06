@@ -14,6 +14,7 @@ export type { ChatGateway } from "./chatGateway.js";
 export type { AssistantTurnOutcome } from "../services/assistantTurnOutcomeTypes.js";
 export { ASSISTANT_TURN_OUTCOME } from "../services/assistantTurnOutcomeTypes.js";
 export { appendDirectiveSteeringStage } from "../services/directiveTracePresenter.js";
+export type { TurnTraceEnvelope } from "../services/turnTraceEnvelope.js";
 export type { ChatStreamEvent } from "./streamEvents.js";
 export { CitationAnchorSanitizer } from "../services/citationAnchorSanitizer.js";
 export type {

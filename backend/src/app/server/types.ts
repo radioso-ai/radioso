@@ -5,6 +5,7 @@ import type {
   ChatBootstrapService,
   ChatHistoryService,
   ChatService,
+  WorkbenchReplayRunner,
 } from "../../modules/chat/composition.js";
 import type {
   DocumentStoragePort,
@@ -114,6 +115,7 @@ export interface AppDependencies {
   documentDeletionService: DocumentDeletionService;
   documentStorage: DocumentStoragePort;
   chatService: ChatService;
+  workbenchReplayRunner: WorkbenchReplayRunner;
   // Worker-process drain loop for the async conversation-action outbox (spec 070).
   // Present in every dependency build; only the worker runtime calls start/stop.
   actionDispatchWorker: ActionDispatchWorker;

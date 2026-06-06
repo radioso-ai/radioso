@@ -6,6 +6,12 @@ export {
   type ChatRoutineProvider,
 } from "./services/chatService.js";
 export {
+  WorkbenchReplayRunner,
+  type WorkbenchReplayInput,
+  type WorkbenchReplayResolvedConfig,
+  type WorkbenchReplayResult,
+} from "./services/workbenchReplayRunner.js";
+export {
   RoutineNextStepSelector,
   RoutineRegistry,
   RoutineStepRenderer,

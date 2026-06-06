@@ -13,8 +13,8 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
   id: "agent-1",
   workspaceId: "workspace-1",
   name: "Support Bot",
-  createdAt: new Date("2026-01-01T00:00:00.000Z"),
-  updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+  createdAt: new Date(0),
+  updatedAt: new Date(0),
   customInstruction: "Answer with precise procurement guidance.",
   suggestedQuestionsEnabled: false,
   assistantLinkUtmEnabled: false,
@@ -110,7 +110,7 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
     },
   },
   authoredDirectives: [{
-    id: "directive-1",
+    id: "agent-1:directive:0",
     agentId: "agent-1",
     name: "procurement-tone",
     condition: { kind: "contextual", description: "When answering procurement questions" },
@@ -122,8 +122,8 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
     routes: ["retrieval"],
     description: "Operator-authored behavior rule.",
     metadata: { owner: "ops" },
-    createdAt: new Date("2026-01-03T00:00:00.000Z"),
-    updatedAt: new Date("2026-01-04T00:00:00.000Z"),
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
   }],
 });
 
@@ -132,17 +132,14 @@ describe("serializeAgentConfig", () => {
     const config = serializeAgentConfig(fullyConfiguredAgent());
 
     expect(config.schemaVersion).toBe(AGENT_CONFIG_SCHEMA_VERSION);
+    expect(config.schemaVersion).toBe(2);
     expect(config.name).toBe("Support Bot");
     expect(config.customInstruction).toBe("Answer with precise procurement guidance.");
-    expect(config.suggestedQuestionsEnabled).toBe(false);
-    expect(config.assistantLinkUtmEnabled).toBe(false);
-    expect(config.citationDisplayEnabled).toBe(false);
     expect(config.contactRequestsEnabled).toBe(true);
     expect(config.contactRequestDelivery).toEqual({
       recipientEmails: ["help@example.com"],
       webhook: { url: "https://hooks.example.com/contact" },
     });
-    expect(config.retrievalEnabled).toBe(true);
     expect(config.theme).toEqual({
       brand: "#112233",
       brandText: "#ffffff",
@@ -158,8 +155,20 @@ describe("serializeAgentConfig", () => {
     expect(config.proactiveGreetingEnabled).toBe(true);
     expect(config.skillSettings).toEqual({
       "retrieval.answer": {
-        vectorTopK: 9,
-        suggestedQuestionsCount: 4,
+        enabled: true,
+        settings: {
+          vectorTopK: 9,
+          suggestedQuestionsCount: 4,
+          __agentRetrievalDefaults: {
+            sourceScope: {
+              mode: "selected",
+              sourceIds: [{ __ref: "documentSource" }, { __ref: "documentSource" }],
+            },
+            suggestedQuestionsEnabled: false,
+            citationDisplayEnabled: false,
+            assistantLinkUtmEnabled: false,
+          },
+        },
       },
     });
     expect(config.chatModelOverride).toEqual({
@@ -211,7 +220,7 @@ describe("serializeAgentConfig", () => {
     expect(config.portability["authoredDirectives"]).toBe("portable");
     expect(config.portability["surfaceSettings.anonymousChat.token"]).toBe("secret");
     expect(config.portability["surfaceSettings.websiteEmbed.token"]).toBe("secret");
-    expect(config.portability["sourceScope.sourceIds"]).toBe("ref");
+    expect(config.portability["skillSettings[\"retrieval.answer\"].settings.__agentRetrievalDefaults.sourceScope.sourceIds"]).toBe("ref");
     expect(config.portability["logo.bucket"]).toBe("ref");
     expect(config.portability["logo.objectPath"]).toBe("ref");
     expect(config.portability["logo.generation"]).toBe("ref");
@@ -219,10 +228,6 @@ describe("serializeAgentConfig", () => {
 
     expect(config.surfaceSettings.anonymousChat.token).toEqual({ __redacted: "secret" });
     expect(config.surfaceSettings.websiteEmbed.token).toEqual({ __redacted: "secret" });
-    expect(config.sourceScope).toEqual({
-      mode: "selected",
-      sourceIds: [{ __ref: "documentSource" }, { __ref: "documentSource" }],
-    });
     expect(config.logo).toEqual({
       bucket: { __ref: "storageBucket" },
       objectPath: { __ref: "storageObjectPath" },
@@ -268,9 +273,21 @@ describe("serializeAgentConfig", () => {
     expect(config.surfaceSettings.anonymousChat.token).toBe("raw-anonymous-token");
     expect(config.surfaceSettings.websiteEmbed.token).toBe("raw-embed-token");
     expect(config.surfaceSettings.websiteEmbed.allowedOrigins).toEqual(["https://raw-origin.example.com"]);
-    expect(config.sourceScope).toEqual({
-      mode: "selected",
-      sourceIds: ["raw-source-1", "raw-source-2"],
+    expect(config.skillSettings["retrieval.answer"]).toEqual({
+      enabled: true,
+      settings: {
+        vectorTopK: 9,
+        suggestedQuestionsCount: 4,
+        __agentRetrievalDefaults: {
+          sourceScope: {
+            mode: "selected",
+            sourceIds: ["raw-source-1", "raw-source-2"],
+          },
+          suggestedQuestionsEnabled: false,
+          citationDisplayEnabled: false,
+          assistantLinkUtmEnabled: false,
+        },
+      },
     });
     expect(config.logo).toEqual({
       bucket: "raw-logo-bucket",
@@ -283,6 +300,7 @@ describe("serializeAgentConfig", () => {
 
     const materialized = materializeAgentFromConfig(config, { agentId: agent.id, workspaceId: agent.workspaceId });
 
+    expect(materialized).toEqual(agent);
     expect(materialized.id).toBe(agent.id);
     expect(materialized.workspaceId).toBe(agent.workspaceId);
     expect(materialized.name).toBe(agent.name);
@@ -320,5 +338,50 @@ describe("serializeAgentConfig", () => {
       createdAt: new Date(0),
       updatedAt: new Date(0),
     }]);
+  });
+
+  it("round-trips divergent agent-level and retrieval skill suggested question flags", () => {
+    const agent: ConversationAgent = {
+      ...fullyConfiguredAgent(),
+      suggestedQuestionsEnabled: true,
+      skillSettings: {
+        "retrieval.answer": {
+          vectorTopK: 11,
+          suggestedQuestionsEnabled: false,
+        },
+      },
+    };
+
+    const config = projectInternalAgentConfig(agent);
+    const retrievalEnvelope = config.skillSettings["retrieval.answer"];
+
+    expect(retrievalEnvelope).toEqual({
+      enabled: true,
+      settings: {
+        vectorTopK: 11,
+        suggestedQuestionsEnabled: false,
+        __agentRetrievalDefaults: {
+          sourceScope: {
+            mode: "selected",
+            sourceIds: ["raw-source-1", "raw-source-2"],
+          },
+          suggestedQuestionsEnabled: true,
+          citationDisplayEnabled: false,
+          assistantLinkUtmEnabled: false,
+        },
+      },
+    });
+
+    const materialized = materializeAgentFromConfig(config, { agentId: agent.id, workspaceId: agent.workspaceId });
+
+    expect(materialized).toEqual(agent);
+    expect(materialized.suggestedQuestionsEnabled).toBe(true);
+    expect(materialized.skillSettings["retrieval.answer"]).toEqual({
+      vectorTopK: 11,
+      suggestedQuestionsEnabled: false,
+    });
+    expect(
+      (materialized.skillSettings["retrieval.answer"] as Record<string, unknown>).suggestedQuestionsEnabled,
+    ).toBe(false);
   });
 });

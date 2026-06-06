@@ -430,6 +430,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
       expect.objectContaining({ action: "Keep it brief.", source: "directive", lifespan: "response" }),
     ]);
     expect(result.trace.stages.map((stage) => stage.kind)).toEqual([
+      "message",
       "gather",
       "directive_match",
       "skill_selection",

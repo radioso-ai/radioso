@@ -15,6 +15,7 @@ import type {
  */
 
 const SPINE_STAGE_LABELS: Record<string, string> = {
+  message: 'Message',
   gather: 'Gather',
   directive_match: 'Directives',
   skill_selection: 'Select skill',

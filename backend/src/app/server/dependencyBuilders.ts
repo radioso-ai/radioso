@@ -100,7 +100,7 @@ import {
   createDefaultRetrievalServices,
   type RetrievalPipelinePort,
 } from "../../modules/retrieval/composition.js";
-import { DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
+import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { AbuseControlRepository } from "../../db/repositories/abuseControlRepository.js";
 import { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
@@ -617,7 +617,9 @@ const buildRetrievalAnswerExecutor = (
     reasoning: () => {
       const systemPrompt = loadPromptTemplate("agentic-retrieval/system.md");
       const runner = new AgenticRetrievalRunner({
-        runtime: new DefaultAgentRuntime({ gateway: input.llmRegistry.createToolCallingGateway(input.usageEventRecorder) }),
+        capabilityRunner: new AgenticCapabilityRunner({
+          runtime: new DefaultAgentRuntime({ gateway: input.llmRegistry.createToolCallingGateway(input.usageEventRecorder) }),
+        }),
         embeddings: input.embeddingService,
         vectorSearch: new PgVectorSearch(input.database),
         lexicalSearch: new PgLexicalSearch(input.database),

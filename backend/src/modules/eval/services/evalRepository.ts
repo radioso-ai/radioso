@@ -20,6 +20,7 @@ import type {
   EvalSnapshotOriginalRetrievalChunk,
 } from "../domain/types.js";
 import type { AgentSnapshot } from "../../agents/public.js";
+import type { InternalAgentConfig } from "../../agents/public.js";
 import type { RetrievalSettingsSnapshot } from "../../settings/contracts/retrieval.js";
 
 type SnapshotRow = QueryResultRow & {
@@ -34,6 +35,8 @@ type SnapshotRow = QueryResultRow & {
   original_retrieval_settings: unknown;
   original_retrieval_result: unknown;
   original_agent: unknown;
+  original_agent_config: unknown;
+  source_agent_id: string | null;
   captured_at: Date | string;
   captured_by: string | null;
 };
@@ -98,6 +101,8 @@ const mapSnapshot = (row: SnapshotRow): EvalSnapshot => ({
     ? (row.original_retrieval_result as EvalSnapshotOriginalRetrievalChunk[])
     : null,
   originalAgent: asObject<AgentSnapshot | null>(row.original_agent, null),
+  originalAgentConfig: asObject<InternalAgentConfig | null>(row.original_agent_config, null),
+  sourceAgentId: row.source_agent_id,
   capturedAt: isoDate(row.captured_at),
   capturedBy: row.captured_by,
 });
@@ -143,6 +148,8 @@ export interface CreateSnapshotInput {
   originalRetrievalSettings: RetrievalSettingsSnapshot | null;
   originalRetrievalResult: EvalSnapshotOriginalRetrievalChunk[] | null;
   originalAgent: AgentSnapshot | null;
+  originalAgentConfig: InternalAgentConfig | null;
+  sourceAgentId: string | null;
   capturedBy: string | null;
 }
 
@@ -202,13 +209,13 @@ export class EvalRepository implements EvalRepositoryPort {
          id, workspace_id, source_conversation_id, source_message_id, fidelity,
          messages, original_instruction_block, original_model_id,
          original_retrieval_settings, original_retrieval_result,
-         original_agent, captured_by
+         original_agent, original_agent_config, source_agent_id, captured_by
        )
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13, $14)
        RETURNING id, workspace_id, source_conversation_id, source_message_id, fidelity,
                  messages, original_instruction_block, original_model_id,
                  original_retrieval_settings, original_retrieval_result,
-                 original_agent, captured_at, captured_by`,
+                 original_agent, original_agent_config, source_agent_id, captured_at, captured_by`,
       [
         randomUUID(),
         input.workspaceId,
@@ -223,6 +230,8 @@ export class EvalRepository implements EvalRepositoryPort {
         input.originalRetrievalSettings ? JSON.stringify(input.originalRetrievalSettings) : null,
         input.originalRetrievalResult ? JSON.stringify(input.originalRetrievalResult) : null,
         input.originalAgent ? JSON.stringify(input.originalAgent) : null,
+        input.originalAgentConfig ? JSON.stringify(input.originalAgentConfig) : null,
+        input.sourceAgentId,
         input.capturedBy,
       ],
     );
@@ -234,7 +243,7 @@ export class EvalRepository implements EvalRepositoryPort {
       `SELECT id, workspace_id, source_conversation_id, source_message_id, fidelity,
               messages, original_instruction_block, original_model_id,
               original_retrieval_settings, original_retrieval_result,
-              original_agent, captured_at, captured_by
+              original_agent, original_agent_config, source_agent_id, captured_at, captured_by
        FROM eval_snapshots
        WHERE workspace_id = $1 AND id = $2
        LIMIT 1`,

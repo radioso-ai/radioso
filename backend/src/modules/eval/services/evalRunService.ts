@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { materializeAgentFromConfig } from "../../agents/public.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { combineVerdicts, evaluateAssertion, isLlmJudgeAssertion } from "../domain/outcomes.js";
 import type {
@@ -11,6 +12,7 @@ import type {
   EvalRunObservedOutput,
   EvalRunOverrides,
   EvalRunResolvedConfig,
+  EvalSnapshot,
 } from "../domain/types.js";
 import type { EvalRepositoryPort } from "./evalRepository.js";
 import type { EvalLlmJudgePort } from "./evalJudge.js";
@@ -41,6 +43,20 @@ const caseStatusFromRun = (runStatus: EvalRun["status"]): EvalCaseStatus | null 
     case "recorded":
       return null;
   }
+};
+
+const resolveSnapshotReplayAgent = (snapshot: EvalSnapshot) => {
+  if (snapshot.originalAgentConfig) {
+    if (!snapshot.sourceAgentId) {
+      throw badRequest("Snapshot is missing source agent identity");
+    }
+    return materializeAgentFromConfig(snapshot.originalAgentConfig, {
+      agentId: snapshot.sourceAgentId,
+      workspaceId: snapshot.workspaceId,
+    });
+  }
+
+  return snapshot.originalAgent;
 };
 
 export class EvalRunService {
@@ -83,7 +99,7 @@ export class EvalRunService {
     // retrieval_only and full_assistant runs need it: sourceScope and
     // suggested-question behavior shape retrieval too, not just generation.
     const replayContext = {
-      agent: snapshot.originalAgent,
+      agent: resolveSnapshotReplayAgent(snapshot),
       customInstructionOverride: overrides.assistantInstructionsOverride?.customInstruction,
     };
 

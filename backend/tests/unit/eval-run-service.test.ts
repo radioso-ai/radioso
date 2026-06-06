@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import type { ConversationAgent } from "../../src/modules/agents/domain.js";
+import { projectInternalAgentConfig } from "../../src/modules/agents/agentConfig.js";
 import { EvalRunService } from "../../src/modules/eval/services/evalRunService.js";
 import type {
   CreateCaseInput,
@@ -36,9 +38,71 @@ const makeSnapshot = (overrides: Partial<EvalSnapshot> = {}): EvalSnapshot => ({
   originalRetrievalSettings: null,
   originalRetrievalResult: null,
   originalAgent: null,
+  originalAgentConfig: null,
+  sourceAgentId: null,
   capturedAt: fixedDate,
   capturedBy: null,
   ...overrides,
+});
+
+const configuredAgent = (): ConversationAgent => ({
+  id: "agent-full",
+  workspaceId: "ws-1",
+  name: "Full Config Bot",
+  createdAt: new Date(0),
+  updatedAt: new Date(0),
+  customInstruction: "Use the captured full config.",
+  suggestedQuestionsEnabled: false,
+  assistantLinkUtmEnabled: false,
+  citationDisplayEnabled: false,
+  contactRequestsEnabled: false,
+  contactRequestDelivery: {
+    recipientEmails: [],
+    webhook: null,
+  },
+  retrievalEnabled: false,
+  logo: null,
+  theme: {
+    brand: "#111111",
+    brandText: "#ffffff",
+    surface: "#ffffff",
+    text: "#111111",
+  },
+  branding: {
+    hidePoweredBy: false,
+    privacyPolicyUrl: null,
+  },
+  greetingInstruction: "",
+  assistantDefaultLocale: null,
+  proactiveGreetingEnabled: false,
+  sourceScope: { mode: "selected", sourceIds: ["source-a", "source-b"] },
+  surfaceSettings: {
+    authenticatedChat: { enabled: true },
+    anonymousChat: { enabled: false, token: null },
+    websiteEmbed: {
+      enabled: false,
+      token: null,
+      allowedOrigins: [],
+      launcherLabel: "Ask",
+      launcherPosition: "bottom-right",
+      theme: {
+        brand: "#111111",
+        brandText: "#ffffff",
+        surface: "#ffffff",
+        text: "#111111",
+      },
+      copy: {},
+      expertOverrides: {},
+    },
+    extensions: {},
+  },
+  skillSettings: {
+    "retrieval.answer": {
+      vectorTopK: 3,
+    },
+  },
+  chatModelOverride: null,
+  authoredDirectives: [],
 });
 
 class InMemoryEvalRepository implements EvalRepositoryPort {
@@ -159,8 +223,14 @@ type StubRunnerCall = {
   historyLength: number;
   historyRoles: string[];
   agentName?: string | null;
+  agentId?: string | null;
+  agentWorkspaceId?: string | null;
   agentSourceScopeMode?: string;
+  agentSourceIds?: string[];
+  agentRetrievalEnabled?: boolean;
+  agentCitationDisplayEnabled?: boolean;
   customInstruction?: string;
+  retrievalSkillSettings?: unknown;
 };
 
 class StubRunner implements EvalRetrievalRunnerPort {
@@ -179,7 +249,17 @@ class StubRunner implements EvalRetrievalRunnerPort {
     query: string;
     history: { role: string }[];
     context?: {
-      agent?: { name: string; sourceScope: { mode: string }; customInstruction: string } | null;
+      agent?: {
+        id?: string;
+        agentId?: string;
+        workspaceId?: string;
+        name: string;
+        sourceScope: { mode: "all" } | { mode: "selected"; sourceIds: string[] };
+        customInstruction: string;
+        retrievalEnabled?: boolean;
+        citationDisplayEnabled?: boolean;
+        skillSettings?: Record<string, unknown>;
+      } | null;
       customInstructionOverride?: string;
     };
   }): StubRunnerCall {
@@ -188,10 +268,18 @@ class StubRunner implements EvalRetrievalRunnerPort {
       historyLength: input.history.length,
       historyRoles: input.history.map((m) => m.role),
       agentName: input.context?.agent?.name ?? null,
+      agentId: input.context?.agent?.id ?? input.context?.agent?.agentId ?? null,
+      agentWorkspaceId: input.context?.agent?.workspaceId ?? null,
       agentSourceScopeMode: input.context?.agent?.sourceScope?.mode,
+      agentSourceIds: input.context?.agent?.sourceScope?.mode === "selected"
+        ? input.context.agent.sourceScope.sourceIds
+        : undefined,
+      agentRetrievalEnabled: input.context?.agent?.retrievalEnabled,
+      agentCitationDisplayEnabled: input.context?.agent?.citationDisplayEnabled,
       customInstruction:
         input.context?.customInstructionOverride ??
         input.context?.agent?.customInstruction,
+      retrievalSkillSettings: input.context?.agent?.skillSettings?.["retrieval.answer"],
     };
   }
 
@@ -534,6 +622,38 @@ describe("EvalRunService.execute (retrieval_only)", () => {
     expect(runner.lastRetrieveCall?.agentSourceScopeMode).toBe("selected");
     // The override wins over the agent's baked-in instruction.
     expect(runner.lastRetrieveCall?.customInstruction).toBe("Reply tersely.");
+  });
+
+  it("materializes full agent config snapshots before passing replay context to the runner", async () => {
+    const agent = configuredAgent();
+    const snapshot = makeSnapshot({
+      sourceAgentId: agent.id,
+      originalAgentConfig: projectInternalAgentConfig(agent),
+      originalAgent: null,
+    });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const runner = new StubRunner([
+      { chunkId: "c1", documentId: "doc-refund", title: "Refund Policy", rank: 0 },
+    ]);
+    const service = new EvalRunService(repo, runner, passJudge());
+
+    await service.execute({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      mode: "retrieval_only",
+    });
+
+    expect(runner.lastRetrieveCall?.agentId).toBe("agent-full");
+    expect(runner.lastRetrieveCall?.agentWorkspaceId).toBe("ws-1");
+    expect(runner.lastRetrieveCall?.agentName).toBe("Full Config Bot");
+    expect(runner.lastRetrieveCall?.agentSourceScopeMode).toBe("selected");
+    expect(runner.lastRetrieveCall?.agentSourceIds).toEqual(["source-a", "source-b"]);
+    expect(runner.lastRetrieveCall?.agentRetrievalEnabled).toBe(false);
+    expect(runner.lastRetrieveCall?.agentCitationDisplayEnabled).toBe(false);
+    expect(runner.lastRetrieveCall?.customInstruction).toBe("Use the captured full config.");
+    expect(runner.lastRetrieveCall?.retrievalSkillSettings).toEqual({
+      vectorTopK: 3,
+    });
   });
 
   it("supports full_assistant mode, capturing the generated answer in the run output", async () => {

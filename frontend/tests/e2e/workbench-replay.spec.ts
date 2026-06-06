@@ -1,0 +1,202 @@
+import { expect, test, type Page } from "@playwright/test";
+
+import {
+  defaultAgentId,
+  installDashboardApiMocks,
+  nowIso,
+  seedDashboardStorage,
+  workspaceId,
+  workspaceKey,
+} from "./dashboard-fixtures";
+
+const conversationId = "11111111-1111-4111-8111-111111111111";
+const userMessageId = "22222222-2222-4222-8222-222222222222";
+const assistantMessageId = "33333333-3333-4333-8333-333333333333";
+const snapshotId = "44444444-4444-4444-8444-444444444444";
+
+const seededConversation = {
+  id: conversationId,
+  conversationId,
+  workspaceId,
+  sourceChannel: null,
+  sourceOrigin: null,
+  createdAt: nowIso,
+  updatedAt: nowIso,
+  messageCount: 2,
+  userMessageCount: 1,
+  assistantMessageCount: 1,
+  messagesTotal: 2,
+  messageWindowOffset: 0,
+  messageWindowLimit: 50,
+  hasOlderMessages: false,
+  nextCursor: null,
+  messages: [
+    {
+      id: userMessageId,
+      role: "user",
+      content: "What changed in the workbench release?",
+      createdAt: nowIso,
+    },
+    {
+      id: assistantMessageId,
+      role: "assistant",
+      content: "Original answer from the saved conversation.",
+      createdAt: nowIso,
+      citations: [],
+      answerSegments: [{ text: "Original answer from the saved conversation." }],
+    },
+  ],
+};
+
+const installWorkbenchMocks = async (
+  page: Page,
+  requestBodies: unknown[],
+) => {
+  await page.route("**/backend/api/v1/assistant/chat", async (route) => {
+    const body = route.request().postDataJSON() as { message?: string; startConversation?: boolean };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        conversationId,
+        assistantMessageId,
+        answer: body.startConversation ? "Hello, how can I help?" : `Chat answer: ${body.message}`,
+        citations: [],
+        answerSegments: [{ text: body.startConversation ? "Hello, how can I help?" : `Chat answer: ${body.message}` }],
+        debug: {
+          activityTrace: {
+            traceId: "chat-trace",
+            startedAt: nowIso,
+            stages: [],
+            links: [],
+          },
+        },
+      }),
+    });
+  });
+
+  await page.route("**/backend/api/v1/evals/snapshots", async (route) => {
+    requestBodies.push(route.request().postDataJSON());
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: snapshotId,
+        workspaceId,
+        sourceConversationId: conversationId,
+        sourceMessageId: assistantMessageId,
+        fidelity: "full",
+        messages: seededConversation.messages,
+        originalInstructionBlock: null,
+        originalModelId: null,
+        originalRetrievalSettings: null,
+        originalRetrievalResult: null,
+        originalAgent: null,
+        capturedAt: nowIso,
+        capturedBy: "operator",
+      }),
+    });
+  });
+
+  await page.route("**/backend/api/v1/evals/runs", async (route) => {
+    const body = route.request().postDataJSON();
+    requestBodies.push(body);
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        run: {
+          id: "run-1",
+          workspaceId,
+          snapshotId,
+          caseId: null,
+          mode: "full_assistant",
+          overrides: { agentConfigOverride: body.agentConfigOverride },
+          resolvedConfig: { modelProvider: "openai", modelId: "gpt-5.2" },
+          observedOutput: {
+            retrievedChunks: [],
+            answer: "Replay answer with the override.",
+            citations: [],
+            answerSegments: [{ text: "Replay answer with the override." }],
+          },
+          assertionVerdicts: [],
+          status: "recorded",
+          outcomeReason: null,
+          startedAt: nowIso,
+          completedAt: nowIso,
+        },
+        case: null,
+        answer: "Replay answer with the override.",
+        citations: [],
+        answerSegments: [{ text: "Replay answer with the override." }],
+        turnTrace: {
+          version: 1,
+          spine: {
+            traceId: "turn-trace-1",
+            startedAt: nowIso,
+            completedAt: nowIso,
+            stages: [
+              { id: "gather", kind: "gather", status: "applied", outputs: { historyCount: 1 } },
+              { id: "compose", kind: "compose", status: "applied", outputs: { outcomeCount: 1 } },
+            ],
+          },
+        },
+        resolvedConfig: { modelProvider: "openai", modelId: "gpt-5.2", retrievedChunks: [] },
+      }),
+    });
+  });
+};
+
+test("no-override chat tab sends through the normal chat flow", async ({ page }) => {
+  const requestBodies: unknown[] = [];
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await installWorkbenchMocks(page, requestBodies);
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=chat`);
+  await page.getByPlaceholder("Ask a question...").fill("Explain workbench replay");
+  await page.getByRole("button", { name: "Send message" }).click();
+
+  await expect(page.getByText("Chat answer: Explain workbench replay")).toBeVisible();
+  expect(requestBodies.some((body) => JSON.stringify(body).includes("agentConfigOverride"))).toBe(false);
+});
+
+test("seeded override replay creates a run card with answer and flow control", async ({ page }) => {
+  const requestBodies: unknown[] = [];
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { conversationDetail: seededConversation });
+  await installWorkbenchMocks(page, requestBodies);
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=chat&replayConversationId=${conversationId}&replayMessageId=${assistantMessageId}`);
+  await page.getByLabel("Override custom instruction").click();
+  await page.locator("textarea").fill("Answer using release notes only.");
+  await page.getByRole("button", { name: "Run replay" }).click();
+
+  await expect(page.getByText("Replay answer with the override.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Flow" })).toBeVisible();
+  expect(requestBodies).toContainEqual({
+    mode: "full_assistant",
+    snapshotId,
+    agentConfigOverride: {
+      customInstruction: "Answer using release notes only.",
+    },
+  });
+});
+
+test("seeded replay compare shows original and replay answers side by side", async ({ page }) => {
+  const requestBodies: unknown[] = [];
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { conversationDetail: seededConversation });
+  await installWorkbenchMocks(page, requestBodies);
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=chat&replayConversationId=${conversationId}&replayMessageId=${assistantMessageId}`);
+  await expect(page.getByRole("heading", { name: "Original" })).toBeVisible();
+  await expect(page.getByText("Original answer from the saved conversation.")).toBeVisible();
+
+  await page.getByLabel("Override custom instruction").click();
+  await page.locator("textarea").fill("Prefer implementation details.");
+  await page.getByRole("button", { name: "Run replay" }).click();
+
+  await expect(page.getByRole("heading", { name: "Replay" })).toBeVisible();
+  await expect(page.getByText("Replay answer with the override.")).toBeVisible();
+});

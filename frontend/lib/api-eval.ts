@@ -1,5 +1,5 @@
 import { request } from './api-client'
-import type { AnswerSegment, Citation } from './api-types'
+import type { ActivityTrace, AnswerSegment, Citation, TurnTraceEnvelope } from './api-types'
 
 // Eval is currently a dashboard-only API surface and is not registered in the
 // public OpenAPI/SDK contract. Keep these local request/response types in sync
@@ -103,6 +103,8 @@ export interface EvalRunObservedOutput {
   answer?: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
+  turnTrace?: TurnTraceEnvelope
+  activityTrace?: ActivityTrace
   error?: { message: string; code?: string }
 }
 
@@ -135,6 +137,34 @@ export interface EvalRunOverridesInput {
   modelOverride?: EvalRunModelOverride
   assistantInstructionsOverride?: { customInstruction?: string }
   retrievalSettingsOverride?: Record<string, unknown>
+  agentConfigOverride?: AgentConfigOverrideInput
+}
+
+export interface AgentConfigOverrideInput {
+  name?: string
+  customInstruction?: string
+  contactRequestsEnabled?: boolean
+  contactRequestDelivery?: unknown
+  logo?: unknown | null
+  theme?: Record<string, unknown>
+  branding?: Record<string, unknown>
+  greetingInstruction?: string
+  assistantDefaultLocale?: string | null
+  proactiveGreetingEnabled?: boolean
+  surfaceSettings?: Record<string, unknown>
+  skillSettings?: Record<string, unknown>
+  chatModelOverride?: EvalRunModelOverride | null
+  authoredDirectives?: Array<Record<string, unknown>>
+}
+
+export interface WorkbenchReplayRunResponse {
+  run: EvalRun
+  case: EvalCase | null
+  answer?: string
+  citations?: Citation[]
+  answerSegments?: AnswerSegment[]
+  turnTrace?: TurnTraceEnvelope
+  resolvedConfig?: Record<string, unknown>
 }
 
 export const evalsApi = {
@@ -202,10 +232,16 @@ export const evalsApi = {
     snapshotId: string
     mode?: EvalRunMode
     overrides?: EvalRunOverridesInput
-  }): Promise<{ run: EvalRun; case: EvalCase | null }> {
-    return request<{ run: EvalRun; case: EvalCase | null }>('/evals/runs', {
+    agentConfigOverride?: AgentConfigOverrideInput
+  }): Promise<WorkbenchReplayRunResponse> {
+    const { agentConfigOverride, ...rest } = input
+    return request<WorkbenchReplayRunResponse>('/evals/runs', {
       method: 'POST',
-      body: JSON.stringify({ mode: input.mode ?? 'retrieval_only', ...input }),
+      body: JSON.stringify({
+        mode: input.mode ?? 'retrieval_only',
+        ...rest,
+        ...(agentConfigOverride ? { agentConfigOverride } : {}),
+      }),
     }, { withApiToken: true })
   },
 }

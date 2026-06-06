@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Globe2, RefreshCw, X } from 'lucide-react'
 
-import { ChatView } from '@/components/dashboard/chat-view'
+import { WorkbenchView } from '@/components/dashboard/workbench/workbench-view'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { SaveStateIndicator } from '@/components/dashboard/shared/save-state-indicator'
 import { WorkspaceAssistantChannelsTab } from '@/components/dashboard/settings/workspace-assistant-channels-tab'
@@ -399,7 +399,7 @@ export function AgentView({
   if (section === 'chat') {
     return (
       <>
-        <ChatView
+        <WorkbenchView
           key={selectedAgentId}
           accountId={accountId}
           agentId={selectedAgentId}
@@ -407,6 +407,8 @@ export function AgentView({
           assistantLinkUtmEnabled={selectedAgent?.assistantLinkUtmEnabled}
           onOpenDocument={onOpenDocument}
           onboarding={onboarding}
+          selectedAgent={selectedAgent}
+          routeState={routeState}
         />
         {wizard}
       </>

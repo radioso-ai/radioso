@@ -72,6 +72,33 @@ const DISPLAY_MODES: { value: 'bubble' | 'panel'; label: string; description: st
   },
 ]
 
+const formatLastUsed = (value: string | null | undefined) => {
+  if (!value) {
+    return 'Never used'
+  }
+  const timestamp = new Date(value).getTime()
+  if (!Number.isFinite(timestamp)) {
+    return 'Last used: Unknown'
+  }
+  const diffSeconds = Math.round((timestamp - Date.now()) / 1000)
+  const absoluteSeconds = Math.abs(diffSeconds)
+  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+    ['year', 60 * 60 * 24 * 365],
+    ['month', 60 * 60 * 24 * 30],
+    ['week', 60 * 60 * 24 * 7],
+    ['day', 60 * 60 * 24],
+    ['hour', 60 * 60],
+    ['minute', 60],
+  ]
+  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+  for (const [unit, unitSeconds] of units) {
+    if (absoluteSeconds >= unitSeconds) {
+      return `Last used: ${formatter.format(Math.round(diffSeconds / unitSeconds), unit)}`
+    }
+  }
+  return `Last used: ${formatter.format(diffSeconds, 'second')}`
+}
+
 export function WebsiteEmbedSettingsController(props: WebsiteEmbedSettingsControllerProps) {
   if (!editionController.shouldRenderWebsiteEmbedSettings(props.mode)) {
     return null
@@ -94,7 +121,7 @@ function WebsiteEmbedSettingsPanel({
   setSaveState,
   setSaveError,
 }: WebsiteEmbedSettingsControllerProps) {
-  const savedWebsiteEmbedOrigins = formatWebsiteEmbedOrigins(anonSettings?.websiteEmbedAllowedOrigins ?? [])
+  const savedWebsiteEmbedOrigins = formatWebsiteEmbedOrigins((anonSettings?.websiteEmbedAllowedOrigins ?? []).filter((origin) => origin !== '*'))
   const [websiteEmbedOriginsDraft, setWebsiteEmbedOriginsDraft] = useState(() => ({
     savedOrigins: savedWebsiteEmbedOrigins,
     value: savedWebsiteEmbedOrigins,
@@ -121,6 +148,7 @@ function WebsiteEmbedSettingsPanel({
     const savedLocales = Object.keys(anonSettings.websiteEmbedCopy ?? {})
     const firstSavedLocale = savedLocales[0]
     if (firstSavedLocale && !savedLocales.includes('en')) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Initializes the editor to an existing saved locale after settings load.
       setWebsiteEmbedCopyLocale(firstSavedLocale)
     }
   }, [anonSettings])
@@ -129,11 +157,21 @@ function WebsiteEmbedSettingsPanel({
     setWebsiteEmbedOriginsDraft({ savedOrigins: savedWebsiteEmbedOrigins, value })
   }
 
+  const websiteEmbedUsesWildcardOrigin = anonSettings?.websiteEmbedAllowedOrigins?.includes('*') ?? false
+  const websiteEmbedSavedAllowedOrigins = useMemo(
+    () => savedAnonSettings?.websiteEmbedAllowedOrigins ?? [],
+    [savedAnonSettings?.websiteEmbedAllowedOrigins],
+  )
+  const websiteEmbedStoredOrigins = useMemo(
+    () => (websiteEmbedUsesWildcardOrigin ? ['*'] : websiteEmbedAllowedOrigins),
+    [websiteEmbedUsesWildcardOrigin, websiteEmbedAllowedOrigins],
+  )
+
   const hasWebsiteEmbedChanges =
     anonSettings && savedAnonSettings
       ? (
           anonSettings.websiteEmbedEnabled !== savedAnonSettings.websiteEmbedEnabled ||
-          websiteEmbedOrigins !== savedWebsiteEmbedOrigins ||
+          JSON.stringify(websiteEmbedStoredOrigins) !== JSON.stringify(websiteEmbedSavedAllowedOrigins) ||
           anonSettings.websiteEmbedLauncherLabel !== savedAnonSettings.websiteEmbedLauncherLabel ||
           anonSettings.websiteEmbedLauncherPosition !== savedAnonSettings.websiteEmbedLauncherPosition ||
           JSON.stringify(anonSettings.websiteEmbedCopy ?? {}) !== JSON.stringify(savedAnonSettings.websiteEmbedCopy ?? {}) ||
@@ -193,12 +231,6 @@ function WebsiteEmbedSettingsPanel({
       return
     }
 
-    if ((anonSettings.websiteEmbedEnabled ?? false) && websiteEmbedAllowedOrigins.length === 0) {
-      setSaveState('error')
-      setSaveError('Add at least one approved origin to enable the website widget.')
-      return
-    }
-
     const timeout = window.setTimeout(async () => {
       const draftVersionAtRequestStart = anonDraftVersionRef.current
       const saveId = saveSequenceRef.current + 1
@@ -209,7 +241,7 @@ function WebsiteEmbedSettingsPanel({
       try {
         const updated = await updateGeneralSettings({
           websiteEmbedEnabled: anonSettings.websiteEmbedEnabled ?? false,
-          websiteEmbedAllowedOrigins,
+          websiteEmbedAllowedOrigins: websiteEmbedStoredOrigins,
           websiteEmbedLauncherLabel: anonSettings.websiteEmbedLauncherLabel ?? 'Chat with us',
           websiteEmbedLauncherPosition: anonSettings.websiteEmbedLauncherPosition ?? 'bottom-right',
           websiteEmbedCopy: anonSettings.websiteEmbedCopy ?? {},
@@ -249,15 +281,27 @@ function WebsiteEmbedSettingsPanel({
     updateGeneralSettings,
     websiteEmbedAllowedOrigins,
     websiteEmbedOrigins,
+    websiteEmbedSavedAllowedOrigins,
+    websiteEmbedStoredOrigins,
+    websiteEmbedUsesWildcardOrigin,
   ])
 
   const handleWebsiteEmbedSettingChange = <K extends keyof GeneralSettings>(key: K, value: GeneralSettings[K]) => {
     if (!anonSettings) return
     anonDraftVersionRef.current += 1
-    if (key === 'websiteEmbedEnabled' && value === true && websiteEmbedAllowedOrigins.length === 0 && websiteEmbedDemoOrigin) {
+    if (key === 'websiteEmbedEnabled' && value === true && !websiteEmbedUsesWildcardOrigin && websiteEmbedAllowedOrigins.length === 0 && websiteEmbedDemoOrigin) {
       setWebsiteEmbedOrigins(websiteEmbedDemoOrigin)
     }
     setAnonSettings({ ...anonSettings, [key]: value })
+  }
+
+  const handleWebsiteEmbedWildcardOriginChange = (checked: boolean) => {
+    if (!anonSettings) return
+    anonDraftVersionRef.current += 1
+    setAnonSettings({
+      ...anonSettings,
+      websiteEmbedAllowedOrigins: checked ? ['*'] : websiteEmbedAllowedOrigins,
+    })
   }
 
   const handleOpenWebsiteEmbedDemo = async () => {
@@ -269,16 +313,18 @@ function WebsiteEmbedSettingsPanel({
     setWebsiteEmbedDemoError(null)
 
     try {
-      const nextOrigins = websiteEmbedHasDemoOrigin
+      const nextOrigins = websiteEmbedUsesWildcardOrigin
+        ? ['*']
+        : websiteEmbedHasDemoOrigin
         ? websiteEmbedAllowedOrigins
         : websiteEmbedDemoOrigin
           ? [...websiteEmbedAllowedOrigins, websiteEmbedDemoOrigin]
           : websiteEmbedAllowedOrigins
 
       const hasPersistedChanges =
-        !websiteEmbedHasDemoOrigin ||
+        (!websiteEmbedUsesWildcardOrigin && !websiteEmbedHasDemoOrigin) ||
         anonSettings.websiteEmbedEnabled !== (savedAnonSettings?.websiteEmbedEnabled ?? false) ||
-        websiteEmbedOrigins !== formatWebsiteEmbedOrigins(savedAnonSettings?.websiteEmbedAllowedOrigins ?? []) ||
+        JSON.stringify(nextOrigins) !== JSON.stringify(savedAnonSettings?.websiteEmbedAllowedOrigins ?? []) ||
         anonSettings.websiteEmbedLauncherLabel !== savedAnonSettings?.websiteEmbedLauncherLabel ||
         anonSettings.websiteEmbedLauncherPosition !== savedAnonSettings?.websiteEmbedLauncherPosition ||
         JSON.stringify(anonSettings.websiteEmbedCopy ?? {}) !== JSON.stringify(savedAnonSettings?.websiteEmbedCopy ?? {}) ||
@@ -365,9 +411,14 @@ function WebsiteEmbedSettingsPanel({
                 <Globe className="h-5 w-5 text-primary" />
               </div>
               <div className="min-w-0">
-                <h3 className="font-medium text-foreground">Website chat widget</h3>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="font-medium text-foreground">Website chat widget</h3>
+                </div>
                 <p className="text-sm text-muted-foreground">
                   Add a chat button to your website so visitors can ask the assistant questions.
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {formatLastUsed(anonSettings.websiteEmbedLastUsedAt)}
                 </p>
               </div>
             </div>
@@ -475,21 +526,39 @@ function WebsiteEmbedSettingsPanel({
             </div>
           </div>
 
-          <div className="mt-5 space-y-2">
-            <Label htmlFor="websiteEmbedAllowedOrigins" className="text-foreground">Allowed websites</Label>
-            <Textarea
-              id="websiteEmbedAllowedOrigins"
-              value={websiteEmbedOrigins}
-              onChange={(event) => {
-                anonDraftVersionRef.current += 1
-                setWebsiteEmbedOrigins(event.target.value)
-              }}
-              placeholder={`https://example.com\nhttps://docs.example.com`}
-              className="min-h-[132px]"
-            />
-            <p className="text-xs text-muted-foreground">
-              The chat widget will only appear on these websites. List one address per line, starting with <code>https://</code>.
-            </p>
+          <div className="mt-5 space-y-3">
+            <div className="flex items-center justify-between gap-4 rounded-xl border border-border bg-background/60 p-4">
+              <div className="min-w-0">
+                <Label htmlFor="websiteEmbedWildcardOrigin" className="text-foreground">Allow all origins</Label>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Let the widget launch from any website that has the install code.
+                </p>
+              </div>
+              <Switch
+                id="websiteEmbedWildcardOrigin"
+                checked={websiteEmbedUsesWildcardOrigin}
+                onCheckedChange={handleWebsiteEmbedWildcardOriginChange}
+                disabled={isAnonSaving}
+              />
+            </div>
+            {!websiteEmbedUsesWildcardOrigin ? (
+              <div className="space-y-2">
+                <Label htmlFor="websiteEmbedAllowedOrigins" className="text-foreground">Allowed websites</Label>
+                <Textarea
+                  id="websiteEmbedAllowedOrigins"
+                  value={websiteEmbedOrigins}
+                  onChange={(event) => {
+                    anonDraftVersionRef.current += 1
+                    setWebsiteEmbedOrigins(event.target.value)
+                  }}
+                  placeholder={`https://example.com\nhttps://docs.example.com`}
+                  className="min-h-[132px]"
+                />
+                <p className="text-xs text-muted-foreground">
+                  The chat widget will only appear on these websites. List one address per line, starting with <code>https://</code>.
+                </p>
+              </div>
+            ) : null}
           </div>
 
           <details className="group mt-5 rounded-xl border border-border bg-background/60 p-4">

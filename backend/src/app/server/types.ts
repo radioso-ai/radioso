@@ -25,6 +25,7 @@ import type { AuthService } from "../../modules/auth/services/authService.js";
 import type { EmailVerificationService } from "../../modules/auth/services/emailVerificationService.js";
 import type { PasswordResetService } from "../../modules/auth/services/passwordResetService.js";
 import type { AccountAccessService } from "../../modules/account/services/accountAccessService.js";
+import type { AccessGrantService } from "../../modules/accessGrants/services/accessGrantService.js";
 import type { AccountInvitationService } from "../../modules/account/services/accountInvitationService.js";
 import type { AuditService } from "../../modules/audit/composition.js";
 import type { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
@@ -82,6 +83,7 @@ export interface AppDependencies {
   applicationRouteMounts: ApplicationRouteMount[];
   applicationModules: ApplicationModuleCoordinator;
   authService: AuthService;
+  accessGrantService: AccessGrantService;
   passwordResetService: PasswordResetService;
   emailVerificationService: EmailVerificationService;
   accountAccessService: AccountAccessService;

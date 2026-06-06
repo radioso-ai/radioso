@@ -194,6 +194,21 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     agentId: z.string().uuid(),
   });
 
+  const AgentChannelLifecycleSchema = registry.register(
+    "AgentChannelLifecycle",
+    z.object({
+      lastUsedAt: z.string().datetime().nullable(),
+    }),
+  );
+
+  const AgentChannelsLifecycleResponseSchema = registry.register(
+    "AgentChannelsLifecycleResponse",
+    z.object({
+      anonymousChat: AgentChannelLifecycleSchema,
+      websiteEmbed: AgentChannelLifecycleSchema,
+    }),
+  );
+
   const AuthoredDirectiveParamsSchema = z.object({
     agentId: z.string().uuid(),
     directiveId: z.string().uuid(),
@@ -351,6 +366,8 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     ConversationAgentSchema,
     AgentListResponseSchema,
     ConversationAgentRequestSchema,
+    AgentChannelLifecycleSchema,
+    AgentChannelsLifecycleResponseSchema,
     AgentParamsSchema,
     AuthoredDirectiveConditionSchema,
     AuthoredDirectiveCreateRequestSchema,

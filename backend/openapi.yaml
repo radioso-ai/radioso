@@ -1293,6 +1293,11 @@ components:
           type:
             - string
             - "null"
+        anonymousChatLastUsedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
         assistantName:
           type: string
         greetingInstruction:
@@ -1315,6 +1320,11 @@ components:
           type:
             - string
             - "null"
+        websiteEmbedLastUsedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
         websiteEmbedScriptUrl:
           type:
             - string
@@ -1361,6 +1371,7 @@ components:
       required:
         - anonymousChatEnabled
         - anonymousChatUrl
+        - anonymousChatLastUsedAt
         - assistantName
         - greetingInstruction
         - assistantDefaultLocale
@@ -1369,6 +1380,7 @@ components:
         - assistantLogoUrl
         - websiteEmbedEnabled
         - websiteEmbedToken
+        - websiteEmbedLastUsedAt
         - websiteEmbedScriptUrl
         - websiteEmbedSnippet
         - websiteEmbedAllowedOrigins
@@ -1545,12 +1557,22 @@ components:
           type:
             - string
             - "null"
+        anonymousChatLastUsedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
         websiteEmbedEnabled:
           type: boolean
         websiteEmbedToken:
           type:
             - string
             - "null"
+        websiteEmbedLastUsedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
         websiteEmbedAllowedOrigins:
           type: array
           items:
@@ -1597,8 +1619,10 @@ components:
       required:
         - anonymousChatEnabled
         - anonymousChatUrl
+        - anonymousChatLastUsedAt
         - websiteEmbedEnabled
         - websiteEmbedToken
+        - websiteEmbedLastUsedAt
         - websiteEmbedAllowedOrigins
         - websiteEmbedLauncherLabel
         - websiteEmbedLauncherPosition
@@ -2395,6 +2419,26 @@ components:
                   type: object
                   additionalProperties:
                     type: string
+    AgentChannelLifecycle:
+      type: object
+      properties:
+        lastUsedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - lastUsedAt
+    AgentChannelsLifecycleResponse:
+      type: object
+      properties:
+        anonymousChat:
+          $ref: "#/components/schemas/AgentChannelLifecycle"
+        websiteEmbed:
+          $ref: "#/components/schemas/AgentChannelLifecycle"
+      required:
+        - anonymousChat
+        - websiteEmbed
     AuthoredDirectiveCondition:
       oneOf:
         - type: object
@@ -7531,6 +7575,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/channels/lifecycle:
+    get:
+      tags:
+        - Agents
+      summary: Get public channel lifecycle for an agent
+      operationId: getAgentChannelsLifecycle
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      responses:
+        "200":
+          description: Channel lifecycle returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentChannelsLifecycleResponse"
         "401":
           description: Authentication required
           content:

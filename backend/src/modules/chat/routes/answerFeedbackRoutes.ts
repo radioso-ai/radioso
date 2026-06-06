@@ -44,8 +44,12 @@ export interface AnswerFeedbackRouteDependencies {
   workspaceRepository: Pick<AppDependencies["workspaceRepository"],
     "findByAnonymousChatToken" | "findByWebsiteEmbedToken" | "findById"
   >;
-  agentRepository: Pick<AppDependencies["agentRepository"], "findByAnonymousChatToken" | "findByWebsiteEmbedToken">;
+  agentRepository: Pick<AppDependencies["agentRepository"], "findByAnonymousChatToken" | "findByWebsiteEmbedToken" | "findByIdAndWorkspaceId">;
   agentService?: Pick<AppDependencies["agentService"], "resolve">;
+  accessGrantService?: Pick<
+    AppDependencies["accessGrantService"],
+    "resolvePublicLaunchGrant" | "evaluate" | "touchGrant" | "recordAuthFailure"
+  >;
 }
 
 const feedbackBodySchema = z.object({
@@ -106,6 +110,7 @@ export const createAnswerFeedbackRoutes = (
     dependencies.env.SESSION_COOKIE_SECRET,
     dependencies.agentRepository,
     dependencies.agentService,
+    dependencies.accessGrantService,
   );
 
   router.put("/messages/:assistantMessageId", workspaceSession, validateBody(feedbackBodySchema), async (req, res, next) => {

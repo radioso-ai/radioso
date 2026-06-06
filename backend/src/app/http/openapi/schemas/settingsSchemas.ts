@@ -176,6 +176,7 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
     z.object({
       anonymousChatEnabled: z.boolean(),
       anonymousChatUrl: z.string().nullable(),
+      anonymousChatLastUsedAt: z.string().datetime().nullable(),
       assistantName: z.string(),
       greetingInstruction: z.string(),
       assistantDefaultLocale: z.string().nullable(),
@@ -184,6 +185,7 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
       assistantLogoUrl: z.string().nullable(),
       websiteEmbedEnabled: z.boolean(),
       websiteEmbedToken: z.string().nullable(),
+      websiteEmbedLastUsedAt: z.string().datetime().nullable(),
       websiteEmbedScriptUrl: z.string().nullable(),
       websiteEmbedSnippet: z.string().nullable(),
       websiteEmbedAllowedOrigins: z.array(z.string()),
@@ -272,8 +274,10 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
     z.object({
       anonymousChatEnabled: z.boolean(),
       anonymousChatUrl: z.string().nullable(),
+      anonymousChatLastUsedAt: z.string().datetime().nullable(),
       websiteEmbedEnabled: z.boolean(),
       websiteEmbedToken: z.string().nullable(),
+      websiteEmbedLastUsedAt: z.string().datetime().nullable(),
       websiteEmbedAllowedOrigins: z.array(z.string()),
       websiteEmbedLauncherLabel: z.string(),
       websiteEmbedLauncherPosition: z.enum(websiteEmbedLauncherPositions),

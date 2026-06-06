@@ -206,6 +206,9 @@ const createDependencies = (
     async findByWebsiteEmbedToken() {
       return null;
     },
+    async findByIdAndWorkspaceId() {
+      return null;
+    },
   },
   ...overrides,
 });
@@ -373,6 +376,9 @@ describe("answer feedback routes", () => {
                 },
               } as any
             : null;
+        },
+        async findByIdAndWorkspaceId() {
+          return null;
         },
       },
     });

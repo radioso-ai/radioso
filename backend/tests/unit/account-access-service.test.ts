@@ -28,7 +28,7 @@ describe("AccountAccessService", () => {
     const service = new AccountAccessService(new InMemoryAccountMembershipRepository(), createAuditService());
     const principal = {
       type: "public_chat_session" as const,
-      role: "public_chat" as const,
+      role: "public" as const,
       workspaceId: "11111111-1111-1111-1111-111111111111",
       agentId: "22222222-2222-2222-2222-222222222222",
       publicSessionId: "33333333-3333-3333-3333-333333333333",

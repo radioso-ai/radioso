@@ -526,12 +526,13 @@ function WebsiteEmbedSettingsPanel({
             </div>
           </div>
 
-          <div className="mt-5 space-y-3">
-            <div className="flex items-center justify-between gap-4 rounded-xl border border-border bg-background/60 p-4">
+          <div className="mt-5 rounded-xl border border-border bg-background/60 p-4">
+            <Label className="text-foreground">Where the chat widget can appear</Label>
+            <div className="mt-3 flex items-center justify-between gap-4">
               <div className="min-w-0">
-                <Label htmlFor="websiteEmbedWildcardOrigin" className="text-foreground">Allow all origins</Label>
+                <Label htmlFor="websiteEmbedWildcardOrigin" className="text-sm font-medium text-foreground">Any website</Label>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Let the widget launch from any website that has the install code.
+                  The widget can launch from any site that has the install code. Turn this off to allow only specific websites.
                 </p>
               </div>
               <Switch
@@ -542,8 +543,8 @@ function WebsiteEmbedSettingsPanel({
               />
             </div>
             {!websiteEmbedUsesWildcardOrigin ? (
-              <div className="space-y-2">
-                <Label htmlFor="websiteEmbedAllowedOrigins" className="text-foreground">Allowed websites</Label>
+              <div className="mt-4 space-y-2 border-t border-border pt-4">
+                <Label htmlFor="websiteEmbedAllowedOrigins" className="text-sm font-medium text-foreground">Specific websites</Label>
                 <Textarea
                   id="websiteEmbedAllowedOrigins"
                   value={websiteEmbedOrigins}
@@ -555,7 +556,7 @@ function WebsiteEmbedSettingsPanel({
                   className="min-h-[132px]"
                 />
                 <p className="text-xs text-muted-foreground">
-                  The chat widget will only appear on these websites. List one address per line, starting with <code>https://</code>.
+                  The widget appears only on these sites. One address per line, starting with <code>https://</code>.
                 </p>
               </div>
             ) : null}

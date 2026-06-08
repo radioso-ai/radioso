@@ -272,6 +272,13 @@ export function PublicChatBubbleComposerForm({
           size="icon"
           className={`${buttonSize} shrink-0 rounded-full hover:opacity-90`}
           disabled={sendDisabled}
+          // Keep focus on the textarea so tapping send on mobile submits on the
+          // first tap instead of just dismissing the keyboard. Moving focus to
+          // the button blurs the input, which hides the keyboard and reflows the
+          // layout out from under the finger before the click lands. Guarding on
+          // mousedown blocks the focus shift while leaving the click/submit
+          // intact (preventing pointerdown can cancel the synthesized click).
+          onMouseDown={(event) => event.preventDefault()}
           tabIndex={readOnly ? -1 : undefined}
           style={{
             background: theme.accent,

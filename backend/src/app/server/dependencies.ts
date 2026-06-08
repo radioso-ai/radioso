@@ -160,6 +160,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceIngestionReprocessService,
     errorReporter: infrastructure.errorReportingService,
   });
+  const retrievalDefaultsProvider = createSystemRetrievalDefaultsProvider();
+  const skillSettingsResolver = createRetrievalSkillSettingsResolver();
   const retrieval = buildRetrievalServices({
     auditService: infrastructure.auditService,
     database: infrastructure.database,
@@ -169,8 +171,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     llmRegistry,
     logger,
     retrievalSettingsService: settings.retrievalSettingsService,
-    retrievalDefaultsProvider: createSystemRetrievalDefaultsProvider(),
-    skillSettingsResolver: createRetrievalSkillSettingsResolver(),
+    retrievalDefaultsProvider,
+    skillSettingsResolver,
     telemetryService: infrastructure.telemetryService,
     usageEventRecorder: infrastructure.usageEventRecorder,
   });
@@ -185,7 +187,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const agentService = new AgentService(
     repositories.agentRepository,
     repositories.workspaceRepository,
-    settings.retrievalSettingsService,
     repositories.documentSourceRepository,
     resolveEmbedConfigCacheInvalidator({
       projectId: env.GOOGLE_CLOUD_PROJECT,
@@ -288,7 +289,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repositories.conversationRepository,
     repositories.messageRepository,
     repositories.agentRepository,
-    settings.retrievalSettingsService,
+    retrievalDefaultsProvider,
+    skillSettingsResolver,
     evalRepository,
   );
   const evalCaseService = new EvalCaseService(evalRepository);
@@ -298,8 +300,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       retrieval.retrievalPipeline,
       chat.chatGateway,
       llmCapabilityResolver,
-      settings.retrievalSettingsService,
+      retrievalDefaultsProvider,
       chat.answerPresentation,
+      skillSettingsResolver,
     ),
     new ChatGatewayLlmJudge(chat.chatGateway),
     chat.workbenchReplayRunner,

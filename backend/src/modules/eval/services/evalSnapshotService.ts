@@ -4,8 +4,8 @@ import type { MessageRepositoryPort, MessageRecord } from "../../../db/repositor
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { projectInternalAgentConfig } from "../../agents/public.js";
 import type { AnswerSegment, ChatCitation } from "../../chat/contracts/answerTypes.js";
+import type { RetrievalDefaultsProvider, SkillSettingsResolver } from "../../retrieval/public.js";
 import { freezeRetrievalSettings } from "../../settings/contracts/retrieval.js";
-import type { RetrievalSettingsService } from "../../settings/contracts/services.js";
 import type { EvalRepositoryPort } from "./evalRepository.js";
 import type {
   EvalSnapshot,
@@ -143,7 +143,8 @@ export class EvalSnapshotService {
     private readonly conversations: ConversationRepositoryPort,
     private readonly messages: MessageRepositoryPort,
     private readonly agents: AgentRepositoryPort,
-    private readonly retrievalSettings: RetrievalSettingsService,
+    private readonly retrievalDefaultsProvider: RetrievalDefaultsProvider,
+    private readonly skillSettingsResolver: SkillSettingsResolver,
     private readonly repository: EvalRepositoryPort,
   ) {}
 
@@ -188,14 +189,20 @@ export class EvalSnapshotService {
 
     const fidelity = determineFidelity(assistantTurn, retrieval);
 
-    const agentConfig = conversation.agentId
+    const agent = conversation.agentId
       ? await this.agents.findByIdAndWorkspaceId(conversation.agentId, input.workspaceId)
-          .then((agent) => (agent ? projectInternalAgentConfig(agent) : null))
       : null;
-
-    const settingsSnapshot = await this.retrievalSettings
-      .getForWorkspace(input.workspaceId)
-      .then(freezeRetrievalSettings);
+    const agentConfig = agent ? projectInternalAgentConfig(agent) : null;
+    const defaults = this.retrievalDefaultsProvider.getDefaults(input.workspaceId);
+    const settingsSnapshot = freezeRetrievalSettings(
+      agent
+        ? this.skillSettingsResolver.resolve(
+            "retrieval.answer",
+            defaults,
+            agent.skillSettings["retrieval.answer"],
+          )
+        : defaults,
+    );
 
     return this.repository.createSnapshot({
       workspaceId: input.workspaceId,

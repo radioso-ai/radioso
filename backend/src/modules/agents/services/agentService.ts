@@ -3,7 +3,6 @@ import type { DocumentSourceRepositoryPort } from "../../../db/repositories/docu
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AccessGrantService } from "../../accessGrants/public.js";
 import { generateApiToken } from "../../auth/contracts/index.js";
-import type { RetrievalSettingsService } from "../../settings/contracts/services.js";
 import type { EmbedConfigCacheInvalidator } from "./embedConfigCacheInvalidator.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../documents/contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
@@ -23,7 +22,6 @@ export class AgentService {
   constructor(
     private readonly agentRepository: AgentRepositoryPort,
     private readonly workspaceRepository: Pick<WorkspaceRepositoryPort, "findById" | "updateGeneralSettings">,
-    private readonly retrievalSettingsService: Pick<RetrievalSettingsService, "getForWorkspace">,
     private readonly documentSourceRepository?: Pick<
       DocumentSourceRepositoryPort,
       "findExistingIdsByWorkspaceId" | "countDocumentsWithoutSource"
@@ -141,11 +139,8 @@ export class AgentService {
     if (existing) {
       return existing;
     }
-    const settings = await this.retrievalSettingsService.getForWorkspace(workspaceId);
     const agent = await this.agentRepository.create(workspaceId, {
       name: workspace.assistantName ?? "",
-      customInstruction: settings.customInstruction,
-      suggestedQuestionsEnabled: settings.suggestedQuestionsEnabled,
       retrievalEnabled: true,
       sourceScope: { mode: "all" },
       greetingInstruction: workspace.greetingInstruction,

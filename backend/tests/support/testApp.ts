@@ -88,6 +88,7 @@ import {
 import { ApplicationModuleCoordinator, createApplicationExtensionRegistry } from "../../src/app/composition/applicationModule.js";
 import {
   createDefaultAgentSkillSettingsRegistry,
+  createRetrievalSkillSettingsResolver,
   createSystemRetrievalDefaultsProvider,
 } from "../../src/app/composition/index.js";
 import { DefaultAllowCapabilityPolicy, registeredCapabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
@@ -657,7 +658,6 @@ export const createTestDependencies = (overrides: {
   const agentService = new AgentService(
     agentRepository,
     workspaceRepository,
-    retrievalSettingsService,
     documentSourceRepository,
     undefined,
     accessGrantService,
@@ -854,7 +854,8 @@ export const createTestDependencies = (overrides: {
       conversationRepository,
       messageRepository,
       agentRepository,
-      retrievalSettingsService,
+      createSystemRetrievalDefaultsProvider(),
+      createRetrievalSkillSettingsResolver(),
       new EvalRepository(connectorDb as any),
     ),
     evalCaseService: new EvalCaseService(new EvalRepository(connectorDb as any)),

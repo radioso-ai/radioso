@@ -18,27 +18,6 @@ describe("sdk client integration", () => {
       .mockResolvedValueOnce(
         new Response(JSON.stringify({
           workspaceId: "w1",
-          queryRewriteEnabled: true,
-          semanticRewriteInstructions: "",
-          lexicalRewriteInstructions: "",
-          rerankEnabled: true,
-          vectorTopK: 20,
-          similarityThreshold: 0.2,
-          rerankTopK: 20,
-          citationDisplayEnabled: true,
-          metadataFieldSuggestions: [],
-          metadataRules: [],
-          customInstruction: "",
-          createdAt: "2026-04-04T00:00:00.000Z",
-          updatedAt: "2026-04-04T00:00:00.000Z",
-        }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({
-          workspaceId: "w1",
           chunkingStrategy: "fixed_window",
           fixedWindowChunkSize: 800,
           fixedWindowChunkOverlap: 120,
@@ -101,7 +80,6 @@ describe("sdk client integration", () => {
     });
 
     const documents = await client.documents.list({ limit: 10 });
-    const retrievalSettings = await client.settings.getRetrieval();
     const ingestionSettings = await client.settings.getIngestion();
     const generalSettings = await client.settings.getGeneral();
     const searchHistory = await client.documents.listHistory({ limit: 10 });

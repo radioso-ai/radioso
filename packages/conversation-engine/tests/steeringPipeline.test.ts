@@ -1,9 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { DefaultConversationEngine, DefaultRoutineRunner, DefaultSteeringResolver } from "../src/index.js";
+import {
+  DefaultConversationEngine,
+  DefaultRoutineRunner,
+  DefaultSteeringResolver,
+  isDirectiveEligibleForTurn,
+} from "../src/index.js";
 import type {
   ConversationEvent,
   ConversationRoutineStepRenderer,
+  Directive,
   ProcessTurnInput,
   Routine,
   RoutineState,
@@ -30,6 +36,11 @@ const activeState: RoutineState = {
   variables: {},
   status: "active",
 };
+
+const testDirective = (overrides: Partial<Directive> & Pick<Directive, "name" | "action">): Directive => ({
+  condition: { kind: "always" },
+  ...overrides,
+});
 
 const createRoutineInput = (
   overrides: Partial<ProcessTurnInput> = {},
@@ -208,5 +219,118 @@ describe("one steering-list pipeline", () => {
         steering: [expect.objectContaining({ source: "directive", action: "Use a warm tone." })],
       }),
     }));
+  });
+
+  it("filters routine-turn directives by routine and step scope before matching", async () => {
+    const render = vi.fn(async ({ steering }) => ({
+      answer: steering.map((rule: SteeringRule) => rule.action).join(" | "),
+    }));
+    const matchedNames: string[][] = [];
+    const input = createRoutineInput({
+      directives: [
+        testDirective({ name: "global", action: "Global action" }),
+        testDirective({ name: "routine-match", action: "Routine action", tags: ["routine:contact"] }),
+        testDirective({ name: "routine-other", action: "Other routine action", tags: ["routine:other"] }),
+        testDirective({ name: "step-match", action: "Step action", tags: ["step:contact:ask_email"] }),
+        testDirective({ name: "step-other-step", action: "Other step action", tags: ["step:contact:ask_message"] }),
+        testDirective({ name: "step-other-routine", action: "Other routine step action", tags: ["step:other:ask_email"] }),
+        testDirective({ name: "non-scope", action: "Non-scope action", tags: ["foo"] }),
+      ],
+      directiveMatcher: {
+        match: vi.fn(async ({ directives }) => {
+          matchedNames.push(directives.map((directive) => directive.name));
+          return directives.map((directive) => ({
+            directive,
+            selectionMode: "deterministic" as const,
+            selectionReason: "always",
+          }));
+        }),
+      },
+    }, { render });
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(matchedNames).toEqual([["global", "routine-match", "step-match", "non-scope"]]);
+    expect(render).toHaveBeenCalledWith(expect.objectContaining({
+      steering: [
+        expect.objectContaining({ source: "routine", action: "Ask the user for the message they want to send." }),
+        expect.objectContaining({ source: "directive", action: "Global action" }),
+        expect.objectContaining({ source: "directive", action: "Routine action" }),
+        expect.objectContaining({ source: "directive", action: "Step action" }),
+        expect.objectContaining({ source: "directive", action: "Non-scope action" }),
+      ],
+    }));
+    expect(result.response.answer).not.toContain("Other routine action");
+    expect(result.response.answer).not.toContain("Other step action");
+    expect(result.response.answer).not.toContain("Other routine step action");
+    expect(result.trace.stages.at(-1)?.outputs).toMatchObject({
+      candidateCount: 4,
+      scopeFilteredCount: 3,
+    });
+  });
+
+  it("filters routine and step scoped directives out on non-routine turns before matching", async () => {
+    const matchedNames: string[][] = [];
+    const input = createRoutineInput({
+      routineStore: undefined,
+      routineRunner: undefined,
+      directives: [
+        testDirective({ name: "global", action: "Global action" }),
+        testDirective({ name: "routine", action: "Routine action", tags: ["routine:contact"] }),
+        testDirective({ name: "step", action: "Step action", tags: ["step:contact:ask_email"] }),
+      ],
+      directiveMatcher: {
+        match: vi.fn(async ({ directives }) => {
+          matchedNames.push(directives.map((directive) => directive.name));
+          return directives.map((directive) => ({
+            directive,
+            selectionMode: "deterministic" as const,
+            selectionReason: "always",
+          }));
+        }),
+      },
+      selector: { select: vi.fn(async () => ({ selected: [], reason: "none" })) },
+    });
+
+    await new DefaultConversationEngine().processTurn(input);
+
+    expect(matchedNames).toEqual([["global"]]);
+    expect(input.selector.select).toHaveBeenCalledWith(expect.objectContaining({
+      turn: expect.objectContaining({
+        steering: [expect.objectContaining({ source: "directive", action: "Global action" })],
+      }),
+      directives: [expect.objectContaining({ directive: expect.objectContaining({ name: "global" }) })],
+    }));
+  });
+});
+
+describe("isDirectiveEligibleForTurn", () => {
+  const turn: TurnContext = {
+    agent: { id: "agent_1" },
+    sessionId: "session_1",
+    inputEvent: { kind: "message", content: "hello" },
+    history: [],
+    stagedContext: [],
+    steering: [],
+    activeRoutineId: "R",
+    activeStepId: "S",
+  };
+
+  it.each([
+    ["untagged", undefined, turn, true],
+    ["non-scope tag", ["foo"], turn, true],
+    ["matching routine", ["routine:R"], turn, true],
+    ["other routine", ["routine:OTHER"], turn, false],
+    ["matching step", ["step:R:S"], turn, true],
+    ["other step", ["step:R:OTHER"], turn, false],
+    ["other step routine", ["step:OTHER:S"], turn, false],
+    ["routine tag without active routine", ["routine:R"], { ...turn, activeRoutineId: undefined, activeStepId: undefined }, false],
+    ["step tag without active step", ["step:R:S"], { ...turn, activeRoutineId: undefined, activeStepId: undefined }, false],
+    ["mixed scope requires all scope tags", ["routine:R", "step:R:OTHER"], turn, false],
+  ])("%s", (_name, tags, candidateTurn, expected) => {
+    expect(isDirectiveEligibleForTurn(
+      testDirective({ name: "candidate", action: "Do it", tags }),
+      candidateTurn,
+    )).toBe(expected);
   });
 });

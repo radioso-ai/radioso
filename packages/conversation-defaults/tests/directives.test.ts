@@ -8,7 +8,9 @@ import {
   ProbabilisticDirectiveMatcher,
   directiveToSteeringRule,
   parseDirectiveClassifications,
+  parseScopeTag,
   resolveDirectiveRelationships,
+  scopeTag,
   type Directive,
   type DirectiveMatch,
   type DirectiveMatchGateway,
@@ -118,5 +120,21 @@ describe("directive defaults", () => {
       source: "directive",
       lifespan: "response",
     });
+  });
+
+  it("builds and parses routine and step scope tags", () => {
+    expect(scopeTag.routine("routine_1")).toBe("routine:routine_1");
+    expect(scopeTag.step("routine_1", "step_1")).toBe("step:routine_1:step_1");
+
+    expect(parseScopeTag(scopeTag.routine("routine_1"))).toEqual({
+      kind: "routine",
+      routineId: "routine_1",
+    });
+    expect(parseScopeTag(scopeTag.step("routine_1", "step_1"))).toEqual({
+      kind: "step",
+      routineId: "routine_1",
+      stepId: "step_1",
+    });
+    expect(parseScopeTag("foo")).toEqual({ kind: "other" });
   });
 });

@@ -57,6 +57,14 @@ export interface Directive {
   name: string;
   condition: DirectiveCondition;
   action: string;
+  /**
+   * Optional authored tags. Scope tags use `routine:<id>` and
+   * `step:<routineId>:<stepId>` conventions: untagged directives are global,
+   * routine tags apply only while that routine is active, and step tags apply
+   * only while that routine and step are active. Non-scope tags are ignored by
+   * scope eligibility and may carry other meaning.
+   */
+  tags?: string[];
   priority?: number;
   requiredCapabilities?: string[];
   dependsOn?: string[];

@@ -4,6 +4,7 @@ import type {
   ConversationEvent,
   ConversationTrace,
   ConversationTraceStage,
+  Directive,
   DirectiveMatch,
   ProcessTurnInput,
   ProcessTurnResult,
@@ -91,6 +92,33 @@ const directiveMatchToSteering = (match: DirectiveMatch): SteeringRule => ({
   lifespan: "response",
 });
 
+export const isDirectiveEligibleForTurn = (directive: Directive, turnContext: TurnContext): boolean => {
+  for (const tag of directive.tags ?? []) {
+    if (tag.startsWith("routine:")) {
+      const routineId = tag.slice("routine:".length);
+      if (!routineId || turnContext.activeRoutineId !== routineId) {
+        return false;
+      }
+      continue;
+    }
+
+    if (tag.startsWith("step:")) {
+      const [routineId, stepId, extra] = tag.slice("step:".length).split(":");
+      if (
+        extra !== undefined ||
+        !routineId ||
+        !stepId ||
+        turnContext.activeRoutineId !== routineId ||
+        turnContext.activeStepId !== stepId
+      ) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+};
+
 export class DefaultSteeringResolver implements SteeringResolver {
   resolve(rules: SteeringRule[], _ctx: { turnContext: TurnContext }): SteeringRule[] {
     const indexed = rules.map((rule, index) => ({ rule, index }));
@@ -126,6 +154,7 @@ const buildDirectiveTraceStage = (input: {
   kind: string;
   matches: DirectiveMatch[];
   candidateCount: number;
+  scopeFilteredCount?: number;
 }): ConversationTraceStage => stage({
   id: input.id,
   kind: input.kind,
@@ -139,6 +168,7 @@ const buildDirectiveTraceStage = (input: {
         }))
       : input.matches.map(summarizeDirectiveMatch),
     candidateCount: input.candidateCount,
+    ...(input.scopeFilteredCount !== undefined ? { scopeFilteredCount: input.scopeFilteredCount } : {}),
   },
 });
 
@@ -151,8 +181,9 @@ const buildResolvedSteering = async (input: {
   traceKind?: string;
 }): Promise<{ steering: SteeringRule[]; directiveMatches: DirectiveMatch[]; traceStage: ConversationTraceStage }> => {
   const directives = input.directives ?? [];
+  const eligibleDirectives = directives.filter((directive) => isDirectiveEligibleForTurn(directive, input.turn));
   const directiveMatches = input.directiveMatcher
-    ? await input.directiveMatcher.match({ turn: input.turn, directives })
+    ? await input.directiveMatcher.match({ turn: input.turn, directives: eligibleDirectives })
     : [];
   const directiveSteering = directiveMatches.map(directiveMatchToSteering);
   const combined = [...(input.baseSteering ?? []), ...directiveSteering];
@@ -167,7 +198,8 @@ const buildResolvedSteering = async (input: {
       id: input.traceKind === "directive_steering" ? "directive_steering" : "directives",
       kind: input.traceKind ?? "directive_match",
       matches: directiveMatches,
-      candidateCount: directives.length,
+      candidateCount: eligibleDirectives.length,
+      scopeFilteredCount: directives.length - eligibleDirectives.length,
     }),
   };
 };

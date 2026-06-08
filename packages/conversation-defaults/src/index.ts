@@ -89,3 +89,4 @@ export {
   InMemoryConversationStores,
   type InMemoryConversationRoutineStoreOptions,
 } from "./inMemoryStores.js";
+export { parseScopeTag, scopeTag, type ParsedScopeTag } from "./scopeTags.js";

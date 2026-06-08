@@ -121,6 +121,7 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
     dependsOn: ["represent-organization"],
     excludes: [],
     routes: ["retrieval"],
+    tags: ["step:contact:ask_email"],
     description: "Operator-authored behavior rule.",
     metadata: { owner: "ops" },
     createdAt: new Date(0),
@@ -302,6 +303,7 @@ describe("serializeAgentConfig", () => {
       dependsOn: ["represent-organization"],
       excludes: [],
       routes: ["retrieval"],
+      tags: ["step:contact:ask_email"],
       description: "Operator-authored behavior rule.",
       metadata: { owner: "ops" },
     }]);
@@ -429,6 +431,7 @@ describe("serializeAgentConfig", () => {
       dependsOn: ["represent-organization"],
       excludes: [],
       routes: ["retrieval"],
+      tags: ["step:contact:ask_email"],
       description: "Operator-authored behavior rule.",
       metadata: { owner: "ops" },
       createdAt: new Date(0),

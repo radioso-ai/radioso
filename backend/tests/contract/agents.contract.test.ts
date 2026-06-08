@@ -618,6 +618,7 @@ describe("agents contract", () => {
         name: "operator-formality",
         condition: { kind: "always" },
         action: "Use a formal register.",
+        tags: ["step:contact:ask_email"],
       })
       .expect(201);
 
@@ -631,6 +632,7 @@ describe("agents contract", () => {
         priority: null,
         requiredCapabilities: [],
         routes: [],
+        tags: ["step:contact:ask_email"],
       },
       coherence: {
         coherent: true,
@@ -648,6 +650,7 @@ describe("agents contract", () => {
     expect(list.body.directives[0]).toMatchObject({
       id: create.body.directive.id,
       name: "operator-formality",
+      tags: ["step:contact:ask_email"],
     });
     expect(list.body.builtIns).toEqual(defaultAnswerDirectives.map((directive) => ({
       name: directive.name,
@@ -662,6 +665,7 @@ describe("agents contract", () => {
       .set("Authorization", authorization)
       .send({
         action: "Use a warm formal register.",
+        tags: ["routine:contact"],
       })
       .expect(200);
 
@@ -669,6 +673,7 @@ describe("agents contract", () => {
       directive: {
         id: create.body.directive.id,
         action: "Use a warm formal register.",
+        tags: ["routine:contact"],
       },
       coherence: {
         coherent: true,

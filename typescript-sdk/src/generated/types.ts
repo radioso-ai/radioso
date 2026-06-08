@@ -2378,6 +2378,7 @@ export interface components {
             requiredCapabilities?: string[];
             dependsOn?: string[];
             excludes?: string[];
+            tags?: string[];
             description?: string | null;
             metadata?: {
                 [key: string]: unknown;
@@ -2390,6 +2391,7 @@ export interface components {
             requiredCapabilities?: string[];
             dependsOn?: string[];
             excludes?: string[];
+            tags?: string[];
             description?: string | null;
             metadata?: {
                 [key: string]: unknown;
@@ -2408,6 +2410,7 @@ export interface components {
             dependsOn: string[];
             excludes: string[];
             routes: string[];
+            tags: string[];
             description: string | null;
             metadata: {
                 [key: string]: unknown;

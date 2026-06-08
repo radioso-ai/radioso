@@ -2493,6 +2493,12 @@ components:
             type: string
             minLength: 1
             maxLength: 200
+        tags:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 200
         description:
           type:
             - string
@@ -2533,6 +2539,12 @@ components:
             minLength: 1
             maxLength: 200
         excludes:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 200
+        tags:
           type: array
           items:
             type: string
@@ -2583,6 +2595,10 @@ components:
           type: array
           items:
             type: string
+        tags:
+          type: array
+          items:
+            type: string
         description:
           type:
             - string
@@ -2607,6 +2623,7 @@ components:
         - dependsOn
         - excludes
         - routes
+        - tags
         - description
         - metadata
         - createdAt

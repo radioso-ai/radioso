@@ -234,6 +234,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     requiredCapabilities: z.array(z.string().min(1).max(200)).optional(),
     dependsOn: z.array(z.string().min(1).max(200)).optional(),
     excludes: z.array(z.string().min(1).max(200)).optional(),
+    tags: z.array(z.string().min(1).max(200)).optional(),
     description: z.string().min(1).max(1000).nullable().optional(),
     metadata: z.record(z.unknown()).optional(),
   }).strict();
@@ -261,6 +262,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       dependsOn: z.array(z.string()),
       excludes: z.array(z.string()),
       routes: z.array(z.string()),
+      tags: z.array(z.string()),
       description: z.string().nullable(),
       metadata: z.record(z.unknown()),
       createdAt: z.string().datetime(),

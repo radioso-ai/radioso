@@ -1046,6 +1046,7 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
       dependsOn: input.dependsOn ?? existing.dependsOn,
       excludes: input.excludes ?? existing.excludes,
       routes: input.routes ?? existing.routes,
+      tags: input.tags ?? existing.tags,
       description: input.description ?? existing.description,
       metadata: input.metadata ?? existing.metadata,
     });

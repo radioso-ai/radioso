@@ -402,6 +402,7 @@ describe("createChatProcessTurnInput", () => {
         dependsOn: [],
         excludes: [],
         routes: [],
+        tags: [],
         description: null,
         metadata: {},
         createdAt: new Date("2026-01-01T00:00:00.000Z"),

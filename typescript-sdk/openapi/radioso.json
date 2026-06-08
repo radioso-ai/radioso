@@ -3813,6 +3813,14 @@
               "maxLength": 200
             }
           },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
           "description": {
             "type": [
               "string",
@@ -3866,6 +3874,14 @@
             }
           },
           "excludes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "tags": {
             "type": "array",
             "items": {
               "type": "string",
@@ -3938,6 +3954,12 @@
               "type": "string"
             }
           },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "description": {
             "type": [
               "string",
@@ -3968,6 +3990,7 @@
           "dependsOn",
           "excludes",
           "routes",
+          "tags",
           "description",
           "metadata",
           "createdAt",

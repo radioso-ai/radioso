@@ -3,6 +3,7 @@ import {
   createDefaultApplicationComposition,
   createDefaultAgentSkillSettingsRegistry,
   createRetrievalSkillSettingsResolver,
+  createSystemRetrievalDefaultsProvider,
   createDefaultDocumentJobDispatcher,
   type ApplicationModule,
 } from "../composition/index.js";
@@ -168,6 +169,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     llmRegistry,
     logger,
     retrievalSettingsService: settings.retrievalSettingsService,
+    retrievalDefaultsProvider: createSystemRetrievalDefaultsProvider(),
     skillSettingsResolver: createRetrievalSkillSettingsResolver(),
     telemetryService: infrastructure.telemetryService,
     usageEventRecorder: infrastructure.usageEventRecorder,

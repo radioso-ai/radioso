@@ -86,7 +86,10 @@ import {
   EvalSnapshotService,
 } from "../../src/modules/eval/composition.js";
 import { ApplicationModuleCoordinator, createApplicationExtensionRegistry } from "../../src/app/composition/applicationModule.js";
-import { createDefaultAgentSkillSettingsRegistry } from "../../src/app/composition/skillSettingsResolver.js";
+import {
+  createDefaultAgentSkillSettingsRegistry,
+  createSystemRetrievalDefaultsProvider,
+} from "../../src/app/composition/index.js";
 import { DefaultAllowCapabilityPolicy, registeredCapabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
 import {
@@ -580,7 +583,7 @@ export const createTestDependencies = (overrides: {
     return result;
   };
   const retrievalPipeline = new RetrievalPipelineService(
-    retrievalSettingsService,
+    createSystemRetrievalDefaultsProvider(),
     embeddingService,
     vectorSearch,
     lexicalSearch,

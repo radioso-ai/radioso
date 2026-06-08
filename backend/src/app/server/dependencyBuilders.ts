@@ -127,7 +127,7 @@ import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.
 import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
 import { WorkspaceService, WorkspaceSummaryService } from "../../modules/workspace/public.js";
-import type { SkillSettingsResolver } from "../../modules/retrieval/public.js";
+import type { RetrievalDefaultsProvider, SkillSettingsResolver } from "../../modules/retrieval/public.js";
 import { ProductAnalyticsService } from "../../shared/analytics/productAnalyticsService.js";
 import { NoopUsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import {
@@ -579,6 +579,7 @@ export const buildRetrievalServices = (input: {
   llmRegistry: LlmProviderRegistry;
   logger: AppLogger;
   retrievalSettingsService: RetrievalSettingsService;
+  retrievalDefaultsProvider: RetrievalDefaultsProvider;
   skillSettingsResolver?: SkillSettingsResolver;
   telemetryService: TelemetryService;
   usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];

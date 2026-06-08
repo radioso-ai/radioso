@@ -96,6 +96,7 @@ export {
 export { resolveContextSourceUrl } from "./services/contextSourceUrl.js";
 export type { EmbeddingGateway, EmbeddingService } from "./services/embeddingService.js";
 export type { PromptBuildResult } from "./services/promptBuilder.js";
+export type { RetrievalDefaultsProvider } from "./domain/retrievalDefaultsProvider.js";
 export type { SkillSettingsResolver } from "./services/retrievalContextStage.js";
 export type {
   QueryRewriteGateway,

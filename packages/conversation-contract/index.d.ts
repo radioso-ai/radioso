@@ -78,6 +78,61 @@ export interface DirectiveMatch {
   selectionConfidence?: number;
 }
 
+export interface DirectiveMatchInput {
+  /** Turn signals a matcher may inspect (query, history summary, etc.). */
+  turnContext: Record<string, unknown>;
+  directives: Directive[];
+}
+
+/**
+ * Decides which authored Directives' conditions hold this turn. Sibling to skill
+ * selection: it matches, it does not execute.
+ */
+export interface DirectiveMatcherPort {
+  match(input: DirectiveMatchInput): Promise<DirectiveMatch[]>;
+}
+
+/** The model's verdict that a single directive's condition holds this turn. */
+export interface DirectiveClassification {
+  name: string;
+  confidence: number;
+  reason?: string;
+}
+
+/**
+ * Classifies which contextual directives apply to a turn. Narrow port so the
+ * matcher is testable with a stub and the LLM wiring stays a composition detail.
+ */
+export interface DirectiveMatchGateway {
+  match(input: { turnContext: Record<string, unknown>; directives: Directive[] }): Promise<DirectiveClassification[]>;
+}
+
+export interface DirectiveCoherenceConflict {
+  directiveId?: string;
+  directiveName: string;
+  reason: string;
+}
+
+export interface DirectiveCoherenceVerdict {
+  coherent: boolean;
+  conflicts: DirectiveCoherenceConflict[];
+  rationale: string;
+}
+
+export interface DirectiveCoherenceCheckInput {
+  agent: ConversationAgentConfig;
+  candidate: Directive;
+  existingDirectives: Directive[];
+}
+
+export interface DirectiveCoherenceChecker {
+  check(input: DirectiveCoherenceCheckInput): Promise<DirectiveCoherenceVerdict>;
+}
+
+export interface DirectiveCatalogRegistryPort {
+  list(): Directive[];
+}
+
 export interface SkillDefinition {
   name: string;
   description?: string;
@@ -117,6 +172,11 @@ export interface SkillOutcomeError {
   message: string;
   retryable?: boolean;
   metadata?: Record<string, unknown>;
+}
+
+export interface SkillCatalogRegistryPort<Entry extends { name: string } = { name: string }> {
+  list(): Entry[];
+  get(name: string): Entry | null;
 }
 
 export interface StagedContext {

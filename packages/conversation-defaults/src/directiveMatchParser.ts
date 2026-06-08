@@ -1,4 +1,4 @@
-import type { DirectiveClassification } from "./probabilisticDirectiveMatcher.js";
+import type { DirectiveClassification } from "@radioso/conversation-contract";
 
 const clampConfidence = (value: unknown): number | null => {
   const numeric = typeof value === "number" ? value : Number(value);

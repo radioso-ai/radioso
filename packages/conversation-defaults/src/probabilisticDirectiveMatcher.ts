@@ -1,22 +1,14 @@
 import { buildDirectiveMatchPrompt, getDirectiveMatchSystemPrompt } from "./directiveMatchPrompt.js";
 import { parseDirectiveClassifications } from "./directiveMatchParser.js";
-import type { DirectiveMatcherPort, DirectiveMatchInput } from "./directiveMatcher.js";
-import type { Directive, DirectiveMatch } from "./domain.js";
-
-/** The model's verdict that a single directive's condition holds this turn. */
-export interface DirectiveClassification {
-  name: string;
-  confidence: number;
-  reason?: string;
-}
-
-/**
- * Classifies which contextual directives apply to a turn. Narrow port so the
- * matcher is testable with a stub and the LLM wiring stays a composition detail.
- */
-export interface DirectiveMatchGateway {
-  match(input: { turnContext: Record<string, unknown>; directives: Directive[] }): Promise<DirectiveClassification[]>;
-}
+import type {
+  Directive,
+  DirectiveClassification,
+  DirectiveMatch,
+  DirectiveMatchGateway,
+  DirectiveMatchInput,
+  DirectiveMatcherPort,
+} from "@radioso/conversation-contract";
+export type { DirectiveClassification, DirectiveMatchGateway } from "@radioso/conversation-contract";
 
 export interface DirectiveTextGenerationClient {
   complete(input: {

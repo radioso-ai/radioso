@@ -1,4 +1,4 @@
-import type { DirectiveCoherenceChecker, DirectiveCoherenceVerdict } from "@radioso/conversation-defaults";
+import type { DirectiveCoherenceChecker, DirectiveCoherenceVerdict } from "@radioso/conversation-contract";
 
 import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";

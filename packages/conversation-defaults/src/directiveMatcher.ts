@@ -1,19 +1,5 @@
-import type { Directive, DirectiveMatch } from "./domain.js";
-
-export interface DirectiveMatchInput {
-  /** Turn signals a matcher may inspect (query, history summary, etc.). */
-  turnContext: Record<string, unknown>;
-  directives: Directive[];
-}
-
-/**
- * Decides which authored Directives' conditions hold this turn. Sibling to skill
- * selection — it matches, it does not execute. The probabilistic (LLM-backed)
- * matcher is a later slice; selection MUST never be an English keyword list.
- */
-export interface DirectiveMatcherPort {
-  match(input: DirectiveMatchInput): Promise<DirectiveMatch[]>;
-}
+import type { DirectiveMatchInput, DirectiveMatcherPort, DirectiveMatch } from "@radioso/conversation-contract";
+export type { DirectiveMatchInput, DirectiveMatcherPort } from "@radioso/conversation-contract";
 
 /**
  * Deterministic matcher for `{ kind: "always" }` directives. Resolves without a

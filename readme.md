@@ -165,7 +165,7 @@ curl -sS -b cookies.txt \
 
 Each workspace payload includes both `id` and `publicRouteKey`. Use `id` for API calls that require a workspace identifier. Use `publicRouteKey` when you need to inspect or build the canonical dashboard URL. If a workspace token, public chat link, or Enterprise embed token is ever exposed, rotate it from the settings screen instead of relying on disable-and-re-enable toggles.
 
-**Agents, assistant, and retrieval.** Use agents to configure knowledge-assistant identity, instructions, source scope, retrieval participation, per-skill settings, and public surface settings. Chat calls use the workspace default agent unless `agentId` is provided. Workspace retrieval settings still provide defaults; `skillSettings["retrieval.answer"]` can override retrieval behavior for one agent.
+**Agents, assistant, and retrieval.** Use agents to configure knowledge-assistant identity, instructions, source scope, retrieval participation, per-skill settings, and public surface settings. Chat calls use the workspace default agent unless `agentId` is provided. Retrieval configuration lives on the agent `retrieval.answer` skill through `skillSettings["retrieval.answer"]`; omitted fields inherit system/model defaults.
 
 ```bash
 curl -sS \
@@ -183,7 +183,7 @@ curl -sS \
   http://localhost:8080/api/v1/assistant/chat
 ```
 
-Use retrieval APIs when you want grounded search or answer generation over workspace context without assistant persona or chat routing.
+Use retrieval APIs when you want grounded search or answer generation over workspace context without assistant persona or chat routing. Retrieval-only calls use system defaults and still support per-call filters such as `metadataFilter`.
 
 ```bash
 curl -sS \
@@ -209,7 +209,7 @@ curl -sS \
 
 The catalog describes product-facing work and points to stable contracts. It does not add a generic skill execution endpoint. Skill entries may also declare UI display hints and their own outcome names. History and diagnostics expose those names with a normalized status so clients can filter by skill behavior without depending on retrieval-specific enums.
 
-**History, settings, feedback, and quality.** Assistant conversations are listed from `GET /api/v1/history/chat` and fetched from `GET /api/v1/history/chat/<conversation-id>`. `GET /api/v1/history` returns merged chat and document-search history. Shared workspace settings are read and merge-updated through `GET /api/v1/settings` and `PUT /api/v1/settings`, with separate `assistant`, `retrieval`, and `channels` sections.
+**History, settings, feedback, and quality.** Assistant conversations are listed from `GET /api/v1/history/chat` and fetched from `GET /api/v1/history/chat/<conversation-id>`. `GET /api/v1/history` returns merged chat and document-search history. Shared workspace settings are read and merge-updated through `GET /api/v1/settings` and `PUT /api/v1/settings`, with assistant and channel settings. Ingestion settings stay under the settings API. Retrieval defaults are read-only at `GET /api/v1/settings/retrieval-defaults`; per-agent retrieval behavior is configured on the agent Skills tab.
 
 Persisted assistant answers can receive thumbs up or thumbs down feedback in the dashboard, public chat, and website embed. Authenticated callers use `PUT /api/v1/answer-feedback/messages/<assistant-message-id>` and `DELETE /api/v1/answer-feedback/messages/<assistant-message-id>`. Public chat sessions use `PUT /api/v1/answer-feedback/public/chat/<token>/messages/<assistant-message-id>` and the matching `DELETE` route. A thumbs down request may include an optional `comment` up to 2000 characters.
 

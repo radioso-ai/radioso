@@ -103,17 +103,17 @@ export const registerSettingsPaths = (
 
   registry.registerPath({
     method: "get",
-    path: "/api/v1/settings/metadata-fields",
+    path: "/api/v1/settings/retrieval-defaults",
     tags: ["Settings"],
-    summary: "List metadata field suggestions for the authenticated workspace",
-    operationId: "listSettingsMetadataFields",
+    summary: "Get system retrieval defaults for the authenticated workspace",
+    operationId: "getSettingsRetrievalDefaults",
     security: [{ [security.bearerAuthScheme.name]: [] }],
     responses: {
       200: {
-        description: "Metadata field suggestions returned",
+        description: "Retrieval defaults returned",
         content: {
           "application/json": {
-            schema: schemas.MetadataFieldSuggestionsResponseSchema,
+            schema: schemas.RetrievalDefaultsResponseSchema,
           },
         },
       },

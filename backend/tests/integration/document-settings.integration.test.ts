@@ -123,11 +123,11 @@ describe("document and settings integration", () => {
     });
 
     const firstFields = await request(app)
-      .get("/api/v1/settings/metadata-fields")
+      .get("/api/v1/settings/retrieval-defaults")
       .set("Authorization", firstAuthorization);
 
     const secondFields = await request(app)
-      .get("/api/v1/settings/metadata-fields")
+      .get("/api/v1/settings/retrieval-defaults")
       .set("Authorization", secondAuthorization);
 
     expect(firstFields.status).toBe(200);
@@ -207,7 +207,7 @@ describe("document and settings integration", () => {
     });
 
     const fields = await request(app)
-      .get("/api/v1/settings/metadata-fields")
+      .get("/api/v1/settings/retrieval-defaults")
       .set("Authorization", authorization);
 
     expect(fields.status).toBe(200);

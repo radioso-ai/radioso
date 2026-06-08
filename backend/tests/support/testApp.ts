@@ -752,6 +752,7 @@ export const createTestDependencies = (overrides: {
     accessGrantService,
     publicChatBaseUrl: env.PUBLIC_CHAT_BASE_URL,
   });
+  const retrievalDefaultsProvider = createSystemRetrievalDefaultsProvider();
   const dependencies: AppDependencies = {
     env,
     logger,
@@ -844,11 +845,12 @@ export const createTestDependencies = (overrides: {
     assistantHistoryService,
     retrievalSearchService,
     retrievalAnswerService,
+    retrievalDefaultsProvider,
     evalSnapshotService: new EvalSnapshotService(
       conversationRepository,
       messageRepository,
       agentRepository,
-      createSystemRetrievalDefaultsProvider(),
+      retrievalDefaultsProvider,
       createRetrievalSkillSettingsResolver(),
       new EvalRepository(connectorDb as any),
     ),

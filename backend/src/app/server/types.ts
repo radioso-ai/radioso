@@ -22,6 +22,7 @@ import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
 import type { IngestionSettingsService } from "../../modules/settings/composition.js";
 import type { PlatformSettingsService } from "../../modules/settings/composition.js";
 import type { RetrievalAnswerService, RetrievalSearchService } from "../../modules/retrieval/composition.js";
+import type { RetrievalDefaultsProvider } from "../../modules/retrieval/public.js";
 import type { AuthService } from "../../modules/auth/services/authService.js";
 import type { EmailVerificationService } from "../../modules/auth/services/emailVerificationService.js";
 import type { PasswordResetService } from "../../modules/auth/services/passwordResetService.js";
@@ -125,6 +126,7 @@ export interface AppDependencies {
   assistantHistoryService: AssistantHistoryService;
   retrievalSearchService: RetrievalSearchService;
   retrievalAnswerService: RetrievalAnswerService;
+  retrievalDefaultsProvider: RetrievalDefaultsProvider;
   evalSnapshotService: EvalSnapshotService;
   evalCaseService: EvalCaseService;
   evalRunService: EvalRunService;

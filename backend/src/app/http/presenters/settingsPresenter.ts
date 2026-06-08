@@ -1,4 +1,8 @@
 import type { IngestionSettingsRecord } from "../../../modules/settings/contracts/ingestion.js";
+import type {
+  MetadataFieldSuggestion,
+  RetrievalSettingsRecord,
+} from "../../../modules/settings/contracts/retrieval.js";
 import type { PlatformSettingsResource } from "../../../modules/settings/contracts/platform.js";
 
 export const presentIngestionSettings = (
@@ -32,4 +36,22 @@ export const presentGeneralSettings = (
   websiteEmbedTheme: settings.channels.websiteEmbedTheme,
   websiteEmbedCopy: settings.channels.websiteEmbedCopy,
   websiteEmbedExpertOverrides: settings.channels.websiteEmbedExpertOverrides,
+});
+
+export const presentRetrievalDefaults = (
+  settings: RetrievalSettingsRecord,
+  metadataFieldSuggestions: MetadataFieldSuggestion[],
+) => ({
+  queryRewriteEnabled: settings.queryRewriteEnabled,
+  semanticRewriteInstructions: settings.semanticRewriteInstructions,
+  lexicalRewriteInstructions: settings.lexicalRewriteInstructions,
+  suggestedQuestionsEnabled: settings.suggestedQuestionsEnabled,
+  suggestedQuestionsCount: settings.suggestedQuestionsCount,
+  rerankEnabled: settings.rerankEnabled,
+  vectorTopK: settings.vectorTopK,
+  rerankTopK: settings.rerankTopK,
+  retrievalStrategy: settings.retrievalStrategy,
+  customInstruction: settings.customInstruction,
+  metadataRules: [],
+  metadataFieldSuggestions,
 });

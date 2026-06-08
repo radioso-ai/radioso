@@ -52,7 +52,7 @@ import {
   type AccountMembershipRole,
   type DocumentSourceListItem,
   type GeneralSettings,
-  type RetrievalSettings,
+  type RetrievalDefaults,
 } from '@/lib/api'
 import { isValidEmailAddress } from '@/lib/validation'
 import { useWorkspace } from '@/lib/workspace-context'
@@ -189,7 +189,7 @@ const getContactRequestDeliveryKey = (
   })
 }
 
-const fallbackRetrievalDefaults: RetrievalSettings = {
+const fallbackRetrievalDefaults: RetrievalDefaults = {
   queryRewriteEnabled: false,
   semanticRewriteInstructions: '',
   lexicalRewriteInstructions: '',
@@ -197,7 +197,6 @@ const fallbackRetrievalDefaults: RetrievalSettings = {
   suggestedQuestionsCount: 3,
   rerankEnabled: false,
   vectorTopK: 15,
-  similarityThreshold: 0.2,
   rerankTopK: 5,
   retrievalStrategy: 'fixed',
   metadataRules: [],
@@ -272,7 +271,7 @@ export function WorkspaceAssistantChannelsTab({
   const [assistantBehaviorSettings, setAssistantBehaviorSettings] = useState<AssistantBehaviorSettings | null>(null)
   const [savedAssistantBehaviorSettings, setSavedAssistantBehaviorSettings] = useState<AssistantBehaviorSettings | null>(null)
   const [contactRequestEmailsText, setContactRequestEmailsText] = useState('')
-  const [retrievalDefaults, setRetrievalDefaults] = useState<RetrievalSettings | null>(null)
+  const [retrievalDefaults, setRetrievalDefaults] = useState<RetrievalDefaults | null>(null)
   const [sourceList, setSourceList] = useState<DocumentSourceListItem[]>([])
   const [sourceListError, setSourceListError] = useState<string | null>(null)
   const [isSourceListLoading, setIsSourceListLoading] = useState(false)
@@ -321,12 +320,21 @@ export function WorkspaceAssistantChannelsTab({
     return agentId ? agentsApi.deleteAssistantLogo(agentId) : generalSettingsApi.deleteAssistantLogo({ auth: 'session' })
   }, [agentId])
 
+  // Assistant behavior settings are per-agent only; this tab loads/saves them solely in
+  // `mode === 'assistant'` (which always carries an agentId). Workspace mode renders channels
+  // and general settings, not retrieval/answer behavior.
   const loadAssistantBehaviorSettings = useCallback(async () => {
-    return agentId ? agentsApi.getBehaviorSettings(agentId) : agentsApi.getWorkspaceBehaviorSettings({ auth: 'session' })
+    if (!agentId) {
+      throw new Error('Assistant behavior settings require an agent')
+    }
+    return agentsApi.getBehaviorSettings(agentId)
   }, [agentId])
 
   const updateAssistantBehaviorSettings = useCallback(async (data: AssistantBehaviorSettings) => {
-    return agentId ? agentsApi.updateBehaviorSettings(agentId, data) : agentsApi.updateWorkspaceBehaviorSettings(data, { auth: 'session' })
+    if (!agentId) {
+      throw new Error('Assistant behavior settings require an agent')
+    }
+    return agentsApi.updateBehaviorSettings(agentId, data)
   }, [agentId])
 
   useEffect(() => {
@@ -447,7 +455,7 @@ export function WorkspaceAssistantChannelsTab({
     }
     const loadRetrievalDefaults = async () => {
       try {
-        const defaults = await settingsApi.getRetrievalSettings({ auth: 'session' })
+        const defaults = await settingsApi.getRetrievalDefaults({ auth: 'session' })
         if (!active) return
         setRetrievalDefaults(defaults)
       } catch (error) {

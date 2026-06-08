@@ -95,9 +95,9 @@ describe("settings contract", () => {
     expect(putResponse.status).toBe(404);
   });
 
-  it("returns metadata field suggestions on the dedicated endpoint", async () => {
+  it("returns retrieval defaults with metadata field suggestions on the dedicated endpoint", async () => {
     const { app } = createTestApp();
-    const session = await issueTestSession(app, "settings-metadata-fields@example.com");
+    const session = await issueTestSession(app, "settings-retrieval-defaults@example.com");
 
     await request(app)
       .post("/api/v1/document/")
@@ -113,10 +113,25 @@ describe("settings contract", () => {
     );
 
     const response = await request(app)
-      .get("/api/v1/settings/metadata-fields")
+      .get("/api/v1/settings/retrieval-defaults")
       .set(adminSessionHeaders(session));
 
     expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      queryRewriteEnabled: false,
+      suggestedQuestionsEnabled: true,
+      suggestedQuestionsCount: 3,
+      rerankEnabled: false,
+      vectorTopK: 15,
+      rerankTopK: 5,
+      retrievalStrategy: "fixed",
+      customInstruction: "",
+      metadataRules: [],
+    });
+    expect(response.body).not.toHaveProperty("workspaceId");
+    expect(response.body).not.toHaveProperty("similarityThreshold");
+    expect(response.body).not.toHaveProperty("createdAt");
+    expect(response.body).not.toHaveProperty("updatedAt");
     expect(response.body.metadataFieldSuggestions).toEqual(
       expect.arrayContaining([
         { field: "language", inferredType: "string" },
@@ -227,16 +242,30 @@ describe("settings contract", () => {
     });
   });
 
-  it("documents metadata fields and ingestion settings in the generated schema", () => {
+  it("documents retrieval defaults and ingestion settings in the generated schema", () => {
     const spec = readFileSync(new URL("../../openapi.yaml", import.meta.url), "utf8");
-    const metadataFieldsSchema = spec.match(/MetadataFieldSuggestionsResponse:\n([\s\S]*?)\n    IngestionSettings:/)?.[1] ?? "";
+    const retrievalDefaultsSchema = spec.match(/RetrievalDefaultsResponse:\n([\s\S]*?)\n    RetrievalSettingsOverride:/)?.[1] ?? "";
     const retrievalOverrideSchema = spec.match(/RetrievalSettingsOverride:\n([\s\S]*?)\n    IngestionSettings:/)?.[1] ?? "";
     const ingestionSettingsSchema = spec.match(/IngestionSettings:\n([\s\S]*?)\n    UpdateIngestionSettingsRequest:/)?.[1] ?? "";
     const ingestionUpdateSchema = spec.match(/UpdateIngestionSettingsRequest:\n([\s\S]*?)\n    RetrievalMetadataRule:/)?.[1] ?? "";
 
     expect(spec).not.toContain("/api/v1/settings/retrieval:");
     expect(spec).not.toContain("UpdateRetrievalSettingsRequest:");
-    expect(metadataFieldsSchema).toContain("metadataFieldSuggestions:");
+    expect(spec).not.toContain("/api/v1/settings/metadata-fields:");
+    expect(retrievalDefaultsSchema).toContain("queryRewriteEnabled:");
+    expect(retrievalDefaultsSchema).toContain("semanticRewriteInstructions:");
+    expect(retrievalDefaultsSchema).toContain("lexicalRewriteInstructions:");
+    expect(retrievalDefaultsSchema).toContain("suggestedQuestionsEnabled:");
+    expect(retrievalDefaultsSchema).toContain("suggestedQuestionsCount:");
+    expect(retrievalDefaultsSchema).toContain("rerankEnabled:");
+    expect(retrievalDefaultsSchema).toContain("vectorTopK:");
+    expect(retrievalDefaultsSchema).toContain("rerankTopK:");
+    expect(retrievalDefaultsSchema).toContain("retrievalStrategy:");
+    expect(retrievalDefaultsSchema).toContain("customInstruction:");
+    expect(retrievalDefaultsSchema).toContain("metadataRules:");
+    expect(retrievalDefaultsSchema).toContain("metadataFieldSuggestions:");
+    expect(retrievalDefaultsSchema).not.toContain("workspaceId:");
+    expect(retrievalDefaultsSchema).not.toContain("similarityThreshold:");
     expect(retrievalOverrideSchema).toContain("metadataRules:");
     expect(retrievalOverrideSchema).toContain("semanticRewriteInstructions:");
     expect(retrievalOverrideSchema).toContain("suggestedQuestionsEnabled:");
@@ -250,7 +279,7 @@ describe("settings contract", () => {
     expect(ingestionUpdateSchema).toContain("fixedWindowChunkOverlap:");
     expect(ingestionUpdateSchema).toContain("structuredMinChunkSize:");
     expect(spec).toContain("/api/v1/settings:");
-    expect(spec).toContain("/api/v1/settings/metadata-fields:");
+    expect(spec).toContain("/api/v1/settings/retrieval-defaults:");
     expect(spec).toContain("PlatformSettingsResponse:");
     expect(spec).toContain("UpdatePlatformSettingsRequest:");
     expect(spec).toContain("/api/v1/settings/ingestion:");

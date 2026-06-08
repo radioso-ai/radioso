@@ -158,7 +158,7 @@ export interface OpenApiSchemaCatalog {
   RetrievalSearchEvidenceSchema: z.ZodTypeAny;
   RetrievalSearchRequestSchema: z.ZodTypeAny;
   RetrievalSearchResponseSchema: z.ZodTypeAny;
-  MetadataFieldSuggestionsResponseSchema: z.ZodTypeAny;
+  RetrievalDefaultsResponseSchema: z.ZodTypeAny;
   RetrievalSubquerySchema: z.ZodTypeAny;
   ActivityLinkSchema: z.ZodTypeAny;
   ActivityTraceSchema: z.ZodTypeAny;

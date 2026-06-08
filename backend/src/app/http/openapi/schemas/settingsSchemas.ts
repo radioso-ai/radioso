@@ -27,15 +27,50 @@ import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
 
 export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: OpenApiSchemaCatalog) => {
-  const MetadataFieldSuggestionsResponseSchema = registry.register(
-    "MetadataFieldSuggestionsResponse",
+  const MetadataFieldSuggestionSchema = z.object({
+    field: z.string(),
+    inferredType: z.enum(metadataValueTypes),
+  });
+
+  const RetrievalMetadataRuleShape = z.object({
+    id: z.string(),
+    field: z.string(),
+    valueType: z.enum(metadataValueTypes),
+    operator: z.enum(metadataRuleOperators),
+    value: z.string(),
+    combinator: z.enum(["and", "or"]).default("and"),
+    conditions: z.array(
+      z.object({
+        id: z.string(),
+        field: z.string(),
+        valueType: z.enum(metadataValueTypes),
+        operator: z.enum(metadataRuleOperators),
+        value: z.string(),
+      }),
+    ).default([]),
+    effect: z.enum(metadataRuleEffects),
+    enabled: z.boolean(),
+    triggerMode: z.enum(metadataRuleTriggerModes),
+    triggerInstruction: z.string().optional(),
+  });
+
+  const RetrievalDefaultsResponseSchema = registry.register(
+    "RetrievalDefaultsResponse",
     z.object({
-      metadataFieldSuggestions: z.array(
-        z.object({
-          field: z.string(),
-          inferredType: z.enum(metadataValueTypes),
-        }),
-      ),
+      queryRewriteEnabled: z.boolean(),
+      semanticRewriteInstructions: z.string(),
+      lexicalRewriteInstructions: z.string(),
+      suggestedQuestionsEnabled: z.boolean(),
+      suggestedQuestionsCount: z.number().int(),
+      rerankEnabled: z.boolean(),
+      vectorTopK: z.number().int(),
+      rerankTopK: z.number().int(),
+      retrievalStrategy: z.enum(retrievalStrategyPreferences).optional(),
+      customInstruction: z.string(),
+      metadataRules: z.array(RetrievalMetadataRuleShape).openapi({
+        description: "Always empty for system retrieval defaults.",
+      }),
+      metadataFieldSuggestions: z.array(MetadataFieldSuggestionSchema),
     }),
   );
 
@@ -68,27 +103,7 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
 
   const RetrievalMetadataRuleSchema = registry.register(
     "RetrievalMetadataRule",
-    z.object({
-      id: z.string(),
-      field: z.string(),
-      valueType: z.enum(metadataValueTypes),
-      operator: z.enum(metadataRuleOperators),
-      value: z.string(),
-      combinator: z.enum(["and", "or"]).default("and"),
-      conditions: z.array(
-        z.object({
-          id: z.string(),
-          field: z.string(),
-          valueType: z.enum(metadataValueTypes),
-          operator: z.enum(metadataRuleOperators),
-          value: z.string(),
-        }),
-      ).default([]),
-      effect: z.enum(metadataRuleEffects),
-      enabled: z.boolean(),
-      triggerMode: z.enum(metadataRuleTriggerModes),
-      triggerInstruction: z.string().optional(),
-    }),
+    RetrievalMetadataRuleShape,
   );
 
   const TriggerAnalysisRuleSchema = registry.register(
@@ -288,7 +303,7 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
   );
 
   Object.assign(schemas, {
-    MetadataFieldSuggestionsResponseSchema,
+    RetrievalDefaultsResponseSchema,
     IngestionSettingsSchema,
     UpdateIngestionSettingsRequestSchema,
     RetrievalMetadataRuleSchema,

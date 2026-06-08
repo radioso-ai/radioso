@@ -917,9 +917,169 @@
           "expiresAt"
         ]
       },
-      "MetadataFieldSuggestionsResponse": {
+      "RetrievalDefaultsResponse": {
         "type": "object",
         "properties": {
+          "queryRewriteEnabled": {
+            "type": "boolean"
+          },
+          "semanticRewriteInstructions": {
+            "type": "string"
+          },
+          "lexicalRewriteInstructions": {
+            "type": "string"
+          },
+          "suggestedQuestionsEnabled": {
+            "type": "boolean"
+          },
+          "suggestedQuestionsCount": {
+            "type": "integer"
+          },
+          "rerankEnabled": {
+            "type": "boolean"
+          },
+          "vectorTopK": {
+            "type": "integer"
+          },
+          "rerankTopK": {
+            "type": "integer"
+          },
+          "retrievalStrategy": {
+            "type": "string",
+            "enum": [
+              "fixed",
+              "reasoning",
+              "auto"
+            ]
+          },
+          "customInstruction": {
+            "type": "string"
+          },
+          "metadataRules": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "field": {
+                  "type": "string"
+                },
+                "valueType": {
+                  "type": "string",
+                  "enum": [
+                    "string",
+                    "number",
+                    "date",
+                    "boolean"
+                  ]
+                },
+                "operator": {
+                  "type": "string",
+                  "enum": [
+                    "equals",
+                    "not_equals",
+                    "contains",
+                    "not_contains",
+                    "lt",
+                    "lte",
+                    "gt",
+                    "gte"
+                  ]
+                },
+                "value": {
+                  "type": "string"
+                },
+                "combinator": {
+                  "type": "string",
+                  "enum": [
+                    "and",
+                    "or"
+                  ],
+                  "default": "and"
+                },
+                "conditions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "field": {
+                        "type": "string"
+                      },
+                      "valueType": {
+                        "type": "string",
+                        "enum": [
+                          "string",
+                          "number",
+                          "date",
+                          "boolean"
+                        ]
+                      },
+                      "operator": {
+                        "type": "string",
+                        "enum": [
+                          "equals",
+                          "not_equals",
+                          "contains",
+                          "not_contains",
+                          "lt",
+                          "lte",
+                          "gt",
+                          "gte"
+                        ]
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "field",
+                      "valueType",
+                      "operator",
+                      "value"
+                    ]
+                  },
+                  "default": []
+                },
+                "effect": {
+                  "type": "string",
+                  "enum": [
+                    "boost",
+                    "filter"
+                  ]
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "triggerMode": {
+                  "type": "string",
+                  "enum": [
+                    "always_on",
+                    "match_turn"
+                  ]
+                },
+                "triggerInstruction": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "field",
+                "valueType",
+                "operator",
+                "value",
+                "effect",
+                "enabled",
+                "triggerMode"
+              ]
+            },
+            "description": "Always empty for system retrieval defaults."
+          },
           "metadataFieldSuggestions": {
             "type": "array",
             "items": {
@@ -946,6 +1106,16 @@
           }
         },
         "required": [
+          "queryRewriteEnabled",
+          "semanticRewriteInstructions",
+          "lexicalRewriteInstructions",
+          "suggestedQuestionsEnabled",
+          "suggestedQuestionsCount",
+          "rerankEnabled",
+          "vectorTopK",
+          "rerankTopK",
+          "customInstruction",
+          "metadataRules",
           "metadataFieldSuggestions"
         ]
       },
@@ -9800,13 +9970,13 @@
         }
       }
     },
-    "/api/v1/settings/metadata-fields": {
+    "/api/v1/settings/retrieval-defaults": {
       "get": {
         "tags": [
           "Settings"
         ],
-        "summary": "List metadata field suggestions for the authenticated workspace",
-        "operationId": "listSettingsMetadataFields",
+        "summary": "Get system retrieval defaults for the authenticated workspace",
+        "operationId": "getSettingsRetrievalDefaults",
         "security": [
           {
             "bearerAuth": []
@@ -9814,11 +9984,11 @@
         ],
         "responses": {
           "200": {
-            "description": "Metadata field suggestions returned",
+            "description": "Retrieval defaults returned",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MetadataFieldSuggestionsResponse"
+                  "$ref": "#/components/schemas/RetrievalDefaultsResponse"
                 }
               }
             }

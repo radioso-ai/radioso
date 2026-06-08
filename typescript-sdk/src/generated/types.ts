@@ -417,15 +417,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/settings/metadata-fields": {
+    "/api/v1/settings/retrieval-defaults": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List metadata field suggestions for the authenticated workspace */
-        get: operations["listSettingsMetadataFields"];
+        /** Get system retrieval defaults for the authenticated workspace */
+        get: operations["getSettingsRetrievalDefaults"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1677,7 +1677,49 @@ export interface components {
             /** Format: date-time */
             expiresAt: string;
         };
-        MetadataFieldSuggestionsResponse: {
+        RetrievalDefaultsResponse: {
+            queryRewriteEnabled: boolean;
+            semanticRewriteInstructions: string;
+            lexicalRewriteInstructions: string;
+            suggestedQuestionsEnabled: boolean;
+            suggestedQuestionsCount: number;
+            rerankEnabled: boolean;
+            vectorTopK: number;
+            rerankTopK: number;
+            /** @enum {string} */
+            retrievalStrategy?: "fixed" | "reasoning" | "auto";
+            customInstruction: string;
+            /** @description Always empty for system retrieval defaults. */
+            metadataRules: {
+                id: string;
+                field: string;
+                /** @enum {string} */
+                valueType: "string" | "number" | "date" | "boolean";
+                /** @enum {string} */
+                operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
+                value: string;
+                /**
+                 * @default and
+                 * @enum {string}
+                 */
+                combinator: "and" | "or";
+                /** @default [] */
+                conditions: {
+                    id: string;
+                    field: string;
+                    /** @enum {string} */
+                    valueType: "string" | "number" | "date" | "boolean";
+                    /** @enum {string} */
+                    operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
+                    value: string;
+                }[];
+                /** @enum {string} */
+                effect: "boost" | "filter";
+                enabled: boolean;
+                /** @enum {string} */
+                triggerMode: "always_on" | "match_turn";
+                triggerInstruction?: string;
+            }[];
             metadataFieldSuggestions: {
                 field: string;
                 /** @enum {string} */
@@ -4731,7 +4773,7 @@ export interface operations {
             };
         };
     };
-    listSettingsMetadataFields: {
+    getSettingsRetrievalDefaults: {
         parameters: {
             query?: never;
             header?: never;
@@ -4740,13 +4782,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Metadata field suggestions returned */
+            /** @description Retrieval defaults returned */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MetadataFieldSuggestionsResponse"];
+                    "application/json": components["schemas"]["RetrievalDefaultsResponse"];
                 };
             };
             /** @description Authentication required */

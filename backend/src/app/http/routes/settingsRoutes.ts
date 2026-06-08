@@ -25,6 +25,7 @@ import {
 import {
   presentGeneralSettings,
   presentIngestionSettings,
+  presentRetrievalDefaults,
 } from "../presenters/settingsPresenter.js";
 
 type SettingsRouteDependencies = WorkspaceSessionDependencies & Pick<
@@ -36,6 +37,7 @@ type SettingsRouteDependencies = WorkspaceSessionDependencies & Pick<
   | "agentSurfaceExtensions"
   | "documentRepository"
   | "documentStorage"
+  | "retrievalDefaultsProvider"
   | "logger"
 >;
 
@@ -67,11 +69,12 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
     }
   });
 
-  router.get("/metadata-fields", workspaceSession, settingsRead, async (_req, res, next) => {
+  router.get("/retrieval-defaults", workspaceSession, settingsRead, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
+      const defaults = dependencies.retrievalDefaultsProvider.getDefaults(workspaceId);
       const metadataFieldSuggestions = await dependencies.documentRepository.listMetadataFieldSuggestions(workspaceId);
-      res.status(200).json({ metadataFieldSuggestions });
+      res.status(200).json(presentRetrievalDefaults(defaults, metadataFieldSuggestions));
     } catch (error) {
       next(error);
     }

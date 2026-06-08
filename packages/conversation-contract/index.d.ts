@@ -134,6 +134,8 @@ export interface TurnContext {
   history: ConversationMessage[];
   stagedContext: StagedContext[];
   steering: SteeringRule[];
+  activeRoutineId?: string;
+  activeStepId?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -282,6 +284,10 @@ export interface ConversationSkillDispatcher {
 
 export interface ConversationDirectiveMatcher {
   match(input: { turn: TurnContext; directives: Directive[] }): Promise<DirectiveMatch[]>;
+}
+
+export interface SteeringResolver {
+  resolve(rules: SteeringRule[], ctx: { turnContext: TurnContext }): SteeringRule[];
 }
 
 export interface ConversationSkillSelector {
@@ -435,6 +441,16 @@ export interface ConversationRoutineStepRenderer {
   }): Promise<RenderableTurn>;
 }
 
+export interface ConversationRoutineSteeringInput {
+  step: RoutineStep;
+  baseSteering: SteeringRule[];
+  turn: TurnContext;
+}
+
+export interface ConversationRoutineSteeringResolver {
+  resolve(input: ConversationRoutineSteeringInput): Promise<SteeringRule[]>;
+}
+
 /**
  * Durable, session-scoped store for the active Routine's position + variables.
  * `loadActive` returns only an in-flight (`status: "active"`) routine — the store
@@ -469,7 +485,11 @@ export interface ConversationRoutineResumeResult {
  * resumes through it and persists the returned next state.
  */
 export interface ConversationRoutineRunner {
-  resume(input: { turn: TurnContext; state: RoutineState }): Promise<ConversationRoutineResumeResult>;
+  resume(input: {
+    turn: TurnContext;
+    state: RoutineState;
+    steeringResolver?: ConversationRoutineSteeringResolver;
+  }): Promise<ConversationRoutineResumeResult>;
 }
 
 /**
@@ -491,6 +511,7 @@ export interface ProcessTurnInput {
   modelGateway: ConversationModelGateway;
   dispatcher: ConversationSkillDispatcher;
   directiveMatcher: ConversationDirectiveMatcher;
+  steeringResolver?: SteeringResolver;
   selector: ConversationSkillSelector;
   composer: ConversationTurnComposer;
   /**
@@ -519,6 +540,9 @@ export interface AttemptRoutineInput {
   sessionId: string;
   inputEvent: ConversationInputEvent;
   stores: ConversationStores;
+  directives?: Directive[];
+  directiveMatcher?: ConversationDirectiveMatcher;
+  steeringResolver?: SteeringResolver;
   routineStore?: ConversationRoutineStore;
   routineRunner?: ConversationRoutineRunner;
   routineActivator?: ConversationRoutineActivator;

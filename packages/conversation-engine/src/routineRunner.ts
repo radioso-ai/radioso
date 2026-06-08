@@ -3,6 +3,7 @@ import type {
   ConversationRoutineResumeResult,
   ConversationRoutineRunner,
   ConversationRoutineSkillDispatcher,
+  ConversationRoutineSteeringResolver,
   ConversationRoutineStepRenderer,
   Routine,
   RoutineActionRequest,
@@ -47,7 +48,11 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     private readonly skillDispatcher?: ConversationRoutineSkillDispatcher,
   ) {}
 
-  async resume(input: { turn: TurnContext; state: RoutineState }): Promise<ConversationRoutineResumeResult> {
+  async resume(input: {
+    turn: TurnContext;
+    state: RoutineState;
+    steeringResolver?: ConversationRoutineSteeringResolver;
+  }): Promise<ConversationRoutineResumeResult> {
     const { turn, state } = input;
     const routine = this.routines.find((candidate) => candidate.id === state.routineId);
     if (!routine) {
@@ -162,9 +167,14 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     }
 
     const nextState: RoutineState = { ...state, path, variables, status: "active" };
+    const baseSteering = projectStep(step);
+    const steering = input.steeringResolver
+      ? await input.steeringResolver.resolve({ step, baseSteering, turn })
+      : baseSteering;
+
     const response = await this.renderer.render({
       step,
-      steering: projectStep(step),
+      steering,
       turn,
     });
 

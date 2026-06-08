@@ -6,8 +6,8 @@ import {
   createDefaultDocumentJobDispatcher,
   type ApplicationModule,
 } from "../composition/index.js";
-import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService } from "../../modules/agents/public.js";
-import { createDirectiveCoherenceChecker } from "@radioso/conversation-defaults";
+import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../modules/agents/public.js";
+import { createDirectiveCoherenceChecker, scopeTag } from "@radioso/conversation-defaults";
 import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloudCdnEmbedConfigCacheInvalidator.js";
 import { PlatformSettingsService } from "../../modules/settings/composition.js";
 import type { AppDependencies } from "./types.js";
@@ -280,6 +280,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     }),
     registeredCapabilityNames,
   });
+  const directiveAuthorService = new DirectiveAuthorService({
+    repository: repositories.agentRepository,
+    textGenerationClient: {
+      complete: async ({ signal: _signal, ...input }) =>
+        (await chatInferencePipeline.complete(input)).text,
+    },
+    logger,
+    telemetryService: infrastructure.telemetryService,
+    buildStepScopeTag: scopeTag.step,
+  });
 
   const evalRepository = new EvalRepository(infrastructure.database);
   const evalSnapshotService = new EvalSnapshotService(
@@ -363,6 +373,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     platformSettingsService,
     agentService,
     authoredDirectiveService,
+    directiveAuthorService,
     agentSurfaceExtensions,
     skillCatalogService,
     accountRepository: repositories.accountRepository,

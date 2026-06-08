@@ -56,7 +56,7 @@ import type { ApplicationModuleCoordinator, ApplicationRouteMount } from "../com
 import type { PublicChatActionAdvertiserPort, ContactHistoryProviderPort } from "../../modules/chat/contracts/index.js";
 import type { UserRepositoryPort } from "../../db/repositories/userRepository.js";
 import type { SkillCatalogService } from "../../modules/skills/public.js";
-import type { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService } from "../../modules/agents/public.js";
+import type { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../modules/agents/public.js";
 import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.js";
 import type { DocumentSourceRepositoryPort } from "../../db/repositories/documentSourceRepository.js";
 import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
@@ -132,6 +132,7 @@ export interface AppDependencies {
   skillCatalogService: SkillCatalogService;
   agentService: AgentService;
   authoredDirectiveService: AuthoredDirectiveService;
+  directiveAuthorService: DirectiveAuthorService;
   agentSurfaceExtensions: AgentSurfaceExtensionRegistry;
   workspaceRepository: WorkspaceRepositoryPort;
   agentRepository: AgentRepositoryPort;

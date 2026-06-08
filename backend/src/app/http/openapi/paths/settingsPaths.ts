@@ -22,7 +22,7 @@ export const registerSettingsPaths = (
     security: [{ [security.bearerAuthScheme.name]: [] }],
     responses: {
       200: {
-        description: "Shared assistant, retrieval, and channel settings returned",
+        description: "Shared assistant and channel settings returned",
         content: {
           "application/json": {
             schema: schemas.PlatformSettingsResponseSchema,
@@ -103,62 +103,17 @@ export const registerSettingsPaths = (
 
   registry.registerPath({
     method: "get",
-    path: "/api/v1/settings/retrieval",
+    path: "/api/v1/settings/metadata-fields",
     tags: ["Settings"],
-    summary: "Get retrieval settings for the authenticated workspace",
-    operationId: "getRetrievalSettings",
+    summary: "List metadata field suggestions for the authenticated workspace",
+    operationId: "listSettingsMetadataFields",
     security: [{ [security.bearerAuthScheme.name]: [] }],
     responses: {
       200: {
-        description: "Retrieval settings returned",
+        description: "Metadata field suggestions returned",
         content: {
           "application/json": {
-            schema: schemas.RetrievalSettingsSchema,
-          },
-        },
-      },
-      401: {
-        description: "Authentication required",
-        content: {
-          "application/json": {
-            schema: schemas.ErrorResponseSchema,
-          },
-        },
-      },
-    },
-  });
-
-  registry.registerPath({
-    method: "put",
-    path: "/api/v1/settings/retrieval",
-    tags: ["Settings"],
-    summary: "Update retrieval settings for the authenticated workspace",
-    operationId: "updateRetrievalSettings",
-    security: [{ [security.bearerAuthScheme.name]: [] }],
-    request: {
-      body: {
-        required: true,
-        content: {
-          "application/json": {
-            schema: schemas.UpdateRetrievalSettingsRequestSchema,
-          },
-        },
-      },
-    },
-    responses: {
-      200: {
-        description: "Updated retrieval settings",
-        content: {
-          "application/json": {
-            schema: schemas.RetrievalSettingsSchema,
-          },
-        },
-      },
-      400: {
-        description: "Request validation failed",
-        content: {
-          "application/json": {
-            schema: schemas.ErrorResponseSchema,
+            schema: schemas.MetadataFieldSuggestionsResponseSchema,
           },
         },
       },

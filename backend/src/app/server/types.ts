@@ -17,10 +17,10 @@ import type {
   DocumentSearchService,
   WorkspaceIngestionReprocessService,
 } from "../../modules/documents/composition.js";
+import type { RetrievalMetadataFieldSourcePort } from "../../modules/settings/contracts/services.js";
 import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
 import type { IngestionSettingsService } from "../../modules/settings/composition.js";
 import type { PlatformSettingsService } from "../../modules/settings/composition.js";
-import type { RetrievalSettingsService } from "../../modules/settings/composition.js";
 import type { RetrievalAnswerService, RetrievalSearchService } from "../../modules/retrieval/composition.js";
 import type { AuthService } from "../../modules/auth/services/authService.js";
 import type { EmailVerificationService } from "../../modules/auth/services/emailVerificationService.js";
@@ -98,8 +98,8 @@ export interface AppDependencies {
   workspaceService: WorkspaceService;
   workspaceSummaryService: WorkspaceSummaryService;
   ingestionSettingsService: IngestionSettingsService;
-  retrievalSettingsService: RetrievalSettingsService;
   chunkRepository: ChunkRepositoryPort;
+  documentRepository: RetrievalMetadataFieldSourcePort;
   documentIngestionService: DocumentIngestionService;
   documentSourceRepository: DocumentSourceRepositoryPort;
   documentImportService: DocumentImportService;

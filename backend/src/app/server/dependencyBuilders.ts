@@ -118,7 +118,6 @@ import {
   embeddingModelIds,
   IngestionSettingsService,
   PlatformSettingsService,
-  RetrievalSettingsService,
 } from "../../modules/settings/composition.js";
 import type { EmbeddingModelId } from "../../modules/settings/contracts/ingestion.js";
 import { SkillCatalogService, retrievalAnswerSkillDefinition } from "../../modules/skills/public.js";
@@ -334,12 +333,10 @@ export const buildWorkspaceProviderCredentialsService = (input: {
 export const buildWorkspaceLlmCapabilitySettingsService = (input: {
   auditService: AuditPort;
   capabilityRepository: WorkspaceLlmCapabilityPreferencesRepositoryPort;
-  retrievalSettingsService: Pick<RetrievalSettingsService, "getForWorkspace">;
   logger?: Pick<AppLogger, "warn">;
 }): WorkspaceLlmCapabilitySettingsService =>
   new WorkspaceLlmCapabilitySettingsService(
     input.capabilityRepository,
-    input.retrievalSettingsService,
     input.auditService,
     input.logger,
   );
@@ -389,8 +386,6 @@ export const buildSettingsServices = (input: {
   auditService: AuditService;
   documentRepository: DocumentRepository;
   ingestionSettingsRepository: IngestionSettingsRepository;
-  productAnalyticsService: ProductAnalyticsService;
-  retrievalSettingsRepository: RetrievalSettingsRepository;
   supportedEmbeddingModels?: readonly EmbeddingModelId[];
   workspaceIngestionReprocessService?: Pick<WorkspaceIngestionReprocessService, "reprocessWorkspace">;
 }) => {
@@ -401,16 +396,9 @@ export const buildSettingsServices = (input: {
     input.supportedEmbeddingModels,
     input.workspaceIngestionReprocessService,
   );
-  const retrievalSettingsService = new RetrievalSettingsService(
-    input.retrievalSettingsRepository,
-    input.auditService,
-    input.documentRepository,
-    input.productAnalyticsService,
-  );
 
   return {
     ingestionSettingsService,
-    retrievalSettingsService,
   };
 };
 
@@ -578,7 +566,6 @@ export const buildRetrievalServices = (input: {
   ingestionSettingsService: IngestionSettingsService;
   llmRegistry: LlmProviderRegistry;
   logger: AppLogger;
-  retrievalSettingsService: RetrievalSettingsService;
   retrievalDefaultsProvider: RetrievalDefaultsProvider;
   skillSettingsResolver?: SkillSettingsResolver;
   telemetryService: TelemetryService;

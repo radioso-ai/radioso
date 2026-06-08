@@ -136,7 +136,6 @@ export interface OpenApiSchemaCatalog {
   PasswordResetRequestSchema: z.ZodTypeAny;
   ParsedQuerySchema: z.ZodTypeAny;
   PlatformChannelsSettingsSectionSchema: z.ZodTypeAny;
-  PlatformRetrievalSettingsSectionSchema: z.ZodTypeAny;
   PlatformSettingsResponseSchema: z.ZodTypeAny;
   PublicChatRequestSchema: z.ZodTypeAny;
   PublicChatSessionRequestSchema: z.ZodTypeAny;
@@ -159,7 +158,7 @@ export interface OpenApiSchemaCatalog {
   RetrievalSearchEvidenceSchema: z.ZodTypeAny;
   RetrievalSearchRequestSchema: z.ZodTypeAny;
   RetrievalSearchResponseSchema: z.ZodTypeAny;
-  RetrievalSettingsSchema: z.ZodTypeAny;
+  MetadataFieldSuggestionsResponseSchema: z.ZodTypeAny;
   RetrievalSubquerySchema: z.ZodTypeAny;
   ActivityLinkSchema: z.ZodTypeAny;
   ActivityTraceSchema: z.ZodTypeAny;
@@ -181,7 +180,6 @@ export interface OpenApiSchemaCatalog {
   UpdateGeneralSettingsRequestSchema: z.ZodTypeAny;
   UpdateIngestionSettingsRequestSchema: z.ZodTypeAny;
   UpdatePlatformSettingsRequestSchema: z.ZodTypeAny;
-  UpdateRetrievalSettingsRequestSchema: z.ZodTypeAny;
   WebsiteCrawlJobListQuerySchema: RouteParameterSchema;
   WebsiteCrawlJobListResponseSchema: z.ZodTypeAny;
   WebsiteCrawlJobResponseSchema: z.ZodTypeAny;

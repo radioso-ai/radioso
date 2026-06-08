@@ -384,7 +384,7 @@ describe("runtime entrypoints", () => {
       },
     });
     const reportErrorSpy = vi.spyOn(dependencies.errorReportingService, "reportUnhandledRequestError");
-    vi.spyOn(dependencies.retrievalSettingsService, "getForWorkspace").mockRejectedValue(new Error("boom"));
+    vi.spyOn(dependencies.platformSettingsService, "getForWorkspace").mockRejectedValue(new Error("boom"));
 
     const runtime = await startApiRuntime({
       env: createEnv(8095),
@@ -413,7 +413,7 @@ describe("runtime entrypoints", () => {
     expect(login.status).toBe(200);
 
     const response = await request(runtime.server!)
-      .get("/api/v1/settings/retrieval")
+      .get("/api/v1/settings/general")
       .set("Cookie", login.headers["set-cookie"][0] as string)
       .set("X-Workspace-Id", register.body.workspaceId as string);
 

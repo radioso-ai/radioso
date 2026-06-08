@@ -16,28 +16,25 @@ import {
   updateGeneralSettingsSchema,
   updateIngestionSettingsSchema,
   updatePlatformSettingsSchema,
-  updateSettingsSchema,
 } from "./settingsRouteSchemas.js";
 import {
   anonymousChatTokenRotationPatch,
   toGeneralSettingsPatch,
-  toRetrievalSettingsPatch,
   websiteEmbedTokenRotationPatch,
 } from "./settingsRouteMappers.js";
 import {
   presentGeneralSettings,
   presentIngestionSettings,
-  presentRetrievalSettings,
 } from "../presenters/settingsPresenter.js";
 
 type SettingsRouteDependencies = WorkspaceSessionDependencies & Pick<
   AppDependencies,
   | "ingestionSettingsService"
   | "platformSettingsService"
-  | "retrievalSettingsService"
   | "workspaceIngestionReprocessService"
   | "agentService"
   | "agentSurfaceExtensions"
+  | "documentRepository"
   | "documentStorage"
   | "logger"
 >;
@@ -70,28 +67,11 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
     }
   });
 
-  router.get("/retrieval", workspaceSession, settingsRead, async (_req, res, next) => {
+  router.get("/metadata-fields", workspaceSession, settingsRead, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const [settings, record] = await Promise.all([
-        dependencies.platformSettingsService.getForWorkspace(workspaceId),
-        dependencies.retrievalSettingsService.getForWorkspace(workspaceId),
-      ]);
-      res.status(200).json(presentRetrievalSettings(settings, record));
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  router.put("/retrieval", workspaceSession, requireWorkspacePermission(dependencies, "workspace.settings.manage"), validateBody(updateSettingsSchema), async (req, res, next) => {
-    try {
-      const { workspaceId } = res.locals as { workspaceId: string };
-      const settings = await dependencies.platformSettingsService.updateForWorkspace(
-        workspaceId,
-        toRetrievalSettingsPatch(req.body),
-      );
-      const record = await dependencies.retrievalSettingsService.getForWorkspace(workspaceId);
-      res.status(200).json(presentRetrievalSettings(settings, record));
+      const metadataFieldSuggestions = await dependencies.documentRepository.listMetadataFieldSuggestions(workspaceId);
+      res.status(200).json({ metadataFieldSuggestions });
     } catch (error) {
       next(error);
     }

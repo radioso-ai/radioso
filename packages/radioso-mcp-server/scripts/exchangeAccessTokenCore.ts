@@ -4,12 +4,10 @@ export const DEFAULT_TOOLS = [
   "get_document",
   "search_documents",
   "answer_grounded",
-  "get_retrieval_settings",
   "create_document",
   "update_document",
   "delete_document",
   "reprocess_document",
-  "update_retrieval_settings",
 ];
 
 export type OutputFormat = "shell" | "token" | "json";

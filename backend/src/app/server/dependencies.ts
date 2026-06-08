@@ -119,8 +119,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     auditService: infrastructure.auditService,
     documentRepository: repositories.documentRepository,
     ingestionSettingsRepository: repositories.ingestionSettingsRepository,
-    productAnalyticsService: infrastructure.productAnalyticsService,
-    retrievalSettingsRepository: repositories.retrievalSettingsRepository,
     supportedEmbeddingModels,
     workspaceIngestionReprocessService,
   });
@@ -131,7 +129,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const workspaceLlmCapabilitySettingsService = buildWorkspaceLlmCapabilitySettingsService({
     auditService: infrastructure.auditService,
     capabilityRepository: repositories.retrievalSettingsRepository,
-    retrievalSettingsService: settings.retrievalSettingsService,
     logger,
   });
   const llmCapabilityResolver = buildLlmCapabilityResolver({
@@ -170,7 +167,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     ingestionSettingsService: settings.ingestionSettingsService,
     llmRegistry,
     logger,
-    retrievalSettingsService: settings.retrievalSettingsService,
     retrievalDefaultsProvider,
     skillSettingsResolver,
     telemetryService: infrastructure.telemetryService,
@@ -222,7 +218,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceRepository: repositories.workspaceRepository,
     agentService,
     accessGrantService: access.accessGrantService,
-    retrievalSettingsService: settings.retrievalSettingsService,
     auditService: infrastructure.auditService,
     publicChatBaseUrl: env.PUBLIC_CHAT_BASE_URL,
     websiteEmbedIntegration: composition.websiteEmbedIntegration,
@@ -337,8 +332,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceService: workspace.workspaceService,
     workspaceSummaryService: workspace.workspaceSummaryService,
     ingestionSettingsService: settings.ingestionSettingsService,
-    retrievalSettingsService: settings.retrievalSettingsService,
     chunkRepository: repositories.chunkRepository,
+    documentRepository: repositories.documentRepository,
     documentIngestionService: documents.documentIngestionService,
     documentSourceRepository: repositories.documentSourceRepository,
     documentImportService: documents.documentImportService,

@@ -62,7 +62,6 @@ import { streamResult, textResult } from "./llmStubs.js";
 import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
 import { PlatformSettingsService } from "../../src/modules/settings/services/platformSettingsService.js";
 import type { RetrievedChunk, VectorSearchPort } from "../../src/modules/retrieval/public.js";
-import { RetrievalSettingsService } from "../../src/modules/settings/services/retrievalSettingsService.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import { WorkspaceSummaryService } from "../../src/modules/workspace/services/workspaceSummaryService.js";
 import { WorkspaceSessionService } from "../../src/modules/auth/services/workspaceSessionService.js";
@@ -494,12 +493,6 @@ export const createTestDependencies = (overrides: {
     undefined,
     workspaceIngestionReprocessService,
   );
-  const retrievalSettingsService = new RetrievalSettingsService(
-    retrievalSettingsRepository,
-    auditService,
-    documentRepository,
-    productAnalyticsService,
-  );
   const documentSourceContentService = new DocumentSourceContentService(documentStorage);
   const documentProcessingService = new DocumentProcessingService(
     documentRepository,
@@ -596,6 +589,9 @@ export const createTestDependencies = (overrides: {
     new PromptContextSelectorService(),
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(telemetryService),
+    undefined,
+    ingestionSettingsService,
+    createRetrievalSkillSettingsResolver(),
   );
   const documentSearchService = new DocumentSearchService(
     documentRepository,
@@ -642,7 +638,6 @@ export const createTestDependencies = (overrides: {
   );
   const workspaceLlmCapabilitySettingsService = new WorkspaceLlmCapabilitySettingsService(
     retrievalSettingsRepository,
-    retrievalSettingsService,
     auditService,
   );
   const connectorRegistry = new ConnectorRegistry();
@@ -752,7 +747,6 @@ export const createTestDependencies = (overrides: {
   });
   const platformSettingsService = new PlatformSettingsService({
     workspaceRepository,
-    retrievalSettingsService,
     auditService,
     agentService,
     accessGrantService,
@@ -815,8 +809,8 @@ export const createTestDependencies = (overrides: {
     workspaceService,
     workspaceSummaryService,
     ingestionSettingsService,
-    retrievalSettingsService,
     chunkRepository,
+    documentRepository,
     documentIngestionService,
     documentSourceRepository,
     documentImportService,

@@ -93,7 +93,7 @@ describe("document and settings integration", () => {
     expect(secondResponse.body.documentId).not.toBe(firstResponse.body.documentId);
   });
 
-  it("keeps metadata signal policies account scoped", async () => {
+  it("keeps metadata field suggestions workspace scoped", async () => {
     const { app, repositories } = createTestApp();
 
     const { token: firstToken, workspaceId: firstWorkspaceId } = await issueTestToken(app, "controls-one@example.com");
@@ -107,7 +107,7 @@ describe("document and settings integration", () => {
       title: "First metadata doc",
       sourceContent: "Language doc",
       markdownContent: "Language doc",
-      metadata: { language: "en" },
+      metadata: { language: "en", region: "us" },
       sourceKind: "inline_text",
       status: "ready",
     });
@@ -117,69 +117,34 @@ describe("document and settings integration", () => {
       title: "Second metadata doc",
       sourceContent: "Language doc",
       markdownContent: "Language doc",
-      metadata: { language: "et" },
+      metadata: { language: "et", locale: "ee" },
       sourceKind: "inline_text",
       status: "ready",
     });
 
-    const firstUpdate = await request(app)
-      .put("/api/v1/settings/retrieval")
-      .set("Authorization", firstAuthorization)
-      .send({
-        queryRewriteEnabled: true,
-        semanticRewriteInstructions: "Keep semantic retrieval meaning-preserving.",
-        lexicalRewriteInstructions: "Prefer exact notation and aliases.",
-        rerankEnabled: true,
-        vectorTopK: 25,
-        similarityThreshold: 0.25,
-        rerankTopK: 8,
-        citationDisplayEnabled: true,
-        customInstruction: "",
-        metadataRules: [
-          {
-            id: "language-filter",
-            field: "language",
-            valueType: "string",
-            operator: "equals",
-            value: "en",
-            effect: "filter",
-            enabled: true,
-          },
-        ],
-      });
+    const firstFields = await request(app)
+      .get("/api/v1/settings/metadata-fields")
+      .set("Authorization", firstAuthorization);
 
-    const secondSettings = await request(app)
-      .get("/api/v1/settings/retrieval")
+    const secondFields = await request(app)
+      .get("/api/v1/settings/metadata-fields")
       .set("Authorization", secondAuthorization);
 
-    expect(firstUpdate.status).toBe(200);
-    expect(firstUpdate.body.semanticRewriteInstructions).toBe("Keep semantic retrieval meaning-preserving.");
-    expect(firstUpdate.body.lexicalRewriteInstructions).toBe("Prefer exact notation and aliases.");
-    expect(firstUpdate.body.metadataRules).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: "language-filter",
-          field: "language",
-          valueType: "string",
-          operator: "equals",
-          value: "en",
-          combinator: "and",
-          conditions: [
-            expect.objectContaining({
-              field: "language",
-              valueType: "string",
-              operator: "equals",
-              value: "en",
-            }),
-          ],
-          enabled: true,
-          effect: "filter",
-        }),
-      ]),
+    expect(firstFields.status).toBe(200);
+    expect(secondFields.status).toBe(200);
+
+    const firstFieldNames = firstFields.body.metadataFieldSuggestions.map(
+      (suggestion: { field: string }) => suggestion.field,
     );
-    expect(secondSettings.status).toBe(200);
-    expect(secondSettings.body.metadataRules).toEqual([]);
-    expect(secondSettings.body.semanticRewriteInstructions).not.toBe(firstUpdate.body.semanticRewriteInstructions);
+    const secondFieldNames = secondFields.body.metadataFieldSuggestions.map(
+      (suggestion: { field: string }) => suggestion.field,
+    );
+
+    // Each workspace sees only its own documents' metadata fields.
+    expect(firstFieldNames).toContain("region");
+    expect(firstFieldNames).not.toContain("locale");
+    expect(secondFieldNames).toContain("locale");
+    expect(secondFieldNames).not.toContain("region");
   });
 
   it("queues eligible workspace documents for reprocessing from ingestion settings", async () => {
@@ -220,7 +185,7 @@ describe("document and settings integration", () => {
     expect(repositories.documentRepository.items.get(second.body.documentId)?.status).toBe("ready");
   });
 
-  it("discovers metadata-backed signal definitions and persists metadata policies", async () => {
+  it("discovers metadata-backed field suggestions from workspace documents", async () => {
     const { app, repositories } = createTestApp();
 
     const { token, workspaceId } = await issueTestToken(app, "metadata-signals@example.com");
@@ -241,73 +206,15 @@ describe("document and settings integration", () => {
       status: "ready",
     });
 
-    const settings = await request(app)
-      .get("/api/v1/settings/retrieval")
+    const fields = await request(app)
+      .get("/api/v1/settings/metadata-fields")
       .set("Authorization", authorization);
 
-    expect(settings.status).toBe(200);
-    expect(settings.body.metadataFieldSuggestions).toEqual(
+    expect(fields.status).toBe(200);
+    expect(fields.body.metadataFieldSuggestions).toEqual(
       expect.arrayContaining([
         { field: "language", inferredType: "string" },
         { field: "parsedData.url", inferredType: "string" },
-      ]),
-    );
-    expect(settings.body.metadataRules).toEqual([]);
-
-    const update = await request(app)
-      .put("/api/v1/settings/retrieval")
-      .set("Authorization", authorization)
-      .send({
-        queryRewriteEnabled: false,
-        rerankEnabled: false,
-        vectorTopK: 15,
-        similarityThreshold: 0.2,
-        rerankTopK: 5,
-        citationDisplayEnabled: true,
-        customInstruction: "",
-        metadataRules: [
-          {
-            id: "language-filter",
-            field: "language",
-            valueType: "string",
-            operator: "equals",
-            value: "en",
-            effect: "filter",
-            enabled: true,
-          },
-          {
-            id: "source-boost",
-            field: "parsedData.url",
-            valueType: "string",
-            operator: "contains",
-            value: "example.com",
-            effect: "boost",
-            enabled: true,
-          },
-        ],
-      });
-
-    expect(update.status).toBe(200);
-    expect(update.body.metadataRules).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: "language-filter",
-          field: "language",
-          valueType: "string",
-          operator: "equals",
-          value: "en",
-          combinator: "and",
-          conditions: [
-            expect.objectContaining({
-              field: "language",
-              valueType: "string",
-              operator: "equals",
-              value: "en",
-            }),
-          ],
-          enabled: true,
-          effect: "filter",
-        }),
       ]),
     );
   });

@@ -9,7 +9,11 @@ import { AccountRepository } from "../../src/db/repositories/accountRepository.j
 import { AgentRepository } from "../../src/db/repositories/agentRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
-import { runAllTestMigrations, testMigrationsPath } from "../support/databaseMigrations.js";
+import {
+  ensureLegacyRetrievalColumns,
+  runAllTestMigrations,
+  testMigrationsPath,
+} from "../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -53,6 +57,9 @@ describeIfDatabase("workspace retrieval settings to agent skill settings migrati
     workspaceRepository = new WorkspaceRepository(database);
     agentRepository = new AgentRepository(database);
     await runAllTestMigrations(database);
+    // 081 drops the query-time columns 080 reads; re-add them so we can seed the pre-migration
+    // schema and exercise 080 against it.
+    await ensureLegacyRetrievalColumns(database);
     migrationSql = await readFile(
       path.join(testMigrationsPath, "080_migrate_workspace_retrieval_to_agent_skill_settings.sql"),
       "utf8",

@@ -1,6 +1,5 @@
 import type { IngestionSettingsRecord } from "../../../modules/settings/contracts/ingestion.js";
 import type { PlatformSettingsResource } from "../../../modules/settings/contracts/platform.js";
-import type { RetrievalSettingsRecord } from "../../../modules/settings/contracts/retrieval.js";
 
 export const presentIngestionSettings = (
   settings: IngestionSettingsRecord,
@@ -8,18 +7,6 @@ export const presentIngestionSettings = (
 ) => ({
   ...settings,
   supportedEmbeddingModels,
-});
-
-export const presentRetrievalSettings = (
-  settings: PlatformSettingsResource,
-  record: RetrievalSettingsRecord,
-) => ({
-  ...settings.retrieval,
-  workspaceId: record.workspaceId,
-  createdAt: record.createdAt,
-  updatedAt: record.updatedAt,
-  suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
-  customInstruction: settings.assistant.customInstruction,
 });
 
 export const presentGeneralSettings = (

@@ -20,6 +20,7 @@ export const metadata: Metadata = {
   title: 'radioso - Knowledge Agents Platform',
   description: 'A knowledge agents platform for grounded document Q&A',
   icons: {
+    shortcut: '/favicon.ico',
     icon: '/radioso-icon.svg',
     apple: '/apple-icon.png',
   },

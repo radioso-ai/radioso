@@ -1,4 +1,4 @@
-import type { SkillCatalogRegistry } from "@radioso/conversation-defaults";
+import type { SkillCatalogRegistryPort } from "@radioso/conversation-contract";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { SkillCatalogEntry, SkillCatalogEntryDefinition, SkillCatalogResponse } from "./domain.js";
 
@@ -10,11 +10,11 @@ export interface SkillCatalogContext {
 
 export class SkillCatalogService {
   private readonly capabilityPolicy: CapabilityPolicy;
-  private readonly registry: SkillCatalogRegistry<SkillCatalogEntryDefinition>;
+  private readonly registry: SkillCatalogRegistryPort<SkillCatalogEntryDefinition>;
 
   constructor(input: {
     capabilityPolicy: CapabilityPolicy;
-    registry: SkillCatalogRegistry<SkillCatalogEntryDefinition>;
+    registry: SkillCatalogRegistryPort<SkillCatalogEntryDefinition>;
   }) {
     this.capabilityPolicy = input.capabilityPolicy;
     this.registry = input.registry;

@@ -3,6 +3,7 @@ export type { SkillCatalogEntryDefinition } from "./domain.js";
 export {
   SkillCatalogRegistry,
   SkillExecutorRegistry,
+  SkillRunResolver,
   noopSkillEmitPort,
   type SkillDeferralTicket,
   type SkillDispatchResult,

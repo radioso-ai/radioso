@@ -23,6 +23,7 @@ export const authoredDirectiveToDirective = (
     requiredCapabilities: directive.requiredCapabilities,
     dependsOn: directive.dependsOn,
     excludes: directive.excludes,
+    tags: directive.tags,
     ...(directive.description === null ? {} : { description: directive.description }),
     metadata: directive.metadata,
   };

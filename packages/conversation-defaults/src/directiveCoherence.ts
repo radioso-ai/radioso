@@ -1,31 +1,18 @@
 import type {
-  ConversationAgentConfig,
   ConversationMessage,
   ConversationModelGateway,
   Directive,
+  DirectiveCoherenceCheckInput,
+  DirectiveCoherenceChecker,
+  DirectiveCoherenceConflict,
+  DirectiveCoherenceVerdict,
 } from "@radioso/conversation-contract";
-
-export interface DirectiveCoherenceConflict {
-  directiveId?: string;
-  directiveName: string;
-  reason: string;
-}
-
-export interface DirectiveCoherenceVerdict {
-  coherent: boolean;
-  conflicts: DirectiveCoherenceConflict[];
-  rationale: string;
-}
-
-export interface DirectiveCoherenceCheckInput {
-  agent: ConversationAgentConfig;
-  candidate: Directive;
-  existingDirectives: Directive[];
-}
-
-export interface DirectiveCoherenceChecker {
-  check(input: DirectiveCoherenceCheckInput): Promise<DirectiveCoherenceVerdict>;
-}
+export type {
+  DirectiveCoherenceCheckInput,
+  DirectiveCoherenceChecker,
+  DirectiveCoherenceConflict,
+  DirectiveCoherenceVerdict,
+} from "@radioso/conversation-contract";
 
 export interface CreateDirectiveCoherenceCheckerOptions {
   modelGateway: ConversationModelGateway;

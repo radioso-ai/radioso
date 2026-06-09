@@ -42,6 +42,8 @@ export interface OpenApiSchemaCatalog {
   AuthoredDirectiveSaveResponseSchema: z.ZodTypeAny;
   AuthoredDirectiveUpdateRequestSchema: z.ZodTypeAny;
   BuiltInDirectiveSchema: z.ZodTypeAny;
+  DirectiveDraftRequestSchema: z.ZodTypeAny;
+  DirectiveDraftResponseSchema: z.ZodTypeAny;
   DirectiveCoherenceVerdictSchema: z.ZodTypeAny;
   DirectiveListResponseSchema: z.ZodTypeAny;
   AnswerSegmentSchema: z.ZodTypeAny;

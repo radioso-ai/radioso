@@ -198,6 +198,7 @@ export function WorkbenchOverridePanel({
             />
           </div>
           <Textarea
+            aria-label="Custom instruction override"
             value={state.touched.customInstruction ? state.values.customInstruction : baseline.customInstruction}
             disabled={!state.touched.customInstruction}
             onChange={(event) => dispatch({ type: 'set-custom-instruction', value: event.target.value })}

@@ -4,6 +4,7 @@ import {
   authoredDirectiveInputSchema,
   validateAuthoredDirectiveCapabilities,
 } from "../../src/modules/agents/authoredDirectives.js";
+import { authoredDirectiveToDirective } from "../../src/modules/agents/authoredDirectiveMapper.js";
 
 describe("authored directive domain validation", () => {
   it("rejects contextual directives without a condition description", () => {
@@ -64,6 +65,34 @@ describe("authored directive domain validation", () => {
       action: "Use the configured behavior.",
       routes: ["marketing"],
     }).success).toBe(false);
+  });
+
+  it("normalizes directive tags without requiring scope prefixes", () => {
+    const result = authoredDirectiveInputSchema.parse({
+      name: "scoped-step",
+      condition: { kind: "always" },
+      action: "Only while this step is active.",
+      tags: ["step:contact:ask_email", "step:contact:ask_email", "custom-tag"],
+    });
+
+    expect(result.tags).toEqual(["step:contact:ask_email", "custom-tag"]);
+  });
+
+  it("materializes authored directive tags into runtime directives", () => {
+    const directive = authoredDirectiveToDirective({
+      name: "scoped-step",
+      condition: { kind: "always" },
+      action: "Only while this step is active.",
+      requiredCapabilities: [],
+      dependsOn: [],
+      excludes: [],
+      routes: [],
+      tags: ["step:contact:ask_email"],
+      description: null,
+      metadata: {},
+    });
+
+    expect(directive.tags).toEqual(["step:contact:ask_email"]);
   });
 
   it("rejects unknown capability references against a registered capability set", () => {

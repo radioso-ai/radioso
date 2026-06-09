@@ -121,6 +121,7 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
     dependsOn: ["represent-organization"],
     excludes: [],
     routes: ["retrieval"],
+    tags: ["step:contact:ask_email"],
     description: "Operator-authored behavior rule.",
     metadata: { owner: "ops" },
     createdAt: new Date(0),
@@ -302,6 +303,7 @@ describe("serializeAgentConfig", () => {
       dependsOn: ["represent-organization"],
       excludes: [],
       routes: ["retrieval"],
+      tags: ["step:contact:ask_email"],
       description: "Operator-authored behavior rule.",
       metadata: { owner: "ops" },
     }]);
@@ -429,6 +431,7 @@ describe("serializeAgentConfig", () => {
       dependsOn: ["represent-organization"],
       excludes: [],
       routes: ["retrieval"],
+      tags: ["step:contact:ask_email"],
       description: "Operator-authored behavior rule.",
       metadata: { owner: "ops" },
       createdAt: new Date(0),
@@ -479,5 +482,41 @@ describe("serializeAgentConfig", () => {
     expect(
       (materialized.skillSettings["retrieval.answer"] as Record<string, unknown>).suggestedQuestionsEnabled,
     ).toBe(false);
+  });
+
+  it("materializes partial authored directive overrides with defensive defaults", () => {
+    const agent = fullyConfiguredAgent();
+    const config = {
+      ...projectInternalAgentConfig(agent),
+      authoredDirectives: [{
+        name: "preview-draft",
+        condition: { kind: "always" },
+        action: "Use the draft behavior.",
+        tags: ["step:onboarding:answer"],
+      }],
+    } as ReturnType<typeof projectInternalAgentConfig>;
+
+    const materialized = materializeAgentFromConfig(config, {
+      agentId: agent.id,
+      workspaceId: agent.workspaceId,
+    });
+
+    expect(materialized.authoredDirectives).toEqual([{
+      id: `${agent.id}:directive:0`,
+      agentId: agent.id,
+      name: "preview-draft",
+      condition: { kind: "always" },
+      action: "Use the draft behavior.",
+      priority: null,
+      requiredCapabilities: [],
+      dependsOn: [],
+      excludes: [],
+      routes: [],
+      tags: ["step:onboarding:answer"],
+      description: null,
+      metadata: {},
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    }]);
   });
 });

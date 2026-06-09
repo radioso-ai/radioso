@@ -6,6 +6,7 @@ import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../src/modules/documents/
 import { defaultAnswerDirectives } from "../../src/modules/directives/public.js";
 import { RESPONSE_INTENT, REWRITE_TURN_KIND } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
 import { adminSessionHeaders, createTestApp, issueTestToken } from "../support/testApp.js";
+import { textResult } from "../support/llmStubs.js";
 
 const parseSseData = (body: string, eventName: string): unknown[] =>
   body
@@ -618,6 +619,7 @@ describe("agents contract", () => {
         name: "operator-formality",
         condition: { kind: "always" },
         action: "Use a formal register.",
+        tags: ["step:contact:ask_email"],
       })
       .expect(201);
 
@@ -631,6 +633,7 @@ describe("agents contract", () => {
         priority: null,
         requiredCapabilities: [],
         routes: [],
+        tags: ["step:contact:ask_email"],
       },
       coherence: {
         coherent: true,
@@ -648,6 +651,7 @@ describe("agents contract", () => {
     expect(list.body.directives[0]).toMatchObject({
       id: create.body.directive.id,
       name: "operator-formality",
+      tags: ["step:contact:ask_email"],
     });
     expect(list.body.builtIns).toEqual(defaultAnswerDirectives.map((directive) => ({
       name: directive.name,
@@ -662,6 +666,7 @@ describe("agents contract", () => {
       .set("Authorization", authorization)
       .send({
         action: "Use a warm formal register.",
+        tags: ["routine:contact"],
       })
       .expect(200);
 
@@ -669,6 +674,7 @@ describe("agents contract", () => {
       directive: {
         id: create.body.directive.id,
         action: "Use a warm formal register.",
+        tags: ["routine:contact"],
       },
       coherence: {
         coherent: true,
@@ -685,6 +691,60 @@ describe("agents contract", () => {
       .delete(`/api/v1/agents/${agent.body.id}/directives/${create.body.directive.id}`)
       .set("Authorization", authorization)
       .expect(404);
+  });
+
+  it("drafts a directive for an authorized workspace without persisting it", async () => {
+    const { app } = createTestApp({
+      chatInferencePipelineComplete: async () => textResult(JSON.stringify({
+        directive: {
+          name: "answer-directly-first",
+          condition: { kind: "contextual", description: "When the user asks for an operational decision." },
+          action: "Answer the operational decision first, then provide supporting context only if it changes the next step.",
+        },
+        diagnosis: "directive_recommended",
+        rationale: "The coaching asks for reusable answer behavior.",
+      })),
+    });
+    const { token } = await issueTestToken(app, "agents-directives-draft@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const agent = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({ name: "Directive draft agent" })
+      .expect(201);
+
+    const draft = await request(app)
+      .post(`/api/v1/agents/${agent.body.id}/directives/draft`)
+      .set("Authorization", authorization)
+      .send({
+        coachingText: "The assistant should answer the decision first and keep the policy explanation secondary.",
+        turn: {
+          userMessage: "Can I reschedule today?",
+          assistantAnswer: "Here is a long explanation before the actual answer.",
+          activeRoutineId: "booking",
+          activeStepId: "reschedule",
+        },
+      })
+      .expect(200);
+
+    expect(draft.body).toMatchObject({
+      directive: {
+        name: "answer-directly-first",
+        condition: { kind: "contextual", description: expect.any(String) },
+        action: expect.stringContaining("operational decision"),
+        tags: ["step:booking:reschedule"],
+      },
+      diagnosis: "directive_recommended",
+      rationale: expect.any(String),
+    });
+
+    const list = await request(app)
+      .get(`/api/v1/agents/${agent.body.id}/directives`)
+      .set("Authorization", authorization)
+      .expect(200);
+
+    expect(list.body.directives).toEqual([]);
   });
 
   it("denies authored directive access across workspaces", async () => {
@@ -714,6 +774,41 @@ describe("agents contract", () => {
         action: "Should not save.",
       })
       .expect(404);
+
+    await request(app)
+      .post(`/api/v1/agents/${agent.body.id}/directives/draft`)
+      .set("Authorization", secondAuthorization)
+      .send({
+        coachingText: "Make future answers shorter.",
+        turn: {
+          userMessage: "Hello",
+          assistantAnswer: "A very long answer.",
+        },
+      })
+      .expect(404);
+  });
+
+  it("requires authentication for directive draft authoring", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-directives-draft-auth@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const agent = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({ name: "Directive draft auth agent" })
+      .expect(201);
+
+    await request(app)
+      .post(`/api/v1/agents/${agent.body.id}/directives/draft`)
+      .send({
+        coachingText: "Make future answers shorter.",
+        turn: {
+          userMessage: "Hello",
+          assistantAnswer: "A very long answer.",
+        },
+      })
+      .expect(401);
   });
 
   it("rejects malformed authored directive requests and keeps routes out of the v1 body", async () => {

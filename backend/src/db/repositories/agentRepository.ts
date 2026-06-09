@@ -56,6 +56,7 @@ interface AgentDirectiveRow {
   depends_on: string[];
   excludes: string[];
   routes: Array<AuthoredDirective["routes"][number]>;
+  scope_tags: string[];
   description: string | null;
   metadata: Record<string, unknown>;
   created_at: Date;
@@ -73,6 +74,7 @@ interface LoadedDirectiveJson {
   dependsOn?: unknown;
   excludes?: unknown;
   routes?: unknown;
+  tags?: unknown;
   description?: unknown;
   metadata?: unknown;
   createdAt?: unknown;
@@ -141,6 +143,7 @@ const agentColumns = `
           'dependsOn', agent_directives.depends_on,
           'excludes', agent_directives.excludes,
           'routes', agent_directives.routes,
+          'tags', agent_directives.scope_tags,
           'description', agent_directives.description,
           'metadata', agent_directives.metadata,
           'createdAt', agent_directives.created_at,
@@ -218,6 +221,9 @@ const mapDirectiveJson = (agentId: string, value: LoadedDirectiveJson): Authored
     routes: Array.isArray(value.routes)
       ? value.routes.filter((item): item is AuthoredDirective["routes"][number] => typeof item === "string")
       : [],
+    tags: Array.isArray(value.tags)
+      ? value.tags.filter((item): item is string => typeof item === "string")
+      : [],
     description: typeof value.description === "string" ? value.description : null,
     metadata: asMetadata(value.metadata),
     createdAt: readDate(value.createdAt),
@@ -245,6 +251,7 @@ const mapDirectiveRow = (row: AgentDirectiveRow): AuthoredDirective => ({
   dependsOn: row.depends_on ?? [],
   excludes: row.excludes ?? [],
   routes: row.routes ?? [],
+  tags: row.scope_tags ?? [],
   description: row.description,
   metadata: asMetadata(row.metadata),
   createdAt: new Date(row.created_at),
@@ -615,6 +622,7 @@ export class AgentRepository implements AgentRepositoryPort {
              depends_on,
              excludes,
              routes,
+             scope_tags,
              description,
              metadata
            )
@@ -629,8 +637,9 @@ export class AgentRepository implements AgentRepositoryPort {
              $8::text[],
              $9::text[],
              $10::text[],
-             $11,
-             $12::jsonb
+             $11::text[],
+             $12,
+             $13::jsonb
            FROM agents
            WHERE agents.id = $1
              AND agents.workspace_id = $2
@@ -646,6 +655,7 @@ export class AgentRepository implements AgentRepositoryPort {
             directive.dependsOn,
             directive.excludes,
             directive.routes,
+            directive.tags,
             directive.description,
             JSON.stringify(directive.metadata),
           ],
@@ -682,6 +692,7 @@ export class AgentRepository implements AgentRepositoryPort {
       dependsOn: input.dependsOn ?? existing.dependsOn,
       excludes: input.excludes ?? existing.excludes,
       routes: input.routes ?? existing.routes,
+      tags: input.tags ?? existing.tags,
       description: hasOwn(input, "description") ? input.description : existing.description,
       metadata: input.metadata ?? existing.metadata,
     });
@@ -697,8 +708,9 @@ export class AgentRepository implements AgentRepositoryPort {
              depends_on = $9::text[],
              excludes = $10::text[],
              routes = $11::text[],
-             description = $12,
-             metadata = $13::jsonb,
+             scope_tags = $12::text[],
+             description = $13,
+             metadata = $14::jsonb,
              updated_at = NOW()
          FROM agents
          WHERE agent_directives.id = $1
@@ -718,6 +730,7 @@ export class AgentRepository implements AgentRepositoryPort {
           directive.dependsOn,
           directive.excludes,
           directive.routes,
+          directive.tags,
           directive.description,
           JSON.stringify(directive.metadata),
         ],

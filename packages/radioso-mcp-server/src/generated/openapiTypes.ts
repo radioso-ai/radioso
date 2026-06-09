@@ -680,6 +680,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{agentId}/directives/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Draft an authored directive from coaching */
+        post: operations["draftAgentDirective"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agentId}/directives/{directiveId}": {
         parameters: {
             query?: never;
@@ -2242,6 +2259,7 @@ export interface components {
             requiredCapabilities?: string[];
             dependsOn?: string[];
             excludes?: string[];
+            tags?: string[];
             description?: string | null;
             metadata?: {
                 [key: string]: unknown;
@@ -2254,10 +2272,32 @@ export interface components {
             requiredCapabilities?: string[];
             dependsOn?: string[];
             excludes?: string[];
+            tags?: string[];
             description?: string | null;
             metadata?: {
                 [key: string]: unknown;
             };
+        };
+        DirectiveDraftRequest: {
+            coachingText: string;
+            turn: {
+                userMessage: string;
+                assistantAnswer: string;
+                activeRoutineId?: string;
+                activeStepId?: string;
+            };
+        };
+        DirectiveDraftDirective: {
+            name: string;
+            condition: components["schemas"]["AuthoredDirectiveCondition"];
+            action: string;
+            tags: string[];
+        };
+        DirectiveDraftResponse: {
+            directive: components["schemas"]["DirectiveDraftDirective"];
+            /** @enum {string} */
+            diagnosis: "directive_recommended" | "knowledge_recommended_deferred";
+            rationale?: string;
         };
         AuthoredDirective: {
             /** Format: uuid */
@@ -2272,6 +2312,7 @@ export interface components {
             dependsOn: string[];
             excludes: string[];
             routes: string[];
+            tags: string[];
             description: string | null;
             metadata: {
                 [key: string]: unknown;
@@ -5635,6 +5676,68 @@ export interface operations {
             };
             /** @description Directive name already exists for this agent */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    draftAgentDirective: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectiveDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Directive draft returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectiveDraftResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The model did not return a valid draft */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

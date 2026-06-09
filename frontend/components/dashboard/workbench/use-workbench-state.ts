@@ -13,7 +13,12 @@ import {
   type Directive,
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
-import type { AgentConfigOverrideInput, EvalRunModelOverride, WorkbenchReplayRunResponse } from '@/lib/api-eval'
+import type {
+  AgentConfigAuthoredDirectiveOverride,
+  AgentConfigOverrideInput,
+  EvalRunModelOverride,
+  WorkbenchReplayRunResponse,
+} from '@/lib/api-eval'
 import {
   readRetrievalSkillSettingsOverride,
   RETRIEVAL_ANSWER_SKILL_NAME,
@@ -31,7 +36,7 @@ export interface WorkbenchOverrideValues {
   chatModelOverride: EvalRunModelOverride | null
   customInstruction: string
   retrievalSkillSettings: RetrievalSkillSettingsOverride
-  authoredDirectives: Array<Record<string, unknown>>
+  authoredDirectives: AgentConfigAuthoredDirectiveOverride[]
 }
 
 export interface WorkbenchOverrideState {
@@ -43,7 +48,7 @@ export type WorkbenchOverrideAction =
   | { type: 'set-model'; value: EvalRunModelOverride | null }
   | { type: 'set-custom-instruction'; value: string }
   | { type: 'set-retrieval-skill-settings'; value: RetrievalSkillSettingsOverride }
-  | { type: 'set-authored-directives'; value: Array<Record<string, unknown>> }
+  | { type: 'set-authored-directives'; value: AgentConfigAuthoredDirectiveOverride[] }
   | { type: 'clear-field'; field: WorkbenchOverrideField }
   | { type: 'reset'; baseline: WorkbenchOverrideValues }
 

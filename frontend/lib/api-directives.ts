@@ -1,6 +1,8 @@
 import { request } from './api-client'
 import type {
   DirectiveCreateRequest,
+  DirectiveDraftRequest,
+  DirectiveDraftResponse,
   DirectiveListResponse,
   DirectiveMutationResponse,
   DirectiveUpdateRequest,
@@ -15,6 +17,13 @@ export const directivesApi = {
 
   async createDirective(agentId: string, data: DirectiveCreateRequest): Promise<DirectiveMutationResponse> {
     return request<DirectiveMutationResponse>(`/agents/${agentId}/directives`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, { withApiToken: true })
+  },
+
+  async draftDirective(agentId: string, data: DirectiveDraftRequest): Promise<DirectiveDraftResponse> {
+    return request<DirectiveDraftResponse>(`/agents/${agentId}/directives/draft`, {
       method: 'POST',
       body: JSON.stringify(data),
     }, { withApiToken: true })

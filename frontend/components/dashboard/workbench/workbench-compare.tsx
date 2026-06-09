@@ -54,7 +54,7 @@ export function WorkbenchCompare({
   onOpenDocument: (documentId: string) => void
 }) {
   return (
-    <section className="grid min-h-0 gap-4 xl:grid-cols-2">
+    <section data-testid="workbench-compare" className="grid min-h-0 gap-4 xl:grid-cols-2">
       <AnswerPane
         title="Original"
         answer={originalTurn?.content ?? ''}

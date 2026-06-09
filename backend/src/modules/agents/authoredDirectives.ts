@@ -10,6 +10,7 @@ export const AUTHORED_DIRECTIVE_LIMITS = {
   description: 1000,
   relationshipName: 200,
   capabilityName: 200,
+  tag: 200,
 } as const;
 
 export const authoredDirectiveRouteValues = Object.values(CHAT_TURN_ROUTE) as [ChatTurnRoute, ...ChatTurnRoute[]];
@@ -58,6 +59,7 @@ export const authoredDirectiveInputSchema = z.object({
   dependsOn: uniqueTextArray(AUTHORED_DIRECTIVE_LIMITS.relationshipName),
   excludes: uniqueTextArray(AUTHORED_DIRECTIVE_LIMITS.relationshipName),
   routes: z.array(z.enum(authoredDirectiveRouteValues)).optional().default([]).transform((values) => [...new Set(values)]),
+  tags: uniqueTextArray(AUTHORED_DIRECTIVE_LIMITS.tag),
   description: optionalTrimmedText(AUTHORED_DIRECTIVE_LIMITS.description),
   metadata: z.record(z.unknown()).optional().default({}),
 }).strict();
@@ -79,6 +81,7 @@ export interface AuthoredDirective {
   dependsOn: string[];
   excludes: string[];
   routes: ChatTurnRoute[];
+  tags: string[];
   description: string | null;
   metadata: Record<string, unknown>;
   createdAt: Date;

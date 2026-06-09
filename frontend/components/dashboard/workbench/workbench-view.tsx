@@ -11,6 +11,7 @@ import type { WorkspaceOnboardingState } from '@/lib/onboarding'
 import { WorkbenchCompare } from './workbench-compare'
 import { WorkbenchOverridePanel } from './workbench-override-panel'
 import { WorkbenchRunStrip } from './workbench-run-strip'
+import { TrainingView } from './training-view'
 import { useWorkbenchState } from './use-workbench-state'
 
 interface WorkbenchViewProps {
@@ -84,6 +85,13 @@ export function WorkbenchView({
                 <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
                   {state.error}
                 </div>
+              ) : null}
+              {state.seedTurn ? (
+                <TrainingView
+                  selectedAgent={selectedAgent}
+                  seedTurn={state.seedTurn}
+                  onOpenDocument={onOpenDocument}
+                />
               ) : null}
               <WorkbenchCompare
                 originalTurn={state.seedTurn?.assistantTurn ?? null}

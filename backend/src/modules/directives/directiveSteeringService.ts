@@ -1,4 +1,4 @@
-import type { DirectiveCatalogRegistry, DirectiveMatcherPort } from "@radioso/conversation-defaults";
+import type { DirectiveCatalogRegistryPort, DirectiveMatcherPort } from "@radioso/conversation-contract";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { ModelCallUsageContext } from "../../shared/domain/modelCallUsageContext.js";
 import { orderSteeringRules, type SteeringRule } from "../../shared/domain/steeringRule.js";
@@ -52,12 +52,12 @@ export interface DirectiveSteeringPort {
  * policy so the chat module stays ignorant of all three.
  */
 export class DirectiveSteeringService implements DirectiveSteeringPort {
-  private readonly registry: DirectiveCatalogRegistry;
+  private readonly registry: DirectiveCatalogRegistryPort;
   private readonly matcher: DirectiveMatcherPort;
   private readonly capabilityPolicy: CapabilityPolicy;
 
   constructor(deps: {
-    registry: DirectiveCatalogRegistry;
+    registry: DirectiveCatalogRegistryPort;
     matcher: DirectiveMatcherPort;
     capabilityPolicy: CapabilityPolicy;
   }) {

@@ -115,6 +115,29 @@ export const registerAgentsPaths = (
 
   registry.registerPath({
     method: "post",
+    path: "/api/v1/agents/{agentId}/directives/draft",
+    tags: ["Agents"],
+    summary: "Draft an authored directive from coaching",
+    operationId: "draftAgentDirective",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.AgentParamsSchema,
+      body: {
+        required: true,
+        content: { "application/json": { schema: schemas.DirectiveDraftRequestSchema } },
+      },
+    },
+    responses: {
+      200: { description: "Directive draft returned", content: { "application/json": { schema: schemas.DirectiveDraftResponseSchema } } },
+      400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      422: { description: "The model did not return a valid draft", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
     path: "/api/v1/agents/{agentId}/directives",
     tags: ["Agents"],
     summary: "Create an authored directive for an agent",

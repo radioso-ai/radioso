@@ -12,9 +12,8 @@ export {
 export { DirectiveCatalogRegistry } from "./directiveCatalogRegistry.js";
 export {
   AlwaysMatchDirectiveMatcher,
-  type DirectiveMatcherPort,
-  type DirectiveMatchInput,
 } from "./directiveMatcher.js";
+export type { DirectiveMatcherPort, DirectiveMatchInput } from "@radioso/conversation-contract";
 export { CompositeDirectiveMatcher } from "./compositeDirectiveMatcher.js";
 export { parseDirectiveClassifications } from "./directiveMatchParser.js";
 export {
@@ -25,11 +24,11 @@ export {
 export {
   ModelDirectiveMatchGateway,
   ProbabilisticDirectiveMatcher,
-  type DirectiveClassification,
-  type DirectiveMatchGateway,
   type DirectiveTextGenerationClient,
 } from "./probabilisticDirectiveMatcher.js";
+export type { DirectiveClassification, DirectiveMatchGateway } from "@radioso/conversation-contract";
 export { SkillCatalogRegistry } from "./skillCatalogRegistry.js";
+export type { DirectiveCatalogRegistryPort, SkillCatalogRegistryPort } from "@radioso/conversation-contract";
 export {
   SkillExecutorRegistry,
   noopSkillEmitPort,
@@ -75,16 +74,19 @@ export {
   DirectiveCoherenceError,
   ModelDirectiveCoherenceChecker,
   type CreateDirectiveCoherenceCheckerOptions,
-  type DirectiveCoherenceCheckInput,
-  type DirectiveCoherenceChecker,
-  type DirectiveCoherenceConflict,
   type DirectiveCoherenceGate,
   type DirectiveCoherenceGateOptions,
   type DirectiveCoherenceMode,
-  type DirectiveCoherenceVerdict,
 } from "./directiveCoherence.js";
+export type {
+  DirectiveCoherenceCheckInput,
+  DirectiveCoherenceChecker,
+  DirectiveCoherenceConflict,
+  DirectiveCoherenceVerdict,
+} from "@radioso/conversation-contract";
 export {
   InMemoryConversationRoutineStore,
   InMemoryConversationStores,
   type InMemoryConversationRoutineStoreOptions,
 } from "./inMemoryStores.js";
+export { parseScopeTag, scopeTag, type ParsedScopeTag } from "./scopeTags.js";

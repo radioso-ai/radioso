@@ -43,6 +43,15 @@ export {
   type AuthoredDirectiveServiceOptions,
 } from "./services/authoredDirectiveService.js";
 export {
+  DirectiveAuthorService,
+  directiveAuthorDraftInputSchema,
+  directiveAuthorDraftSchema,
+  type DirectiveAuthorDraftInput,
+  type DirectiveAuthorDraftResult,
+  type DirectiveAuthorServiceOptions,
+  type DirectiveAuthorTextGenerationPort,
+} from "./services/directiveAuthorService.js";
+export {
   AUTHORED_DIRECTIVE_STEERING_DEFAULT_PRIORITY,
   authoredDirectiveToDirective,
   authoredDirectiveToSteeringDirective,

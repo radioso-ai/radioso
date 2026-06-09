@@ -2,8 +2,10 @@ import type {
   AttemptRoutineInput,
   ConversationEngine,
   ConversationEvent,
+  ConversationRoutineSteeringInput,
   ConversationTrace,
   ConversationTraceStage,
+  Directive,
   DirectiveMatch,
   ProcessTurnInput,
   ProcessTurnResult,
@@ -15,6 +17,7 @@ import type {
   SkillDefinition,
   SkillTransientGuidance,
   StagedContext,
+  SteeringResolver,
   SteeringRule,
   TurnContext,
   TurnOutcome,
@@ -89,6 +92,118 @@ const directiveMatchToSteering = (match: DirectiveMatch): SteeringRule => ({
   source: "directive",
   lifespan: "response",
 });
+
+export const isDirectiveEligibleForTurn = (directive: Directive, turnContext: TurnContext): boolean => {
+  for (const tag of directive.tags ?? []) {
+    if (tag.startsWith("routine:")) {
+      const routineId = tag.slice("routine:".length);
+      if (!routineId || turnContext.activeRoutineId !== routineId) {
+        return false;
+      }
+      continue;
+    }
+
+    if (tag.startsWith("step:")) {
+      const [routineId, stepId, extra] = tag.slice("step:".length).split(":");
+      if (
+        extra !== undefined ||
+        !routineId ||
+        !stepId ||
+        turnContext.activeRoutineId !== routineId ||
+        turnContext.activeStepId !== stepId
+      ) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+};
+
+export class DefaultSteeringResolver implements SteeringResolver {
+  resolve(rules: SteeringRule[], _ctx: { turnContext: TurnContext }): SteeringRule[] {
+    const indexed = rules.map((rule, index) => ({ rule, index }));
+    const base = indexed.filter(({ rule }) => rule.source !== "directive");
+    const directives = indexed
+      .filter(({ rule }) => rule.source === "directive")
+      .sort((a, b) => {
+        const priorityDelta = (b.rule.priority ?? 0) - (a.rule.priority ?? 0);
+        if (priorityDelta !== 0) {
+          return priorityDelta;
+        }
+        return a.index - b.index;
+      });
+
+    const seen = new Set<string>();
+    const resolved: SteeringRule[] = [];
+    for (const { rule } of [...base, ...directives]) {
+      const key = `${rule.action}\u0000${rule.condition ?? ""}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      resolved.push(rule);
+    }
+    return resolved;
+  }
+}
+
+const defaultSteeringResolver = new DefaultSteeringResolver();
+
+const buildDirectiveTraceStage = (input: {
+  id: string;
+  kind: string;
+  matches: DirectiveMatch[];
+  candidateCount: number;
+  scopeFilteredCount?: number;
+}): ConversationTraceStage => stage({
+  id: input.id,
+  kind: input.kind,
+  status: input.matches.length > 0 ? "applied" : "skipped",
+  outputs: {
+    matchCount: input.matches.length,
+    directives: input.kind === "directive_steering"
+      ? input.matches.map((match) => ({
+          id: match.directive.id,
+          name: match.directive.name,
+        }))
+      : input.matches.map(summarizeDirectiveMatch),
+    candidateCount: input.candidateCount,
+    ...(input.scopeFilteredCount !== undefined ? { scopeFilteredCount: input.scopeFilteredCount } : {}),
+  },
+});
+
+const buildResolvedSteering = async (input: {
+  turn: TurnContext;
+  directives?: ProcessTurnInput["directives"];
+  directiveMatcher?: ProcessTurnInput["directiveMatcher"];
+  steeringResolver?: SteeringResolver;
+  baseSteering?: SteeringRule[];
+  traceKind?: string;
+}): Promise<{ steering: SteeringRule[]; directiveMatches: DirectiveMatch[]; traceStage: ConversationTraceStage }> => {
+  const directives = input.directives ?? [];
+  const eligibleDirectives = directives.filter((directive) => isDirectiveEligibleForTurn(directive, input.turn));
+  const directiveMatches = input.directiveMatcher
+    ? await input.directiveMatcher.match({ turn: input.turn, directives: eligibleDirectives })
+    : [];
+  const directiveSteering = directiveMatches.map(directiveMatchToSteering);
+  const combined = [...(input.baseSteering ?? []), ...directiveSteering];
+  const steering = (input.steeringResolver ?? defaultSteeringResolver).resolve(combined, {
+    turnContext: input.turn,
+  });
+
+  return {
+    steering,
+    directiveMatches,
+    traceStage: buildDirectiveTraceStage({
+      id: input.traceKind === "directive_steering" ? "directive_steering" : "directives",
+      kind: input.traceKind ?? "directive_match",
+      matches: directiveMatches,
+      candidateCount: eligibleDirectives.length,
+      scopeFilteredCount: directives.length - eligibleDirectives.length,
+    }),
+  };
+};
 
 const guidanceToSteering = (guidance: SkillTransientGuidance, fallbackPriority?: number): SteeringRule => ({
   ...guidance,
@@ -233,25 +348,15 @@ export class DefaultConversationEngine implements ConversationEngine {
       },
     }));
 
-    const directiveMatches = await input.directiveMatcher.match({
+    const resolved = await buildResolvedSteering({
       turn: baseTurn,
       directives: input.directives,
+      directiveMatcher: input.directiveMatcher,
+      steeringResolver: input.steeringResolver,
     });
-    const directiveSteering = directiveMatches.map(directiveMatchToSteering);
-    stages.push(stage({
-      id: "directives",
-      kind: "directive_match",
-      status: directiveMatches.length > 0 ? "applied" : "skipped",
-      outputs: {
-        matchCount: directiveMatches.length,
-        // Full matched directive metadata so the side panel can list them by
-        // title and let the user read each rule, not just count them.
-        directives: directiveMatches.map(summarizeDirectiveMatch),
-        // Total directives considered (matched + not matched) for context on the
-        // selection.
-        candidateCount: input.directives.length,
-      },
-    }));
+    const directiveMatches = resolved.directiveMatches;
+    const directiveSteering = resolved.steering;
+    stages.push(resolved.traceStage);
 
     const selectedTurn: TurnContext = {
       ...baseTurn,
@@ -359,7 +464,7 @@ export class DefaultConversationEngine implements ConversationEngine {
     const resuming = !!active && active.status === "active";
 
     const history = await input.stores.loadHistory({ sessionId: input.sessionId });
-    const turn: TurnContext = {
+    const baseTurn: TurnContext = {
       agent: input.agent,
       sessionId: input.sessionId,
       inputEvent: input.inputEvent,
@@ -373,7 +478,7 @@ export class DefaultConversationEngine implements ConversationEngine {
       if (!input.routineActivator) {
         return null;
       }
-      const activation = await input.routineActivator.activate({ turn });
+      const activation = await input.routineActivator.activate({ turn: baseTurn });
       if (!activation) {
         return null;
       }
@@ -387,12 +492,45 @@ export class DefaultConversationEngine implements ConversationEngine {
       };
     }
 
+    const turn: TurnContext = {
+      ...baseTurn,
+      activeRoutineId: state.routineId,
+      activeStepId: state.path.at(-1),
+    };
+    let directiveSteeringStage: ConversationTraceStage | null = null;
+    const routineSteeringResolver = {
+      resolve: async ({ step, baseSteering }: ConversationRoutineSteeringInput): Promise<SteeringRule[]> => {
+        const resolved = await buildResolvedSteering({
+          turn: { ...turn, activeStepId: step.id },
+          directives: input.directives,
+          directiveMatcher: input.directiveMatcher,
+          steeringResolver: input.steeringResolver,
+          baseSteering,
+          traceKind: "directive_steering",
+        });
+        directiveSteeringStage = resolved.traceStage;
+        return resolved.steering;
+      },
+    };
+
     // Resume runs before any persistence: a routine may decline (yield) the turn —
     // then the input event is left for the normal path and the routine's position is
     // untouched, so it resumes on a later turn.
-    const result = await input.routineRunner.resume({ turn, state });
+    const result = await input.routineRunner.resume({ turn, state, steeringResolver: routineSteeringResolver });
     if (result.yielded) {
       return null;
+    }
+    if (!directiveSteeringStage) {
+      const landedStepId = result.nextState?.path.at(-1) ?? state.path.at(-1);
+      const resolved = await buildResolvedSteering({
+        turn: { ...turn, activeStepId: landedStepId },
+        directives: input.directives,
+        directiveMatcher: input.directiveMatcher,
+        steeringResolver: input.steeringResolver,
+        baseSteering: [],
+        traceKind: "directive_steering",
+      });
+      directiveSteeringStage = resolved.traceStage;
     }
 
     const events: ConversationEvent[] = [];
@@ -457,7 +595,7 @@ export class DefaultConversationEngine implements ConversationEngine {
       outcomes: result.outcomes ?? [],
       response: result.response,
       actions: result.actions,
-      trace: createTrace([messageStage, gatherStage, routineStage]),
+      trace: createTrace([messageStage, gatherStage, routineStage, directiveSteeringStage]),
     });
   }
 

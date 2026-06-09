@@ -277,10 +277,15 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     const result = await new DefaultConversationEngine().processTurn(input);
 
     expect(input.routineStore!.loadActive).toHaveBeenCalledWith({ sessionId: "session_1" });
-    expect(input.routineRunner!.resume).toHaveBeenCalledWith({
-      turn: expect.objectContaining({ sessionId: "session_1" }),
+    expect(input.routineRunner!.resume).toHaveBeenCalledWith(expect.objectContaining({
+      turn: expect.objectContaining({
+        sessionId: "session_1",
+        activeRoutineId: "contact",
+        activeStepId: "ask_email",
+      }),
       state: activeState,
-    });
+      steeringResolver: expect.objectContaining({ resolve: expect.any(Function) }),
+    }));
     // Normal turn machinery is bypassed.
     expect(input.selector.select).not.toHaveBeenCalled();
     expect(input.dispatcher.dispatch).not.toHaveBeenCalled();
@@ -294,6 +299,7 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
       "message",
       "gather",
       "routine_resume",
+      "directive_steering",
     ]);
   });
 
@@ -373,17 +379,23 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     const result = await new DefaultConversationEngine().processTurn(input);
 
     expect(input.routineActivator!.activate).toHaveBeenCalledWith({ turn: expect.objectContaining({ sessionId: "session_1" }) });
-    expect(input.routineRunner!.resume).toHaveBeenCalledWith({
-      turn: expect.objectContaining({ sessionId: "session_1" }),
+    expect(input.routineRunner!.resume).toHaveBeenCalledWith(expect.objectContaining({
+      turn: expect.objectContaining({
+        sessionId: "session_1",
+        activeRoutineId: "contact",
+        activeStepId: undefined,
+      }),
       // A fresh routine starts at its root (empty path).
       state: expect.objectContaining({ routineId: "contact", path: [], status: "active" }),
-    });
+      steeringResolver: expect.objectContaining({ resolve: expect.any(Function) }),
+    }));
     expect(input.routineStore!.save).toHaveBeenCalledWith(started);
     expect(input.selector.select).not.toHaveBeenCalled();
     expect(result.trace.stages.map((stage) => stage.kind)).toEqual([
       "message",
       "gather",
       "routine_activate",
+      "directive_steering",
     ]);
   });
 
@@ -431,10 +443,15 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
 
     await new DefaultConversationEngine().processTurn(input);
 
-    expect(input.routineRunner!.resume).toHaveBeenCalledWith({
-      turn: expect.objectContaining({ sessionId: "session_1" }),
+    expect(input.routineRunner!.resume).toHaveBeenCalledWith(expect.objectContaining({
+      turn: expect.objectContaining({
+        sessionId: "session_1",
+        activeRoutineId: "contact",
+        activeStepId: undefined,
+      }),
       state: expect.objectContaining({ routineId: "contact", path: [], variables: { email: "a@b.c" } }),
-    });
+      steeringResolver: expect.objectContaining({ resolve: expect.any(Function) }),
+    }));
   });
 
   it("surfaces routine action requests on the turn result for the host to persist", async () => {

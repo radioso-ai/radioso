@@ -1,4 +1,4 @@
-import type { DirectiveCoherenceChecker, DirectiveCoherenceVerdict } from "@radioso/conversation-defaults";
+import type { DirectiveCoherenceChecker, DirectiveCoherenceVerdict } from "@radioso/conversation-contract";
 
 import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
@@ -76,6 +76,7 @@ export class AuthoredDirectiveService {
       requiredCapabilities: input.requiredCapabilities ?? existing.requiredCapabilities,
       dependsOn: input.dependsOn ?? existing.dependsOn,
       excludes: input.excludes ?? existing.excludes,
+      tags: input.tags ?? existing.tags,
       routes: [],
       description: Object.prototype.hasOwnProperty.call(input, "description") ? input.description : existing.description,
       metadata: input.metadata ?? existing.metadata,

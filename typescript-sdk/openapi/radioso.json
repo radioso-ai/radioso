@@ -3788,7 +3788,10 @@
                   "enum": [
                     "llm",
                     "always",
-                    "fallback"
+                    "fallback",
+                    "slot_filled",
+                    "outcome",
+                    "counter"
                   ]
                 },
                 "guardText": {
@@ -3798,6 +3801,21 @@
                   ],
                   "minLength": 1,
                   "maxLength": 2000
+                },
+                "outcomeStatus": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "counterLimit": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "exclusiveMinimum": 0
                 },
                 "ordinal": {
                   "type": "integer",
@@ -4034,7 +4052,10 @@
                   "enum": [
                     "llm",
                     "always",
-                    "fallback"
+                    "fallback",
+                    "slot_filled",
+                    "outcome",
+                    "counter"
                   ]
                 },
                 "guardText": {
@@ -4044,6 +4065,21 @@
                   ],
                   "minLength": 1,
                   "maxLength": 2000
+                },
+                "outcomeStatus": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "counterLimit": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "exclusiveMinimum": 0
                 },
                 "ordinal": {
                   "type": "integer",
@@ -4323,7 +4359,10 @@
                   "enum": [
                     "llm",
                     "always",
-                    "fallback"
+                    "fallback",
+                    "slot_filled",
+                    "outcome",
+                    "counter"
                   ]
                 },
                 "guardText": {
@@ -4333,6 +4372,21 @@
                   ],
                   "minLength": 1,
                   "maxLength": 2000
+                },
+                "outcomeStatus": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "counterLimit": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "exclusiveMinimum": 0
                 },
                 "ordinal": {
                   "type": "integer",

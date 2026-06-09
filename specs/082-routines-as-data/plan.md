@@ -45,10 +45,20 @@ Slices 1–3 ship on the already-merged 069 runtime and do **not** need #664. Sl
 - **Fast-forward mechanism (decided)**: structured guards stay in Slice 3. v1 fast-forward = **one extraction pass** (the selector extracts every declared slot present in the user message, not just the current step's) + a **bounded loop over a pure typed-slot check**: after the selector lands on a chat step, if that step's collected slot(s) (compiled into step metadata from its `{{slot.x}}` references) are already present in state, re-invoke the selector to advance again; stop at the first chat step with an unfilled required slot (render it) or a tool/terminal step (existing handling). Loop bounded by step count. LLM cost ≈ extraction + final render regardless of how many slots were pre-provided. The fast-forward loop MUST preserve #664's `steeringResolver` on the final render.
 - **Tests**: one message providing N facts advances past all N satisfied steps in that turn (no intermediate prompt); partial provision asks only for the missing slot; typed-slot extraction/validation; **existing contact-flow / routine runtime tests still pass (parity)**.
 
-### Slice 3 — Condition-gated actions + outcome branches + structured guards + handoff + permission gate (P1 / US3)
-- **Contract/engine**: condition-gating on a step's action reference (availability gated; engine decides invocation); outcome edges; **structured guards** (slot-filled / action-outcome / counter) for bounded retries — never LLM counting; **handoff** as a first-class terminal kind, recorded distinguishably in the trace.
-- **Action-permission gate (net-new)**: action registry carries `requiredCapabilities` per action type; publish-time validation (Slice-1 validator calls it) + enqueue-time check in `chatTurnLifecycle` (analogous to skills' `firstDeniedCapability`).
-- **Tests**: success / not-found→retry / two-fail→handoff paths; counter guard enforces the limit (structured, not LLM); engine (not routine) decides the call; permission gate rejects an unauthorized action at publish and at enqueue.
+### Slice 3 — split into 3a (engine control-flow) + 3b (permission gate) (P1 / US3)
+
+Split decided during delivery: 3a is a large, risky engine refactor; 3b is independent backend-only. Ship 3a first.
+
+**Slice 3a — Structured guards + outcome branching + counter + handoff (engine + compiler + migration)**
+- **Contract (additive)**: optional `RoutineTransition.guard?` tagged union — `slot_filled` / `outcome` (on `skillResult.status`) / `counter` (limit) / `fallback` / `llm` (keeps `condition`). Add `RoutineState.attempts?: Record<stepId, number>`.
+- **Compiler/migration/authoring**: extend `routineGuardKinds` with `slot_filled`/`outcome`/`counter` (+ migration after 083); compiler emits the structured guard; validator aligns the attempt-limit-without-fallback check with real counter guards and constrains `outcome` to edges leaving a tool step.
+- **Runner**: evaluate structured guards **purely, in declared order**, falling to the LLM selector only for `llm` edges; deterministic outcome branch on `skillResult.status`; increment `attempts[stepId]` on entry so a `counter` guard routes to handoff at the limit (no LLM counting — FR-009); land a `metadata.terminalKind === "handoff"` terminal in an escalate state recorded distinctly in the trace (no outbox action).
+- **Parity**: `llm`/`condition`-only routines (incl. `contactRoutine`) still route via the selector, unchanged.
+- **Tests**: deterministic outcome branch (selector NOT consulted), counter→handoff at the limit, handoff recorded distinct from complete, slot_filled pure advance, llm-only parity.
+
+**Slice 3b — Per-action permission gate (backend, independent)**
+- Action registry carries `requiredCapabilities` per action type; publish-time validation (fills the Slice-1 validator TODO seam) + enqueue-time check in `chatTurnLifecycle` (analogous to skills' `firstDeniedCapability`), reusing `CapabilityPolicy`.
+- **Tests**: publish rejects an over-permission action; enqueue blocks it at runtime.
 
 ### Slice 4 — Versioning + stable identity + in-flight pinning + scope-tag orphan protection (P2 / US4) — *needs #664*
 - `routine_state` pins the **definition version** it started on; explicit **migrate-vs-finish** policy for in-flight sessions on republish; recompile **preserves stable step ids**; **orphaned directive scope tags** (`step:<routineId>:<stepId>`, per #664) detected and surfaced on edit (the orphan-observability follow-up #664 defers).

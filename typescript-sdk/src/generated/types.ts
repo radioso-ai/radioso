@@ -2451,8 +2451,10 @@ export interface components {
                 fromStep: string;
                 toRef: string;
                 /** @enum {string} */
-                guardKind: "llm" | "always" | "fallback";
+                guardKind: "llm" | "always" | "fallback" | "slot_filled" | "outcome" | "counter";
                 guardText?: string | null;
+                outcomeStatus?: string | null;
+                counterLimit?: number | null;
                 ordinal: number;
             }[];
             terminals: {
@@ -2498,8 +2500,10 @@ export interface components {
                 fromStep: string;
                 toRef: string;
                 /** @enum {string} */
-                guardKind: "llm" | "always" | "fallback";
+                guardKind: "llm" | "always" | "fallback" | "slot_filled" | "outcome" | "counter";
                 guardText?: string | null;
+                outcomeStatus?: string | null;
+                counterLimit?: number | null;
                 ordinal: number;
             }[];
             terminals: {
@@ -2554,8 +2558,10 @@ export interface components {
                 fromStep: string;
                 toRef: string;
                 /** @enum {string} */
-                guardKind: "llm" | "always" | "fallback";
+                guardKind: "llm" | "always" | "fallback" | "slot_filled" | "outcome" | "counter";
                 guardText?: string | null;
+                outcomeStatus?: string | null;
+                counterLimit?: number | null;
                 ordinal: number;
             }[];
             terminals: {

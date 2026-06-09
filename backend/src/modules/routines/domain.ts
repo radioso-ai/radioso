@@ -16,7 +16,7 @@ export const ROUTINE_DEFINITION_LIMITS = {
 export const routineDefinitionStatuses = ["draft", "published"] as const;
 export const routineSlotTypes = ["text", "number", "boolean", "email", "date"] as const;
 export const routineStepKinds = ["chat", "tool", "fork"] as const;
-export const routineGuardKinds = ["llm", "always", "fallback"] as const;
+export const routineGuardKinds = ["llm", "always", "fallback", "slot_filled", "outcome", "counter"] as const;
 export const routineTerminalKinds = ["complete", "handoff", "action"] as const;
 
 const identifierPattern = /^[A-Za-z_][A-Za-z0-9_.-]*$/u;
@@ -27,6 +27,9 @@ const trimmedText = (maxLength: number) =>
 
 const optionalTrimmedText = (maxLength: number) =>
   z.string().trim().min(1).max(maxLength).optional().nullable().transform((value) => value ?? null);
+
+const optionalStructuredParamText = (maxLength: number) =>
+  z.string().trim().min(1).max(maxLength).optional().nullable();
 
 const stableIdSchema = trimmedText(ROUTINE_DEFINITION_LIMITS.stableId).regex(identifierPattern);
 
@@ -53,6 +56,8 @@ export const routineTransitionSchema = z.object({
   toRef: stableIdSchema,
   guardKind: z.enum(routineGuardKinds),
   guardText: optionalTrimmedText(ROUTINE_DEFINITION_LIMITS.guardText),
+  outcomeStatus: optionalStructuredParamText(ROUTINE_DEFINITION_LIMITS.stableId),
+  counterLimit: z.number().int().positive().optional().nullable(),
   ordinal: z.number().int().min(0),
 }).strict();
 

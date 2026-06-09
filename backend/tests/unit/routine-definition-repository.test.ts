@@ -33,7 +33,7 @@ const draftInput = () => ({
     { stableStepId: "ask_name", kind: "chat" as const, instruction: "Ask for {{slot.name}}.", toolRef: null, ordinal: 0, metadata: {} },
   ],
   transitions: [
-    { fromStep: "ask_name", toRef: "done", guardKind: "llm" as const, guardText: "The user provided {{slot.name}}.", ordinal: 0 },
+    { fromStep: "ask_name", toRef: "done", guardKind: "counter" as const, guardText: "2", ordinal: 0 },
   ],
   terminals: [
     { stableStepId: "done", kind: "complete" as const, instruction: "Confirm completion.", actionType: null, ordinal: 0 },
@@ -56,7 +56,7 @@ const loadedRow = () => ({
     { stableStepId: "ask_name", kind: "chat", instruction: "Ask for {{slot.name}}.", toolRef: null, ordinal: 0, metadata: {} },
   ],
   transitions: [
-    { fromStep: "ask_name", toRef: "done", guardKind: "llm", guardText: "The user provided {{slot.name}}.", ordinal: 0 },
+    { fromStep: "ask_name", toRef: "done", guardKind: "counter", guardText: "2", ordinal: 0 },
   ],
   terminals: [
     { stableStepId: "done", kind: "complete", instruction: "Confirm completion.", actionType: null, ordinal: 0 },
@@ -81,7 +81,7 @@ describe("RoutineDefinitionRepository", () => {
       activation: { triggerDescription: "The user asks for a handoff.", gateRef: null, priority: 5 },
       slots: [{ stableSlotId: "slot_name", key: "name", type: "text", required: true, description: "Visitor name.", ordinal: 0 }],
       steps: [{ stableStepId: "ask_name", kind: "chat", instruction: "Ask for {{slot.name}}.", toolRef: null, ordinal: 0, metadata: {} }],
-      transitions: [{ fromStep: "ask_name", toRef: "done", guardKind: "llm", guardText: "The user provided {{slot.name}}.", ordinal: 0 }],
+      transitions: [{ fromStep: "ask_name", toRef: "done", guardKind: "counter", guardText: "2", ordinal: 0 }],
       terminals: [{ stableStepId: "done", kind: "complete", instruction: "Confirm completion.", actionType: null, ordinal: 0 }],
       createdAt: new Date("2026-06-09T00:00:00.000Z"),
       updatedAt: new Date("2026-06-09T00:00:00.000Z"),

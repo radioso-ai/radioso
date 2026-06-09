@@ -7,6 +7,7 @@ import type {
   ConversationRoutineStepRenderer,
   Routine,
   RoutineActionRequest,
+  RoutineNextStepDecision,
   RoutineSkillResult,
   RoutineState,
   RoutineStep,
@@ -53,6 +54,20 @@ const isSatisfiedSlotCollectionStep = (
   }
   const collectedSlots = collectedSlotsFor(step);
   return collectedSlots.length > 0 && collectedSlots.every((key) => hasVariable(variables, key));
+};
+
+const isFallbackTransition = (transition: RoutineTransition): boolean =>
+  transition.guard?.kind === "fallback";
+
+const isLlmTransition = (transition: RoutineTransition): boolean =>
+  !transition.guard || transition.guard.kind === "llm";
+
+const terminalKindFor = (step: RoutineStep): "complete" | "handoff" | "action" | null => {
+  if (step.kind !== "terminal") {
+    return null;
+  }
+  const kind = step.metadata?.terminalKind;
+  return kind === "handoff" || kind === "action" || kind === "complete" ? kind : "complete";
 };
 
 /**
@@ -102,14 +117,76 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
 
     const currentStepId = state.path.at(-1) ?? routine.rootStepId;
     const currentStep = stepById(currentStepId);
+    const attempts: Record<string, number> = { ...(state.attempts ?? {}) };
+    if (state.path.length === 0) {
+      attempts[currentStepId] = (attempts[currentStepId] ?? 0) + 1;
+    }
+    const enterStep = (nextStep: RoutineStep, path: string[]): void => {
+      path.push(nextStep.id);
+      attempts[nextStep.id] = (attempts[nextStep.id] ?? 0) + 1;
+    };
+    const guardMatches = (
+      transition: RoutineTransition,
+      fromStepId: string,
+      variables: Record<string, unknown>,
+      skillResult?: RoutineSkillResult,
+    ): boolean => {
+      switch (transition.guard?.kind) {
+        case "slot_filled":
+          return transition.guard.slots.length > 0 && transition.guard.slots.every((slot) => hasVariable(variables, slot));
+        case "outcome":
+          return skillResult?.status === transition.guard.status;
+        case "counter":
+          return (attempts[fromStepId] ?? 0) >= transition.guard.limit;
+        default:
+          return false;
+      }
+    };
+    const selectNext = async (input: {
+      step: RoutineStep;
+      transitions: RoutineTransition[];
+      variables: Record<string, unknown>;
+      state: RoutineState;
+      skillResult?: RoutineSkillResult;
+      fallbackOnDecline?: boolean;
+    }): Promise<RoutineNextStepDecision> => {
+      for (const transition of input.transitions) {
+        if (guardMatches(transition, input.step.id, input.variables, input.skillResult)) {
+          return { nextStepId: transition.to };
+        }
+      }
+
+      const llmTransitions = input.transitions.filter(isLlmTransition);
+      const fallbackTransition = input.transitions.find(isFallbackTransition);
+      if (llmTransitions.length === 0) {
+        return { nextStepId: fallbackTransition?.to ?? input.step.id };
+      }
+
+      const decision = await this.selector.select({
+        routine,
+        state: input.state,
+        currentStep: input.step,
+        transitions: llmTransitions,
+        turn,
+        ...(input.skillResult ? { skillResult: input.skillResult } : {}),
+      });
+      if (decision.yieldTurn) {
+        return decision;
+      }
+      const allowed = new Set([input.step.id, ...llmTransitions.map((transition) => transition.to)]);
+      const chosen = allowed.has(decision.nextStepId) ? decision.nextStepId : input.step.id;
+      if (input.fallbackOnDecline && chosen === input.step.id && fallbackTransition) {
+        return { ...decision, nextStepId: fallbackTransition.to };
+      }
+      return { ...decision, nextStepId: chosen };
+    };
 
     // Select the step this turn lands on from the current step's outgoing edges.
-    const decision = await this.selector.select({
-      routine,
-      state,
-      currentStep,
+    const decision = await selectNext({
+      step: currentStep,
       transitions: outgoing(currentStepId),
-      turn,
+      variables: state.variables,
+      state: { ...state, attempts },
     });
     // The user's message is off-topic for the routine → decline this turn and let
     // normal answering handle it; the routine stays at its current step to resume.
@@ -122,6 +199,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     let variables = { ...state.variables, ...(decision.variables ?? {}) };
     // Append to the path only on a real advance; re-asking a step keeps it stable.
     const path = step.id === currentStepId ? [...state.path] : [...state.path, step.id];
+    if (step.id !== currentStepId) {
+      attempts[step.id] = (attempts[step.id] ?? 0) + 1;
+    }
 
     let fastForwardHops = 0;
     while (isSatisfiedSlotCollectionStep(routine, step, variables)) {
@@ -137,13 +217,12 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       if (stepEdges.length === 1) {
         nextStepId = stepEdges[0]!.to;
       } else {
-        const fastForwardState: RoutineState = { ...state, path, variables, status: "active" };
-        const fastForwardDecision = await this.selector.select({
-          routine,
-          state: fastForwardState,
-          currentStep: step,
+        const fastForwardState: RoutineState = { ...state, path, variables, attempts, status: "active" };
+        const fastForwardDecision = await selectNext({
+          step,
           transitions: stepEdges,
-          turn,
+          variables,
+          state: fastForwardState,
         });
         if (fastForwardDecision.yieldTurn) {
           return { yielded: true, response: { answer: "" }, nextState: null };
@@ -156,7 +235,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       }
 
       step = stepById(nextStepId);
-      path.push(step.id);
+      enterStep(step, path);
     }
 
     // Run through any transit steps — skill (dispatch a tool) and action (emit a
@@ -183,7 +262,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         // and auto-advance — there is no result to branch on.
         actions.push({ type: step.actionType, payload: { ...variables } });
         step = stepById(actionEdges[0]!.to);
-        path.push(step.id);
+        enterStep(step, path);
         continue;
       }
 
@@ -194,7 +273,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       if (!step.skillName) {
         throw new Error(`routine_skill_step_missing_skill:${routine.id}:${step.id}`);
       }
-      const skillStateAtStep: RoutineState = { ...state, path, variables, status: "active" };
+      const skillStateAtStep: RoutineState = { ...state, path, variables, attempts, status: "active" };
       const skillResult: RoutineSkillResult = await this.skillDispatcher.dispatch({
         skillName: step.skillName,
         state: skillStateAtStep,
@@ -205,29 +284,37 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         throw new Error(`routine_skill_step_no_follow_up:${routine.id}:${step.id}`);
       }
       let nextStepId: string;
-      if (skillEdges.length === 1) {
-        // Single follow-up → deterministic auto-advance, no selector call.
+      if (skillEdges.length === 1 && isLlmTransition(skillEdges[0]!)) {
+        // Legacy single follow-up → deterministic auto-advance, no selector call.
         nextStepId = skillEdges[0]!.to;
       } else {
-        const skillDecision = await this.selector.select({
-          routine,
-          state: skillStateAtStep,
-          currentStep: step,
+        const skillDecision = await selectNext({
+          step,
           transitions: skillEdges,
-          turn,
+          variables,
+          state: skillStateAtStep,
           skillResult,
+          fallbackOnDecline: true,
         });
         variables = { ...variables, ...(skillDecision.variables ?? {}) };
         const chosen = landingStepId(step.id, skillDecision);
         // If the selector declined to pick an edge, advance along the first declared
         // one rather than parking on (and re-dispatching) the skill step.
-        nextStepId = chosen === step.id ? skillEdges[0]!.to : chosen;
+        if (chosen === step.id) {
+          if (skillEdges.some(isLlmTransition)) {
+            nextStepId = skillEdges[0]!.to;
+          } else {
+            throw new Error(`routine_skill_step_no_matching_follow_up:${routine.id}:${step.id}:${skillResult.status}`);
+          }
+        } else {
+          nextStepId = chosen;
+        }
       }
       step = stepById(nextStepId);
-      path.push(step.id);
+      enterStep(step, path);
     }
 
-    const nextState: RoutineState = { ...state, path, variables, status: "active" };
+    const nextState: RoutineState = { ...state, path, variables, attempts, status: "active" };
     const baseSteering = projectStep(step);
     const steering = input.steeringResolver
       ? await input.steeringResolver.resolve({ step, baseSteering, turn })
@@ -239,10 +326,12 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       turn,
     });
 
+    const terminalKind = terminalKindFor(step);
     return {
       response,
       // A terminal step ends the routine — clear its state.
       nextState: step.kind === "terminal" ? null : nextState,
+      ...(terminalKind ? { terminal: { kind: terminalKind, stepId: step.id } } : {}),
       ...(actions.length > 0 ? { actions } : {}),
     };
   }

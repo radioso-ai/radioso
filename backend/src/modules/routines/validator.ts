@@ -7,7 +7,9 @@ export type RoutineValidationCode =
   | "dangling_step_reference"
   | "declared_unused_slot"
   | "referenced_undeclared_slot"
-  | "attempt_limit_without_fallback";
+  | "attempt_limit_without_fallback"
+  | "outcome_guard_on_non_tool_step"
+  | "structured_guard_missing_parameter";
 
 export interface RoutineValidationDiagnostic {
   code: RoutineValidationCode;
@@ -32,11 +34,20 @@ const metadataAttemptLimit = (metadata: Record<string, unknown>): number | null 
     ? metadata.attemptLimit
     : null;
 
+const parsePositiveInteger = (value: string | null): number | null => {
+  if (!value) {
+    return null;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed > 0 && String(parsed) === value.trim() ? parsed : null;
+};
+
 export const validateRoutineDefinition = (definition: RoutineDefinition): RoutineValidationResult => {
   const diagnostics: RoutineValidationDiagnostic[] = [];
   const steps = [...definition.steps].sort((left, right) => left.ordinal - right.ordinal);
   const terminals = [...definition.terminals].sort((left, right) => left.ordinal - right.ordinal);
   const stepIds = new Set(steps.map((step) => step.stableStepId));
+  const stepById = new Map(steps.map((step) => [step.stableStepId, step]));
   const terminalIds = new Set(terminals.map((terminal) => terminal.stableStepId));
   const nodeIds = new Set([...stepIds, ...terminalIds]);
 
@@ -81,6 +92,30 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
         code: "dangling_step_reference",
         location: `transition:${transition.fromStep}->${transition.toRef}`,
         message: `dangling step reference: transition points to unknown step or terminal "${transition.toRef}".`,
+      });
+    }
+    if (transition.guardKind === "outcome") {
+      const fromStep = stepById.get(transition.fromStep);
+      if (fromStep && fromStep.kind !== "tool") {
+        diagnostics.push({
+          code: "outcome_guard_on_non_tool_step",
+          location: `transition:${transition.fromStep}->${transition.toRef}`,
+          message: `outcome guard on non-tool step: transition "${transition.fromStep}" to "${transition.toRef}" uses an outcome guard but does not leave a tool step.`,
+        });
+      }
+      if (!transition.outcomeStatus && !transition.guardText) {
+        diagnostics.push({
+          code: "structured_guard_missing_parameter",
+          location: `transition:${transition.fromStep}->${transition.toRef}`,
+          message: `structured guard missing parameter: outcome guard from "${transition.fromStep}" must declare an outcome status.`,
+        });
+      }
+    }
+    if (transition.guardKind === "counter" && !transition.counterLimit && parsePositiveInteger(transition.guardText) === null) {
+      diagnostics.push({
+        code: "structured_guard_missing_parameter",
+        location: `transition:${transition.fromStep}->${transition.toRef}`,
+        message: `structured guard missing parameter: counter guard from "${transition.fromStep}" must declare a positive limit.`,
       });
     }
   }
@@ -175,6 +210,26 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
         code: "attempt_limit_without_fallback",
         location: `step:${step.stableStepId}`,
         message: `attempt-limit-without-fallback: step "${step.stableStepId}" declares an attempt limit but has no fallback transition to a terminal.`,
+      });
+    }
+  }
+
+  for (const transition of definition.transitions) {
+    if (transition.guardKind !== "counter") {
+      continue;
+    }
+    const hasTerminalPath =
+      terminalIds.has(transition.toRef) ||
+      definition.transitions.some((candidate) =>
+        candidate.fromStep === transition.fromStep &&
+        candidate.guardKind === "fallback" &&
+        terminalIds.has(candidate.toRef)
+      );
+    if (!hasTerminalPath) {
+      diagnostics.push({
+        code: "attempt_limit_without_fallback",
+        location: `transition:${transition.fromStep}->${transition.toRef}`,
+        message: `attempt-limit-without-fallback: counter guard from "${transition.fromStep}" has no fallback or terminal handoff path.`,
       });
     }
   }

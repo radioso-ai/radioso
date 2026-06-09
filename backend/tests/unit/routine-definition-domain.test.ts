@@ -75,6 +75,38 @@ describe("routine definition compiler and validator", () => {
     expect(validateRoutineDefinition(baseDefinition())).toEqual({ ok: true, diagnostics: [] });
   });
 
+  it("compiles structured transition guards additively", () => {
+    const definition: RoutineDefinition = {
+      ...baseDefinition(),
+      steps: [
+        { stableStepId: "ask_email", kind: "chat", instruction: "Ask for {{slot.email}}.", toolRef: null, ordinal: 0, metadata: {} },
+        { stableStepId: "lookup", kind: "tool", instruction: "Look up order.", toolRef: "order_lookup", ordinal: 1, metadata: {} },
+      ],
+      slots: [
+        { stableSlotId: "slot_email", key: "email", type: "email", required: true, description: null, ordinal: 0 },
+      ],
+      transitions: [
+        { fromStep: "ask_email", toRef: "lookup", guardKind: "slot_filled", guardText: "{{slot.email}}", ordinal: 0 },
+        { fromStep: "lookup", toRef: "done", guardKind: "outcome", guardText: "completed", ordinal: 1 },
+        { fromStep: "lookup", toRef: "handoff", guardKind: "counter", guardText: "2", ordinal: 2 },
+        { fromStep: "lookup", toRef: "handoff", guardKind: "fallback", guardText: null, ordinal: 3 },
+      ],
+      terminals: [
+        { stableStepId: "done", kind: "complete", instruction: "Confirm completion.", actionType: null, ordinal: 0 },
+        { stableStepId: "handoff", kind: "handoff", instruction: "Route to a human.", actionType: null, ordinal: 1 },
+      ],
+    };
+
+    const routine = compileRoutineDefinition(definition);
+
+    expect(routine.transitions).toEqual([
+      { from: "ask_email", to: "lookup", condition: "slot_filled", guard: { kind: "slot_filled", slots: ["email"] } },
+      { from: "lookup", to: "done", condition: "outcome", guard: { kind: "outcome", status: "completed" } },
+      { from: "lookup", to: "handoff", condition: "counter", guard: { kind: "counter", limit: 2 } },
+      { from: "lookup", to: "handoff", condition: "fallback", guard: { kind: "fallback" } },
+    ]);
+  });
+
   it("is deterministic for the same authored document", () => {
     expect(compileRoutineDefinition(baseDefinition())).toEqual(compileRoutineDefinition(baseDefinition()));
   });
@@ -93,6 +125,42 @@ describe("routine definition compiler and validator", () => {
     expect(result.diagnostics.map((diagnostic) => diagnostic.message).join("\n")).toContain(label);
     expect(result.diagnostics[0]?.location).toBeTruthy();
     expect(() => compileRoutineDefinition(mutate(baseDefinition()))).toThrow("routine_definition_invalid");
+  });
+
+  it("reports counter guards without a fallback terminal path in author terms", () => {
+    const definition: RoutineDefinition = {
+      ...baseDefinition(),
+      transitions: [
+        { fromStep: "ask_name", toRef: "ask_topic", guardKind: "counter", guardText: "2", ordinal: 0 },
+        { fromStep: "ask_topic", toRef: "done", guardKind: "llm", guardText: "The user provided {{slot.topic}}.", ordinal: 1 },
+      ],
+    };
+
+    const result = validateRoutineDefinition(definition);
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: "attempt_limit_without_fallback",
+      location: "transition:ask_name->ask_topic",
+    }));
+  });
+
+  it("reports outcome guards leaving non-tool steps in author terms", () => {
+    const definition: RoutineDefinition = {
+      ...baseDefinition(),
+      transitions: [
+        { fromStep: "ask_name", toRef: "ask_topic", guardKind: "outcome", guardText: "completed", ordinal: 0 },
+        { fromStep: "ask_topic", toRef: "done", guardKind: "llm", guardText: "The user provided {{slot.topic}}.", ordinal: 1 },
+      ],
+    };
+
+    const result = validateRoutineDefinition(definition);
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: "outcome_guard_on_non_tool_step",
+      location: "transition:ask_name->ask_topic",
+    }));
   });
 
   it("runs an authored two-slot/two-step compiled routine through the existing 069 runtime", async () => {

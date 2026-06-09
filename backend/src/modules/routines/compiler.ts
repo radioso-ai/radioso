@@ -1,4 +1,4 @@
-import type { Routine, RoutineSlotSchema, RoutineStep } from "@radioso/conversation-contract";
+import type { Routine, RoutineGuard, RoutineSkillOutcomeStatus, RoutineSlotSchema, RoutineStep } from "@radioso/conversation-contract";
 
 import type { RoutineDefinition } from "./domain.js";
 import { validateRoutineDefinition } from "./validator.js";
@@ -7,7 +7,7 @@ const routineId = (definition: RoutineDefinition): string =>
   `routine:${definition.agentId}:${definition.name}:v${definition.version}`;
 
 const conditionFor = (guardKind: string, guardText: string | null): string =>
-  guardText ?? guardKind;
+  guardKind === "llm" || guardKind === "always" ? guardText ?? guardKind : guardKind;
 
 const slotReferencePattern = /\{\{\s*slot\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu;
 
@@ -20,6 +20,35 @@ const collectedSlotKeys = (instruction: string): string[] => {
     }
   }
   return [...keys];
+};
+
+const parsePositiveInteger = (value: string | null): number | null => {
+  if (!value) {
+    return null;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed > 0 && String(parsed) === value.trim() ? parsed : null;
+};
+
+const guardFor = (transition: RoutineDefinition["transitions"][number]): RoutineGuard | undefined => {
+  switch (transition.guardKind) {
+    case "slot_filled": {
+      const slots = collectedSlotKeys(transition.guardText ?? "");
+      return { kind: "slot_filled", slots };
+    }
+    case "outcome": {
+      const status = transition.outcomeStatus ?? transition.guardText;
+      return status ? { kind: "outcome", status: status as RoutineSkillOutcomeStatus } : undefined;
+    }
+    case "counter": {
+      const limit = transition.counterLimit ?? parsePositiveInteger(transition.guardText);
+      return limit ? { kind: "counter", limit } : undefined;
+    }
+    case "fallback":
+      return { kind: "fallback" };
+    default:
+      return undefined;
+  }
 };
 
 export const compileRoutineDefinition = (definition: RoutineDefinition): Routine => {
@@ -90,11 +119,15 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
     steps,
     transitions: [...definition.transitions]
       .sort((left, right) => left.ordinal - right.ordinal)
-      .map((transition) => ({
-        from: transition.fromStep,
-        to: transition.toRef,
-        condition: conditionFor(transition.guardKind, transition.guardText),
-      })),
+      .map((transition) => {
+        const guard = guardFor(transition);
+        return {
+          from: transition.fromStep,
+          to: transition.toRef,
+          condition: conditionFor(transition.guardKind, transition.guardText),
+          ...(guard ? { guard } : {}),
+        };
+      }),
     metadata: {
       definitionId: definition.id,
       agentId: definition.agentId,

@@ -98,6 +98,8 @@ const definitionSelect = `
       'toRef', tr.to_ref,
       'guardKind', tr.guard_kind,
       'guardText', tr.guard_text,
+      'outcomeStatus', tr.outcome_status,
+      'counterLimit', tr.counter_limit,
       'ordinal', tr.ordinal
     ) ORDER BY tr.ordinal ASC, tr.from_step ASC, tr.to_ref ASC) AS items
     FROM routine_transition tr
@@ -148,6 +150,8 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
     toRef: readString(transition, "toRef"),
     guardKind: readString(transition, "guardKind") as RoutineGuardKind,
     guardText: readNullableString(transition, "guardText"),
+    outcomeStatus: readNullableString(transition, "outcomeStatus"),
+    counterLimit: readNumber(transition, "counterLimit") || null,
     ordinal: readNumber(transition, "ordinal"),
   })),
   terminals: asArray(row.terminals).map((terminal) => ({
@@ -316,9 +320,20 @@ export class RoutineDefinitionRepository {
     }
     for (const transition of input.transitions) {
       await client.query(
-        `INSERT INTO routine_transition (definition_id, from_step, to_ref, guard_kind, guard_text, ordinal)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [definitionId, transition.fromStep, transition.toRef, transition.guardKind, transition.guardText, transition.ordinal],
+        `INSERT INTO routine_transition (
+           definition_id, from_step, to_ref, guard_kind, guard_text, outcome_status, counter_limit, ordinal
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          definitionId,
+          transition.fromStep,
+          transition.toRef,
+          transition.guardKind,
+          transition.guardText,
+          transition.outcomeStatus,
+          transition.counterLimit,
+          transition.ordinal,
+        ],
       );
     }
     for (const terminal of input.terminals) {

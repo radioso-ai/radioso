@@ -86,27 +86,16 @@ const directiveSteerInputForSession = (
   },
 });
 
-export const createChatProcessTurnInput = (options: ChatProcessTurnInputOptions): ProcessTurnInput => {
+const buildDirectiveTurnWiring = (options: {
+  session: PreparedSession;
+  accountId?: string;
+  directives?: Directive[];
+  directiveRuntime?: RouteScopedDirectiveRuntime;
+}): Pick<ProcessTurnInput, "directives" | "directiveMatcher"> => {
   const directiveSteerInput = directiveSteerInputForSession(options.session, options.accountId);
   return {
-    agent: toConversationAgentConfig(options.session.agent),
-    sessionId: options.session.conversation.id,
-    inputEvent: toConversationInputEvent(options.session.userMessage),
-    skills: options.skills ?? [],
     directives: options.directives ?? options.directiveRuntime?.directivesFor(directiveSteerInput) ??
       directivesForSession(options.session),
-    stores: {
-      async loadHistory() {
-        return toConversationMessages(options.session.history);
-      },
-      async appendEvent(event) {
-        await options.appendEvent?.(event);
-      },
-    },
-    modelGateway: options.modelGateway ?? missingModelGateway,
-    dispatcher: options.dispatcher,
-    selector: options.selector,
-    composer: options.composer,
     directiveMatcher: {
       async match({ turn, directives }) {
         const runtime = options.directiveRuntime;
@@ -119,6 +108,30 @@ export const createChatProcessTurnInput = (options: ChatProcessTurnInputOptions)
         return steering.matches;
       },
     },
+  };
+};
+
+export const createChatProcessTurnInput = (options: ChatProcessTurnInputOptions): ProcessTurnInput => {
+  const directiveWiring = buildDirectiveTurnWiring(options);
+  return {
+    agent: toConversationAgentConfig(options.session.agent),
+    sessionId: options.session.conversation.id,
+    inputEvent: toConversationInputEvent(options.session.userMessage),
+    skills: options.skills ?? [],
+    directives: directiveWiring.directives,
+    stores: {
+      async loadHistory() {
+        return toConversationMessages(options.session.history);
+      },
+      async appendEvent(event) {
+        await options.appendEvent?.(event);
+      },
+    },
+    modelGateway: options.modelGateway ?? missingModelGateway,
+    dispatcher: options.dispatcher,
+    selector: options.selector,
+    composer: options.composer,
+    directiveMatcher: directiveWiring.directiveMatcher,
     ...(options.routineStore ? { routineStore: options.routineStore } : {}),
     ...(options.routineRunner ? { routineRunner: options.routineRunner } : {}),
     ...(options.routineActivator ? { routineActivator: options.routineActivator } : {}),
@@ -134,6 +147,9 @@ export const createChatProcessTurnStreamInput = (
 
 export interface AttemptRoutineInputOptions {
   session: PreparedSession;
+  accountId?: string;
+  directives?: Directive[];
+  directiveRuntime?: RouteScopedDirectiveRuntime;
   appendEvent?: (event: ConversationEvent) => Promise<void>;
   routineStore?: ConversationRoutineStore;
   routineRunner?: ConversationRoutineRunner;
@@ -142,23 +158,28 @@ export interface AttemptRoutineInputOptions {
 
 /**
  * Builds the narrow input `engine.attemptRoutine` needs — agent, session, input event,
- * stores, and routine machinery only. Routine resume/activation never runs selection,
- * dispatch, or composition, so unlike {@link createChatProcessTurnInput} this wires no
- * (stub) selector/dispatcher/composer.
+ * stores, directive steering, and routine machinery only. Routine resume/activation
+ * never runs selection, dispatch, or composition, so unlike
+ * {@link createChatProcessTurnInput} this wires no stub selector/dispatcher/composer.
  */
-export const createAttemptRoutineInput = (options: AttemptRoutineInputOptions): AttemptRoutineInput => ({
-  agent: toConversationAgentConfig(options.session.agent),
-  sessionId: options.session.conversation.id,
-  inputEvent: toConversationInputEvent(options.session.userMessage),
-  stores: {
-    async loadHistory() {
-      return toConversationMessages(options.session.history);
+export const createAttemptRoutineInput = (options: AttemptRoutineInputOptions): AttemptRoutineInput => {
+  const directiveWiring = buildDirectiveTurnWiring(options);
+  return {
+    agent: toConversationAgentConfig(options.session.agent),
+    sessionId: options.session.conversation.id,
+    inputEvent: toConversationInputEvent(options.session.userMessage),
+    stores: {
+      async loadHistory() {
+        return toConversationMessages(options.session.history);
+      },
+      async appendEvent(event) {
+        await options.appendEvent?.(event);
+      },
     },
-    async appendEvent(event) {
-      await options.appendEvent?.(event);
-    },
-  },
-  ...(options.routineStore ? { routineStore: options.routineStore } : {}),
-  ...(options.routineRunner ? { routineRunner: options.routineRunner } : {}),
-  ...(options.routineActivator ? { routineActivator: options.routineActivator } : {}),
-});
+    directives: directiveWiring.directives,
+    directiveMatcher: directiveWiring.directiveMatcher,
+    ...(options.routineStore ? { routineStore: options.routineStore } : {}),
+    ...(options.routineRunner ? { routineRunner: options.routineRunner } : {}),
+    ...(options.routineActivator ? { routineActivator: options.routineActivator } : {}),
+  };
+};

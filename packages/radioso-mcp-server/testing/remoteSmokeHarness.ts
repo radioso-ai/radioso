@@ -288,10 +288,18 @@ export const runSingleNodeSmoke = async (logger: SmokeLogger): Promise<SmokeSumm
       tools.result.tools.map((tool) => tool.name).sort(),
       ["answer_grounded", "create_document", "describe_capabilities", "get_document", "list_documents"].sort(),
     );
+    assert.ok(!tools.result.tools.some((tool) => tool.name === "get_retrieval_settings"));
+    assert.ok(!tools.result.tools.some((tool) => tool.name === "update_retrieval_settings"));
     const capabilities = await callTool(remote.baseUrl, exchange.accessToken, "describe_capabilities", {});
     assert.equal(capabilities.structuredContent.workspace.id, issued.workspaceId);
     assert.equal(capabilities.structuredContent.workspace.name, "Default");
     assert.deepEqual(capabilities.structuredContent.approvalRequiredTools, ["create_document"]);
+
+    logger.step("verifying removed retrieval settings tools are unknown");
+    const removedTool = await callTool(remote.baseUrl, exchange.accessToken, "get_retrieval_settings", {});
+    assert.equal(removedTool.response.status, 200);
+    assert.equal(removedTool.payload?.error?.code, -32602);
+    assert.match(String(removedTool.payload?.error?.message), /tool.*not.*found/i);
 
     logger.step("creating a document with the access token alone");
     const created = await callTool(remote.baseUrl, exchange.accessToken, "create_document", {

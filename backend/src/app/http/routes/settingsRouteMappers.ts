@@ -1,33 +1,9 @@
 import type { z } from "zod";
 
 import type { PlatformSettingsPatch } from "../../../modules/settings/contracts/platform.js";
-import type {
-  updateGeneralSettingsSchema,
-  updateSettingsSchema,
-} from "./settingsRouteSchemas.js";
+import type { updateGeneralSettingsSchema } from "./settingsRouteSchemas.js";
 
-type RetrievalSettingsPatch = NonNullable<PlatformSettingsPatch["retrieval"]>;
 type ChannelSettingsPatch = NonNullable<PlatformSettingsPatch["channels"]>;
-
-export const toRetrievalSettingsPatch = (
-  body: z.infer<typeof updateSettingsSchema>,
-): PlatformSettingsPatch => ({
-  assistant: {
-    suggestedQuestionsEnabled: body.suggestedQuestionsEnabled,
-    customInstruction: body.customInstruction,
-  },
-  retrieval: {
-    queryRewriteEnabled: body.queryRewriteEnabled,
-    semanticRewriteInstructions: body.semanticRewriteInstructions,
-    lexicalRewriteInstructions: body.lexicalRewriteInstructions,
-    rerankEnabled: body.rerankEnabled,
-    vectorTopK: body.vectorTopK,
-    similarityThreshold: body.similarityThreshold,
-    rerankTopK: body.rerankTopK,
-    metadataRules: body.metadataRules as RetrievalSettingsPatch["metadataRules"],
-    retrievalStrategy: body.retrievalStrategy,
-  },
-});
 
 export const toGeneralSettingsPatch = (
   body: z.infer<typeof updateGeneralSettingsSchema>,

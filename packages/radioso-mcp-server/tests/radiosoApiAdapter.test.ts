@@ -60,30 +60,6 @@ describe("createRadiosoApiAdapter", () => {
     await expect(adapter.listDocuments()).rejects.toBeInstanceOf(RadiosoApiError);
   });
 
-  it("maps missing capability routes to unsupported_capability", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ error: { code: "not_found", message: "Missing route" } }), {
-        status: 404,
-        headers: { "content-type": "application/json" },
-      }),
-    );
-
-    const adapter = createRadiosoApiAdapter(
-      {
-        apiToken: "radioso_test",
-        baseUrl: "http://localhost:8080",
-        requestTimeoutMs: 30000,
-        serverName: "radioso-test",
-      },
-      fetchMock,
-    );
-
-    await expect(adapter.getRetrievalSettings()).rejects.toMatchObject({
-      code: "unsupported_capability",
-      status: 404,
-    });
-  });
-
   it("maps missing retrieval answer routes to unsupported_capability", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ error: { code: "not_found", message: "Missing route" } }), {

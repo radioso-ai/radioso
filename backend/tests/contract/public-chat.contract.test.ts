@@ -45,6 +45,19 @@ describe("public chat contract", () => {
     return response.body;
   };
 
+  const updateRetrievalSkillSettings = async (
+    dependencies: ReturnType<typeof createTestApp>["dependencies"],
+    workspaceId: string,
+    settings: Record<string, unknown>,
+  ) => {
+    const agent = await dependencies.agentService.resolve(workspaceId);
+    return dependencies.agentService.update(workspaceId, agent.id, {
+      skillSettings: {
+        "retrieval.answer": settings,
+      },
+    });
+  };
+
   it("answers a message sent together with startConversation instead of dropping it", async () => {
     // A caller may set startConversation:true on the first user message ("start a
     // conversation with this message"). The message must be answered, not
@@ -500,7 +513,7 @@ describe("public chat contract", () => {
   });
 
   it("grounds anonymous chat answers using retrieval validation defaults", async () => {
-    const { app } = createTestApp({
+    const { app, dependencies } = createTestApp({
       envOverrides: {
         PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 1,
         PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 100,
@@ -515,26 +528,22 @@ describe("public chat contract", () => {
       },
     });
     const session = await issueTestSession(app, "public-chat-policy@example.com");
+    const { workspaceId } = session;
     await request(app)
       .post("/api/v1/document/")
       .set(adminSessionHeaders(session))
       .send({ title: "Event listing", content: "Narayani leads a satsang this weekend." });
 
-    await request(app)
-      .put("/api/v1/settings/retrieval")
-      .set(adminSessionHeaders(session))
-      .send({
-        queryRewriteEnabled: false,
-        semanticRewriteInstructions: "Keep the query standalone.",
-        lexicalRewriteInstructions: "Prefer exact literals.",
-        rerankEnabled: false,
-        vectorTopK: 15,
-        similarityThreshold: 0.2,
-        rerankTopK: 5,
-        metadataRules: [],
-        customInstruction: "",
-      })
-      .expect(200);
+    await updateRetrievalSkillSettings(dependencies, workspaceId, {
+      queryRewriteEnabled: false,
+      semanticRewriteInstructions: "Keep the query standalone.",
+      lexicalRewriteInstructions: "Prefer exact literals.",
+      rerankEnabled: false,
+      vectorTopK: 15,
+      rerankTopK: 5,
+      metadataRules: [],
+      customInstruction: "",
+    });
 
     const chatToken = await enableAnonymousChat(app, session);
     const publicSession = await createPublicSession(app, chatToken);

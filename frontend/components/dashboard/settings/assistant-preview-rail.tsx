@@ -5,12 +5,12 @@ import NextLink from 'next/link'
 
 import { ChatPreview, ThemeContrastWarning } from '@/components/dashboard/settings/assistant-chat-preview'
 import { DEFAULT_ASSISTANT_THEME } from '@/components/dashboard/settings/assistant-theme-form-helpers'
-import type { AssistantBehaviorSettings, GeneralSettings, RetrievalSettings } from '@/lib/api'
+import type { AssistantBehaviorSettings, GeneralSettings, RetrievalDefaults } from '@/lib/api'
 
 export interface AssistantPreviewRailProps {
   anonSettings: GeneralSettings
   assistantBehaviorSettings: AssistantBehaviorSettings
-  retrievalDefaults: Pick<RetrievalSettings, 'suggestedQuestionsEnabled'>
+  retrievalDefaults: Pick<RetrievalDefaults, 'suggestedQuestionsEnabled'>
   channelsTabHref?: string
 }
 

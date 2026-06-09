@@ -274,6 +274,8 @@ export class ChatService {
     const outcome = await attemptRoutineTurnWithConversationEngine({
       engine: this.conversationEngine,
       session,
+      accountId,
+      directiveRuntime: this.directiveRuntime,
       routineStore: deferredStore,
       routineRunner: this.routineProvider.createRunner(modelGateway),
       routineActivator: this.routineProvider.activator(modelGateway),

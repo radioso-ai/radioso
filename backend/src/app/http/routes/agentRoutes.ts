@@ -11,6 +11,7 @@ import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import {
   agentSurfacePositions,
   authoredDirectiveInputSchema,
+  directiveAuthorDraftInputSchema,
 } from "../../../modules/agents/public.js";
 import { routineDefinitionDraftInputSchema } from "../../../modules/routines/public.js";
 import { builtInAnswerDirectiveViews } from "../../../modules/directives/public.js";
@@ -114,7 +115,7 @@ export const agentBodySchema = z.object({
 
 export { llmProviderNames as agentLlmProviderNames, chatModelOverrideSchema as agentChatModelOverrideSchema };
 
-type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "authoredDirectiveService" | "routineDefinitionService" | "agentSurfaceExtensions" | "documentStorage" | "logger">;
+type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "authoredDirectiveService" | "directiveAuthorService" | "routineDefinitionService" | "agentSurfaceExtensions" | "documentStorage" | "logger">;
 
 export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router => {
   const router = Router();
@@ -183,6 +184,23 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
       next(error);
     }
   });
+
+  router.post(
+    "/:agentId/directives/draft",
+    workspaceSession,
+    agentManage,
+    validateBody(directiveAuthorDraftInputSchema),
+    async (req, res, next) => {
+      try {
+        const { workspaceId } = res.locals as { workspaceId: string };
+        const parsed = agentParamsSchema.parse(req.params);
+        const result = await dependencies.directiveAuthorService.draft(workspaceId, parsed.agentId, req.body);
+        res.status(200).json(result);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   router.post(
     "/:agentId/directives",

@@ -10,7 +10,10 @@ import type {
 import type { ConversationRecord } from "../../src/db/repositories/conversationRepository.js";
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
 import type { AgentRecord } from "../../src/modules/agents/public.js";
-import { createChatProcessTurnInput } from "../../src/modules/chat/services/conversationProcessTurnInput.js";
+import {
+  createAttemptRoutineInput,
+  createChatProcessTurnInput,
+} from "../../src/modules/chat/services/conversationProcessTurnInput.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import type { RouteScopedDirectiveRuntime } from "../../src/modules/chat/services/routeScopedDirectiveSteering.js";
 import type { RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
@@ -402,6 +405,7 @@ describe("createChatProcessTurnInput", () => {
         dependsOn: [],
         excludes: [],
         routes: [],
+        tags: [],
         description: null,
         metadata: {},
         createdAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -440,5 +444,55 @@ describe("createChatProcessTurnInput", () => {
     await expect(input.modelGateway.complete({ messages: [] })).rejects.toThrow(
       "conversation_model_gateway_not_configured",
     );
+  });
+});
+
+describe("createAttemptRoutineInput", () => {
+  it("wires directive candidates and matcher through the routine turn input", async () => {
+    const directive: Directive = {
+      name: "routine-tone",
+      condition: { kind: "always" },
+      action: "Keep the routine answer precise.",
+      priority: 60,
+    };
+    const session = preparedSession();
+    session.directiveSteering = undefined;
+    const { runtime, matchedTurnContexts } = routeScopedDirectiveRuntime([directive]);
+
+    const input = createAttemptRoutineInput({
+      session,
+      accountId: "account_1",
+      directiveRuntime: runtime,
+    });
+
+    expect(input.directives).toEqual([directive]);
+    expect(input.directiveMatcher).toBeDefined();
+    const directiveMatcher = input.directiveMatcher;
+    const directives = input.directives;
+    if (!directiveMatcher || !directives) {
+      throw new Error("routine directive wiring missing");
+    }
+    await expect(directiveMatcher.match({
+      turn: {
+        agent: input.agent,
+        sessionId: input.sessionId,
+        inputEvent: input.inputEvent,
+        history: [],
+        stagedContext: [],
+        steering: [],
+      },
+      directives,
+    })).resolves.toEqual([
+      expect.objectContaining({
+        directive,
+        selectionReason: "test matcher",
+      }),
+    ]);
+    expect(matchedTurnContexts).toEqual([{ query: "Where is my order?", route: "social_only" }]);
+    expect(session.directiveSteering).toMatchObject({
+      rules: [{ action: "Keep the routine answer precise.", source: "directive", lifespan: "response" }],
+      matches: [expect.objectContaining({ directive })],
+      omissions: [],
+    });
   });
 });

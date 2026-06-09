@@ -281,10 +281,13 @@ describe("retrieval answer contract", () => {
       },
     });
     const session = await issueTestSession(app, "retrieval-unsupported@example.com");
-    const existing = await dependencies.retrievalSettingsService.getForWorkspace(session.workspaceId);
-    await dependencies.retrievalSettingsService.updateForWorkspace(session.workspaceId, {
-      ...existing,
-      queryRewriteEnabled: true,
+    const agent = await dependencies.agentService.resolve(session.workspaceId);
+    await dependencies.agentService.update(session.workspaceId, agent.id, {
+      skillSettings: {
+        "retrieval.answer": {
+          queryRewriteEnabled: true,
+        },
+      },
     });
 
     const response = await request(app)

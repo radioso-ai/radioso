@@ -119,7 +119,6 @@ import {
   embeddingModelIds,
   IngestionSettingsService,
   PlatformSettingsService,
-  RetrievalSettingsService,
 } from "../../modules/settings/composition.js";
 import type { EmbeddingModelId } from "../../modules/settings/contracts/ingestion.js";
 import { SkillCatalogService, retrievalAnswerSkillDefinition } from "../../modules/skills/public.js";
@@ -128,7 +127,7 @@ import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.
 import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
 import { WorkspaceService, WorkspaceSummaryService } from "../../modules/workspace/public.js";
-import type { SkillSettingsResolver } from "../../modules/retrieval/public.js";
+import type { RetrievalDefaultsProvider, SkillSettingsResolver } from "../../modules/retrieval/public.js";
 import { ProductAnalyticsService } from "../../shared/analytics/productAnalyticsService.js";
 import { NoopUsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import {
@@ -336,12 +335,10 @@ export const buildWorkspaceProviderCredentialsService = (input: {
 export const buildWorkspaceLlmCapabilitySettingsService = (input: {
   auditService: AuditPort;
   capabilityRepository: WorkspaceLlmCapabilityPreferencesRepositoryPort;
-  retrievalSettingsService: Pick<RetrievalSettingsService, "getForWorkspace">;
   logger?: Pick<AppLogger, "warn">;
 }): WorkspaceLlmCapabilitySettingsService =>
   new WorkspaceLlmCapabilitySettingsService(
     input.capabilityRepository,
-    input.retrievalSettingsService,
     input.auditService,
     input.logger,
   );
@@ -391,8 +388,6 @@ export const buildSettingsServices = (input: {
   auditService: AuditService;
   documentRepository: DocumentRepository;
   ingestionSettingsRepository: IngestionSettingsRepository;
-  productAnalyticsService: ProductAnalyticsService;
-  retrievalSettingsRepository: RetrievalSettingsRepository;
   supportedEmbeddingModels?: readonly EmbeddingModelId[];
   workspaceIngestionReprocessService?: Pick<WorkspaceIngestionReprocessService, "reprocessWorkspace">;
 }) => {
@@ -403,16 +398,9 @@ export const buildSettingsServices = (input: {
     input.supportedEmbeddingModels,
     input.workspaceIngestionReprocessService,
   );
-  const retrievalSettingsService = new RetrievalSettingsService(
-    input.retrievalSettingsRepository,
-    input.auditService,
-    input.documentRepository,
-    input.productAnalyticsService,
-  );
 
   return {
     ingestionSettingsService,
-    retrievalSettingsService,
   };
 };
 
@@ -580,7 +568,7 @@ export const buildRetrievalServices = (input: {
   ingestionSettingsService: IngestionSettingsService;
   llmRegistry: LlmProviderRegistry;
   logger: AppLogger;
-  retrievalSettingsService: RetrievalSettingsService;
+  retrievalDefaultsProvider: RetrievalDefaultsProvider;
   skillSettingsResolver?: SkillSettingsResolver;
   telemetryService: TelemetryService;
   usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];

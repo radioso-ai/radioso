@@ -6,7 +6,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 import { AssistantBehaviorSection } from '@/components/dashboard/settings/assistant-behavior-section'
 import { AssistantPreviewRail } from '@/components/dashboard/settings/assistant-preview-rail'
-import type { AssistantBehaviorSettings, GeneralSettings, RetrievalSettings } from '@/lib/api'
+import type { AssistantBehaviorSettings, GeneralSettings, RetrievalDefaults } from '@/lib/api'
 
 vi.mock('@/components/dashboard/settings/assistant-chat-preview', () => ({
   ChatPreview: ({ showSuggestedQuestions }: { showSuggestedQuestions: boolean }) => (
@@ -25,10 +25,13 @@ beforeAll(() => {
 
 const generalSettings = (): GeneralSettings => ({
   anonymousChatEnabled: true,
-  anonymousChatToken: 'anon-token',
-  anonymousRateLimit: 10,
+  anonymousChatUrl: 'http://localhost:3000/chat/anon-token',
+  anonymousChatLastUsedAt: null,
   websiteEmbedEnabled: true,
   websiteEmbedToken: 'embed-token',
+  websiteEmbedLastUsedAt: null,
+  websiteEmbedScriptUrl: 'http://localhost:3000/embed.js',
+  websiteEmbedSnippet: '<script src="http://localhost:3000/embed.js"></script>',
   websiteEmbedAllowedOrigins: [],
   websiteEmbedLauncherLabel: 'Chat',
   websiteEmbedLauncherPosition: 'bottom-right',
@@ -71,8 +74,7 @@ const behaviorSettings = (overrides: Partial<AssistantBehaviorSettings> = {}): A
   ...overrides,
 })
 
-const retrievalDefaults = (overrides: Partial<RetrievalSettings> = {}): RetrievalSettings => ({
-  workspaceId: 'ws-1',
+const retrievalDefaults = (overrides: Partial<RetrievalDefaults> = {}): RetrievalDefaults => ({
   queryRewriteEnabled: true,
   semanticRewriteInstructions: '',
   lexicalRewriteInstructions: '',
@@ -80,14 +82,11 @@ const retrievalDefaults = (overrides: Partial<RetrievalSettings> = {}): Retrieva
   suggestedQuestionsCount: 3,
   rerankEnabled: false,
   vectorTopK: 20,
-  similarityThreshold: 0.2,
   rerankTopK: 5,
   metadataRules: [],
   metadataFieldSuggestions: [],
   customInstruction: '',
   retrievalStrategy: 'fixed',
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
   ...overrides,
 })
 

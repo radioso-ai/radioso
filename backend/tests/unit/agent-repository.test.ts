@@ -51,6 +51,7 @@ const directiveRow = (overrides: Record<string, unknown> = {}) => ({
   depends_on: [],
   excludes: [],
   routes: ["retrieval"],
+  scope_tags: [],
   description: null,
   metadata: {},
   created_at: new Date("2026-01-01T00:00:00.000Z"),
@@ -465,6 +466,7 @@ describe("AgentRepository", () => {
           dependsOn: [],
           excludes: [],
           routes: ["retrieval"],
+          tags: ["step:contact:ask_email"],
           description: "Tone control",
           metadata: { source: "test" },
           createdAt: "2026-01-01T00:00:00.000Z",
@@ -491,11 +493,48 @@ describe("AgentRepository", () => {
       dependsOn: [],
       excludes: [],
       routes: ["retrieval"],
+      tags: ["step:contact:ask_email"],
       description: "Tone control",
       metadata: { source: "test" },
       createdAt: new Date("2026-01-01T00:00:00.000Z"),
       updatedAt: new Date("2026-01-02T00:00:00.000Z"),
     }]);
+  });
+
+  it("persists and reads directive scope tags through create, list, and update", async () => {
+    const query = vi.fn(async (text: string, params?: unknown[]) => {
+      if (text.includes("SELECT agent_directives")) {
+        return [directiveRow({ scope_tags: ["step:contact:ask_email"] })];
+      }
+      if (text.includes("INSERT INTO agent_directives")) {
+        return { rows: [directiveRow({ scope_tags: params?.[10] })] };
+      }
+      if (text.includes("UPDATE agent_directives")) {
+        return [directiveRow({ scope_tags: params?.[11] })];
+      }
+      return [];
+    });
+    const repository = new AgentRepository({
+      query,
+      withTransaction: async (callback: (client: { query: typeof query }) => Promise<unknown>) => callback({ query }),
+    } as never);
+
+    const created = await repository.createDirective("agent-1", "workspace-1", {
+      name: "step scoped",
+      condition: { kind: "always" },
+      action: "Only while collecting email.",
+      tags: ["step:contact:ask_email"],
+    });
+    const listed = await repository.listDirectives("agent-1", "workspace-1");
+    const updated = await repository.updateDirective("agent-1", "workspace-1", "directive-1", {
+      tags: ["routine:contact"],
+    });
+
+    expect(created.tags).toEqual(["step:contact:ask_email"]);
+    expect(listed[0]?.tags).toEqual(["step:contact:ask_email"]);
+    expect(updated.tags).toEqual(["routine:contact"]);
+    expect(query.mock.calls.find(([text]) => text.includes("INSERT INTO agent_directives"))?.[0]).toContain("scope_tags");
+    expect(query.mock.calls.find(([text]) => text.includes("UPDATE agent_directives"))?.[0]).toContain("scope_tags");
   });
 
   it("uses an updated_at compare-and-set guard on update and reports stale writes as conflicts", async () => {

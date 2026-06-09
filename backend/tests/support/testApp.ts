@@ -17,12 +17,13 @@ import type { WorkbenchReplayRunner } from "../../src/modules/chat/composition.j
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import { ActionDispatchWorker } from "../../src/modules/chat/services/actions/actionDispatchWorker.js";
 import { createConversationEngine } from "@radioso/conversation-engine";
+import { scopeTag } from "@radioso/conversation-defaults";
 import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
 import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
-import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService } from "../../src/modules/agents/public.js";
+import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../src/modules/agents/public.js";
 import { RoutineDefinitionService } from "../../src/modules/routines/public.js";
 import {
   type FallbackReplyComposer,
@@ -63,7 +64,6 @@ import { streamResult, textResult } from "./llmStubs.js";
 import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
 import { PlatformSettingsService } from "../../src/modules/settings/services/platformSettingsService.js";
 import type { RetrievedChunk, VectorSearchPort } from "../../src/modules/retrieval/public.js";
-import { RetrievalSettingsService } from "../../src/modules/settings/services/retrievalSettingsService.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import { WorkspaceSummaryService } from "../../src/modules/workspace/services/workspaceSummaryService.js";
 import { WorkspaceSessionService } from "../../src/modules/auth/services/workspaceSessionService.js";
@@ -87,7 +87,11 @@ import {
   EvalSnapshotService,
 } from "../../src/modules/eval/composition.js";
 import { ApplicationModuleCoordinator, createApplicationExtensionRegistry } from "../../src/app/composition/applicationModule.js";
-import { createDefaultAgentSkillSettingsRegistry } from "../../src/app/composition/skillSettingsResolver.js";
+import {
+  createDefaultAgentSkillSettingsRegistry,
+  createRetrievalSkillSettingsResolver,
+  createSystemRetrievalDefaultsProvider,
+} from "../../src/app/composition/index.js";
 import { DefaultAllowCapabilityPolicy, registeredCapabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
 import {
@@ -260,6 +264,7 @@ export const createTestDependencies = (overrides: {
   publicChatActionAdvertiser?: PublicChatActionAdvertiserPort;
   applicationRouteMounts?: ApplicationRouteMount[];
   workbenchReplayRunner?: Pick<WorkbenchReplayRunner, "run">;
+  chatInferencePipelineComplete?: AppDependencies["chatInferencePipeline"]["complete"];
   logger?: AppDependencies["logger"];
 } = {}): { dependencies: AppDependencies; repositories: TestRepositories } => {
   const env = {
@@ -493,12 +498,6 @@ export const createTestDependencies = (overrides: {
     undefined,
     workspaceIngestionReprocessService,
   );
-  const retrievalSettingsService = new RetrievalSettingsService(
-    retrievalSettingsRepository,
-    auditService,
-    documentRepository,
-    productAnalyticsService,
-  );
   const documentSourceContentService = new DocumentSourceContentService(documentStorage);
   const documentProcessingService = new DocumentProcessingService(
     documentRepository,
@@ -583,7 +582,7 @@ export const createTestDependencies = (overrides: {
     return result;
   };
   const retrievalPipeline = new RetrievalPipelineService(
-    retrievalSettingsService,
+    createSystemRetrievalDefaultsProvider(),
     embeddingService,
     vectorSearch,
     lexicalSearch,
@@ -595,6 +594,9 @@ export const createTestDependencies = (overrides: {
     new PromptContextSelectorService(),
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(telemetryService),
+    undefined,
+    ingestionSettingsService,
+    createRetrievalSkillSettingsResolver(),
   );
   const documentSearchService = new DocumentSearchService(
     documentRepository,
@@ -641,7 +643,6 @@ export const createTestDependencies = (overrides: {
   );
   const workspaceLlmCapabilitySettingsService = new WorkspaceLlmCapabilitySettingsService(
     retrievalSettingsRepository,
-    retrievalSettingsService,
     auditService,
   );
   const connectorRegistry = new ConnectorRegistry();
@@ -658,7 +659,6 @@ export const createTestDependencies = (overrides: {
   const agentService = new AgentService(
     agentRepository,
     workspaceRepository,
-    retrievalSettingsService,
     documentSourceRepository,
     undefined,
     accessGrantService,
@@ -679,6 +679,21 @@ export const createTestDependencies = (overrides: {
   const routineDefinitionService = new RoutineDefinitionService({
     agentRepository,
     repository: routineDefinitionRepository,
+  });
+  const chatInferencePipeline: AppDependencies["chatInferencePipeline"] = {
+    metadata: { capability: "chat" as const, provider: "openai" as const, model: "test" },
+    complete: overrides.chatInferencePipelineComplete ?? (async () => textResult("")),
+    stream() { return streamResult([""]); },
+  };
+  const directiveAuthorService = new DirectiveAuthorService({
+    repository: agentRepository,
+    textGenerationClient: {
+      complete: async ({ signal: _signal, ...input }) =>
+        (await chatInferencePipeline.complete(input)).text,
+    },
+    logger,
+    telemetryService,
+    buildStepScopeTag: scopeTag.step,
   });
   const agentSurfaceExtensions = new AgentSurfaceExtensionRegistry();
   // Mimic an EE deployment for OSS contract/unit tests so the runtime gate on
@@ -757,12 +772,12 @@ export const createTestDependencies = (overrides: {
   });
   const platformSettingsService = new PlatformSettingsService({
     workspaceRepository,
-    retrievalSettingsService,
     auditService,
     agentService,
     accessGrantService,
     publicChatBaseUrl: env.PUBLIC_CHAT_BASE_URL,
   });
+  const retrievalDefaultsProvider = createSystemRetrievalDefaultsProvider();
   const dependencies: AppDependencies = {
     env,
     logger,
@@ -820,8 +835,8 @@ export const createTestDependencies = (overrides: {
     workspaceService,
     workspaceSummaryService,
     ingestionSettingsService,
-    retrievalSettingsService,
     chunkRepository,
+    documentRepository,
     documentIngestionService,
     documentSourceRepository,
     documentImportService,
@@ -855,11 +870,13 @@ export const createTestDependencies = (overrides: {
     assistantHistoryService,
     retrievalSearchService,
     retrievalAnswerService,
+    retrievalDefaultsProvider,
     evalSnapshotService: new EvalSnapshotService(
       conversationRepository,
       messageRepository,
       agentRepository,
-      retrievalSettingsService,
+      retrievalDefaultsProvider,
+      createRetrievalSkillSettingsResolver(),
       new EvalRepository(connectorDb as any),
     ),
     evalCaseService: new EvalCaseService(new EvalRepository(connectorDb as any)),
@@ -883,6 +900,7 @@ export const createTestDependencies = (overrides: {
     agentService,
     authoredDirectiveService,
     routineDefinitionService,
+    directiveAuthorService,
     agentSurfaceExtensions,
     skillCatalogService,
     accountRepository,
@@ -899,11 +917,7 @@ export const createTestDependencies = (overrides: {
       async ensureSource() { return { id: "test-source" }; },
     },
     connectorDb: connectorDb as any,
-    chatInferencePipeline: {
-      metadata: { capability: "chat" as const, provider: "openai" as const, model: "test" },
-      async complete() { return textResult(""); },
-      stream() { return streamResult([""]); },
-    },
+    chatInferencePipeline,
     crawlerProvider: {
       async fetchPageWithScreenshot() { return { url: "", title: null, text: "", links: [], screenshot: null, faviconUrl: null }; },
       async crawlSite() { return []; },
@@ -954,6 +968,7 @@ export const createTestApp = (overrides: {
   publicChatActionAdvertiser?: PublicChatActionAdvertiserPort;
   applicationRouteMounts?: ApplicationRouteMount[];
   workbenchReplayRunner?: Pick<WorkbenchReplayRunner, "run">;
+  chatInferencePipelineComplete?: AppDependencies["chatInferencePipeline"]["complete"];
   logger?: AppDependencies["logger"];
 } = {}) => {
   const { dependencies, repositories } = createTestDependencies(overrides);

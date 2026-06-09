@@ -6,7 +6,7 @@ Rewrite the user request into optimized semantic and lexical search queries.
 ## Details
 ### Overview
 
-Query rewrite converts the user request into retrieval-oriented semantic and lexical queries before search begins.
+Query rewrite converts the user request into retrieval-oriented semantic and lexical queries before this agent searches.
 
 ### Why It Exists
 

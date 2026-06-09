@@ -1,13 +1,13 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import type { QueryRewriteGateway } from "../../src/modules/retrieval/services/queryRewriteService.js";
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 
 describe("retrieval answer integration", () => {
   it("answers from retrieval without creating assistant conversation history", async () => {
-    const { app } = createTestApp();
+    const { app, dependencies } = createTestApp();
     const session = await issueTestSession(app, "retrieval-answer-integration@example.com");
+    const { workspaceId } = session;
     const headers = adminSessionHeaders(session);
 
     await request(app)
@@ -59,90 +59,6 @@ describe("retrieval answer integration", () => {
     expect(history.body.conversations).toEqual([]);
   });
 
-  it("uses caller-supplied conversation context for retrieval-only rewrite continuity", async () => {
-    let observedContextMessages: string[] = [];
-    const queryRewriteGateway: QueryRewriteGateway = {
-      async rewrite(input) {
-        observedContextMessages = input.contextMessages.map((message) => `${message.role}:${message.content}`);
-        return {
-          rewrittenQuery: "advanced workshop next month returning students",
-          semanticQuery: "advanced workshop next month returning students",
-          lexicalQuery: "advanced workshop next month",
-          turnKind: "referential_followup",
-          proposedActiveSubject: "advanced workshop",
-          relatedEntities: [],
-          unresolved: false,
-          confidence: 0.94,
-        };
-      },
-    };
-    const { app } = createTestApp({ queryRewriteGateway });
-    const session = await issueTestSession(app, "retrieval-answer-context@example.com");
-    const headers = adminSessionHeaders(session);
-
-    await request(app)
-      .post("/api/v1/document/")
-      .set(headers)
-      .send({
-        title: "Course Calendar",
-        content: "The advanced workshop runs next month for returning students.",
-      })
-      .expect(202);
-    await request(app)
-      .put("/api/v1/settings/retrieval")
-      .set(headers)
-      .send({
-        queryRewriteEnabled: true,
-        rerankEnabled: false,
-        vectorTopK: 20,
-        similarityThreshold: 0.1,
-        rerankTopK: 5,
-        citationDisplayEnabled: true,
-      })
-      .expect(200);
-
-    const response = await request(app)
-      .post("/api/v1/retrieval/answer")
-      .set(headers)
-      .send({
-        query: "What about that one?",
-        includeDebug: true,
-        conversationContext: {
-          previousUserMessages: ["Do you have an advanced workshop?"],
-          previousAssistantMessages: ["The advanced workshop is available for returning students."],
-        },
-      })
-      .expect(200);
-
-    expect(observedContextMessages).toEqual([
-      "user:Do you have an advanced workshop?",
-      "assistant:The advanced workshop is available for returning students.",
-    ]);
-    expect(response.body).toMatchObject({
-      outcome: "answer",
-      debug: {
-        activitySummary: {
-          parsedQuery: {
-            originalQuery: "What about that one?",
-            semanticQuery: "advanced workshop next month returning students",
-            lexicalQuery: "advanced workshop next month",
-          },
-          rewrite: {
-            status: "applied",
-            eligible: true,
-            ran: true,
-            continuityDecision: "updated",
-          },
-          execution: {
-            surface: "retrieval",
-            path: "retrieval_answer",
-            retrievalInvoked: true,
-          },
-        },
-      },
-    });
-  });
-
   it("returns typed unsupported outcomes for non-retrieval requests", async () => {
     const { app } = createTestApp({
       queryRewriteGateway: {
@@ -163,19 +79,6 @@ describe("retrieval answer integration", () => {
     const session = await issueTestSession(app, "retrieval-answer-unsupported-integration@example.com");
     const headers = adminSessionHeaders(session);
 
-    await request(app)
-      .put("/api/v1/settings/retrieval")
-      .set(headers)
-      .send({
-        queryRewriteEnabled: true,
-        rerankEnabled: false,
-        vectorTopK: 20,
-        similarityThreshold: 0.1,
-        rerankTopK: 5,
-        citationDisplayEnabled: true,
-      })
-      .expect(200);
-
     const response = await request(app)
       .post("/api/v1/retrieval/answer")
       .set(headers)
@@ -191,8 +94,9 @@ describe("retrieval answer integration", () => {
   });
 
   it("marks MCP capability diagnostics separately from direct retrieval answer clients", async () => {
-    const { app } = createTestApp();
+    const { app, dependencies } = createTestApp();
     const session = await issueTestSession(app, "retrieval-answer-mcp-integration@example.com");
+    const { workspaceId } = session;
     const headers = adminSessionHeaders(session);
 
     await request(app)

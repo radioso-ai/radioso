@@ -17,11 +17,12 @@ import type {
   DocumentSearchService,
   WorkspaceIngestionReprocessService,
 } from "../../modules/documents/composition.js";
+import type { RetrievalMetadataFieldSourcePort } from "../../modules/settings/contracts/services.js";
 import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
 import type { IngestionSettingsService } from "../../modules/settings/composition.js";
 import type { PlatformSettingsService } from "../../modules/settings/composition.js";
-import type { RetrievalSettingsService } from "../../modules/settings/composition.js";
 import type { RetrievalAnswerService, RetrievalSearchService } from "../../modules/retrieval/composition.js";
+import type { RetrievalDefaultsProvider } from "../../modules/retrieval/public.js";
 import type { AuthService } from "../../modules/auth/services/authService.js";
 import type { EmailVerificationService } from "../../modules/auth/services/emailVerificationService.js";
 import type { PasswordResetService } from "../../modules/auth/services/passwordResetService.js";
@@ -56,7 +57,7 @@ import type { ApplicationModuleCoordinator, ApplicationRouteMount } from "../com
 import type { PublicChatActionAdvertiserPort, ContactHistoryProviderPort } from "../../modules/chat/contracts/index.js";
 import type { UserRepositoryPort } from "../../db/repositories/userRepository.js";
 import type { SkillCatalogService } from "../../modules/skills/public.js";
-import type { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService } from "../../modules/agents/public.js";
+import type { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../modules/agents/public.js";
 import type { RoutineDefinitionService } from "../../modules/routines/public.js";
 import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.js";
 import type { DocumentSourceRepositoryPort } from "../../db/repositories/documentSourceRepository.js";
@@ -99,8 +100,8 @@ export interface AppDependencies {
   workspaceService: WorkspaceService;
   workspaceSummaryService: WorkspaceSummaryService;
   ingestionSettingsService: IngestionSettingsService;
-  retrievalSettingsService: RetrievalSettingsService;
   chunkRepository: ChunkRepositoryPort;
+  documentRepository: RetrievalMetadataFieldSourcePort;
   documentIngestionService: DocumentIngestionService;
   documentSourceRepository: DocumentSourceRepositoryPort;
   documentImportService: DocumentImportService;
@@ -126,6 +127,7 @@ export interface AppDependencies {
   assistantHistoryService: AssistantHistoryService;
   retrievalSearchService: RetrievalSearchService;
   retrievalAnswerService: RetrievalAnswerService;
+  retrievalDefaultsProvider: RetrievalDefaultsProvider;
   evalSnapshotService: EvalSnapshotService;
   evalCaseService: EvalCaseService;
   evalRunService: EvalRunService;
@@ -134,6 +136,7 @@ export interface AppDependencies {
   agentService: AgentService;
   authoredDirectiveService: AuthoredDirectiveService;
   routineDefinitionService: RoutineDefinitionService;
+  directiveAuthorService: DirectiveAuthorService;
   agentSurfaceExtensions: AgentSurfaceExtensionRegistry;
   workspaceRepository: WorkspaceRepositoryPort;
   agentRepository: AgentRepositoryPort;

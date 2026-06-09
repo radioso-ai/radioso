@@ -9,7 +9,6 @@ The package connects to an existing Radioso deployment over its public HTTP API 
 - grounded answers with citations
 - document listing, lookup, and search
 - document create, update, delete, and reprocess
-- retrieval settings reads and partial updates
 
 The package owns MCP protocol handling, token verification seams, capability policy enforcement, and audit logging. Authorization comes from the workspace API token and the tools the MCP session was granted at exchange time; the package does not implement a separate server-side approval gate. Tools that should prompt the user before execution are advertised with `requiresApproval: true` so the MCP host (Cursor, Claude Desktop, ChatGPT) can show its own confirmation UI. The package does not import backend domain modules and does not access the database directly.
 
@@ -229,9 +228,7 @@ If you want stdio-originated `answer_grounded` traffic to be labeled as `MCP` in
 - `get_document`
 - `search_documents`
 - `answer_grounded`
-- `get_retrieval_settings`
 - `create_document`
 - `update_document`
 - `delete_document`
 - `reprocess_document`
-- `update_retrieval_settings`

@@ -17,11 +17,6 @@ type RelaxedAssistantChatResponse<T> = T extends unknown
       activityTrace?: ActivityTrace
     }
   : never
-type PlatformRetrievalSettings = Omit<ApiSchemas['PlatformRetrievalSettingsSection'], 'metadataRules'> & {
-  metadataRules: RetrievalMetadataRule[]
-  suggestedQuestionsCount?: number
-}
-
 export type RegisterRequest = ApiSchemas['RegisterRequest']
 export type RegisterResponse = ApiSchemas['RegisterResponse'] & {
   requiresEmailVerification?: boolean
@@ -36,13 +31,9 @@ export type EmailVerificationVerifyRequest = ApiSchemas['EmailVerificationVerify
 export type EmailVerificationVerifyResponse = ApiSchemas['EmailVerificationVerifyResponse']
 export type EmailVerificationResendRequest = ApiSchemas['EmailVerificationResendRequest']
 
-export type RetrievalSettings = PlatformRetrievalSettings &
-  Pick<
-    ApiSchemas['AssistantSettingsSection'],
-    'suggestedQuestionsEnabled' | 'customInstruction'
-  > & {
-    suggestedQuestionsCount: number
-  }
+export type RetrievalDefaults = Omit<ApiSchemas['RetrievalDefaultsResponse'], 'metadataRules'> & {
+  metadataRules: RetrievalMetadataRule[]
+}
 
 export type AgentChatModelOverride = NonNullable<ApiSchemas['ConversationAgent']['chatModelOverride']>
 export type AgentContactRequestDelivery = ApiSchemas['AgentContactRequestDelivery']
@@ -54,9 +45,12 @@ export type DirectiveUpdateRequest = ApiSchemas['AuthoredDirectiveUpdateRequest'
 export type DirectiveCoherence = ApiSchemas['DirectiveCoherenceVerdict']
 export type DirectiveMutationResponse = ApiSchemas['AuthoredDirectiveSaveResponse']
 export type DirectiveListResponse = ApiSchemas['DirectiveListResponse']
+export type DirectiveDraftRequest = ApiSchemas['DirectiveDraftRequest']
+export type DirectiveDraftResponse = ApiSchemas['DirectiveDraftResponse']
+export type DirectiveDraftDirective = ApiSchemas['DirectiveDraftDirective']
 
 export type AssistantBehaviorSettings = Pick<
-  RetrievalSettings,
+  RetrievalDefaults,
   'suggestedQuestionsEnabled' | 'customInstruction'
 > & {
   assistantLinkUtmEnabled: boolean
@@ -74,9 +68,7 @@ export type AssistantBehaviorSettings = Pick<
   retrievalSkillSettings?: RetrievalSkillSettingsOverride
 }
 
-export type PlatformSettings = Omit<ApiSchemas['PlatformSettingsResponse'], 'retrieval'> & {
-  retrieval: PlatformRetrievalSettings
-}
+export type PlatformSettings = ApiSchemas['PlatformSettingsResponse']
 
 export type GeneralSettings = ApiSchemas['GeneralSettingsResponse']
 export type WebsiteEmbedThemeSettings = ApiSchemas['GeneralSettingsResponse']['websiteEmbedTheme']
@@ -87,7 +79,7 @@ export type WebsiteEmbedExpertOverrides = ApiSchemas['GeneralSettingsResponse'][
 export type RetrievalMetadataRule = Omit<ApiSchemas['RetrievalMetadataRule'], 'combinator' | 'conditions'> &
   Partial<Pick<ApiSchemas['RetrievalMetadataRule'], 'combinator' | 'conditions'>>
 export type RetrievalMetadataValueType = RetrievalMetadataRule['valueType']
-export type MetadataFieldSuggestion = ApiSchemas['PlatformRetrievalSettingsSection']['metadataFieldSuggestions'][number]
+export type MetadataFieldSuggestion = ApiSchemas['RetrievalDefaultsResponse']['metadataFieldSuggestions'][number]
 export type RetrievalMetadataRuleOperator = RetrievalMetadataRule['operator']
 export type RetrievalMetadataRuleEffect = RetrievalMetadataRule['effect']
 export type RetrievalMetadataRuleCombinator = NonNullable<RetrievalMetadataRule['combinator']>
@@ -182,13 +174,6 @@ export const toAssistantChatPayload = (data: ChatRequest) => ({
   sourceContext: {
     surface: 'authenticated_chat' as const,
   },
-})
-
-export const toRetrievalSettings = (settings: PlatformSettings): RetrievalSettings => ({
-  ...settings.retrieval,
-  suggestedQuestionsCount: settings.retrieval.suggestedQuestionsCount ?? 3,
-  suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
-  customInstruction: settings.assistant.customInstruction,
 })
 
 export const toGeneralSettings = (settings: PlatformSettings): GeneralSettings => ({
@@ -529,19 +514,6 @@ export const agentToAssistantBehaviorSettings = (agent: AgentSettings): Assistan
   retrievalEnabled: agent.retrievalEnabled,
   skillSettings: agent.skillSettings,
   retrievalSkillSettings: readRetrievalSkillSettingsOverride(agent.skillSettings),
-})
-
-export const retrievalSettingsToAssistantBehaviorSettings = (settings: RetrievalSettings): AssistantBehaviorSettings => ({
-  suggestedQuestionsEnabled: settings.suggestedQuestionsEnabled,
-  customInstruction: settings.customInstruction,
-  assistantLinkUtmEnabled: true,
-  citationDisplayEnabled: true,
-  theme: {
-    brand: '#0f172a',
-    brandText: '#f8fafc',
-    surface: '#ffffff',
-    text: '#0f172a',
-  },
 })
 
 export interface RenameOrganizationResponse {

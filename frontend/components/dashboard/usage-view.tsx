@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { LogoSpinner } from '@/components/ui/spinner'
+import { UsageTrendsView } from '@/components/dashboard/usage-trends-view'
 import { enterpriseUsageApi, workspaceApi, type AccountUsageSummary, type WorkspaceSummaryResponse } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { editionController } from '@/lib/edition-controller'
@@ -127,7 +128,7 @@ export function UsageView() {
   return (
     <DashboardPage
       title="Usage"
-      description={usageLimitsEnabled ? 'Limits and totals summed across all workspaces in this account.' : 'Current workspace usage.'}
+      description={usageLimitsEnabled ? 'Limits, current totals, and usage trends for this account.' : 'Current workspace usage and account trends.'}
       contentClassName="p-6"
     >
       {isLoading ? (
@@ -143,6 +144,8 @@ export function UsageView() {
         </Card>
       ) : usageLimitsEnabled && usage ? (
         <div className="space-y-6">
+          <UsageTrendsView />
+
           {usage?.profile ? (
             <Card>
               <CardHeader>
@@ -199,31 +202,35 @@ export function UsageView() {
           </div>
         </div>
       ) : workspaceSummary ? (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <UsageMeter
-            label="Conversations"
-            used={workspaceSummary.conversationCount}
-            limit={null}
-            caption="Saved conversations in this workspace."
-          />
-          <UsageMeter
-            label="Stored documents"
-            used={workspaceSummary.documentCount}
-            limit={null}
-            caption="Documents currently stored in this workspace."
-          />
-          <UsageMeter
-            label="Ready documents"
-            used={workspaceSummary.readyDocumentCount}
-            limit={null}
-            caption="Documents available for retrieval."
-          />
-          <UsageMeter
-            label="Pending documents"
-            used={workspaceSummary.pendingDocumentCount}
-            limit={null}
-            caption="Documents waiting for processing."
-          />
+        <div className="space-y-6">
+          <UsageTrendsView />
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            <UsageMeter
+              label="Conversations"
+              used={workspaceSummary.conversationCount}
+              limit={null}
+              caption="Saved conversations in this workspace."
+            />
+            <UsageMeter
+              label="Stored documents"
+              used={workspaceSummary.documentCount}
+              limit={null}
+              caption="Documents currently stored in this workspace."
+            />
+            <UsageMeter
+              label="Ready documents"
+              used={workspaceSummary.readyDocumentCount}
+              limit={null}
+              caption="Documents available for retrieval."
+            />
+            <UsageMeter
+              label="Pending documents"
+              used={workspaceSummary.pendingDocumentCount}
+              limit={null}
+              caption="Documents waiting for processing."
+            />
+          </div>
         </div>
       ) : (
         <Card>

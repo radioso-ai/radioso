@@ -437,6 +437,8 @@ export type AssignableAccountRole = Exclude<AccountMembershipRole, 'owner'>
 export type WorkspaceGrantRole = ApiSchemas['WorkspaceGrant']['role']
 export type AccountInvitationSummary = ApiSchemas['AccountInvitation']
 export type WorkspaceGrantSummary = ApiSchemas['WorkspaceGrant']
+export type UsageTrendsResponse = ApiSchemas['UsageTrendsResponse']
+export type UsageTrendBucket = ApiSchemas['UsageTrendBucket']
 
 
 export type AccountUsersResponse = ApiSchemas['AccountUsersResponse']

@@ -61,6 +61,40 @@ describe('accountApi.getWorkspaceToken', () => {
     )
   })
 
+  it('loads account usage trends with session credentials and scoped query params', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'application/json',
+      },
+      json: async () => ({
+        granularity: 'day',
+        from: '2026-06-01',
+        to: '2026-06-02',
+        filters: { workspaceId: 'workspace-1', agentId: null },
+        buckets: [],
+      }),
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    await accountApi.getUsageTrends({
+      from: '2026-06-01',
+      to: '2026-06-02',
+      granularity: 'day',
+      workspaceId: 'workspace-1',
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/backend/api/v1/account/usage-trends?from=2026-06-01&to=2026-06-02&granularity=day&workspaceId=workspace-1',
+      expect.objectContaining({
+        method: 'GET',
+        credentials: 'include',
+      }),
+    )
+  })
+
   it('creates invitations with session credentials', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

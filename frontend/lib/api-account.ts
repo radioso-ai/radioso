@@ -9,6 +9,7 @@ import {
 import { withQuery } from './api-query'
 import type {
   AccountUsageSummary,
+  UsageTrendsResponse,
   AccountUserSummary,
   AccountUsersResponse,
   AnswerFeedbackEntry,
@@ -34,6 +35,18 @@ export const enterpriseUsageApi = {
 }
 
 export const accountApi = {
+  async getUsageTrends(input: {
+    from: string
+    to: string
+    granularity: 'day' | 'week' | 'month'
+    workspaceId?: string
+    agentId?: string
+  }): Promise<UsageTrendsResponse> {
+    return request<UsageTrendsResponse>(withQuery('/account/usage-trends', input), {
+      method: 'GET',
+    }, { withSession: true })
+  },
+
   async listAccounts(): Promise<AccessibleAccountsResponse> {
     return request<AccessibleAccountsResponse>('/account/accounts', {
       method: 'GET',

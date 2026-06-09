@@ -9,6 +9,47 @@ export const registerAccountManagementPaths = (
 ) => {
   registry.registerPath({
     method: "get",
+    path: "/api/v1/account/usage-trends",
+    tags: ["Account"],
+    summary: "Get account usage trends",
+    description:
+      "Returns UTC-bucketed usage trends for the current account. Token totals include succeeded usage events only. " +
+      "When an agent filter is supplied, usage events without conversation lineage are excluded because they cannot be attributed to that agent.",
+    operationId: "getAccountUsageTrends",
+    security: [{ [security.sessionCookieScheme.name]: [] }],
+    request: {
+      query: schemas.UsageTrendsQuerySchema,
+    },
+    responses: {
+      200: {
+        description: "Usage trends returned",
+        content: {
+          "application/json": {
+            schema: schemas.UsageTrendsResponseSchema,
+          },
+        },
+      },
+      400: {
+        description: "Invalid date range, bucket count, or account-scoped filter",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
     path: "/api/v1/account/users",
     tags: ["Account"],
     summary: "List active account users and invitations",

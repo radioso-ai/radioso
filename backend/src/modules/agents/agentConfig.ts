@@ -66,6 +66,7 @@ export interface AuthoredDirectiveConfig {
   dependsOn: string[];
   excludes: string[];
   routes: ChatTurnRoute[];
+  tags: string[];
   description: string | null;
   metadata: Record<string, unknown>;
 }
@@ -397,6 +398,7 @@ const serializeAuthoredDirectives = (
     dependsOn: [...directive.dependsOn],
     excludes: [...directive.excludes],
     routes: [...directive.routes],
+    tags: [...directive.tags],
     description: directive.description,
     metadata: cloneJson(directive.metadata),
   }));
@@ -537,13 +539,14 @@ const materializeAuthoredDirectives = (
     name: directive.name,
     condition: cloneJson(directive.condition),
     action: directive.action,
-    priority: directive.priority,
-    requiredCapabilities: [...directive.requiredCapabilities],
-    dependsOn: [...directive.dependsOn],
-    excludes: [...directive.excludes],
-    routes: [...directive.routes],
-    description: directive.description,
-    metadata: cloneJson(directive.metadata),
+    priority: directive.priority ?? null,
+    requiredCapabilities: [...(directive.requiredCapabilities ?? [])],
+    dependsOn: [...(directive.dependsOn ?? [])],
+    excludes: [...(directive.excludes ?? [])],
+    routes: [...(directive.routes ?? [])],
+    tags: [...(directive.tags ?? [])],
+    description: directive.description ?? null,
+    metadata: cloneJson(directive.metadata ?? {}),
     createdAt: new Date(INTERNAL_CONFIG_DATE.getTime()),
     updatedAt: new Date(INTERNAL_CONFIG_DATE.getTime()),
   }));

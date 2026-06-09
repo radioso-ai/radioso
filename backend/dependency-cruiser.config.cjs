@@ -1,6 +1,27 @@
 module.exports = {
   forbidden: [
     {
+      name: "engine-concretes-only-via-composition",
+      severity: "error",
+      comment:
+        "Domain/services must depend on @radioso/conversation-contract; concrete conversation-(engine|defaults|nlp|tools) is for composition, infra, and sanctioned adapter barrels.",
+      from: {
+        path: "^src/",
+        pathNot: [
+          "^src/app/composition/",
+          "^src/app/server/(dependencies|dependencyBuilders|types)\\.ts$",
+          "composition\\.ts$",
+          "^src/shared/infra/",
+          "^src/modules/directives/(domain|public)\\.ts$",
+          "^src/shared/domain/steeringRule\\.ts$",
+          "^src/modules/skills/defaultCatalog\\.ts$",
+        ],
+      },
+      to: {
+        path: "^(?:@radioso/conversation-(engine|defaults|nlp|tools)|\\.\\./packages/conversation-(engine|defaults|nlp|tools)/dist/index\\.js)$",
+      },
+    },
+    {
       name: "no-cross-module-internals",
       severity: "error",
       comment:

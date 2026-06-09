@@ -57,6 +57,14 @@ export interface Directive {
   name: string;
   condition: DirectiveCondition;
   action: string;
+  /**
+   * Optional authored tags. Scope tags use `routine:<id>` and
+   * `step:<routineId>:<stepId>` conventions: untagged directives are global,
+   * routine tags apply only while that routine is active, and step tags apply
+   * only while that routine and step are active. Non-scope tags are ignored by
+   * scope eligibility and may carry other meaning.
+   */
+  tags?: string[];
   priority?: number;
   requiredCapabilities?: string[];
   dependsOn?: string[];
@@ -76,6 +84,61 @@ export interface DirectiveMatch {
   selectionMode: DirectiveSelectionMode;
   selectionReason: string;
   selectionConfidence?: number;
+}
+
+export interface DirectiveMatchInput {
+  /** Turn signals a matcher may inspect (query, history summary, etc.). */
+  turnContext: Record<string, unknown>;
+  directives: Directive[];
+}
+
+/**
+ * Decides which authored Directives' conditions hold this turn. Sibling to skill
+ * selection: it matches, it does not execute.
+ */
+export interface DirectiveMatcherPort {
+  match(input: DirectiveMatchInput): Promise<DirectiveMatch[]>;
+}
+
+/** The model's verdict that a single directive's condition holds this turn. */
+export interface DirectiveClassification {
+  name: string;
+  confidence: number;
+  reason?: string;
+}
+
+/**
+ * Classifies which contextual directives apply to a turn. Narrow port so the
+ * matcher is testable with a stub and the LLM wiring stays a composition detail.
+ */
+export interface DirectiveMatchGateway {
+  match(input: { turnContext: Record<string, unknown>; directives: Directive[] }): Promise<DirectiveClassification[]>;
+}
+
+export interface DirectiveCoherenceConflict {
+  directiveId?: string;
+  directiveName: string;
+  reason: string;
+}
+
+export interface DirectiveCoherenceVerdict {
+  coherent: boolean;
+  conflicts: DirectiveCoherenceConflict[];
+  rationale: string;
+}
+
+export interface DirectiveCoherenceCheckInput {
+  agent: ConversationAgentConfig;
+  candidate: Directive;
+  existingDirectives: Directive[];
+}
+
+export interface DirectiveCoherenceChecker {
+  check(input: DirectiveCoherenceCheckInput): Promise<DirectiveCoherenceVerdict>;
+}
+
+export interface DirectiveCatalogRegistryPort {
+  list(): Directive[];
 }
 
 export interface SkillDefinition {
@@ -119,6 +182,11 @@ export interface SkillOutcomeError {
   metadata?: Record<string, unknown>;
 }
 
+export interface SkillCatalogRegistryPort<Entry extends { name: string } = { name: string }> {
+  list(): Entry[];
+  get(name: string): Entry | null;
+}
+
 export interface StagedContext {
   kind: string;
   id?: string;
@@ -134,6 +202,8 @@ export interface TurnContext {
   history: ConversationMessage[];
   stagedContext: StagedContext[];
   steering: SteeringRule[];
+  activeRoutineId?: string;
+  activeStepId?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -282,6 +352,10 @@ export interface ConversationSkillDispatcher {
 
 export interface ConversationDirectiveMatcher {
   match(input: { turn: TurnContext; directives: Directive[] }): Promise<DirectiveMatch[]>;
+}
+
+export interface SteeringResolver {
+  resolve(rules: SteeringRule[], ctx: { turnContext: TurnContext }): SteeringRule[];
 }
 
 export interface ConversationSkillSelector {
@@ -435,6 +509,16 @@ export interface ConversationRoutineStepRenderer {
   }): Promise<RenderableTurn>;
 }
 
+export interface ConversationRoutineSteeringInput {
+  step: RoutineStep;
+  baseSteering: SteeringRule[];
+  turn: TurnContext;
+}
+
+export interface ConversationRoutineSteeringResolver {
+  resolve(input: ConversationRoutineSteeringInput): Promise<SteeringRule[]>;
+}
+
 /**
  * Durable, session-scoped store for the active Routine's position + variables.
  * `loadActive` returns only an in-flight (`status: "active"`) routine — the store
@@ -469,7 +553,11 @@ export interface ConversationRoutineResumeResult {
  * resumes through it and persists the returned next state.
  */
 export interface ConversationRoutineRunner {
-  resume(input: { turn: TurnContext; state: RoutineState }): Promise<ConversationRoutineResumeResult>;
+  resume(input: {
+    turn: TurnContext;
+    state: RoutineState;
+    steeringResolver?: ConversationRoutineSteeringResolver;
+  }): Promise<ConversationRoutineResumeResult>;
 }
 
 /**
@@ -491,6 +579,7 @@ export interface ProcessTurnInput {
   modelGateway: ConversationModelGateway;
   dispatcher: ConversationSkillDispatcher;
   directiveMatcher: ConversationDirectiveMatcher;
+  steeringResolver?: SteeringResolver;
   selector: ConversationSkillSelector;
   composer: ConversationTurnComposer;
   /**
@@ -519,6 +608,9 @@ export interface AttemptRoutineInput {
   sessionId: string;
   inputEvent: ConversationInputEvent;
   stores: ConversationStores;
+  directives?: Directive[];
+  directiveMatcher?: ConversationDirectiveMatcher;
+  steeringResolver?: SteeringResolver;
   routineStore?: ConversationRoutineStore;
   routineRunner?: ConversationRoutineRunner;
   routineActivator?: ConversationRoutineActivator;

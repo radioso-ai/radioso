@@ -45,6 +45,9 @@ export type DirectiveUpdateRequest = ApiSchemas['AuthoredDirectiveUpdateRequest'
 export type DirectiveCoherence = ApiSchemas['DirectiveCoherenceVerdict']
 export type DirectiveMutationResponse = ApiSchemas['AuthoredDirectiveSaveResponse']
 export type DirectiveListResponse = ApiSchemas['DirectiveListResponse']
+export type DirectiveDraftRequest = ApiSchemas['DirectiveDraftRequest']
+export type DirectiveDraftResponse = ApiSchemas['DirectiveDraftResponse']
+export type DirectiveDraftDirective = ApiSchemas['DirectiveDraftDirective']
 
 export type AssistantBehaviorSettings = Pick<
   RetrievalDefaults,

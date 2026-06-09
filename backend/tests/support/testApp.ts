@@ -17,12 +17,13 @@ import type { WorkbenchReplayRunner } from "../../src/modules/chat/composition.j
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import { ActionDispatchWorker } from "../../src/modules/chat/services/actions/actionDispatchWorker.js";
 import { createConversationEngine } from "@radioso/conversation-engine";
+import { scopeTag } from "@radioso/conversation-defaults";
 import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
 import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
-import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService } from "../../src/modules/agents/public.js";
+import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../src/modules/agents/public.js";
 import {
   type FallbackReplyComposer,
 } from "../../src/modules/chat/services/fallbackReplyComposer.js";
@@ -260,6 +261,7 @@ export const createTestDependencies = (overrides: {
   publicChatActionAdvertiser?: PublicChatActionAdvertiserPort;
   applicationRouteMounts?: ApplicationRouteMount[];
   workbenchReplayRunner?: Pick<WorkbenchReplayRunner, "run">;
+  chatInferencePipelineComplete?: AppDependencies["chatInferencePipeline"]["complete"];
   logger?: AppDependencies["logger"];
 } = {}): { dependencies: AppDependencies; repositories: TestRepositories } => {
   const env = {
@@ -670,6 +672,21 @@ export const createTestDependencies = (overrides: {
     },
     registeredCapabilityNames,
   });
+  const chatInferencePipeline: AppDependencies["chatInferencePipeline"] = {
+    metadata: { capability: "chat" as const, provider: "openai" as const, model: "test" },
+    complete: overrides.chatInferencePipelineComplete ?? (async () => textResult("")),
+    stream() { return streamResult([""]); },
+  };
+  const directiveAuthorService = new DirectiveAuthorService({
+    repository: agentRepository,
+    textGenerationClient: {
+      complete: async ({ signal: _signal, ...input }) =>
+        (await chatInferencePipeline.complete(input)).text,
+    },
+    logger,
+    telemetryService,
+    buildStepScopeTag: scopeTag.step,
+  });
   const agentSurfaceExtensions = new AgentSurfaceExtensionRegistry();
   // Mimic an EE deployment for OSS contract/unit tests so the runtime gate on
   // embed-only routes (settingsRoutes, agentRoutes, publicChatRoutes) doesn't
@@ -874,6 +891,7 @@ export const createTestDependencies = (overrides: {
     platformSettingsService,
     agentService,
     authoredDirectiveService,
+    directiveAuthorService,
     agentSurfaceExtensions,
     skillCatalogService,
     accountRepository,
@@ -890,11 +908,7 @@ export const createTestDependencies = (overrides: {
       async ensureSource() { return { id: "test-source" }; },
     },
     connectorDb: connectorDb as any,
-    chatInferencePipeline: {
-      metadata: { capability: "chat" as const, provider: "openai" as const, model: "test" },
-      async complete() { return textResult(""); },
-      stream() { return streamResult([""]); },
-    },
+    chatInferencePipeline,
     crawlerProvider: {
       async fetchPageWithScreenshot() { return { url: "", title: null, text: "", links: [], screenshot: null, faviconUrl: null }; },
       async crawlSite() { return []; },
@@ -944,6 +958,7 @@ export const createTestApp = (overrides: {
   publicChatActionAdvertiser?: PublicChatActionAdvertiserPort;
   applicationRouteMounts?: ApplicationRouteMount[];
   workbenchReplayRunner?: Pick<WorkbenchReplayRunner, "run">;
+  chatInferencePipelineComplete?: AppDependencies["chatInferencePipeline"]["complete"];
   logger?: AppDependencies["logger"];
 } = {}) => {
   const { dependencies, repositories } = createTestDependencies(overrides);

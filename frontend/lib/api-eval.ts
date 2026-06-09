@@ -1,5 +1,5 @@
 import { request } from './api-client'
-import type { ActivityTrace, AnswerSegment, Citation, TurnTraceEnvelope } from './api-types'
+import type { ActivityTrace, AnswerSegment, Citation, Directive, TurnTraceEnvelope } from './api-types'
 
 // Eval is currently a dashboard-only API surface and is not registered in the
 // public OpenAPI/SDK contract. Keep these local request/response types in sync
@@ -133,6 +133,20 @@ export interface EvalRunModelOverride {
   model: string
 }
 
+export interface AgentConfigAuthoredDirectiveOverride {
+  name: string
+  condition: Directive['condition']
+  action: string
+  priority: number | null
+  requiredCapabilities: string[]
+  dependsOn: string[]
+  excludes: string[]
+  routes: Directive['routes']
+  tags: string[]
+  description: string | null
+  metadata: Record<string, unknown>
+}
+
 export interface EvalRunOverridesInput {
   modelOverride?: EvalRunModelOverride
   assistantInstructionsOverride?: { customInstruction?: string }
@@ -154,7 +168,7 @@ export interface AgentConfigOverrideInput {
   surfaceSettings?: Record<string, unknown>
   skillSettings?: Record<string, unknown>
   chatModelOverride?: EvalRunModelOverride | null
-  authoredDirectives?: Array<Record<string, unknown>>
+  authoredDirectives?: AgentConfigAuthoredDirectiveOverride[]
 }
 
 export interface WorkbenchReplayRunResponse {

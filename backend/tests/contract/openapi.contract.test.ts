@@ -4,6 +4,21 @@ import { parse } from "yaml";
 import { describe, expect, it } from "vitest";
 
 import { createOpenApiDocument } from "../../src/app/http/openapi/openApiDocument.js";
+import { routineValidationCodes } from "../../src/modules/routines/public.js";
+
+interface RoutineValidationResultOpenApiSchema {
+  properties?: {
+    diagnostics?: {
+      items?: {
+        properties?: {
+          code?: {
+            enum?: string[];
+          };
+        };
+      };
+    };
+  };
+}
 
 describe("openapi contract", () => {
   it("matches the checked-in generated yaml", () => {
@@ -44,5 +59,14 @@ describe("openapi contract", () => {
     expect(sessionCookie).toBeDefined();
     expect(bearerAuth).not.toEqual(sessionCookie);
     expect(document.paths?.["/api/v1/document/"]?.post?.security).toEqual([{ bearerAuth: [] }]);
+  });
+
+  it("keeps the routine validation code enum in sync with the validator", () => {
+    const document = createOpenApiDocument();
+    const schema = document.components?.schemas?.RoutineValidationResult as
+      | RoutineValidationResultOpenApiSchema
+      | undefined;
+
+    expect(schema?.properties?.diagnostics?.items?.properties?.code?.enum).toEqual([...routineValidationCodes]);
   });
 });

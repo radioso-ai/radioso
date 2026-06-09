@@ -117,6 +117,17 @@ const toPresentationSkillTurnOutcome = (presentation: ChatPresentedAnswer): Skil
 
 type MessageCreateInput = Parameters<MessageRepositoryPort["create"]>[0];
 
+class RoutineActionAuthorizationError extends Error {
+  constructor(
+    readonly actionType: string,
+    readonly reason: string,
+    readonly capability?: string,
+  ) {
+    super("routine_action_authorization_denied");
+    this.name = "RoutineActionAuthorizationError";
+  }
+}
+
 export interface AssistantTurnPersistencePort {
   completeAssistantTurn(input: {
     workspaceId: string;
@@ -322,16 +333,15 @@ export class ChatTurnLifecycle {
     }
   }
 
-  private async filterAuthorizedActions(input: {
+  private async assertActionsAuthorized(input: {
     actions: RoutineActionRequest[] | undefined;
     workspaceId: string;
     conversationId: string;
-  }): Promise<RoutineActionRequest[] | undefined> {
+  }): Promise<void> {
     if (!this.actionCapabilities || !input.actions?.length) {
-      return input.actions;
+      return;
     }
 
-    const authorized: RoutineActionRequest[] = [];
     for (const action of input.actions) {
       const denial = await this.firstDeniedActionCapability(action.type, input.workspaceId);
       if (denial) {
@@ -345,12 +355,9 @@ export class ChatTurnLifecycle {
           },
           "Routine action blocked by capability policy",
         );
-        continue;
+        throw new RoutineActionAuthorizationError(action.type, denial.reason, denial.capability);
       }
-      authorized.push(action);
     }
-
-    return authorized.length > 0 ? authorized : undefined;
   }
 
   private async firstDeniedActionCapability(
@@ -408,7 +415,7 @@ export class ChatTurnLifecycle {
 
     let assistantMessage: MessageRecord;
     const successAuditEvent = this.buildAssistantTurnSuccessAuditEvent(presentation.successInput);
-    const authorizedActions = await this.filterAuthorizedActions({
+    await this.assertActionsAuthorized({
       actions: input.actions,
       workspaceId: input.workspaceId,
       conversationId: input.session.conversation.id,
@@ -418,7 +425,7 @@ export class ChatTurnLifecycle {
         workspaceId: input.workspaceId,
         accountId: input.accountId,
         conversationId: input.session.conversation.id,
-        actions: authorizedActions,
+        actions: input.actions,
         routineStateTransition: input.routineStateTransition,
         assistantMessage: presentation.assistantMessage,
         auditEvent: successAuditEvent,
@@ -429,7 +436,7 @@ export class ChatTurnLifecycle {
       // Fallback for tests and non-DB hosts. Production wires a transaction port so
       // outbox enqueue, routine state, assistant message, touch, and audit commit together.
       await this.enqueueTurnActions({
-        actions: authorizedActions,
+        actions: input.actions,
         workspaceId: input.workspaceId,
         accountId: input.accountId,
         conversationId: input.session.conversation.id,

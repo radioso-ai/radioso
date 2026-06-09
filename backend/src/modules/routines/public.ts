@@ -15,6 +15,7 @@ export {
 } from "./domain.js";
 export { compileRoutineDefinition } from "./compiler.js";
 export {
+  routineValidationCodes,
   validateRoutineDefinition,
   type RoutineValidationCode,
   type RoutineValidationDiagnostic,

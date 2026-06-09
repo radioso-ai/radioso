@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { publicChatSessionSchema } from "../../routes/publicChatRouteSchemas.js";
 import { agentSurfacePositions } from "../../../../modules/agents/public.js";
-import { routineDefinitionDraftInputSchema } from "../../../../modules/routines/public.js";
+import { routineDefinitionDraftInputSchema, routineValidationCodes } from "../../../../modules/routines/public.js";
 import { skillDisplayMetadataSchema } from "../../../../modules/skills/public.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
@@ -364,15 +364,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     z.object({
       ok: z.boolean(),
       diagnostics: z.array(z.object({
-        code: z.enum([
-          "unreachable_step",
-          "missing_terminal",
-          "dangling_action_reference",
-          "dangling_step_reference",
-          "declared_unused_slot",
-          "referenced_undeclared_slot",
-          "attempt_limit_without_fallback",
-        ]),
+        code: z.enum(routineValidationCodes),
         location: z.string(),
         message: z.string(),
       })),

@@ -1,17 +1,20 @@
 import type { RoutineDefinition } from "./domain.js";
 
-export type RoutineValidationCode =
-  | "unreachable_step"
-  | "missing_terminal"
-  | "dangling_action_reference"
-  | "dangling_step_reference"
-  | "declared_unused_slot"
-  | "referenced_undeclared_slot"
-  | "unregistered_action_type"
-  | "action_capability_denied"
-  | "attempt_limit_without_fallback"
-  | "outcome_guard_on_non_tool_step"
-  | "structured_guard_missing_parameter";
+export const routineValidationCodes = [
+  "unreachable_step",
+  "missing_terminal",
+  "dangling_action_reference",
+  "dangling_step_reference",
+  "declared_unused_slot",
+  "referenced_undeclared_slot",
+  "unregistered_action_type",
+  "action_capability_denied",
+  "attempt_limit_without_fallback",
+  "outcome_guard_on_non_tool_step",
+  "structured_guard_missing_parameter",
+] as const;
+
+export type RoutineValidationCode = (typeof routineValidationCodes)[number];
 
 export interface RoutineValidationDiagnostic {
   code: RoutineValidationCode;

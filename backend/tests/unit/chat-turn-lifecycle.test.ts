@@ -212,7 +212,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     expect(records[0]).toBe(persisted.auditEvent);
   });
 
-  it("filters denied routine actions before the transactional persistence path", async () => {
+  it("fails a routine turn with a runtime-denied action before persisting a false success", async () => {
     const auditService = {
       record: vi.fn(async () => {}),
       logRecorded: vi.fn(() => {}),
@@ -238,21 +238,29 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
         createdAt: new Date(),
       })),
     };
+    const actionOutbox: ChatActionOutboxPort = {
+      enqueue: vi.fn(async () => ({ id: "action_1", duplicate: false })),
+    };
+    const commitRoutineState = vi.fn(async () => {});
+    const logger = {
+      warn: vi.fn(),
+    };
     const lifecycle = new ChatTurnLifecycle(
       conversationRepository,
       messageRepository,
       auditService,
       undefined,
-      undefined,
+      actionOutbox,
       assistantTurnPersistence,
       new FakeActionCapabilityMap(new Map([
         ["contact.send", [capabilityNames.humanContact.request]],
         ["ticket.create", []],
       ])),
       new FakeCapabilityPolicy(new Set([capabilityNames.humanContact.request])),
+      logger,
     );
 
-    await lifecycle.completeAssistantTurn({
+    await expect(lifecycle.completeAssistantTurn({
       workspaceId: "workspace_1",
       accountId: "account_1",
       session: session(),
@@ -263,12 +271,26 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
         { type: "contact.send", payload: { email: "alex@example.com" } },
         { type: "ticket.create", payload: { title: "Keep this one" } },
       ],
-    });
+      routineStateTransition: { kind: "clear", sessionId: "conv_1" },
+      commitRoutineState,
+    })).rejects.toThrow("routine_action_authorization_denied");
 
-    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
-    expect(persisted.actions).toEqual([
-      { type: "ticket.create", payload: { title: "Keep this one" } },
-    ]);
+    expect(assistantTurnPersistence.completeAssistantTurn).not.toHaveBeenCalled();
+    expect(messageRepository.create).not.toHaveBeenCalled();
+    expect(actionOutbox.enqueue).not.toHaveBeenCalled();
+    expect(commitRoutineState).not.toHaveBeenCalled();
+    expect(auditService.logRecorded).not.toHaveBeenCalled();
+    expect(auditService.record).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      {
+        workspaceId: "workspace_1",
+        conversationId: "conv_1",
+        actionType: "contact.send",
+        reason: "capability_denied",
+        capability: capabilityNames.humanContact.request,
+      },
+      "Routine action blocked by capability policy",
+    );
   });
 
   it("enqueues an authorized action unchanged on the fallback outbox path", async () => {

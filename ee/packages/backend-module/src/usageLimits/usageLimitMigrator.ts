@@ -117,6 +117,26 @@ export const usageLimitMigrator: ApplicationDatabaseMigrator = {
     `);
 
     await database.query(`
+      CREATE TABLE IF NOT EXISTS ee_org_creation_counters (
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        period_start DATE NOT NULL,
+        used_count INTEGER NOT NULL DEFAULT 0 CHECK (used_count >= 0),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (user_id, period_start)
+      )
+    `);
+
+    await database.query(`
+      CREATE TABLE IF NOT EXISTS ee_org_creation_overrides (
+        user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        monthly_limit INTEGER,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT ee_org_creation_overrides_monthly_limit_check
+          CHECK (monthly_limit IS NULL OR monthly_limit >= 0)
+      )
+    `);
+
+    await database.query(`
       INSERT INTO ee_usage_limit_profiles (
         key,
         display_name,

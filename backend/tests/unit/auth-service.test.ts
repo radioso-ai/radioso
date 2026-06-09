@@ -19,6 +19,10 @@ import {
 } from "../../src/modules/auth/services/authService.js";
 import { sha256 } from "../../src/modules/auth/domain/authPrimitives.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
+import type {
+  OrganizationCreationGuard,
+  OrganizationCreationReservation,
+} from "../../src/shared/domain/organizationCreationGuard.js";
 
 class TrackingAccountRepository implements AccountRepositoryPort {
   readonly items = new Map<string, AccountRecord>();
@@ -121,6 +125,35 @@ class WorkingSessionRepository implements SessionRepositoryPort {
   }
 }
 
+class RecordingOrganizationCreationGuard implements OrganizationCreationGuard {
+  readonly reservations: RecordingOrganizationCreationReservation[] = [];
+  shouldReject: unknown = null;
+
+  async reserve(input: { userId: string }): Promise<OrganizationCreationReservation> {
+    if (this.shouldReject) {
+      throw this.shouldReject;
+    }
+    const reservation = new RecordingOrganizationCreationReservation(input.userId);
+    this.reservations.push(reservation);
+    return reservation;
+  }
+}
+
+class RecordingOrganizationCreationReservation implements OrganizationCreationReservation {
+  committed = false;
+  released = false;
+
+  constructor(readonly userId: string) {}
+
+  async commit(): Promise<void> {
+    this.committed = true;
+  }
+
+  async release(): Promise<void> {
+    this.released = true;
+  }
+}
+
 const createAuthService = (options: {
   accountRepository?: AccountRepositoryPort;
   userRepository?: InMemoryUserRepository;
@@ -128,6 +161,7 @@ const createAuthService = (options: {
   workspaceService?: WorkspaceService;
   accountInvitationRepository?: InMemoryAccountInvitationRepository;
   onAccountCreated?: (input: { accountId: string }) => Promise<void>;
+  organizationCreationGuard?: OrganizationCreationGuard;
 }) => {
   const env = createTestEnv();
   const auditService = createAuditService();
@@ -157,11 +191,13 @@ const createAuthService = (options: {
       accountAccessService,
       accountInvitationService,
       onAccountCreated: options.onAccountCreated,
+      organizationCreationGuard: options.organizationCreationGuard,
     }),
     accountRepository,
     userRepository,
     accountMembershipRepository,
     accountInvitationRepository,
+    auditService,
   };
 };
 
@@ -283,6 +319,126 @@ describe("AuthService rollback", () => {
     expect(accountIds).toEqual([accountId]);
   });
 
+  it("reserves and commits one organization creation when creating a new organization account", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    const userRepository = new InMemoryUserRepository();
+    await userRepository.create({
+      id: "user-1",
+      email: "create-org-guard@example.com",
+      passwordHash: "hash",
+    });
+    const { authService: orgAuthService } = createAuthService({
+      userRepository,
+      sessionRepository: new WorkingSessionRepository(),
+      organizationCreationGuard: guard,
+    });
+
+    await orgAuthService.createOrganization({
+      userId: "user-1",
+      organizationName: "Guard Org",
+    });
+
+    expect(guard.reservations).toHaveLength(1);
+    expect(guard.reservations[0]).toMatchObject({
+      userId: "user-1",
+      committed: true,
+      released: false,
+    });
+  });
+
+  it("releases the organization creation reservation when post-create provisioning fails", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    const userRepository = new InMemoryUserRepository();
+    await userRepository.create({
+      id: "user-1",
+      email: "create-org-release@example.com",
+      passwordHash: "hash",
+    });
+    const { authService: orgAuthService } = createAuthService({
+      userRepository,
+      organizationCreationGuard: guard,
+    });
+
+    await expect(orgAuthService.createOrganization({
+      userId: "user-1",
+      organizationName: "Release Org",
+    })).rejects.toThrow("session create failed");
+
+    expect(guard.reservations[0]).toMatchObject({
+      committed: false,
+      released: true,
+    });
+  });
+
+  it("does not create account records when the organization creation guard rejects", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    guard.shouldReject = {
+      statusCode: 429,
+      code: "rate_limit_exceeded",
+      message: "Organization creation limit reached.",
+      details: {
+        limit: 1,
+        used: 1,
+        periodStart: "2026-06-01",
+        resetAt: "2026-07-01T00:00:00.000Z",
+      },
+    };
+    const accountRepository = new TrackingAccountRepository();
+    const userRepository = new InMemoryUserRepository();
+    await userRepository.create({
+      id: "user-1",
+      email: "create-org-blocked@example.com",
+      passwordHash: "hash",
+    });
+    const { authService: orgAuthService, auditService } = createAuthService({
+      accountRepository,
+      userRepository,
+      sessionRepository: new WorkingSessionRepository(),
+      organizationCreationGuard: guard,
+    });
+
+    await expect(orgAuthService.createOrganization({
+      userId: "user-1",
+      organizationName: "Blocked Org",
+    })).rejects.toMatchObject({ statusCode: 429, code: "rate_limit_exceeded" });
+
+    expect(accountRepository.items.size).toBe(0);
+    expect(auditService.events.at(-1)).toMatchObject({
+      eventType: "account.create",
+      eventStatus: "failure",
+      metadata: {
+        actorUserId: "user-1",
+        reason: "rate_limited",
+      },
+    });
+  });
+
+  it("does not release committed organization creation reservations when deleting organizations", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    const userRepository = new InMemoryUserRepository();
+    await userRepository.create({
+      id: "user-1",
+      email: "create-org-delete@example.com",
+      passwordHash: "hash",
+    });
+    const { authService: orgAuthService } = createAuthService({
+      userRepository,
+      sessionRepository: new WorkingSessionRepository(),
+      organizationCreationGuard: guard,
+    });
+
+    const { accountId } = await orgAuthService.createOrganization({
+      userId: "user-1",
+      organizationName: "Deleted Org",
+    });
+    await orgAuthService.deleteOrganization({ accountId, userId: "user-1" });
+
+    expect(guard.reservations[0]).toMatchObject({
+      committed: true,
+      released: false,
+    });
+  });
+
   it("calls the account-created hook when registering a new account", async () => {
     const accountIds: string[] = [];
     const { authService } = createAuthService({
@@ -313,6 +469,21 @@ describe("AuthService rollback", () => {
     const user = await userRepository.findById(result.userId);
     expect(result.sessionCookie).toBeUndefined();
     expect(user?.emailVerifiedAt).toBeNull();
+  });
+
+  it("does not reserve organization creation while registering a first account", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    const { authService } = createAuthService({
+      sessionRepository: new WorkingSessionRepository(),
+      organizationCreationGuard: guard,
+    });
+
+    await authService.register({
+      email: "signup-not-capped@example.com",
+      password: "verysecurepassword",
+    });
+
+    expect(guard.reservations).toEqual([]);
   });
 
   it("rejects login until the user email is verified", async () => {

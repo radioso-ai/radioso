@@ -4,6 +4,7 @@ import {
   defaultUsageTrendQuery,
   findPeakUsageTrendBucket,
   formatUsageTrendBucketLabel,
+  isAgentFilterScopedOut,
   summarizeUsageTrends,
 } from '@/lib/usage-trends'
 import type { UsageTrendsResponse } from '@/lib/api-types'
@@ -57,5 +58,23 @@ describe('usage trends helpers', () => {
       ...response.buckets[0],
       periodStart: '2026-06-01T00:00:00.000Z',
     }, 'month')).toMatch(/Jun|June/)
+  })
+})
+
+describe('isAgentFilterScopedOut', () => {
+  it('keeps the agent filter available with no workspace filter', () => {
+    expect(isAgentFilterScopedOut(undefined, 'ws-active')).toBe(false)
+  })
+
+  it('keeps the agent filter available for the active workspace', () => {
+    expect(isAgentFilterScopedOut('ws-active', 'ws-active')).toBe(false)
+  })
+
+  it('disables the agent filter for a different workspace', () => {
+    expect(isAgentFilterScopedOut('ws-other', 'ws-active')).toBe(true)
+  })
+
+  it('disables the agent filter for a specific workspace when no agents are loaded', () => {
+    expect(isAgentFilterScopedOut('ws-other', undefined)).toBe(true)
   })
 })

@@ -22,6 +22,18 @@ const monthFormatter = new Intl.DateTimeFormat(undefined, {
 
 const toDateOnly = (date: Date): string => date.toISOString().slice(0, 10)
 
+/**
+ * The agent list is loaded for the active workspace only (the workspace-token
+ * `/agents` API), so agent filtering is scoped to that workspace. When a
+ * different specific workspace is selected the active workspace's agents no
+ * longer apply — combining them would match zero conversations — so the agent
+ * filter must be disabled in that case.
+ */
+export const isAgentFilterScopedOut = (
+  selectedWorkspaceId: string | undefined,
+  activeWorkspaceId: string | undefined,
+): boolean => selectedWorkspaceId !== undefined && selectedWorkspaceId !== activeWorkspaceId
+
 export const defaultUsageTrendQuery = (now: Date = new Date()): UsageTrendQueryState => {
   const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
   const start = new Date(end.getTime())

@@ -106,7 +106,7 @@ As a member, I want to switch between daily, weekly, and monthly buckets so I ca
 - **FR-013**: Agent-filtered token totals MUST include only usage events attributable to that agent via their conversation; usage events without a conversation MUST be excluded from agent-filtered token totals, and this MUST be documented.
 - **FR-014**: The reporting output MUST NOT contain message content, prompts, completions, or chunk text — only counts and token aggregates.
 - **FR-015**: The new HTTP contract MUST be reflected in the code-first OpenAPI registry and generated artifacts, and contract tests MUST cover the response shape.
-- **FR-016**: A frontend trends view MUST present the series with controls for date range, granularity (daily/weekly/monthly), workspace filter, and agent filter, available to members and above.
+- **FR-016**: A frontend trends view MUST present the series with controls for date range, granularity (daily/weekly/monthly), workspace filter, and agent filter, available to members and above. The dashboard agent list is loaded for the active workspace only (the workspace-token `/agents` API), so the agent filter is scoped to the active workspace: selecting a different workspace clears any chosen agent and disables the agent control. The backend already supports account-scoped agent filtering (FR-009/FR-010); surfacing an account-wide agent picker (a session-authed account-scoped agent list) is a deliberate follow-up.
 
 ### Key Entities *(include if feature involves data)*
 

@@ -22,6 +22,7 @@ import {
   defaultUsageTrendQuery,
   findPeakUsageTrendBucket,
   formatUsageTrendBucketLabel,
+  isAgentFilterScopedOut,
   summarizeUsageTrends,
   type UsageTrendGranularity,
   type UsageTrendQueryState,
@@ -131,6 +132,11 @@ export function UsageTrendsView() {
     setQuery((current) => ({ ...current, ...patch }))
   }
 
+  // Agents are loaded for the active workspace only, so the agent filter is
+  // scoped to that workspace. Switching workspaces clears any stale agent.
+  const activeWorkspaceId = agents[0]?.workspaceId
+  const agentFilterDisabled = isAgentFilterScopedOut(query.workspaceId, activeWorkspaceId)
+
   return (
     <div className="space-y-6" data-testid="usage-trends">
       <Card>
@@ -175,7 +181,12 @@ export function UsageTrendsView() {
               <Label>Workspace</Label>
               <Select
                 value={query.workspaceId ?? ALL_FILTER_VALUE}
-                onValueChange={(value) => updateQuery({ workspaceId: value === ALL_FILTER_VALUE ? undefined : value })}
+                onValueChange={(value) =>
+                  updateQuery({
+                    workspaceId: value === ALL_FILTER_VALUE ? undefined : value,
+                    agentId: undefined,
+                  })
+                }
               >
                 <SelectTrigger className="w-full" aria-label="Workspace">
                   <SelectValue />
@@ -193,6 +204,7 @@ export function UsageTrendsView() {
               <Select
                 value={query.agentId ?? ALL_FILTER_VALUE}
                 onValueChange={(value) => updateQuery({ agentId: value === ALL_FILTER_VALUE ? undefined : value })}
+                disabled={agentFilterDisabled}
               >
                 <SelectTrigger className="w-full" aria-label="Agent">
                   <SelectValue />
@@ -204,6 +216,9 @@ export function UsageTrendsView() {
                   ))}
                 </SelectContent>
               </Select>
+              {agentFilterDisabled ? (
+                <p className="text-xs text-muted-foreground">Agent filtering is available for the current workspace only.</p>
+              ) : null}
             </div>
             <div className="flex items-end">
               <Button type="button" variant="outline" className="w-full" onClick={() => setReloadKey((value) => value + 1)}>

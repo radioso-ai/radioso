@@ -4,6 +4,7 @@ import type { components } from "./types.js";
 
 export type IngestionSettings = components["schemas"]["IngestionSettings"];
 export type UpdateIngestionSettingsRequest = components["schemas"]["UpdateIngestionSettingsRequest"];
+export type RetrievalDefaultsResponse = components["schemas"]["RetrievalDefaultsResponse"];
 export type GeneralSettingsResponse = components["schemas"]["GeneralSettingsResponse"];
 export type UpdateGeneralSettingsRequest = components["schemas"]["UpdateGeneralSettingsRequest"];
 export type Agent = components["schemas"]["Agent"];
@@ -71,6 +72,13 @@ export class GeneratedRadiosoClient {
     return requestJson(this.config, {
       method: "GET",
       path: "/api/v1/settings/ingestion",
+    });
+  }
+
+  getRetrievalDefaults(): Promise<RetrievalDefaultsResponse> {
+    return requestJson(this.config, {
+      method: "GET",
+      path: "/api/v1/settings/retrieval-defaults",
     });
   }
 

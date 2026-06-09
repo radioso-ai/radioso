@@ -17,6 +17,25 @@ describe("sdk client integration", () => {
       )
       .mockResolvedValueOnce(
         new Response(JSON.stringify({
+          queryRewriteEnabled: false,
+          semanticRewriteInstructions: "",
+          lexicalRewriteInstructions: "",
+          suggestedQuestionsEnabled: true,
+          suggestedQuestionsCount: 3,
+          rerankEnabled: false,
+          vectorTopK: 15,
+          rerankTopK: 5,
+          retrievalStrategy: "fixed",
+          customInstruction: "",
+          metadataRules: [],
+          metadataFieldSuggestions: [],
+        }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({
           workspaceId: "w1",
           chunkingStrategy: "fixed_window",
           fixedWindowChunkSize: 800,
@@ -80,6 +99,7 @@ describe("sdk client integration", () => {
     });
 
     const documents = await client.documents.list({ limit: 10 });
+    const retrievalDefaults = await client.settings.getRetrievalDefaults();
     const ingestionSettings = await client.settings.getIngestion();
     const generalSettings = await client.settings.getGeneral();
     const searchHistory = await client.documents.listHistory({ limit: 10 });
@@ -87,6 +107,8 @@ describe("sdk client integration", () => {
     const chat = await client.chat.create({ message: "hello", stream: false });
 
     expect(documents.documents).toEqual([]);
+    expect(retrievalDefaults.metadataFieldSuggestions).toEqual([]);
+    expect(retrievalDefaults.queryRewriteEnabled).toBe(false);
     expect(ingestionSettings.chunkingStrategy).toBe("fixed_window");
     expect(generalSettings.anonymousChatEnabled).toBe(true);
     expect(searchHistory.searches).toEqual([]);

@@ -37,6 +37,7 @@ export type {
   GeneralSettingsResponse,
   IngestionSettings,
   PaginationQuery,
+  RetrievalDefaultsResponse,
   SkillCatalogEntry,
   SkillCatalogResponse,
   UpdateDocumentRequest,
@@ -97,6 +98,7 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
 
   return {
     settings: {
+      getRetrievalDefaults: () => generated.getRetrievalDefaults(),
       getIngestion: () => generated.getIngestionSettings(),
       updateIngestion: (body: Parameters<GeneratedRadiosoClient["updateIngestionSettings"]>[0]) =>
         generated.updateIngestionSettings(body),

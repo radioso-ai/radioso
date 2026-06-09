@@ -6,7 +6,7 @@ import type {
   OrganizationCreationGuard,
   OrganizationCreationReservation,
 } from "../../../shared/domain/organizationCreationGuard.js";
-import { NoopOrganizationCreationGuard } from "../../../shared/domain/organizationCreationGuard.js";
+import { noopOrganizationCreationGuard } from "../../../shared/domain/organizationCreationGuard.js";
 import type { WorkspaceService } from "../../workspace/public.js";
 import type { UserRepositoryPort } from "../../../db/repositories/userRepository.js";
 import {
@@ -218,7 +218,7 @@ export class AuthService {
 
     let organizationCreationReservation: OrganizationCreationReservation | null = null;
     try {
-      organizationCreationReservation = await (this.dependencies.organizationCreationGuard ?? new NoopOrganizationCreationGuard())
+      organizationCreationReservation = await (this.dependencies.organizationCreationGuard ?? noopOrganizationCreationGuard)
         .reserve({ userId: user.id });
     } catch (error) {
       await this.recordOrganizationCreationRateLimited(user.id, error);

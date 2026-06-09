@@ -94,7 +94,7 @@ import {
 import { DefaultAllowCapabilityPolicy, registeredCapabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
 import {
-  NoopOrganizationCreationGuard,
+  noopOrganizationCreationGuard,
   type OrganizationCreationGuard,
 } from "../../src/shared/domain/organizationCreationGuard.js";
 import {
@@ -297,7 +297,7 @@ export const createTestDependencies = (overrides: {
     }),
   });
   const usageLimitPolicy = overrides.usageLimitPolicy ?? new NoopUsageLimitPolicy();
-  const organizationCreationGuard = overrides.organizationCreationGuard ?? new NoopOrganizationCreationGuard();
+  const organizationCreationGuard = overrides.organizationCreationGuard ?? noopOrganizationCreationGuard;
   const persistentErrorReportingService = new ErrorReportingService({
     enabled: env.OBSERVABILITY_ENABLED,
     environment: env.OBSERVABILITY_ENVIRONMENT,

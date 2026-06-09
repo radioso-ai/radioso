@@ -12,8 +12,13 @@ const noopReservation: OrganizationCreationReservation = {
   async release() {},
 };
 
-export class NoopOrganizationCreationGuard implements OrganizationCreationGuard {
-  async reserve(_input: { userId: string }): Promise<OrganizationCreationReservation> {
+/**
+ * Default OSS guard: organization creation is unlimited unless an Enterprise
+ * guard is registered. A shared singleton so the no-op is referenced (not
+ * re-instantiated) across composition, dependency wiring, and tests.
+ */
+export const noopOrganizationCreationGuard: OrganizationCreationGuard = {
+  async reserve() {
     return noopReservation;
-  }
-}
+  },
+};

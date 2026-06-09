@@ -1,4 +1,4 @@
-import type { Routine, RoutineStep } from "@radioso/conversation-contract";
+import type { Routine, RoutineSlotSchema, RoutineStep } from "@radioso/conversation-contract";
 
 import type { RoutineDefinition } from "./domain.js";
 import { validateRoutineDefinition } from "./validator.js";
@@ -9,6 +9,19 @@ const routineId = (definition: RoutineDefinition): string =>
 const conditionFor = (guardKind: string, guardText: string | null): string =>
   guardText ?? guardKind;
 
+const slotReferencePattern = /\{\{\s*slot\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu;
+
+const collectedSlotKeys = (instruction: string): string[] => {
+  const keys = new Set<string>();
+  for (const match of instruction.matchAll(slotReferencePattern)) {
+    const key = match[1];
+    if (key) {
+      keys.add(key);
+    }
+  }
+  return [...keys];
+};
+
 export const compileRoutineDefinition = (definition: RoutineDefinition): Routine => {
   const validation = validateRoutineDefinition(definition);
   if (!validation.ok) {
@@ -18,8 +31,18 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
 
   const sortedSteps = [...definition.steps].sort((left, right) => left.ordinal - right.ordinal);
   const sortedTerminals = [...definition.terminals].sort((left, right) => left.ordinal - right.ordinal);
+  const slots: RoutineSlotSchema[] = [...definition.slots]
+    .sort((left, right) => left.ordinal - right.ordinal)
+    .map((slot) => ({
+      id: slot.stableSlotId,
+      key: slot.key,
+      type: slot.type,
+      required: slot.required,
+      description: slot.description ?? undefined,
+    }));
   const steps: RoutineStep[] = [
     ...sortedSteps.map((step): RoutineStep => {
+      const collectsSlots = collectedSlotKeys(step.instruction);
       if (step.kind === "tool") {
         return {
           id: step.stableStepId,
@@ -29,6 +52,7 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
           metadata: {
             ...step.metadata,
             authoredKind: step.kind,
+            ...(collectsSlots.length > 0 ? { collectsSlots } : {}),
           },
         };
       }
@@ -37,8 +61,8 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
         kind: "chat",
         action: step.instruction,
         metadata: Object.keys(step.metadata).length > 0
-          ? { ...step.metadata, authoredKind: step.kind }
-          : { authoredKind: step.kind },
+          ? { ...step.metadata, authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) }
+          : { authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) },
       };
     }),
     ...sortedTerminals.map((terminal): RoutineStep => {
@@ -62,6 +86,7 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
   return {
     id: routineId(definition),
     rootStepId: sortedSteps[0]!.stableStepId,
+    slots,
     steps,
     transitions: [...definition.transitions]
       .sort((left, right) => left.ordinal - right.ordinal)
@@ -80,15 +105,7 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
         gateRef: definition.activation.gateRef,
         priority: definition.activation.priority,
       },
-      slotSchema: [...definition.slots]
-        .sort((left, right) => left.ordinal - right.ordinal)
-        .map((slot) => ({
-          id: slot.stableSlotId,
-          key: slot.key,
-          type: slot.type,
-          required: slot.required,
-          description: slot.description,
-        })),
+      slotSchema: slots,
     },
   };
 };

@@ -30,6 +30,31 @@ const projectStep = (step: RoutineStep): SteeringRule[] =>
       }]
     : [];
 
+const hasTypedSlotSchema = (routine: Routine): boolean =>
+  Array.isArray(routine.slots) && routine.slots.length > 0;
+
+const collectedSlotsFor = (step: RoutineStep): string[] => {
+  const value = step.metadata?.collectsSlots;
+  return Array.isArray(value) && value.every((candidate): candidate is string => typeof candidate === "string")
+    ? value
+    : [];
+};
+
+const hasVariable = (variables: Record<string, unknown>, key: string): boolean =>
+  Object.prototype.hasOwnProperty.call(variables, key);
+
+const isSatisfiedSlotCollectionStep = (
+  routine: Routine,
+  step: RoutineStep,
+  variables: Record<string, unknown>,
+): boolean => {
+  if (step.kind !== "chat" || !hasTypedSlotSchema(routine)) {
+    return false;
+  }
+  const collectedSlots = collectedSlotsFor(step);
+  return collectedSlots.length > 0 && collectedSlots.every((key) => hasVariable(variables, key));
+};
+
 /**
  * Walks a registered Routine graph for the current turn: it asks the injected
  * next-step selector which step the turn lands on, captures slot variables, runs
@@ -97,6 +122,42 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     let variables = { ...state.variables, ...(decision.variables ?? {}) };
     // Append to the path only on a real advance; re-asking a step keeps it stable.
     const path = step.id === currentStepId ? [...state.path] : [...state.path, step.id];
+
+    let fastForwardHops = 0;
+    while (isSatisfiedSlotCollectionStep(routine, step, variables)) {
+      if (++fastForwardHops > routine.steps.length) {
+        throw new Error(`routine_fast_forward_exceeded:${routine.id}:${step.id}`);
+      }
+      const stepEdges = outgoing(step.id);
+      if (stepEdges.length === 0) {
+        break;
+      }
+
+      let nextStepId: string;
+      if (stepEdges.length === 1) {
+        nextStepId = stepEdges[0]!.to;
+      } else {
+        const fastForwardState: RoutineState = { ...state, path, variables, status: "active" };
+        const fastForwardDecision = await this.selector.select({
+          routine,
+          state: fastForwardState,
+          currentStep: step,
+          transitions: stepEdges,
+          turn,
+        });
+        if (fastForwardDecision.yieldTurn) {
+          return { yielded: true, response: { answer: "" }, nextState: null };
+        }
+        variables = { ...variables, ...(fastForwardDecision.variables ?? {}) };
+        nextStepId = landingStepId(step.id, fastForwardDecision);
+        if (nextStepId === step.id) {
+          break;
+        }
+      }
+
+      step = stepById(nextStepId);
+      path.push(step.id);
+    }
 
     // Run through any transit steps — skill (dispatch a tool) and action (emit a
     // fire-and-forget request) — advancing off each this turn, until a chat/terminal

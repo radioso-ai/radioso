@@ -169,6 +169,102 @@ describe("DefaultRoutineRunner", () => {
     expect(result.response.answer).toContain("ask_email");
   });
 
+  it("fast-forwards through multiple already-filled typed slot collection steps in one turn", async () => {
+    const slotRoutine: Routine = {
+      id: "intake",
+      rootStepId: "ask_name",
+      slots: [
+        { id: "slot_name", key: "name", type: "text", required: true },
+        { id: "slot_email", key: "email", type: "email", required: true },
+      ],
+      steps: [
+        { id: "ask_name", kind: "chat", action: "Ask for name.", metadata: { collectsSlots: ["name"] } },
+        { id: "ask_email", kind: "chat", action: "Ask for email.", metadata: { collectsSlots: ["email"] } },
+        { id: "done", kind: "terminal", action: "Confirm intake." },
+      ],
+      transitions: [
+        { from: "ask_name", to: "ask_email", condition: "name was provided" },
+        { from: "ask_email", to: "done", condition: "email was provided" },
+      ],
+    };
+    const select = vi.fn(async () => ({
+      nextStepId: "ask_email",
+      variables: { name: "Alex", email: "alex@example.com" },
+    }));
+    const renderer: ConversationRoutineStepRenderer = { render: vi.fn(echoRenderer.render) };
+    const runner = new DefaultRoutineRunner([slotRoutine], { select }, renderer);
+
+    const result = await runner.resume({ turn, state: { ...state(["ask_name"]), routineId: "intake" } });
+
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({
+      step: expect.objectContaining({ id: "done" }),
+    }));
+    expect(result.nextState).toBeNull();
+  });
+
+  it("fast-forwards past filled typed slot steps and renders the first missing slot prompt", async () => {
+    const slotRoutine: Routine = {
+      id: "intake",
+      rootStepId: "ask_name",
+      slots: [
+        { id: "slot_name", key: "name", type: "text", required: true },
+        { id: "slot_email", key: "email", type: "email", required: true },
+      ],
+      steps: [
+        { id: "ask_name", kind: "chat", action: "Ask for name.", metadata: { collectsSlots: ["name"] } },
+        { id: "ask_email", kind: "chat", action: "Ask for email.", metadata: { collectsSlots: ["email"] } },
+        { id: "done", kind: "terminal", action: "Confirm intake." },
+      ],
+      transitions: [
+        { from: "ask_name", to: "ask_email", condition: "name was provided" },
+        { from: "ask_email", to: "done", condition: "email was provided" },
+      ],
+    };
+    const runner = new DefaultRoutineRunner(
+      [slotRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "ask_email", variables: { name: "Alex" } })) },
+      { render: vi.fn(echoRenderer.render) },
+    );
+
+    const result = await runner.resume({ turn, state: { ...state(["ask_name"]), routineId: "intake" } });
+
+    expect(result.response.answer).toContain("ask_email");
+    expect(result.nextState).toMatchObject({
+      path: ["ask_name", "ask_email"],
+      variables: { name: "Alex" },
+    });
+  });
+
+  it("does not fast-forward contact-shaped routines without a typed slot schema", async () => {
+    const noSchemaRoutine: Routine = {
+      ...routine,
+      steps: routine.steps.map((step) =>
+        step.id === "ask_message"
+          ? { ...step, metadata: { collectsSlots: ["message"] } }
+          : step,
+      ),
+    };
+    const runner = new DefaultRoutineRunner(
+      [noSchemaRoutine],
+      {
+        select: vi.fn(async () => ({
+          nextStepId: "ask_message",
+          variables: { email: "alex@example.com", message: "hello" },
+        })),
+      },
+      { render: vi.fn(echoRenderer.render) },
+    );
+
+    const result = await runner.resume({ turn, state: state(["ask_email"]) });
+
+    expect(result.response.answer).toContain("ask_message");
+    expect(result.nextState).toMatchObject({
+      path: ["ask_email", "ask_message"],
+      variables: { email: "alex@example.com", message: "hello" },
+    });
+  });
+
   it("throws on a skill-step cycle instead of looping forever (or re-dispatching the skill)", async () => {
     const cyclic: Routine = {
       id: "loop",

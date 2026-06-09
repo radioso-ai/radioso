@@ -429,9 +429,21 @@ export interface RoutineTransition {
   condition: string;
 }
 
+export type RoutineSlotType = "text" | "number" | "boolean" | "email" | "date";
+
+export interface RoutineSlotSchema {
+  id: string;
+  key: string;
+  type: RoutineSlotType;
+  required: boolean;
+  description?: string;
+}
+
 export interface Routine {
   id: string;
   rootStepId: string;
+  /** Optional typed slot schema. Routines without it keep legacy traversal behavior. */
+  slots?: RoutineSlotSchema[];
   steps: RoutineStep[];
   transitions: RoutineTransition[];
   metadata?: Record<string, unknown>;

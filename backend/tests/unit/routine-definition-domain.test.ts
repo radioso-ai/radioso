@@ -55,8 +55,8 @@ describe("routine definition compiler and validator", () => {
       id: "routine:agent_1:handoff:v1",
       rootStepId: "ask_name",
       steps: [
-        { id: "ask_name", kind: "chat", action: "Ask for {{slot.name}}." },
-        { id: "ask_topic", kind: "chat", action: "Ask for {{slot.topic}}." },
+        { id: "ask_name", kind: "chat", action: "Ask for {{slot.name}}.", metadata: { collectsSlots: ["name"] } },
+        { id: "ask_topic", kind: "chat", action: "Ask for {{slot.topic}}.", metadata: { collectsSlots: ["topic"] } },
         { id: "done", kind: "terminal", action: "Confirm completion." },
       ],
       transitions: [
@@ -65,6 +65,10 @@ describe("routine definition compiler and validator", () => {
       ],
     });
     expect(routine.metadata?.slotSchema).toEqual([
+      { id: "slot_name", key: "name", type: "text", required: true, description: "Visitor name." },
+      { id: "slot_topic", key: "topic", type: "text", required: true, description: "Conversation topic." },
+    ]);
+    expect(routine.slots).toEqual([
       { id: "slot_name", key: "name", type: "text", required: true, description: "Visitor name." },
       { id: "slot_topic", key: "topic", type: "text", required: true, description: "Conversation topic." },
     ]);

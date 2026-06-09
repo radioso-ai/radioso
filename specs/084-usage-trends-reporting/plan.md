@@ -15,7 +15,7 @@ Add an OSS, member-accessible account usage trends report over existing read-onl
 **Testing**: Backend Vitest unit + contract tests first; integration tests gated on `INTEGRATION_DATABASE_URL`; frontend Vitest for data/adapters and Playwright for user-visible journey  
 **Target Platform**: Self-hosted Radioso web app and backend API  
 **Project Type**: Web application with backend, frontend, docs, generated OpenAPI artifacts  
-**Performance Goals**: Keep trend requests bounded to a maximum of 366 buckets and use existing source-table indexes; no new rollup or worker path in this feature  
+**Performance Goals**: Keep trend requests bounded to a maximum of 366 buckets; each aggregation must run on a timestamp-aligned index verified by `EXPLAIN ANALYZE` (no sequential scan over a bounded range). Messages and tokens reuse existing timestamp-leading indexes; the conversation `created_at` aggregation requires a new index (the existing conversation indexes lead with `updated_at`). No new rollup or worker path in this feature  
 **Constraints**: UTC bucketing only; succeeded usage events only; no message content/prompts/completions/chunks in output; no EE dependency; no new instrumentation or enforcement  
 **Scale/Scope**: Per-account trend report with workspace/agent filters and daily/weekly/monthly buckets for dashboard use
 
@@ -101,7 +101,7 @@ docs/
 - **Transport Layer**: `backend/src/modules/reporting/routes.ts` validates query params, reads `res.locals.accountId/userId`, calls the service, and returns JSON. It does not contain SQL or bucket math.
 - **Orchestration Layer**: `UsageTrendsService` checks active membership through the existing account access service, validates workspace/agent filters against the account, calls query helpers, and maps rows to the response.
 - **Domain Layer**: `usageTrendsQuery.ts` owns granularity/date validation, UTC bucket generation, zero fill, response merging, and SQL query text/params.
-- **Persistence/Integration Layer**: SQL is read-only and uses existing tables/indexes. No writes, rollups, queues, or migrations are planned unless verification shows an index is required.
+- **Persistence/Integration Layer**: SQL is read-only over existing tables. Messages and tokens reuse existing timestamp-leading indexes. EXPLAIN ANALYZE verification (100k conversations / 5 workspaces, 90-day window) showed the conversation `created_at` aggregation sequential-scanned because no conversation index leads with `created_at`; migration `083_usage_trends_conversation_created_at_index.sql` adds `idx_conversations_workspace_created_at (workspace_id, created_at)`, turning the workspace-filtered scan into an index-only scan (~4.6ms → ~1.1ms) and the account-wide scan into a bitmap index scan (~18.3ms → ~8.9ms). No writes, rollups, or queues.
 - **Application Composition**: Add `createUsageReportingApplicationModule()` in `backend/src/app/composition/builtIn/` to mount `/api/v1/account/usage-trends`. Composition constructs the service with `connectorDb` and account-access dependency only.
 - **Files Kept Small**: `backend/src/app/http/routes/index.ts` only receives the registered app route; account route files remain focused on account management. OpenAPI files only register schema/path metadata. `frontend/components/dashboard/usage-view.tsx` delegates trend-specific UI to `usage-trends-view.tsx`.
 - **Planned Extractions**: `usageTrendsQuery.ts` for pure period math and query construction; `frontend/lib/usage-trends.ts` for frontend date presets, query serialization, and response totals.

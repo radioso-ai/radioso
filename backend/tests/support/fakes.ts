@@ -1140,6 +1140,16 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
 export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort {
   readonly items = new Map<string, RoutineDefinition>();
 
+  async listPublishedByAgent(agentId: string): Promise<RoutineDefinition[]> {
+    return [...this.items.values()]
+      .filter((definition) => definition.agentId === agentId && definition.status === "published")
+      .sort((left, right) =>
+        right.activation.priority - left.activation.priority ||
+        left.createdAt.getTime() - right.createdAt.getTime() ||
+        left.id.localeCompare(right.id)
+      );
+  }
+
   async listByAgent(agentId: string): Promise<RoutineDefinition[]> {
     return [...this.items.values()]
       .filter((definition) => definition.agentId === agentId)

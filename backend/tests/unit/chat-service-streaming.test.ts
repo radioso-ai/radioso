@@ -320,13 +320,14 @@ describe("chat service streaming", () => {
       clear: async () => {},
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
-      isEmpty: false,
-      activator: () => ({ activate: async () => ({ routineId: "contact.request" }) }),
-      createRunner: () => ({
-        resume: async () => ({
-          response: { answer: "What is your email?" },
-          nextState: { sessionId: "s", routineId: "contact.request", path: ["ask_email"], variables: {}, status: "active" },
-        }),
+      forTurn: async () => ({
+        activator: { activate: async () => ({ routineId: "contact.request" }) },
+        runner: {
+          resume: async () => ({
+            response: { answer: "What is your email?" },
+            nextState: { sessionId: "s", routineId: "contact.request", path: ["ask_email"], variables: {}, status: "active" },
+          }),
+        },
       }),
     };
     const service = makeChatService(
@@ -377,14 +378,15 @@ describe("chat service streaming", () => {
       clear: async () => { order.push("clear"); },
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
-      isEmpty: false,
-      activator: () => ({ activate: async () => ({ routineId: "contact.request" }) }),
-      createRunner: () => ({
-        resume: async () => ({
-          response: { answer: "Got it — someone will be in touch." },
-          nextState: null,
-          actions: [{ type: "contact.send", payload: { email: "a@b.c" } }],
-        }),
+      forTurn: async () => ({
+        activator: { activate: async () => ({ routineId: "contact.request" }) },
+        runner: {
+          resume: async () => ({
+            response: { answer: "Got it — someone will be in touch." },
+            nextState: null,
+            actions: [{ type: "contact.send", payload: { email: "a@b.c" } }],
+          }),
+        },
       }),
     };
     return { routineStore, routineProvider };

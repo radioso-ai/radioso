@@ -18,6 +18,12 @@ const agentId = "22222222-2222-4222-8222-222222222222";
 class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort {
   readonly items = new Map<string, RoutineDefinition>();
 
+  async listPublishedByAgent(inputAgentId: string): Promise<RoutineDefinition[]> {
+    return [...this.items.values()].filter((definition) =>
+      definition.agentId === inputAgentId && definition.status === "published"
+    );
+  }
+
   async listByAgent(inputAgentId: string): Promise<RoutineDefinition[]> {
     return [...this.items.values()].filter((definition) => definition.agentId === inputAgentId);
   }

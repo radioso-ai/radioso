@@ -208,6 +208,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     mailService: infrastructure.mailService,
     messageRepository: repositories.messageRepository,
     productAnalyticsService: infrastructure.productAnalyticsService,
+    routineDefinitionRepository: repositories.routineDefinitionRepository,
     retrievalPipeline: retrieval.retrievalPipeline,
     usageEventRecorder: infrastructure.usageEventRecorder,
     usageLimitPolicy: infrastructure.usageLimitPolicy,

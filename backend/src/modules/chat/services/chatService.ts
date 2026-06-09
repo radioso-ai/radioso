@@ -136,16 +136,19 @@ type PreparedChatStreamTurnEvent =
     };
 
 /**
- * The registered routines this turn may resume or activate. Composition assembles it
- * (the concrete `RoutineRegistry` plus a runner factory); ChatService only builds the
- * per-turn model gateway and asks for a runner, the activator, and whether anything is
- * registered. Empty → routine machinery stays off (no per-turn store load), and the
- * engine runner stays a composition concern rather than something ChatService news up.
+ * The routines this turn may resume or activate. Composition loads/compiles the
+ * agent-scoped registrations, assembles the concrete `RoutineRegistry`, and returns
+ * the engine ports for this turn. Null means no applicable routines, so ChatService
+ * skips the routine state store and falls through to normal chat.
  */
 export interface ChatRoutineProvider {
-  readonly isEmpty: boolean;
-  activator(modelGateway: ConversationModelGateway): ConversationRoutineActivator;
-  createRunner(modelGateway: ConversationModelGateway): ConversationRoutineRunner;
+  forTurn(input: {
+    modelGateway: ConversationModelGateway;
+    agentId: string;
+  }): Promise<{
+    activator: ConversationRoutineActivator;
+    runner: ConversationRoutineRunner;
+  } | null>;
 }
 
 /**
@@ -275,13 +278,20 @@ export class ChatService {
     // enqueue leaves the routine recoverable rather than advanced past a lost action.
     commitRoutineState: () => Promise<void>;
   } | null> {
-    if (!this.routineStore || !this.routineProvider || this.routineProvider.isEmpty) {
+    if (!this.routineStore || !this.routineProvider) {
       return null;
     }
     const modelGateway = new RoutineChatModelGateway(this.chatGateway, {
       workspaceContext: this.answerSupport.buildChatWorkspaceContext(session),
       usageContext: this.answerSupport.buildChatUsageContext(session, accountId, "routine_turn"),
     });
+    const routineTurnPorts = await this.routineProvider.forTurn({
+      modelGateway,
+      agentId: session.agent.id,
+    });
+    if (!routineTurnPorts) {
+      return null;
+    }
     const deferredStore = new DeferredRoutineStore(this.routineStore);
     const outcome = await attemptRoutineTurnWithConversationEngine({
       engine: this.conversationEngine,
@@ -289,8 +299,8 @@ export class ChatService {
       accountId,
       directiveRuntime: this.directiveRuntime,
       routineStore: deferredStore,
-      routineRunner: this.routineProvider.createRunner(modelGateway),
-      routineActivator: this.routineProvider.activator(modelGateway),
+      routineRunner: routineTurnPorts.runner,
+      routineActivator: routineTurnPorts.activator,
       presentRoutineReply: (response) => this.chatAnswerPresenter.presentNonRetrievalAnswer(response.answer),
     });
     if (!outcome) {

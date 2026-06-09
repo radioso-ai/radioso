@@ -16,6 +16,7 @@ import {
 } from "./validator.js";
 
 export interface RoutineDefinitionRepositoryPort {
+  listPublishedByAgent(agentId: string): Promise<RoutineDefinition[]>;
   listByAgent(agentId: string): Promise<RoutineDefinition[]>;
   findById(agentId: string, id: string): Promise<RoutineDefinition | null>;
   createDraft(agentId: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition>;

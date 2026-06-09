@@ -9,6 +9,10 @@ export interface PublishedRoutineRegistrationSource {
   load(input: { agentId: string }): Promise<RoutineRegistration[]>;
 }
 
+export interface PublishedRoutineRegistrationSourceOptions {
+  onDefinitionError?: (input: { agentId: string; definitionId: string; error: unknown }) => void;
+}
+
 const parseActivationDecision = (text: string): boolean => {
   try {
     const parsed: unknown = JSON.parse(text);
@@ -53,18 +57,28 @@ const activateWithTrigger = async (
 
 export const createPublishedRoutineRegistrationSource = (
   repository: Pick<RoutineDefinitionRepository, "listPublishedByAgent">,
+  options: PublishedRoutineRegistrationSourceOptions = {},
 ): PublishedRoutineRegistrationSource => ({
   async load({ agentId }) {
     const definitions = await repository.listPublishedByAgent(agentId);
-    return definitions.map((definition) => ({
-      routine: compileRoutineDefinition(definition),
-      activates: ({ turn, modelGateway }) =>
-        activateWithTrigger({
-          turn,
-          modelGateway,
-          triggerDescription: definition.activation.triggerDescription,
-          gateRef: definition.activation.gateRef,
-        }),
-    }));
+    const registrations: RoutineRegistration[] = [];
+    for (const definition of definitions) {
+      try {
+        const routine = compileRoutineDefinition(definition);
+        registrations.push({
+          routine,
+          activates: ({ turn, modelGateway }) =>
+            activateWithTrigger({
+              turn,
+              modelGateway,
+              triggerDescription: definition.activation.triggerDescription,
+              gateRef: definition.activation.gateRef,
+            }),
+        });
+      } catch (error) {
+        options.onDefinitionError?.({ agentId, definitionId: definition.id, error });
+      }
+    }
+    return registrations;
   },
 });

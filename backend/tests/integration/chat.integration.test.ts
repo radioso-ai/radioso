@@ -6,6 +6,7 @@ import type { RerankGateway } from "../../src/modules/retrieval/services/rerankS
 import type { TriggerAnalysisGateway } from "../../src/modules/retrieval/services/queryRewriteService.js";
 import { SUGGESTIONS_SENTINEL } from "../../src/modules/chat/services/groundedAnswerEnvelope.js";
 import type { ProductAnalyticsEvent } from "../../src/shared/analytics/productAnalyticsTypes.js";
+import type { RoutineDefinitionDraftInput } from "../../src/modules/routines/public.js";
 import { createTestApp, issueTestToken } from "../support/testApp.js";
 import { InMemoryMessageRepository } from "../support/fakes.js";
 import { retrievalFixtureDocuments } from "../support/retrievalFixtures.js";
@@ -45,7 +46,90 @@ const updateRetrievalSkillSettings = async (
   });
 };
 
+const supportIntakeRoutineDraft = (): RoutineDefinitionDraftInput => ({
+  name: "db-support-intake",
+  activation: {
+    triggerDescription: "When the user asks to start support intake.",
+    gateRef: null,
+    priority: 10,
+  },
+  slots: [{
+    stableSlotId: "slot_topic",
+    key: "topic",
+    type: "text",
+    required: true,
+    description: "The support topic",
+    ordinal: 0,
+  }],
+  steps: [{
+    stableStepId: "step_collect_topic",
+    kind: "chat",
+    instruction: "Ask for {{slot.topic}}.",
+    toolRef: null,
+    ordinal: 0,
+    metadata: {},
+  }],
+  transitions: [{
+    fromStep: "step_collect_topic",
+    toRef: "terminal_complete",
+    guardKind: "llm",
+    guardText: "The user provided {{slot.topic}}.",
+    ordinal: 0,
+  }],
+  terminals: [{
+    stableStepId: "terminal_complete",
+    kind: "complete",
+    instruction: "Complete intake for {{slot.topic}}.",
+    actionType: null,
+    ordinal: 1,
+  }],
+});
+
 describe("chat integration", () => {
+  it("activates and runs a published routine definition during a chat turn", async () => {
+    const calls: Array<{ systemPrompt?: string }> = [];
+    const routineGateway: ChatGateway = {
+      async answer(input) {
+        calls.push({ systemPrompt: input.systemPrompt });
+        if (input.systemPrompt?.includes("You decide whether to activate a routine")) {
+          return "{\"activate\":true}";
+        }
+        if (input.systemPrompt?.includes("conditions")) {
+          return "{}";
+        }
+        return "Routine intake reply from the published definition.";
+      },
+      async *streamAnswer() {
+        yield "Routine intake reply from the published definition.";
+      },
+    };
+    const { app, dependencies, repositories } = createTestApp({ chatGateway: routineGateway });
+    const { token, workspaceId } = await issueTestToken(app, "published-routine-chat@example.com");
+    const authorization = `Bearer ${token}`;
+    const agent = await dependencies.agentService.resolve(workspaceId);
+
+    const draft = await dependencies.routineDefinitionService.createDraft(
+      workspaceId,
+      agent.id,
+      supportIntakeRoutineDraft(),
+    );
+    const publish = await dependencies.routineDefinitionService.publish(workspaceId, agent.id, draft.routine.id);
+    expect("routine" in publish && publish.routine.status).toBe("published");
+
+    const response = await request(app)
+      .post("/api/v1/assistant/chat")
+      .set("Authorization", authorization)
+      .send({ message: "I need support intake", stream: false, includeDebug: true })
+      .expect(200);
+
+    expect(response.body.answer).toBe("Routine intake reply from the published definition.");
+    expect(calls.some((call) => call.systemPrompt?.includes("You decide whether to activate a routine"))).toBe(true);
+
+    const messages = await repositories.messageRepository.listByConversationId(workspaceId, response.body.conversationId);
+    expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(messages.at(-1)?.content).toBe("Routine intake reply from the published definition.");
+  });
+
   it("evaluates today() dynamically for date metadata rules", async () => {
     const { app, dependencies } = createTestApp();
     const { token, workspaceId } = await issueTestToken(app, "dynamic-date@example.com");

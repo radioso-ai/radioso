@@ -84,6 +84,45 @@ Limits are enforced before expensive work begins, so customers cannot race past 
 
 Requests that exceed a cap receive a `429` response with `code: "usage_limit_exceeded"` and a `details.resource` of `stored_indexed_bytes`, `monthly_indexed_bytes`, `stored_documents`, or `monthly_answers`.
 
+## Organization creation cap
+
+Enterprise deployments also include a per-user cap on creating additional organizations. This cap is an anti-abuse control, not a usage-limit profile dimension.
+
+The cap applies to `POST /api/v1/account/accounts`. It does not apply to signup or the first organization. The counter is per user, per UTC calendar month. Deleting organizations does not refund the counter.
+
+Set the global default with:
+
+```bash
+EE_MAX_ORGS_PER_USER_PER_MONTH=10
+```
+
+When the variable is unset, Radioso uses 10. A request over the cap receives `429` with `code: "rate_limit_exceeded"` and `details.limit`, `details.used`, `details.periodStart`, and `details.resetAt`.
+
+Operators can set a per-user override through the existing usage-limit admin API. The same `EE_USAGE_ADMIN_TOKEN` bearer token is required.
+
+```bash
+curl -X PUT https://radioso.example.com/api/v1/ee/usage-limits/org-creation/users/00000000-0000-0000-0000-000000000001 \
+  -H "Authorization: Bearer $EE_USAGE_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"monthlyLimit": 25}'
+```
+
+Use `null` for an unlimited override:
+
+```bash
+curl -X PUT https://radioso.example.com/api/v1/ee/usage-limits/org-creation/users/00000000-0000-0000-0000-000000000001 \
+  -H "Authorization: Bearer $EE_USAGE_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"monthlyLimit": null}'
+```
+
+Read or remove an override with:
+
+```text
+GET    /api/v1/ee/usage-limits/org-creation/users/{userId}
+DELETE /api/v1/ee/usage-limits/org-creation/users/{userId}
+```
+
 ## Internal usage ledger
 
 In addition to the customer-facing meters, the core platform records an immutable usage event for every embedding call so cost and reliability can be analysed without scanning request logs. This ledger is part of the open-source platform, so it is available without Enterprise Edition; Enterprise builds governance and reporting on top of it rather than maintaining a separate ledger. Each event captures the account, workspace, document revision, provider, model, input bytes, vector count, and either provider-reported or estimated tokens. Events are written with a deterministic idempotency key per `(workspace, document, revision, provider, model)`, so retries do not double-count, and they are summarised into a daily rollup (`usage_daily_rollups`) for fast internal reporting. Answer-side model usage uses the same ledger structure and will be progressively instrumented at chat and retrieval call sites.

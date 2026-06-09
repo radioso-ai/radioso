@@ -8,6 +8,7 @@ import {
   createDefaultWebsiteCrawlJobDispatcher,
 } from "../../src/app/composition/defaultComposition.js";
 import { DefaultTurnSelectionStrategy } from "../../src/modules/chat/composition.js";
+import type { OrganizationCreationGuard } from "../../src/shared/domain/organizationCreationGuard.js";
 import type { DirectiveMatcherPort } from "../../src/modules/directives/public.js";
 import { AmqpDocumentJobConsumer, AmqpDocumentJobDispatcher } from "../../src/modules/documents/infra/amqpDocumentJobQueue.js";
 import { NoopDocumentJobDispatcher } from "../../src/modules/documents/services/documentJobDispatcher.js";
@@ -68,6 +69,7 @@ describe("default application composition", () => {
     expect(composition.answerFeedbackHistoryProviderRegistration).toBeTypeOf("function");
     expect(composition.agentSurfaceExtensions.map((extension) => extension.key)).toEqual(["websiteEmbed"]);
     expect(composition.websiteEmbedIntegration).toBeDefined();
+    expect(composition.organizationCreationGuardRegistration).toBeUndefined();
   });
 
   it("applies optional connector contributions through module registration", async () => {
@@ -94,6 +96,28 @@ describe("default application composition", () => {
       "radioso-contact-routine",
       "connector-module",
     ]);
+  });
+
+  it("collects an optional organization creation guard through module registration", () => {
+    const guard: OrganizationCreationGuard = {
+      reserve: vi.fn(async () => ({
+        commit: vi.fn(),
+        release: vi.fn(),
+      })),
+    };
+    const composition = createDefaultApplicationComposition({
+      logger: createLogger(),
+      modules: [
+        {
+          id: "organization-creation-guard-module",
+          register(context) {
+            context.registerOrganizationCreationGuard(guard);
+          },
+        },
+      ],
+    });
+
+    expect(composition.organizationCreationGuardRegistration).toBe(guard);
   });
 
   it("applies optional directive contributions through module registration", () => {

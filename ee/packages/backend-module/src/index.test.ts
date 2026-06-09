@@ -5,6 +5,7 @@ import type {
   ApplicationAccountCreatedHandler,
   ApplicationDatabaseMigrator,
   ApplicationModuleRegistrationContext,
+  ApplicationOrganizationCreationGuardRegistration,
   ApplicationRouteMount,
   ApplicationUsageLimitPolicyRegistration,
 } from "./radiosoModuleTypes.js";
@@ -14,6 +15,7 @@ const createCaptureContext = () => {
   const routeMounts: ApplicationRouteMount[] = [];
   const accountCreatedHandlers: ApplicationAccountCreatedHandler[] = [];
   let usageLimitPolicy: ApplicationUsageLimitPolicyRegistration | undefined;
+  let organizationCreationGuard: ApplicationOrganizationCreationGuardRegistration | undefined;
 
   const context: ApplicationModuleRegistrationContext = {
     registerDatabaseMigrator(migrator) {
@@ -28,6 +30,9 @@ const createCaptureContext = () => {
     registerUsageLimitPolicy(policy) {
       usageLimitPolicy = policy;
     },
+    registerOrganizationCreationGuard(guard) {
+      organizationCreationGuard = guard;
+    },
     registerContactHistoryProvider() {},
     registerAnswerFeedbackHistoryProvider() {
       throw new Error("answer feedback is registered by the OSS backend");
@@ -40,6 +45,9 @@ const createCaptureContext = () => {
     databaseMigrators,
     get usageLimitPolicy() {
       return usageLimitPolicy;
+    },
+    get organizationCreationGuard() {
+      return organizationCreationGuard;
     },
     routeMounts,
   };
@@ -61,5 +69,6 @@ describe("Enterprise backend module aggregation", () => {
     ]);
     expect(capture.accountCreatedHandlers).toHaveLength(1);
     expect(capture.usageLimitPolicy).toBeTypeOf("function");
+    expect(capture.organizationCreationGuard).toBeTypeOf("function");
   });
 });

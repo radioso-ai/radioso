@@ -2,6 +2,26 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 
 import { createTestApp, issueTestSession, issueTestToken } from "../support/testApp.js";
+import type {
+  OrganizationCreationGuard,
+  OrganizationCreationReservation,
+} from "../../src/shared/domain/organizationCreationGuard.js";
+
+class BlockingOrganizationCreationGuard implements OrganizationCreationGuard {
+  async reserve(): Promise<OrganizationCreationReservation> {
+    throw {
+      statusCode: 429,
+      code: "rate_limit_exceeded",
+      message: "Organization creation limit reached. You can create up to 1 organization per month. Try again after 2026-07-01T00:00:00.000Z.",
+      details: {
+        limit: 1,
+        used: 1,
+        periodStart: "2026-06-01",
+        resetAt: "2026-07-01T00:00:00.000Z",
+      },
+    };
+  }
+}
 
 describe("auth contract", () => {
   it("registers a user, returns workspace bootstrap data, and requires email verification", async () => {
@@ -28,6 +48,32 @@ describe("auth contract", () => {
     expect(response.body.token).toBeUndefined();
     expect(response.body.requiresEmailVerification).toBe(true);
     expect(response.headers["set-cookie"]).toBeUndefined();
+  });
+
+  it("returns a documented 429 envelope when additional organization creation is capped", async () => {
+    const { app } = createTestApp({
+      organizationCreationGuard: new BlockingOrganizationCreationGuard(),
+    });
+    const registration = await issueTestSession(app, "org-cap-contract@example.com");
+
+    const response = await request(app)
+      .post("/api/v1/account/accounts")
+      .set("Cookie", registration.cookie)
+      .send({ organizationName: "Blocked Additional Org" });
+
+    expect(response.status).toBe(429);
+    expect(response.body).toEqual({
+      error: {
+        code: "rate_limit_exceeded",
+        message: "Organization creation limit reached. You can create up to 1 organization per month. Try again after 2026-07-01T00:00:00.000Z.",
+        details: {
+          limit: 1,
+          used: 1,
+          periodStart: "2026-06-01",
+          resetAt: "2026-07-01T00:00:00.000Z",
+        },
+      },
+    });
   });
 
   it("rejects login for users who have not verified their email", async () => {

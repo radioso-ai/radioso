@@ -146,6 +146,61 @@ describe("usage limit admin routes", () => {
       .get("/api/v1/ee/usage-limits/profiles")
       .expect(401);
   });
+
+  it("reads, writes, and deletes organization creation overrides with the admin token", async () => {
+    process.env.EE_USAGE_ADMIN_TOKEN = "secret-admin-token";
+    const queries: Array<{ text: string; params?: unknown[] }> = [];
+    const database: UsageLimitDatabasePort = {
+      async query(text: string, params?: unknown[]) {
+        queries.push({ text, params });
+        if (text.includes("SELECT user_id, monthly_limit")) {
+          return [{
+            user_id: "22222222-2222-2222-2222-222222222222",
+            monthly_limit: 25,
+            updated_at: new Date("2026-06-09T00:00:00.000Z"),
+          }];
+        }
+        if (text.includes("INSERT INTO ee_org_creation_overrides")) {
+          return [{
+            user_id: "22222222-2222-2222-2222-222222222222",
+            monthly_limit: null,
+            updated_at: new Date("2026-06-10T00:00:00.000Z"),
+          }];
+        }
+        return [];
+      },
+      async withTransaction(callback) {
+        return callback(this);
+      },
+    };
+
+    const getResponse = await request(createSessionApp(database))
+      .get("/api/v1/ee/usage-limits/org-creation/users/22222222-2222-2222-2222-222222222222")
+      .set("Authorization", "Bearer secret-admin-token")
+      .expect(200);
+    expect(getResponse.body.override).toMatchObject({
+      userId: "22222222-2222-2222-2222-222222222222",
+      monthlyLimit: 25,
+      unlimited: false,
+    });
+
+    const putResponse = await request(createSessionApp(database))
+      .put("/api/v1/ee/usage-limits/org-creation/users/22222222-2222-2222-2222-222222222222")
+      .set("Authorization", "Bearer secret-admin-token")
+      .send({ monthlyLimit: null })
+      .expect(200);
+    expect(putResponse.body.override).toMatchObject({
+      monthlyLimit: null,
+      unlimited: true,
+    });
+
+    await request(createSessionApp(database))
+      .delete("/api/v1/ee/usage-limits/org-creation/users/22222222-2222-2222-2222-222222222222")
+      .set("Authorization", "Bearer secret-admin-token")
+      .expect(204);
+
+    expect(queries.some((query) => query.text.includes("DELETE FROM ee_org_creation_overrides"))).toBe(true);
+  });
 });
 
 describe("usage limit account routes", () => {

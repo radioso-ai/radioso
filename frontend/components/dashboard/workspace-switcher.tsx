@@ -127,8 +127,13 @@ export function WorkspaceSwitcher({ accountId, currentView, routeState }: Worksp
         workspaceId: response.workspaceId,
         workspacePublicRouteKey: response.workspacePublicRouteKey,
       }))
-    } catch {
-      setCreateOrganizationError('Failed to create organization')
+    } catch (error) {
+      const message = error && typeof error === 'object' && 'error' in error
+        && error.error && typeof error.error === 'object'
+        && 'message' in error.error && typeof error.error.message === 'string'
+        ? error.error.message
+        : 'Failed to create organization'
+      setCreateOrganizationError(message)
     } finally {
       setIsCreatingOrganization(false)
     }

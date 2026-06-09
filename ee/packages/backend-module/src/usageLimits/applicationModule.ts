@@ -3,6 +3,7 @@ import type { ApplicationModule } from "../radiosoModuleTypes.js";
 import { usageLimitMigrator } from "./usageLimitMigrator.js";
 import { createUsageLimitRoutes } from "./usageLimitRoutes.js";
 import { EnterpriseUsageLimitService } from "./usageLimitService.js";
+import { EnterpriseOrganizationCreationGuard } from "../orgCreation/organizationCreationGuard.js";
 
 const STARTER_PROFILE_KEY = "starter_100";
 
@@ -13,6 +14,9 @@ export const createUsageLimitsApplicationModule = (): ApplicationModule => ({
     context.registerDatabaseMigrator(usageLimitMigrator);
     context.registerUsageLimitPolicy(({ database }) => {
       return new EnterpriseUsageLimitService(database);
+    });
+    context.registerOrganizationCreationGuard?.(({ database }) => {
+      return new EnterpriseOrganizationCreationGuard(database);
     });
     // The durable usage-event recorder is now an OSS default (registered in
     // backend composition). EE no longer registers its own to avoid a second

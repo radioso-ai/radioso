@@ -81,6 +81,36 @@ Operator requests use `Authorization: Bearer <token>` against:
 The API can list or upsert profiles, assign or clear an account profile, and
 inspect an account's current usage for a UTC month.
 
+Enterprise also caps additional organization creation per user as an anti-abuse
+velocity control. This is separate from account usage limit profiles. Signup
+and the first organization are not capped. Deleting organizations does not
+refund the monthly counter.
+
+Set the default monthly cap with:
+
+```bash
+EE_MAX_ORGS_PER_USER_PER_MONTH=10
+```
+
+The value is per user per UTC calendar month. When unset, the default is 10.
+Operators can override a user under the same usage-limit admin API:
+
+```bash
+curl -X PUT "$BASE_URL/api/v1/ee/usage-limits/org-creation/users/$USER_ID" \
+  -H "Authorization: Bearer $EE_USAGE_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"monthlyLimit": 25}'
+```
+
+Use `{"monthlyLimit": null}` for an unlimited override. Delete the override to
+return the user to the global default:
+
+```text
+GET    /api/v1/ee/usage-limits/org-creation/users/:userId
+PUT    /api/v1/ee/usage-limits/org-creation/users/:userId
+DELETE /api/v1/ee/usage-limits/org-creation/users/:userId
+```
+
 Signed-in Enterprise users can view their assigned profile and current account
 usage from the dashboard user menu under Usage. The dashboard reads the
 session-scoped endpoint:

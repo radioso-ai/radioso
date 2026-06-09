@@ -42,6 +42,7 @@ export interface ErrorResponse {
   error: {
     code: string
     message: string
+    details?: unknown
     retryAfterSeconds?: number
   }
 }

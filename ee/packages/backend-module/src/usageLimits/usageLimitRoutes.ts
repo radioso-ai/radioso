@@ -2,12 +2,14 @@ import { Router, type RequestHandler } from "express";
 import { z } from "zod";
 
 import type { ApplicationRouteMount, UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
+import { EnterpriseOrganizationCreationGuard } from "../orgCreation/organizationCreationGuard.js";
 import { EnterpriseUsageLimitService, normalizePeriodStart } from "./usageLimitService.js";
 
 type RouteDependencies = Parameters<ApplicationRouteMount["createRouter"]>[0];
 
 const profileKeySchema = z.string().trim().regex(/^[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]$/);
 const accountIdSchema = z.string().uuid();
+const userIdSchema = z.string().uuid();
 const nullableLimitSchema = z.number().int().min(0).nullable();
 const nullableByteLimitSchema = z
   .union([z.number().int().min(0), z.null()])
@@ -23,6 +25,10 @@ const profileBodySchema = z.object({
 
 const assignmentBodySchema = z.object({
   profileKey: profileKeySchema.nullable(),
+});
+
+const orgCreationOverrideBodySchema = z.object({
+  monthlyLimit: nullableLimitSchema,
 });
 
 const usageQuerySchema = z.object({
@@ -104,6 +110,7 @@ export const createUsageLimitRoutes = (input: RouteDependencies | UsageLimitData
   const router = Router();
   const database = isRouteDependencies(input) ? input.connectorDb : input;
   const service = new EnterpriseUsageLimitService(database);
+  const organizationCreationGuard = new EnterpriseOrganizationCreationGuard(database);
 
   if (isRouteDependencies(input)) {
     router.get("/me", requireAccountSession(input), async (req, res, next) => {
@@ -163,6 +170,39 @@ export const createUsageLimitRoutes = (input: RouteDependencies | UsageLimitData
       const query = parseRequest(usageQuerySchema, req.query, "Invalid usage query");
       const usage = await service.getAccountUsage(accountId, normalizePeriodStart(query.period));
       res.status(200).json(usage);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/org-creation/users/:userId", async (req, res, next) => {
+    try {
+      const userId = parseRequest(userIdSchema, req.params.userId, "Invalid user id");
+      res.status(200).json({ override: await organizationCreationGuard.getOverride(userId) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.put("/org-creation/users/:userId", async (req, res, next) => {
+    try {
+      const userId = parseRequest(userIdSchema, req.params.userId, "Invalid user id");
+      const body = parseRequest(orgCreationOverrideBodySchema, req.body, "Invalid organization creation override payload");
+      const override = await organizationCreationGuard.upsertOverride({
+        userId,
+        monthlyLimit: body.monthlyLimit,
+      });
+      res.status(200).json({ override });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/org-creation/users/:userId", async (req, res, next) => {
+    try {
+      const userId = parseRequest(userIdSchema, req.params.userId, "Invalid user id");
+      await organizationCreationGuard.deleteOverride(userId);
+      res.status(204).end();
     } catch (error) {
       next(error);
     }

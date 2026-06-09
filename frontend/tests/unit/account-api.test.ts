@@ -1,10 +1,40 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { accountApi } from '@/lib/api'
+import { buildError } from '@/lib/api-client'
 
 describe('accountApi.getWorkspaceToken', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  it('preserves organization creation rate-limit error details', async () => {
+    const error = await buildError({
+      status: 429,
+      json: async () => ({
+        error: {
+          code: 'rate_limit_exceeded',
+          message: 'Organization creation limit reached.',
+          details: {
+            limit: 1,
+            used: 1,
+            periodStart: '2026-06-01',
+            resetAt: '2026-07-01T00:00:00.000Z',
+          },
+        },
+      }),
+    } as Response)
+
+    expect(error.error).toEqual({
+      code: 'rate_limit_exceeded',
+      message: 'Organization creation limit reached.',
+      details: {
+        limit: 1,
+        used: 1,
+        periodStart: '2026-06-01',
+        resetAt: '2026-07-01T00:00:00.000Z',
+      },
+    })
   })
 
   it('reveals the workspace token with session credentials and no bearer storage dependency', async () => {

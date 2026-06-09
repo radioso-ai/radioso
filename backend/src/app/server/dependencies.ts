@@ -35,6 +35,7 @@ import {
 } from "./dependencyBuilders.js";
 import { resolveLlmConfig } from "../../shared/infra/llm/providerConfig.js";
 import { registeredCapabilityNames } from "../../shared/domain/capabilityPolicy.js";
+import { noopOrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
 import { EmbeddingService } from "../../modules/retrieval/composition.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
@@ -233,10 +234,17 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
           await hook({ accountId, database: infrastructure.database, logger });
         }
       };
+  const organizationCreationGuardRegistration = composition.organizationCreationGuardRegistration;
+  const organizationCreationGuard = !organizationCreationGuardRegistration
+    ? noopOrganizationCreationGuard
+    : typeof organizationCreationGuardRegistration === "function"
+      ? organizationCreationGuardRegistration({ database: infrastructure.database, logger })
+      : organizationCreationGuardRegistration;
   const authService = buildAuthService({
     access,
     auditService: infrastructure.auditService,
     env,
+    organizationCreationGuard,
     onAccountCreated,
     repositories,
     workspaceService: workspace.workspaceService,
@@ -323,6 +331,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     productAnalyticsService: infrastructure.productAnalyticsService,
     capabilityPolicy: composition.capabilityPolicy,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
+    organizationCreationGuard,
     publicChatActionAdvertiser: chat.publicChatActionAdvertiser,
     contactHistoryProvider: chat.contactHistoryProvider,
     applicationRouteMounts: composition.routeMounts,

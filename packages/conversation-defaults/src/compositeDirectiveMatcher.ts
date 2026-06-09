@@ -1,5 +1,8 @@
-import type { DirectiveMatcherPort, DirectiveMatchInput } from "./directiveMatcher.js";
-import type { DirectiveMatch } from "./domain.js";
+import type {
+  DirectiveMatch,
+  DirectiveMatcherPort,
+  DirectiveMatchInput,
+} from "@radioso/conversation-contract";
 
 /**
  * Runs each delegate matcher and concatenates their matches. Used to combine the

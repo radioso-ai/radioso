@@ -1,7 +1,7 @@
-import type { Directive } from "./domain.js";
+import type { Directive, DirectiveCatalogRegistryPort } from "@radioso/conversation-contract";
 
 /** Holds the registered Directive definitions. Mirrors SkillCatalogRegistry. */
-export class DirectiveCatalogRegistry {
+export class DirectiveCatalogRegistry implements DirectiveCatalogRegistryPort {
   private readonly directives = new Map<string, Directive>();
 
   constructor(directives: Directive[] = []) {

@@ -37,6 +37,7 @@ const persistedDirective = (input: AuthoredDirectiveInput, overrides: Partial<Au
     requiredCapabilities: input.requiredCapabilities ?? [],
     dependsOn: input.dependsOn ?? [],
     excludes: input.excludes ?? [],
+    tags: input.tags ?? [],
     routes: [],
     description: input.description ?? null,
     metadata: {},
@@ -91,6 +92,7 @@ class StubAgentRepository implements StubAgentRepositoryPort {
       requiredCapabilities: input.requiredCapabilities ?? existing?.requiredCapabilities ?? [],
       dependsOn: input.dependsOn ?? existing?.dependsOn ?? [],
       excludes: input.excludes ?? existing?.excludes ?? [],
+      tags: input.tags ?? existing?.tags ?? [],
     });
     return { ...merged, id: directiveId };
   }
@@ -129,6 +131,24 @@ describe("AuthoredDirectiveService", () => {
     expect(repository.created).toHaveLength(1);
     expect(result.directive.name).toBe(repository.created[0]?.name);
     expect(result.coherence).toEqual(coherentVerdict);
+  });
+
+  it("preserves scope tags through validation, coherence, and persistence", async () => {
+    const repository = new StubAgentRepository();
+    const checker = new CapturingChecker(coherentVerdict);
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: checker,
+      registeredCapabilityNames: new Set(),
+    });
+
+    const result = await service.create(workspaceId, agentId, directiveInput({
+      tags: ["step:contact:ask_email", "step:contact:ask_email", "routine:contact"],
+    }));
+
+    expect(repository.created[0]?.tags).toEqual(["step:contact:ask_email", "routine:contact"]);
+    expect(checker.checks[0]?.candidate.tags).toEqual(["step:contact:ask_email", "routine:contact"]);
+    expect(result.directive.tags).toEqual(["step:contact:ask_email", "routine:contact"]);
   });
 
   it("rejects unknown required capabilities before persistence", async () => {

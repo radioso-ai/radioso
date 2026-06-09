@@ -3235,6 +3235,14 @@
               "maxLength": 200
             }
           },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
           "description": {
             "type": [
               "string",
@@ -3295,6 +3303,14 @@
               "maxLength": 200
             }
           },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
           "description": {
             "type": [
               "string",
@@ -3309,6 +3325,107 @@
           }
         },
         "additionalProperties": false
+      },
+      "DirectiveDraftRequest": {
+        "type": "object",
+        "properties": {
+          "coachingText": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000
+          },
+          "turn": {
+            "type": "object",
+            "properties": {
+              "userMessage": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20000
+              },
+              "assistantAnswer": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40000
+              },
+              "activeRoutineId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "activeStepId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            },
+            "required": [
+              "userMessage",
+              "assistantAnswer"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "coachingText",
+          "turn"
+        ],
+        "additionalProperties": false
+      },
+      "DirectiveDraftDirective": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "condition": {
+            "$ref": "#/components/schemas/AuthoredDirectiveCondition"
+          },
+          "action": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          }
+        },
+        "required": [
+          "name",
+          "condition",
+          "action",
+          "tags"
+        ]
+      },
+      "DirectiveDraftResponse": {
+        "type": "object",
+        "properties": {
+          "directive": {
+            "$ref": "#/components/schemas/DirectiveDraftDirective"
+          },
+          "diagnosis": {
+            "type": "string",
+            "enum": [
+              "directive_recommended",
+              "knowledge_recommended_deferred"
+            ]
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "directive",
+          "diagnosis"
+        ]
       },
       "AuthoredDirective": {
         "type": "object",
@@ -3360,6 +3477,12 @@
               "type": "string"
             }
           },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "description": {
             "type": [
               "string",
@@ -3390,6 +3513,7 @@
           "dependsOn",
           "excludes",
           "routes",
+          "tags",
           "description",
           "metadata",
           "createdAt",
@@ -11102,6 +11226,93 @@
           },
           "409": {
             "description": "Directive name already exists for this agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/directives/draft": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Draft an authored directive from coaching",
+        "operationId": "draftAgentDirective",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectiveDraftRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Directive draft returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectiveDraftResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The model did not return a valid draft",
             "content": {
               "application/json": {
                 "schema": {

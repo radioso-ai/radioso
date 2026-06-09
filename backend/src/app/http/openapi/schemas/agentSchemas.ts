@@ -234,6 +234,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     requiredCapabilities: z.array(z.string().min(1).max(200)).optional(),
     dependsOn: z.array(z.string().min(1).max(200)).optional(),
     excludes: z.array(z.string().min(1).max(200)).optional(),
+    tags: z.array(z.string().min(1).max(200)).optional(),
     description: z.string().min(1).max(1000).nullable().optional(),
     metadata: z.record(z.unknown()).optional(),
   }).strict();
@@ -246,6 +247,38 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
   const AuthoredDirectiveUpdateRequestSchema = registry.register(
     "AuthoredDirectiveUpdateRequest",
     AuthoredDirectiveRequestBaseSchema.partial().strict(),
+  );
+
+  const DirectiveDraftRequestSchema = registry.register(
+    "DirectiveDraftRequest",
+    z.object({
+      coachingText: z.string().min(1).max(20_000),
+      turn: z.object({
+        userMessage: z.string().min(1).max(20_000),
+        assistantAnswer: z.string().min(1).max(40_000),
+        activeRoutineId: z.string().min(1).max(200).optional(),
+        activeStepId: z.string().min(1).max(200).optional(),
+      }).strict(),
+    }).strict(),
+  );
+
+  const DirectiveDraftDirectiveSchema = registry.register(
+    "DirectiveDraftDirective",
+    z.object({
+      name: z.string().min(1).max(200),
+      condition: AuthoredDirectiveConditionSchema,
+      action: z.string().min(1).max(4000),
+      tags: z.array(z.string().min(1).max(200)),
+    }),
+  );
+
+  const DirectiveDraftResponseSchema = registry.register(
+    "DirectiveDraftResponse",
+    z.object({
+      directive: DirectiveDraftDirectiveSchema,
+      diagnosis: z.enum(["directive_recommended", "knowledge_recommended_deferred"]),
+      rationale: z.string().min(1).max(1000).optional(),
+    }),
   );
 
   const AuthoredDirectiveResponseSchema = registry.register(
@@ -261,6 +294,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       dependsOn: z.array(z.string()),
       excludes: z.array(z.string()),
       routes: z.array(z.string()),
+      tags: z.array(z.string()),
       description: z.string().nullable(),
       metadata: z.record(z.unknown()),
       createdAt: z.string().datetime(),
@@ -377,6 +411,8 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     AuthoredDirectiveSaveResponseSchema,
     AuthoredDirectiveUpdateRequestSchema,
     BuiltInDirectiveSchema,
+    DirectiveDraftRequestSchema,
+    DirectiveDraftResponseSchema,
     DirectiveCoherenceVerdictSchema,
     DirectiveListResponseSchema,
     PublicChatSessionResponseSchema,

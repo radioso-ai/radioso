@@ -1,6 +1,8 @@
+import type { SkillCatalogRegistryPort } from "@radioso/conversation-contract";
 import type { NamedSkillCatalogEntry } from "./skillTypes.js";
 
-export class SkillCatalogRegistry<Entry extends NamedSkillCatalogEntry = NamedSkillCatalogEntry> {
+export class SkillCatalogRegistry<Entry extends NamedSkillCatalogEntry = NamedSkillCatalogEntry>
+  implements SkillCatalogRegistryPort<Entry> {
   private readonly entries = new Map<string, Entry>();
 
   constructor(entries: Entry[] = []) {

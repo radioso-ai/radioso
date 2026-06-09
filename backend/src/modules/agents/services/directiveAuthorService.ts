@@ -49,7 +49,7 @@ export const directiveAuthorDraftSchema = z.object({
       }).strict(),
     ]),
     action: z.string().trim().min(1).max(4_000),
-    tags: z.array(z.string().trim().min(1).max(200)).optional().default([]),
+    tags: z.array(z.string().trim().min(1).max(200)).optional(),
   }).strict(),
   diagnosis: z.enum(["directive_recommended", "knowledge_recommended_deferred"]),
   rationale: z.string().trim().min(1).max(1_000).optional(),
@@ -96,8 +96,12 @@ const defaultTags = (
   input: DirectiveAuthorDraftInput,
   buildStepScopeTag: DirectiveAuthorServiceOptions["buildStepScopeTag"],
 ): string[] => {
-  if (draft.directive.tags.length > 0) {
-    return [...new Set(draft.directive.tags)];
+  const tags = draft.directive.tags;
+  if (tags && tags.length > 0) {
+    return [...new Set(tags)];
+  }
+  if (tags) {
+    return [];
   }
   const { activeRoutineId, activeStepId } = input.turn;
   return activeRoutineId && activeStepId ? [buildStepScopeTag(activeRoutineId, activeStepId)] : [];

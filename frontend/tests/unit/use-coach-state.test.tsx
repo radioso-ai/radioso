@@ -65,11 +65,12 @@ function renderCoachHook(input: {
   document.body.appendChild(container)
   const root = createRoot(container)
   let latest: HookResult | null = null
+  let currentSeed = input.seed === undefined ? seedTurn : input.seed
 
   function Harness() {
     latest = useCoachState({
       selectedAgent: agent,
-      seedTurn: input.seed === undefined ? seedTurn : input.seed,
+      seedTurn: currentSeed,
       deps: input.deps,
     })
     return null
@@ -83,6 +84,12 @@ function renderCoachHook(input: {
     get current() {
       if (!latest) throw new Error('Hook did not render')
       return latest
+    },
+    setSeed(seed: WorkbenchSeedTurn | null) {
+      currentSeed = seed
+      act(() => {
+        root.render(<Harness />)
+      })
     },
     cleanup() {
       act(() => root.unmount())
@@ -179,5 +186,47 @@ describe('coach state', () => {
     expect(hook.current.status).toBe('error')
     expect(hook.current.error).toBe('Draft failed')
     expect(deps.replay).not.toHaveBeenCalled()
+  })
+
+  it('captures a new snapshot after the seeded turn identity changes', async () => {
+    const nextSeedTurn = {
+      conversation: {
+        id: 'conversation-2',
+        conversationId: 'conversation-2',
+        messages: [
+          { id: 'user-2', role: 'user', content: 'What is next?', createdAt: '2026-06-01T11:00:00.000Z' },
+          { id: 'assistant-2', role: 'assistant', content: 'The next step is unclear.', createdAt: '2026-06-01T11:00:01.000Z' },
+        ],
+      },
+      userTurn: { id: 'user-2', role: 'user', content: 'What is next?', createdAt: '2026-06-01T11:00:00.000Z' },
+      assistantTurn: { id: 'assistant-2', role: 'assistant', content: 'The next step is unclear.', createdAt: '2026-06-01T11:00:01.000Z' },
+    } as WorkbenchSeedTurn
+    const deps = createDeps({
+      captureSnapshot: vi.fn()
+        .mockResolvedValueOnce({ id: 'snapshot-1' })
+        .mockResolvedValueOnce({ id: 'snapshot-2' }),
+    })
+    const hook = renderCoachHook({ deps })
+    roots.push(hook)
+
+    await act(async () => {
+      await hook.current.submitCoaching('Answer with release note specifics.')
+    })
+
+    hook.setSeed(nextSeedTurn)
+
+    await act(async () => {
+      await hook.current.submitCoaching('Answer with the next concrete step.')
+    })
+
+    expect(deps.captureSnapshot).toHaveBeenCalledTimes(2)
+    expect(deps.captureSnapshot).toHaveBeenNthCalledWith(2, {
+      conversationId: 'conversation-2',
+      messageId: 'assistant-2',
+    })
+    expect(deps.replay).toHaveBeenLastCalledWith({
+      snapshotId: 'snapshot-2',
+      agentConfigOverride: buildCoachReplayOverride(draft.directive),
+    })
   })
 })

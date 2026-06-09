@@ -123,6 +123,48 @@ describe("DirectiveAuthorService", () => {
     expect(result.directive.tags).toEqual(["step:contact:ask_email"]);
   });
 
+  it("keeps an explicit empty tag list global when step context is present", async () => {
+    const textGenerationClient = new FakeTextClient([validDraft({
+      directive: {
+        name: "global-answer-style",
+        condition: { kind: "always" },
+        action: "Use the requested answer style for all routine steps.",
+        tags: [],
+      },
+    })]);
+    const { service } = createService(textGenerationClient);
+
+    const result = await service.draft(workspaceId, agentId, draftInput({
+      turn: {
+        activeRoutineId: "contact",
+        activeStepId: "ask_email",
+      },
+    }));
+
+    expect(result.directive.tags).toEqual([]);
+  });
+
+  it("keeps and deduplicates explicit tags", async () => {
+    const textGenerationClient = new FakeTextClient([validDraft({
+      directive: {
+        name: "step-answer-style",
+        condition: { kind: "always" },
+        action: "Use the requested answer style for this step.",
+        tags: ["step:contact:ask_email", "step:contact:ask_email", "routine:contact"],
+      },
+    })]);
+    const { service } = createService(textGenerationClient);
+
+    const result = await service.draft(workspaceId, agentId, draftInput({
+      turn: {
+        activeRoutineId: "contact",
+        activeStepId: "ask_email",
+      },
+    }));
+
+    expect(result.directive.tags).toEqual(["step:contact:ask_email", "routine:contact"]);
+  });
+
   it("defaults an unscoped draft to global tags without step context", async () => {
     const textGenerationClient = new FakeTextClient([validDraft({
       directive: {

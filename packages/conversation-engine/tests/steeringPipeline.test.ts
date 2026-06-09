@@ -134,7 +134,7 @@ describe("one steering-list pipeline", () => {
     ]);
   });
 
-  it("passes active routine and step ids to the directive matcher on routine turns", async () => {
+  it("passes active routine and rendered step ids to the directive matcher on routine turns", async () => {
     let capturedTurn: TurnContext | null = null;
     const input = createRoutineInput({
       directiveMatcher: {
@@ -153,7 +153,7 @@ describe("one steering-list pipeline", () => {
 
     expect(capturedTurn).toMatchObject({
       activeRoutineId: "contact",
-      activeStepId: "ask_email",
+      activeStepId: "ask_message",
     });
   });
 
@@ -250,23 +250,58 @@ describe("one steering-list pipeline", () => {
 
     const result = await new DefaultConversationEngine().processTurn(input);
 
-    expect(matchedNames).toEqual([["global", "routine-match", "step-match", "non-scope"]]);
+    expect(matchedNames).toEqual([["global", "routine-match", "step-other-step", "non-scope"]]);
     expect(render).toHaveBeenCalledWith(expect.objectContaining({
       steering: [
         expect.objectContaining({ source: "routine", action: "Ask the user for the message they want to send." }),
         expect.objectContaining({ source: "directive", action: "Global action" }),
         expect.objectContaining({ source: "directive", action: "Routine action" }),
-        expect.objectContaining({ source: "directive", action: "Step action" }),
+        expect.objectContaining({ source: "directive", action: "Other step action" }),
         expect.objectContaining({ source: "directive", action: "Non-scope action" }),
       ],
     }));
     expect(result.response.answer).not.toContain("Other routine action");
-    expect(result.response.answer).not.toContain("Other step action");
+    expect(result.response.answer).not.toContain("Step action");
     expect(result.response.answer).not.toContain("Other routine step action");
     expect(result.trace.stages.at(-1)?.outputs).toMatchObject({
       candidateCount: 4,
       scopeFilteredCount: 3,
     });
+  });
+
+  it("matches routine directives against the rendered step after resume advances", async () => {
+    const matchedNames: string[][] = [];
+    const render = vi.fn(async ({ steering }) => ({
+      answer: steering.map((rule: SteeringRule) => rule.action).join(" | "),
+    }));
+    const input = createRoutineInput({
+      directives: [
+        testDirective({ name: "previous-step", action: "Previous step action", tags: ["step:contact:ask_email"] }),
+        testDirective({ name: "rendered-step", action: "Rendered step action", tags: ["step:contact:ask_message"] }),
+      ],
+      directiveMatcher: {
+        match: vi.fn(async ({ directives }) => {
+          matchedNames.push(directives.map((directive) => directive.name));
+          return directives.map((directive) => ({
+            directive,
+            selectionMode: "deterministic" as const,
+            selectionReason: "always",
+          }));
+        }),
+      },
+    }, { render });
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(matchedNames).toEqual([["rendered-step"]]);
+    expect(render).toHaveBeenCalledWith(expect.objectContaining({
+      steering: [
+        expect.objectContaining({ source: "routine", action: "Ask the user for the message they want to send." }),
+        expect.objectContaining({ source: "directive", action: "Rendered step action" }),
+      ],
+    }));
+    expect(result.response.answer).toContain("Rendered step action");
+    expect(result.response.answer).not.toContain("Previous step action");
   });
 
   it("filters routine and step scoped directives out on non-routine turns before matching", async () => {

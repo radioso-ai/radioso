@@ -2,6 +2,7 @@ import type {
   AttemptRoutineInput,
   ConversationEngine,
   ConversationEvent,
+  ConversationRoutineSteeringInput,
   ConversationTrace,
   ConversationTraceStage,
   Directive,
@@ -498,9 +499,9 @@ export class DefaultConversationEngine implements ConversationEngine {
     };
     let directiveSteeringStage: ConversationTraceStage | null = null;
     const routineSteeringResolver = {
-      resolve: async ({ baseSteering }: { baseSteering: SteeringRule[] }): Promise<SteeringRule[]> => {
+      resolve: async ({ step, baseSteering }: ConversationRoutineSteeringInput): Promise<SteeringRule[]> => {
         const resolved = await buildResolvedSteering({
-          turn,
+          turn: { ...turn, activeStepId: step.id },
           directives: input.directives,
           directiveMatcher: input.directiveMatcher,
           steeringResolver: input.steeringResolver,
@@ -520,8 +521,9 @@ export class DefaultConversationEngine implements ConversationEngine {
       return null;
     }
     if (!directiveSteeringStage) {
+      const landedStepId = result.nextState?.path.at(-1) ?? state.path.at(-1);
       const resolved = await buildResolvedSteering({
-        turn,
+        turn: { ...turn, activeStepId: landedStepId },
         directives: input.directives,
         directiveMatcher: input.directiveMatcher,
         steeringResolver: input.steeringResolver,

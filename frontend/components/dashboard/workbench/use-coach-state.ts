@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import {
   directivesApi,
@@ -82,6 +82,17 @@ export function useCoachState({
     error: null,
   })
   const [snapshotId, setSnapshotId] = useState<string | null>(null)
+  const seedIdentity = `${seedTurn?.conversation.conversationId ?? ''}:${seedTurn?.assistantTurn?.id ?? ''}`
+
+  useEffect(() => {
+    setSnapshotId(null)
+    setState({
+      status: 'idle',
+      preview: null,
+      savedDirective: null,
+      error: null,
+    })
+  }, [seedIdentity])
 
   const canSubmit = useMemo(
     () => Boolean(seedTurn?.assistantTurn) && state.status !== 'drafting' && state.status !== 'validating',

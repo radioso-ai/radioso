@@ -85,7 +85,6 @@ export interface OpenApiSchemaCatalog {
   ConversationAgentSurfaceSettingsSchema: z.ZodTypeAny;
   conversationParamsSchema: RouteParameterSchema;
   CreateAccountInvitationResponseSchema: z.ZodTypeAny;
-  CreateAccountRequestSchema: z.ZodTypeAny;
   DocumentCreateRequestSchema: z.ZodTypeAny;
   DocumentDetailsSchema: z.ZodTypeAny;
   DocumentImportRequestSchema: z.ZodTypeAny;
@@ -148,11 +147,6 @@ export interface OpenApiSchemaCatalog {
   PublicConversationSummarySchema: z.ZodTypeAny;
   RagStatusSchema: z.ZodTypeAny;
   RateLimitExceededSchema: z.ZodTypeAny;
-  OrganizationCreationRateLimitExceededSchema: z.ZodTypeAny;
-  OrganizationCreationOverrideSchema: z.ZodTypeAny;
-  OrganizationCreationOverrideResponseSchema: z.ZodTypeAny;
-  OrganizationCreationOverrideRequestSchema: z.ZodTypeAny;
-  organizationCreationUserParamsSchema: RouteParameterSchema;
   RegisterRequestSchema: z.ZodTypeAny;
   RegisterResponseSchema: z.ZodTypeAny;
   RetrievalAnswerEvidenceSchema: z.ZodTypeAny;

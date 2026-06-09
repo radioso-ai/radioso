@@ -201,8 +201,7 @@ export interface paths {
         /** List accessible accounts for the current user */
         get: operations["listAccessibleAccounts"];
         put?: never;
-        /** Create an additional organization for the current user */
-        post: operations["createOrganization"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1397,25 +1396,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/ee/usage-limits/org-creation/users/{userId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get a user's organization creation limit override */
-        get: operations["getOrganizationCreationOverride"];
-        /** Set a user's organization creation limit override */
-        put: operations["setOrganizationCreationOverride"];
-        post?: never;
-        /** Delete a user's organization creation limit override */
-        delete: operations["deleteOrganizationCreationOverride"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/public/chat/{token}": {
         parameters: {
             query?: never;
@@ -1484,34 +1464,6 @@ export interface components {
         HealthResponse: {
             /** @enum {string} */
             status: "ok";
-        };
-        OrganizationCreationRateLimitExceeded: {
-            error: {
-                /** @enum {string} */
-                code: "rate_limit_exceeded";
-                message: string;
-                details: {
-                    limit: number;
-                    used: number;
-                    periodStart: string;
-                    /** Format: date-time */
-                    resetAt: string;
-                };
-            };
-        };
-        OrganizationCreationOverride: {
-            /** Format: uuid */
-            userId: string;
-            monthlyLimit: number | null;
-            unlimited: boolean;
-            /** Format: date-time */
-            updatedAt: string;
-        };
-        OrganizationCreationOverrideResponse: {
-            override: components["schemas"]["OrganizationCreationOverride"] & (Record<string, never> | null);
-        };
-        OrganizationCreationOverrideRequest: {
-            monthlyLimit: number | null;
         };
         RegisterResponse: {
             /** Format: uuid */
@@ -1731,9 +1683,6 @@ export interface components {
         };
         CreateAccountInvitationResponse: components["schemas"]["AccountInvitation"] & {
             acceptanceUrl: string;
-        };
-        CreateAccountRequest: {
-            organizationName: string;
         };
         InvitationDetailsResponse: {
             /** Format: uuid */
@@ -4150,48 +4099,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    createOrganization: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateAccountRequest"];
-            };
-        };
-        responses: {
-            /** @description Organization created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LoginResponse"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Monthly organization creation limit reached */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrganizationCreationRateLimitExceeded"];
                 };
             };
         };
@@ -8259,101 +8166,6 @@ export interface operations {
             };
             /** @description Workbench replay rate limit exceeded */
             429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    getOrganizationCreationOverride: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                userId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Organization creation override returned */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrganizationCreationOverrideResponse"];
-                };
-            };
-            /** @description Admin token required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    setOrganizationCreationOverride: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                userId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OrganizationCreationOverrideRequest"];
-            };
-        };
-        responses: {
-            /** @description Organization creation override updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OrganizationCreationOverrideResponse"];
-                };
-            };
-            /** @description Admin token required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    deleteOrganizationCreationOverride: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                userId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Organization creation override removed */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Admin token required */
-            401: {
                 headers: {
                     [name: string]: unknown;
                 };

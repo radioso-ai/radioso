@@ -86,6 +86,7 @@ const definitionSelect = `
       'kind', st.kind,
       'instruction', st.instruction,
       'toolRef', st.tool_ref,
+      'actionType', st.action_type,
       'ordinal', st.ordinal,
       'metadata', st.metadata
     ) ORDER BY st.ordinal ASC, st.stable_step_id ASC) AS items
@@ -110,7 +111,6 @@ const definitionSelect = `
       'stableStepId', te.stable_step_id,
       'kind', te.kind,
       'instruction', te.instruction,
-      'actionType', te.action_type,
       'ordinal', te.ordinal
     ) ORDER BY te.ordinal ASC, te.stable_step_id ASC) AS items
     FROM routine_terminal te
@@ -142,6 +142,7 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
     kind: readString(step, "kind") as RoutineStepKind,
     instruction: readString(step, "instruction"),
     toolRef: readNullableString(step, "toolRef"),
+    actionType: readNullableString(step, "actionType"),
     ordinal: readNumber(step, "ordinal"),
     metadata: readMetadata(step, "metadata"),
   })),
@@ -158,7 +159,6 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
     stableStepId: readString(terminal, "stableStepId"),
     kind: readString(terminal, "kind") as RoutineTerminalKind,
     instruction: readNullableString(terminal, "instruction"),
-    actionType: readNullableString(terminal, "actionType"),
     ordinal: readNumber(terminal, "ordinal"),
   })),
   createdAt: new Date(row.created_at),
@@ -313,9 +313,18 @@ export class RoutineDefinitionRepository {
     }
     for (const step of input.steps) {
       await client.query(
-        `INSERT INTO routine_step (definition_id, stable_step_id, kind, instruction, tool_ref, ordinal, metadata)
-         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
-        [definitionId, step.stableStepId, step.kind, step.instruction, step.toolRef, step.ordinal, JSON.stringify(step.metadata)],
+        `INSERT INTO routine_step (definition_id, stable_step_id, kind, instruction, tool_ref, action_type, ordinal, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+        [
+          definitionId,
+          step.stableStepId,
+          step.kind,
+          step.instruction,
+          step.toolRef,
+          step.actionType,
+          step.ordinal,
+          JSON.stringify(step.metadata),
+        ],
       );
     }
     for (const transition of input.transitions) {
@@ -338,9 +347,9 @@ export class RoutineDefinitionRepository {
     }
     for (const terminal of input.terminals) {
       await client.query(
-        `INSERT INTO routine_terminal (definition_id, stable_step_id, kind, instruction, action_type, ordinal)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [definitionId, terminal.stableStepId, terminal.kind, terminal.instruction, terminal.actionType, terminal.ordinal],
+        `INSERT INTO routine_terminal (definition_id, stable_step_id, kind, instruction, ordinal)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [definitionId, terminal.stableStepId, terminal.kind, terminal.instruction, terminal.ordinal],
       );
     }
   }

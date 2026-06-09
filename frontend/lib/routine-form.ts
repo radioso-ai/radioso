@@ -30,6 +30,7 @@ export type RoutineStepForm = {
   kind: Exclude<RoutineStepKind, 'fork'>
   instruction: string
   toolRef: string
+  actionType: string
   transitions: RoutineTransitionForm[]
 }
 
@@ -37,7 +38,6 @@ export type RoutineTerminalForm = {
   stableStepId: string
   kind: RoutineTerminalKind
   instruction: string
-  actionType: string
 }
 
 export type RoutineFormState = {
@@ -78,13 +78,13 @@ export const createEmptyRoutineForm = (): RoutineFormState => ({
     kind: 'chat',
     instruction: '',
     toolRef: '',
+    actionType: '',
     transitions: [],
   }],
   terminals: [{
     stableStepId: 'complete',
     kind: 'complete',
     instruction: '',
-    actionType: '',
   }],
 })
 
@@ -101,6 +101,7 @@ export const createStepForm = (index: number): RoutineStepForm => ({
   kind: 'chat',
   instruction: '',
   toolRef: '',
+  actionType: '',
   transitions: [],
 })
 
@@ -108,7 +109,6 @@ export const createTerminalForm = (index: number): RoutineTerminalForm => ({
   stableStepId: `complete_${index + 1}`,
   kind: 'complete',
   instruction: '',
-  actionType: '',
 })
 
 export const createTransitionForm = (fromStep: string, toRef: string): RoutineTransitionForm => ({
@@ -153,63 +153,66 @@ export const routineToForm = (routine: RoutineDefinition): RoutineFormState => {
       kind: step.kind === 'fork' ? 'chat' : step.kind,
       instruction: step.instruction,
       toolRef: step.toolRef ?? '',
+      actionType: step.actionType ?? '',
       transitions: transitionsByStep.get(step.stableStepId) ?? [],
     })),
     terminals: [...routine.terminals].sort((left, right) => left.ordinal - right.ordinal).map((terminal) => ({
       stableStepId: terminal.stableStepId,
       kind: terminal.kind,
       instruction: terminal.instruction ?? '',
-      actionType: terminal.actionType ?? '',
     })),
   }
 }
 
-export const formToRoutineDraft = (form: RoutineFormState): RoutineDefinitionDraft => ({
-  name: form.name.trim(),
-  activation: {
-    triggerDescription: form.activation.triggerDescription.trim(),
-    priority: Number.parseInt(form.activation.priority, 10) || 0,
-  },
-  slots: form.slots.map((slot, index) => {
-    const key = slugify(slot.key, `slot_${index + 1}`).replace(/[^A-Za-z0-9_]/gu, '_')
-    return {
-      stableSlotId: slugify(slot.stableSlotId || key, `slot_${index + 1}`),
-      key,
-      type: slot.type,
-      required: slot.required,
-      description: nullableText(slot.description),
+export const formToRoutineDraft = (form: RoutineFormState): RoutineDefinitionDraft => {
+  let transitionOrdinal = 0
+  return {
+    name: form.name.trim(),
+    activation: {
+      triggerDescription: form.activation.triggerDescription.trim(),
+      priority: Number.parseInt(form.activation.priority, 10) || 0,
+    },
+    slots: form.slots.map((slot, index) => {
+      const key = slugify(slot.key, `slot_${index + 1}`).replace(/[^A-Za-z0-9_]/gu, '_')
+      return {
+        stableSlotId: slugify(slot.stableSlotId || key, `slot_${index + 1}`),
+        key,
+        type: slot.type,
+        required: slot.required,
+        description: nullableText(slot.description),
+        ordinal: index,
+      }
+    }),
+    steps: form.steps.map((step, index) => ({
+      stableStepId: slugify(step.stableStepId, `step_${index + 1}`),
+      kind: step.kind,
+      instruction: step.instruction.trim(),
+      toolRef: step.kind === 'tool' ? nullableText(step.toolRef) : null,
+      ...(step.kind === 'action' ? { actionType: nullableText(step.actionType) } : {}),
       ordinal: index,
-    }
-  }),
-  steps: form.steps.map((step, index) => ({
-    stableStepId: slugify(step.stableStepId, `step_${index + 1}`),
-    kind: step.kind,
-    instruction: step.instruction.trim(),
-    toolRef: step.kind === 'tool' ? nullableText(step.toolRef) : null,
-    ordinal: index,
-    metadata: {},
-  })),
-  transitions: form.steps.flatMap((step) =>
-    step.transitions.map((transition, index) => ({
-      fromStep: slugify(transition.fromStep || step.stableStepId, step.stableStepId),
-      toRef: slugify(transition.toRef, 'complete'),
-      guardKind: transition.guardKind,
-      guardText: nullableText(transition.guardText),
-      outcomeStatus: transition.guardKind === 'outcome' ? nullableText(transition.outcomeStatus) : null,
-      counterLimit: transition.guardKind === 'counter'
-        ? Number.parseInt(transition.counterLimit, 10) || null
-        : null,
+      metadata: {},
+    })),
+    transitions: form.steps.flatMap((step) =>
+      step.transitions.map((transition) => ({
+        fromStep: slugify(transition.fromStep || step.stableStepId, step.stableStepId),
+        toRef: slugify(transition.toRef, 'complete'),
+        guardKind: transition.guardKind,
+        guardText: nullableText(transition.guardText),
+        outcomeStatus: transition.guardKind === 'outcome' ? nullableText(transition.outcomeStatus) : null,
+        counterLimit: transition.guardKind === 'counter'
+          ? Number.parseInt(transition.counterLimit, 10) || null
+          : null,
+        ordinal: transitionOrdinal++,
+      })),
+    ),
+    terminals: form.terminals.map((terminal, index) => ({
+      stableStepId: slugify(terminal.stableStepId, `complete_${index + 1}`),
+      kind: terminal.kind,
+      instruction: nullableText(terminal.instruction),
       ordinal: index,
     })),
-  ),
-  terminals: form.terminals.map((terminal, index) => ({
-    stableStepId: slugify(terminal.stableStepId, `complete_${index + 1}`),
-    kind: terminal.kind,
-    instruction: nullableText(terminal.instruction),
-    actionType: terminal.kind === 'action' ? nullableText(terminal.actionType) : null,
-    ordinal: index,
-  })),
-})
+  }
+}
 
 export const diagnosticTargetFor = (diagnostic: RoutineValidationDiagnostic): DiagnosticTarget => {
   const [scope, rest = ''] = diagnostic.location.split(':', 2)

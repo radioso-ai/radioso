@@ -85,6 +85,16 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
           },
         };
       }
+      if (step.kind === "action") {
+        return {
+          id: step.stableStepId,
+          kind: "action",
+          actionType: step.actionType ?? undefined,
+          metadata: Object.keys(step.metadata).length > 0
+            ? { ...step.metadata, authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) }
+            : { authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) },
+        };
+      }
       return {
         id: step.stableStepId,
         kind: "chat",
@@ -95,14 +105,6 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
       };
     }),
     ...sortedTerminals.map((terminal): RoutineStep => {
-      if (terminal.kind === "action") {
-        return {
-          id: terminal.stableStepId,
-          kind: "action",
-          actionType: terminal.actionType ?? undefined,
-          metadata: { terminalKind: terminal.kind },
-        };
-      }
       return {
         id: terminal.stableStepId,
         kind: "terminal",

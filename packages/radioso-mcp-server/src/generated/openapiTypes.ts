@@ -2437,9 +2437,10 @@ export interface components {
             steps: {
                 stableStepId: string;
                 /** @enum {string} */
-                kind: "chat" | "tool" | "fork";
+                kind: "chat" | "tool" | "fork" | "action";
                 instruction: string;
                 toolRef?: string | null;
+                actionType?: string | null;
                 ordinal: number;
                 /** @default {} */
                 metadata: {
@@ -2460,9 +2461,8 @@ export interface components {
             terminals: {
                 stableStepId: string;
                 /** @enum {string} */
-                kind: "complete" | "handoff" | "action";
+                kind: "complete" | "handoff";
                 instruction?: string | null;
-                actionType?: string | null;
                 ordinal: number;
             }[];
         };
@@ -2486,9 +2486,10 @@ export interface components {
             steps: {
                 stableStepId: string;
                 /** @enum {string} */
-                kind: "chat" | "tool" | "fork";
+                kind: "chat" | "tool" | "fork" | "action";
                 instruction: string;
                 toolRef?: string | null;
+                actionType?: string | null;
                 ordinal: number;
                 /** @default {} */
                 metadata: {
@@ -2509,9 +2510,8 @@ export interface components {
             terminals: {
                 stableStepId: string;
                 /** @enum {string} */
-                kind: "complete" | "handoff" | "action";
+                kind: "complete" | "handoff";
                 instruction?: string | null;
-                actionType?: string | null;
                 ordinal: number;
             }[];
         };
@@ -2519,7 +2519,7 @@ export interface components {
             ok: boolean;
             diagnostics: {
                 /** @enum {string} */
-                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "action_capability_denied" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter";
+                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "action_capability_denied" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter";
                 location: string;
                 message: string;
             }[];
@@ -2544,9 +2544,10 @@ export interface components {
             steps: {
                 stableStepId: string;
                 /** @enum {string} */
-                kind: "chat" | "tool" | "fork";
+                kind: "chat" | "tool" | "fork" | "action";
                 instruction: string;
                 toolRef?: string | null;
+                actionType?: string | null;
                 ordinal: number;
                 /** @default {} */
                 metadata: {
@@ -2567,9 +2568,8 @@ export interface components {
             terminals: {
                 stableStepId: string;
                 /** @enum {string} */
-                kind: "complete" | "handoff" | "action";
+                kind: "complete" | "handoff";
                 instruction?: string | null;
-                actionType?: string | null;
                 ordinal: number;
             }[];
             /** Format: uuid */

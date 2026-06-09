@@ -14,7 +14,7 @@ const definition: RoutineDefinition = {
   slots: [],
   steps: [{ stableStepId: "ask", kind: "chat", instruction: "Ask what they need.", toolRef: null, ordinal: 0, metadata: {} }],
   transitions: [{ fromStep: "ask", toRef: "done", guardKind: "llm", guardText: "The user answered.", ordinal: 0 }],
-  terminals: [{ stableStepId: "done", kind: "complete", instruction: "Confirm.", actionType: null, ordinal: 0 }],
+  terminals: [{ stableStepId: "done", kind: "complete", instruction: "Confirm.", ordinal: 0 }],
   createdAt: new Date("2026-06-09T00:00:00.000Z"),
   updatedAt: new Date("2026-06-09T00:00:00.000Z"),
 };

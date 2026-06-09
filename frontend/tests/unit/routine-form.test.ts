@@ -52,7 +52,6 @@ const routine = {
     stableStepId: 'complete',
     kind: 'complete',
     instruction: null,
-    actionType: null,
     ordinal: 0,
   }],
 } satisfies RoutineDefinition
@@ -109,6 +108,63 @@ describe('routine form transforms', () => {
       }],
       transitions: [{ fromStep: 'step_1', toRef: 'complete', guardKind: 'always' }],
     })
+  })
+
+  it('round-trips an action step with its action type and transition', () => {
+    const actionRoutine: RoutineDefinition = {
+      ...routine,
+      steps: [
+        ...routine.steps,
+        {
+          stableStepId: 'send',
+          kind: 'action',
+          instruction: 'Emit the contact request.',
+          toolRef: null,
+          actionType: 'contact.send',
+          ordinal: 1,
+          metadata: {},
+        },
+      ],
+      transitions: [
+        {
+          fromStep: 'ask_email',
+          toRef: 'send',
+          guardKind: 'always',
+          guardText: null,
+          outcomeStatus: null,
+          counterLimit: null,
+          ordinal: 0,
+        },
+        {
+          fromStep: 'send',
+          toRef: 'complete',
+          guardKind: 'always',
+          guardText: null,
+          outcomeStatus: null,
+          counterLimit: null,
+          ordinal: 1,
+        },
+      ],
+    }
+
+    const form = routineToForm(actionRoutine)
+
+    expect(form.steps[1]).toMatchObject({
+      stableStepId: 'send',
+      kind: 'action',
+      actionType: 'contact.send',
+      transitions: [{
+        fromStep: 'send',
+        toRef: 'complete',
+        guardKind: 'always',
+      }],
+    })
+    expect(formToRoutineDraft(form).steps[1]).toMatchObject({
+      stableStepId: 'send',
+      kind: 'action',
+      actionType: 'contact.send',
+    })
+    expect(formToRoutineDraft(form).transitions).toEqual(actionRoutine.transitions)
   })
 })
 

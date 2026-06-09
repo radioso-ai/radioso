@@ -36,7 +36,7 @@ const draftInput = () => ({
     { fromStep: "ask_name", toRef: "done", guardKind: "counter" as const, guardText: "2", ordinal: 0 },
   ],
   terminals: [
-    { stableStepId: "done", kind: "complete" as const, instruction: "Confirm completion.", actionType: null, ordinal: 0 },
+    { stableStepId: "done", kind: "complete" as const, instruction: "Confirm completion.", ordinal: 0 },
   ],
 });
 
@@ -59,7 +59,7 @@ const loadedRow = () => ({
     { fromStep: "ask_name", toRef: "done", guardKind: "counter", guardText: "2", ordinal: 0 },
   ],
   terminals: [
-    { stableStepId: "done", kind: "complete", instruction: "Confirm completion.", actionType: null, ordinal: 0 },
+    { stableStepId: "done", kind: "complete", instruction: "Confirm completion.", ordinal: 0 },
   ],
   created_at: new Date("2026-06-09T00:00:00.000Z"),
   updated_at: new Date("2026-06-09T00:00:00.000Z"),
@@ -82,7 +82,7 @@ describe("RoutineDefinitionRepository", () => {
       slots: [{ stableSlotId: "slot_name", key: "name", type: "text", required: true, description: "Visitor name.", ordinal: 0 }],
       steps: [{ stableStepId: "ask_name", kind: "chat", instruction: "Ask for {{slot.name}}.", toolRef: null, ordinal: 0, metadata: {} }],
       transitions: [{ fromStep: "ask_name", toRef: "done", guardKind: "counter", guardText: "2", ordinal: 0 }],
-      terminals: [{ stableStepId: "done", kind: "complete", instruction: "Confirm completion.", actionType: null, ordinal: 0 }],
+      terminals: [{ stableStepId: "done", kind: "complete", instruction: "Confirm completion.", ordinal: 0 }],
       createdAt: new Date("2026-06-09T00:00:00.000Z"),
       updatedAt: new Date("2026-06-09T00:00:00.000Z"),
     });

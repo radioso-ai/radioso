@@ -44,7 +44,8 @@ import {
 
 const slotTypes: RoutineSlotType[] = ['text', 'number', 'boolean', 'email', 'date']
 const guardKinds: RoutineGuardKind[] = ['always', 'llm', 'slot_filled', 'outcome', 'counter', 'fallback']
-const terminalKinds: RoutineTerminalKind[] = ['complete', 'handoff', 'action']
+const stepKinds: Array<'chat' | 'tool' | 'action'> = ['chat', 'tool', 'action']
+const terminalKinds: RoutineTerminalKind[] = ['complete', 'handoff']
 
 const optionLabel = (value: string) => value.replace(/_/gu, ' ')
 
@@ -58,8 +59,8 @@ const formError = (form: RoutineFormState): string | null => {
   if (form.steps.some((step) => step.kind === 'tool' && !step.toolRef.trim())) {
     return 'Tool steps need a tool reference.'
   }
-  if (form.terminals.some((terminal) => terminal.kind === 'action' && !terminal.actionType.trim())) {
-    return 'Action terminals need an action type.'
+  if (form.steps.some((step) => step.kind === 'action' && !step.actionType.trim())) {
+    return 'Action steps need an action type.'
   }
   return null
 }
@@ -479,20 +480,24 @@ export function AssistantRoutinesSection({
                     }))} />
                     <Select value={step.kind} disabled={editingRoutine?.status === 'published'} onValueChange={(value) => updateForm((current) => ({
                       ...current,
-                      steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? { ...item, kind: value as 'chat' | 'tool' } : item),
+                      steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? { ...item, kind: value as 'chat' | 'tool' | 'action' } : item),
                     }))}>
                       <SelectTrigger aria-label={`Step ${stepIndex + 1} kind`}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="chat">chat</SelectItem>
-                        <SelectItem value="tool">tool</SelectItem>
+                        {stepKinds.map((kind) => <SelectItem key={kind} value={kind}>{kind}</SelectItem>)}
                       </SelectContent>
                     </Select>
                     {step.kind === 'tool' ? (
                       <Input aria-label={`Step ${stepIndex + 1} tool reference`} value={step.toolRef} disabled={editingRoutine?.status === 'published'} onChange={(event) => updateForm((current) => ({
                         ...current,
                         steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? { ...item, toolRef: event.target.value } : item),
+                      }))} />
+                    ) : step.kind === 'action' ? (
+                      <Input aria-label={`Step ${stepIndex + 1} action type`} value={step.actionType} disabled={editingRoutine?.status === 'published'} onChange={(event) => updateForm((current) => ({
+                        ...current,
+                        steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? { ...item, actionType: event.target.value } : item),
                       }))} />
                     ) : <div />}
                     <Button type="button" variant="ghost" size="sm" disabled={editingRoutine?.status === 'published'} onClick={() => updateForm((current) => ({
@@ -643,17 +648,10 @@ export function AssistantRoutinesSection({
                       {terminalKinds.map((kind) => <SelectItem key={kind} value={kind}>{kind}</SelectItem>)}
                     </SelectContent>
                   </Select>
-                  {terminal.kind === 'action' ? (
-                    <Input aria-label={`Terminal ${index + 1} action type`} value={terminal.actionType} disabled={editingRoutine?.status === 'published'} onChange={(event) => updateForm((current) => ({
-                      ...current,
-                      terminals: current.terminals.map((item, itemIndex) => itemIndex === index ? { ...item, actionType: event.target.value } : item),
-                    }))} />
-                  ) : (
-                    <Input aria-label={`Terminal ${index + 1} instruction`} value={terminal.instruction} disabled={editingRoutine?.status === 'published'} onChange={(event) => updateForm((current) => ({
-                      ...current,
-                      terminals: current.terminals.map((item, itemIndex) => itemIndex === index ? { ...item, instruction: event.target.value } : item),
-                    }))} />
-                  )}
+                  <Input aria-label={`Terminal ${index + 1} instruction`} value={terminal.instruction} disabled={editingRoutine?.status === 'published'} onChange={(event) => updateForm((current) => ({
+                    ...current,
+                    terminals: current.terminals.map((item, itemIndex) => itemIndex === index ? { ...item, instruction: event.target.value } : item),
+                  }))} />
                   <Button type="button" variant="ghost" size="sm" disabled={editingRoutine?.status === 'published'} onClick={() => updateForm((current) => ({
                     ...current,
                     terminals: current.terminals.filter((_, itemIndex) => itemIndex !== index),

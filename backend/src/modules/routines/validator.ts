@@ -5,6 +5,7 @@ export const routineValidationCodes = [
   "missing_terminal",
   "dangling_action_reference",
   "dangling_step_reference",
+  "missing_action_follow_up",
   "declared_unused_slot",
   "referenced_undeclared_slot",
   "unregistered_action_type",
@@ -52,11 +53,6 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
   const steps = [...definition.steps].sort((left, right) => left.ordinal - right.ordinal);
   const terminals = [...definition.terminals].sort((left, right) => left.ordinal - right.ordinal);
   const stepIds = new Set(steps.map((step) => step.stableStepId));
-  const actionTerminalIds = new Set(
-    terminals
-      .filter((terminal) => terminal.kind === "action")
-      .map((terminal) => terminal.stableStepId),
-  );
   const stepById = new Map(steps.map((step) => [step.stableStepId, step]));
   const terminalIds = new Set(terminals.map((terminal) => terminal.stableStepId));
   const nodeIds = new Set([...stepIds, ...terminalIds]);
@@ -77,24 +73,21 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
         message: `dangling action reference: step "${step.stableStepId}" is a tool step but has no tool reference.`,
       });
     }
-  }
-
-  for (const terminal of terminals) {
-    if (terminal.kind === "action" && !terminal.actionType) {
+    if (step.kind === "action" && !step.actionType) {
       diagnostics.push({
         code: "dangling_action_reference",
-        location: `terminal:${terminal.stableStepId}`,
-        message: `dangling action reference: terminal "${terminal.stableStepId}" is an action terminal but has no action type.`,
+        location: `step:${step.stableStepId}`,
+        message: `dangling action reference: step "${step.stableStepId}" is an action step but has no action type.`,
       });
     }
   }
 
   for (const transition of definition.transitions) {
-    if (!stepIds.has(transition.fromStep) && !actionTerminalIds.has(transition.fromStep)) {
+    if (!stepIds.has(transition.fromStep)) {
       diagnostics.push({
         code: "dangling_step_reference",
         location: `transition:${transition.fromStep}->${transition.toRef}`,
-        message: `dangling step reference: transition starts at unknown step or action terminal "${transition.fromStep}".`,
+        message: `dangling step reference: transition starts at unknown step "${transition.fromStep}".`,
       });
     }
     if (!nodeIds.has(transition.toRef)) {
@@ -140,6 +133,22 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
   for (const transition of definition.transitions) {
     for (const key of collectSlotReferences(transition.guardText)) {
       referencedSlotKeys.add(key);
+    }
+  }
+
+  for (const step of steps) {
+    if (step.kind !== "action") {
+      continue;
+    }
+    const hasReachableFollowUp = definition.transitions.some((transition) =>
+      transition.fromStep === step.stableStepId && nodeIds.has(transition.toRef)
+    );
+    if (!hasReachableFollowUp) {
+      diagnostics.push({
+        code: "missing_action_follow_up",
+        location: `step:${step.stableStepId}`,
+        message: `missing action follow-up: action step "${step.stableStepId}" must declare an outgoing transition to another step or terminal.`,
+      });
     }
   }
   for (const terminal of terminals) {

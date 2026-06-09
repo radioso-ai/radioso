@@ -53,6 +53,15 @@ export const contactRoutineDefinition: RoutineDefinition = {
       ordinal: 1,
       metadata: {},
     },
+    {
+      stableStepId: "send",
+      kind: "action",
+      instruction: "Emit the contact request.",
+      toolRef: null,
+      actionType: CONTACT_SEND_ACTION_TYPE,
+      ordinal: 2,
+      metadata: {},
+    },
   ],
   transitions: [
     {
@@ -93,25 +102,16 @@ export const contactRoutineDefinition: RoutineDefinition = {
   ],
   terminals: [
     {
-      stableStepId: "send",
-      kind: "action",
-      instruction: null,
-      actionType: CONTACT_SEND_ACTION_TYPE,
-      ordinal: 0,
-    },
-    {
       stableStepId: "done",
       kind: "complete",
       instruction: "Confirm their request was sent and that someone will follow up. Ask what you can help with next.",
-      actionType: null,
-      ordinal: 1,
+      ordinal: 0,
     },
     {
       stableStepId: "cancelled",
       kind: "complete",
       instruction: "Acknowledge that the contact request was cancelled and that they do not need to provide anything else.",
-      actionType: null,
-      ordinal: 2,
+      ordinal: 1,
     },
   ],
   createdAt: new Date("2026-06-09T00:00:00.000Z"),

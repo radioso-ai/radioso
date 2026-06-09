@@ -56,7 +56,6 @@ const routineDraft = {
     stableStepId: 'complete',
     kind: 'complete' as const,
     instruction: null,
-    actionType: null,
     ordinal: 0,
   }],
 }

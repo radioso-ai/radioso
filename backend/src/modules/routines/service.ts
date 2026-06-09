@@ -183,26 +183,26 @@ export class RoutineDefinitionService {
     }
 
     const diagnostics: RoutineValidationDiagnostic[] = [...validation.diagnostics];
-    for (const terminal of routine.terminals) {
-      if (terminal.kind !== "action" || !terminal.actionType) {
+    for (const step of routine.steps) {
+      if (step.kind !== "action" || !step.actionType) {
         continue;
       }
-      if (!this.options.actionCapabilities.has(terminal.actionType)) {
+      if (!this.options.actionCapabilities.has(step.actionType)) {
         diagnostics.push({
           code: "unregistered_action_type",
-          location: `terminal:${terminal.stableStepId}`,
-          message: `unregistered action type: action terminal "${terminal.stableStepId}" references "${terminal.actionType}", but no action handler is registered for that type.`,
+          location: `step:${step.stableStepId}`,
+          message: `unregistered action type: action step "${step.stableStepId}" references "${step.actionType}", but no action handler is registered for that type.`,
         });
         continue;
       }
 
-      for (const capability of this.options.actionCapabilities.requiredCapabilitiesFor(terminal.actionType)) {
+      for (const capability of this.options.actionCapabilities.requiredCapabilitiesFor(step.actionType)) {
         const decision = await this.capabilityPolicy.can({ capability, workspaceId });
         if (!decision.allowed) {
           diagnostics.push({
             code: "action_capability_denied",
-            location: `terminal:${terminal.stableStepId}`,
-            message: `action capability denied: action "${terminal.actionType}" requires capability "${capability}" for this workspace.`,
+            location: `step:${step.stableStepId}`,
+            message: `action capability denied: action "${step.actionType}" requires capability "${capability}" for this workspace.`,
           });
         }
       }

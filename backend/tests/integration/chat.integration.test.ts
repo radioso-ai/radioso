@@ -80,7 +80,6 @@ const supportIntakeRoutineDraft = (): RoutineDefinitionDraftInput => ({
     stableStepId: "terminal_complete",
     kind: "complete",
     instruction: "Complete intake for {{slot.topic}}.",
-    actionType: null,
     ordinal: 1,
   }],
 });

@@ -90,7 +90,6 @@ test("agent routines settings create, validate, publish, and persist", async ({ 
         stableStepId: "complete",
         kind: "complete",
         instruction: "Confirm the request was captured.",
-        actionType: null,
         ordinal: 0,
       }],
     },

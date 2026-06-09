@@ -41,7 +41,7 @@ const baseDefinition = (): RoutineDefinition => ({
     { fromStep: "ask_topic", toRef: "done", guardKind: "llm", guardText: "The user provided {{slot.topic}}.", ordinal: 1 },
   ],
   terminals: [
-    { stableStepId: "done", kind: "complete", instruction: "Confirm completion.", actionType: null, ordinal: 0 },
+    { stableStepId: "done", kind: "complete", instruction: "Confirm completion.", ordinal: 0 },
   ],
   createdAt: new Date("2026-06-09T00:00:00.000Z"),
   updatedAt: new Date("2026-06-09T00:00:00.000Z"),
@@ -92,8 +92,8 @@ describe("routine definition compiler and validator", () => {
         { fromStep: "lookup", toRef: "handoff", guardKind: "fallback", guardText: null, ordinal: 3 },
       ],
       terminals: [
-        { stableStepId: "done", kind: "complete", instruction: "Confirm completion.", actionType: null, ordinal: 0 },
-        { stableStepId: "handoff", kind: "handoff", instruction: "Route to a human.", actionType: null, ordinal: 1 },
+        { stableStepId: "done", kind: "complete", instruction: "Confirm completion.", ordinal: 0 },
+        { stableStepId: "handoff", kind: "handoff", instruction: "Route to a human.", ordinal: 1 },
       ],
     };
 
@@ -114,7 +114,29 @@ describe("routine definition compiler and validator", () => {
   it.each([
     ["unreachable step", (def: RoutineDefinition) => ({ ...def, steps: [...def.steps, { stableStepId: "orphan", kind: "chat" as const, instruction: "Ask for {{slot.name}}.", toolRef: null, ordinal: 2, metadata: {} }] })],
     ["missing terminal", (def: RoutineDefinition) => ({ ...def, terminals: [] })],
-    ["dangling action reference", (def: RoutineDefinition) => ({ ...def, terminals: [{ ...def.terminals[0]!, kind: "action" as const, actionType: null }] })],
+    ["dangling action reference", (def: RoutineDefinition) => ({
+      ...def,
+      steps: [
+        ...def.steps,
+        { stableStepId: "send", kind: "action" as const, instruction: "Emit side effect.", toolRef: null, actionType: null, ordinal: 2, metadata: {} },
+      ],
+      transitions: [
+        ...def.transitions,
+        { fromStep: "ask_topic", toRef: "send", guardKind: "always" as const, guardText: null, ordinal: 1 },
+        { fromStep: "send", toRef: "done", guardKind: "always" as const, guardText: null, ordinal: 2 },
+      ],
+    })],
+    ["missing action follow-up", (def: RoutineDefinition) => ({
+      ...def,
+      steps: [
+        ...def.steps,
+        { stableStepId: "send", kind: "action" as const, instruction: "Emit side effect.", toolRef: null, actionType: "contact.send", ordinal: 2, metadata: {} },
+      ],
+      transitions: [
+        { fromStep: "ask_name", toRef: "ask_topic", guardKind: "llm" as const, guardText: "The user provided {{slot.name}}.", ordinal: 0 },
+        { fromStep: "ask_topic", toRef: "send", guardKind: "llm" as const, guardText: "The user provided {{slot.topic}}.", ordinal: 1 },
+      ],
+    })],
     ["declared-but-unused slot", (def: RoutineDefinition) => ({ ...def, slots: [...def.slots, { stableSlotId: "slot_unused", key: "unused", type: "text" as const, required: false, description: null, ordinal: 2 }] })],
     ["referenced-but-undeclared slot", (def: RoutineDefinition) => ({ ...def, steps: [{ ...def.steps[0]!, instruction: "Ask for {{slot.missing}}." }, def.steps[1]!] })],
     ["attempt-limit-without-fallback", (def: RoutineDefinition) => ({ ...def, steps: [{ ...def.steps[0]!, metadata: { attemptLimit: 2 } }, def.steps[1]!] })],
@@ -161,6 +183,34 @@ describe("routine definition compiler and validator", () => {
       code: "outcome_guard_on_non_tool_step",
       location: "transition:ask_name->ask_topic",
     }));
+  });
+
+  it("compiles an action step with its authored follow-up transition", () => {
+    const definition: RoutineDefinition = {
+      ...baseDefinition(),
+      steps: [
+        ...baseDefinition().steps,
+        { stableStepId: "send", kind: "action", instruction: "Emit side effect.", toolRef: null, actionType: "contact.send", ordinal: 2, metadata: {} },
+      ],
+      transitions: [
+        { fromStep: "ask_name", toRef: "ask_topic", guardKind: "llm", guardText: "The user provided {{slot.name}}.", ordinal: 0 },
+        { fromStep: "ask_topic", toRef: "send", guardKind: "llm", guardText: "The user provided {{slot.topic}}.", ordinal: 1 },
+        { fromStep: "send", toRef: "done", guardKind: "always", guardText: null, ordinal: 2 },
+      ],
+    };
+
+    const routine = compileRoutineDefinition(definition);
+
+    expect(routine.steps).toContainEqual(expect.objectContaining({
+      id: "send",
+      kind: "action",
+      actionType: "contact.send",
+    }));
+    expect(routine.transitions).toContainEqual({
+      from: "send",
+      to: "done",
+      condition: "always",
+    });
   });
 
   it("runs an authored two-slot/two-step compiled routine through the existing 069 runtime", async () => {

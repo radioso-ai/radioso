@@ -2521,11 +2521,18 @@ components:
                   - chat
                   - tool
                   - fork
+                  - action
               instruction:
                 type: string
                 minLength: 1
                 maxLength: 4000
               toolRef:
+                type:
+                  - string
+                  - "null"
+                minLength: 1
+                maxLength: 300
+              actionType:
                 type:
                   - string
                   - "null"
@@ -2611,19 +2618,12 @@ components:
                 enum: &a19
                   - complete
                   - handoff
-                  - action
               instruction:
                 type:
                   - string
                   - "null"
                 minLength: 1
                 maxLength: 4000
-              actionType:
-                type:
-                  - string
-                  - "null"
-                minLength: 1
-                maxLength: 300
               ordinal:
                 type: integer
                 minimum: 0
@@ -2725,6 +2725,12 @@ components:
                   - "null"
                 minLength: 1
                 maxLength: 300
+              actionType:
+                type:
+                  - string
+                  - "null"
+                minLength: 1
+                maxLength: 300
               ordinal:
                 type: integer
                 minimum: 0
@@ -2803,12 +2809,6 @@ components:
                   - "null"
                 minLength: 1
                 maxLength: 4000
-              actionType:
-                type:
-                  - string
-                  - "null"
-                minLength: 1
-                maxLength: 300
               ordinal:
                 type: integer
                 minimum: 0
@@ -2841,6 +2841,7 @@ components:
                   - missing_terminal
                   - dangling_action_reference
                   - dangling_step_reference
+                  - missing_action_follow_up
                   - declared_unused_slot
                   - referenced_undeclared_slot
                   - unregistered_action_type
@@ -2945,6 +2946,12 @@ components:
                   - "null"
                 minLength: 1
                 maxLength: 300
+              actionType:
+                type:
+                  - string
+                  - "null"
+                minLength: 1
+                maxLength: 300
               ordinal:
                 type: integer
                 minimum: 0
@@ -3023,12 +3030,6 @@ components:
                   - "null"
                 minLength: 1
                 maxLength: 4000
-              actionType:
-                type:
-                  - string
-                  - "null"
-                minLength: 1
-                maxLength: 300
               ordinal:
                 type: integer
                 minimum: 0

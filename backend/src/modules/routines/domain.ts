@@ -15,9 +15,9 @@ export const ROUTINE_DEFINITION_LIMITS = {
 
 export const routineDefinitionStatuses = ["draft", "published"] as const;
 export const routineSlotTypes = ["text", "number", "boolean", "email", "date"] as const;
-export const routineStepKinds = ["chat", "tool", "fork"] as const;
+export const routineStepKinds = ["chat", "tool", "fork", "action"] as const;
 export const routineGuardKinds = ["llm", "always", "fallback", "slot_filled", "outcome", "counter"] as const;
-export const routineTerminalKinds = ["complete", "handoff", "action"] as const;
+export const routineTerminalKinds = ["complete", "handoff"] as const;
 
 const identifierPattern = /^[A-Za-z_][A-Za-z0-9_.-]*$/u;
 const slotKeyPattern = /^[A-Za-z_][A-Za-z0-9_]*$/u;
@@ -29,6 +29,9 @@ const optionalTrimmedText = (maxLength: number) =>
   z.string().trim().min(1).max(maxLength).optional().nullable().transform((value) => value ?? null);
 
 const optionalStructuredParamText = (maxLength: number) =>
+  z.string().trim().min(1).max(maxLength).optional().nullable();
+
+const optionalAuthoringParamText = (maxLength: number) =>
   z.string().trim().min(1).max(maxLength).optional().nullable();
 
 const stableIdSchema = trimmedText(ROUTINE_DEFINITION_LIMITS.stableId).regex(identifierPattern);
@@ -47,6 +50,7 @@ export const routineStepSchema = z.object({
   kind: z.enum(routineStepKinds),
   instruction: trimmedText(ROUTINE_DEFINITION_LIMITS.instruction),
   toolRef: optionalTrimmedText(ROUTINE_DEFINITION_LIMITS.toolRef),
+  actionType: optionalAuthoringParamText(ROUTINE_DEFINITION_LIMITS.actionType),
   ordinal: z.number().int().min(0),
   metadata: z.record(z.unknown()).optional().default({}),
 }).strict();
@@ -65,7 +69,6 @@ export const routineTerminalSchema = z.object({
   stableStepId: stableIdSchema,
   kind: z.enum(routineTerminalKinds),
   instruction: optionalTrimmedText(ROUTINE_DEFINITION_LIMITS.instruction),
-  actionType: optionalTrimmedText(ROUTINE_DEFINITION_LIMITS.actionType),
   ordinal: z.number().int().min(0),
 }).strict();
 

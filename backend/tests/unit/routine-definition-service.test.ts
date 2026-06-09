@@ -120,7 +120,6 @@ const validDraft = (): RoutineDefinitionDraftInput => ({
     stableStepId: "terminal_complete",
     kind: "complete",
     instruction: "Complete intake for {{slot.topic}}.",
-    actionType: null,
     ordinal: 1,
   }],
 });
@@ -137,20 +136,31 @@ const invalidDraft = (): RoutineDefinitionDraftInput => ({
   }],
 });
 
-const actionDraft = (actionType: string): RoutineDefinitionDraftInput => ({
+const actionDraft = (actionType: string | null): RoutineDefinitionDraftInput => ({
   ...validDraft(),
+  steps: [
+    ...validDraft().steps,
+    {
+      stableStepId: "step_send",
+      kind: "action",
+      instruction: "Emit the contact request.",
+      toolRef: null,
+      actionType,
+      ordinal: 1,
+      metadata: {},
+    },
+  ],
   transitions: [{
     fromStep: "step_collect_topic",
-    toRef: "terminal_action",
+    toRef: "step_send",
     guardKind: "always",
     guardText: null,
     ordinal: 0,
-  }],
-  terminals: [{
-    stableStepId: "terminal_action",
-    kind: "action",
-    instruction: null,
-    actionType,
+  }, {
+    fromStep: "step_send",
+    toRef: "terminal_complete",
+    guardKind: "always",
+    guardText: null,
     ordinal: 1,
   }],
 });
@@ -243,7 +253,58 @@ describe("RoutineDefinitionService", () => {
     });
   });
 
-  it("rejects publishing an action terminal when the workspace lacks the required capability", async () => {
+  it("rejects publishing an action step with no follow-up", async () => {
+    const { repository, service } = createService();
+    const draft = await service.createDraft(workspaceId, agentId, {
+      ...actionDraft("contact.send"),
+      transitions: [{
+        fromStep: "step_collect_topic",
+        toRef: "step_send",
+        guardKind: "always",
+        guardText: null,
+        ordinal: 0,
+      }],
+    });
+
+    const result = await service.publish(workspaceId, agentId, draft.routine.id);
+
+    expect(result).toMatchObject({
+      rejected: true,
+      validation: {
+        ok: false,
+        diagnostics: expect.arrayContaining([
+          expect.objectContaining({
+            code: "missing_action_follow_up",
+            location: "step:step_send",
+          }),
+        ]),
+      },
+    });
+    expect(await repository.listByAgent(agentId)).toHaveLength(1);
+  });
+
+  it("rejects publishing an action step without an action type", async () => {
+    const { repository, service } = createService();
+    const draft = await service.createDraft(workspaceId, agentId, actionDraft(null));
+
+    const result = await service.publish(workspaceId, agentId, draft.routine.id);
+
+    expect(result).toMatchObject({
+      rejected: true,
+      validation: {
+        ok: false,
+        diagnostics: [
+          expect.objectContaining({
+            code: "dangling_action_reference",
+            location: "step:step_send",
+          }),
+        ],
+      },
+    });
+    expect(await repository.listByAgent(agentId)).toHaveLength(1);
+  });
+
+  it("rejects publishing an action step when the workspace lacks the required capability", async () => {
     const { repository, service } = createService({
       actionCapabilities: new FakeActionCapabilityMap(new Map([
         ["contact.send", [capabilityNames.humanContact.request]],
@@ -261,7 +322,7 @@ describe("RoutineDefinitionService", () => {
         diagnostics: [
           expect.objectContaining({
             code: "action_capability_denied",
-            location: "terminal:terminal_action",
+            location: "step:step_send",
           }),
         ],
       },
@@ -271,7 +332,7 @@ describe("RoutineDefinitionService", () => {
     expect(await repository.listByAgent(agentId)).toHaveLength(1);
   });
 
-  it("rejects publishing an action terminal for an unregistered action type", async () => {
+  it("rejects publishing an action step for an unregistered action type", async () => {
     const { service } = createService({
       actionCapabilities: new FakeActionCapabilityMap(new Map()),
       capabilityPolicy: new FakeCapabilityPolicy(),
@@ -287,7 +348,7 @@ describe("RoutineDefinitionService", () => {
         diagnostics: [
           expect.objectContaining({
             code: "unregistered_action_type",
-            location: "terminal:terminal_action",
+            location: "step:step_send",
           }),
         ],
       },
@@ -295,7 +356,7 @@ describe("RoutineDefinitionService", () => {
     expect("rejected" in result && result.validation.diagnostics[0]?.message).toContain("unknown.send");
   });
 
-  it("publishes an action terminal when the workspace has the required capability", async () => {
+  it("publishes an action step when the workspace has the required capability", async () => {
     const { service } = createService({
       actionCapabilities: new FakeActionCapabilityMap(new Map([
         ["contact.send", [capabilityNames.humanContact.request]],

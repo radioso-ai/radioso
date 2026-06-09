@@ -51,14 +51,15 @@ export type DirectiveDraftDirective = ApiSchemas['DirectiveDraftDirective']
 
 export type RoutineDefinitionStatus = 'draft' | 'published'
 export type RoutineSlotType = 'text' | 'number' | 'boolean' | 'email' | 'date'
-export type RoutineStepKind = 'chat' | 'tool' | 'fork'
+export type RoutineStepKind = 'chat' | 'tool' | 'fork' | 'action'
 export type RoutineGuardKind = 'llm' | 'always' | 'fallback' | 'slot_filled' | 'outcome' | 'counter'
-export type RoutineTerminalKind = 'complete' | 'handoff' | 'action'
+export type RoutineTerminalKind = 'complete' | 'handoff'
 export type RoutineValidationCode =
   | 'unreachable_step'
   | 'missing_terminal'
   | 'dangling_action_reference'
   | 'dangling_step_reference'
+  | 'missing_action_follow_up'
   | 'declared_unused_slot'
   | 'referenced_undeclared_slot'
   | 'unregistered_action_type'

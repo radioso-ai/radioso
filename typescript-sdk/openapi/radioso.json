@@ -3730,7 +3730,8 @@
                   "enum": [
                     "chat",
                     "tool",
-                    "fork"
+                    "fork",
+                    "action"
                   ]
                 },
                 "instruction": {
@@ -3739,6 +3740,14 @@
                   "maxLength": 4000
                 },
                 "toolRef": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "actionType": {
                   "type": [
                     "string",
                     "null"
@@ -3847,8 +3856,7 @@
                   "type": "string",
                   "enum": [
                     "complete",
-                    "handoff",
-                    "action"
+                    "handoff"
                   ]
                 },
                 "instruction": {
@@ -3858,14 +3866,6 @@
                   ],
                   "minLength": 1,
                   "maxLength": 4000
-                },
-                "actionType": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "minLength": 1,
-                  "maxLength": 300
                 },
                 "ordinal": {
                   "type": "integer",
@@ -3994,7 +3994,8 @@
                   "enum": [
                     "chat",
                     "tool",
-                    "fork"
+                    "fork",
+                    "action"
                   ]
                 },
                 "instruction": {
@@ -4003,6 +4004,14 @@
                   "maxLength": 4000
                 },
                 "toolRef": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "actionType": {
                   "type": [
                     "string",
                     "null"
@@ -4111,8 +4120,7 @@
                   "type": "string",
                   "enum": [
                     "complete",
-                    "handoff",
-                    "action"
+                    "handoff"
                   ]
                 },
                 "instruction": {
@@ -4122,14 +4130,6 @@
                   ],
                   "minLength": 1,
                   "maxLength": 4000
-                },
-                "actionType": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "minLength": 1,
-                  "maxLength": 300
                 },
                 "ordinal": {
                   "type": "integer",
@@ -4172,6 +4172,7 @@
                     "missing_terminal",
                     "dangling_action_reference",
                     "dangling_step_reference",
+                    "missing_action_follow_up",
                     "declared_unused_slot",
                     "referenced_undeclared_slot",
                     "unregistered_action_type",
@@ -4305,7 +4306,8 @@
                   "enum": [
                     "chat",
                     "tool",
-                    "fork"
+                    "fork",
+                    "action"
                   ]
                 },
                 "instruction": {
@@ -4314,6 +4316,14 @@
                   "maxLength": 4000
                 },
                 "toolRef": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "actionType": {
                   "type": [
                     "string",
                     "null"
@@ -4422,8 +4432,7 @@
                   "type": "string",
                   "enum": [
                     "complete",
-                    "handoff",
-                    "action"
+                    "handoff"
                   ]
                 },
                 "instruction": {
@@ -4433,14 +4442,6 @@
                   ],
                   "minLength": 1,
                   "maxLength": 4000
-                },
-                "actionType": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "minLength": 1,
-                  "maxLength": 300
                 },
                 "ordinal": {
                   "type": "integer",

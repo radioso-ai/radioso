@@ -63,7 +63,6 @@ import { streamResult, textResult } from "./llmStubs.js";
 import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
 import { PlatformSettingsService } from "../../src/modules/settings/services/platformSettingsService.js";
 import type { RetrievedChunk, VectorSearchPort } from "../../src/modules/retrieval/public.js";
-import { RetrievalSettingsService } from "../../src/modules/settings/services/retrievalSettingsService.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import { WorkspaceSummaryService } from "../../src/modules/workspace/services/workspaceSummaryService.js";
 import { WorkspaceSessionService } from "../../src/modules/auth/services/workspaceSessionService.js";
@@ -87,7 +86,11 @@ import {
   EvalSnapshotService,
 } from "../../src/modules/eval/composition.js";
 import { ApplicationModuleCoordinator, createApplicationExtensionRegistry } from "../../src/app/composition/applicationModule.js";
-import { createDefaultAgentSkillSettingsRegistry } from "../../src/app/composition/skillSettingsResolver.js";
+import {
+  createDefaultAgentSkillSettingsRegistry,
+  createRetrievalSkillSettingsResolver,
+  createSystemRetrievalDefaultsProvider,
+} from "../../src/app/composition/index.js";
 import { DefaultAllowCapabilityPolicy, registeredCapabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
 import {
@@ -492,12 +495,6 @@ export const createTestDependencies = (overrides: {
     undefined,
     workspaceIngestionReprocessService,
   );
-  const retrievalSettingsService = new RetrievalSettingsService(
-    retrievalSettingsRepository,
-    auditService,
-    documentRepository,
-    productAnalyticsService,
-  );
   const documentSourceContentService = new DocumentSourceContentService(documentStorage);
   const documentProcessingService = new DocumentProcessingService(
     documentRepository,
@@ -582,7 +579,7 @@ export const createTestDependencies = (overrides: {
     return result;
   };
   const retrievalPipeline = new RetrievalPipelineService(
-    retrievalSettingsService,
+    createSystemRetrievalDefaultsProvider(),
     embeddingService,
     vectorSearch,
     lexicalSearch,
@@ -594,6 +591,9 @@ export const createTestDependencies = (overrides: {
     new PromptContextSelectorService(),
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(telemetryService),
+    undefined,
+    ingestionSettingsService,
+    createRetrievalSkillSettingsResolver(),
   );
   const documentSearchService = new DocumentSearchService(
     documentRepository,
@@ -640,7 +640,6 @@ export const createTestDependencies = (overrides: {
   );
   const workspaceLlmCapabilitySettingsService = new WorkspaceLlmCapabilitySettingsService(
     retrievalSettingsRepository,
-    retrievalSettingsService,
     auditService,
   );
   const connectorRegistry = new ConnectorRegistry();
@@ -656,7 +655,6 @@ export const createTestDependencies = (overrides: {
   const agentService = new AgentService(
     agentRepository,
     workspaceRepository,
-    retrievalSettingsService,
     documentSourceRepository,
     undefined,
     accessGrantService,
@@ -766,12 +764,12 @@ export const createTestDependencies = (overrides: {
   });
   const platformSettingsService = new PlatformSettingsService({
     workspaceRepository,
-    retrievalSettingsService,
     auditService,
     agentService,
     accessGrantService,
     publicChatBaseUrl: env.PUBLIC_CHAT_BASE_URL,
   });
+  const retrievalDefaultsProvider = createSystemRetrievalDefaultsProvider();
   const dependencies: AppDependencies = {
     env,
     logger,
@@ -829,8 +827,8 @@ export const createTestDependencies = (overrides: {
     workspaceService,
     workspaceSummaryService,
     ingestionSettingsService,
-    retrievalSettingsService,
     chunkRepository,
+    documentRepository,
     documentIngestionService,
     documentSourceRepository,
     documentImportService,
@@ -864,11 +862,13 @@ export const createTestDependencies = (overrides: {
     assistantHistoryService,
     retrievalSearchService,
     retrievalAnswerService,
+    retrievalDefaultsProvider,
     evalSnapshotService: new EvalSnapshotService(
       conversationRepository,
       messageRepository,
       agentRepository,
-      retrievalSettingsService,
+      retrievalDefaultsProvider,
+      createRetrievalSkillSettingsResolver(),
       new EvalRepository(connectorDb as any),
     ),
     evalCaseService: new EvalCaseService(new EvalRepository(connectorDb as any)),

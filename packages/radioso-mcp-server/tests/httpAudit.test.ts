@@ -9,7 +9,7 @@ import { createCapabilityPolicyRegistry } from "../src/policy/capabilityPolicy.j
 const workspaceValidation = {
   apiVersion: "0.1.0",
   mcpContextVersion: "2026-04-22",
-  supportedTools: ["describe_capabilities", "create_document", "get_retrieval_settings"],
+  supportedTools: ["describe_capabilities", "create_document"],
   workspaceHint: "Default",
   workspaceId: "3f3caef3-050c-46a7-8fd7-2fa48f17fe98",
   workspaceName: "Default",
@@ -104,33 +104,65 @@ describe("remote MCP audit logging", () => {
     };
   };
 
-  it("emits upstream.unsupported_capability when the target deployment lacks a route", async () => {
-    const actualFetch = globalThis.fetch;
-    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-      if (url.startsWith("http://127.0.0.1")) {
-        return actualFetch(input as RequestInfo | URL, init);
-      }
-
-      return new Response(JSON.stringify({ error: { code: "not_found", message: "Missing route" } }), {
-        headers: { "content-type": "application/json" },
-        status: 404,
-      });
-    });
-
-    vi.stubGlobal("fetch", fetchMock);
-
+  it("rejects removed retrieval settings tools during token exchange", async () => {
     const runtime = await createRuntime({
-      allowedReadTools: ["get_retrieval_settings"],
+      allowedReadTools: ["describe_capabilities"],
       allowedWriteTools: [],
       approvalRequiredWriteTools: [],
     });
     runtimes.push(runtime);
 
-    const exchangeResponse = await actualFetch(`${runtime.baseUrl}/v1/auth/exchange`, {
+    const exchangeResponse = await fetch(`${runtime.baseUrl}/v1/auth/exchange`, {
       body: JSON.stringify({
         radiosoApiToken: "radioso_test",
-        requestedTools: ["get_retrieval_settings"],
+        requestedTools: ["get_retrieval_settings", "update_retrieval_settings"],
+      }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    });
+    const exchange = await exchangeResponse.json() as {
+      error: { code: string; details: { deniedTools: string[] }; message: string };
+    };
+
+    expect(exchangeResponse.status).toBe(403);
+    expect(exchange.error).toMatchObject({
+      code: "capability_forbidden",
+      details: {
+        deniedTools: ["get_retrieval_settings", "update_retrieval_settings"],
+      },
+    });
+    expect(exchange.error.message).toMatch(/not allowed/i);
+
+    expect(runtime.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventType: "auth.exchange_failed",
+          metadata: expect.objectContaining({
+            code: "capability_forbidden",
+            details: {
+              deniedTools: ["get_retrieval_settings", "update_retrieval_settings"],
+            },
+          }),
+          outcome: "denied",
+        }),
+      ]),
+    );
+  });
+
+  it("returns a clear unknown-tool error if an old client calls a removed tool", async () => {
+    const runtime = await createRuntime({
+      allowedReadTools: ["describe_capabilities"],
+      allowedWriteTools: [],
+      approvalRequiredWriteTools: [],
+    });
+    runtimes.push(runtime);
+
+    const exchangeResponse = await fetch(`${runtime.baseUrl}/v1/auth/exchange`, {
+      body: JSON.stringify({
+        radiosoApiToken: "radioso_test",
+        requestedTools: ["describe_capabilities"],
       }),
       headers: {
         "content-type": "application/json",
@@ -140,7 +172,7 @@ describe("remote MCP audit logging", () => {
     const exchange = await exchangeResponse.json() as { accessToken: string };
 
     await initializeMcp(runtime.baseUrl, exchange.accessToken);
-    await mcpRequest(runtime.baseUrl, exchange.accessToken, {
+    const callResponse = await mcpRequest(runtime.baseUrl, exchange.accessToken, {
       id: "2",
       jsonrpc: "2.0",
       method: "tools/call",
@@ -149,19 +181,12 @@ describe("remote MCP audit logging", () => {
         name: "get_retrieval_settings",
       },
     });
+    const call = await callResponse.json() as { error?: { code: number; message: string } };
 
-    expect(runtime.events).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          eventType: "upstream.unsupported_capability",
-          metadata: expect.objectContaining({
-            code: "unsupported_capability",
-          }),
-          outcome: "error",
-          toolName: "get_retrieval_settings",
-        }),
-      ]),
-    );
+    expect(call.error).toMatchObject({
+      code: -32602,
+      message: expect.stringMatching(/tool.*not.*found/i),
+    });
   });
 
   it("emits audit evidence for malformed exchange requests", async () => {

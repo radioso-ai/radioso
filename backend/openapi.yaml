@@ -270,7 +270,7 @@ components:
         mcpContextVersion:
           type: string
           enum:
-            - 2026-05-06
+            - 2026-06-09
         supportedTools:
           type: array
           items:
@@ -281,12 +281,10 @@ components:
               - delete_document
               - describe_capabilities
               - get_document
-              - get_retrieval_settings
               - list_documents
               - reprocess_document
               - search_documents
               - update_document
-              - update_retrieval_settings
         workspaceId:
           type: string
           format: uuid
@@ -638,63 +636,33 @@ components:
         - email
         - status
         - expiresAt
-    RetrievalSettings:
+    RetrievalDefaultsResponse:
       type: object
       properties:
-        workspaceId:
-          type: string
-          format: uuid
         queryRewriteEnabled:
           type: boolean
         semanticRewriteInstructions:
           type: string
-          maxLength: 2000
         lexicalRewriteInstructions:
           type: string
-          maxLength: 2000
         suggestedQuestionsEnabled:
           type: boolean
         suggestedQuestionsCount:
           type: integer
-          minimum: 1
-          maximum: 4
         rerankEnabled:
           type: boolean
         vectorTopK:
           type: integer
-          minimum: 1
-          maximum: 300
-        similarityThreshold:
-          type: number
-          minimum: 0
-          maximum: 1
         rerankTopK:
           type: integer
-          minimum: 1
         retrievalStrategy:
           type: string
           enum: &a3
             - fixed
             - reasoning
             - auto
-        metadataFieldSuggestions:
-          type: array
-          items:
-            type: object
-            properties:
-              field:
-                type: string
-              inferredType:
-                type: string
-                enum: &a1
-                  - string
-                  - number
-                  - date
-                  - boolean
-            required:
-              - field
-              - inferredType
-          default: []
+        customInstruction:
+          type: string
         metadataRules:
           type: array
           items:
@@ -706,7 +674,11 @@ components:
                 type: string
               valueType:
                 type: string
-                enum: *a1
+                enum: &a1
+                  - string
+                  - number
+                  - date
+                  - boolean
               operator:
                 type: string
                 enum: &a2
@@ -722,7 +694,7 @@ components:
                 type: string
               combinator:
                 type: string
-                enum:
+                enum: &a8
                   - and
                   - or
                 default: and
@@ -749,7 +721,7 @@ components:
                     - valueType
                     - operator
                     - value
-                default: []
+                default: &a9 []
               effect:
                 type: string
                 enum: &a4
@@ -773,18 +745,21 @@ components:
               - effect
               - enabled
               - triggerMode
-          default: []
-        customInstruction:
-          type: string
-          maxLength: 2000
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
+          description: Always empty for system retrieval defaults.
+        metadataFieldSuggestions:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              inferredType:
+                type: string
+                enum: *a1
+            required:
+              - field
+              - inferredType
       required:
-        - workspaceId
         - queryRewriteEnabled
         - semanticRewriteInstructions
         - lexicalRewriteInstructions
@@ -792,115 +767,10 @@ components:
         - suggestedQuestionsCount
         - rerankEnabled
         - vectorTopK
-        - similarityThreshold
         - rerankTopK
-        - retrievalStrategy
         - customInstruction
-        - createdAt
-        - updatedAt
-    UpdateRetrievalSettingsRequest:
-      type: object
-      properties:
-        queryRewriteEnabled:
-          type: boolean
-        semanticRewriteInstructions:
-          type: string
-          maxLength: 2000
-        lexicalRewriteInstructions:
-          type: string
-          maxLength: 2000
-        suggestedQuestionsEnabled:
-          type: boolean
-        suggestedQuestionsCount:
-          type: integer
-          minimum: 1
-          maximum: 4
-        rerankEnabled:
-          type: boolean
-        vectorTopK:
-          type: integer
-          minimum: 1
-        similarityThreshold:
-          type: number
-        rerankTopK:
-          type: integer
-          maximum: 50
-        retrievalStrategy:
-          type: string
-          enum: *a3
-        metadataRules:
-          type: array
-          items:
-            type: object
-            properties:
-              id:
-                type: string
-                minLength: 1
-              field:
-                type: string
-                minLength: 1
-              valueType:
-                type: string
-                enum: *a1
-              operator:
-                type: string
-                enum: *a2
-              value:
-                type: string
-              combinator:
-                type: string
-                enum: &a6
-                  - and
-                  - or
-              conditions:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    id:
-                      type: string
-                      minLength: 1
-                    field:
-                      type: string
-                      minLength: 1
-                    valueType:
-                      type: string
-                      enum: *a1
-                    operator:
-                      type: string
-                      enum: *a2
-                    value:
-                      type: string
-                  required:
-                    - id
-                    - field
-                    - valueType
-                    - operator
-                    - value
-              effect:
-                type: string
-                enum: *a4
-              enabled:
-                type: boolean
-              triggerMode:
-                type: string
-                enum: *a5
-              triggerInstruction:
-                type: string
-                maxLength: 500
-            required:
-              - id
-              - effect
-              - enabled
-        customInstruction:
-          type: string
-          maxLength: 2000
-      required:
-        - queryRewriteEnabled
-        - rerankEnabled
-        - vectorTopK
-        - similarityThreshold
-        - rerankTopK
+        - metadataRules
+        - metadataFieldSuggestions
     RetrievalSettingsOverride:
       type: object
       properties:
@@ -952,7 +822,9 @@ components:
                 type: string
               combinator:
                 type: string
-                enum: *a6
+                enum:
+                  - and
+                  - or
               conditions:
                 type: array
                 items:
@@ -1004,13 +876,13 @@ components:
           format: uuid
         chunkingStrategy:
           type: string
-          enum: &a8
+          enum: &a7
             - fixed_window
             - structured_semantic
             - recursive_text
         embeddingModel:
           type: string
-          enum: &a7
+          enum: &a6
             - text-embedding-3-small
             - text-embedding-3-large
             - text-embedding-ada-002
@@ -1019,12 +891,12 @@ components:
           type:
             - string
             - "null"
-          enum: *a7
+          enum: *a6
         supportedEmbeddingModels:
           type: array
           items:
             type: string
-            enum: *a7
+            enum: *a6
         fixedWindowChunkSize:
           type: integer
         fixedWindowChunkOverlap:
@@ -1056,7 +928,7 @@ components:
       properties:
         chunkingStrategy:
           type: string
-          enum: *a8
+          enum: *a7
         fixedWindowChunkSize:
           type: integer
           minimum: 100
@@ -1075,7 +947,7 @@ components:
           maximum: 2000
         embeddingModel:
           type: string
-          enum: *a7
+          enum: *a6
       required:
         - chunkingStrategy
         - fixedWindowChunkSize
@@ -1099,9 +971,7 @@ components:
           type: string
         combinator:
           type: string
-          enum:
-            - and
-            - or
+          enum: *a8
           default: and
         conditions:
           type: array
@@ -1126,7 +996,7 @@ components:
               - valueType
               - operator
               - value
-          default: []
+          default: *a9
         effect:
           type: string
           enum: *a4
@@ -1254,7 +1124,7 @@ components:
           maxLength: 80
         websiteEmbedLauncherPosition:
           type: string
-          enum: &a9
+          enum: &a10
             - bottom-right
             - bottom-left
         websiteEmbedTheme:
@@ -1341,7 +1211,7 @@ components:
           type: string
         websiteEmbedLauncherPosition:
           type: string
-          enum: *a9
+          enum: *a10
         websiteEmbedTheme:
           type: object
           properties:
@@ -1431,123 +1301,6 @@ components:
         - suggestedQuestionsEnabled
         - customInstruction
         - assistantLogoUrl
-    PlatformRetrievalSettingsSection:
-      type: object
-      properties:
-        queryRewriteEnabled:
-          type: boolean
-        semanticRewriteInstructions:
-          type: string
-          maxLength: 2000
-        lexicalRewriteInstructions:
-          type: string
-          maxLength: 2000
-        rerankEnabled:
-          type: boolean
-        vectorTopK:
-          type: integer
-          minimum: 1
-          maximum: 300
-        similarityThreshold:
-          type: number
-          minimum: 0
-          maximum: 1
-        rerankTopK:
-          type: integer
-          minimum: 1
-        metadataRules:
-          type: array
-          items:
-            type: object
-            properties:
-              id:
-                type: string
-              field:
-                type: string
-              valueType:
-                type: string
-                enum: *a1
-              operator:
-                type: string
-                enum: *a2
-              value:
-                type: string
-              combinator:
-                type: string
-                enum:
-                  - and
-                  - or
-                default: and
-              conditions:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    id:
-                      type: string
-                    field:
-                      type: string
-                    valueType:
-                      type: string
-                      enum: *a1
-                    operator:
-                      type: string
-                      enum: *a2
-                    value:
-                      type: string
-                  required:
-                    - id
-                    - field
-                    - valueType
-                    - operator
-                    - value
-                default: []
-              effect:
-                type: string
-                enum: *a4
-              enabled:
-                type: boolean
-              triggerMode:
-                type: string
-                enum: *a5
-              triggerInstruction:
-                type: string
-            required:
-              - id
-              - field
-              - valueType
-              - operator
-              - value
-              - effect
-              - enabled
-              - triggerMode
-          default: []
-        metadataFieldSuggestions:
-          type: array
-          items:
-            type: object
-            properties:
-              field:
-                type: string
-              inferredType:
-                type: string
-                enum: *a1
-            required:
-              - field
-              - inferredType
-          default: []
-        retrievalStrategy:
-          type: string
-          enum: *a3
-      required:
-        - queryRewriteEnabled
-        - semanticRewriteInstructions
-        - lexicalRewriteInstructions
-        - rerankEnabled
-        - vectorTopK
-        - similarityThreshold
-        - rerankTopK
-        - retrievalStrategy
     PlatformChannelsSettingsSection:
       type: object
       properties:
@@ -1581,7 +1334,7 @@ components:
           type: string
         websiteEmbedLauncherPosition:
           type: string
-          enum: *a9
+          enum: *a10
         websiteEmbedScriptUrl:
           type:
             - string
@@ -1636,13 +1389,10 @@ components:
       properties:
         assistant:
           $ref: "#/components/schemas/AssistantSettingsSection"
-        retrieval:
-          $ref: "#/components/schemas/PlatformRetrievalSettingsSection"
         channels:
           $ref: "#/components/schemas/PlatformChannelsSettingsSection"
       required:
         - assistant
-        - retrieval
         - channels
     UpdatePlatformSettingsRequest:
       type: object
@@ -1668,94 +1418,6 @@ components:
             customInstruction:
               type: string
               maxLength: 2000
-        retrieval:
-          type: object
-          properties:
-            queryRewriteEnabled:
-              type: boolean
-            semanticRewriteInstructions:
-              type: string
-              maxLength: 2000
-            lexicalRewriteInstructions:
-              type: string
-              maxLength: 2000
-            suggestedQuestionsCount:
-              type: integer
-              minimum: 1
-              maximum: 4
-            rerankEnabled:
-              type: boolean
-            vectorTopK:
-              type: integer
-            similarityThreshold:
-              type: number
-            rerankTopK:
-              type: integer
-            retrievalStrategy:
-              type: string
-              enum: *a3
-            metadataRules:
-              type: array
-              items:
-                type: object
-                properties:
-                  id:
-                    type: string
-                    minLength: 1
-                  field:
-                    type: string
-                    minLength: 1
-                  valueType:
-                    type: string
-                    enum: *a1
-                  operator:
-                    type: string
-                    enum: *a2
-                  value:
-                    type: string
-                  combinator:
-                    type: string
-                    enum: *a6
-                  conditions:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id:
-                          type: string
-                          minLength: 1
-                        field:
-                          type: string
-                          minLength: 1
-                        valueType:
-                          type: string
-                          enum: *a1
-                        operator:
-                          type: string
-                          enum: *a2
-                        value:
-                          type: string
-                      required:
-                        - id
-                        - field
-                        - valueType
-                        - operator
-                        - value
-                  effect:
-                    type: string
-                    enum: *a4
-                  enabled:
-                    type: boolean
-                  triggerMode:
-                    type: string
-                    enum: *a5
-                  triggerInstruction:
-                    type: string
-                    maxLength: 500
-                required:
-                  - id
-                  - effect
-                  - enabled
         channels:
           type: object
           properties:
@@ -1774,7 +1436,7 @@ components:
               maxLength: 80
             websiteEmbedLauncherPosition:
               type: string
-              enum: *a9
+              enum: *a10
             websiteEmbedTheme:
               type: object
               properties:
@@ -1807,7 +1469,7 @@ components:
       properties:
         provider:
           type: string
-          enum: &a19
+          enum: &a20
             - openai
             - openai-compatible
             - gemini
@@ -1863,7 +1525,7 @@ components:
       properties:
         provider:
           type: string
-          enum: &a10
+          enum: &a11
             - openai
             - openai-compatible
             - gemini
@@ -1920,7 +1582,7 @@ components:
               properties:
                 provider:
                   type: string
-                  enum: *a10
+                  enum: *a11
                 model:
                   type: string
                   minLength: 1
@@ -1936,7 +1598,7 @@ components:
               properties:
                 provider:
                   type: string
-                  enum: *a10
+                  enum: *a11
                 model:
                   type: string
                   minLength: 1
@@ -1952,7 +1614,7 @@ components:
               properties:
                 provider:
                   type: string
-                  enum: *a10
+                  enum: *a11
                 model:
                   type: string
                   minLength: 1
@@ -2024,7 +1686,7 @@ components:
               type: string
             launcherPosition:
               type: string
-              enum: &a11
+              enum: &a12
                 - bottom-right
                 - bottom-left
             theme:
@@ -2397,7 +2059,7 @@ components:
                   maxLength: 80
                 launcherPosition:
                   type: string
-                  enum: *a11
+                  enum: *a12
                 theme:
                   type: object
                   properties:
@@ -3866,7 +3528,7 @@ components:
               type: string
             selectionMode:
               type: string
-              enum: &a14
+              enum: &a15
                 - deterministic
                 - probabilistic
             selectionReason:
@@ -3877,7 +3539,7 @@ components:
               maximum: 1
             callerSurface:
               type: string
-              enum: &a15
+              enum: &a16
                 - assistant
                 - retrieval_api
                 - sdk
@@ -3914,7 +3576,7 @@ components:
                 - used
             outcome:
               type: string
-              enum: &a16
+              enum: &a17
                 - success
                 - unsupported
                 - forbidden
@@ -3951,14 +3613,14 @@ components:
                     additionalProperties: {}
                 evidenceStatus:
                   type: string
-                  enum: &a12
+                  enum: &a13
                     - found
                     - missing
                     - partial
                     - not_applicable
                 supportStatus:
                   type: string
-                  enum: &a13
+                  enum: &a14
                     - supported
                     - unsupported
                     - not_checked
@@ -4418,10 +4080,10 @@ components:
             additionalProperties: {}
         evidenceStatus:
           type: string
-          enum: *a12
+          enum: *a13
         supportStatus:
           type: string
-          enum: *a13
+          enum: *a14
         groundingOutcome:
           type: string
     SkillDiagnosticDefinition:
@@ -4435,7 +4097,7 @@ components:
           type: string
         selectionMode:
           type: string
-          enum: *a14
+          enum: *a15
         selectionReason:
           type: string
         selectionConfidence:
@@ -4444,7 +4106,7 @@ components:
           maximum: 1
         callerSurface:
           type: string
-          enum: *a15
+          enum: *a16
         capabilityChecks:
           type: array
           items:
@@ -4475,7 +4137,7 @@ components:
             - used
         outcome:
           type: string
-          enum: *a16
+          enum: *a17
         error:
           type: object
           properties:
@@ -4507,10 +4169,10 @@ components:
                 additionalProperties: {}
             evidenceStatus:
               type: string
-              enum: *a12
+              enum: *a13
             supportStatus:
               type: string
-              enum: *a13
+              enum: *a14
             groundingOutcome:
               type: string
       required:
@@ -4559,7 +4221,7 @@ components:
           type: array
           items:
             type: string
-            enum: *a15
+            enum: *a16
         requiredCapabilities:
           type: array
           items:
@@ -4586,7 +4248,7 @@ components:
               type: array
               items:
                 type: string
-                enum: *a15
+                enum: *a16
             intent:
               type: object
               properties:
@@ -5468,7 +5130,7 @@ components:
           format: uuid
         value:
           type: string
-          enum: &a17
+          enum: &a18
             - up
             - down
         comment:
@@ -5477,7 +5139,7 @@ components:
             - "null"
         actorType:
           type: string
-          enum: &a18
+          enum: &a19
             - authenticated_user
             - api_token
             - anonymous_user
@@ -5537,14 +5199,14 @@ components:
           format: uuid
         value:
           type: string
-          enum: *a17
+          enum: *a18
         comment:
           type:
             - string
             - "null"
         actorType:
           type: string
-          enum: *a18
+          enum: *a19
         actorId:
           type: string
         accountId:
@@ -7039,7 +6701,7 @@ paths:
         - bearerAuth: []
       responses:
         "200":
-          description: Shared assistant, retrieval, and channel settings returned
+          description: Shared assistant and channel settings returned
           content:
             application/json:
               schema:
@@ -7094,53 +6756,21 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/v1/settings/retrieval:
+  /api/v1/settings/retrieval-defaults:
     get:
       tags:
         - Settings
-      summary: Get retrieval settings for the authenticated workspace
-      operationId: getRetrievalSettings
+      summary: Get system retrieval defaults for the authenticated workspace
+      operationId: getSettingsRetrievalDefaults
       security:
         - bearerAuth: []
       responses:
         "200":
-          description: Retrieval settings returned
+          description: Retrieval defaults returned
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RetrievalSettings"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-    put:
-      tags:
-        - Settings
-      summary: Update retrieval settings for the authenticated workspace
-      operationId: updateRetrievalSettings
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateRetrievalSettingsRequest"
-      responses:
-        "200":
-          description: Updated retrieval settings
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RetrievalSettings"
-        "400":
-          description: Request validation failed
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/RetrievalDefaultsResponse"
         "401":
           description: Authentication required
           content:
@@ -7434,7 +7064,7 @@ paths:
       parameters:
         - schema:
             type: string
-            enum: *a19
+            enum: *a20
           required: true
           name: provider
           in: path
@@ -7475,7 +7105,7 @@ paths:
       parameters:
         - schema:
             type: string
-            enum: *a19
+            enum: *a20
           required: true
           name: provider
           in: path
@@ -8103,7 +7733,7 @@ paths:
       operationId: listSkills
       security:
         - bearerAuth: []
-        - &a20
+        - &a21
           sessionCookie: []
           workspaceSelection: []
       responses:
@@ -8127,7 +7757,7 @@ paths:
       operationId: getSkill
       security:
         - bearerAuth: []
-        - *a20
+        - *a21
       parameters:
         - schema:
             type: string
@@ -10100,7 +9730,7 @@ paths:
                           properties:
                             provider:
                               type: string
-                              enum: &a21
+                              enum: &a22
                                 - openai
                                 - openai-compatible
                                 - gemini
@@ -10155,7 +9785,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: *a21
+                          enum: *a22
                         model:
                           type: string
                       required:

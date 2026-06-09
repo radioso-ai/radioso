@@ -22,6 +22,19 @@ const createPublicSession = async (app: any, chatToken: string) => {
   return response.body as { publicSessionToken: string };
 };
 
+const updateRetrievalSkillSettings = async (
+  dependencies: ReturnType<typeof createTestApp>["dependencies"],
+  workspaceId: string,
+  settings: Record<string, unknown>,
+) => {
+  const agent = await dependencies.agentService.resolve(workspaceId);
+  return dependencies.agentService.update(workspaceId, agent.id, {
+    skillSettings: {
+      "retrieval.answer": settings,
+    },
+  });
+};
+
 describe("anonymous chat bootstrap integration", () => {
   beforeEach(() => {
     resetRateLimiterState();
@@ -41,6 +54,7 @@ describe("anonymous chat bootstrap integration", () => {
     };
     const { app, repositories } = createTestApp({ chatGateway: bootstrapGateway });
     const session = await issueTestSession(app, "anon-chat-bootstrap-integration@example.com");
+    const { workspaceId } = session;
     const headers = adminSessionHeaders(session);
 
     const settings = await request(app)
@@ -125,8 +139,9 @@ describe("anonymous chat bootstrap integration", () => {
         yield "unused";
       },
     };
-    const { app } = createTestApp({ chatGateway: publicGateway });
+    const { app, dependencies } = createTestApp({ chatGateway: publicGateway });
     const session = await issueTestSession(app, "anon-chat-suggestions@example.com");
+    const { workspaceId } = session;
     const headers = adminSessionHeaders(session);
 
     const settings = await request(app)
@@ -137,18 +152,13 @@ describe("anonymous chat bootstrap integration", () => {
         assistantName: "Marta",
         proactiveGreetingEnabled: false,
       });
-    await request(app)
-      .put("/api/v1/settings/retrieval")
-      .set(headers)
-      .send({
+    await updateRetrievalSkillSettings(dependencies, workspaceId, {
         queryRewriteEnabled: false,
         suggestedQuestionsEnabled: true,
         suggestedQuestionsCount: 4,
         rerankEnabled: false,
         vectorTopK: 20,
-        similarityThreshold: 0.1,
-        rerankTopK: 5,
-        citationDisplayEnabled: true,
+        rerankTopK: 5
       });
     await request(app)
       .post("/api/v1/document/")

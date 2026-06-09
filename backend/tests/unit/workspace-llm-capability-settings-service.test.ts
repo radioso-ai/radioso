@@ -7,17 +7,22 @@ import type {
   WorkspaceLlmCapabilityPreferenceInput,
 } from "../../src/modules/settings/contracts/llmCapability.js";
 import type {
-  RetrievalSettingsPort,
   WorkspaceLlmCapabilityPreferencesRepositoryPort,
 } from "../../src/modules/settings/contracts/services.js";
 import type { AuditPort } from "../../src/modules/audit/contracts/index.js";
 
 const createRepository = (): WorkspaceLlmCapabilityPreferencesRepositoryPort & {
   rows: Map<string, Map<WorkspaceLlmCapability, WorkspaceLlmCapabilityPreference>>;
+  ensuredRows: string[];
 } => {
   const rows = new Map<string, Map<WorkspaceLlmCapability, WorkspaceLlmCapabilityPreference>>();
+  const ensuredRows: string[] = [];
   return {
     rows,
+    ensuredRows,
+    async ensureRow(workspaceId) {
+      ensuredRows.push(workspaceId);
+    },
     async findByWorkspace(workspaceId) {
       return rows.get(workspaceId) ? [...rows.get(workspaceId)!.values()] : [];
     },
@@ -35,17 +40,6 @@ const createRepository = (): WorkspaceLlmCapabilityPreferencesRepositoryPort & {
         });
       }
       rows.set(workspaceId, row);
-    },
-  };
-};
-
-const createRetrievalSettingsStub = (): Pick<RetrievalSettingsPort, "getForWorkspace"> & { calls: string[] } => {
-  const calls: string[] = [];
-  return {
-    calls,
-    async getForWorkspace(workspaceId: string) {
-      calls.push(workspaceId);
-      return { workspaceId } as never;
     },
   };
 };
@@ -89,13 +83,13 @@ const validInput: WorkspaceLlmCapabilityPreferenceInput = { provider: "openai", 
 describe("WorkspaceLlmCapabilitySettingsService", () => {
   it("returns an empty list when no preferences are stored", async () => {
     const repo = createRepository();
-    const service = new WorkspaceLlmCapabilitySettingsService(repo, createRetrievalSettingsStub(), createAudit());
+    const service = new WorkspaceLlmCapabilitySettingsService(repo, createAudit());
     expect(await service.listForWorkspace("ws-1")).toEqual([]);
   });
 
   it("stores a preference and reports it back", async () => {
     const repo = createRepository();
-    const service = new WorkspaceLlmCapabilitySettingsService(repo, createRetrievalSettingsStub(), createAudit());
+    const service = new WorkspaceLlmCapabilitySettingsService(repo, createAudit());
 
     await service.setPreference("ws-1", "chat", { provider: "claude", model: "claude-sonnet-4-5" }, { accountId: "acc-1" });
 
@@ -107,18 +101,17 @@ describe("WorkspaceLlmCapabilitySettingsService", () => {
 
   it("ensures the retrieval_settings row exists before writing", async () => {
     const repo = createRepository();
-    const retrievalSettings = createRetrievalSettingsStub();
-    const service = new WorkspaceLlmCapabilitySettingsService(repo, retrievalSettings, createAudit());
+    const service = new WorkspaceLlmCapabilitySettingsService(repo, createAudit());
 
     await service.setPreference("ws-1", "chat", validInput, { accountId: "acc-1" });
 
-    expect(retrievalSettings.calls).toEqual(["ws-1"]);
+    expect(repo.ensuredRows).toEqual(["ws-1"]);
   });
 
   it("emits audit events on set and remove", async () => {
     const repo = createRepository();
     const audit = createAudit();
-    const service = new WorkspaceLlmCapabilitySettingsService(repo, createRetrievalSettingsStub(), audit);
+    const service = new WorkspaceLlmCapabilitySettingsService(repo, audit);
 
     await service.setPreference("ws-1", "rerank", { provider: "openai", model: "gpt-5-mini" }, { accountId: "acc-1" });
     await service.removePreference("ws-1", "rerank", { accountId: "acc-1" });
@@ -130,7 +123,7 @@ describe("WorkspaceLlmCapabilitySettingsService", () => {
 
   it("returns true on remove only when something was deleted", async () => {
     const repo = createRepository();
-    const service = new WorkspaceLlmCapabilitySettingsService(repo, createRetrievalSettingsStub(), createAudit());
+    const service = new WorkspaceLlmCapabilitySettingsService(repo, createAudit());
 
     await service.setPreference("ws-1", "chat", { provider: "openai", model: "gpt-5-mini" }, { accountId: "acc-1" });
     const first = await service.removePreference("ws-1", "chat", { accountId: "acc-1" });
@@ -142,7 +135,7 @@ describe("WorkspaceLlmCapabilitySettingsService", () => {
 
   it("rejects an unknown provider before touching the repository", async () => {
     const repo = createRepository();
-    const service = new WorkspaceLlmCapabilitySettingsService(repo, createRetrievalSettingsStub(), createAudit());
+    const service = new WorkspaceLlmCapabilitySettingsService(repo, createAudit());
 
     await expect(
       service.setPreference(
@@ -157,7 +150,7 @@ describe("WorkspaceLlmCapabilitySettingsService", () => {
 
   it("rejects an empty model string", async () => {
     const repo = createRepository();
-    const service = new WorkspaceLlmCapabilitySettingsService(repo, createRetrievalSettingsStub(), createAudit());
+    const service = new WorkspaceLlmCapabilitySettingsService(repo, createAudit());
 
     await expect(
       service.setPreference("ws-1", "chat", { provider: "openai", model: "" }, { accountId: "acc-1" }),
@@ -166,7 +159,7 @@ describe("WorkspaceLlmCapabilitySettingsService", () => {
 
   it("getPreference returns the single capability preference or null", async () => {
     const repo = createRepository();
-    const service = new WorkspaceLlmCapabilitySettingsService(repo, createRetrievalSettingsStub(), createAudit());
+    const service = new WorkspaceLlmCapabilitySettingsService(repo, createAudit());
 
     await service.setPreference("ws-1", "chat", { provider: "claude", model: "claude-sonnet-4-5" }, { accountId: "acc-1" });
 
@@ -186,7 +179,7 @@ describe("WorkspaceLlmCapabilitySettingsService", () => {
       ...repo,
       setPreference: () => { throw writeError; },
     };
-    const service = new WorkspaceLlmCapabilitySettingsService(failingRepo, createRetrievalSettingsStub(), audit);
+    const service = new WorkspaceLlmCapabilitySettingsService(failingRepo, audit);
 
     await expect(
       service.setPreference("ws-1", "chat", validInput, { accountId: "acc-1" }),
@@ -202,6 +195,7 @@ describe("WorkspaceLlmCapabilitySettingsService", () => {
   it("emits a failure audit on removePreference when the write throws", async () => {
     const repo = createRepository();
     // Seed an existing preference so removePreference reaches the write path.
+    await repo.ensureRow("ws-1");
     await repo.setPreference("ws-1", "chat", { provider: "claude", model: "claude-sonnet-4-5" });
     const writeError = new Error("db down");
     const failingRepo: typeof repo = {
@@ -209,7 +203,7 @@ describe("WorkspaceLlmCapabilitySettingsService", () => {
       setPreference: () => { throw writeError; },
     };
     const audit = createAudit();
-    const service = new WorkspaceLlmCapabilitySettingsService(failingRepo, createRetrievalSettingsStub(), audit);
+    const service = new WorkspaceLlmCapabilitySettingsService(failingRepo, audit);
 
     await expect(
       service.removePreference("ws-1", "chat", { accountId: "acc-1" }),
@@ -227,7 +221,6 @@ describe("WorkspaceLlmCapabilitySettingsService", () => {
     const warn = vi.fn();
     const service = new WorkspaceLlmCapabilitySettingsService(
       repo,
-      createRetrievalSettingsStub(),
       createThrowingAudit(),
       { warn },
     );

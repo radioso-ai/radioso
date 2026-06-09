@@ -6,10 +6,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
 import { AgentRepository } from "../../src/db/repositories/agentRepository.js";
-import { RetrievalSettingsRepository } from "../../src/db/repositories/retrievalSettingsRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
-import { runAllTestMigrations, testMigrationsPath } from "../support/databaseMigrations.js";
+import {
+  ensureLegacyRetrievalColumns,
+  runAllTestMigrations,
+  testMigrationsPath,
+} from "../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -35,16 +38,16 @@ describeIfDatabase("agent suggested questions skill settings migration", () => {
   let database: Database;
   let accountRepository: AccountRepository;
   let workspaceRepository: WorkspaceRepository;
-  let retrievalSettingsRepository: RetrievalSettingsRepository;
   let agentRepository: AgentRepository;
 
   beforeAll(async () => {
     database = new Database(integrationDatabaseUrl!);
     accountRepository = new AccountRepository(database);
     workspaceRepository = new WorkspaceRepository(database);
-    retrievalSettingsRepository = new RetrievalSettingsRepository(database);
     agentRepository = new AgentRepository(database);
     await runAllTestMigrations(database);
+    // 081 drops attribute_controls (read by 075); re-add it so we can seed the legacy schema.
+    await ensureLegacyRetrievalColumns(database);
   });
 
   afterAll(async () => {
@@ -58,19 +61,11 @@ describeIfDatabase("agent suggested questions skill settings migration", () => {
       passwordHash: "hash",
     });
     const workspace = await workspaceRepository.create(account.id, "Suggested Questions Workspace");
-    await retrievalSettingsRepository.upsert(workspace.id, {
-      queryRewriteEnabled: true,
-      semanticRewriteInstructions: "",
-      lexicalRewriteInstructions: "",
-      suggestedQuestionsEnabled: true,
-      suggestedQuestionsCount: 3,
-      rerankEnabled: false,
-      vectorTopK: 20,
-      similarityThreshold: 0.2,
-      rerankTopK: 5,
-      metadataRules: [],
-      customInstruction: "",
-    });
+    await database.pool.query(
+      `INSERT INTO retrieval_settings (workspace_id, attribute_controls)
+       VALUES ($1, $2::jsonb)`,
+      [workspace.id, JSON.stringify({ suggestedQuestionsEnabled: true })],
+    );
     const divergent = await agentRepository.create(workspace.id, {
       name: "Divergent",
       suggestedQuestionsEnabled: false,

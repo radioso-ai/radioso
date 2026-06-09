@@ -25,6 +25,24 @@ export const runAllTestMigrations = async (database: Database): Promise<void> =>
   }
 };
 
+// Re-add the workspace retrieval/query-time columns that migration 081 drops, so the
+// data-migration tests for 075/080 can seed the schema those migrations read. Idempotent;
+// safe on a fully-migrated DB whether or not 081 has already dropped them. Defaults mirror
+// the original DDL (migrations 001/003/008). For migration tests ONLY — production has these
+// columns removed.
+export const ensureLegacyRetrievalColumns = async (database: Database): Promise<void> => {
+  await database.execute(`
+    ALTER TABLE retrieval_settings
+      ADD COLUMN IF NOT EXISTS query_rewrite_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      ADD COLUMN IF NOT EXISTS rerank_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      ADD COLUMN IF NOT EXISTS vector_top_k INTEGER NOT NULL DEFAULT 10,
+      ADD COLUMN IF NOT EXISTS similarity_threshold DOUBLE PRECISION NOT NULL DEFAULT 0.2,
+      ADD COLUMN IF NOT EXISTS rerank_top_k INTEGER NOT NULL DEFAULT 5,
+      ADD COLUMN IF NOT EXISTS custom_instruction TEXT NOT NULL DEFAULT '',
+      ADD COLUMN IF NOT EXISTS attribute_controls JSONB NOT NULL DEFAULT '{}'::jsonb;
+  `);
+};
+
 const runAllTestMigrationsOnce = async (database: Database): Promise<void> => {
   const client = await database.pool.connect();
   try {

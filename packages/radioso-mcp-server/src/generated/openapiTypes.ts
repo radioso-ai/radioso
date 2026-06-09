@@ -417,17 +417,16 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/settings/retrieval": {
+    "/api/v1/settings/retrieval-defaults": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get retrieval settings for the authenticated workspace */
-        get: operations["getRetrievalSettings"];
-        /** Update retrieval settings for the authenticated workspace */
-        put: operations["updateRetrievalSettings"];
+        /** Get system retrieval defaults for the authenticated workspace */
+        get: operations["getSettingsRetrievalDefaults"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -1547,8 +1546,8 @@ export interface components {
             /** @enum {string} */
             apiVersion: "0.1.0";
             /** @enum {string} */
-            mcpContextVersion: "2026-05-06";
-            supportedTools: ("answer_grounded" | "create_document" | "delete_document" | "describe_capabilities" | "get_document" | "get_retrieval_settings" | "list_documents" | "reprocess_document" | "search_documents" | "update_document" | "update_retrieval_settings")[];
+            mcpContextVersion: "2026-06-09";
+            supportedTools: ("answer_grounded" | "create_document" | "delete_document" | "describe_capabilities" | "get_document" | "list_documents" | "reprocess_document" | "search_documents" | "update_document")[];
             /** Format: uuid */
             workspaceId: string;
             workspaceName: string;
@@ -1695,9 +1694,7 @@ export interface components {
             /** Format: date-time */
             expiresAt: string;
         };
-        RetrievalSettings: {
-            /** Format: uuid */
-            workspaceId: string;
+        RetrievalDefaultsResponse: {
             queryRewriteEnabled: boolean;
             semanticRewriteInstructions: string;
             lexicalRewriteInstructions: string;
@@ -1705,17 +1702,11 @@ export interface components {
             suggestedQuestionsCount: number;
             rerankEnabled: boolean;
             vectorTopK: number;
-            similarityThreshold: number;
             rerankTopK: number;
             /** @enum {string} */
-            retrievalStrategy: "fixed" | "reasoning" | "auto";
-            /** @default [] */
-            metadataFieldSuggestions: {
-                field: string;
-                /** @enum {string} */
-                inferredType: "string" | "number" | "date" | "boolean";
-            }[];
-            /** @default [] */
+            retrievalStrategy?: "fixed" | "reasoning" | "auto";
+            customInstruction: string;
+            /** @description Always empty for system retrieval defaults. */
             metadataRules: {
                 id: string;
                 field: string;
@@ -1746,51 +1737,11 @@ export interface components {
                 triggerMode: "always_on" | "match_turn";
                 triggerInstruction?: string;
             }[];
-            customInstruction: string;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-        };
-        UpdateRetrievalSettingsRequest: {
-            queryRewriteEnabled: boolean;
-            semanticRewriteInstructions?: string;
-            lexicalRewriteInstructions?: string;
-            suggestedQuestionsEnabled?: boolean;
-            suggestedQuestionsCount?: number;
-            rerankEnabled: boolean;
-            vectorTopK: number;
-            similarityThreshold: number;
-            rerankTopK: number;
-            /** @enum {string} */
-            retrievalStrategy?: "fixed" | "reasoning" | "auto";
-            metadataRules?: {
-                id: string;
-                field?: string;
+            metadataFieldSuggestions: {
+                field: string;
                 /** @enum {string} */
-                valueType?: "string" | "number" | "date" | "boolean";
-                /** @enum {string} */
-                operator?: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
-                value?: string;
-                /** @enum {string} */
-                combinator?: "and" | "or";
-                conditions?: {
-                    id: string;
-                    field: string;
-                    /** @enum {string} */
-                    valueType: "string" | "number" | "date" | "boolean";
-                    /** @enum {string} */
-                    operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
-                    value: string;
-                }[];
-                /** @enum {string} */
-                effect: "boost" | "filter";
-                enabled: boolean;
-                /** @enum {string} */
-                triggerMode?: "always_on" | "match_turn";
-                triggerInstruction?: string;
+                inferredType: "string" | "number" | "date" | "boolean";
             }[];
-            customInstruction?: string;
         };
         RetrievalSettingsOverride: {
             queryRewriteEnabled?: boolean;
@@ -1992,54 +1943,6 @@ export interface components {
             customInstruction: string;
             assistantLogoUrl: string | null;
         };
-        PlatformRetrievalSettingsSection: {
-            queryRewriteEnabled: boolean;
-            semanticRewriteInstructions: string;
-            lexicalRewriteInstructions: string;
-            rerankEnabled: boolean;
-            vectorTopK: number;
-            similarityThreshold: number;
-            rerankTopK: number;
-            /** @default [] */
-            metadataRules: {
-                id: string;
-                field: string;
-                /** @enum {string} */
-                valueType: "string" | "number" | "date" | "boolean";
-                /** @enum {string} */
-                operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
-                value: string;
-                /**
-                 * @default and
-                 * @enum {string}
-                 */
-                combinator: "and" | "or";
-                /** @default [] */
-                conditions: {
-                    id: string;
-                    field: string;
-                    /** @enum {string} */
-                    valueType: "string" | "number" | "date" | "boolean";
-                    /** @enum {string} */
-                    operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
-                    value: string;
-                }[];
-                /** @enum {string} */
-                effect: "boost" | "filter";
-                enabled: boolean;
-                /** @enum {string} */
-                triggerMode: "always_on" | "match_turn";
-                triggerInstruction?: string;
-            }[];
-            /** @default [] */
-            metadataFieldSuggestions: {
-                field: string;
-                /** @enum {string} */
-                inferredType: "string" | "number" | "date" | "boolean";
-            }[];
-            /** @enum {string} */
-            retrievalStrategy: "fixed" | "reasoning" | "auto";
-        };
         PlatformChannelsSettingsSection: {
             anonymousChatEnabled: boolean;
             anonymousChatUrl: string | null;
@@ -2072,7 +1975,6 @@ export interface components {
         };
         PlatformSettingsResponse: {
             assistant: components["schemas"]["AssistantSettingsSection"];
-            retrieval: components["schemas"]["PlatformRetrievalSettingsSection"];
             channels: components["schemas"]["PlatformChannelsSettingsSection"];
         };
         UpdatePlatformSettingsRequest: {
@@ -2083,44 +1985,6 @@ export interface components {
                 proactiveGreetingEnabled?: boolean;
                 suggestedQuestionsEnabled?: boolean;
                 customInstruction?: string;
-            };
-            retrieval?: {
-                queryRewriteEnabled?: boolean;
-                semanticRewriteInstructions?: string;
-                lexicalRewriteInstructions?: string;
-                suggestedQuestionsCount?: number;
-                rerankEnabled?: boolean;
-                vectorTopK?: number;
-                similarityThreshold?: number;
-                rerankTopK?: number;
-                /** @enum {string} */
-                retrievalStrategy?: "fixed" | "reasoning" | "auto";
-                metadataRules?: {
-                    id: string;
-                    field?: string;
-                    /** @enum {string} */
-                    valueType?: "string" | "number" | "date" | "boolean";
-                    /** @enum {string} */
-                    operator?: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
-                    value?: string;
-                    /** @enum {string} */
-                    combinator?: "and" | "or";
-                    conditions?: {
-                        id: string;
-                        field: string;
-                        /** @enum {string} */
-                        valueType: "string" | "number" | "date" | "boolean";
-                        /** @enum {string} */
-                        operator: "equals" | "not_equals" | "contains" | "not_contains" | "lt" | "lte" | "gt" | "gte";
-                        value: string;
-                    }[];
-                    /** @enum {string} */
-                    effect: "boost" | "filter";
-                    enabled: boolean;
-                    /** @enum {string} */
-                    triggerMode?: "always_on" | "match_turn";
-                    triggerInstruction?: string;
-                }[];
             };
             channels?: {
                 anonymousChatEnabled?: boolean;
@@ -4870,7 +4734,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Shared assistant, retrieval, and channel settings returned */
+            /** @description Shared assistant and channel settings returned */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4950,7 +4814,7 @@ export interface operations {
             };
         };
     };
-    getRetrievalSettings: {
+    getSettingsRetrievalDefaults: {
         parameters: {
             query?: never;
             header?: never;
@@ -4959,55 +4823,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Retrieval settings returned */
+            /** @description Retrieval defaults returned */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RetrievalSettings"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    updateRetrievalSettings: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateRetrievalSettingsRequest"];
-            };
-        };
-        responses: {
-            /** @description Updated retrieval settings */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RetrievalSettings"];
-                };
-            };
-            /** @description Request validation failed */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
+                    "application/json": components["schemas"]["RetrievalDefaultsResponse"];
                 };
             };
             /** @description Authentication required */

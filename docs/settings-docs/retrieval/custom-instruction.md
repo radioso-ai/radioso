@@ -1,14 +1,14 @@
 # Custom Instruction
 
 ## Summary
-Add assistant-owned answer guidance for customer-facing chat responses.
+Add per-agent answer guidance for retrieval-backed responses.
 
 ## Details
 ### Overview
 
-This is the workspace-level assistant instruction for how customer-facing answers should be written.
+This is the selected agent's instruction for how retrieval-backed answers should be written.
 
-In practice, it applies to assistant chat responses after the assistant decides whether the current message can be answered directly or needs retrieval. It is not a retrieval tuning field.
+In practice, it applies after evidence has been selected for the `retrieval.answer` skill. It affects answer behavior, not document search quality.
 
 ### Appropriate Uses
 
@@ -21,4 +21,4 @@ In practice, it applies to assistant chat responses after the assistant decides 
 
 Do not use this as a bandage for retrieval problems.
 
-If the wrong evidence is being found, the fix belongs in ingestion or retrieval settings, not here. Use retrieval rewrite, ranking, and metadata controls for evidence quality.
+If the wrong evidence is being found, the fix belongs in ingestion, source scope, metadata, or the agent's retrieval skill settings, not here. Use this field for how the agent explains answers once the evidence is already right.

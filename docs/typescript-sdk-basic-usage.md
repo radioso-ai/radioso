@@ -200,7 +200,7 @@ const response = await client.chat.create({
 });
 ```
 
-Agents with `retrievalEnabled: true` can use the retrieval pipeline. Workspace retrieval settings provide defaults; set `skillSettings["retrieval.answer"]` on an agent to override retrieval behavior for that agent. Direct-only agents answer from their own instructions and return retrieval diagnostics with `retrievalInvoked: false`.
+Agents with `retrievalEnabled: true` can use the retrieval pipeline. Set `skillSettings["retrieval.answer"]` on an agent to configure retrieval behavior for that agent. Omitted fields inherit system/model defaults. Direct-only agents answer from their own instructions and return retrieval diagnostics with `retrievalInvoked: false`.
 
 ## Non-Streaming Chat
 
@@ -291,7 +291,6 @@ try {
 - Streaming chat is layered on top of the assistant chat contract, `POST /api/v1/assistant/chat`, with `stream: true`.
 - Skill discovery is exposed through `client.skills.list()` and `client.skills.get(name)`. The catalog describes current assistant, retrieval, document, and MCP contracts; it does not execute skills directly.
 - Retrieval-only clients should use the REST retrieval surfaces, `POST /api/v1/retrieval/search` and `POST /api/v1/retrieval/answer`, when they do not want assistant persona or assistant-owned chat history. Pass `includeDebug: true` when callers need shape, resolved-step diagnostics, or retrieval answer evidence. Callers do not select shapes directly.
-- Shared workspace settings are exposed by the REST platform settings resource, `GET /api/v1/settings` and `PUT /api/v1/settings`, with separate `assistant`, `retrieval`, and `channels` sections.
+- Shared workspace settings are exposed by the REST platform settings resource, `GET /api/v1/settings` and `PUT /api/v1/settings`, with assistant and channel settings. Ingestion settings are exposed separately through the settings API.
 - Workspace creation, rename, and deletion are not exposed because those routes are currently session-authenticated rather than token-authenticated.
 - Run `pnpm run sync` in [`typescript-sdk/`](../typescript-sdk/) after backend API changes so the generated types stay up to date.
-- Search and answer settings are documented separately in [Retrieval Settings](./typescript-sdk-retrieval-settings.md).

@@ -4,7 +4,7 @@ import type {
   WorkspaceLlmCapabilityPreference,
   WorkspaceLlmCapabilityPreferenceInput,
 } from "./llmCapability.js";
-import type { MetadataFieldSuggestion, RetrievalSettingsInput, RetrievalSettingsRecord } from "./retrieval.js";
+import type { MetadataFieldSuggestion } from "./retrieval.js";
 
 export interface IngestionSettingsRepositoryPort {
   findByWorkspaceId(workspaceId: string): Promise<IngestionSettingsRecord | null>;
@@ -17,11 +17,6 @@ export interface WorkspaceReprocessPort {
   reprocessWorkspace(workspaceId: string): Promise<unknown>;
 }
 
-export interface RetrievalSettingsRepositoryPort {
-  findByWorkspaceId(workspaceId: string): Promise<RetrievalSettingsRecord | null>;
-  upsert(workspaceId: string, input: RetrievalSettingsInput): Promise<RetrievalSettingsRecord>;
-}
-
 /**
  * Narrow port for reading/writing the per-workspace LLM capability preferences
  * (chat / rewrite / rerank provider+model). Backed by the same row as retrieval
@@ -29,6 +24,7 @@ export interface RetrievalSettingsRepositoryPort {
  * not leak into retrieval-pipeline configuration.
  */
 export interface WorkspaceLlmCapabilityPreferencesRepositoryPort {
+  ensureRow(workspaceId: string): Promise<void>;
   findByWorkspace(workspaceId: string): Promise<WorkspaceLlmCapabilityPreference[]>;
   setPreference(
     workspaceId: string,
@@ -49,11 +45,4 @@ export interface IngestionSettingsPort {
   promotePendingEmbeddingModelIfReady?(workspaceId: string): Promise<IngestionSettingsRecord | null>;
 }
 
-export interface RetrievalSettingsPort {
-  getForWorkspace(workspaceId: string): Promise<RetrievalSettingsRecord>;
-  listMetadataFieldSuggestions(workspaceId: string): Promise<MetadataFieldSuggestion[]>;
-  updateForWorkspace(workspaceId: string, input: RetrievalSettingsInput): Promise<RetrievalSettingsRecord>;
-}
-
 export type IngestionSettingsService = IngestionSettingsPort;
-export type RetrievalSettingsService = RetrievalSettingsPort;

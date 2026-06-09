@@ -1,9 +1,10 @@
-import type { IngestionSettingsService, RetrievalSettingsService } from "../settings/contracts/services.js";
+import type { IngestionSettingsService } from "../settings/contracts/services.js";
 import type { Database } from "../../shared/infra/database.js";
 import type { LlmProviderRegistry } from "../../shared/infra/llm/providerRegistry.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
 import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
+import type { RetrievalDefaultsProvider } from "./domain/retrievalDefaultsProvider.js";
 import { CandidatePreparationService } from "./services/candidatePreparationService.js";
 import { ConversationContextService } from "./services/conversationContextService.js";
 import { EmbeddingService } from "./services/embeddingService.js";
@@ -106,14 +107,14 @@ export const createDefaultRetrievalServices = (input: {
   embeddingService: EmbeddingService;
   llmRegistry: LlmProviderRegistry;
   logger: AppLogger;
-  retrievalSettingsService: RetrievalSettingsService;
+  retrievalDefaultsProvider: RetrievalDefaultsProvider;
   telemetryService: TelemetryService;
   ingestionSettingsService?: IngestionSettingsService;
   usageEventRecorder?: UsageEventRecorder;
   skillSettingsResolver?: SkillSettingsResolver;
 }) => {
   const retrievalPipeline = new RetrievalPipelineService(
-    input.retrievalSettingsService,
+    input.retrievalDefaultsProvider,
     input.embeddingService,
     new PgVectorSearch(input.database),
     new PgLexicalSearch(input.database),

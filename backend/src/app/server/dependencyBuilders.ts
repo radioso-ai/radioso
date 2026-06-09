@@ -130,6 +130,7 @@ import { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
 import { WorkspaceService, WorkspaceSummaryService } from "../../modules/workspace/public.js";
 import type { RetrievalDefaultsProvider, SkillSettingsResolver } from "../../modules/retrieval/public.js";
 import { ProductAnalyticsService } from "../../shared/analytics/productAnalyticsService.js";
+import type { OrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
 import { NoopUsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import {
   DurableUsageEventRecorder,
@@ -1006,6 +1007,7 @@ export const buildAuthService = (input: {
   access: ReturnType<typeof buildAccessServices>;
   auditService: AuditService;
   env: Env;
+  organizationCreationGuard: OrganizationCreationGuard;
   onAccountCreated?: (input: { accountId: string }) => Promise<void>;
   repositories: ReturnType<typeof buildRepositories>;
   workspaceService: WorkspaceService;
@@ -1020,6 +1022,7 @@ export const buildAuthService = (input: {
     accountAccessService: input.access.accountAccessService,
     accountInvitationService: input.access.accountInvitationService,
     onAccountCreated: input.onAccountCreated,
+    organizationCreationGuard: input.organizationCreationGuard,
     auditService: input.auditService,
   });
 

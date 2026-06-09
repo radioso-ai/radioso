@@ -2,6 +2,11 @@ import type { Env } from "../../../app/config/env.js";
 import { conflict, forbidden, serviceUnavailable, unauthorized } from "../../../shared/domain/errors.js";
 import type { AccountAccessService, AccountInvitationService } from "../../account/public.js";
 import type { AuditService } from "../../audit/contracts/index.js";
+import type {
+  OrganizationCreationGuard,
+  OrganizationCreationReservation,
+} from "../../../shared/domain/organizationCreationGuard.js";
+import { noopOrganizationCreationGuard } from "../../../shared/domain/organizationCreationGuard.js";
 import type { WorkspaceService } from "../../workspace/public.js";
 import type { UserRepositoryPort } from "../../../db/repositories/userRepository.js";
 import {
@@ -94,6 +99,7 @@ interface AuthServiceDependencies {
   accountAccessService: AccountAccessService;
   accountInvitationService: AccountInvitationService;
   onAccountCreated?: (input: { accountId: string }) => Promise<void>;
+  organizationCreationGuard?: OrganizationCreationGuard;
   auditService: AuditService;
 }
 
@@ -210,6 +216,15 @@ export class AuthService {
       throw unauthorized("Invalid session");
     }
 
+    let organizationCreationReservation: OrganizationCreationReservation | null = null;
+    try {
+      organizationCreationReservation = await (this.dependencies.organizationCreationGuard ?? noopOrganizationCreationGuard)
+        .reserve({ userId: user.id });
+    } catch (error) {
+      await this.recordOrganizationCreationRateLimited(user.id, error);
+      throw error;
+    }
+
     const account = await this.dependencies.accountRepository.create({
       name: input.organizationName.trim(),
       email: user.email,
@@ -235,6 +250,7 @@ export class AuthService {
           organizationName: account.name,
         },
       });
+      await organizationCreationReservation.commit();
 
       return {
         userId: user.id,
@@ -246,9 +262,29 @@ export class AuthService {
         sessionCookie,
       };
     } catch (error) {
+      await organizationCreationReservation.release();
       await this.rollbackCreatedAccount(account.id);
       throw error;
     }
+  }
+
+  private async recordOrganizationCreationRateLimited(userId: string, error: unknown): Promise<void> {
+    const candidate = error as { statusCode?: number; code?: string; details?: unknown };
+    if (candidate.statusCode !== 429 && candidate.code !== "rate_limit_exceeded") {
+      return;
+    }
+
+    await this.dependencies.auditService.record({
+      eventType: "account.create",
+      eventStatus: "failure",
+      metadata: {
+        actorUserId: userId,
+        reason: "rate_limited",
+        ...(typeof candidate.details === "object" && candidate.details !== null
+          ? { rateLimit: candidate.details }
+          : {}),
+      },
+    });
   }
 
   async login(input: {

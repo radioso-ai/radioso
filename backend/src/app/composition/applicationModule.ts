@@ -13,6 +13,7 @@ import type {
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { Database } from "../../shared/infra/database.js";
 import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
+import type { OrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
 import type { WebsiteEmbedIntegrationProvider } from "../../modules/settings/contracts/websiteEmbedIntegration.js";
@@ -77,6 +78,13 @@ export type ApplicationUsageLimitPolicyRegistration =
       database: ApplicationDatabasePort;
       logger: AppLogger;
     }) => UsageLimitPolicy);
+
+export type ApplicationOrganizationCreationGuardRegistration =
+  | OrganizationCreationGuard
+  | ((context: {
+      database: ApplicationDatabasePort;
+      logger: AppLogger;
+    }) => OrganizationCreationGuard);
 
 export type ApplicationUsageEventRecorderRegistration =
   | UsageEventRecorder
@@ -181,6 +189,7 @@ export interface ApplicationExtensionRegistry {
   accountCreatedHooks: ApplicationAccountCreatedHook[];
   capabilityPolicy?: CapabilityPolicy;
   usageLimitPolicyRegistration?: ApplicationUsageLimitPolicyRegistration;
+  organizationCreationGuardRegistration?: ApplicationOrganizationCreationGuardRegistration;
   usageEventRecorderRegistration?: ApplicationUsageEventRecorderRegistration;
   documentStorage?: DocumentStoragePort;
   documentJobDispatcher?: DocumentJobDispatcherPort;
@@ -222,6 +231,7 @@ export interface ApplicationModuleRegistrationContext {
   registerAccountCreatedHandler(handler: ApplicationAccountCreatedHook): void;
   registerCapabilityPolicy(policy: CapabilityPolicy): void;
   registerUsageLimitPolicy(policy: ApplicationUsageLimitPolicyRegistration): void;
+  registerOrganizationCreationGuard(guard: ApplicationOrganizationCreationGuardRegistration): void;
   registerUsageEventRecorder(recorder: ApplicationUsageEventRecorderRegistration): void;
   registerDocumentStorage(storage: DocumentStoragePort): void;
   registerDocumentJobDispatcher(dispatcher: DocumentJobDispatcherPort): void;
@@ -300,6 +310,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerUsageLimitPolicy(policy) {
     registry.usageLimitPolicyRegistration = policy;
+  },
+  registerOrganizationCreationGuard(guard) {
+    registry.organizationCreationGuardRegistration = guard;
   },
   registerUsageEventRecorder(recorder) {
     registry.usageEventRecorderRegistration = recorder;

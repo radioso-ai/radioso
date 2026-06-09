@@ -81,6 +81,7 @@ export interface ApplicationComposition {
   chunkingProvider?: ReturnType<typeof createApplicationExtensionRegistry>["chunkingProvider"];
   websiteEmbedIntegration?: ReturnType<typeof createApplicationExtensionRegistry>["websiteEmbedIntegration"];
   usageLimitPolicyRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageLimitPolicyRegistration"];
+  organizationCreationGuardRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["organizationCreationGuardRegistration"];
   usageEventRecorderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageEventRecorderRegistration"];
   publicChatActionAdvertiserRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["publicChatActionAdvertiserRegistrations"];
   routineRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["routineRegistrations"];
@@ -138,6 +139,7 @@ export const createDefaultApplicationComposition = (options: {
     chunkingProvider: registry.chunkingProvider,
     websiteEmbedIntegration: registry.websiteEmbedIntegration,
     usageLimitPolicyRegistration: registry.usageLimitPolicyRegistration,
+    organizationCreationGuardRegistration: registry.organizationCreationGuardRegistration,
     usageEventRecorderRegistration: registry.usageEventRecorderRegistration,
     publicChatActionAdvertiserRegistrations: registry.publicChatActionAdvertiserRegistrations,
     routineRegistrations: registry.routineRegistrations,

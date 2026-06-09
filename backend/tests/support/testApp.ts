@@ -104,6 +104,10 @@ import {
 import { DefaultAllowCapabilityPolicy, registeredCapabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
 import {
+  noopOrganizationCreationGuard,
+  type OrganizationCreationGuard,
+} from "../../src/shared/domain/organizationCreationGuard.js";
+import {
   ChainedPublicChatActionAdvertiser,
   NoopPublicChatActionAdvertiser,
   type PublicChatActionAdvertiserPort,
@@ -285,6 +289,7 @@ export const createTestDependencies = (overrides: {
   abuseControlRepository?: AbuseControlRepositoryPort;
   fallbackReplyComposer?: FallbackReplyComposer;
   usageLimitPolicy?: UsageLimitPolicy;
+  organizationCreationGuard?: OrganizationCreationGuard;
   answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
   publicChatActionAdvertiser?: PublicChatActionAdvertiserPort;
   applicationRouteMounts?: ApplicationRouteMount[];
@@ -319,6 +324,7 @@ export const createTestDependencies = (overrides: {
     }),
   });
   const usageLimitPolicy = overrides.usageLimitPolicy ?? new NoopUsageLimitPolicy();
+  const organizationCreationGuard = overrides.organizationCreationGuard ?? noopOrganizationCreationGuard;
   const persistentErrorReportingService = new ErrorReportingService({
     enabled: env.OBSERVABILITY_ENABLED,
     environment: env.OBSERVABILITY_ENVIRONMENT,
@@ -863,6 +869,7 @@ export const createTestDependencies = (overrides: {
     productAnalyticsService,
     capabilityPolicy,
     usageLimitPolicy,
+    organizationCreationGuard,
     publicChatActionAdvertiser,
     contactHistoryProvider: new NoopContactHistoryProvider(),
     applicationRouteMounts: overrides.applicationRouteMounts ?? [],
@@ -888,6 +895,7 @@ export const createTestDependencies = (overrides: {
       workspaceService,
       accountAccessService,
       accountInvitationService,
+      organizationCreationGuard,
     }),
     accessGrantService,
     passwordResetService: new PasswordResetService({
@@ -1040,6 +1048,7 @@ export const createTestApp = (overrides: {
   abuseControlRepository?: AbuseControlRepositoryPort;
   fallbackReplyComposer?: FallbackReplyComposer;
   usageLimitPolicy?: UsageLimitPolicy;
+  organizationCreationGuard?: OrganizationCreationGuard;
   answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
   publicChatActionAdvertiser?: PublicChatActionAdvertiserPort;
   applicationRouteMounts?: ApplicationRouteMount[];

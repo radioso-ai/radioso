@@ -8,6 +8,7 @@ import {
   createDefaultWebsiteCrawlJobDispatcher,
 } from "../../src/app/composition/defaultComposition.js";
 import { CONTACT_SEND_ACTION_TYPE, DefaultTurnSelectionStrategy } from "../../src/modules/chat/composition.js";
+import type { OrganizationCreationGuard } from "../../src/shared/domain/organizationCreationGuard.js";
 import type { DirectiveMatcherPort } from "../../src/modules/directives/public.js";
 import { capabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 import { AmqpDocumentJobConsumer, AmqpDocumentJobDispatcher } from "../../src/modules/documents/infra/amqpDocumentJobQueue.js";
@@ -73,6 +74,7 @@ describe("default application composition", () => {
     expect(composition.actionCapabilityMap.requiredCapabilitiesFor(CONTACT_SEND_ACTION_TYPE)).toEqual([
       capabilityNames.humanContact.request,
     ]);
+    expect(composition.organizationCreationGuardRegistration).toBeUndefined();
   });
 
   it("applies optional connector contributions through module registration", async () => {
@@ -99,6 +101,28 @@ describe("default application composition", () => {
       "radioso-contact-routine",
       "connector-module",
     ]);
+  });
+
+  it("collects an optional organization creation guard through module registration", () => {
+    const guard: OrganizationCreationGuard = {
+      reserve: vi.fn(async () => ({
+        commit: vi.fn(),
+        release: vi.fn(),
+      })),
+    };
+    const composition = createDefaultApplicationComposition({
+      logger: createLogger(),
+      modules: [
+        {
+          id: "organization-creation-guard-module",
+          register(context) {
+            context.registerOrganizationCreationGuard(guard);
+          },
+        },
+      ],
+    });
+
+    expect(composition.organizationCreationGuardRegistration).toBe(guard);
   });
 
   it("applies optional directive contributions through module registration", () => {

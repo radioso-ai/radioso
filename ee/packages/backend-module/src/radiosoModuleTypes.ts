@@ -19,6 +19,7 @@ export interface ApplicationModuleRegistrationContext {
   registerDatabaseMigrator(migrator: ApplicationDatabaseMigrator): void;
   registerRouteMount(mount: ApplicationRouteMount): void;
   registerUsageLimitPolicy(policy: ApplicationUsageLimitPolicyRegistration): void;
+  registerOrganizationCreationGuard?(guard: ApplicationOrganizationCreationGuardRegistration): void;
   registerUsageEventRecorder?(recorder: ApplicationUsageEventRecorderRegistration): void;
   registerAccountCreatedHandler(handler: ApplicationAccountCreatedHandler): void;
   registerPublicChatActionAdvertiser?(provider: ApplicationPublicChatActionAdvertiserRegistration): void;
@@ -139,6 +140,15 @@ export interface UsageLimitPolicy {
   }): Promise<UsageLimitReservation>;
   reserveIndexedStorage(input: IndexedStorageReservationInput): Promise<UsageLimitReservation>;
   reserveMonthlyIndexedContent(input: MonthlyIndexedContentReservationInput): Promise<UsageLimitReservation>;
+}
+
+export interface OrganizationCreationReservation {
+  commit(): Promise<void>;
+  release(): Promise<void>;
+}
+
+export interface OrganizationCreationGuard {
+  reserve(input: { userId: string }): Promise<OrganizationCreationReservation>;
 }
 
 export interface ApplicationDatabasePort {
@@ -394,6 +404,15 @@ export type ApplicationUsageLimitPolicyRegistration =
         error(entry: unknown, message?: string): void;
       };
     }) => UsageLimitPolicy);
+
+export type ApplicationOrganizationCreationGuardRegistration =
+  | OrganizationCreationGuard
+  | ((context: {
+      database: UsageLimitDatabasePort;
+      logger: {
+        error(entry: unknown, message?: string): void;
+      };
+    }) => OrganizationCreationGuard);
 
 // The recorder contract is owned by @radioso/usage-contract (shared by OSS and
 // EE). These aliases keep EE's local names stable while sourcing the canonical

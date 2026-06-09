@@ -52,6 +52,7 @@ import type { TelemetryService } from "../../shared/observability/telemetry/tele
 import type { ErrorReportingService } from "../../shared/errors/errorReportingService.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
+import type { OrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { ApplicationModuleCoordinator, ApplicationRouteMount } from "../composition/applicationModule.js";
 import type { PublicChatActionAdvertiserPort, ContactHistoryProviderPort } from "../../modules/chat/contracts/index.js";
@@ -81,6 +82,7 @@ export interface AppDependencies {
   productAnalyticsService: ProductAnalyticsPort;
   capabilityPolicy: CapabilityPolicy;
   usageLimitPolicy: UsageLimitPolicy;
+  organizationCreationGuard: OrganizationCreationGuard;
   publicChatActionAdvertiser: PublicChatActionAdvertiserPort;
   contactHistoryProvider: ContactHistoryProviderPort;
   applicationRouteMounts: ApplicationRouteMount[];

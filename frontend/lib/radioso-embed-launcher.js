@@ -466,7 +466,11 @@
     style.textContent = [
       '@keyframes radioso-breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.04); } }',
       '@keyframes radioso-nudge { 0%,90%,100% { transform: rotate(0deg); } 92% { transform: rotate(-6deg); } 94% { transform: rotate(5deg); } 96% { transform: rotate(-4deg); } 98% { transform: rotate(2deg); } }',
-      '@keyframes radioso-pulse-ring { 0% { transform: scale(0.85); opacity: 0.6; } 100% { transform: scale(1.6); opacity: 0; } }',
+      // Expand a fixed-pixel ring via box-shadow spread rather than a transform
+      // scale: scaling grew the ring proportionally to the launcher width, so a
+      // long labeled pill produced a huge ripple. A px-based spread stays the
+      // same visual size no matter how wide the widget is.
+      '@keyframes radioso-pulse-ring { 0% { box-shadow: 0 0 0 0 var(--radioso-pulse-color, rgba(15,23,42,0.45)); } 70% { box-shadow: 0 0 0 12px rgba(15,23,42,0); } 100% { box-shadow: 0 0 0 0 rgba(15,23,42,0); } }',
       '@keyframes radioso-bounce-in { 0% { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.12); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }',
       '@keyframes radioso-typing-ring { 0% { box-shadow: 0 0 0 0 var(--radioso-accent, rgba(15,23,42,0.55)); } 70% { box-shadow: 0 0 0 8px rgba(15,23,42,0); } 100% { box-shadow: 0 0 0 0 rgba(15,23,42,0); } }',
       '@keyframes radioso-teaser-in { 0% { transform: translateY(8px) scale(0.96); opacity: 0; } 100% { transform: translateY(0) scale(1); opacity: 1; } }',
@@ -480,9 +484,9 @@
       '.radioso-launcher[data-radioso-attention="breathe"] { animation: radioso-breathe 3.4s ease-in-out infinite !important; }',
       '.radioso-launcher[data-radioso-attention="nudge"] { animation: radioso-nudge 8s ease-in-out infinite !important; transform-origin: 50% 80%; }',
       '.radioso-launcher[data-radioso-attention="bounce-in"] { animation: radioso-bounce-in 700ms cubic-bezier(0.34, 1.56, 0.64, 1) 1 !important; }',
-      '.radioso-launcher[data-radioso-attention="pulse"]::before { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--radioso-pulse-color, rgba(15,23,42,0.45)); z-index: -1; animation: radioso-pulse-ring 2.2s ease-out infinite; pointer-events: none; }',
+      '.radioso-launcher[data-radioso-attention="pulse"]::before { content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: -1; animation: radioso-pulse-ring 2.2s ease-out infinite; pointer-events: none; }',
       '.radioso-launcher[data-radioso-typing="true"] .radioso-launcher-avatar { animation: radioso-typing-ring 1.4s ease-out infinite; }',
-      '.radioso-launcher-dot { position: absolute; top: 4px; right: 6px; width: 10px; height: 10px; border-radius: 9999px; background: var(--radioso-dot-color, #ef4444); border: 2px solid var(--radioso-dot-border, #ffffff); opacity: 0; transform: scale(0.6); transition: opacity 180ms ease, transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1); pointer-events: none; }',
+      '.radioso-launcher-dot { position: absolute; top: 9px; right: 12px; width: 10px; height: 10px; border-radius: 9999px; background: var(--radioso-dot-color, #ef4444); border: 2px solid var(--radioso-dot-border, #ffffff); opacity: 0; transform: scale(0.6); transition: opacity 180ms ease, transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1); pointer-events: none; }',
       '.radioso-launcher-dot[data-visible="true"] { opacity: 1; transform: scale(1); }',
       '.radioso-teaser { position: relative; max-width: 280px; padding: 12px 14px; border-radius: 16px; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.4; cursor: pointer; pointer-events: auto; opacity: 0; transform: translateY(8px) scale(0.96); transform-origin: bottom right; animation: radioso-teaser-in 280ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }',
       '.radioso-teaser[data-position="bottom-left"] { transform-origin: bottom left; }',
@@ -741,8 +745,8 @@
     container.innerHTML = iconMarkup[icon] ?? iconMarkup[DEFAULT_ICON]
     const svg = container.querySelector('svg')
     if (svg) {
-      svg.style.width = '70%'
-      svg.style.height = '70%'
+      svg.style.width = '78%'
+      svg.style.height = '78%'
     }
   }
 
@@ -754,10 +758,10 @@
     container.style.display = 'inline-flex'
     container.style.alignItems = 'center'
     container.style.justifyContent = 'center'
-    container.style.width = isLarge ? '3rem' : '2rem'
-    container.style.height = isLarge ? '3rem' : '2rem'
+    container.style.width = isLarge ? '3rem' : '2.5rem'
+    container.style.height = isLarge ? '3rem' : '2.5rem'
     container.style.overflow = 'hidden'
-    container.style.borderRadius = isLarge ? '0.85rem' : '0.65rem'
+    container.style.borderRadius = isLarge ? '0.85rem' : '0.8rem'
     container.style.flexShrink = '0'
     container.style.background = theme.mutedBackground
     container.style.color = theme.accent
@@ -1032,9 +1036,9 @@
     button.style.boxSizing = 'border-box'
     button.style.display = 'inline-flex'
     button.style.alignItems = 'center'
-    button.style.gap = '0.75rem'
-    button.style.padding = hasVisibleLabel ? '0.875rem 1rem' : '0.5rem'
-    button.style.borderRadius = hasVisibleLabel ? '18px' : '24px'
+    button.style.gap = '0.625rem'
+    button.style.padding = hasVisibleLabel ? '0.4rem 0.5rem' : '0.5rem'
+    button.style.borderRadius = hasVisibleLabel ? '20px' : '24px'
     button.style.cursor = 'pointer'
     button.style.background = theme.launcherBackground
     button.style.color = theme.launcherForeground

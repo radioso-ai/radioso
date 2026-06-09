@@ -24,6 +24,13 @@ type DirectiveMutationFixture = {
   directiveId?: string;
   body?: unknown;
 };
+type RoutineFixture = ApiSchemas["RoutineDefinition"];
+type RoutineDraftFixture = ApiSchemas["RoutineDefinitionCreateRequest"];
+type RoutineMutationFixture = {
+  method: "POST" | "PATCH" | "DELETE" | "VALIDATE" | "PUBLISH";
+  routineId?: string;
+  body?: unknown;
+};
 
 export const basePlatformSettings = (): ApiSchemas["PlatformSettingsResponse"] => ({
   assistant: {
@@ -153,6 +160,66 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   updatedAt: nowIso,
 });
 
+const validateRoutineFixture = (routine: RoutineDraftFixture | RoutineFixture): ApiSchemas["RoutineValidationResult"] => {
+  const diagnostics: ApiSchemas["RoutineValidationResult"]["diagnostics"] = [];
+  const stepIds = new Set(routine.steps.map((step) => step.stableStepId));
+  const terminalIds = new Set(routine.terminals.map((terminal) => terminal.stableStepId));
+  const nodeIds = new Set([...stepIds, ...terminalIds]);
+  const slotKeys = new Set(routine.slots.map((slot) => slot.key));
+  const referencedSlots = new Set<string>();
+
+  for (const step of routine.steps) {
+    for (const match of step.instruction.matchAll(/\{\{\s*slot\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu)) {
+      if (match[1]) referencedSlots.add(match[1]);
+    }
+  }
+  for (const key of referencedSlots) {
+    if (!slotKeys.has(key)) {
+      diagnostics.push({
+        code: "referenced_undeclared_slot",
+        location: `slot:${key}`,
+        message: `referenced-but-undeclared slot: "${key}" is referenced but is not declared.`,
+      });
+    }
+  }
+  for (const slot of routine.slots) {
+    if (!referencedSlots.has(slot.key)) {
+      diagnostics.push({
+        code: "declared_unused_slot",
+        location: `slot:${slot.key}`,
+        message: `declared-but-unused slot: "${slot.key}" is declared but never referenced.`,
+      });
+    }
+  }
+  for (const transition of routine.transitions) {
+    if (!stepIds.has(transition.fromStep) || !nodeIds.has(transition.toRef)) {
+      diagnostics.push({
+        code: "dangling_step_reference",
+        location: `transition:${transition.fromStep}->${transition.toRef}`,
+        message: `dangling step reference: transition "${transition.fromStep}" points at "${transition.toRef}".`,
+      });
+    }
+  }
+  if (routine.terminals.length === 0 || !routine.transitions.some((transition) => terminalIds.has(transition.toRef))) {
+    diagnostics.push({
+      code: "missing_terminal",
+      location: `routine:${routine.name}`,
+      message: `missing terminal: no terminal is reachable from the first step.`,
+    });
+  }
+  return { ok: diagnostics.length === 0, diagnostics };
+};
+
+const buildRoutine = (input: RoutineDraftFixture & Partial<Pick<RoutineFixture, "id" | "status" | "version">>): RoutineFixture => ({
+  ...input,
+  id: input.id ?? "55555555-5555-4555-8555-000000000001",
+  agentId: defaultAgentId,
+  status: input.status ?? "draft",
+  version: input.version ?? 1,
+  createdAt: nowIso,
+  updatedAt: nowIso,
+});
+
 const buildDefaultChannelsLifecycle = (settings: PlatformSettingsFixture): ChannelsLifecycleFixture => ({
   anonymousChat: {
     lastUsedAt: settings.channels.anonymousChatLastUsedAt,
@@ -228,6 +295,7 @@ const buildDirective = (input: Partial<AuthoredDirectiveFixture> & Pick<Authored
   dependsOn: [],
   excludes: [],
   routes: [],
+  tags: [],
   description: null,
   metadata: {},
   createdAt: nowIso,
@@ -346,6 +414,8 @@ export const installDashboardApiMocks = async (
     directiveUpdates?: DirectiveMutationFixture[];
     directives?: AuthoredDirectiveFixture[];
     builtIns?: BuiltInDirectiveFixture[];
+    routineUpdates?: RoutineMutationFixture[];
+    routines?: RoutineFixture[];
     requestLog?: string[];
     providerEncryptionConfigured?: boolean;
     providerCredentialUpdates?: Array<{ method: "PUT" | "DELETE"; provider: string; body?: unknown }>;
@@ -388,6 +458,9 @@ export const installDashboardApiMocks = async (
   const builtIns = options.builtIns ?? baseBuiltInDirectives();
   let nextDirectiveIndex = 1;
   const directiveUpdates = options.directiveUpdates;
+  let routines = options.routines ?? [];
+  let nextRoutineIndex = 1;
+  const routineUpdates = options.routineUpdates;
   const coherenceFor = (directive: AuthoredDirectiveFixture): ApiSchemas["DirectiveCoherenceVerdict"] => {
     const hasConflict =
       (directive.name.toLowerCase().includes("conflict") || directive.action.toLowerCase().includes("verbose")) &&
@@ -723,6 +796,104 @@ export const installDashboardApiMocks = async (
         directiveUpdates?.push({ method: "DELETE", directiveId });
         directives = directives.filter((directive) => directive.id !== directiveId);
         await route.fulfill({ status: 204, contentType: "application/json", body: "" });
+        return;
+      }
+    }
+
+    if (path === `/agents/${defaultAgentId}/routines`) {
+      if (request.method() === "GET") {
+        await json(route, { routines });
+        return;
+      }
+
+      if (request.method() === "POST") {
+        const body = request.postDataJSON() as RoutineDraftFixture;
+        routineUpdates?.push({ method: "POST", body });
+        const routine = buildRoutine({
+          ...body,
+          id: `55555555-5555-4555-8555-${String(nextRoutineIndex).padStart(12, "0")}`,
+        });
+        nextRoutineIndex += 1;
+        routines = [...routines, routine];
+        await json(route, {
+          routine,
+          validation: validateRoutineFixture(routine),
+        }, 201);
+        return;
+      }
+    }
+
+    if (path.startsWith(`/agents/${defaultAgentId}/routines/`)) {
+      const suffix = path.replace(`/agents/${defaultAgentId}/routines/`, "");
+      const [routineId, action] = suffix.split("/");
+      const existing = routines.find((routine) => routine.id === routineId);
+
+      if (request.method() === "GET" && !action) {
+        if (!existing) {
+          await json(route, { error: { code: "not_found", message: "Routine not found" } }, 404);
+          return;
+        }
+        await json(route, { routine: existing });
+        return;
+      }
+
+      if (request.method() === "PATCH" && !action) {
+        const body = request.postDataJSON() as RoutineDraftFixture;
+        routineUpdates?.push({ method: "PATCH", routineId, body });
+        if (!existing || existing.status !== "draft") {
+          await json(route, { error: { code: "not_found", message: "Draft routine not found" } }, 404);
+          return;
+        }
+        const routine: RoutineFixture = {
+          ...existing,
+          ...body,
+          updatedAt: nowIso,
+        };
+        routines = routines.map((item) => item.id === routineId ? routine : item);
+        await json(route, {
+          routine,
+          validation: validateRoutineFixture(routine),
+        });
+        return;
+      }
+
+      if (request.method() === "DELETE" && !action) {
+        routineUpdates?.push({ method: "DELETE", routineId });
+        routines = routines.filter((routine) => routine.id !== routineId);
+        await route.fulfill({ status: 204, contentType: "application/json", body: "" });
+        return;
+      }
+
+      if (request.method() === "POST" && action === "validate") {
+        routineUpdates?.push({ method: "VALIDATE", routineId });
+        if (!existing) {
+          await json(route, { error: { code: "not_found", message: "Routine not found" } }, 404);
+          return;
+        }
+        await json(route, { validation: validateRoutineFixture(existing) });
+        return;
+      }
+
+      if (request.method() === "POST" && action === "publish") {
+        routineUpdates?.push({ method: "PUBLISH", routineId });
+        if (!existing || existing.status !== "draft") {
+          await json(route, { error: { code: "not_found", message: "Draft routine not found" } }, 404);
+          return;
+        }
+        const validation = validateRoutineFixture(existing);
+        if (!validation.ok) {
+          await json(route, { error: "Routine definition is invalid", validation }, 422);
+          return;
+        }
+        const published: RoutineFixture = {
+          ...existing,
+          id: `55555555-5555-4555-9555-${String(nextRoutineIndex).padStart(12, "0")}`,
+          status: "published",
+          version: existing.version + 1,
+          updatedAt: nowIso,
+        };
+        routines = routines.filter((routine) => routine.id !== routineId).concat(published);
+        await json(route, { routine: published, validation });
         return;
       }
     }

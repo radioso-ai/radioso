@@ -12,6 +12,8 @@ any language — judge by meaning, not by matching words.
 
 {{conditions}}
 
+{{slotSchema}}
+
 Return a JSON object:
 
 {"condition": <number or null>, "offTopic": <true or false>, "variables": {"<name>": "<value the user provided this turn>"}}

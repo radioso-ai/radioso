@@ -3626,6 +3626,949 @@
           "coherence"
         ]
       },
+      "RoutineDefinitionCreateRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "activation": {
+            "type": "object",
+            "properties": {
+              "triggerDescription": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              "gateRef": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "priority": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "triggerDescription",
+              "priority"
+            ],
+            "additionalProperties": false
+          },
+          "slots": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "stableSlotId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                },
+                "key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "number",
+                    "boolean",
+                    "email",
+                    "date"
+                  ]
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 1000
+                },
+                "ordinal": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "stableSlotId",
+                "key",
+                "type",
+                "required",
+                "ordinal"
+              ],
+              "additionalProperties": false
+            },
+            "default": []
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "stableStepId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "chat",
+                    "tool",
+                    "fork",
+                    "action"
+                  ]
+                },
+                "instruction": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "toolRef": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "actionType": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "ordinal": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "metadata": {
+                  "type": "object",
+                  "additionalProperties": {},
+                  "default": {}
+                }
+              },
+              "required": [
+                "stableStepId",
+                "kind",
+                "instruction",
+                "ordinal"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1
+          },
+          "transitions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "fromStep": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                },
+                "toRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                },
+                "guardKind": {
+                  "type": "string",
+                  "enum": [
+                    "llm",
+                    "always",
+                    "fallback",
+                    "slot_filled",
+                    "outcome",
+                    "counter"
+                  ]
+                },
+                "guardText": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                "outcomeStatus": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "counterLimit": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "exclusiveMinimum": 0
+                },
+                "ordinal": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "fromStep",
+                "toRef",
+                "guardKind",
+                "ordinal"
+              ],
+              "additionalProperties": false
+            },
+            "default": []
+          },
+          "terminals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "stableStepId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "complete",
+                    "handoff"
+                  ]
+                },
+                "instruction": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "ordinal": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "stableStepId",
+                "kind",
+                "ordinal"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "name",
+          "activation",
+          "steps",
+          "terminals"
+        ],
+        "additionalProperties": false
+      },
+      "RoutineDefinitionUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "activation": {
+            "type": "object",
+            "properties": {
+              "triggerDescription": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              "gateRef": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "priority": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "triggerDescription",
+              "priority"
+            ],
+            "additionalProperties": false
+          },
+          "slots": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "stableSlotId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                },
+                "key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "number",
+                    "boolean",
+                    "email",
+                    "date"
+                  ]
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 1000
+                },
+                "ordinal": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "stableSlotId",
+                "key",
+                "type",
+                "required",
+                "ordinal"
+              ],
+              "additionalProperties": false
+            },
+            "default": []
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "stableStepId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "chat",
+                    "tool",
+                    "fork",
+                    "action"
+                  ]
+                },
+                "instruction": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "toolRef": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "actionType": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "ordinal": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "metadata": {
+                  "type": "object",
+                  "additionalProperties": {},
+                  "default": {}
+                }
+              },
+              "required": [
+                "stableStepId",
+                "kind",
+                "instruction",
+                "ordinal"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1
+          },
+          "transitions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "fromStep": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                },
+                "toRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                },
+                "guardKind": {
+                  "type": "string",
+                  "enum": [
+                    "llm",
+                    "always",
+                    "fallback",
+                    "slot_filled",
+                    "outcome",
+                    "counter"
+                  ]
+                },
+                "guardText": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                "outcomeStatus": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "counterLimit": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "exclusiveMinimum": 0
+                },
+                "ordinal": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "fromStep",
+                "toRef",
+                "guardKind",
+                "ordinal"
+              ],
+              "additionalProperties": false
+            },
+            "default": []
+          },
+          "terminals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "stableStepId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "complete",
+                    "handoff"
+                  ]
+                },
+                "instruction": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "ordinal": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "stableStepId",
+                "kind",
+                "ordinal"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "name",
+          "activation",
+          "steps",
+          "terminals"
+        ],
+        "additionalProperties": false
+      },
+      "RoutineValidationResult": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "diagnostics": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "enum": [
+                    "unreachable_step",
+                    "missing_terminal",
+                    "dangling_action_reference",
+                    "dangling_step_reference",
+                    "missing_action_follow_up",
+                    "declared_unused_slot",
+                    "referenced_undeclared_slot",
+                    "unregistered_action_type",
+                    "action_capability_denied",
+                    "attempt_limit_without_fallback",
+                    "outcome_guard_on_non_tool_step",
+                    "structured_guard_missing_parameter",
+                    "unsupported_tool_step"
+                  ]
+                },
+                "location": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "location",
+                "message"
+              ]
+            }
+          }
+        },
+        "required": [
+          "ok",
+          "diagnostics"
+        ]
+      },
+      "RoutineDefinition": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "activation": {
+            "type": "object",
+            "properties": {
+              "triggerDescription": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              "gateRef": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "priority": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "triggerDescription",
+              "priority"
+            ],
+            "additionalProperties": false
+          },
+          "slots": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "stableSlotId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                },
+                "key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "number",
+                    "boolean",
+                    "email",
+                    "date"
+                  ]
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 1000
+                },
+                "ordinal": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "stableSlotId",
+                "key",
+                "type",
+                "required",
+                "ordinal"
+              ],
+              "additionalProperties": false
+            },
+            "default": []
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "stableStepId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "chat",
+                    "tool",
+                    "fork",
+                    "action"
+                  ]
+                },
+                "instruction": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "toolRef": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "actionType": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "ordinal": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "metadata": {
+                  "type": "object",
+                  "additionalProperties": {},
+                  "default": {}
+                }
+              },
+              "required": [
+                "stableStepId",
+                "kind",
+                "instruction",
+                "ordinal"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1
+          },
+          "transitions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "fromStep": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                },
+                "toRef": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                },
+                "guardKind": {
+                  "type": "string",
+                  "enum": [
+                    "llm",
+                    "always",
+                    "fallback",
+                    "slot_filled",
+                    "outcome",
+                    "counter"
+                  ]
+                },
+                "guardText": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                "outcomeStatus": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "counterLimit": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "exclusiveMinimum": 0
+                },
+                "ordinal": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "fromStep",
+                "toRef",
+                "guardKind",
+                "ordinal"
+              ],
+              "additionalProperties": false
+            },
+            "default": []
+          },
+          "terminals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "stableStepId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "complete",
+                    "handoff"
+                  ]
+                },
+                "instruction": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "ordinal": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "stableStepId",
+                "kind",
+                "ordinal"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "name",
+          "activation",
+          "steps",
+          "terminals",
+          "id",
+          "agentId",
+          "version",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "RoutineDefinitionListResponse": {
+        "type": "object",
+        "properties": {
+          "routines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoutineDefinition"
+            }
+          }
+        },
+        "required": [
+          "routines"
+        ]
+      },
+      "RoutineDefinitionGetResponse": {
+        "type": "object",
+        "properties": {
+          "routine": {
+            "$ref": "#/components/schemas/RoutineDefinition"
+          }
+        },
+        "required": [
+          "routine"
+        ]
+      },
+      "RoutineDefinitionSaveResponse": {
+        "type": "object",
+        "properties": {
+          "routine": {
+            "$ref": "#/components/schemas/RoutineDefinition"
+          },
+          "validation": {
+            "$ref": "#/components/schemas/RoutineValidationResult"
+          }
+        },
+        "required": [
+          "routine",
+          "validation"
+        ]
+      },
+      "RoutineDefinitionValidateResponse": {
+        "type": "object",
+        "properties": {
+          "validation": {
+            "$ref": "#/components/schemas/RoutineValidationResult"
+          }
+        },
+        "required": [
+          "validation"
+        ]
+      },
+      "RoutineDefinitionPublishRejectedResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "Routine definition is invalid"
+            ]
+          },
+          "validation": {
+            "$ref": "#/components/schemas/RoutineValidationResult"
+          }
+        },
+        "required": [
+          "error",
+          "validation"
+        ]
+      },
       "PublicChatSessionResponse": {
         "type": "object",
         "properties": {
@@ -11694,6 +12637,487 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/routines": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "List routine definitions for an agent",
+        "operationId": "listAgentRoutines",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Routine definitions returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutineDefinitionListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Create a draft routine definition for an agent",
+        "operationId": "createAgentRoutine",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoutineDefinitionCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Draft routine definition created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutineDefinitionSaveResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/routines/{routineId}": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Get a routine definition for an agent",
+        "operationId": "getAgentRoutine",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "routineId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Routine definition returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutineDefinitionGetResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or routine definition not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Update a draft routine definition for an agent",
+        "operationId": "updateAgentRoutine",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "routineId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoutineDefinitionUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Draft routine definition updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutineDefinitionSaveResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or routine definition not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Delete a draft routine definition for an agent",
+        "operationId": "deleteAgentRoutine",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "routineId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Draft routine definition deleted"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or draft routine definition not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/routines/{routineId}/validate": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Validate a routine definition for an agent",
+        "operationId": "validateAgentRoutine",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "routineId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Routine validation returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutineDefinitionValidateResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or routine definition not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/routines/{routineId}/publish": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Publish a draft routine definition for an agent",
+        "operationId": "publishAgentRoutine",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "routineId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Routine definition published",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutineDefinitionSaveResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or routine definition not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Routine definition is invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutineDefinitionPublishRejectedResponse"
                 }
               }
             }

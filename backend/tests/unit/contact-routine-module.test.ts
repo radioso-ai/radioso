@@ -7,11 +7,13 @@ import {
 } from "../../src/app/composition/applicationModule.js";
 import { createContactRoutineApplicationModule } from "../../src/app/composition/builtIn/contactRoutineModule.js";
 import {
-  contactRoutine,
+  contactRoutineDefinition,
   CONTACT_SEND_ACTION_TYPE,
   CONTACT_INTENT_SKILL_NAME,
   CONTACT_INTENT_NAME,
 } from "../../src/modules/chat/services/routines/contactRoutine.js";
+import { compileRoutineDefinition } from "../../src/modules/routines/public.js";
+import { capabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 
 const turnWith = (
   metadata: Record<string, unknown> | undefined,
@@ -51,8 +53,13 @@ describe("contact routine application module", () => {
   it("registers the contact routine, the contact.send handler, and the public action advertiser", () => {
     const registry = applyModule();
 
-    expect(registry.routineRegistrations.map((r) => r.routine.id)).toEqual([contactRoutine.id]);
+    expect(registry.routineRegistrations.map((r) => r.routine.id)).toEqual([
+      compileRoutineDefinition(contactRoutineDefinition).id,
+    ]);
     expect(registry.actionHandlerRegistrations.map((r) => r.type)).toEqual([CONTACT_SEND_ACTION_TYPE]);
+    expect(registry.actionHandlerRegistrations[0]?.requiredCapabilities).toEqual([
+      capabilityNames.humanContact.request,
+    ]);
     expect(registry.publicChatActionAdvertiserRegistrations).toHaveLength(1);
   });
 

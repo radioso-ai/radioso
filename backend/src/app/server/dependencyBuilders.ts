@@ -4,6 +4,7 @@ import { AccountRepository } from "../../db/repositories/accountRepository.js";
 import { ActionRequestRepository } from "../../db/repositories/actionRequestRepository.js";
 import { AccessGrantRepository } from "../../db/repositories/accessGrantRepository.js";
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
+import { RoutineDefinitionRepository } from "../../db/repositories/routineDefinitionRepository.js";
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
 import { createConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
 import type { AgentSkillSettingsRegistry, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
@@ -60,6 +61,7 @@ import {
   RoutineRegistry,
   RoutineNextStepSelector,
   RoutineStepRenderer,
+  type RoutineRegistration,
   SkillRetrievalTurnDispatch,
   WorkbenchReplayRunner,
 } from "../../modules/chat/composition.js";
@@ -144,6 +146,7 @@ import { TextGenerationClientCache } from "../../shared/infra/llm/textClientFact
 import { createMailService } from "../../modules/mail/public.js";
 import { createLogger, type AppLogger } from "../../shared/observability/logger.js";
 import { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
+import { createPublishedRoutineRegistrationSource } from "../composition/routineDefinitionSource.js";
 import {
   createDefaultAnalyticsSinks,
   createDefaultErrorSinks,
@@ -254,6 +257,7 @@ export const buildRepositories = (
   messageRepository: new MessageRepository(database),
   passwordResetTokenRepository: new PasswordResetTokenRepository(database),
   retrievalSettingsRepository: new RetrievalSettingsRepository(database),
+  routineDefinitionRepository: new RoutineDefinitionRepository(database),
   sessionRepository: new SessionRepository(database),
   userRepository: new UserRepository(database),
   websiteCrawlJobRepository: new WebsiteCrawlJobRepository(database),
@@ -676,6 +680,7 @@ export const buildChatServices = (input: {
   logger: AppLogger;
   messageRepository: MessageRepository;
   productAnalyticsService: ProductAnalyticsService;
+  routineDefinitionRepository: RoutineDefinitionRepository;
   mailService: ReturnType<typeof buildInfrastructure>["mailService"];
   usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
   retrievalPipeline: RetrievalPipelinePort;
@@ -831,28 +836,58 @@ export const buildChatServices = (input: {
     new ActionDispatcher(actionOutbox, actionHandlerRegistry),
     { logger: input.logger, errorReporter: input.errorReporter },
   );
-  // Routine machinery (spec 070 / #520). The store + provider are passed to ChatService
-  // only when a host registered routines; with none registered the provider is absent,
-  // so the engine routine ports stay unwired and turns are unchanged (no store load).
-  // Composition owns the engine runner + LLM-adapter assembly so ChatService stays
-  // free of engine internals — it just supplies the per-turn model gateway.
-  const routineRegistry = new RoutineRegistry(input.composition.routineRegistrations);
-  const routineProvider: ChatRoutineProvider | undefined = routineRegistry.isEmpty
-    ? undefined
-    : {
-        isEmpty: false,
-        activator: (modelGateway) => routineRegistry.activator(modelGateway),
-        createRunner: (modelGateway) =>
-          new DefaultRoutineRunner(
-            routineRegistry.routines,
-            new RoutineNextStepSelector(modelGateway, {
-              promptTemplate: loadPromptTemplate("chat/routine-next-step.md"),
-            }),
-            new RoutineStepRenderer(modelGateway, {
-              promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
-            }),
-          ),
+  // Routine machinery (spec 070 / #520). Composition loads the turn agent's published
+  // routines, unions them with static registrations, and assembles the engine runner +
+  // LLM adapter per turn. ChatService supplies only the model gateway and agent id; if
+  // the union is empty the provider returns null and ChatService skips the store load.
+  const publishedRoutineSource = createPublishedRoutineRegistrationSource(input.routineDefinitionRepository, {
+    onDefinitionError: ({ agentId, definitionId, error }) => {
+      input.logger.warn(
+        {
+          agentId,
+          definitionId,
+          err: error instanceof Error ? error.message : String(error),
+        },
+        "Published routine definition failed to compile; skipping",
+      );
+    },
+  });
+  const routineProvider: ChatRoutineProvider = {
+    async forTurn({ modelGateway, agentId }) {
+      let publishedRegistrations: RoutineRegistration[];
+      try {
+        publishedRegistrations = await publishedRoutineSource.load({ agentId });
+      } catch (error) {
+        input.logger.warn(
+          {
+            agentId,
+            err: error instanceof Error ? error.message : String(error),
+          },
+          "Published routine definitions failed to load; continuing without DB-backed routines",
+        );
+        publishedRegistrations = [];
+      }
+      const routineRegistry = new RoutineRegistry([
+        ...input.composition.routineRegistrations,
+        ...publishedRegistrations,
+      ]);
+      if (routineRegistry.isEmpty) {
+        return null;
+      }
+      return {
+        activator: routineRegistry.activator(modelGateway),
+        runner: new DefaultRoutineRunner(
+          routineRegistry.routines,
+          new RoutineNextStepSelector(modelGateway, {
+            promptTemplate: loadPromptTemplate("chat/routine-next-step.md"),
+          }),
+          new RoutineStepRenderer(modelGateway, {
+            promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
+          }),
+        ),
       };
+    },
+  };
   const retrievalTurn = new RetrievalTurnController(
     input.retrievalPipeline,
     new SkillRetrievalTurnDispatch(
@@ -892,6 +927,9 @@ export const buildChatServices = (input: {
     // dispatched out of band by `actionDispatchWorker` in the worker process.
     actionOutbox,
     assistantTurnPersistence: new PostgresAssistantTurnPersistence(input.database),
+    actionCapabilities: input.composition.actionCapabilityMap,
+    capabilityPolicy: input.composition.capabilityPolicy,
+    logger: input.logger,
     // Routine resume/activate per turn — present only when routines are registered.
     routineStore: new RoutineStateRepository(input.database),
     routineProvider,

@@ -11,6 +11,7 @@ import {
   MessageSquare,
   Plug,
   Plus,
+  Route,
   ScrollText,
   SlidersHorizontal,
   Trash2,
@@ -37,6 +38,7 @@ const AGENT_GROUPS: { label: string | null; items: AgentItem[] }[] = [
       { id: 'behavior', label: 'Behavior', icon: SlidersHorizontal },
       { id: 'skills', label: 'Skills', icon: Wrench },
       { id: 'directives', label: 'Directives', icon: ScrollText },
+      { id: 'routines', label: 'Routines', icon: Route },
     ],
   },
   {

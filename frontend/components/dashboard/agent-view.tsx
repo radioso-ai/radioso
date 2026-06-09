@@ -66,6 +66,7 @@ const AGENT_SECTION_META: Record<Exclude<AgentSectionId, 'chat'>, { title: strin
   behavior: { title: 'Behavior', mode: 'assistant' },
   skills: { title: 'Skills', mode: 'assistant' },
   directives: { title: 'Directives', mode: 'assistant' },
+  routines: { title: 'Routines', mode: 'assistant' },
   'public-chat-link': { title: 'Public chat link', mode: 'channels' },
   'website-embed': { title: 'Website widget', mode: 'channels' },
   'api-channel': { title: 'API', mode: 'channels' },

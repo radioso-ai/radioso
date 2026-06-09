@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { publicChatSessionSchema } from "../../routes/publicChatRouteSchemas.js";
 import { agentSurfacePositions } from "../../../../modules/agents/public.js";
+import { routineDefinitionDraftInputSchema, routineValidationCodes } from "../../../../modules/routines/public.js";
 import { skillDisplayMetadataSchema } from "../../../../modules/skills/public.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
@@ -343,6 +344,82 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }),
   );
 
+  const RoutineDefinitionParamsSchema = z.object({
+    agentId: z.string().uuid(),
+    routineId: z.string().uuid(),
+  });
+
+  const RoutineDefinitionCreateRequestSchema = registry.register(
+    "RoutineDefinitionCreateRequest",
+    routineDefinitionDraftInputSchema,
+  );
+
+  const RoutineDefinitionUpdateRequestSchema = registry.register(
+    "RoutineDefinitionUpdateRequest",
+    routineDefinitionDraftInputSchema,
+  );
+
+  const RoutineValidationResultSchema = registry.register(
+    "RoutineValidationResult",
+    z.object({
+      ok: z.boolean(),
+      diagnostics: z.array(z.object({
+        code: z.enum(routineValidationCodes),
+        location: z.string(),
+        message: z.string(),
+      })),
+    }),
+  );
+
+  const RoutineDefinitionResponseSchema = registry.register(
+    "RoutineDefinition",
+    routineDefinitionDraftInputSchema.extend({
+      id: z.string().uuid(),
+      agentId: z.string().uuid(),
+      version: z.number().int().min(1),
+      status: z.enum(["draft", "published"]),
+      createdAt: z.string().datetime(),
+      updatedAt: z.string().datetime(),
+    }),
+  );
+
+  const RoutineDefinitionListResponseSchema = registry.register(
+    "RoutineDefinitionListResponse",
+    z.object({
+      routines: z.array(RoutineDefinitionResponseSchema),
+    }),
+  );
+
+  const RoutineDefinitionGetResponseSchema = registry.register(
+    "RoutineDefinitionGetResponse",
+    z.object({
+      routine: RoutineDefinitionResponseSchema,
+    }),
+  );
+
+  const RoutineDefinitionSaveResponseSchema = registry.register(
+    "RoutineDefinitionSaveResponse",
+    z.object({
+      routine: RoutineDefinitionResponseSchema,
+      validation: RoutineValidationResultSchema,
+    }),
+  );
+
+  const RoutineDefinitionValidateResponseSchema = registry.register(
+    "RoutineDefinitionValidateResponse",
+    z.object({
+      validation: RoutineValidationResultSchema,
+    }),
+  );
+
+  const RoutineDefinitionPublishRejectedResponseSchema = registry.register(
+    "RoutineDefinitionPublishRejectedResponse",
+    z.object({
+      error: z.literal("Routine definition is invalid"),
+      validation: RoutineValidationResultSchema,
+    }),
+  );
+
   const PublicChatSessionResponseSchema = registry.register(
     "PublicChatSessionResponse",
     z.object({
@@ -415,6 +492,16 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     DirectiveDraftResponseSchema,
     DirectiveCoherenceVerdictSchema,
     DirectiveListResponseSchema,
+    RoutineDefinitionCreateRequestSchema,
+    RoutineDefinitionGetResponseSchema,
+    RoutineDefinitionListResponseSchema,
+    RoutineDefinitionParamsSchema,
+    RoutineDefinitionPublishRejectedResponseSchema,
+    RoutineDefinitionResponseSchema,
+    RoutineDefinitionSaveResponseSchema,
+    RoutineDefinitionUpdateRequestSchema,
+    RoutineDefinitionValidateResponseSchema,
+    RoutineValidationResultSchema,
     PublicChatSessionResponseSchema,
     PublicChatSessionRequestSchema,
     WorkspaceIngestionReprocessResponseSchema,

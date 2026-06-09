@@ -5,6 +5,7 @@ import { createApp } from "../../src/app/server/createApp.js";
 import type { Env } from "../../src/app/config/env.js";
 import { createMailService } from "../../src/modules/mail/public.js";
 import { randomUUID } from "node:crypto";
+import type { ConversationRoutineStore, RoutineState } from "@radioso/conversation-contract";
 
 import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
 import { AccessGrantService, DefaultOriginMatcher } from "../../src/modules/accessGrants/public.js";
@@ -13,10 +14,16 @@ import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { EmailVerificationService } from "../../src/modules/auth/services/emailVerificationService.js";
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
-import type { WorkbenchReplayRunner } from "../../src/modules/chat/composition.js";
-import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
+import {
+  RoutineNextStepSelector,
+  RoutineRegistry,
+  RoutineStepRenderer,
+  type RoutineRegistration,
+  type WorkbenchReplayRunner,
+} from "../../src/modules/chat/composition.js";
+import { ChatService, type ChatGateway, type ChatRoutineProvider } from "../../src/modules/chat/services/chatService.js";
 import { ActionDispatchWorker } from "../../src/modules/chat/services/actions/actionDispatchWorker.js";
-import { createConversationEngine } from "@radioso/conversation-engine";
+import { createConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
 import { scopeTag } from "@radioso/conversation-defaults";
 import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
 import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
@@ -24,6 +31,7 @@ import { RetrievalTurnController } from "../../src/modules/chat/services/retriev
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
 import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../src/modules/agents/public.js";
+import { RoutineDefinitionService } from "../../src/modules/routines/public.js";
 import {
   type FallbackReplyComposer,
 } from "../../src/modules/chat/services/fallbackReplyComposer.js";
@@ -76,6 +84,8 @@ import { ProductAnalyticsService } from "../../src/shared/analytics/productAnaly
 import { buildErrorSinks } from "../../src/shared/errors/buildErrorSinks.js";
 import { ErrorReportingService } from "../../src/shared/errors/errorReportingService.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
+import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
+import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
 import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/buildTelemetrySinks.js";
 import { TelemetryService } from "../../src/shared/observability/telemetry/telemetryService.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
@@ -139,6 +149,7 @@ import {
   InMemoryAbuseControlRepository,
   InMemoryAccessGrantRepository,
   InMemoryWorkspaceProviderCredentialsRepository,
+  InMemoryRoutineDefinitionRepository,
 } from "./fakes.js";
 
 export const createTestEnv = (): Env => ({
@@ -240,6 +251,7 @@ interface TestRepositories {
   conversationRepository: InMemoryConversationRepository;
   messageRepository: InMemoryMessageRepository;
   agentRepository: InMemoryAgentRepository;
+  routineDefinitionRepository: InMemoryRoutineDefinitionRepository;
 }
 
 const appDependencyMap = new WeakMap<object, AppDependencies>();
@@ -248,6 +260,22 @@ const appRepositoryMap = new WeakMap<object, TestRepositories>();
 class TestFallbackReplyComposer implements FallbackReplyComposer {
   async composeNoContext(): Promise<string> {
     return "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.";
+  }
+}
+
+class InMemoryRoutineStateStore implements ConversationRoutineStore {
+  readonly states = new Map<string, RoutineState>();
+
+  async loadActive({ sessionId }: { sessionId: string }): Promise<RoutineState | null> {
+    return this.states.get(sessionId) ?? null;
+  }
+
+  async save(state: RoutineState): Promise<void> {
+    this.states.set(state.sessionId, state);
+  }
+
+  async clear({ sessionId }: { sessionId: string }): Promise<void> {
+    this.states.delete(sessionId);
   }
 }
 
@@ -652,6 +680,7 @@ export const createTestDependencies = (overrides: {
   connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY!);
   const connectorDb = new InMemoryConnectorDatabase();
   const agentRepository = new InMemoryAgentRepository(createDefaultAgentSkillSettingsRegistry());
+  const routineDefinitionRepository = new InMemoryRoutineDefinitionRepository();
   const accessGrantService = new AccessGrantService({
     repository: accessGrantRepository,
     originMatcher: new DefaultOriginMatcher(),
@@ -677,6 +706,10 @@ export const createTestDependencies = (overrides: {
       },
     },
     registeredCapabilityNames,
+  });
+  const routineDefinitionService = new RoutineDefinitionService({
+    agentRepository,
+    repository: routineDefinitionRepository,
   });
   const chatInferencePipeline: AppDependencies["chatInferencePipeline"] = {
     metadata: { capability: "chat" as const, provider: "openai" as const, model: "test" },
@@ -723,6 +756,55 @@ export const createTestDependencies = (overrides: {
       : new ChainedPublicChatActionAdvertiser(publicChatActionAdvertisers);
   const skillCatalogRegistry = createDefaultSkillCatalogRegistry();
   const fallbackReplyComposer = overrides.fallbackReplyComposer ?? new TestFallbackReplyComposer();
+  const publishedRoutineSource = createPublishedRoutineRegistrationSource(routineDefinitionRepository, {
+    onDefinitionError: ({ agentId, definitionId, error }) => {
+      logger.warn(
+        {
+          agentId,
+          definitionId,
+          err: error instanceof Error ? error.message : String(error),
+        },
+        "Published routine definition failed to compile; skipping",
+      );
+    },
+  });
+  const staticRoutineRegistrations: RoutineRegistration[] = [];
+  const routineProvider: ChatRoutineProvider = {
+    async forTurn({ modelGateway, agentId }) {
+      let publishedRegistrations: RoutineRegistration[];
+      try {
+        publishedRegistrations = await publishedRoutineSource.load({ agentId });
+      } catch (error) {
+        logger.warn(
+          {
+            agentId,
+            err: error instanceof Error ? error.message : String(error),
+          },
+          "Published routine definitions failed to load; continuing without DB-backed routines",
+        );
+        publishedRegistrations = [];
+      }
+      const routineRegistry = new RoutineRegistry([
+        ...staticRoutineRegistrations,
+        ...publishedRegistrations,
+      ]);
+      if (routineRegistry.isEmpty) {
+        return null;
+      }
+      return {
+        activator: routineRegistry.activator(modelGateway),
+        runner: new DefaultRoutineRunner(
+          routineRegistry.routines,
+          new RoutineNextStepSelector(modelGateway, {
+            promptTemplate: loadPromptTemplate("chat/routine-next-step.md"),
+          }),
+          new RoutineStepRenderer(modelGateway, {
+            promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
+          }),
+        ),
+      };
+    },
+  };
   const chatService = new ChatService({
     conversationRepository,
     messageRepository,
@@ -739,6 +821,8 @@ export const createTestDependencies = (overrides: {
     usageLimitPolicy,
     agentService,
     conversationEngine: createConversationEngine(),
+    routineStore: new InMemoryRoutineStateStore(),
+    routineProvider,
   });
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,
@@ -899,6 +983,7 @@ export const createTestDependencies = (overrides: {
     platformSettingsService,
     agentService,
     authoredDirectiveService,
+    routineDefinitionService,
     directiveAuthorService,
     agentSurfaceExtensions,
     skillCatalogService,
@@ -948,6 +1033,7 @@ export const createTestDependencies = (overrides: {
       conversationRepository,
       messageRepository,
       agentRepository,
+      routineDefinitionRepository,
     },
   };
 };

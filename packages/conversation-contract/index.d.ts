@@ -160,6 +160,8 @@ export type SkillOutcomeStatus =
   | "cancelled"
   | "expired";
 
+export type RoutineSkillOutcomeStatus = SkillOutcomeStatus | (string & {});
+
 export interface SkillOutcomeControl {
   sessionMode?: "automatic" | "manual";
   lifespan?: "response" | "session";
@@ -390,6 +392,8 @@ export interface RoutineState {
   routineId: string;
   path: string[];
   variables: Record<string, unknown>;
+  /** Per-step entry counts, used by deterministic counter guards. */
+  attempts?: Record<string, number>;
   status: "active" | "completed" | "expired";
   metadata?: Record<string, unknown>;
 }
@@ -427,11 +431,33 @@ export interface RoutineTransition {
   to: string;
   /** Condition the next-step selector evaluates to decide whether this edge fires. */
   condition: string;
+  /** Optional deterministic guard. Absent/llm preserves legacy selector behavior. */
+  guard?: RoutineGuard;
+}
+
+export type RoutineGuard =
+  | { kind: "slot_filled"; slots: string[] }
+  | { kind: "outcome"; status: RoutineSkillOutcomeStatus }
+  | { kind: "counter"; limit: number }
+  | { kind: "always" }
+  | { kind: "fallback" }
+  | { kind: "llm" };
+
+export type RoutineSlotType = "text" | "number" | "boolean" | "email" | "date";
+
+export interface RoutineSlotSchema {
+  id: string;
+  key: string;
+  type: RoutineSlotType;
+  required: boolean;
+  description?: string;
 }
 
 export interface Routine {
   id: string;
   rootStepId: string;
+  /** Optional typed slot schema. Routines without it keep legacy traversal behavior. */
+  slots?: RoutineSlotSchema[];
   steps: RoutineStep[];
   transitions: RoutineTransition[];
   metadata?: Record<string, unknown>;
@@ -459,7 +485,7 @@ export interface RoutineNextStepDecision {
 
 /** The result of dispatching a Routine skill (tool) step. */
 export interface RoutineSkillResult {
-  status: SkillOutcomeStatus;
+  status: RoutineSkillOutcomeStatus;
   outputs?: Record<string, unknown>;
   answer?: string;
 }
@@ -535,6 +561,8 @@ export interface ConversationRoutineResumeResult {
   response: RenderableTurn;
   /** The next state to persist; `null` clears it (the routine reached a terminal step). */
   nextState: RoutineState | null;
+  /** Distinguishes terminal exits such as handoff from normal completion. */
+  terminal?: { kind: "complete" | "handoff" | "action"; stepId: string };
   outcomes?: TurnOutcome[];
   /** Fire-and-forget side effects the routine emitted this turn, for the host to persist. */
   actions?: RoutineActionRequest[];
@@ -629,6 +657,8 @@ export interface ProcessTurnResult {
    * the engine only declares them.
    */
   actions?: RoutineActionRequest[];
+  /** True when a routine ended in a human handoff terminal. */
+  handoff?: { routineId: string; stepId: string };
 }
 
 export type ProcessTurnStreamEvent =

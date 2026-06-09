@@ -2,6 +2,9 @@ import { createHash, randomUUID } from "node:crypto";
 
 import type { ConversationTrace, RoutineActionRequest } from "@radioso/conversation-contract";
 import type { AuditEventInput, AuditService } from "../../audit/contracts/index.js";
+import { DefaultAllowCapabilityPolicy, type CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
+import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilities.js";
+import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import {
@@ -113,6 +116,17 @@ const toPresentationSkillTurnOutcome = (presentation: ChatPresentedAnswer): Skil
 });
 
 type MessageCreateInput = Parameters<MessageRepositoryPort["create"]>[0];
+
+class RoutineActionAuthorizationError extends Error {
+  constructor(
+    readonly actionType: string,
+    readonly reason: string,
+    readonly capability?: string,
+  ) {
+    super("routine_action_authorization_denied");
+    this.name = "RoutineActionAuthorizationError";
+  }
+}
 
 export interface AssistantTurnPersistencePort {
   completeAssistantTurn(input: {
@@ -279,6 +293,7 @@ export const buildTurnTraceForPresentation = (
 export class ChatTurnLifecycle {
   private readonly activitySummaryPresenter = new ActivitySummaryPresenter();
   private readonly activityTracePresenter = new ActivityTracePresenter();
+  private readonly capabilityPolicy: CapabilityPolicy;
 
   constructor(
     private readonly conversationRepository: ConversationRepositoryPort,
@@ -289,7 +304,12 @@ export class ChatTurnLifecycle {
     // enqueued to the outbox at turn completion. Absent leaves turns unchanged.
     private readonly actionOutbox?: ChatActionOutboxPort,
     private readonly assistantTurnPersistence?: AssistantTurnPersistencePort,
-  ) {}
+    private readonly actionCapabilities?: ActionCapabilityMap,
+    capabilityPolicy?: CapabilityPolicy,
+    private readonly logger?: Pick<AppLogger, "warn">,
+  ) {
+    this.capabilityPolicy = capabilityPolicy ?? new DefaultAllowCapabilityPolicy();
+  }
 
   /** Enqueue routine-emitted fire-and-forget actions to the outbox (idempotent). */
   private async enqueueTurnActions(input: {
@@ -311,6 +331,52 @@ export class ChatTurnLifecycle {
         idempotencyKey: actionIdempotencyKey(input.conversationId, action.type, action.payload),
       });
     }
+  }
+
+  private async assertActionsAuthorized(input: {
+    actions: RoutineActionRequest[] | undefined;
+    workspaceId: string;
+    conversationId: string;
+  }): Promise<void> {
+    if (!this.actionCapabilities || !input.actions?.length) {
+      return;
+    }
+
+    for (const action of input.actions) {
+      const denial = await this.firstDeniedActionCapability(action.type, input.workspaceId);
+      if (denial) {
+        this.logger?.warn(
+          {
+            workspaceId: input.workspaceId,
+            conversationId: input.conversationId,
+            actionType: action.type,
+            reason: denial.reason,
+            capability: denial.capability,
+          },
+          "Routine action blocked by capability policy",
+        );
+        throw new RoutineActionAuthorizationError(action.type, denial.reason, denial.capability);
+      }
+    }
+  }
+
+  private async firstDeniedActionCapability(
+    actionType: string,
+    workspaceId: string,
+  ): Promise<{ reason: string; capability?: string } | null> {
+    if (!this.actionCapabilities) {
+      return null;
+    }
+    if (!this.actionCapabilities.has(actionType)) {
+      return { reason: "unregistered_action_type" };
+    }
+    for (const capability of this.actionCapabilities.requiredCapabilitiesFor(actionType)) {
+      const decision = await this.capabilityPolicy.can({ capability, workspaceId });
+      if (!decision.allowed) {
+        return { reason: decision.reason ?? "capability_denied", capability };
+      }
+    }
+    return null;
   }
 
   async completeAssistantTurn(input: {
@@ -349,6 +415,11 @@ export class ChatTurnLifecycle {
 
     let assistantMessage: MessageRecord;
     const successAuditEvent = this.buildAssistantTurnSuccessAuditEvent(presentation.successInput);
+    await this.assertActionsAuthorized({
+      actions: input.actions,
+      workspaceId: input.workspaceId,
+      conversationId: input.session.conversation.id,
+    });
     if (this.assistantTurnPersistence) {
       assistantMessage = await this.assistantTurnPersistence.completeAssistantTurn({
         workspaceId: input.workspaceId,

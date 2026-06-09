@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../src/modules/documents/contracts/index.js";
 import { defaultAnswerDirectives } from "../../src/modules/directives/public.js";
+import type { RoutineDefinitionDraftInput } from "../../src/modules/routines/public.js";
 import { RESPONSE_INTENT, REWRITE_TURN_KIND } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
 import { adminSessionHeaders, createTestApp, issueTestToken } from "../support/testApp.js";
 import { textResult } from "../support/llmStubs.js";
@@ -19,6 +20,73 @@ const parseSseData = (body: string, eventName: string): unknown[] =>
       }
       return JSON.parse(dataLine.slice("data: ".length));
     });
+
+const validRoutineDraft = (overrides: Partial<RoutineDefinitionDraftInput> = {}): RoutineDefinitionDraftInput => ({
+  name: "support-intake",
+  activation: {
+    triggerDescription: "When the user asks for support intake",
+    gateRef: null,
+    priority: 10,
+  },
+  slots: [{
+    stableSlotId: "slot_topic",
+    key: "topic",
+    type: "text",
+    required: true,
+    description: "The support topic",
+    ordinal: 0,
+  }],
+  steps: [{
+    stableStepId: "step_collect_topic",
+    kind: "chat",
+    instruction: "Ask for {{slot.topic}}.",
+    toolRef: null,
+    ordinal: 0,
+    metadata: {},
+  }],
+  transitions: [{
+    fromStep: "step_collect_topic",
+    toRef: "terminal_complete",
+    guardKind: "always",
+    guardText: null,
+    ordinal: 0,
+  }],
+  terminals: [{
+    stableStepId: "terminal_complete",
+    kind: "complete",
+    instruction: "Complete intake for {{slot.topic}}.",
+    ordinal: 1,
+  }],
+  ...overrides,
+});
+
+const invalidRoutineDraft = (): RoutineDefinitionDraftInput =>
+  validRoutineDraft({
+    name: "broken-intake",
+    slots: [{
+      stableSlotId: "slot_unused",
+      key: "unused",
+      type: "text",
+      required: true,
+      description: null,
+      ordinal: 0,
+    }],
+    steps: [{
+      stableStepId: "step_collect_topic",
+      kind: "chat",
+      instruction: "Ask for {{slot.topic}}.",
+      toolRef: null,
+      ordinal: 0,
+      metadata: {},
+    }],
+    transitions: [{
+      fromStep: "step_collect_topic",
+      toRef: "missing_step",
+      guardKind: "always",
+      guardText: null,
+      ordinal: 0,
+    }],
+  });
 
 describe("agents contract", () => {
   it("creates a default agent and preserves omitted agentId chat compatibility", async () => {
@@ -841,6 +909,163 @@ describe("agents contract", () => {
         routes: ["retrieval_answer"],
       })
       .expect(400);
+  });
+
+  it("rejects unauthenticated routine authoring access", async () => {
+    const { app } = createTestApp();
+
+    await request(app)
+      .get("/api/v1/agents/11111111-1111-4111-8111-111111111111/routines")
+      .expect(401);
+  });
+
+  it("creates, lists, gets, updates, validates, and publishes routine definitions", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-routines-crud@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const agent = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({ name: "Routine authoring" })
+      .expect(201);
+
+    const create = await request(app)
+      .post(`/api/v1/agents/${agent.body.id}/routines`)
+      .set("Authorization", authorization)
+      .send(validRoutineDraft())
+      .expect(201);
+
+    expect(create.body).toMatchObject({
+      routine: {
+        id: expect.any(String),
+        agentId: agent.body.id,
+        name: "support-intake",
+        version: 1,
+        status: "draft",
+      },
+      validation: {
+        ok: true,
+        diagnostics: [],
+      },
+    });
+
+    const list = await request(app)
+      .get(`/api/v1/agents/${agent.body.id}/routines`)
+      .set("Authorization", authorization)
+      .expect(200);
+
+    expect(list.body.routines).toHaveLength(1);
+    expect(list.body.routines[0]).toMatchObject({
+      id: create.body.routine.id,
+      name: "support-intake",
+      status: "draft",
+    });
+
+    const get = await request(app)
+      .get(`/api/v1/agents/${agent.body.id}/routines/${create.body.routine.id}`)
+      .set("Authorization", authorization)
+      .expect(200);
+
+    expect(get.body.routine).toMatchObject({
+      id: create.body.routine.id,
+      slots: [{ key: "topic" }],
+    });
+
+    const updateDraft = validRoutineDraft({ name: "support-intake-updated" });
+    const update = await request(app)
+      .patch(`/api/v1/agents/${agent.body.id}/routines/${create.body.routine.id}`)
+      .set("Authorization", authorization)
+      .send(updateDraft)
+      .expect(200);
+
+    expect(update.body).toMatchObject({
+      routine: {
+        id: create.body.routine.id,
+        name: "support-intake-updated",
+        status: "draft",
+      },
+      validation: {
+        ok: true,
+      },
+    });
+
+    const validate = await request(app)
+      .post(`/api/v1/agents/${agent.body.id}/routines/${create.body.routine.id}/validate`)
+      .set("Authorization", authorization)
+      .expect(200);
+
+    expect(validate.body.validation).toEqual({ ok: true, diagnostics: [] });
+
+    const publish = await request(app)
+      .post(`/api/v1/agents/${agent.body.id}/routines/${create.body.routine.id}/publish`)
+      .set("Authorization", authorization)
+      .expect(200);
+
+    expect(publish.body).toMatchObject({
+      routine: {
+        id: expect.any(String),
+        agentId: agent.body.id,
+        name: "support-intake-updated",
+        version: 2,
+        status: "published",
+      },
+      validation: {
+        ok: true,
+        diagnostics: [],
+      },
+    });
+    expect(publish.body.routine.id).not.toEqual(create.body.routine.id);
+  });
+
+  it("surfaces routine validation diagnostics and rejects invalid publishes", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-routines-validation@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const agent = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({ name: "Routine validation" })
+      .expect(201);
+
+    const create = await request(app)
+      .post(`/api/v1/agents/${agent.body.id}/routines`)
+      .set("Authorization", authorization)
+      .send(invalidRoutineDraft())
+      .expect(201);
+
+    expect(create.body.validation).toMatchObject({
+      ok: false,
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({ code: "referenced_undeclared_slot", location: "slot:topic" }),
+        expect.objectContaining({ code: "declared_unused_slot", location: "slot:unused" }),
+        expect.objectContaining({ code: "dangling_step_reference" }),
+      ]),
+    });
+
+    const validate = await request(app)
+      .post(`/api/v1/agents/${agent.body.id}/routines/${create.body.routine.id}/validate`)
+      .set("Authorization", authorization)
+      .expect(200);
+
+    expect(validate.body.validation.ok).toBe(false);
+    expect(validate.body.validation.diagnostics.length).toBeGreaterThan(0);
+
+    const publish = await request(app)
+      .post(`/api/v1/agents/${agent.body.id}/routines/${create.body.routine.id}/publish`)
+      .set("Authorization", authorization)
+      .expect(422);
+
+    expect(publish.body).toMatchObject({
+      error: "Routine definition is invalid",
+      validation: {
+        ok: false,
+        diagnostics: expect.arrayContaining([
+          expect.objectContaining({ code: "referenced_undeclared_slot" }),
+        ]),
+      },
+    });
   });
 
   it("rejects website embed copy packs above the locale cap", async () => {

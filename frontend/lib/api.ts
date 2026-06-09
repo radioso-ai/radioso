@@ -27,6 +27,7 @@ export { accountApi, answerFeedbackApi, enterpriseUsageApi } from './api-account
 export { authApi } from './api-auth'
 export { chatApi } from './api-chat'
 export { directivesApi } from './api-directives'
+export { RoutinePublishRejectedError, routinesApi } from './api-routines'
 export { qualityApi } from './api-quality'
 export type {
   FeedbackValue,

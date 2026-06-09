@@ -8,6 +8,7 @@ import {
   type ApplicationModule,
 } from "../composition/index.js";
 import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../modules/agents/public.js";
+import { RoutineDefinitionService } from "../../modules/routines/public.js";
 import { createDirectiveCoherenceChecker, scopeTag } from "@radioso/conversation-defaults";
 import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloudCdnEmbedConfigCacheInvalidator.js";
 import { PlatformSettingsService } from "../../modules/settings/composition.js";
@@ -208,6 +209,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     mailService: infrastructure.mailService,
     messageRepository: repositories.messageRepository,
     productAnalyticsService: infrastructure.productAnalyticsService,
+    routineDefinitionRepository: repositories.routineDefinitionRepository,
     retrievalPipeline: retrieval.retrievalPipeline,
     usageEventRecorder: infrastructure.usageEventRecorder,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
@@ -285,6 +287,12 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       modelGateway: createConversationModelGateway(chatInferencePipeline),
     }),
     registeredCapabilityNames,
+  });
+  const routineDefinitionService = new RoutineDefinitionService({
+    agentRepository: repositories.agentRepository,
+    repository: repositories.routineDefinitionRepository,
+    actionCapabilities: composition.actionCapabilityMap,
+    capabilityPolicy: composition.capabilityPolicy,
   });
   const directiveAuthorService = new DirectiveAuthorService({
     repository: repositories.agentRepository,
@@ -383,6 +391,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     platformSettingsService,
     agentService,
     authoredDirectiveService,
+    routineDefinitionService,
     directiveAuthorService,
     agentSurfaceExtensions,
     skillCatalogService,

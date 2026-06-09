@@ -8,17 +8,32 @@ interface RoutineStateRow {
   routine_id: string;
   path: string[] | null;
   variables: Record<string, unknown> | null;
+  attempts: Record<string, unknown> | null;
   status: string;
   expires_at: Date | null;
 }
 
-const mapState = (row: RoutineStateRow): RoutineState => ({
-  sessionId: row.session_id,
-  routineId: row.routine_id,
-  path: row.path ?? [],
-  variables: row.variables ?? {},
-  status: (row.status as RoutineState["status"]) ?? "active",
-});
+const mapAttempts = (value: Record<string, unknown> | null): Record<string, number> | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const entries = Object.entries(value).filter((entry): entry is [string, number] =>
+    typeof entry[1] === "number" && Number.isFinite(entry[1]),
+  );
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+};
+
+const mapState = (row: RoutineStateRow): RoutineState => {
+  const attempts = mapAttempts(row.attempts);
+  return {
+    sessionId: row.session_id,
+    routineId: row.routine_id,
+    path: row.path ?? [],
+    variables: row.variables ?? {},
+    ...(attempts ? { attempts } : {}),
+    status: (row.status as RoutineState["status"]) ?? "active",
+  };
+};
 
 export const DEFAULT_ROUTINE_STATE_TTL_MS = 30 * 60 * 1000;
 
@@ -37,7 +52,7 @@ export class RoutineStateRepository implements ConversationRoutineStore {
 
   async loadActive(input: { sessionId: string }): Promise<RoutineState | null> {
     const row = await this.database.queryOptional<RoutineStateRow>(
-      `SELECT session_id, routine_id, path, variables, status, expires_at
+      `SELECT session_id, routine_id, path, variables, attempts, status, expires_at
          FROM routine_states
         WHERE session_id = $1
           AND status = 'active'
@@ -52,16 +67,25 @@ export class RoutineStateRepository implements ConversationRoutineStore {
     // One row per session — advancing a routine upserts; an expired row is overwritten
     // when a fresh routine activates for the same session.
     await this.database.execute(
-      `INSERT INTO routine_states (session_id, routine_id, path, variables, status, expires_at, updated_at)
-       VALUES ($1, $2, $3::text[], $4::jsonb, $5, $6, now())
+      `INSERT INTO routine_states (session_id, routine_id, path, variables, attempts, status, expires_at, updated_at)
+       VALUES ($1, $2, $3::text[], $4::jsonb, $5::jsonb, $6, $7, now())
        ON CONFLICT (session_id) DO UPDATE SET
          routine_id = EXCLUDED.routine_id,
          path = EXCLUDED.path,
          variables = EXCLUDED.variables,
+         attempts = EXCLUDED.attempts,
          status = EXCLUDED.status,
          expires_at = EXCLUDED.expires_at,
          updated_at = now()`,
-      [state.sessionId, state.routineId, state.path, JSON.stringify(state.variables), state.status, expiresAt],
+      [
+        state.sessionId,
+        state.routineId,
+        state.path,
+        JSON.stringify(state.variables),
+        JSON.stringify(state.attempts ?? {}),
+        state.status,
+        expiresAt,
+      ],
     );
   }
 

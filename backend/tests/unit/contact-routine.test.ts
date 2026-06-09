@@ -6,10 +6,12 @@ import type {
   ConversationRoutineStepRenderer,
   ConversationRoutineStore,
   ProcessTurnInput,
+  Routine,
   RoutineState,
 } from "@radioso/conversation-contract";
 
-import { contactRoutine, CONTACT_SEND_ACTION_TYPE } from "../../src/modules/chat/services/routines/contactRoutine.js";
+import { compileRoutineDefinition } from "../../src/modules/routines/public.js";
+import { contactRoutineDefinition, CONTACT_SEND_ACTION_TYPE } from "../../src/modules/chat/services/routines/contactRoutine.js";
 import { RoutineRegistry } from "@radioso/conversation-defaults";
 
 /**
@@ -19,6 +21,24 @@ import { RoutineRegistry } from "@radioso/conversation-defaults";
  * email + message over chat turns, then emits a `contact.send` action (fire-and-forget)
  * carrying the gathered variables and clears its state at the terminal step.
  */
+
+const contactRoutine = compileRoutineDefinition(contactRoutineDefinition);
+
+const behaviorGraphOf = (routine: Routine) => ({
+  rootStepId: routine.rootStepId,
+  steps: routine.steps.map((step) => {
+    if (step.kind === "action") {
+      return { id: step.id, kind: step.kind, actionType: step.actionType };
+    }
+    return { id: step.id, kind: step.kind, action: step.action };
+  }),
+  transitions: routine.transitions.map((transition) => ({
+    from: transition.from,
+    to: transition.to,
+    condition: transition.condition,
+    guard: transition.guard,
+  })),
+});
 
 const inMemoryStore = (): ConversationRoutineStore & { rows: Map<string, RoutineState> } => {
   const rows = new Map<string, RoutineState>();
@@ -96,6 +116,26 @@ const buildInput = (content: string, store: ConversationRoutineStore, events: Co
 });
 
 describe("contact routine — end-to-end through the engine (action emission)", () => {
+  it("compiles the authored contact definition to the retired routine graph shape", () => {
+    expect(behaviorGraphOf(contactRoutine)).toEqual({
+      rootStepId: "ask_email",
+      steps: [
+        { id: "ask_email", kind: "chat", action: "Ask the user for the email address where they can be reached." },
+        { id: "ask_message", kind: "chat", action: "Ask the user for the message they would like to send." },
+        { id: "send", kind: "action", actionType: CONTACT_SEND_ACTION_TYPE },
+        { id: "done", kind: "terminal", action: "Confirm their request was sent and that someone will follow up. Ask what you can help with next." },
+        { id: "cancelled", kind: "terminal", action: "Acknowledge that the contact request was cancelled and that they do not need to provide anything else." },
+      ],
+      transitions: [
+        { from: "ask_email", to: "cancelled", condition: "the user declined, cancelled, refused, or said they no longer want to continue the contact request", guard: undefined },
+        { from: "ask_email", to: "ask_message", condition: "the user provided a valid email address and did not decline or cancel the contact request", guard: undefined },
+        { from: "ask_message", to: "cancelled", condition: "the user declined, cancelled, refused, or said they no longer want to continue the contact request", guard: undefined },
+        { from: "ask_message", to: "send", condition: "the user provided the message they want to send and did not decline or cancel the contact request", guard: undefined },
+        { from: "send", to: "done", condition: "the contact request was emitted", guard: undefined },
+      ],
+    });
+  });
+
   it("gathers email + message, then emits contact.send with the gathered payload and clears state", async () => {
     const store = inMemoryStore();
     const engine = createConversationEngine();

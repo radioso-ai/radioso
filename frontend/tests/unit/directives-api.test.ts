@@ -92,6 +92,44 @@ describe('directivesApi', () => {
     )
   })
 
+  it('drafts an agent directive from coaching text and turn context', async () => {
+    const draftResponse = {
+      directive: {
+        name: 'Use release note specifics',
+        condition: { kind: 'always' },
+        action: 'Answer with concrete release note details.',
+        tags: ['step:onboarding:answer'],
+      },
+      diagnosis: 'directive_recommended',
+      rationale: 'The coaching is behavioral.',
+    }
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(draftResponse))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(directivesApi.draftDirective('agent-1', {
+      coachingText: 'Be more specific about the release.',
+      turn: {
+        userMessage: 'What changed?',
+        assistantAnswer: 'Some things changed.',
+      },
+    })).resolves.toEqual(draftResponse)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/backend/api/v1/agents/agent-1/directives/draft',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'omit',
+        body: JSON.stringify({
+          coachingText: 'Be more specific about the release.',
+          turn: {
+            userMessage: 'What changed?',
+            assistantAnswer: 'Some things changed.',
+          },
+        }),
+      }),
+    )
+  })
+
   it('includes directive replacement relationships when creating agent directives', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
       directive: { id: 'directive-1' },

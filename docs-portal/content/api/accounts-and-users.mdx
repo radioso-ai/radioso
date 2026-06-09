@@ -5,13 +5,14 @@ description: List accounts, invite users, manage organization roles, and switch 
 
 # Accounts and users
 
-These routes manage who can access an account and which account the current session is operating on.
+These routes manage who can access an account, which account the current session is operating on, and account-level usage visibility for signed-in members.
 
 ## Relevant endpoints
 
 ```text
 GET    /api/v1/account/users
 GET    /api/v1/account/accounts
+GET    /api/v1/account/usage-trends
 POST   /api/v1/account/invitations
 POST   /api/v1/account/switch
 PATCH  /api/v1/account/users/{membershipId}
@@ -28,6 +29,7 @@ Use these routes after a session has already been established.
 2. Switch the active account if needed.
 3. List current users, invitations, and workspace grants for that account.
 4. Create invitations, update roles, assign workspace grants, or remove access.
+5. Read usage trends when a member needs account-level activity reporting.
 
 Organization roles are scoped to one account:
 
@@ -36,6 +38,26 @@ Organization roles are scoped to one account:
 - `member` can use workspaces broadly and reveal workspace tokens, but cannot manage users, rename the organization, create or delete workspaces, or rotate workspace tokens.
 
 When a signed-in user creates a new organization, that user becomes the `owner` of the new organization.
+
+## Usage trends
+
+Any active account member can read usage trends for the current account.
+
+```text
+GET /api/v1/account/usage-trends?from=2026-06-01&to=2026-06-30&granularity=day
+```
+
+The response is a continuous UTC bucket series. Each bucket includes:
+
+- conversations created in the period
+- user and assistant message counts
+- succeeded input, output, and total token usage
+
+Use `granularity=day`, `granularity=week`, or `granularity=month`. `from` and `to` are inclusive `YYYY-MM-DD` UTC dates. Very large requests are rejected when they would produce more than 366 buckets.
+
+You can narrow the report with `workspaceId` and `agentId`. Both filters must belong to the current account. Token usage is directly scoped by account and workspace. When `agentId` is supplied, token events are attributed through their conversation. Token events without a conversation are not included in agent-filtered token totals because they cannot be tied to an agent.
+
+The report returns aggregate counts only. It does not return message content, prompts, completions, retrieved chunks, or document content.
 
 ## Invite a user
 

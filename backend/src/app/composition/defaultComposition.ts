@@ -46,6 +46,7 @@ import { createAnswerFeedbackApplicationModule } from "./builtIn/answerFeedbackM
 import { createWebsiteEmbedApplicationModule } from "./builtIn/websiteEmbedModule.js";
 import { createAgentWizardApplicationModule } from "./builtIn/agentWizardModule.js";
 import { createQualityApplicationModule } from "./builtIn/qualityModule.js";
+import { createUsageReportingApplicationModule } from "./builtIn/usageReportingModule.js";
 import { createAnswerDirectivesApplicationModule } from "./builtIn/answerDirectivesModule.js";
 import { createContactRoutineApplicationModule } from "./builtIn/contactRoutineModule.js";
 import {
@@ -115,6 +116,7 @@ export const createDefaultApplicationComposition = (options: {
     createAnswerFeedbackApplicationModule(),
     createWebsiteEmbedApplicationModule({ widgetOrigin: options.widgetOrigin }),
     createAgentWizardApplicationModule(),
+    createUsageReportingApplicationModule(),
     createQualityApplicationModule(),
     createContactRoutineApplicationModule(),
     ...(options.modules ?? []),

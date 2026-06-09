@@ -352,7 +352,7 @@ test("seeded override replay creates a run card with answer and flow control", a
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=chat&replayConversationId=${conversationId}&replayMessageId=${assistantMessageId}`);
   await page.getByLabel("Override custom instruction").click();
-  await page.locator("textarea").fill("Answer using release notes only.");
+  await page.getByLabel("Custom instruction override").fill("Answer using release notes only.");
   await page.getByRole("button", { name: "Run replay" }).click();
 
   await expect(page.getByRole("article").getByText("Replay answer with the override.")).toBeVisible();
@@ -373,15 +373,16 @@ test("seeded replay compare shows original and replay answers side by side", asy
   await installWorkbenchMocks(page, requestBodies);
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=chat&replayConversationId=${conversationId}&replayMessageId=${assistantMessageId}`);
-  await expect(page.getByRole("heading", { name: "Original" })).toBeVisible();
-  await expect(page.getByText("Original answer from the saved conversation.")).toBeVisible();
+  const compare = page.getByTestId("workbench-compare");
+  await expect(compare.getByRole("heading", { name: "Original" })).toBeVisible();
+  await expect(compare.getByText("Original answer from the saved conversation.")).toBeVisible();
 
   await page.getByLabel("Override custom instruction").click();
-  await page.locator("textarea").fill("Prefer implementation details.");
+  await page.getByLabel("Custom instruction override").fill("Prefer implementation details.");
   await page.getByRole("button", { name: "Run replay" }).click();
 
-  await expect(page.getByRole("heading", { name: "Replay", exact: true })).toBeVisible();
-  await expect(page.getByText("Replay answer with the override.").first()).toBeVisible();
+  await expect(compare.getByRole("heading", { name: "Replay", exact: true })).toBeVisible();
+  await expect(compare.getByText("Replay answer with the override.")).toBeVisible();
 });
 
 test("quality turn opens seeded workbench and promotes replay to eval case", async ({ page }) => {
@@ -395,11 +396,12 @@ test("quality turn opens seeded workbench and promotes replay to eval case", asy
   await page.getByRole("button", { name: /open .* turn in workbench/i }).click();
 
   await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?replayConversationId=${conversationId}&replayMessageId=${assistantMessageId}`));
-  await expect(page.getByRole("heading", { name: "Original" })).toBeVisible();
-  await expect(page.getByText("Original answer from the saved conversation.")).toBeVisible();
+  const compare = page.getByTestId("workbench-compare");
+  await expect(compare.getByRole("heading", { name: "Original" })).toBeVisible();
+  await expect(compare.getByText("Original answer from the saved conversation.")).toBeVisible();
 
   await page.getByLabel("Override custom instruction").click();
-  await page.locator("textarea").fill("Prefer implementation details.");
+  await page.getByLabel("Custom instruction override").fill("Prefer implementation details.");
   await page.getByRole("button", { name: "Run replay" }).click();
   await expect(page.getByRole("article").getByText("Replay answer with the override.")).toBeVisible();
 

@@ -12,6 +12,7 @@ import { registerDocumentRetrievalSchemas } from "./schemas/documentRetrievalSch
 import { registerAssistantHistorySchemas } from "./schemas/assistantHistorySchemas.js";
 import { registerConnectorSchemas } from "./schemas/connectorSchemas.js";
 import { registerQualitySchemas } from "./schemas/qualitySchemas.js";
+import { registerUsageTrendSchemas } from "./schemas/usageTrendSchemas.js";
 
 extendZodWithOpenApi(z);
 
@@ -133,6 +134,10 @@ export interface OpenApiSchemaCatalog {
   QualityTriageStateSchema: z.ZodTypeAny;
   QualityTriageRecordSchema: z.ZodTypeAny;
   SetQualityTriageRequestSchema: z.ZodTypeAny;
+  UsageTrendBucketSchema: z.ZodTypeAny;
+  UsageTrendGranularitySchema: z.ZodTypeAny;
+  UsageTrendsQuerySchema: RouteParameterSchema;
+  UsageTrendsResponseSchema: z.ZodTypeAny;
   IngestionSettingsSchema: z.ZodTypeAny;
   InvitationAcceptRequestSchema: z.ZodTypeAny;
   InvitationDetailsResponseSchema: z.ZodTypeAny;
@@ -260,6 +265,7 @@ export const createOpenApiRegistry = () => {
   registerAssistantHistorySchemas(registry, schemas);
   registerConnectorSchemas(registry, schemas);
   registerQualitySchemas(registry, schemas);
+  registerUsageTrendSchemas(registry, schemas);
 
   return {
     registry,

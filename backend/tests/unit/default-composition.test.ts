@@ -56,6 +56,7 @@ describe("default application composition", () => {
       "radioso-answer-feedback",
       "radioso-website-embed",
       "radioso-agent-wizard",
+      "radioso-usage-reporting",
       "radioso-quality",
       "radioso-contact-routine",
     ]);
@@ -66,6 +67,7 @@ describe("default application composition", () => {
     ]);
     expect(composition.directiveRegistrations.every((registration) => registration.routes === undefined)).toBe(true);
     expect(composition.routeMounts.map((mount) => mount.path)).toContain("/api/v1/answer-feedback");
+    expect(composition.routeMounts.map((mount) => mount.path)).toContain("/api/v1/account");
     expect(composition.routeMounts.map((mount) => mount.path)).toContain("/api/v1/quality");
     expect(composition.answerFeedbackHistoryProviderRegistration).toBeTypeOf("function");
     expect(composition.agentSurfaceExtensions.map((extension) => extension.key)).toEqual(["websiteEmbed"]);
@@ -97,6 +99,7 @@ describe("default application composition", () => {
       "radioso-answer-feedback",
       "radioso-website-embed",
       "radioso-agent-wizard",
+      "radioso-usage-reporting",
       "radioso-quality",
       "radioso-contact-routine",
       "connector-module",

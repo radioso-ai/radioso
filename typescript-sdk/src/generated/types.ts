@@ -174,6 +174,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/account/usage-trends": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get account usage trends
+         * @description Returns UTC-bucketed usage trends for the current account. Token totals include succeeded usage events only. When an agent filter is supplied, usage events without conversation lineage are excluded because they cannot be attributed to that agent.
+         */
+        get: operations["getAccountUsageTrends"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/account/users": {
         parameters: {
             query?: never;
@@ -3868,6 +3888,37 @@ export interface components {
             pageSize: number;
             totalPages: number;
         };
+        /** @enum {string} */
+        UsageTrendGranularity: "day" | "week" | "month";
+        UsageTrendBucket: {
+            /** Format: date-time */
+            periodStart: string;
+            /** Format: date-time */
+            periodEnd: string;
+            conversationsCreated: number;
+            messages: {
+                total: number;
+                user: number;
+                assistant: number;
+            };
+            tokens: {
+                input: number;
+                output: number;
+                total: number;
+            };
+        };
+        UsageTrendsResponse: {
+            granularity: components["schemas"]["UsageTrendGranularity"];
+            from: string;
+            to: string;
+            filters: {
+                /** Format: uuid */
+                workspaceId: string | null;
+                /** Format: uuid */
+                agentId: string | null;
+            };
+            buckets: components["schemas"]["UsageTrendBucket"][];
+        };
         AssistantChatSseStream: string;
         ConnectorNotFoundResponse: {
             /** @enum {string} */
@@ -4292,6 +4343,50 @@ export interface operations {
             };
             /** @description Invitation is no longer valid */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAccountUsageTrends: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+                granularity: "day" | "week" | "month";
+                workspaceId?: string;
+                agentId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Usage trends returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageTrendsResponse"];
+                };
+            };
+            /** @description Invalid date range, bucket count, or account-scoped filter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

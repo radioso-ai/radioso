@@ -383,7 +383,7 @@ Public surfaces and contracts:
 Primary internals:
 
 - `backend/src/modules/routines/compiler.ts`, `validator.ts`, `domain.ts`, `service.ts`
-- `backend/src/db/repositories/routineDefinitionRepository.ts`, migrations `083`–`085`
+- `backend/src/db/repositories/routineDefinitionRepository.ts`, migrations `084`–`086`
 - `backend/src/app/composition/routineDefinitionSource.ts` (loads + compiles published routines per turn)
 - `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward)
 - `backend/prompts/chat/routine-next-step.md`, `routine-step-reply.md`, `routine-data-activation.md`

@@ -69,4 +69,18 @@ describe("openapi contract", () => {
 
     expect(schema?.properties?.diagnostics?.items?.properties?.code?.enum).toEqual([...routineValidationCodes]);
   });
+
+  it("advertises the account usage trends endpoint as a session-authenticated account report", () => {
+    const document = createOpenApiDocument();
+    const operation = document.paths?.["/api/v1/account/usage-trends"]?.get;
+
+    expect(operation).toMatchObject({
+      operationId: "getAccountUsageTrends",
+      tags: ["Account"],
+      security: [{ sessionCookie: [] }],
+    });
+    expect(operation?.responses).toHaveProperty("200");
+    expect(operation?.responses).toHaveProperty("400");
+    expect(operation?.responses).toHaveProperty("401");
+  });
 });

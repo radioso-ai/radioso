@@ -422,6 +422,7 @@ export const installDashboardApiMocks = async (
     llmModelUpdates?: Array<unknown>;
     ingestionSettings?: IngestionSettingsFixture;
     ingestionSettingsUpdates?: unknown[];
+    usageTrends?: unknown;
   } = {},
 ) => {
   let platformSettings = options.platformSettings ?? basePlatformSettings();
@@ -510,6 +511,28 @@ export const installDashboardApiMocks = async (
     hasMore: (historyList as { hasMore?: boolean }).hasMore ?? false,
   };
   const workspaceSummary = options.workspaceSummary ?? buildWorkspaceSummary({ documentList: documents, historyList });
+  const usageTrends = options.usageTrends ?? {
+    granularity: "day",
+    from: "2026-05-28",
+    to: "2026-06-26",
+    filters: { workspaceId: null, agentId: null },
+    buckets: [
+      {
+        periodStart: "2026-06-01T00:00:00.000Z",
+        periodEnd: "2026-06-02T00:00:00.000Z",
+        conversationsCreated: 1,
+        messages: { total: 2, user: 1, assistant: 1 },
+        tokens: { input: 120, output: 80, total: 200 },
+      },
+      {
+        periodStart: "2026-06-02T00:00:00.000Z",
+        periodEnd: "2026-06-03T00:00:00.000Z",
+        conversationsCreated: 2,
+        messages: { total: 4, user: 2, assistant: 2 },
+        tokens: { input: 260, output: 140, total: 400 },
+      },
+    ],
+  };
 
   await page.route("**/backend/api/v1/**", async (route) => {
     const request = route.request();
@@ -559,6 +582,11 @@ export const installDashboardApiMocks = async (
           },
         ],
       });
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/account/usage-trends") {
+      await json(route, usageTrends);
       return;
     }
 

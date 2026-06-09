@@ -132,6 +132,8 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       skillResult?: RoutineSkillResult,
     ): boolean => {
       switch (transition.guard?.kind) {
+        case "always":
+          return true;
         case "slot_filled":
           return transition.guard.slots.length > 0 && transition.guard.slots.every((slot) => hasVariable(variables, slot));
         case "outcome":

@@ -67,6 +67,7 @@ export type RoutineValidationCode =
   | 'attempt_limit_without_fallback'
   | 'outcome_guard_on_non_tool_step'
   | 'structured_guard_missing_parameter'
+  | 'unsupported_tool_step'
 
 export type RoutineValidationDiagnostic = {
   code: RoutineValidationCode

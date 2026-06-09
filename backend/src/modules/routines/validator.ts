@@ -13,6 +13,7 @@ export const routineValidationCodes = [
   "attempt_limit_without_fallback",
   "outcome_guard_on_non_tool_step",
   "structured_guard_missing_parameter",
+  "unsupported_tool_step",
 ] as const;
 
 export type RoutineValidationCode = (typeof routineValidationCodes)[number];
@@ -66,6 +67,13 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
   }
 
   for (const step of steps) {
+    if (step.kind === "tool") {
+      diagnostics.push({
+        code: "unsupported_tool_step",
+        location: `step:${step.stableStepId}`,
+        message: `tool steps are not yet supported: step "${step.stableStepId}" cannot be published until routine tool dispatch is available.`,
+      });
+    }
     if (step.kind === "tool" && !step.toolRef) {
       diagnostics.push({
         code: "dangling_action_reference",

@@ -44,7 +44,7 @@ import {
 
 const slotTypes: RoutineSlotType[] = ['text', 'number', 'boolean', 'email', 'date']
 const guardKinds: RoutineGuardKind[] = ['always', 'llm', 'slot_filled', 'outcome', 'counter', 'fallback']
-const stepKinds: Array<'chat' | 'tool' | 'action'> = ['chat', 'tool', 'action']
+const stepKinds: Array<'chat' | 'action'> = ['chat', 'action']
 const terminalKinds: RoutineTerminalKind[] = ['complete', 'handoff']
 
 const optionLabel = (value: string) => value.replace(/_/gu, ' ')

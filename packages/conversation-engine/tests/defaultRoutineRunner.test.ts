@@ -453,6 +453,31 @@ describe("DefaultRoutineRunner skill (tool) steps", () => {
     expect(result.nextState).toBeNull();
   });
 
+  it("advances always-guarded transitions deterministically without consulting the selector", async () => {
+    const alwaysRoutine: Routine = {
+      id: "always_guard",
+      rootStepId: "ask_email",
+      steps: [
+        { id: "ask_email", kind: "chat", action: "Ask for email." },
+        { id: "done", kind: "terminal", action: "Confirm." },
+      ],
+      transitions: [
+        { from: "ask_email", to: "done", condition: "always", guard: { kind: "always" } },
+      ],
+    };
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({ nextStepId: "ask_email" }));
+    const runner = new DefaultRoutineRunner([alwaysRoutine], { select }, { render: vi.fn(echoRenderer.render) });
+
+    const result = await runner.resume({
+      turn,
+      state: { sessionId: "session_1", routineId: "always_guard", path: ["ask_email"], variables: {}, status: "active" },
+    });
+
+    expect(select).not.toHaveBeenCalled();
+    expect(result.response.answer).toContain("done");
+    expect(result.nextState).toBeNull();
+  });
+
   it("keeps llm-condition-only skill branches on the selector path for parity", async () => {
     const select = vi.fn(async ({ currentStep }) =>
       currentStep.id === "ask_message" ? { nextStepId: "submit" } : { nextStepId: "failed" },

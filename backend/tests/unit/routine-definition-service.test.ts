@@ -165,6 +165,34 @@ const actionDraft = (actionType: string | null): RoutineDefinitionDraftInput => 
   }],
 });
 
+const toolDraft = (): RoutineDefinitionDraftInput => ({
+  ...validDraft(),
+  steps: [
+    ...validDraft().steps,
+    {
+      stableStepId: "step_lookup",
+      kind: "tool",
+      instruction: "Look up the account.",
+      toolRef: "account.lookup",
+      ordinal: 1,
+      metadata: {},
+    },
+  ],
+  transitions: [{
+    fromStep: "step_collect_topic",
+    toRef: "step_lookup",
+    guardKind: "always",
+    guardText: null,
+    ordinal: 0,
+  }, {
+    fromStep: "step_lookup",
+    toRef: "terminal_complete",
+    guardKind: "always",
+    guardText: null,
+    ordinal: 1,
+  }],
+});
+
 class FakeActionCapabilityMap implements ActionCapabilityMap {
   constructor(private readonly capabilitiesByType: Map<string, string[]>) {}
 
@@ -251,6 +279,28 @@ describe("RoutineDefinitionService", () => {
         diagnostics: [],
       },
     });
+  });
+
+  it("rejects publishing a tool step until routine skill dispatch is supported", async () => {
+    const { repository, service } = createService();
+    const draft = await service.createDraft(workspaceId, agentId, toolDraft());
+
+    const result = await service.publish(workspaceId, agentId, draft.routine.id);
+
+    expect(result).toMatchObject({
+      rejected: true,
+      validation: {
+        ok: false,
+        diagnostics: [
+          expect.objectContaining({
+            code: "unsupported_tool_step",
+            location: "step:step_lookup",
+            message: expect.stringContaining("tool steps are not yet supported"),
+          }),
+        ],
+      },
+    });
+    expect(await repository.listByAgent(agentId)).toHaveLength(1);
   });
 
   it("rejects publishing an action step with no follow-up", async () => {

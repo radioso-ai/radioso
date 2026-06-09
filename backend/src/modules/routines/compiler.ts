@@ -44,6 +44,8 @@ const guardFor = (transition: RoutineDefinition["transitions"][number]): Routine
       const limit = transition.counterLimit ?? parsePositiveInteger(transition.guardText);
       return limit ? { kind: "counter", limit } : undefined;
     }
+    case "always":
+      return { kind: "always" };
     case "fallback":
       return { kind: "fallback" };
     default:

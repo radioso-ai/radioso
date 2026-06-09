@@ -439,6 +439,7 @@ export type RoutineGuard =
   | { kind: "slot_filled"; slots: string[] }
   | { kind: "outcome"; status: RoutineSkillOutcomeStatus }
   | { kind: "counter"; limit: number }
+  | { kind: "always" }
   | { kind: "fallback" }
   | { kind: "llm" };
 

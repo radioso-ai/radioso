@@ -75,21 +75,19 @@ describe("routine definition compiler and validator", () => {
     expect(validateRoutineDefinition(baseDefinition())).toEqual({ ok: true, diagnostics: [] });
   });
 
-  it("compiles structured transition guards additively", () => {
+  it("compiles publishable structured transition guards additively", () => {
     const definition: RoutineDefinition = {
       ...baseDefinition(),
       steps: [
         { stableStepId: "ask_email", kind: "chat", instruction: "Ask for {{slot.email}}.", toolRef: null, ordinal: 0, metadata: {} },
-        { stableStepId: "lookup", kind: "tool", instruction: "Look up order.", toolRef: "order_lookup", ordinal: 1, metadata: {} },
       ],
       slots: [
         { stableSlotId: "slot_email", key: "email", type: "email", required: true, description: null, ordinal: 0 },
       ],
       transitions: [
-        { fromStep: "ask_email", toRef: "lookup", guardKind: "slot_filled", guardText: "{{slot.email}}", ordinal: 0 },
-        { fromStep: "lookup", toRef: "done", guardKind: "outcome", guardText: "completed", ordinal: 1 },
-        { fromStep: "lookup", toRef: "handoff", guardKind: "counter", guardText: "2", ordinal: 2 },
-        { fromStep: "lookup", toRef: "handoff", guardKind: "fallback", guardText: null, ordinal: 3 },
+        { fromStep: "ask_email", toRef: "done", guardKind: "slot_filled", guardText: "{{slot.email}}", ordinal: 0 },
+        { fromStep: "ask_email", toRef: "handoff", guardKind: "counter", guardText: "2", ordinal: 1 },
+        { fromStep: "ask_email", toRef: "handoff", guardKind: "fallback", guardText: null, ordinal: 2 },
       ],
       terminals: [
         { stableStepId: "done", kind: "complete", instruction: "Confirm completion.", ordinal: 0 },
@@ -100,10 +98,9 @@ describe("routine definition compiler and validator", () => {
     const routine = compileRoutineDefinition(definition);
 
     expect(routine.transitions).toEqual([
-      { from: "ask_email", to: "lookup", condition: "slot_filled", guard: { kind: "slot_filled", slots: ["email"] } },
-      { from: "lookup", to: "done", condition: "outcome", guard: { kind: "outcome", status: "completed" } },
-      { from: "lookup", to: "handoff", condition: "counter", guard: { kind: "counter", limit: 2 } },
-      { from: "lookup", to: "handoff", condition: "fallback", guard: { kind: "fallback" } },
+      { from: "ask_email", to: "done", condition: "slot_filled", guard: { kind: "slot_filled", slots: ["email"] } },
+      { from: "ask_email", to: "handoff", condition: "counter", guard: { kind: "counter", limit: 2 } },
+      { from: "ask_email", to: "handoff", condition: "fallback", guard: { kind: "fallback" } },
     ]);
   });
 
@@ -185,6 +182,33 @@ describe("routine definition compiler and validator", () => {
     }));
   });
 
+  it("rejects tool steps until routine skill dispatch is supported", () => {
+    const definition: RoutineDefinition = {
+      ...baseDefinition(),
+      steps: [
+        { stableStepId: "ask_email", kind: "chat", instruction: "Ask for {{slot.email}}.", toolRef: null, ordinal: 0, metadata: {} },
+        { stableStepId: "lookup", kind: "tool", instruction: "Look up order.", toolRef: "order_lookup", ordinal: 1, metadata: {} },
+      ],
+      slots: [
+        { stableSlotId: "slot_email", key: "email", type: "email", required: true, description: null, ordinal: 0 },
+      ],
+      transitions: [
+        { fromStep: "ask_email", toRef: "lookup", guardKind: "slot_filled", guardText: "{{slot.email}}", ordinal: 0 },
+        { fromStep: "lookup", toRef: "done", guardKind: "always", guardText: null, ordinal: 1 },
+      ],
+    };
+
+    const result = validateRoutineDefinition(definition);
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: "unsupported_tool_step",
+      location: "step:lookup",
+      message: expect.stringContaining("tool steps are not yet supported"),
+    }));
+    expect(() => compileRoutineDefinition(definition)).toThrow("tool steps are not yet supported");
+  });
+
   it("compiles an action step with its authored follow-up transition", () => {
     const definition: RoutineDefinition = {
       ...baseDefinition(),
@@ -210,6 +234,7 @@ describe("routine definition compiler and validator", () => {
       from: "send",
       to: "done",
       condition: "always",
+      guard: { kind: "always" },
     });
   });
 

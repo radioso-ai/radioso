@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import {
   baseDocumentSources,
   basePlatformSettings,
+  baseRetrievalDefaults,
   defaultAgentId,
   installDashboardApiMocks,
   seedDashboardStorage,
@@ -44,58 +45,6 @@ test("agent settings saves behavior and channel sections without retrieval drift
     },
   });
   expect(agentUpdates.at(-1)).not.toHaveProperty("retrieval");
-});
-
-test("retrieval settings saves without channel drift", async ({ page }) => {
-  const settingsUpdates: unknown[] = [];
-
-  await seedDashboardStorage(page);
-  await installDashboardApiMocks(page, {
-    platformSettings: basePlatformSettings(),
-    settingsUpdates,
-  });
-
-  await page.goto(`/w/${workspaceKey}/knowledge?tab=retrieval`);
-  await expect(page.getByRole("heading", { name: "Query rewrite", exact: true })).toBeVisible();
-  await page.locator("#queryRewrite").click();
-
-  await expect.poll(() => settingsUpdates.length).toBeGreaterThanOrEqual(1);
-  expect(settingsUpdates.at(-1)).toMatchObject({
-    assistant: {
-      suggestedQuestionsEnabled: true,
-      customInstruction: "Keep answers concise.",
-    },
-    retrieval: {
-      queryRewriteEnabled: true,
-      vectorTopK: 20,
-    },
-  });
-  expect(settingsUpdates.at(-1)).not.toHaveProperty("channels");
-});
-
-test("retrieval settings can switch the answering strategy to reasoning", async ({ page }) => {
-  const settingsUpdates: unknown[] = [];
-  const agentUpdates: unknown[] = [];
-
-  await seedDashboardStorage(page);
-  await installDashboardApiMocks(page, {
-    platformSettings: basePlatformSettings(),
-    agentUpdates,
-    settingsUpdates,
-  });
-
-  await page.goto(`/w/${workspaceKey}/knowledge?tab=retrieval`);
-  await expect(page.getByRole("heading", { name: "Answering strategy", exact: true })).toBeVisible();
-
-  await page.locator("#retrievalStrategy").click();
-  await page.getByRole("option", { name: "Reasoning (experimental)" }).click();
-
-  await expect.poll(() => settingsUpdates.length).toBeGreaterThanOrEqual(1);
-  expect(settingsUpdates.at(-1)).toMatchObject({
-    retrieval: {
-      retrievalStrategy: "reasoning",
-    },
-  });
 });
 
 test("agent skills tab saves and clears retrieval skill overrides", async ({ page }) => {
@@ -227,7 +176,8 @@ test("agent skills tab collapses retrieval settings when retrieval is off", asyn
 test("agent skills tab saves, persists, and clears retrieval metadata rules", async ({ page }) => {
   const agentUpdates: unknown[] = [];
   const platformSettings = basePlatformSettings();
-  platformSettings.retrieval.metadataRules = [
+  const retrievalDefaults = baseRetrievalDefaults();
+  retrievalDefaults.metadataRules = [
     {
       id: "workspace-region",
       field: "region",
@@ -253,6 +203,7 @@ test("agent skills tab saves, persists, and clears retrieval metadata rules", as
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     platformSettings,
+    retrievalDefaults,
     agentUpdates,
   });
 

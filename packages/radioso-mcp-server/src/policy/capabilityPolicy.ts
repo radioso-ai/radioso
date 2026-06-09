@@ -36,12 +36,10 @@ export const TOOL_CATALOG: Record<string, { accessMode: CapabilityAccessMode }> 
   delete_document: { accessMode: "write" },
   describe_capabilities: { accessMode: "read" },
   get_document: { accessMode: "read" },
-  get_retrieval_settings: { accessMode: "read" },
   list_documents: { accessMode: "read" },
   reprocess_document: { accessMode: "write" },
   search_documents: { accessMode: "read" },
   update_document: { accessMode: "write" },
-  update_retrieval_settings: { accessMode: "write" },
 };
 
 export const DEFAULT_ALLOWED_READ_TOOLS = Object.keys(TOOL_CATALOG).filter(

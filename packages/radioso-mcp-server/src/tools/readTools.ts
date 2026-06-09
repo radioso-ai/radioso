@@ -39,14 +39,12 @@ const capabilityNames = {
     "get_document",
     "search_documents",
     "answer_grounded",
-    "get_retrieval_settings",
   ],
   writeTools: [
     "create_document",
     "update_document",
     "delete_document",
     "reprocess_document",
-    "update_retrieval_settings",
   ],
 };
 
@@ -140,15 +138,5 @@ export const createReadToolDefinitions = (): GenericToolDefinition[] => [
     },
     inputSchema: answerGroundedSchema,
     name: "answer_grounded",
-  },
-  {
-    accessMode: "read",
-    description: "Read the current retrieval settings for the configured workspace.",
-    execute: async (_args, context) => ({
-      data: await context.adapter.getRetrievalSettings(),
-      summary: "Workspace retrieval settings returned.",
-    }),
-    inputSchema: emptySchema,
-    name: "get_retrieval_settings",
   },
 ];

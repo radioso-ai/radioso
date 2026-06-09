@@ -24,10 +24,10 @@ describe("sdk config", () => {
       fetch: fetchMock as typeof fetch,
     });
 
-    await client.settings.getRetrieval();
+    await client.settings.getGeneral();
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.example.com/api/v1/settings/retrieval",
+      "https://api.example.com/api/v1/settings/general",
       expect.objectContaining({
         headers: expect.any(Headers),
         method: "GET",
@@ -59,10 +59,10 @@ describe("sdk config", () => {
       fetch: fetchMock as typeof fetch,
     });
 
-    await client.settings.getRetrieval();
+    await client.settings.getGeneral();
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.example.com/backend/api/v1/settings/retrieval",
+      "https://api.example.com/backend/api/v1/settings/general",
       expect.anything(),
     );
   });

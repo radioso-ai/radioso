@@ -360,6 +360,45 @@ Related docs and specs:
 - `specs/067-conversational-directives/`
 - `specs/066-assistant-turn-loop-spine/`
 
+## Routines
+
+Owns the authoring side of multi-step routines: the definition data model, the
+compiler that turns a definition into the conversation-engine routine graph, the
+validator (author-facing diagnostics), and the per-agent repository. A routine is
+authored as data and published; the chat runtime loads an agent's published
+routines per turn and runs them through the engine. The runtime itself —
+activation, resume, guards, fast-forward, projecting a step into a directive —
+lives in `packages/conversation-engine`, not here.
+
+The engine must not import this module; it consumes the compiled `Routine` graph,
+never the authoring data. Action steps fire through the conversation-action outbox
+and are gated by a per-action capability.
+
+Public surfaces and contracts:
+
+- `backend/src/modules/routines/public.ts` (definition types, compiler, validator)
+- `backend/src/app/http/routes/agentRoutes.ts` (`/api/v1/agents/:agentId/routines` CRUD/validate/publish)
+- `packages/conversation-contract/index.d.ts` (the `Routine` graph and guards the compiler targets)
+
+Primary internals:
+
+- `backend/src/modules/routines/compiler.ts`, `validator.ts`, `domain.ts`, `service.ts`
+- `backend/src/db/repositories/routineDefinitionRepository.ts`, migrations `083`–`085`
+- `backend/src/app/composition/routineDefinitionSource.ts` (loads + compiles published routines per turn)
+- `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward)
+- `backend/prompts/chat/routine-next-step.md`, `routine-step-reply.md`, `routine-data-activation.md`
+- `frontend/components/dashboard/settings/assistant-routines-section.tsx` (authoring UI)
+
+Focused checks:
+
+- `cd backend && pnpm test -- tests/unit/routine-definition-domain.test.ts tests/unit/routine-definition-service.test.ts tests/integration/chat.integration.test.ts`
+- `cd packages/conversation-engine && pnpm test`
+
+Related docs and specs:
+
+- [Conversational Routines](conversational-routines.md), [Authoring routines](../authoring-routines.md)
+- `specs/082-routines-as-data/`, `specs/069-conversation-routines/`
+
 ## Settings
 
 Owns settings validation, settings DTOs, provider ports, ingestion setting

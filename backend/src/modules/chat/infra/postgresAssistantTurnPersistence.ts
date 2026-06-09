@@ -74,16 +74,25 @@ const saveRoutineState = async (
 ): Promise<void> => {
   const expiresAt = new Date(Date.now() + ttlMs).toISOString();
   await client.query(
-    `INSERT INTO routine_states (session_id, routine_id, path, variables, status, expires_at, updated_at)
-     VALUES ($1, $2, $3::text[], $4::jsonb, $5, $6, now())
+    `INSERT INTO routine_states (session_id, routine_id, path, variables, attempts, status, expires_at, updated_at)
+     VALUES ($1, $2, $3::text[], $4::jsonb, $5::jsonb, $6, $7, now())
      ON CONFLICT (session_id) DO UPDATE SET
        routine_id = EXCLUDED.routine_id,
        path = EXCLUDED.path,
        variables = EXCLUDED.variables,
+       attempts = EXCLUDED.attempts,
        status = EXCLUDED.status,
        expires_at = EXCLUDED.expires_at,
        updated_at = now()`,
-    [state.sessionId, state.routineId, state.path, JSON.stringify(state.variables), state.status, expiresAt],
+    [
+      state.sessionId,
+      state.routineId,
+      state.path,
+      JSON.stringify(state.variables),
+      JSON.stringify(state.attempts ?? {}),
+      state.status,
+      expiresAt,
+    ],
   );
 };
 

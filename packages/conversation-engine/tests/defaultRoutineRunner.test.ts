@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { DefaultRoutineRunner } from "../src/routineRunner.js";
 import type {
+  ConversationRoutineNextStepSelector,
   ConversationRoutineStepRenderer,
   Routine,
   RoutineState,
@@ -169,6 +170,102 @@ describe("DefaultRoutineRunner", () => {
     expect(result.response.answer).toContain("ask_email");
   });
 
+  it("fast-forwards through multiple already-filled typed slot collection steps in one turn", async () => {
+    const slotRoutine: Routine = {
+      id: "intake",
+      rootStepId: "ask_name",
+      slots: [
+        { id: "slot_name", key: "name", type: "text", required: true },
+        { id: "slot_email", key: "email", type: "email", required: true },
+      ],
+      steps: [
+        { id: "ask_name", kind: "chat", action: "Ask for name.", metadata: { collectsSlots: ["name"] } },
+        { id: "ask_email", kind: "chat", action: "Ask for email.", metadata: { collectsSlots: ["email"] } },
+        { id: "done", kind: "terminal", action: "Confirm intake." },
+      ],
+      transitions: [
+        { from: "ask_name", to: "ask_email", condition: "name was provided" },
+        { from: "ask_email", to: "done", condition: "email was provided" },
+      ],
+    };
+    const select = vi.fn(async () => ({
+      nextStepId: "ask_email",
+      variables: { name: "Alex", email: "alex@example.com" },
+    }));
+    const renderer: ConversationRoutineStepRenderer = { render: vi.fn(echoRenderer.render) };
+    const runner = new DefaultRoutineRunner([slotRoutine], { select }, renderer);
+
+    const result = await runner.resume({ turn, state: { ...state(["ask_name"]), routineId: "intake" } });
+
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({
+      step: expect.objectContaining({ id: "done" }),
+    }));
+    expect(result.nextState).toBeNull();
+  });
+
+  it("fast-forwards past filled typed slot steps and renders the first missing slot prompt", async () => {
+    const slotRoutine: Routine = {
+      id: "intake",
+      rootStepId: "ask_name",
+      slots: [
+        { id: "slot_name", key: "name", type: "text", required: true },
+        { id: "slot_email", key: "email", type: "email", required: true },
+      ],
+      steps: [
+        { id: "ask_name", kind: "chat", action: "Ask for name.", metadata: { collectsSlots: ["name"] } },
+        { id: "ask_email", kind: "chat", action: "Ask for email.", metadata: { collectsSlots: ["email"] } },
+        { id: "done", kind: "terminal", action: "Confirm intake." },
+      ],
+      transitions: [
+        { from: "ask_name", to: "ask_email", condition: "name was provided" },
+        { from: "ask_email", to: "done", condition: "email was provided" },
+      ],
+    };
+    const runner = new DefaultRoutineRunner(
+      [slotRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "ask_email", variables: { name: "Alex" } })) },
+      { render: vi.fn(echoRenderer.render) },
+    );
+
+    const result = await runner.resume({ turn, state: { ...state(["ask_name"]), routineId: "intake" } });
+
+    expect(result.response.answer).toContain("ask_email");
+    expect(result.nextState).toMatchObject({
+      path: ["ask_name", "ask_email"],
+      variables: { name: "Alex" },
+    });
+  });
+
+  it("does not fast-forward contact-shaped routines without a typed slot schema", async () => {
+    const noSchemaRoutine: Routine = {
+      ...routine,
+      steps: routine.steps.map((step) =>
+        step.id === "ask_message"
+          ? { ...step, metadata: { collectsSlots: ["message"] } }
+          : step,
+      ),
+    };
+    const runner = new DefaultRoutineRunner(
+      [noSchemaRoutine],
+      {
+        select: vi.fn(async () => ({
+          nextStepId: "ask_message",
+          variables: { email: "alex@example.com", message: "hello" },
+        })),
+      },
+      { render: vi.fn(echoRenderer.render) },
+    );
+
+    const result = await runner.resume({ turn, state: state(["ask_email"]) });
+
+    expect(result.response.answer).toContain("ask_message");
+    expect(result.nextState).toMatchObject({
+      path: ["ask_email", "ask_message"],
+      variables: { email: "alex@example.com", message: "hello" },
+    });
+  });
+
   it("throws on a skill-step cycle instead of looping forever (or re-dispatching the skill)", async () => {
     const cyclic: Routine = {
       id: "loop",
@@ -257,6 +354,141 @@ describe("DefaultRoutineRunner skill (tool) steps", () => {
       skillResult: expect.objectContaining({ status: "completed" }),
     }));
     expect(result.response.answer).toContain("done");
+  });
+
+  it("branches on structured outcome guards without consulting the selector for the skill result", async () => {
+    const outcomeRoutine: Routine = {
+      id: "order",
+      rootStepId: "ask",
+      steps: [
+        { id: "ask", kind: "chat", action: "Ask for order info." },
+        { id: "lookup", kind: "skill", skillName: "order_lookup" },
+        { id: "found", kind: "terminal", action: "Share the order." },
+        { id: "not_found", kind: "terminal", action: "Say it was not found." },
+      ],
+      transitions: [
+        { from: "ask", to: "lookup", condition: "ready" },
+        { from: "lookup", to: "found", condition: "found", guard: { kind: "outcome", status: "found" } },
+        { from: "lookup", to: "not_found", condition: "not found", guard: { kind: "outcome", status: "not_found" } },
+      ],
+    };
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({ nextStepId: "lookup" }));
+    const dispatch = vi.fn(async () => ({ status: "not_found" as const }));
+    const runner = new DefaultRoutineRunner([outcomeRoutine], { select }, { render: vi.fn(echoRenderer.render) }, { dispatch });
+
+    const result = await runner.resume({ turn, state: { ...atMessage("order"), path: ["ask"] } });
+
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(result.response.answer).toContain("not_found");
+    expect(result.nextState).toBeNull();
+  });
+
+  it("routes to a handoff terminal through a counter guard on the second failed attempt", async () => {
+    const retryRoutine: Routine = {
+      id: "order",
+      rootStepId: "ask",
+      steps: [
+        { id: "ask", kind: "chat", action: "Ask for order info." },
+        { id: "lookup", kind: "skill", skillName: "order_lookup" },
+        { id: "alternate_email", kind: "chat", action: "Ask for another email." },
+        { id: "handoff", kind: "terminal", action: "Route to a human.", metadata: { terminalKind: "handoff" } },
+      ],
+      transitions: [
+        { from: "ask", to: "lookup", condition: "ready" },
+        { from: "alternate_email", to: "lookup", condition: "alternate email provided" },
+        { from: "lookup", to: "handoff", condition: "attempt limit reached", guard: { kind: "counter", limit: 2 } },
+        { from: "lookup", to: "alternate_email", condition: "not found", guard: { kind: "outcome", status: "not_found" } },
+      ],
+    };
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({ nextStepId: "lookup" }));
+    const dispatch = vi.fn(async () => ({ status: "not_found" as const }));
+    const runner = new DefaultRoutineRunner([retryRoutine], { select }, { render: vi.fn(echoRenderer.render) }, { dispatch });
+
+    const first = await runner.resume({ turn, state: { ...atMessage("order"), path: ["ask"], attempts: { ask: 1 } } });
+    expect(first.response.answer).toContain("alternate_email");
+    expect(first.nextState?.attempts).toMatchObject({ lookup: 1, alternate_email: 1 });
+
+    const second = await runner.resume({
+      turn,
+      state: {
+        sessionId: "session_1",
+        routineId: "order",
+        path: ["ask", "lookup", "alternate_email"],
+        variables: {},
+        status: "active",
+        attempts: first.nextState?.attempts,
+      },
+    });
+
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(dispatch).toHaveBeenCalledTimes(2);
+    expect(second.response.answer).toContain("handoff");
+    expect(second.nextState).toBeNull();
+    expect(second.terminal).toEqual({ kind: "handoff", stepId: "handoff" });
+    expect(second.actions).toBeUndefined();
+  });
+
+  it("uses a slot_filled guard purely before falling back to the selector", async () => {
+    const slotRoutine: Routine = {
+      id: "slot_guard",
+      rootStepId: "ask_email",
+      steps: [
+        { id: "ask_email", kind: "chat", action: "Ask for email." },
+        { id: "done", kind: "terminal", action: "Confirm." },
+      ],
+      transitions: [
+        { from: "ask_email", to: "done", condition: "email present", guard: { kind: "slot_filled", slots: ["email"] } },
+      ],
+    };
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({ nextStepId: "ask_email" }));
+    const runner = new DefaultRoutineRunner([slotRoutine], { select }, { render: vi.fn(echoRenderer.render) });
+
+    const result = await runner.resume({
+      turn,
+      state: { sessionId: "session_1", routineId: "slot_guard", path: ["ask_email"], variables: { email: "a@b.c" }, status: "active" },
+    });
+
+    expect(select).not.toHaveBeenCalled();
+    expect(result.response.answer).toContain("done");
+    expect(result.nextState).toBeNull();
+  });
+
+  it("advances always-guarded transitions deterministically without consulting the selector", async () => {
+    const alwaysRoutine: Routine = {
+      id: "always_guard",
+      rootStepId: "ask_email",
+      steps: [
+        { id: "ask_email", kind: "chat", action: "Ask for email." },
+        { id: "done", kind: "terminal", action: "Confirm." },
+      ],
+      transitions: [
+        { from: "ask_email", to: "done", condition: "always", guard: { kind: "always" } },
+      ],
+    };
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({ nextStepId: "ask_email" }));
+    const runner = new DefaultRoutineRunner([alwaysRoutine], { select }, { render: vi.fn(echoRenderer.render) });
+
+    const result = await runner.resume({
+      turn,
+      state: { sessionId: "session_1", routineId: "always_guard", path: ["ask_email"], variables: {}, status: "active" },
+    });
+
+    expect(select).not.toHaveBeenCalled();
+    expect(result.response.answer).toContain("done");
+    expect(result.nextState).toBeNull();
+  });
+
+  it("keeps llm-condition-only skill branches on the selector path for parity", async () => {
+    const select = vi.fn(async ({ currentStep }) =>
+      currentStep.id === "ask_message" ? { nextStepId: "submit" } : { nextStepId: "failed" },
+    );
+    const dispatch = vi.fn(async () => ({ status: "completed" as const }));
+    const runner = new DefaultRoutineRunner([multiEdge], { select }, { render: vi.fn(echoRenderer.render) }, { dispatch });
+
+    const result = await runner.resume({ turn, state: atMessage() });
+
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(result.response.answer).toContain("failed");
   });
 
   it("throws when a skill step is reached without a dispatcher", async () => {

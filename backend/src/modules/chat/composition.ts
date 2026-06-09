@@ -34,7 +34,7 @@ export {
   type ContactMembershipLookup,
 } from "./services/actions/contactSendActionHandler.js";
 export {
-  contactRoutine,
+  contactRoutineDefinition,
   CONTACT_ROUTINE_ID,
   CONTACT_SEND_ACTION_TYPE,
   CONTACT_INTENT_SKILL_NAME,

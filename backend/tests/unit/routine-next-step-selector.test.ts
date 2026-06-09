@@ -35,6 +35,44 @@ describe("RoutineNextStepSelector", () => {
     expect(decision).toEqual({ nextStepId: "ask_message", variables: { email: "alex@example.com" } });
   });
 
+  it("includes declared slot schema in the prompt and returns variables keyed by slot key", async () => {
+    const typedRoutine: Routine = {
+      ...routine,
+      slots: [
+        { id: "slot_name", key: "name", type: "text", required: true, description: "Visitor name." },
+        { id: "slot_email", key: "email", type: "email", required: true, description: "Visitor email." },
+      ],
+    };
+    const gw = gateway('{"condition": 1, "variables": {"name": "Alex", "email": "alex@example.com"}}');
+
+    const decision = await new RoutineNextStepSelector(gw).select({
+      routine: typedRoutine,
+      state,
+      currentStep,
+      transitions,
+      turn,
+    });
+
+    expect(decision).toEqual({
+      nextStepId: "ask_message",
+      variables: { name: "Alex", email: "alex@example.com" },
+    });
+    const call = vi.mocked(gw.complete).mock.calls[0]![0];
+    expect(call.systemPrompt).toContain('"key":"name"');
+    expect(call.systemPrompt).toContain('"type":"email"');
+    expect(call.systemPrompt).toContain("Extract every declared slot present");
+  });
+
+  it("omits slot extraction schema instructions when the routine has no typed slots", async () => {
+    const gw = gateway('{"condition": 1, "variables": {"email": "alex@example.com"}}');
+
+    await new RoutineNextStepSelector(gw).select({ routine, state, currentStep, transitions, turn });
+
+    const call = vi.mocked(gw.complete).mock.calls[0]![0];
+    expect(call.systemPrompt).not.toContain("Declared slot schema");
+    expect(call.systemPrompt).not.toContain("Extract every declared slot present");
+  });
+
   it("tolerates a code-fenced / prose-wrapped JSON object", async () => {
     const selector = new RoutineNextStepSelector(gateway('Sure:\n```json\n{"condition": 1, "variables": {}}\n```'));
     const decision = await selector.select({ routine, state, currentStep, transitions, turn });

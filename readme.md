@@ -57,7 +57,7 @@ The assistant works with three kinds of unit on a turn.
 
 - A **skill** is something the assistant *does* — grounded retrieval, a lookup, a submission. A skill is dispatched through one port and returns a result. Retrieval is the `retrieval.answer` skill, not a privileged step.
 - A **directive** is a standing rule that shapes *how* the assistant behaves. It pairs a condition with an action: when the condition holds, the action is added to the turn's instructions. A directive is matched and added to the prompt; it is never dispatched and returns nothing. For example: when the customer sounds anxious, slow down and confirm before acting.
-- A **routine** is a stateful, multi-turn flow — a journey described as a graph of steps and conditional transitions. A routine activates when a trigger matches, keeps its position and captured values across turns, and steers the reply by projecting its current step into a directive. The routine runtime is open source; the first routine built on it is Enterprise Edition's human-contact flow: collect an email, collect a message, submit it, then confirm.
+- A **routine** is a stateful, multi-turn flow that carries a task across turns — collecting the values it needs, taking an action, and confirming. Unlike a skill or directive, a routine is **authored as data**: an operator builds it in the agent's Routines settings, and the platform compiles it into a graph the engine runs and resumes turn to turn. The built-in "contact a human" flow — collect an email, collect a message, submit, confirm — is itself an authored routine.
 
 The key point: **skills act, directives steer, routines carry a flow across turns.** Directives and skill-emitted guidance share one steering type, so the composer reads a single ordered set rather than two separate channels.
 
@@ -65,9 +65,9 @@ Condition matching is never a keyword list, because Radioso is multilingual. A c
 
 ### Extending behavior
 
-Skills, directives, and routines are declared in a catalog and registered at application composition. Skills also expose a read-only catalog over HTTP at `GET /api/v1/skills` (see [REST API](#rest-api)). Each directive match and skill dispatch is recorded in the turn trace with the reason it applied, so the steering behind any answer can be inspected.
+Skills and directives are declared in a catalog and registered at application composition. Routines are different: they are authored as data per agent — in the Routines settings or over the API at `/api/v1/agents/<agentId>/routines` — then validated and published, with no redeploy. Skills also expose a read-only catalog over HTTP at `GET /api/v1/skills` (see [REST API](#rest-api)). Each directive match and skill dispatch is recorded in the turn trace with the reason it applied, so the steering behind any answer can be inspected.
 
-For the full model, see [Assistant turn spine](./docs/architecture/assistant-turn-spine.md) and [Conversational directives](./docs/architecture/conversational-directives.md).
+For the full model, see [Assistant turn spine](./docs/architecture/assistant-turn-spine.md), [Conversational directives](./docs/architecture/conversational-directives.md), and [Conversational routines](./docs/architecture/conversational-routines.md). To build a routine, see [Authoring routines](./docs/authoring-routines.md).
 
 ---
 
@@ -165,7 +165,7 @@ curl -sS -b cookies.txt \
 
 Each workspace payload includes both `id` and `publicRouteKey`. Use `id` for API calls that require a workspace identifier. Use `publicRouteKey` when you need to inspect or build the canonical dashboard URL. If a workspace token, public chat link, or Enterprise embed token is ever exposed, rotate it from the settings screen instead of relying on disable-and-re-enable toggles.
 
-**Agents, assistant, and retrieval.** Use agents to configure knowledge-assistant identity, instructions, source scope, retrieval participation, per-skill settings, and public surface settings. Chat calls use the workspace default agent unless `agentId` is provided. Retrieval configuration lives on the agent `retrieval.answer` skill through `skillSettings["retrieval.answer"]`; omitted fields inherit system/model defaults.
+**Agents, assistant, and retrieval.** Use agents to configure knowledge-assistant identity, instructions, source scope, retrieval participation, per-skill settings, and public surface settings. Chat calls use the workspace default agent unless `agentId` is provided. Retrieval configuration lives on the agent `retrieval.answer` skill through `skillSettings["retrieval.answer"]`; omitted fields inherit system/model defaults. Multi-step **routines** are authored per agent under `/api/v1/agents/<agentId>/routines` — create or edit a draft, `POST .../validate`, then `POST .../publish`; see [Authoring routines](./docs/authoring-routines.md).
 
 ```bash
 curl -sS \

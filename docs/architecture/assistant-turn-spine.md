@@ -85,6 +85,28 @@ dispatch, and on the retrieval *result type* for composition. The headless
 `retrieval.*` API, SDK, and MCP surfaces are unchanged — they call retrieval
 directly, as before.
 
+## Routines run before selection
+
+Before normal skill selection, the turn checks for a **routine** — a stateful flow
+that runs across several turns. If a routine is active for the session it resumes
+at its saved step; otherwise the turn checks whether any of the agent's published
+routines should activate, and the highest-priority matching trigger wins.
+
+A routine does not add a new steering channel. Its current step is projected into a
+directive, so it steers the reply through the same matched-directive set as any
+standing rule. The routine advances along the first transition guard that holds;
+most guards (`always`, `slot_filled`, `outcome`, `counter`, `fallback`) are
+resolved without a model call, so the flow is predictable. Slots are filled from
+the user's message, and one message that supplies several values can advance
+through several steps in a single turn.
+
+Routines are authored as data, not registered in code. The chat adapter loads the
+turn agent's published routines, compiles each into the engine's `Routine` graph,
+and runs them through the engine's routine runner. The authoring data model,
+compiler, and validator live in `backend/src/modules/routines/`; the runtime lives
+in `packages/conversation-engine/`. See
+[Conversational routines](./conversational-routines.md).
+
 ## Adding a skill
 
 To make a new capability available to the assistant:

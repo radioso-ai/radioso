@@ -9,10 +9,13 @@ import {
   buildTurnTraceForPresentation,
   ChatTurnLifecycle,
   type AssistantTurnPersistencePort,
+  type ChatActionOutboxPort,
 } from "../../src/modules/chat/services/chatTurnLifecycle.js";
 import type { ChatPresentedAnswer } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import { TURN_TRACE_ENVELOPE_VERSION } from "../../src/modules/chat/services/turnTraceEnvelope.js";
+import { capabilityNames, type CapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
+import type { ActionCapabilityMap } from "../../src/shared/domain/actionCapabilities.js";
 
 interface RecordedAudit {
   metadata: Record<string, any>;
@@ -67,6 +70,31 @@ const presentation = (): ChatPresentedAnswer => ({
   answerOutcome: "grounded_success",
   citations: [],
 });
+
+class FakeActionCapabilityMap implements ActionCapabilityMap {
+  constructor(private readonly capabilitiesByType: Map<string, string[]>) {}
+
+  has(type: string): boolean {
+    return this.capabilitiesByType.has(type);
+  }
+
+  requiredCapabilitiesFor(type: string): string[] {
+    return this.capabilitiesByType.get(type) ?? [];
+  }
+}
+
+class FakeCapabilityPolicy implements CapabilityPolicy {
+  readonly checks: string[] = [];
+
+  constructor(private readonly deniedCapabilities = new Set<string>()) {}
+
+  async can(input: { capability: string }): Promise<{ allowed: boolean; reason?: string }> {
+    this.checks.push(input.capability);
+    return this.deniedCapabilities.has(input.capability)
+      ? { allowed: false, reason: "capability_denied" }
+      : { allowed: true };
+  }
+}
 
 const engineTrace = (): ConversationTrace => ({
   traceId: "conversation-turn-1",
@@ -182,6 +210,138 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     expect(persisted.assistantMessage.id).toEqual(expect.any(String));
     expect(persisted.auditEvent.metadata?.assistantMessageId).toBe(persisted.assistantMessage.id);
     expect(records[0]).toBe(persisted.auditEvent);
+  });
+
+  it("fails a routine turn with a runtime-denied action before persisting a false success", async () => {
+    const auditService = {
+      record: vi.fn(async () => {}),
+      logRecorded: vi.fn(() => {}),
+      updateChatAnswerSuggestions: vi.fn(async () => {}),
+    } as unknown as AuditService;
+    const conversationRepository = {
+      touch: vi.fn(async () => {}),
+    } as unknown as ConversationRepositoryPort;
+    const messageRepository = {
+      create: vi.fn(async () => ({ id: "assistant_msg_separate_write" })),
+    } as unknown as MessageRepositoryPort;
+    const assistantTurnPersistence: AssistantTurnPersistencePort = {
+      completeAssistantTurn: vi.fn(async (input) => ({
+        id: input.assistantMessage.id!,
+        conversationId: input.assistantMessage.conversationId,
+        workspaceId: input.assistantMessage.workspaceId,
+        role: "assistant" as const,
+        content: input.assistantMessage.content,
+        metadata: input.assistantMessage.metadata,
+        skillName: input.assistantMessage.skillName,
+        skillOutcome: input.assistantMessage.skillOutcome,
+        skillStatus: input.assistantMessage.skillStatus,
+        createdAt: new Date(),
+      })),
+    };
+    const actionOutbox: ChatActionOutboxPort = {
+      enqueue: vi.fn(async () => ({ id: "action_1", duplicate: false })),
+    };
+    const commitRoutineState = vi.fn(async () => {});
+    const logger = {
+      warn: vi.fn(),
+    };
+    const lifecycle = new ChatTurnLifecycle(
+      conversationRepository,
+      messageRepository,
+      auditService,
+      undefined,
+      actionOutbox,
+      assistantTurnPersistence,
+      new FakeActionCapabilityMap(new Map([
+        ["contact.send", [capabilityNames.humanContact.request]],
+        ["ticket.create", []],
+      ])),
+      new FakeCapabilityPolicy(new Set([capabilityNames.humanContact.request])),
+      logger,
+    );
+
+    await expect(lifecycle.completeAssistantTurn({
+      workspaceId: "workspace_1",
+      accountId: "account_1",
+      session: session(),
+      presentation: presentation(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      actions: [
+        { type: "contact.send", payload: { email: "alex@example.com" } },
+        { type: "ticket.create", payload: { title: "Keep this one" } },
+      ],
+      routineStateTransition: { kind: "clear", sessionId: "conv_1" },
+      commitRoutineState,
+    })).rejects.toThrow("routine_action_authorization_denied");
+
+    expect(assistantTurnPersistence.completeAssistantTurn).not.toHaveBeenCalled();
+    expect(messageRepository.create).not.toHaveBeenCalled();
+    expect(actionOutbox.enqueue).not.toHaveBeenCalled();
+    expect(commitRoutineState).not.toHaveBeenCalled();
+    expect(auditService.logRecorded).not.toHaveBeenCalled();
+    expect(auditService.record).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      {
+        workspaceId: "workspace_1",
+        conversationId: "conv_1",
+        actionType: "contact.send",
+        reason: "capability_denied",
+        capability: capabilityNames.humanContact.request,
+      },
+      "Routine action blocked by capability policy",
+    );
+  });
+
+  it("enqueues an authorized action unchanged on the fallback outbox path", async () => {
+    const records: RecordedAudit[] = [];
+    const auditService = {
+      record: vi.fn(async (event: RecordedAudit) => {
+        records.push(event);
+      }),
+      updateChatAnswerSuggestions: vi.fn(async () => {}),
+    } as unknown as AuditService;
+    const conversationRepository = {
+      touch: vi.fn(async () => {}),
+    } as unknown as ConversationRepositoryPort;
+    const messageRepository = {
+      create: vi.fn(async () => ({ id: "assistant_msg_1" })),
+    } as unknown as MessageRepositoryPort;
+    const actionOutbox: ChatActionOutboxPort = {
+      enqueue: vi.fn(async () => ({ id: "action_1", duplicate: false })),
+    };
+    const lifecycle = new ChatTurnLifecycle(
+      conversationRepository,
+      messageRepository,
+      auditService,
+      undefined,
+      actionOutbox,
+      undefined,
+      new FakeActionCapabilityMap(new Map([
+        ["contact.send", [capabilityNames.humanContact.request]],
+      ])),
+      new FakeCapabilityPolicy(),
+    );
+
+    await lifecycle.completeAssistantTurn({
+      workspaceId: "workspace_1",
+      accountId: "account_1",
+      session: session(),
+      presentation: presentation(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      actions: [{ type: "contact.send", payload: { email: "alex@example.com" } }],
+    });
+
+    expect(actionOutbox.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      type: "contact.send",
+      payload: { email: "alex@example.com" },
+      workspaceId: "workspace_1",
+      accountId: "account_1",
+      conversationId: "conv_1",
+      idempotencyKey: expect.stringMatching(/^routine-action:conv_1:contact\.send:/),
+    }));
+    expect(records).toHaveLength(1);
   });
 
   it("persists a turnTrace envelope with the retrieval activity trace as a leaf on the dispatch stage", async () => {

@@ -1,10 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const port = Number(process.env.PLAYWRIGHT_PORT ?? 3210);
-const baseURL = `http://127.0.0.1:${port}`;
+const host = process.env.PLAYWRIGHT_HOST ?? "127.0.0.1";
+const baseURL = `http://${host}:${port}`;
 const webServerCommand = process.env.CI
-  ? `pnpm exec next start --port ${port}`
-  : `pnpm exec next dev --webpack --port ${port}`;
+  ? `pnpm exec next start --port ${port} --hostname ${host}`
+  : `pnpm exec next dev --webpack --port ${port} --hostname ${host}`;
 
 export default defineConfig({
   testDir: "./tests/e2e",

@@ -23,6 +23,7 @@ describe("RoutineStateRepository", () => {
       routine_id: "human_contact.request",
       path: ["ask_email"],
       variables: { email: "x@y.z" },
+      attempts: { ask_email: 1 },
       status: "active",
       expires_at: null,
     });
@@ -34,6 +35,7 @@ describe("RoutineStateRepository", () => {
       routineId: "human_contact.request",
       path: ["ask_email"],
       variables: { email: "x@y.z" },
+      attempts: { ask_email: 1 },
       status: "active",
     });
     const [sql, params] = db.queryOptional.mock.calls[0]!;
@@ -55,6 +57,7 @@ describe("RoutineStateRepository", () => {
       routineId: "human_contact.request",
       path: ["ask_email", "ask_message"],
       variables: { email: "x@y.z" },
+      attempts: { ask_email: 1, ask_message: 1 },
       status: "active",
     };
 
@@ -65,7 +68,8 @@ describe("RoutineStateRepository", () => {
     expect(params![0]).toBe("conv_1");
     expect(params![2]).toEqual(["ask_email", "ask_message"]);
     expect(params![3]).toBe(JSON.stringify({ email: "x@y.z" }));
-    expect(params![4]).toBe("active");
+    expect(params![4]).toBe(JSON.stringify({ ask_email: 1, ask_message: 1 }));
+    expect(params![5]).toBe("active");
   });
 
   it("clears by deleting the session's row", async () => {

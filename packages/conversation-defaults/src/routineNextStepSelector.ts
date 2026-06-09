@@ -27,6 +27,8 @@ any language — judge by meaning, not by matching words.
 
 {{conditions}}
 
+{{slotSchema}}
+
 Return a JSON object:
 
 {"condition": <number or null>, "offTopic": <true or false>, "variables": {"<name>": "<value the user provided this turn>"}}
@@ -58,6 +60,19 @@ const skillResultBlock = (skillResult?: RoutineSkillResult): string => {
   }
   const outputs = skillResult.outputs ? ` Outputs: ${JSON.stringify(skillResult.outputs)}.` : "";
   return `A tool just ran for this step with status "${skillResult.status}".${outputs}`;
+};
+
+const slotSchemaBlock = (routine: Routine): string => {
+  if (!routine.slots || routine.slots.length === 0) {
+    return "";
+  }
+  return [
+    "Declared slot schema:",
+    JSON.stringify(routine.slots),
+    "",
+    "Extract every declared slot present in the latest user message in one pass.",
+    'Return extracted values in "variables" keyed by each slot\'s "key"; omit slots not provided this turn.',
+  ].join("\n");
 };
 
 interface ParsedDecision {
@@ -158,6 +173,7 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
       currentStep: input.currentStep.action ?? input.currentStep.id,
       skillResult: skillResultBlock(input.skillResult),
       conditions,
+      slotSchema: slotSchemaBlock(input.routine),
     });
 
     const { text } = await this.modelGateway.complete({

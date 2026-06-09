@@ -286,6 +286,7 @@ const createProcessTurnResult = (input: {
   response: RenderableTurn;
   trace: ConversationTrace;
   actions?: RoutineActionRequest[];
+  handoff?: { routineId: string; stepId: string };
 }): ProcessTurnResult => ({
   sessionId: input.sessionId,
   events: input.events,
@@ -294,6 +295,7 @@ const createProcessTurnResult = (input: {
   response: input.response,
   trace: input.trace,
   ...(input.actions && input.actions.length > 0 ? { actions: input.actions } : {}),
+  ...(input.handoff ? { handoff: input.handoff } : {}),
 });
 
 export class DefaultConversationEngine implements ConversationEngine {
@@ -579,6 +581,8 @@ export class DefaultConversationEngine implements ConversationEngine {
       outputs: {
         routineId: state.routineId,
         completed: result.nextState === null,
+        terminalKind: result.terminal?.kind,
+        handoff: result.terminal?.kind === "handoff",
         // Length only — the assistant's reply lives on the chat message record
         // and the UI joins back to it from there.
         answerLength: result.response.answer.length,
@@ -595,6 +599,9 @@ export class DefaultConversationEngine implements ConversationEngine {
       outcomes: result.outcomes ?? [],
       response: result.response,
       actions: result.actions,
+      handoff: result.terminal?.kind === "handoff"
+        ? { routineId: state.routineId, stepId: result.terminal.stepId }
+        : undefined,
       trace: createTrace([messageStage, gatherStage, routineStage, directiveSteeringStage]),
     });
   }

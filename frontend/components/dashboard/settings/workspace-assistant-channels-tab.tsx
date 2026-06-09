@@ -10,6 +10,7 @@ import { AssistantDirectivesSection } from '@/components/dashboard/settings/assi
 import { AssistantIdentityAppearanceSection } from '@/components/dashboard/settings/assistant-identity-appearance-section'
 import { AssistantPreviewRail } from '@/components/dashboard/settings/assistant-preview-rail'
 import { AssistantRetrievalSkillSettingsSection } from '@/components/dashboard/settings/assistant-retrieval-skill-settings-section'
+import { AssistantRoutinesSection } from '@/components/dashboard/settings/assistant-routines-section'
 import { McpChannelCard } from '@/components/dashboard/settings/mcp-channel-card'
 import { SettingsRow, SettingsRowList } from '@/components/dashboard/settings/settings-row-list'
 import { type AgentSectionId } from '@/lib/dashboard-areas'
@@ -1225,6 +1226,12 @@ export function WorkspaceAssistantChannelsTab({
           {mode === 'assistant' && agentId && showSection('directives') ? (
           <section id="assistant-directives" className="space-y-6 scroll-mt-24">
             <AssistantDirectivesSection agentId={agentId} onSaveStateChange={onSaveStateChange} />
+          </section>
+          ) : null}
+
+          {mode === 'assistant' && agentId && showSection('routines') ? (
+          <section id="assistant-routines" className="space-y-6 scroll-mt-24">
+            <AssistantRoutinesSection agentId={agentId} onSaveStateChange={onSaveStateChange} />
           </section>
           ) : null}
 

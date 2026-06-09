@@ -191,7 +191,11 @@ frontend_modules_ready() {
     "next/dist/pages/_error" \
     "next/dist/build/webpack/loaders/next-app-loader" \
     "next/dist/build/webpack/loaders/next-flight-client-entry-loader" \
-    "next/dist/compiled/jest-worker/processChild.js"
+    "next/dist/compiled/jest-worker/processChild.js" \
+    "react/package.json" \
+    "react/jsx-runtime" \
+    "react-dom/package.json" \
+    "react-dom/server"
   do
     module_is_ready "$required_module" || return 1
   done

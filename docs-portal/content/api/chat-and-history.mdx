@@ -31,7 +31,7 @@ GET  /api/v1/history/search/{searchId}
 4. Reuse `conversationId` when you want continuity across turns.
 5. Inspect saved conversations later through the history routes.
 
-Agents own assistant identity, instructions, greeting settings, retrieval participation, per-skill settings, and surface settings for authenticated chat, anonymous chat, and website embed. In this phase, workspace retrieval settings still provide the default retrieval layer. An agent can override retrieval behavior through `skillSettings["retrieval.answer"]`; omitted fields inherit the workspace defaults. If an agent has retrieval enabled, assistant chat may use retrieval and return citations. Direct-only agents use the direct assistant path and return retrieval diagnostics with `retrievalInvoked: false`.
+Agents own assistant identity, instructions, greeting settings, retrieval participation, per-skill settings, and surface settings for authenticated chat, anonymous chat, and website embed. Retrieval answer configuration lives on the agent through `skillSettings["retrieval.answer"]`; omitted fields inherit system/model defaults. If an agent has retrieval enabled, assistant chat may use retrieval and return citations. Direct-only agents use the direct assistant path and return retrieval diagnostics with `retrievalInvoked: false`.
 
 ## Ask a grounded question
 

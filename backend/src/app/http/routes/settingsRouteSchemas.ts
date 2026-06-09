@@ -77,18 +77,6 @@ export const updatePlatformSettingsSchema = z.object({
     suggestedQuestionsEnabled: z.boolean().optional(),
     customInstruction: z.string().max(2000).optional(),
   }).optional(),
-  retrieval: z.object({
-    queryRewriteEnabled: z.boolean().optional(),
-    semanticRewriteInstructions: z.string().max(2000).optional(),
-    lexicalRewriteInstructions: z.string().max(2000).optional(),
-    suggestedQuestionsCount: z.number().int().min(1).max(4).optional(),
-    rerankEnabled: z.boolean().optional(),
-    vectorTopK: z.number().int().optional(),
-    similarityThreshold: z.number().optional(),
-    rerankTopK: z.number().int().optional(),
-    retrievalStrategy: z.enum(retrievalStrategyPreferences).optional(),
-    metadataRules: updateSettingsSchema.shape.metadataRules,
-  }).optional(),
   channels: z.object({
     anonymousChatEnabled: z.boolean().optional(),
     websiteEmbedEnabled: z.boolean().optional(),

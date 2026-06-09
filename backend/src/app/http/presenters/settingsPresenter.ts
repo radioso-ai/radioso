@@ -1,6 +1,9 @@
 import type { IngestionSettingsRecord } from "../../../modules/settings/contracts/ingestion.js";
+import type {
+  MetadataFieldSuggestion,
+  RetrievalSettingsRecord,
+} from "../../../modules/settings/contracts/retrieval.js";
 import type { PlatformSettingsResource } from "../../../modules/settings/contracts/platform.js";
-import type { RetrievalSettingsRecord } from "../../../modules/settings/contracts/retrieval.js";
 
 export const presentIngestionSettings = (
   settings: IngestionSettingsRecord,
@@ -8,18 +11,6 @@ export const presentIngestionSettings = (
 ) => ({
   ...settings,
   supportedEmbeddingModels,
-});
-
-export const presentRetrievalSettings = (
-  settings: PlatformSettingsResource,
-  record: RetrievalSettingsRecord,
-) => ({
-  ...settings.retrieval,
-  workspaceId: record.workspaceId,
-  createdAt: record.createdAt,
-  updatedAt: record.updatedAt,
-  suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
-  customInstruction: settings.assistant.customInstruction,
 });
 
 export const presentGeneralSettings = (
@@ -45,4 +36,22 @@ export const presentGeneralSettings = (
   websiteEmbedTheme: settings.channels.websiteEmbedTheme,
   websiteEmbedCopy: settings.channels.websiteEmbedCopy,
   websiteEmbedExpertOverrides: settings.channels.websiteEmbedExpertOverrides,
+});
+
+export const presentRetrievalDefaults = (
+  settings: RetrievalSettingsRecord,
+  metadataFieldSuggestions: MetadataFieldSuggestion[],
+) => ({
+  queryRewriteEnabled: settings.queryRewriteEnabled,
+  semanticRewriteInstructions: settings.semanticRewriteInstructions,
+  lexicalRewriteInstructions: settings.lexicalRewriteInstructions,
+  suggestedQuestionsEnabled: settings.suggestedQuestionsEnabled,
+  suggestedQuestionsCount: settings.suggestedQuestionsCount,
+  rerankEnabled: settings.rerankEnabled,
+  vectorTopK: settings.vectorTopK,
+  rerankTopK: settings.rerankTopK,
+  retrievalStrategy: settings.retrievalStrategy,
+  customInstruction: settings.customInstruction,
+  metadataRules: [],
+  metadataFieldSuggestions,
 });

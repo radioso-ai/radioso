@@ -15,7 +15,7 @@ Many AI products optimize first for fluency. Radioso optimizes first for defensi
 
 That changes the product in visible ways:
 
-- retrieval is tunable because retrieval quality changes answer quality
+- retrieval behavior can be adjusted per agent because answer quality depends on the evidence path
 - citations are part of the answer experience rather than a debugging extra
 - unsupported claims should degrade honestly instead of sounding confident
 - operators should be able to inspect why the system answered the way it did
@@ -38,7 +38,7 @@ Radioso is built for the second behavior.
 <Steps>
 ### Retrieve evidence
 
-The system searches workspace documents and applies retrieval settings to gather the best candidate context.
+The system searches workspace documents and applies system defaults plus any selected agent retrieval skill settings to gather the best candidate context.
 
 ### Build the answer with traceable support
 
@@ -54,7 +54,7 @@ The presented answer keeps citation metadata connected to the retrieved chunks t
 - support teams need answers they can stand behind
 - customer-facing agents need to avoid inventing policy
 - customers need a path back to the source of an important claim
-- operators need to improve quality by tuning retrieval, not by guessing blindly
+- operators need to improve quality by inspecting retrieval behavior, not by guessing blindly
 
 <Callout type="info" emoji="i">
   The key point is that grounded answers are not one isolated feature. They are the contract that ties retrieval, citations, and unsupported-answer handling together.
@@ -65,11 +65,11 @@ The presented answer keeps citation metadata connected to the retrieved chunks t
 - a user can ask a policy or product question and get an answer tied to workspace content
 - citations point to the material that actually supports the claim
 - unsupported questions degrade clearly instead of sounding authoritative
-- operators can improve quality by tuning retrieval rather than rewriting the whole system prompt
+- operators can improve quality by adjusting ingestion and per-agent retrieval behavior rather than rewriting the whole system prompt
 
 ## Related docs
 
 - [API first success](/quickstarts/api-first-success)
 - [Embed on your website](/quickstarts/website-embed)
-- [Retrieval tuning](/guides/retrieval-tuning)
+- [Agents and skills](/api/agents-and-skills)
 - [Architecture overview](/architecture)

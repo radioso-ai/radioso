@@ -401,7 +401,7 @@
           "mcpContextVersion": {
             "type": "string",
             "enum": [
-              "2026-05-06"
+              "2026-06-09"
             ]
           },
           "supportedTools": {
@@ -414,12 +414,10 @@
                 "delete_document",
                 "describe_capabilities",
                 "get_document",
-                "get_retrieval_settings",
                 "list_documents",
                 "reprocess_document",
                 "search_documents",
-                "update_document",
-                "update_retrieval_settings"
+                "update_document"
               ]
             }
           },
@@ -917,48 +915,32 @@
           "expiresAt"
         ]
       },
-      "RetrievalSettings": {
+      "RetrievalDefaultsResponse": {
         "type": "object",
         "properties": {
-          "workspaceId": {
-            "type": "string",
-            "format": "uuid"
-          },
           "queryRewriteEnabled": {
             "type": "boolean"
           },
           "semanticRewriteInstructions": {
-            "type": "string",
-            "maxLength": 2000
+            "type": "string"
           },
           "lexicalRewriteInstructions": {
-            "type": "string",
-            "maxLength": 2000
+            "type": "string"
           },
           "suggestedQuestionsEnabled": {
             "type": "boolean"
           },
           "suggestedQuestionsCount": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 4
+            "type": "integer"
           },
           "rerankEnabled": {
             "type": "boolean"
           },
           "vectorTopK": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 300
-          },
-          "similarityThreshold": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
+            "type": "integer"
           },
           "rerankTopK": {
-            "type": "integer",
-            "minimum": 1
+            "type": "integer"
           },
           "retrievalStrategy": {
             "type": "string",
@@ -968,30 +950,8 @@
               "auto"
             ]
           },
-          "metadataFieldSuggestions": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "field": {
-                  "type": "string"
-                },
-                "inferredType": {
-                  "type": "string",
-                  "enum": [
-                    "string",
-                    "number",
-                    "date",
-                    "boolean"
-                  ]
-                }
-              },
-              "required": [
-                "field",
-                "inferredType"
-              ]
-            },
-            "default": []
+          "customInstruction": {
+            "type": "string"
           },
           "metadataRules": {
             "type": "array",
@@ -1116,96 +1076,17 @@
                 "triggerMode"
               ]
             },
-            "default": []
+            "description": "Always empty for system retrieval defaults."
           },
-          "customInstruction": {
-            "type": "string",
-            "maxLength": 2000
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "workspaceId",
-          "queryRewriteEnabled",
-          "semanticRewriteInstructions",
-          "lexicalRewriteInstructions",
-          "suggestedQuestionsEnabled",
-          "suggestedQuestionsCount",
-          "rerankEnabled",
-          "vectorTopK",
-          "similarityThreshold",
-          "rerankTopK",
-          "retrievalStrategy",
-          "customInstruction",
-          "createdAt",
-          "updatedAt"
-        ]
-      },
-      "UpdateRetrievalSettingsRequest": {
-        "type": "object",
-        "properties": {
-          "queryRewriteEnabled": {
-            "type": "boolean"
-          },
-          "semanticRewriteInstructions": {
-            "type": "string",
-            "maxLength": 2000
-          },
-          "lexicalRewriteInstructions": {
-            "type": "string",
-            "maxLength": 2000
-          },
-          "suggestedQuestionsEnabled": {
-            "type": "boolean"
-          },
-          "suggestedQuestionsCount": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 4
-          },
-          "rerankEnabled": {
-            "type": "boolean"
-          },
-          "vectorTopK": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "similarityThreshold": {
-            "type": "number"
-          },
-          "rerankTopK": {
-            "type": "integer",
-            "maximum": 50
-          },
-          "retrievalStrategy": {
-            "type": "string",
-            "enum": [
-              "fixed",
-              "reasoning",
-              "auto"
-            ]
-          },
-          "metadataRules": {
+          "metadataFieldSuggestions": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "id": {
-                  "type": "string",
-                  "minLength": 1
-                },
                 "field": {
-                  "type": "string",
-                  "minLength": 1
+                  "type": "string"
                 },
-                "valueType": {
+                "inferredType": {
                   "type": "string",
                   "enum": [
                     "string",
@@ -1213,118 +1094,27 @@
                     "date",
                     "boolean"
                   ]
-                },
-                "operator": {
-                  "type": "string",
-                  "enum": [
-                    "equals",
-                    "not_equals",
-                    "contains",
-                    "not_contains",
-                    "lt",
-                    "lte",
-                    "gt",
-                    "gte"
-                  ]
-                },
-                "value": {
-                  "type": "string"
-                },
-                "combinator": {
-                  "type": "string",
-                  "enum": [
-                    "and",
-                    "or"
-                  ]
-                },
-                "conditions": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "id": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "field": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "valueType": {
-                        "type": "string",
-                        "enum": [
-                          "string",
-                          "number",
-                          "date",
-                          "boolean"
-                        ]
-                      },
-                      "operator": {
-                        "type": "string",
-                        "enum": [
-                          "equals",
-                          "not_equals",
-                          "contains",
-                          "not_contains",
-                          "lt",
-                          "lte",
-                          "gt",
-                          "gte"
-                        ]
-                      },
-                      "value": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "id",
-                      "field",
-                      "valueType",
-                      "operator",
-                      "value"
-                    ]
-                  }
-                },
-                "effect": {
-                  "type": "string",
-                  "enum": [
-                    "boost",
-                    "filter"
-                  ]
-                },
-                "enabled": {
-                  "type": "boolean"
-                },
-                "triggerMode": {
-                  "type": "string",
-                  "enum": [
-                    "always_on",
-                    "match_turn"
-                  ]
-                },
-                "triggerInstruction": {
-                  "type": "string",
-                  "maxLength": 500
                 }
               },
               "required": [
-                "id",
-                "effect",
-                "enabled"
+                "field",
+                "inferredType"
               ]
             }
-          },
-          "customInstruction": {
-            "type": "string",
-            "maxLength": 2000
           }
         },
         "required": [
           "queryRewriteEnabled",
+          "semanticRewriteInstructions",
+          "lexicalRewriteInstructions",
+          "suggestedQuestionsEnabled",
+          "suggestedQuestionsCount",
           "rerankEnabled",
           "vectorTopK",
-          "similarityThreshold",
-          "rerankTopK"
+          "rerankTopK",
+          "customInstruction",
+          "metadataRules",
+          "metadataFieldSuggestions"
         ]
       },
       "RetrievalSettingsOverride": {
@@ -2154,207 +1944,6 @@
           "assistantLogoUrl"
         ]
       },
-      "PlatformRetrievalSettingsSection": {
-        "type": "object",
-        "properties": {
-          "queryRewriteEnabled": {
-            "type": "boolean"
-          },
-          "semanticRewriteInstructions": {
-            "type": "string",
-            "maxLength": 2000
-          },
-          "lexicalRewriteInstructions": {
-            "type": "string",
-            "maxLength": 2000
-          },
-          "rerankEnabled": {
-            "type": "boolean"
-          },
-          "vectorTopK": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 300
-          },
-          "similarityThreshold": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          },
-          "rerankTopK": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "metadataRules": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string"
-                },
-                "field": {
-                  "type": "string"
-                },
-                "valueType": {
-                  "type": "string",
-                  "enum": [
-                    "string",
-                    "number",
-                    "date",
-                    "boolean"
-                  ]
-                },
-                "operator": {
-                  "type": "string",
-                  "enum": [
-                    "equals",
-                    "not_equals",
-                    "contains",
-                    "not_contains",
-                    "lt",
-                    "lte",
-                    "gt",
-                    "gte"
-                  ]
-                },
-                "value": {
-                  "type": "string"
-                },
-                "combinator": {
-                  "type": "string",
-                  "enum": [
-                    "and",
-                    "or"
-                  ],
-                  "default": "and"
-                },
-                "conditions": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "field": {
-                        "type": "string"
-                      },
-                      "valueType": {
-                        "type": "string",
-                        "enum": [
-                          "string",
-                          "number",
-                          "date",
-                          "boolean"
-                        ]
-                      },
-                      "operator": {
-                        "type": "string",
-                        "enum": [
-                          "equals",
-                          "not_equals",
-                          "contains",
-                          "not_contains",
-                          "lt",
-                          "lte",
-                          "gt",
-                          "gte"
-                        ]
-                      },
-                      "value": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "id",
-                      "field",
-                      "valueType",
-                      "operator",
-                      "value"
-                    ]
-                  },
-                  "default": []
-                },
-                "effect": {
-                  "type": "string",
-                  "enum": [
-                    "boost",
-                    "filter"
-                  ]
-                },
-                "enabled": {
-                  "type": "boolean"
-                },
-                "triggerMode": {
-                  "type": "string",
-                  "enum": [
-                    "always_on",
-                    "match_turn"
-                  ]
-                },
-                "triggerInstruction": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "id",
-                "field",
-                "valueType",
-                "operator",
-                "value",
-                "effect",
-                "enabled",
-                "triggerMode"
-              ]
-            },
-            "default": []
-          },
-          "metadataFieldSuggestions": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "field": {
-                  "type": "string"
-                },
-                "inferredType": {
-                  "type": "string",
-                  "enum": [
-                    "string",
-                    "number",
-                    "date",
-                    "boolean"
-                  ]
-                }
-              },
-              "required": [
-                "field",
-                "inferredType"
-              ]
-            },
-            "default": []
-          },
-          "retrievalStrategy": {
-            "type": "string",
-            "enum": [
-              "fixed",
-              "reasoning",
-              "auto"
-            ]
-          }
-        },
-        "required": [
-          "queryRewriteEnabled",
-          "semanticRewriteInstructions",
-          "lexicalRewriteInstructions",
-          "rerankEnabled",
-          "vectorTopK",
-          "similarityThreshold",
-          "rerankTopK",
-          "retrievalStrategy"
-        ]
-      },
       "PlatformChannelsSettingsSection": {
         "type": "object",
         "properties": {
@@ -2480,16 +2069,12 @@
           "assistant": {
             "$ref": "#/components/schemas/AssistantSettingsSection"
           },
-          "retrieval": {
-            "$ref": "#/components/schemas/PlatformRetrievalSettingsSection"
-          },
           "channels": {
             "$ref": "#/components/schemas/PlatformChannelsSettingsSection"
           }
         },
         "required": [
           "assistant",
-          "retrieval",
           "channels"
         ]
       },
@@ -2523,169 +2108,6 @@
               "customInstruction": {
                 "type": "string",
                 "maxLength": 2000
-              }
-            }
-          },
-          "retrieval": {
-            "type": "object",
-            "properties": {
-              "queryRewriteEnabled": {
-                "type": "boolean"
-              },
-              "semanticRewriteInstructions": {
-                "type": "string",
-                "maxLength": 2000
-              },
-              "lexicalRewriteInstructions": {
-                "type": "string",
-                "maxLength": 2000
-              },
-              "suggestedQuestionsCount": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 4
-              },
-              "rerankEnabled": {
-                "type": "boolean"
-              },
-              "vectorTopK": {
-                "type": "integer"
-              },
-              "similarityThreshold": {
-                "type": "number"
-              },
-              "rerankTopK": {
-                "type": "integer"
-              },
-              "retrievalStrategy": {
-                "type": "string",
-                "enum": [
-                  "fixed",
-                  "reasoning",
-                  "auto"
-                ]
-              },
-              "metadataRules": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "field": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "valueType": {
-                      "type": "string",
-                      "enum": [
-                        "string",
-                        "number",
-                        "date",
-                        "boolean"
-                      ]
-                    },
-                    "operator": {
-                      "type": "string",
-                      "enum": [
-                        "equals",
-                        "not_equals",
-                        "contains",
-                        "not_contains",
-                        "lt",
-                        "lte",
-                        "gt",
-                        "gte"
-                      ]
-                    },
-                    "value": {
-                      "type": "string"
-                    },
-                    "combinator": {
-                      "type": "string",
-                      "enum": [
-                        "and",
-                        "or"
-                      ]
-                    },
-                    "conditions": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "field": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "valueType": {
-                            "type": "string",
-                            "enum": [
-                              "string",
-                              "number",
-                              "date",
-                              "boolean"
-                            ]
-                          },
-                          "operator": {
-                            "type": "string",
-                            "enum": [
-                              "equals",
-                              "not_equals",
-                              "contains",
-                              "not_contains",
-                              "lt",
-                              "lte",
-                              "gt",
-                              "gte"
-                            ]
-                          },
-                          "value": {
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "id",
-                          "field",
-                          "valueType",
-                          "operator",
-                          "value"
-                        ]
-                      }
-                    },
-                    "effect": {
-                      "type": "string",
-                      "enum": [
-                        "boost",
-                        "filter"
-                      ]
-                    },
-                    "enabled": {
-                      "type": "boolean"
-                    },
-                    "triggerMode": {
-                      "type": "string",
-                      "enum": [
-                        "always_on",
-                        "match_turn"
-                      ]
-                    },
-                    "triggerInstruction": {
-                      "type": "string",
-                      "maxLength": 500
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "effect",
-                    "enabled"
-                  ]
-                }
               }
             }
           },
@@ -10450,7 +9872,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Shared assistant, retrieval, and channel settings returned",
+            "description": "Shared assistant and channel settings returned",
             "content": {
               "application/json": {
                 "schema": {
@@ -10546,13 +9968,13 @@
         }
       }
     },
-    "/api/v1/settings/retrieval": {
+    "/api/v1/settings/retrieval-defaults": {
       "get": {
         "tags": [
           "Settings"
         ],
-        "summary": "Get retrieval settings for the authenticated workspace",
-        "operationId": "getRetrievalSettings",
+        "summary": "Get system retrieval defaults for the authenticated workspace",
+        "operationId": "getSettingsRetrievalDefaults",
         "security": [
           {
             "bearerAuth": []
@@ -10560,65 +9982,11 @@
         ],
         "responses": {
           "200": {
-            "description": "Retrieval settings returned",
+            "description": "Retrieval defaults returned",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RetrievalSettings"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "Settings"
-        ],
-        "summary": "Update retrieval settings for the authenticated workspace",
-        "operationId": "updateRetrievalSettings",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateRetrievalSettingsRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Updated retrieval settings",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RetrievalSettings"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Request validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/RetrievalDefaultsResponse"
                 }
               }
             }

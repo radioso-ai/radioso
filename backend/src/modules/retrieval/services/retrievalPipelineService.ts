@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type { IngestionSettingsService, RetrievalSettingsService } from "../../settings/contracts/services.js";
+import type { IngestionSettingsService } from "../../settings/contracts/services.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import { traceOperation } from "../../../shared/observability/tracing/operations.js";
 import type { EmbeddingService } from "./embeddingService.js";
@@ -14,6 +14,7 @@ import { RerankService } from "./rerankService.js";
 import { RetrievalExecutionTelemetryService } from "./retrievalExecutionTelemetryService.js";
 import type { RetrievalExecutionDiagnostics } from "../domain/retrievalPipelineTypes.js";
 import { resolveRetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
+import type { RetrievalDefaultsProvider } from "../domain/retrievalDefaultsProvider.js";
 import type { VectorSearchPort } from "../domain/vectorSearch.js";
 import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
 import { PromptBuilder } from "./promptBuilder.js";
@@ -113,7 +114,7 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
   private readonly activityTraceBuilder = new RetrievalPipelineActivityTraceBuilder();
 
   constructor(
-    retrievalSettingsService: RetrievalSettingsService,
+    retrievalDefaultsProvider: RetrievalDefaultsProvider,
     embeddingService: EmbeddingService,
     vectorSearch: VectorSearchPort,
     lexicalSearch: LexicalSearchPort,
@@ -130,7 +131,7 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
     skillSettingsResolver?: SkillSettingsResolver,
   ) {
     this.retrievalContextStage = new RetrievalContextStageService(
-      retrievalSettingsService,
+      retrievalDefaultsProvider,
       conversationContextService,
       skillSettingsResolver,
     );

@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 
 describe("settings contract", () => {
-  it("returns assistant, retrieval, and channel settings through one shared resource", async () => {
+  it("returns assistant and channel settings through one shared resource", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "platform-settings-default@example.com");
 
@@ -25,17 +25,6 @@ describe("settings contract", () => {
         suggestedQuestionsEnabled: true,
         customInstruction: "",
       },
-      retrieval: {
-        queryRewriteEnabled: false,
-        semanticRewriteInstructions: expect.any(String),
-        lexicalRewriteInstructions: expect.any(String),
-        rerankEnabled: false,
-        vectorTopK: 15,
-        similarityThreshold: expect.any(Number),
-        rerankTopK: 5,
-        metadataRules: [],
-        metadataFieldSuggestions: [],
-      },
       channels: {
         anonymousChatEnabled: false,
         anonymousChatUrl: null,
@@ -47,8 +36,7 @@ describe("settings contract", () => {
         websiteEmbedSnippet: null,
       },
     });
-    expect(response.body.retrieval).not.toHaveProperty("conversationMode");
-    expect(response.body.retrieval).not.toHaveProperty("customInstruction");
+    expect(response.body).not.toHaveProperty("retrieval");
   });
 
   it("merge-updates shared settings without resetting omitted sections", async () => {
@@ -65,17 +53,6 @@ describe("settings contract", () => {
         },
       });
 
-    const retrievalUpdate = await request(app)
-      .put("/api/v1/settings")
-      .set(adminSessionHeaders(session))
-      .send({
-        retrieval: {
-          queryRewriteEnabled: true,
-          vectorTopK: 12,
-          rerankEnabled: true,
-        },
-      });
-
     const channelsUpdate = await request(app)
       .put("/api/v1/settings")
       .set(adminSessionHeaders(session))
@@ -86,243 +63,81 @@ describe("settings contract", () => {
       });
 
     expect(assistantUpdate.status).toBe(200);
-    expect(retrievalUpdate.status).toBe(200);
     expect(channelsUpdate.status).toBe(200);
     expect(channelsUpdate.body).toMatchObject({
       assistant: {
         assistantName: "Marta",
         customInstruction: "Answer plainly.",
       },
-      retrieval: {
-        queryRewriteEnabled: true,
-        vectorTopK: 12,
-        rerankEnabled: true,
-      },
       channels: {
         anonymousChatEnabled: true,
         anonymousChatUrl: expect.any(String),
       },
     });
+    expect(channelsUpdate.body).not.toHaveProperty("retrieval");
   });
 
-  it("returns default retrieval settings for a valid session workspace context", async () => {
+  it("does not expose workspace retrieval settings endpoints", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "settings-default@example.com");
 
-    const response = await request(app)
+    const getResponse = await request(app)
       .get("/api/v1/settings/retrieval")
+      .set(adminSessionHeaders(session));
+    const putResponse = await request(app)
+      .put("/api/v1/settings/retrieval")
+      .set(adminSessionHeaders(session))
+      .send({
+        queryRewriteEnabled: true,
+      });
+
+    expect(getResponse.status).toBe(404);
+    expect(putResponse.status).toBe(404);
+  });
+
+  it("returns retrieval defaults with metadata field suggestions on the dedicated endpoint", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "settings-retrieval-defaults@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Metadata policy doc",
+        content: "Metadata rich content",
+        metadata: {
+          language: "en",
+          publishedAt: "2026-06-08",
+        },
+      },
+    );
+
+    const response = await request(app)
+      .get("/api/v1/settings/retrieval-defaults")
       .set(adminSessionHeaders(session));
 
     expect(response.status).toBe(200);
-    expect(Object.keys(response.body).sort()).toEqual([
-      "createdAt",
-      "customInstruction",
-      "lexicalRewriteInstructions",
-      "metadataFieldSuggestions",
-      "metadataRules",
-      "queryRewriteEnabled",
-      "rerankEnabled",
-      "rerankTopK",
-      "retrievalStrategy",
-      "semanticRewriteInstructions",
-      "similarityThreshold",
-      "suggestedQuestionsEnabled",
-      "updatedAt",
-      "vectorTopK",
-      "workspaceId",
-    ]);
-    expect(response.body.vectorTopK).toBe(15);
-    expect(response.body.customInstruction).toBe("");
-    expect(response.body.semanticRewriteInstructions).toEqual(expect.any(String));
-    expect(response.body.lexicalRewriteInstructions).toEqual(expect.any(String));
-    expect(response.body.suggestedQuestionsEnabled).toBe(true);
-    expect(response.body.metadataFieldSuggestions).toEqual([]);
-    expect(response.body.metadataRules).toEqual([]);
-  });
-
-  it("updates retrieval settings for a valid session workspace context", async () => {
-    const { app } = createTestApp();
-    const session = await issueTestSession(app, "settings-update@example.com");
-
-    await request(app)
-      .post("/api/v1/document/")
-      .set(adminSessionHeaders(session))
-      .send({
-        title: "Metadata policy doc",
-        content: "Metadata rich content",
-        metadata: {
-          language: "en",
-        },
-      });
-
-    const response = await request(app)
-      .put("/api/v1/settings/retrieval")
-      .set(adminSessionHeaders(session))
-      .send({
-        queryRewriteEnabled: true,
-        semanticRewriteInstructions: "Keep the query meaning-preserving and standalone.",
-        lexicalRewriteInstructions: "Prefer exact literals, aliases, and corpus-native notation.",
-        suggestedQuestionsEnabled: true,
-        rerankEnabled: true,
-        vectorTopK: 12,
-        similarityThreshold: 0.4,
-        rerankTopK: 6,
-        customInstruction: "Always cite the paragraph number from the Immigration Act.",
-        metadataRules: [
-          {
-            id: "rule-language",
-            field: "language",
-            valueType: "string",
-            operator: "equals",
-            value: "en",
-            effect: "filter",
-            enabled: true,
-          },
-        ],
-      });
-
-    expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
-      queryRewriteEnabled: true,
-      semanticRewriteInstructions: "Keep the query meaning-preserving and standalone.",
-      lexicalRewriteInstructions: "Prefer exact literals, aliases, and corpus-native notation.",
+      queryRewriteEnabled: false,
       suggestedQuestionsEnabled: true,
-      rerankEnabled: true,
-      vectorTopK: 12,
-      similarityThreshold: 0.4,
-      rerankTopK: 6,
-      customInstruction: "Always cite the paragraph number from the Immigration Act.",
-      metadataRules: [
-        {
-          id: "rule-language",
-          field: "language",
-          valueType: "string",
-          operator: "equals",
-          value: "en",
-          effect: "filter",
-          enabled: true,
-          triggerMode: "always_on",
-        },
-      ],
+      suggestedQuestionsCount: 3,
+      rerankEnabled: false,
+      vectorTopK: 15,
+      rerankTopK: 5,
+      retrievalStrategy: "fixed",
+      customInstruction: "",
+      metadataRules: [],
     });
-  });
-
-  it("updates retrieval settings with trigger-aware metadata rules", async () => {
-    const { app } = createTestApp();
-    const session = await issueTestSession(app, "settings-trigger-update@example.com");
-
-    const response = await request(app)
-      .put("/api/v1/settings/retrieval")
-      .set(adminSessionHeaders(session))
-      .send({
-        queryRewriteEnabled: false,
-        semanticRewriteInstructions: "Keep the query meaning-preserving and standalone.",
-        lexicalRewriteInstructions: "Prefer exact literals, aliases, and corpus-native notation.",
-        suggestedQuestionsEnabled: true,
-        rerankEnabled: false,
-        vectorTopK: 15,
-        similarityThreshold: 0.2,
-        rerankTopK: 5,
-        customInstruction: "",
-        metadataRules: [
-          {
-            id: "rule-upcoming-events",
-            field: "dateFrom",
-            valueType: "date",
-            operator: "gte",
-            value: "today()",
-            effect: "filter",
-            enabled: true,
-            triggerMode: "match_turn",
-            triggerInstruction: "Enact when the user is clearly asking about upcoming events or time-bound courses.",
-          },
-        ],
-      });
-
-    expect(response.status).toBe(200);
-    expect(response.body.metadataRules).toEqual([
-      {
-        id: "rule-upcoming-events",
-        field: "dateFrom",
-        valueType: "date",
-        operator: "gte",
-        value: "today()",
-        combinator: "and",
-        conditions: [
-          expect.objectContaining({
-            field: "dateFrom",
-            valueType: "date",
-            operator: "gte",
-            value: "today()",
-          }),
-        ],
-        effect: "filter",
-        enabled: true,
-        triggerMode: "match_turn",
-        triggerInstruction: "Enact when the user is clearly asking about upcoming events or time-bound courses.",
-      },
-    ]);
-  });
-
-  it("preserves saved signal policies when an older client omits the field", async () => {
-    const { app } = createTestApp();
-    const session = await issueTestSession(app, "settings-preserve@example.com");
-
-    await request(app)
-      .post("/api/v1/document/")
-      .set(adminSessionHeaders(session))
-      .send({
-        title: "Metadata policy doc",
-        content: "Metadata rich content",
-        metadata: {
-          language: "en",
-        },
-      });
-
-    const firstUpdate = await request(app)
-      .put("/api/v1/settings/retrieval")
-      .set(adminSessionHeaders(session))
-      .send({
-        queryRewriteEnabled: true,
-        semanticRewriteInstructions: "Keep the meaning.",
-        lexicalRewriteInstructions: "Prefer exact notation.",
-        suggestedQuestionsEnabled: false,
-        rerankEnabled: true,
-        vectorTopK: 12,
-        similarityThreshold: 0.4,
-        rerankTopK: 6,
-        customInstruction: "Cite paragraph numbers.",
-        metadataRules: [
-          {
-            id: "rule-language",
-            field: "language",
-            valueType: "string",
-            operator: "equals",
-            value: "en",
-            effect: "filter",
-            enabled: true,
-          },
-        ],
-      });
-
-    const secondUpdate = await request(app)
-      .put("/api/v1/settings/retrieval")
-      .set(adminSessionHeaders(session))
-      .send({
-        queryRewriteEnabled: false,
-        rerankEnabled: false,
-        vectorTopK: 20,
-        similarityThreshold: 0.2,
-        rerankTopK: 5,
-      });
-
-    expect(firstUpdate.status).toBe(200);
-    expect(secondUpdate.status).toBe(200);
-    expect(secondUpdate.body.metadataRules).toEqual(firstUpdate.body.metadataRules);
-    expect(secondUpdate.body.customInstruction).toBe("Cite paragraph numbers.");
-    expect(secondUpdate.body.semanticRewriteInstructions).toBe("Keep the meaning.");
-    expect(secondUpdate.body.lexicalRewriteInstructions).toBe("Prefer exact notation.");
-    expect(secondUpdate.body.suggestedQuestionsEnabled).toBe(false);
+    expect(response.body).not.toHaveProperty("workspaceId");
+    expect(response.body).not.toHaveProperty("similarityThreshold");
+    expect(response.body).not.toHaveProperty("createdAt");
+    expect(response.body).not.toHaveProperty("updatedAt");
+    expect(response.body.metadataFieldSuggestions).toEqual(
+      expect.arrayContaining([
+        { field: "language", inferredType: "string" },
+        { field: "publishedAt", inferredType: "date" },
+      ]),
+    );
   });
 
   it("returns default ingestion settings for a valid session workspace context", async () => {
@@ -427,22 +242,35 @@ describe("settings contract", () => {
     });
   });
 
-  it("documents the retrieval and ingestion settings split in the generated schema", () => {
+  it("documents retrieval defaults and ingestion settings in the generated schema", () => {
     const spec = readFileSync(new URL("../../openapi.yaml", import.meta.url), "utf8");
-    const retrievalSettingsSchema = spec.match(/RetrievalSettings:\n([\s\S]*?)\n    UpdateRetrievalSettingsRequest:/)?.[1] ?? "";
-    const retrievalUpdateSchema = spec.match(/UpdateRetrievalSettingsRequest:\n([\s\S]*?)\n    RetrievalSettingsOverride:/)?.[1] ?? "";
+    const retrievalDefaultsSchema = spec.match(/RetrievalDefaultsResponse:\n([\s\S]*?)\n    RetrievalSettingsOverride:/)?.[1] ?? "";
+    const retrievalOverrideSchema = spec.match(/RetrievalSettingsOverride:\n([\s\S]*?)\n    IngestionSettings:/)?.[1] ?? "";
     const ingestionSettingsSchema = spec.match(/IngestionSettings:\n([\s\S]*?)\n    UpdateIngestionSettingsRequest:/)?.[1] ?? "";
     const ingestionUpdateSchema = spec.match(/UpdateIngestionSettingsRequest:\n([\s\S]*?)\n    RetrievalMetadataRule:/)?.[1] ?? "";
 
-    expect(retrievalSettingsSchema).not.toContain("chunkingStrategy:");
-    expect(retrievalSettingsSchema).toContain("semanticRewriteInstructions:");
-    expect(retrievalSettingsSchema).toContain("lexicalRewriteInstructions:");
-    expect(retrievalSettingsSchema).toContain("suggestedQuestionsEnabled:");
-    expect(retrievalUpdateSchema).toContain("metadataRules:");
-    expect(retrievalUpdateSchema).toContain("semanticRewriteInstructions:");
-    expect(retrievalUpdateSchema).toContain("suggestedQuestionsEnabled:");
-    expect(retrievalUpdateSchema).toContain("lexicalRewriteInstructions:");
-    expect(retrievalUpdateSchema).not.toContain("chunkingStrategy:");
+    expect(spec).not.toContain("/api/v1/settings/retrieval:");
+    expect(spec).not.toContain("UpdateRetrievalSettingsRequest:");
+    expect(spec).not.toContain("/api/v1/settings/metadata-fields:");
+    expect(retrievalDefaultsSchema).toContain("queryRewriteEnabled:");
+    expect(retrievalDefaultsSchema).toContain("semanticRewriteInstructions:");
+    expect(retrievalDefaultsSchema).toContain("lexicalRewriteInstructions:");
+    expect(retrievalDefaultsSchema).toContain("suggestedQuestionsEnabled:");
+    expect(retrievalDefaultsSchema).toContain("suggestedQuestionsCount:");
+    expect(retrievalDefaultsSchema).toContain("rerankEnabled:");
+    expect(retrievalDefaultsSchema).toContain("vectorTopK:");
+    expect(retrievalDefaultsSchema).toContain("rerankTopK:");
+    expect(retrievalDefaultsSchema).toContain("retrievalStrategy:");
+    expect(retrievalDefaultsSchema).toContain("customInstruction:");
+    expect(retrievalDefaultsSchema).toContain("metadataRules:");
+    expect(retrievalDefaultsSchema).toContain("metadataFieldSuggestions:");
+    expect(retrievalDefaultsSchema).not.toContain("workspaceId:");
+    expect(retrievalDefaultsSchema).not.toContain("similarityThreshold:");
+    expect(retrievalOverrideSchema).toContain("metadataRules:");
+    expect(retrievalOverrideSchema).toContain("semanticRewriteInstructions:");
+    expect(retrievalOverrideSchema).toContain("suggestedQuestionsEnabled:");
+    expect(retrievalOverrideSchema).toContain("lexicalRewriteInstructions:");
+    expect(retrievalOverrideSchema).not.toContain("chunkingStrategy:");
     expect(ingestionSettingsSchema).toContain("chunkingStrategy:");
     expect(ingestionSettingsSchema).toContain("embeddingModel:");
     expect(ingestionSettingsSchema).toContain("pendingEmbeddingModel:");
@@ -451,6 +279,7 @@ describe("settings contract", () => {
     expect(ingestionUpdateSchema).toContain("fixedWindowChunkOverlap:");
     expect(ingestionUpdateSchema).toContain("structuredMinChunkSize:");
     expect(spec).toContain("/api/v1/settings:");
+    expect(spec).toContain("/api/v1/settings/retrieval-defaults:");
     expect(spec).toContain("PlatformSettingsResponse:");
     expect(spec).toContain("UpdatePlatformSettingsRequest:");
     expect(spec).toContain("/api/v1/settings/ingestion:");

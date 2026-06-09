@@ -222,7 +222,9 @@ Related docs and specs:
 
 Owns query interpretation, lexical and vector candidate retrieval, metadata
 scoring, reranking, context selection, prompt context assembly, diagnostics, and
-retrieval answer services.
+retrieval answer services. Retrieval behavior is resolved from system defaults
+and per-agent `retrieval.answer` skill settings; workspace settings do not own
+retrieval configuration.
 
 Should not own assistant persona, chat session behavior, HTTP request shape, or
 document processing.
@@ -234,6 +236,7 @@ Public surfaces and contracts:
 - `backend/src/modules/retrieval/composition.ts`
 - `backend/src/modules/retrieval/llmAdapters.ts`
 - `backend/src/modules/retrieval/domain/`
+- `backend/src/app/composition/retrievalDefaultsProvider.ts`
 
 Primary internals:
 
@@ -250,21 +253,21 @@ Primary internals:
 Useful searches:
 
 - `rg "RetrievalPipeline|retrievalPipeline|RetrievalStage" backend/src backend/tests`
-- `rg "AgenticRetrieval|agentic|pipelineMode" backend/src/modules/retrieval backend/src/modules/settings backend/tests`
+- `rg "AgenticRetrieval|agentic|pipelineMode|RetrievalDefaultsProvider|skillSettings" backend/src/modules/retrieval backend/src/app/composition backend/tests`
 - `rg "queryRewrite|rerank|metadataRule|lexical" backend/src/modules/retrieval`
 - `rg "from ['\\\"]\\.\\./retrieval|modules/retrieval" backend/src`
 
 Focused checks:
 
 - `cd backend && pnpm test -- tests/unit/retrieval-pipeline-stages.test.ts tests/unit/retrieval-shape-resolver.test.ts tests/unit/hybrid-retrieval-search.test.ts`
-- `cd backend && pnpm test -- tests/unit/agentic-retrieval-runner.test.ts tests/unit/agentic-retrieval-pipeline-service.test.ts tests/unit/agentic-tools.test.ts tests/unit/agentic-activity-trace-builder.test.ts tests/unit/query-rewrite-port.test.ts tests/unit/retrieval-settings-pipeline-mode.test.ts`
+- `cd backend && pnpm test -- tests/unit/agentic-retrieval-runner.test.ts tests/unit/agentic-retrieval-pipeline-service.test.ts tests/unit/agentic-tools.test.ts tests/unit/agentic-activity-trace-builder.test.ts tests/unit/query-rewrite-port.test.ts tests/unit/retrieval-context-stage-override.test.ts`
 - `cd backend && pnpm run test:integration`
 
 Related docs and specs:
 
 - [Vector Search Indexing](./vector-search-indexing.md)
 - [Retrieval Pipeline](../../docs-portal/content/architecture/retrieval-pipeline.mdx)
-- [Retrieval Tuning](../../docs-portal/content/guides/retrieval-tuning.mdx)
+- [Agents and Skills](../../docs-portal/content/api/agents-and-skills.mdx)
 - `specs/058-retrieval-module-boundaries/`
 - `specs/060-retrieval-strategy-diagnostics/`
 - `specs/009-hybrid-retrieval/`
@@ -359,11 +362,15 @@ Related docs and specs:
 
 ## Settings
 
-Owns settings validation, settings DTOs, provider ports, retrieval and ingestion
-setting persistence, and settings documentation sources used by the product UI.
+Owns settings validation, settings DTOs, provider ports, ingestion setting
+persistence, read-only retrieval defaults exposure, and settings documentation
+sources used by the product UI.
 
-Should not own the runtime retrieval or ingestion implementation details beyond
-typed settings contracts.
+Should not own runtime retrieval configuration, retrieval implementation
+details, or ingestion implementation details beyond typed settings contracts.
+Per-agent retrieval settings are stored on agents as `retrieval.answer` skill
+settings. System retrieval defaults come from composition through
+`RetrievalDefaultsProvider`.
 
 Primary paths:
 
@@ -377,17 +384,16 @@ Primary paths:
 
 Useful searches:
 
-- `rg "RetrievalSettings|IngestionSettings|settings" backend/src/modules/settings backend/src/app/http/routes`
+- `rg "RetrievalDefaultsProvider|IngestionSettings|settings" backend/src/modules/settings backend/src/app/http/routes backend/src/app/composition`
 - `rg "settings-docs" docs frontend`
 
 Focused checks:
 
-- `cd backend && pnpm test -- tests/unit/settings-services.test.ts tests/unit/retrieval-settings-and-chunking.test.ts tests/contract/settings.contract.test.ts`
+- `cd backend && pnpm test -- tests/unit/settings-services.test.ts tests/unit/retrieval-context-stage-override.test.ts tests/contract/settings.contract.test.ts`
 - `cd frontend && pnpm test -- tests/unit/settings-tab-metadata.test.ts`
 
 Related docs and specs:
 
-- [TypeScript SDK Retrieval Settings](../typescript-sdk-retrieval-settings.md)
 - `specs/024-ingestion-settings/`
 - `specs/032-split-rewrite-queries/`
 - `specs/043-settings-ui-refresh/`
@@ -521,7 +527,6 @@ Primary paths:
 - `typescript-sdk/README.md`
 - `docs/typescript-sdk-getting-started.md`
 - `docs/typescript-sdk-basic-usage.md`
-- `docs/typescript-sdk-retrieval-settings.md`
 - `docs-portal/content/sdk/`
 
 Useful searches:

@@ -10,7 +10,6 @@ import {
   LogOut,
   Monitor,
   Moon,
-  Search,
   Sun,
   Users,
 } from 'lucide-react'
@@ -47,7 +46,6 @@ export function KnowledgeSubNav({ accountId, routeState }: { accountId: string; 
         { id: 'documents', label: 'Documents', icon: FileText, href: href('documents'), active: active === 'documents' },
         { id: 'sources', label: 'Sources', icon: FolderOpen, href: href('sources'), active: active === 'sources' },
         { id: 'ingestion', label: 'Ingestion', icon: Layers, href: href('ingestion'), active: active === 'ingestion' },
-        { id: 'retrieval', label: 'Retrieval', icon: Search, href: href('retrieval'), active: active === 'retrieval' },
       ],
     },
   ]

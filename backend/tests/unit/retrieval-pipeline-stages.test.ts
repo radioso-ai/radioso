@@ -1138,7 +1138,7 @@ describe("retrieval pipeline stages", () => {
   it("splits vector results between original and rewritten contexts", async () => {
     const contextStage = new RetrievalContextStageService(
       {
-        async getForWorkspace() {
+        getDefaults() {
           return {
             workspaceId: "a1",
             queryRewriteEnabled: true,

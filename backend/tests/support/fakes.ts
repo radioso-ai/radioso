@@ -61,7 +61,6 @@ import type {
   WorkspaceLlmCapabilityPreference,
   WorkspaceLlmCapabilityPreferenceInput,
 } from "../../src/modules/settings/contracts/llmCapability.js";
-import type { WorkspaceLlmCapabilityPreferencesRepositoryPort } from "../../src/modules/settings/contracts/services.js";
 import type { LlmProviderName } from "../../src/shared/infra/llm/providerTypes.js";
 import type {
   EmailVerificationTokenRecord,
@@ -113,12 +112,10 @@ import {
   inferMetadataValueType,
   type MetadataFieldSuggestion,
   type MetadataValueType,
-  type RetrievalSettingsInput,
-  type RetrievalSettingsRecord,
 } from "../../src/modules/settings/contracts/retrieval.js";
 import type {
   IngestionSettingsRepositoryPort,
-  RetrievalSettingsRepositoryPort,
+  WorkspaceLlmCapabilityPreferencesRepositoryPort,
 } from "../../src/modules/settings/contracts/services.js";
 import { AuditService } from "../../src/modules/audit/services/auditService.js";
 import type {
@@ -1257,10 +1254,14 @@ export class InMemoryWorkspaceProviderCredentialsRepository
 }
 
 export class InMemoryRetrievalSettingsRepository
-  implements RetrievalSettingsRepositoryPort, WorkspaceLlmCapabilityPreferencesRepositoryPort
+  implements WorkspaceLlmCapabilityPreferencesRepositoryPort
 {
-  private readonly items = new Map<string, RetrievalSettingsRecord>();
+  private readonly rows = new Set<string>();
   readonly capabilityRows = new Map<string, Map<WorkspaceLlmCapability, WorkspaceLlmCapabilityPreference>>();
+
+  async ensureRow(workspaceId: string): Promise<void> {
+    this.rows.add(workspaceId);
+  }
 
   async findByWorkspace(workspaceId: string): Promise<WorkspaceLlmCapabilityPreference[]> {
     const row = this.capabilityRows.get(workspaceId);
@@ -1272,7 +1273,7 @@ export class InMemoryRetrievalSettingsRepository
     capability: WorkspaceLlmCapability,
     value: WorkspaceLlmCapabilityPreferenceInput | null,
   ): Promise<void> {
-    if (!this.items.has(workspaceId)) {
+    if (!this.rows.has(workspaceId)) {
       throw new Error(`retrieval_settings row missing for workspace ${workspaceId}`);
     }
     const row = this.capabilityRows.get(workspaceId) ?? new Map();
@@ -1290,31 +1291,6 @@ export class InMemoryRetrievalSettingsRepository
     this.capabilityRows.set(workspaceId, row);
   }
 
-  async findByWorkspaceId(workspaceId: string): Promise<RetrievalSettingsRecord | null> {
-    return this.items.get(workspaceId) ?? null;
-  }
-
-  async upsert(workspaceId: string, input: RetrievalSettingsInput): Promise<RetrievalSettingsRecord> {
-    const existing = this.items.get(workspaceId);
-    const record: RetrievalSettingsRecord = {
-      workspaceId,
-      queryRewriteEnabled: input.queryRewriteEnabled,
-      semanticRewriteInstructions: input.semanticRewriteInstructions,
-      lexicalRewriteInstructions: input.lexicalRewriteInstructions,
-      suggestedQuestionsEnabled: input.suggestedQuestionsEnabled,
-      suggestedQuestionsCount: input.suggestedQuestionsCount,
-      rerankEnabled: input.rerankEnabled,
-      vectorTopK: input.vectorTopK,
-      similarityThreshold: input.similarityThreshold,
-      rerankTopK: input.rerankTopK,
-      metadataRules: input.metadataRules,
-      customInstruction: input.customInstruction,
-      createdAt: existing?.createdAt ?? new Date(),
-      updatedAt: new Date(),
-    };
-    this.items.set(workspaceId, record);
-    return record;
-  }
 }
 
 export class InMemoryIngestionSettingsRepository implements IngestionSettingsRepositoryPort {

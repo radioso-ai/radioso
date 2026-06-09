@@ -21,8 +21,6 @@ pnpm run build
 ## Public Surface
 
 - `createRadiosoClient({ baseUrl, apiToken })`
-- `client.settings.getRetrieval()`
-- `client.settings.updateRetrieval(...)`
 - `client.settings.getIngestion()`
 - `client.settings.updateIngestion(...)`
 - `client.settings.reprocessIngestion()`

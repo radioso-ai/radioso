@@ -3,29 +3,11 @@ import type {
   AssistantSettingsSection,
 } from "./assistantSettings.js";
 import type {
-  MetadataFieldSuggestion,
-  RetrievalMetadataRule,
-  RetrievalStrategyPreference,
-} from "./retrievalSettings.js";
-import type {
   WebsiteEmbedLauncherPosition,
   WebsiteEmbedThemeSettings,
   WebsiteEmbedCopyPacks,
   WebsiteEmbedExpertOverrides,
 } from "./websiteEmbedSettings.js";
-
-export interface PlatformRetrievalSettingsSection {
-  queryRewriteEnabled: boolean;
-  semanticRewriteInstructions: string;
-  lexicalRewriteInstructions: string;
-  rerankEnabled: boolean;
-  vectorTopK: number;
-  similarityThreshold: number;
-  rerankTopK: number;
-  metadataRules: RetrievalMetadataRule[];
-  metadataFieldSuggestions: MetadataFieldSuggestion[];
-  retrievalStrategy: RetrievalStrategyPreference;
-}
 
 export interface PlatformChannelsSettingsSection {
   anonymousChatEnabled: boolean;
@@ -46,20 +28,7 @@ export interface PlatformChannelsSettingsSection {
 
 export interface PlatformSettingsResource {
   assistant: AssistantSettingsSection;
-  retrieval: PlatformRetrievalSettingsSection;
   channels: PlatformChannelsSettingsSection;
-}
-
-export interface PlatformRetrievalSettingsPatch {
-  queryRewriteEnabled?: boolean;
-  semanticRewriteInstructions?: string;
-  lexicalRewriteInstructions?: string;
-  rerankEnabled?: boolean;
-  vectorTopK?: number;
-  similarityThreshold?: number;
-  rerankTopK?: number;
-  metadataRules?: RetrievalMetadataRule[];
-  retrievalStrategy?: RetrievalStrategyPreference;
 }
 
 export interface PlatformChannelsSettingsPatch {
@@ -77,6 +46,5 @@ export interface PlatformChannelsSettingsPatch {
 
 export interface PlatformSettingsPatch {
   assistant?: AssistantSettingsPatch;
-  retrieval?: PlatformRetrievalSettingsPatch;
   channels?: PlatformChannelsSettingsPatch;
 }

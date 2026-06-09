@@ -1,7 +1,7 @@
 # Answering Strategy
 
 ## Summary
-Choose how the workspace produces grounded answers: a fixed pipeline, a reasoning agent, or automatic selection.
+Choose how this agent produces grounded answers: a fixed pipeline, a reasoning agent, or automatic selection.
 
 ## Details
 ### Overview
@@ -20,4 +20,4 @@ The setting is a preference, not a hard switch inside a single run. For each tur
 
 ### Practical implication
 
-Leave this on **Standard** for most workspaces. Choose **Reasoning** when your content needs multi-step lookups and you accept higher latency and cost. The choice applies to chat, the retrieval API, the SDK, and MCP, so all callers in the workspace use the same strategy.
+Leave this on **Standard** for most agents. Choose **Reasoning** when the agent's content needs multi-step lookups and you accept higher latency and cost. The choice applies to this agent's `retrieval.answer` skill. Retrieval-only API, SDK, and MCP calls without an agent use system defaults.

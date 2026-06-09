@@ -8,9 +8,6 @@ export type JsonRecord = Record<string, JsonPrimitive>;
 
 export type DocumentListResult = components["schemas"]["DocumentListResponse"];
 
-export type RetrievalSettingsRecord = components["schemas"]["PlatformRetrievalSettingsSection"] &
-  Pick<components["schemas"]["AssistantSettingsSection"], "customInstruction" | "suggestedQuestionsEnabled">;
-
 export type WorkspaceMcpContextRecord = components["schemas"]["WorkspaceMcpContextResponse"];
 
 export interface ToolExecutionResult {

@@ -38,7 +38,11 @@ Agents own:
 - source scope
 - surface settings for authenticated chat, anonymous chat, and website embed
 
-Workspace retrieval settings still provide the default retrieval layer. Agents can override fields for the `retrieval.answer` skill through `skillSettings["retrieval.answer"]`. An empty `skillSettings` map means full inherit. If an agent has `retrievalEnabled: true`, assistant chat may use retrieval and return citations. If `retrievalEnabled: false`, the agent answers through the direct assistant path and returns diagnostics with `retrievalInvoked: false`.
+Retrieval answer configuration lives on the agent. Use `skillSettings["retrieval.answer"]` to set fields such as query rewrite behavior, reranking, metadata rules, strategy, and answer instruction for that one agent. An empty `skillSettings` map means the agent inherits system/model defaults.
+
+The read-only `GET /api/v1/settings/retrieval-defaults` endpoint returns those inherited retrieval defaults plus workspace metadata field suggestions for the Skills tab. It does not update retrieval behavior.
+
+If an agent has `retrievalEnabled: true`, assistant chat may use retrieval and return citations. If `retrievalEnabled: false`, the agent answers through the direct assistant path and returns diagnostics with `retrievalInvoked: false`.
 
 ## Contact requests
 

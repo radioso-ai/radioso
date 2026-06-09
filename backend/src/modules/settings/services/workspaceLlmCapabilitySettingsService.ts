@@ -5,10 +5,7 @@ import type {
   WorkspaceLlmCapabilityPreference,
   WorkspaceLlmCapabilityPreferenceInput,
 } from "../contracts/llmCapability.js";
-import type {
-  RetrievalSettingsPort,
-  WorkspaceLlmCapabilityPreferencesRepositoryPort,
-} from "../contracts/services.js";
+import type { WorkspaceLlmCapabilityPreferencesRepositoryPort } from "../contracts/services.js";
 import { isKnownModelForProvider } from "../../../shared/infra/llm/knownModels.js";
 import type { LlmProviderName } from "../../../shared/infra/llm/providerTypes.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
@@ -27,7 +24,6 @@ export interface WorkspaceLlmCapabilityActor {
 export class WorkspaceLlmCapabilitySettingsService {
   constructor(
     private readonly repository: WorkspaceLlmCapabilityPreferencesRepositoryPort,
-    private readonly retrievalSettings: Pick<RetrievalSettingsPort, "getForWorkspace">,
     private readonly auditService: AuditPort,
     private readonly logger?: Pick<AppLogger, "warn">,
   ) {}
@@ -52,11 +48,10 @@ export class WorkspaceLlmCapabilitySettingsService {
   ): Promise<WorkspaceLlmCapabilityPreference> {
     this.assertValidInput(input);
     try {
-      // Capability preferences are stored on the retrieval_settings row. Ensure the
-      // row exists with the canonical app-level defaults before writing one of the
-      // capability columns; otherwise the UPDATE would no-op on a workspace that
-      // has never touched retrieval settings.
-      await this.retrievalSettings.getForWorkspace(workspaceId);
+      // Capability preferences are stored on the retrieval_settings row. Ensure
+      // the row exists before writing one of the capability columns; otherwise
+      // the UPDATE would no-op on a workspace that has no ingestion/capability row.
+      await this.repository.ensureRow(workspaceId);
       await this.repository.setPreference(workspaceId, capability, {
         provider: input.provider,
         model: input.model.trim(),
@@ -100,7 +95,7 @@ export class WorkspaceLlmCapabilitySettingsService {
       return false;
     }
     try {
-      await this.retrievalSettings.getForWorkspace(workspaceId);
+      await this.repository.ensureRow(workspaceId);
       await this.repository.setPreference(workspaceId, capability, null);
       await this.recordAudit({
         accountId: actor.accountId,

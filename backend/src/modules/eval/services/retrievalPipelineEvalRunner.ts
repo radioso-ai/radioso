@@ -8,6 +8,7 @@ import type {
 import {
   resolveContextSourceUrl,
   type FinalPromptContext,
+  type RetrievalDefaultsProvider,
   type RetrievalPipelineRequest,
   type RetrievalPipelineService,
   type SkillSettingsResolver,
@@ -17,7 +18,6 @@ import type {
   RetrievalSettingsSnapshot,
 } from "../../settings/contracts/retrieval.js";
 import { freezeRetrievalSettings } from "../../settings/contracts/retrieval.js";
-import type { RetrievalSettingsService } from "../../settings/contracts/services.js";
 import type { LlmCapabilityResolver } from "../../../shared/infra/llm/capabilityResolver.js";
 import type { EvalRunModelOverride } from "../domain/types.js";
 import type { EvalReplayContext, EvalRetrievalRunnerPort } from "./evalRunner.js";
@@ -63,8 +63,8 @@ const toCitationEvidence = (contexts: FinalPromptContext[]): CitationEvidence[] 
  *   * Resolve the chat capability once up front (with optional model
  *     override) and thread the same (provider, model) to the gateway, the
  *     usage meter, and the returned resolvedConfig.
- *   * Return the *fully resolved* retrieval settings actually used (the
- *     workspace's settings record + override, merged and frozen) so the run
+ *   * Return the *fully resolved* retrieval settings actually used (system
+ *     defaults + agent skill settings + override, merged and frozen) so the run
  *     row is auditable on its own — not just the delta override.
  */
 export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
@@ -72,7 +72,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
     private readonly pipeline: RetrievalPipelineService,
     private readonly chatGateway: ChatGateway,
     private readonly capabilityResolver: LlmCapabilityResolver,
-    private readonly retrievalSettings: RetrievalSettingsService,
+    private readonly retrievalDefaultsProvider: RetrievalDefaultsProvider,
     private readonly answerPresentation: EvalAnswerPresentationPort,
     private readonly skillSettingsResolver?: SkillSettingsResolver,
   ) {}
@@ -257,7 +257,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
     override: Partial<RetrievalSettingsRecord> | undefined,
   ): Promise<RetrievalSettingsSnapshot | undefined> {
     try {
-      const base = await this.retrievalSettings.getForWorkspace(workspaceId);
+      const base = this.retrievalDefaultsProvider.getDefaults(workspaceId);
       const agentResolved = this.skillSettingsResolver
         ? this.skillSettingsResolver.resolve(
             "retrieval.answer",

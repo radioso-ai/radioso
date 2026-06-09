@@ -4,10 +4,8 @@ import { defaultAssistantBootstrapSettings, validateAssistantBootstrapSettings }
 import type { AccessGrant } from "../../src/modules/accessGrants/public.js";
 import type { AgentRecord } from "../../src/modules/agents/public.js";
 import { defaultIngestionSettings } from "../../src/modules/settings/domain/ingestionSettings.js";
-import { defaultRetrievalSettings } from "../../src/modules/settings/domain/retrievalSettings.js";
 import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
 import { PlatformSettingsService } from "../../src/modules/settings/services/platformSettingsService.js";
-import { RetrievalSettingsService } from "../../src/modules/settings/services/retrievalSettingsService.js";
 
 describe("settings services", () => {
   const createAgent = (
@@ -128,7 +126,7 @@ describe("settings services", () => {
     ...overrides,
   });
 
-  it("aggregates assistant-owned behavior separately from retrieval-owned tuning", async () => {
+  it("aggregates assistant-owned behavior without workspace retrieval tuning", async () => {
     const workspace = {
       id: "workspace-1",
       name: "Workspace",
@@ -149,21 +147,12 @@ describe("settings services", () => {
       suggestedQuestionsEnabled: false,
       customInstruction: "Answer plainly.",
     }));
-    const retrieval = {
-      ...defaultRetrievalSettings("workspace-1"),
-      queryRewriteEnabled: true,
-    };
     const service = new PlatformSettingsService({
       workspaceRepository: {
         findById: vi.fn().mockResolvedValue(workspace),
         updateGeneralSettings: vi.fn(),
       },
       agentService,
-      retrievalSettingsService: {
-        getForWorkspace: vi.fn().mockResolvedValue(retrieval),
-        listMetadataFieldSuggestions: vi.fn().mockResolvedValue([]),
-        updateForWorkspace: vi.fn(),
-      },
       publicChatBaseUrl: "http://localhost:3000/chat",
     } as never);
 
@@ -178,12 +167,7 @@ describe("settings services", () => {
       suggestedQuestionsEnabled: false,
       customInstruction: "Answer plainly.",
     });
-    expect(result.retrieval).toMatchObject({
-      queryRewriteEnabled: true,
-      vectorTopK: 15,
-    });
-    expect(result.retrieval).not.toHaveProperty("conversationMode");
-    expect(result.retrieval).not.toHaveProperty("customInstruction");
+    expect(result).not.toHaveProperty("retrieval");
   });
 
   it("updates one shared settings section without resetting omitted sections", async () => {
@@ -203,7 +187,6 @@ describe("settings services", () => {
       websiteEmbedLauncherLabel: "Chat with us",
       websiteEmbedLauncherPosition: "bottom-right" as const,
     };
-    const retrieval = defaultRetrievalSettings("workspace-1");
     const agentService = createAgentService(createAgent(workspace));
     const workspaceRepository = {
       findById: vi.fn().mockResolvedValue(workspace),
@@ -212,15 +195,9 @@ describe("settings services", () => {
         assistantName: "Nora",
       }),
     };
-    const retrievalSettingsService = {
-      getForWorkspace: vi.fn().mockResolvedValue(retrieval),
-      listMetadataFieldSuggestions: vi.fn().mockResolvedValue([]),
-      updateForWorkspace: vi.fn(),
-    };
     const service = new PlatformSettingsService({
       workspaceRepository,
       agentService,
-      retrievalSettingsService,
       publicChatBaseUrl: "http://localhost:3000/chat",
     } as never);
 
@@ -238,7 +215,6 @@ describe("settings services", () => {
       }),
     );
     expect(workspaceRepository.updateGeneralSettings).not.toHaveBeenCalled();
-    expect(retrievalSettingsService.updateForWorkspace).not.toHaveBeenCalled();
   });
 
   it("delegates website embed script and snippet construction to the configured integration provider", async () => {
@@ -258,7 +234,6 @@ describe("settings services", () => {
       websiteEmbedLauncherLabel: "Ask Nora",
       websiteEmbedLauncherPosition: "bottom-left" as const,
     };
-    const retrieval = defaultRetrievalSettings("workspace-1");
     const agentService = createAgentService(createAgent(workspace));
     const websiteEmbedIntegration = {
       buildScriptUrl: vi.fn().mockReturnValue("https://widget.radioso.example/radioso-embed.js"),
@@ -270,11 +245,6 @@ describe("settings services", () => {
         updateGeneralSettings: vi.fn(),
       },
       agentService,
-      retrievalSettingsService: {
-        getForWorkspace: vi.fn().mockResolvedValue(retrieval),
-        listMetadataFieldSuggestions: vi.fn().mockResolvedValue([]),
-        updateForWorkspace: vi.fn(),
-      },
       publicChatBaseUrl: "http://localhost:3000/chat",
       websiteEmbedIntegration,
     } as never);
@@ -333,11 +303,6 @@ describe("settings services", () => {
       },
       agentService: createAgentService(createAgent(workspace)),
       accessGrantService,
-      retrievalSettingsService: {
-        getForWorkspace: vi.fn().mockResolvedValue(defaultRetrievalSettings("workspace-1")),
-        listMetadataFieldSuggestions: vi.fn().mockResolvedValue([]),
-        updateForWorkspace: vi.fn(),
-      },
       publicChatBaseUrl: "http://localhost:3000/chat",
     } as never);
 
@@ -368,7 +333,6 @@ describe("settings services", () => {
       websiteEmbedLauncherLabel: "Chat with us",
       websiteEmbedLauncherPosition: "bottom-right" as const,
     };
-    const retrieval = defaultRetrievalSettings("workspace-1");
     const agentService = createAgentService(createAgent(workspace));
     const auditService = {
       record: vi.fn().mockResolvedValue(undefined),
@@ -382,11 +346,6 @@ describe("settings services", () => {
         })),
       },
       agentService,
-      retrievalSettingsService: {
-        getForWorkspace: vi.fn().mockResolvedValue(retrieval),
-        listMetadataFieldSuggestions: vi.fn().mockResolvedValue([]),
-        updateForWorkspace: vi.fn(),
-      },
       auditService,
       publicChatBaseUrl: "http://localhost:3000/chat",
     } as never);
@@ -440,60 +399,6 @@ describe("settings services", () => {
         allowedOrigins: ["https://example.com"],
       },
     });
-  });
-
-  it("returns saved retrieval settings even when success audit logging fails", async () => {
-    const settings = defaultRetrievalSettings("workspace-1");
-    const repository = {
-      findByWorkspaceId: vi.fn(),
-      upsert: vi.fn().mockResolvedValue(settings),
-    };
-    const auditService = {
-      record: vi.fn().mockRejectedValue(new Error("audit down")),
-    };
-    const analyticsService = {
-      track: vi.fn().mockResolvedValue(undefined),
-    };
-    const service = new RetrievalSettingsService(repository, auditService as never, undefined, analyticsService as never);
-
-    await expect(service.updateForWorkspace("workspace-1", settings)).resolves.toEqual(settings);
-    expect(repository.upsert).toHaveBeenCalledOnce();
-    expect(auditService.record).toHaveBeenCalledWith({
-      workspaceId: "workspace-1",
-        eventType: "settings.update",
-        eventStatus: "success",
-      });
-    expect(analyticsService.track).toHaveBeenCalledWith(
-      expect.objectContaining({
-        eventName: "retrieval_settings.updated",
-        workspaceId: "workspace-1",
-      }),
-    );
-  });
-
-  it("rethrows the original retrieval save error when failure audit logging also fails", async () => {
-    const writeError = new Error("write failed");
-    const repository = {
-      findByWorkspaceId: vi.fn(),
-      upsert: vi.fn().mockRejectedValue(writeError),
-    };
-    const auditService = {
-      record: vi.fn().mockRejectedValue(new Error("audit down")),
-    };
-    const analyticsService = {
-      track: vi.fn(),
-    };
-    const service = new RetrievalSettingsService(repository, auditService as never, undefined, analyticsService as never);
-
-    await expect(service.updateForWorkspace("workspace-1", defaultRetrievalSettings("workspace-1"))).rejects.toBe(
-      writeError,
-    );
-    expect(auditService.record).toHaveBeenCalledWith({
-      workspaceId: "workspace-1",
-        eventType: "settings.update",
-        eventStatus: "failure",
-      });
-    expect(analyticsService.track).not.toHaveBeenCalled();
   });
 
   it("returns saved ingestion settings even when success audit logging fails", async () => {

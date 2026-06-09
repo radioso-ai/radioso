@@ -6,7 +6,7 @@ Control how terse or warm the assistant sounds when presenting answers.
 ## Details
 ### Overview
 
-This setting controls the tone of the final answer after retrieval and evidence selection are complete.
+This setting controls this agent's tone in the final answer after retrieval and evidence selection are complete.
 
 ### Lower Values
 

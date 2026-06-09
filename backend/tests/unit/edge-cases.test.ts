@@ -186,7 +186,7 @@ describe("edge cases", () => {
     const thresholdsSeen: number[] = [];
     const service = new RetrievalPipelineService(
       {
-        async getForWorkspace() {
+        getDefaults() {
           return {
             workspaceId: "a1",
             queryRewriteEnabled: false,
@@ -254,7 +254,7 @@ describe("edge cases", () => {
     const embeddedQueries: string[] = [];
     const service = new RetrievalPipelineService(
       {
-        async getForWorkspace() {
+        getDefaults() {
           return {
             workspaceId: "a1",
             queryRewriteEnabled: true,
@@ -350,7 +350,7 @@ describe("edge cases", () => {
   it("rejects a subject switch when raw retrieval only mentions the rewritten subject incidentally", async () => {
     const service = new RetrievalPipelineService(
       {
-        async getForWorkspace() {
+        getDefaults() {
           return {
             workspaceId: "a1",
             queryRewriteEnabled: true,
@@ -452,7 +452,7 @@ describe("edge cases", () => {
   it("preserves unresolved continuity decisions for blocked rewrites", async () => {
     const service = new RetrievalPipelineService(
       {
-        async getForWorkspace() {
+        getDefaults() {
           return {
             workspaceId: "a1",
             queryRewriteEnabled: true,
@@ -572,7 +572,7 @@ describe("edge cases", () => {
     let searchCallCount = 0;
     const service = new RetrievalPipelineService(
       {
-        async getForWorkspace() {
+        getDefaults() {
           return {
             workspaceId: "a1",
             queryRewriteEnabled: true,

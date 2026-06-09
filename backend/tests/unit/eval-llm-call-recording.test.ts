@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ChatGatewayLlmJudge } from "../../src/modules/eval/services/evalJudge.js";
 import { RetrievalPipelineEvalRunner } from "../../src/modules/eval/services/retrievalPipelineEvalRunner.js";
@@ -9,7 +9,9 @@ import type { LlmCapabilityResolver } from "../../src/shared/infra/llm/capabilit
 import type { ChatGateway } from "../../src/modules/chat/contracts/index.js";
 import type { ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
 import type { AgentSnapshot } from "../../src/modules/agents/public.js";
-import type { RetrievalPipelineRequest } from "../../src/modules/retrieval/public.js";
+import type { RetrievalDefaultsProvider, RetrievalPipelineRequest } from "../../src/modules/retrieval/public.js";
+import type { RetrievalSettingsRecord } from "../../src/modules/settings/contracts/retrieval.js";
+import { defaultRetrievalSettings } from "../../src/modules/settings/contracts/retrieval.js";
 
 const fixedPipelineResult = {
   rewrittenQuery: "q",
@@ -73,29 +75,19 @@ const buildResolver = (): LlmCapabilityResolver => ({
   },
 });
 
-const buildSettingsService = () => ({
-  async getForWorkspace(workspaceId: string) {
+const buildDefaultsProvider = (): RetrievalDefaultsProvider => ({
+  getDefaults(workspaceId: string): RetrievalSettingsRecord {
     return {
-      workspaceId,
+      ...defaultRetrievalSettings(workspaceId),
       queryRewriteEnabled: true,
-      semanticRewriteInstructions: "",
-      lexicalRewriteInstructions: "",
       suggestedQuestionsEnabled: true,
       suggestedQuestionsCount: 3,
-      rerankEnabled: false,
       vectorTopK: 20,
       similarityThreshold: 0.2,
       rerankTopK: 5,
-      citationDisplayEnabled: true,
-      metadataRules: [],
-      customInstruction: "",
-      createdAt: new Date(),
-      updatedAt: new Date(),
     };
   },
-  async listMetadataFieldSuggestions() { return []; },
-  async updateForWorkspace() { throw new Error("not implemented in test"); },
-}) as any;
+});
 
 const buildAnswerPresentation = () => {
   const answerPresentationService = new AnswerPresentationService();
@@ -155,11 +147,16 @@ describe("eval LLM-call usage recording end-to-end", () => {
       },
     });
     const pipeline = buildCapturingPipeline();
+    const legacyWorkspaceSettings = {
+      getForWorkspace: vi.fn(async () => {
+        throw new Error("workspace retrieval settings should not be consulted");
+      }),
+    };
     const runner = new RetrievalPipelineEvalRunner(
       pipeline.pipeline,
       buildChatGateway("unused").gateway,
       buildResolver(),
-      buildSettingsService(),
+      buildDefaultsProvider(),
       buildAnswerPresentation(),
       createRetrievalSkillSettingsResolver(),
     );
@@ -181,6 +178,44 @@ describe("eval LLM-call usage recording end-to-end", () => {
       vectorTopK: 7,
       metadataRules: [expect.objectContaining({ id: "audience-rule", triggerMode: "match_turn" })],
     });
+    expect(legacyWorkspaceSettings.getForWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("records system defaults, agent overrides, then per-eval overrides in order", async () => {
+    const runner = new RetrievalPipelineEvalRunner(
+      buildPipeline() as never,
+      buildChatGateway("unused").gateway,
+      buildResolver(),
+      buildDefaultsProvider(),
+      buildAnswerPresentation(),
+      createRetrievalSkillSettingsResolver(),
+    );
+
+    const result = await runner.retrieve({
+      workspaceId: "ws-1",
+      query: "partner policy",
+      history: [],
+      context: {
+        agent: buildAgentSnapshot({
+          skillSettings: {
+            "retrieval.answer": {
+              vectorTopK: 7,
+              suggestedQuestionsEnabled: false,
+            },
+          },
+        }),
+      },
+      retrievalSettingsOverride: {
+        vectorTopK: 11,
+      },
+    });
+
+    expect(result.resolvedSettings).toMatchObject({
+      queryRewriteEnabled: true,
+      suggestedQuestionsEnabled: false,
+      suggestedQuestionsCount: 3,
+      vectorTopK: 11,
+    });
   });
 
   it("threads eval usage context through the full_assistant answer gateway call", async () => {
@@ -189,7 +224,7 @@ describe("eval LLM-call usage recording end-to-end", () => {
       buildPipeline() as never,
       chat.gateway,
       buildResolver(),
-      buildSettingsService(),
+      buildDefaultsProvider(),
       buildAnswerPresentation(),
     );
 
@@ -243,7 +278,7 @@ describe("eval LLM-call usage recording end-to-end", () => {
       },
       chat.gateway,
       buildResolver(),
-      buildSettingsService(),
+      buildDefaultsProvider(),
       buildAnswerPresentation(),
     );
 
@@ -282,7 +317,7 @@ describe("eval LLM-call usage recording end-to-end", () => {
       buildPipeline() as never,
       failingGateway,
       buildResolver(),
-      buildSettingsService(),
+      buildDefaultsProvider(),
       buildAnswerPresentation(),
     );
 

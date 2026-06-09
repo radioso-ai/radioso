@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createCapabilityPolicyRegistry } from "../src/policy/capabilityPolicy.js";
+import { TOOL_CATALOG, createCapabilityPolicyRegistry } from "../src/policy/capabilityPolicy.js";
 import { createWorkspacePolicyResolver } from "../src/policy/workspacePolicy.js";
 
 describe("capability policy", () => {
@@ -28,6 +28,18 @@ describe("capability policy", () => {
     expect(policy.isToolAllowed("search_documents")).toBe(true);
     expect(policy.isToolAllowed("update_retrieval_settings")).toBe(false);
     expect(policy.requiresApproval("create_document")).toBe(true);
+  });
+
+  it("does not include removed retrieval settings tools in the catalog", () => {
+    expect(TOOL_CATALOG).not.toHaveProperty("get_retrieval_settings");
+    expect(TOOL_CATALOG).not.toHaveProperty("update_retrieval_settings");
+    expect(() =>
+      createCapabilityPolicyRegistry({
+        allowedReadTools: ["get_retrieval_settings"],
+        allowedWriteTools: [],
+        approvalRequiredWriteTools: [],
+      }),
+    ).toThrow(/Unknown tool names.*get_retrieval_settings/i);
   });
 
   it("filters requested tools to the configured allowlist and reports denials", () => {

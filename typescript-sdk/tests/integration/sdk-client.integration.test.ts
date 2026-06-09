@@ -17,20 +17,18 @@ describe("sdk client integration", () => {
       )
       .mockResolvedValueOnce(
         new Response(JSON.stringify({
-          workspaceId: "w1",
-          queryRewriteEnabled: true,
+          queryRewriteEnabled: false,
           semanticRewriteInstructions: "",
           lexicalRewriteInstructions: "",
-          rerankEnabled: true,
-          vectorTopK: 20,
-          similarityThreshold: 0.2,
-          rerankTopK: 20,
-          citationDisplayEnabled: true,
-          metadataFieldSuggestions: [],
-          metadataRules: [],
+          suggestedQuestionsEnabled: true,
+          suggestedQuestionsCount: 3,
+          rerankEnabled: false,
+          vectorTopK: 15,
+          rerankTopK: 5,
+          retrievalStrategy: "fixed",
           customInstruction: "",
-          createdAt: "2026-04-04T00:00:00.000Z",
-          updatedAt: "2026-04-04T00:00:00.000Z",
+          metadataRules: [],
+          metadataFieldSuggestions: [],
         }), {
           status: 200,
           headers: { "content-type": "application/json" },
@@ -101,7 +99,7 @@ describe("sdk client integration", () => {
     });
 
     const documents = await client.documents.list({ limit: 10 });
-    const retrievalSettings = await client.settings.getRetrieval();
+    const retrievalDefaults = await client.settings.getRetrievalDefaults();
     const ingestionSettings = await client.settings.getIngestion();
     const generalSettings = await client.settings.getGeneral();
     const searchHistory = await client.documents.listHistory({ limit: 10 });
@@ -109,6 +107,8 @@ describe("sdk client integration", () => {
     const chat = await client.chat.create({ message: "hello", stream: false });
 
     expect(documents.documents).toEqual([]);
+    expect(retrievalDefaults.metadataFieldSuggestions).toEqual([]);
+    expect(retrievalDefaults.queryRewriteEnabled).toBe(false);
     expect(ingestionSettings.chunkingStrategy).toBe("fixed_window");
     expect(generalSettings.anonymousChatEnabled).toBe(true);
     expect(searchHistory.searches).toEqual([]);

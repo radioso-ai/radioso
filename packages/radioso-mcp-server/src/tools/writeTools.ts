@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import type { GenericToolDefinition } from "./common.js";
-import { metadataRecordSchema, retrievalPatchSchema } from "./common.js";
+import { metadataRecordSchema } from "./common.js";
 
 const createDocumentSchema = z.object({
   content: z.string().min(1),
@@ -17,8 +17,6 @@ const updateDocumentSchema = createDocumentSchema.extend({
 const documentIdSchema = z.object({
   documentId: z.string().min(1),
 });
-
-const retrievalSettingsSchema = retrievalPatchSchema;
 
 export const createWriteToolDefinitions = (): GenericToolDefinition[] => [
   {
@@ -89,26 +87,6 @@ export const createWriteToolDefinitions = (): GenericToolDefinition[] => [
     },
     inputSchema: documentIdSchema,
     name: "reprocess_document",
-    requiresApproval: true,
-  },
-  {
-    accessMode: "write",
-    description: "Apply a partial patch to workspace retrieval settings by merging it with the current settings.",
-    execute: async (args: unknown, context) => {
-      const patch = retrievalSettingsSchema.parse(args);
-      const current = await context.adapter.getRetrievalSettings();
-      const merged = {
-        ...current,
-        ...patch,
-      };
-      const data = await context.adapter.updateRetrievalSettings(merged);
-      return {
-        data,
-        summary: "Workspace retrieval settings updated.",
-      };
-    },
-    inputSchema: retrievalSettingsSchema,
-    name: "update_retrieval_settings",
     requiresApproval: true,
   },
 ];

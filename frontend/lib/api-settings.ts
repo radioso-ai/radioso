@@ -2,9 +2,7 @@ import { request } from './api-client'
 import {
   agentToAssistantBehaviorSettings,
   agentToGeneralSettings,
-  retrievalSettingsToAssistantBehaviorSettings,
   toGeneralSettings,
-  toRetrievalSettings,
 } from './api-types'
 import type {
   AgentListResponse,
@@ -14,7 +12,7 @@ import type {
   GeneralSettings,
   IngestionSettings,
   PlatformSettings,
-  RetrievalSettings,
+  RetrievalDefaults,
   WebsiteEmbedCopyPacks,
   WebsiteEmbedExpertOverrides,
   WebsiteEmbedThemeSettings,
@@ -41,38 +39,10 @@ export const mergeChannelsLifecycle = (
 })
 
 export const settingsApi = {
-  async getRetrievalSettings(options: { auth?: 'apiToken' | 'session' } = {}): Promise<RetrievalSettings> {
-    const settings = await request<PlatformSettings>("/settings", {
+  async getRetrievalDefaults(options: { auth?: 'apiToken' | 'session' } = {}): Promise<RetrievalDefaults> {
+    return request<RetrievalDefaults>("/settings/retrieval-defaults", {
       method: "GET",
     }, options.auth === 'session' ? { withSession: true } : { withApiToken: true })
-    return toRetrievalSettings(settings)
-  },
-
-  async updateRetrievalSettings(data: RetrievalSettings, options: { auth?: 'apiToken' | 'session' } = {}): Promise<RetrievalSettings> {
-    const { metadataFieldSuggestions, ...payload } = data
-    void metadataFieldSuggestions
-    const settings = await request<PlatformSettings>("/settings", {
-      method: "PUT",
-      body: JSON.stringify({
-        assistant: {
-          suggestedQuestionsEnabled: payload.suggestedQuestionsEnabled,
-          customInstruction: payload.customInstruction,
-        },
-        retrieval: {
-          queryRewriteEnabled: payload.queryRewriteEnabled,
-          semanticRewriteInstructions: payload.semanticRewriteInstructions,
-          lexicalRewriteInstructions: payload.lexicalRewriteInstructions,
-          suggestedQuestionsCount: payload.suggestedQuestionsCount,
-          rerankEnabled: payload.rerankEnabled,
-          vectorTopK: payload.vectorTopK,
-          similarityThreshold: payload.similarityThreshold,
-          rerankTopK: payload.rerankTopK,
-          retrievalStrategy: payload.retrievalStrategy,
-          metadataRules: payload.metadataRules,
-        },
-      }),
-    }, options.auth === 'session' ? { withSession: true } : { withApiToken: true })
-    return toRetrievalSettings(settings)
   },
 
   async getIngestionSettings(): Promise<IngestionSettings> {
@@ -321,20 +291,5 @@ export const agentsApi = {
       // null = clear back to workspace fallback; undefined = leave unchanged.
       chatModelOverride: data.chatModelOverride === undefined ? undefined : data.chatModelOverride,
     }))
-  },
-
-  async getWorkspaceBehaviorSettings(options: { auth?: 'apiToken' | 'session' } = {}): Promise<AssistantBehaviorSettings> {
-    return retrievalSettingsToAssistantBehaviorSettings(await settingsApi.getRetrievalSettings(options))
-  },
-
-  async updateWorkspaceBehaviorSettings(
-    data: AssistantBehaviorSettings,
-    options: { auth?: 'apiToken' | 'session' } = {},
-  ): Promise<AssistantBehaviorSettings> {
-    const current = await settingsApi.getRetrievalSettings(options)
-    return retrievalSettingsToAssistantBehaviorSettings(await settingsApi.updateRetrievalSettings({
-      ...current,
-      ...data,
-    }, options))
   },
 }

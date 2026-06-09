@@ -11,11 +11,24 @@ import {
   retrievalFixtureDocuments,
 } from "../support/retrievalFixtures.js";
 
+const updateRetrievalSkillSettings = async (
+  dependencies: ReturnType<typeof createTestApp>["dependencies"],
+  workspaceId: string,
+  settings: Record<string, unknown>,
+) => {
+  const agent = await dependencies.agentService.resolve(workspaceId);
+  return dependencies.agentService.update(workspaceId, agent.id, {
+    skillSettings: {
+      "retrieval.answer": settings,
+    },
+  });
+};
+
 describe("retrieval benchmark integration", () => {
   it("covers direct, follow-up, noisy-corpus, and fallback scenarios with fixture data", async () => {
-    const { app } = createTestApp();
+    const { app, dependencies } = createTestApp();
 
-    const { token } = await issueTestToken(app, "benchmark@example.com");
+    const { token, workspaceId } = await issueTestToken(app, "benchmark@example.com");
     const authorization = `Bearer ${token}`;
 
     for (const document of Object.values(retrievalFixtureDocuments)) {
@@ -25,17 +38,11 @@ describe("retrieval benchmark integration", () => {
         .send(document);
     }
 
-    await request(app)
-      .put("/api/v1/settings/retrieval")
-      .set("Authorization", authorization)
-      .send({
+    await updateRetrievalSkillSettings(dependencies, workspaceId, {
         queryRewriteEnabled: true,
         rerankEnabled: true,
         vectorTopK: 100,
-        similarityThreshold: 0.2,
-        rerankTopK: 20,
-        citationDisplayEnabled: true,
-        chunkingStrategy: "fixed_window",
+        rerankTopK: 20
       });
 
     for (const scenario of directAnswerQueries) {
@@ -112,8 +119,9 @@ describe("retrieval benchmark integration", () => {
       },
     });
 
-    const setupAccount = async (app: ReturnType<typeof createTestApp>["app"], email: string) => {
-      const { token } = await issueTestToken(app, email);
+    const setupAccount = async (testApp: ReturnType<typeof createTestApp>, email: string) => {
+      const { app, dependencies } = testApp;
+      const { token, workspaceId } = await issueTestToken(app, email);
       const authorization = `Bearer ${token}`;
 
       for (const document of Object.values(retrievalFixtureDocuments)) {
@@ -123,24 +131,18 @@ describe("retrieval benchmark integration", () => {
           .send(document);
       }
 
-      await request(app)
-        .put("/api/v1/settings/retrieval")
-        .set("Authorization", authorization)
-        .send({
+      await updateRetrievalSkillSettings(dependencies, workspaceId, {
           queryRewriteEnabled: true,
           rerankEnabled: true,
           vectorTopK: 100,
-          similarityThreshold: 0.2,
-          rerankTopK: 20,
-          citationDisplayEnabled: true,
-          chunkingStrategy: "fixed_window",
+          rerankTopK: 20
         });
 
       return authorization;
     };
 
-    const hybridAuthorization = await setupAccount(hybrid.app, "benchmark-hybrid@example.com");
-    const vectorOnlyAuthorization = await setupAccount(vectorOnly.app, "benchmark-vector@example.com");
+    const hybridAuthorization = await setupAccount(hybrid, "benchmark-hybrid@example.com");
+    const vectorOnlyAuthorization = await setupAccount(vectorOnly, "benchmark-vector@example.com");
     const benchmarkQueries = [...directAnswerQueries, ...noisyCorpusQueries, ...constraintQueries];
 
     const measureSuccesses = async (

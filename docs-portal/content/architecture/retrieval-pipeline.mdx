@@ -9,14 +9,14 @@ import { Callout, Steps } from 'nextra/components'
 
 Radioso is not a retrieval platform, but retrieval is one of the core pipelines that knowledge agents can use. It is not treated as a single search call. Radioso runs a staged pipeline that turns a user message into evidence, assembles a prompt, and presents an answer with citations.
 
-The key point is simple: if answer quality is off, you need to know which stage is failing before you change settings or prompts.
+The key point is simple: if answer quality is off, you need to know which stage is failing before you change agent skill settings, ingestion settings, or prompts.
 
 ## Stages
 
 <Steps>
 ### Retrieval context
 
-The pipeline starts by loading workspace retrieval settings and a limited conversation window. This stage decides the behavioral frame for the turn before any search runs.
+The pipeline starts by resolving system retrieval defaults, any `retrieval.answer` skill settings on the selected agent, and a limited conversation window. This stage decides the behavioral frame for the turn before any search runs.
 
 ### Query interpretation
 
@@ -39,15 +39,15 @@ The system reranks candidates when reranking is enabled, then selects the final 
 Radioso builds the final prompt, generates citations, and captures diagnostics and a retrieval trace. Chat then uses that result to generate the answer.
 </Steps>
 
-## What operators can tune
+## What operators can adjust
 
-The retrieval settings surface exists because the stages are intentionally adjustable.
+Retrieval behavior is configured per agent through the `retrieval.answer` skill. Retrieval-only API calls use system defaults and still accept per-call controls such as `metadataFilter`.
 
 - `queryRewriteEnabled` and rewrite instructions affect how the active retrieval query is formed.
 - `vectorTopK` controls how many semantic candidates make it into later stages.
-- `similarityThreshold` filters weak semantic matches early.
 - `rerankEnabled` and `rerankTopK` control whether final ordering is delegated to the rerank model.
-- `metadataRules` and per-request `metadataFilter` constrain the candidate set before prompt assembly.
+- `metadataRules` constrain the candidate set before prompt assembly for the agent.
+- Per-request `metadataFilter` constrains retrieval API calls without changing saved agent settings.
 - `customInstruction` influences how the final answer is written, but it cannot rescue bad retrieval.
 
 ## What happens after retrieval
@@ -68,5 +68,5 @@ Retrieval does not directly become the user-visible answer. The agent chat layer
 Related pages:
 
 - [Document processing lifecycle](/architecture/document-processing-lifecycle)
-- [Retrieval tuning](/guides/retrieval-tuning)
+- [Agents and skills](/api/agents-and-skills)
 - [API settings reference](/api/settings)

@@ -12,15 +12,15 @@ export const supportedMcpTools = [
   "delete_document",
   "describe_capabilities",
   "get_document",
-  "get_retrieval_settings",
   "list_documents",
   "reprocess_document",
   "search_documents",
   "update_document",
-  "update_retrieval_settings",
 ] as const;
 
-export const MCP_CONTEXT_VERSION = "2026-05-06";
+// Bumped 2026-06-09: dropped the workspace retrieval-settings tools
+// (get_retrieval_settings / update_retrieval_settings) — retrieval is per-agent now.
+export const MCP_CONTEXT_VERSION = "2026-06-09";
 
 export const workspaceMcpContextSchema = z.object({
   apiVersion: z.literal("0.1.0"),
@@ -44,16 +44,8 @@ const mcpToolPermissionGroups: Array<{
     tools: ["get_document", "list_documents", "search_documents"],
   },
   {
-    permission: "workspace.settings.read",
-    tools: ["get_retrieval_settings"],
-  },
-  {
     permission: "workspace.documents.manage",
     tools: ["create_document", "delete_document", "reprocess_document", "update_document"],
-  },
-  {
-    permission: "workspace.settings.manage",
-    tools: ["update_retrieval_settings"],
   },
 ];
 

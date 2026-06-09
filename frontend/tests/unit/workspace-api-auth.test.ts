@@ -44,17 +44,6 @@ const platformSettingsPayload = {
     suggestedQuestionsEnabled: true,
     customInstruction: '',
   },
-  retrieval: {
-    queryRewriteEnabled: false,
-    semanticRewriteInstructions: '',
-    lexicalRewriteInstructions: '',
-    rerankEnabled: false,
-    vectorTopK: 15,
-    similarityThreshold: 0.2,
-    rerankTopK: 5,
-    metadataRules: [],
-    metadataFieldSuggestions: [],
-  },
   channels: {
     anonymousChatEnabled: false,
     anonymousChatUrl: null,

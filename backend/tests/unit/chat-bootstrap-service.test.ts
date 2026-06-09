@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { AgentService } from "../../src/modules/agents/public.js";
-import { defaultRetrievalSettings } from "../../src/modules/settings/domain/retrievalSettings.js";
 import {
   InMemoryAgentRepository,
   InMemoryBootstrapGreetingCacheRepository,
@@ -10,21 +9,13 @@ import {
   createAuditService,
 } from "../support/fakes.js";
 
-const createRetrievalSettingsService = (customInstruction = "") => ({
-  getForWorkspace: vi.fn(async (workspaceId: string) => ({
-    ...defaultRetrievalSettings(workspaceId),
-    customInstruction,
-  })),
-});
-
 const createProductAnalyticsService = () => ({
   track: vi.fn(async () => null),
 });
 
 const createAgentService = (
   workspaceRepository: InMemoryWorkspaceRepository,
-  retrievalSettingsService: ReturnType<typeof createRetrievalSettingsService>,
-) => new AgentService(new InMemoryAgentRepository(), workspaceRepository, retrievalSettingsService);
+) => new AgentService(new InMemoryAgentRepository(), workspaceRepository);
 
 describe("chat bootstrap service", () => {
   it("returns an ephemeral first assistant turn and records chat started analytics", async () => {
@@ -43,9 +34,8 @@ describe("chat bootstrap service", () => {
       streamAnswer: vi.fn(),
     };
     const auditService = createAuditService();
-    const retrievalSettingsService = createRetrievalSettingsService();
     const productAnalyticsService = createProductAnalyticsService();
-    const agentService = createAgentService(workspaceRepository, retrievalSettingsService);
+    const agentService = createAgentService(workspaceRepository);
     const service = new ChatBootstrapService(
       workspaceRepository,
       bootstrapGreetingCacheRepository,
@@ -105,9 +95,8 @@ describe("chat bootstrap service", () => {
         .mockResolvedValueOnce("Hello! I'm Marta, your museum guide."),
       streamAnswer: vi.fn(),
     };
-    const retrievalSettingsService = createRetrievalSettingsService();
     const productAnalyticsService = createProductAnalyticsService();
-    const agentService = createAgentService(workspaceRepository, retrievalSettingsService);
+    const agentService = createAgentService(workspaceRepository);
     const service = new ChatBootstrapService(
       workspaceRepository,
       new InMemoryBootstrapGreetingCacheRepository(),
@@ -157,13 +146,13 @@ describe("chat bootstrap service", () => {
       createAuditService(),
       undefined,
       undefined,
-      createAgentService(workspaceRepository, createRetrievalSettingsService()),
+      createAgentService(workspaceRepository),
     );
 
     await expect(service.startConversation({ workspaceId: workspace.id })).resolves.toBeNull();
   });
 
-  it("includes answer instruction in the greeting prompt and cache fingerprint", async () => {
+  it("creates a zero-config default agent before operator-specific answer instructions are set", async () => {
     const workspaceRepository = new InMemoryWorkspaceRepository();
     const workspace = await workspaceRepository.create("account-1", "Workspace");
     await workspaceRepository.updateAssistantBootstrapSettings(workspace.id, {
@@ -180,8 +169,7 @@ describe("chat bootstrap service", () => {
         .mockResolvedValueOnce("Hello from the booking guide."),
       streamAnswer: vi.fn(),
     };
-    const retrievalSettingsService = createRetrievalSettingsService("Help visitors choose courses.");
-    const agentService = createAgentService(workspaceRepository, retrievalSettingsService);
+    const agentService = createAgentService(workspaceRepository);
     const service = new ChatBootstrapService(
       workspaceRepository,
       new InMemoryBootstrapGreetingCacheRepository(),
@@ -193,11 +181,15 @@ describe("chat bootstrap service", () => {
     );
 
     await service.startConversation({ workspaceId: workspace.id, userExpectedLocale: "en" });
+    const defaultAgent = await agentService.resolve(workspace.id);
+    expect(defaultAgent.customInstruction).toBe("");
+    expect(defaultAgent.skillSettings).toEqual({});
+    expect(defaultAgent.retrievalEnabled).toBe(true);
+    expect(defaultAgent.suggestedQuestionsEnabled).toBe(true);
     expect(chatGateway.answer).toHaveBeenCalledWith(expect.objectContaining({
-      prompt: expect.stringContaining("Answer instruction: Help visitors choose courses."),
+      prompt: expect.not.stringContaining("Answer instruction:"),
     }));
 
-    const defaultAgent = await agentService.resolve(workspace.id);
     await agentService.update(workspace.id, defaultAgent.id, {
       customInstruction: "Help visitors book retreats.",
     });

@@ -22,7 +22,7 @@ describe("sdk errors", () => {
       fetch: fetchMock as typeof fetch,
     });
 
-    await expect(client.settings.getRetrieval()).rejects.toEqual(expect.objectContaining({
+    await expect(client.settings.getGeneral()).rejects.toEqual(expect.objectContaining({
       code: "UNAUTHORIZED",
       status: 401,
     } satisfies Partial<RadiosoError>));

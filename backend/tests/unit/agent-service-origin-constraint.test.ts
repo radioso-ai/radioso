@@ -4,7 +4,6 @@ import { AgentService } from "../../src/modules/agents/services/agentService.js"
 import { InMemoryAccessGrantRepository } from "../support/fakes.js";
 import { DefaultOriginMatcher } from "../../src/modules/accessGrants/originMatcher.js";
 import { AccessGrantService } from "../../src/modules/accessGrants/services/accessGrantService.js";
-import type { RetrievalSettingsService } from "../../src/modules/settings/contracts/services.js";
 
 describe("AgentService public launch origin constraints", () => {
   it("syncs website embed settings to a list origin constraint by default", async () => {
@@ -89,27 +88,6 @@ const createService = () => {
         throw new Error("not used");
       },
     },
-    {
-      async getForWorkspace() {
-        return {
-          workspaceId: "workspace-1",
-          queryRewriteEnabled: false,
-          semanticRewriteInstructions: "",
-          lexicalRewriteInstructions: "",
-          suggestedQuestionsEnabled: true,
-          suggestedQuestionsCount: 3,
-          rerankEnabled: false,
-          vectorTopK: 10,
-          similarityThreshold: 0.2,
-          rerankTopK: 5,
-          metadataRules: [],
-          customInstruction: "",
-          retrievalStrategy: "fixed",
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-      },
-    } as unknown as Pick<RetrievalSettingsService, "getForWorkspace">,
     undefined,
     undefined,
     accessGrantService,

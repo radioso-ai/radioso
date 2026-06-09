@@ -7,7 +7,8 @@ import type { AuthoredDirective, AuthoredDirectiveInput } from "../../src/module
 import type { ConversationAgent } from "../../src/modules/agents/domain.js";
 import type { RetrievalSettingsRecord } from "../../src/modules/settings/contracts/retrieval.js";
 import { defaultRetrievalSettings, freezeRetrievalSettings } from "../../src/modules/settings/contracts/retrieval.js";
-import type { RetrievalSettingsService } from "../../src/modules/settings/contracts/services.js";
+import { createRetrievalSkillSettingsResolver } from "../../src/app/composition/skillSettingsResolver.js";
+import type { RetrievalDefaultsProvider } from "../../src/modules/retrieval/public.js";
 import { EvalSnapshotService } from "../../src/modules/eval/services/evalSnapshotService.js";
 import type {
   CreateCaseInput,
@@ -79,7 +80,7 @@ const agent = (): ConversationAgent => ({
   skillSettings: {
     "retrieval.answer": {
       vectorTopK: 7,
-      rerankerEnabled: true,
+      rerankEnabled: true,
     },
   },
   chatModelOverride: {
@@ -247,22 +248,17 @@ class StubAgentRepository implements AgentRepositoryPort {
   }
 }
 
-class StubRetrievalSettingsService implements RetrievalSettingsService {
-  private readonly settings: RetrievalSettingsRecord = {
+class StubRetrievalDefaultsProvider implements RetrievalDefaultsProvider {
+  public readonly settings: RetrievalSettingsRecord = {
     ...defaultRetrievalSettings("ws-1"),
     vectorTopK: 5,
+    suggestedQuestionsEnabled: true,
+    suggestedQuestionsCount: 3,
+    rerankEnabled: false,
   };
 
-  async getForWorkspace(): Promise<RetrievalSettingsRecord> {
-    return this.settings;
-  }
-
-  async listMetadataFieldSuggestions() {
-    return [];
-  }
-
-  async updateForWorkspace(): Promise<RetrievalSettingsRecord> {
-    throw new Error("not implemented");
+  getDefaults(workspaceId: string): RetrievalSettingsRecord {
+    return { ...this.settings, workspaceId };
   }
 }
 
@@ -357,7 +353,8 @@ describe("EvalSnapshotService.capture", () => {
       new StubConversationRepository(conversation),
       new StubMessageRepository(messages),
       new StubAgentRepository(originalAgent),
-      new StubRetrievalSettingsService(),
+      new StubRetrievalDefaultsProvider(),
+      createRetrievalSkillSettingsResolver(),
       repository,
     );
 
@@ -377,7 +374,7 @@ describe("EvalSnapshotService.capture", () => {
       enabled: false,
       settings: {
         vectorTopK: 7,
-        rerankerEnabled: true,
+        rerankEnabled: true,
         __agentRetrievalDefaults: {
           sourceScope: { mode: "selected", sourceIds: ["source-1", "source-2"] },
           suggestedQuestionsEnabled: false,
@@ -386,8 +383,63 @@ describe("EvalSnapshotService.capture", () => {
         },
       },
     });
+    expect(repository.lastCreateInput?.originalRetrievalSettings).toEqual(freezeRetrievalSettings({
+      ...new StubRetrievalDefaultsProvider().settings,
+      vectorTopK: 7,
+      rerankEnabled: true,
+    }));
+  });
+
+  it("captures system retrieval defaults when the conversation has no agent", async () => {
+    const conversation: ConversationRecord = {
+      id: "conv-1",
+      workspaceId: "ws-1",
+      agentId: null,
+      agentName: null,
+      sourceChannel: null,
+      sourceOrigin: null,
+      anonymousSessionId: null,
+      createdAt: fixedDate,
+      updatedAt: fixedDate,
+    };
+    const messages: MessageRecord[] = [
+      {
+        id: "msg-1",
+        conversationId: conversation.id,
+        workspaceId: conversation.workspaceId,
+        role: "user",
+        content: "What is the policy?",
+        createdAt: fixedDate,
+      },
+      {
+        id: "msg-2",
+        conversationId: conversation.id,
+        workspaceId: conversation.workspaceId,
+        role: "assistant",
+        content: "Policy answer.",
+        createdAt: fixedDate,
+      },
+    ];
+    const repository = new CapturingEvalRepository();
+    const defaults = new StubRetrievalDefaultsProvider();
+    const service = new EvalSnapshotService(
+      new StubConversationRepository(conversation),
+      new StubMessageRepository(messages),
+      new StubAgentRepository(null),
+      defaults,
+      createRetrievalSkillSettingsResolver(),
+      repository,
+    );
+
+    const snapshot = await service.capture({
+      workspaceId: "ws-1",
+      conversationId: conversation.id,
+      capturedBy: "account-1",
+    });
+
+    expect(snapshot.sourceAgentId).toBeNull();
     expect(repository.lastCreateInput?.originalRetrievalSettings).toEqual(
-      freezeRetrievalSettings(await new StubRetrievalSettingsService().getForWorkspace()),
+      freezeRetrievalSettings(defaults.getDefaults("ws-1")),
     );
   });
 });

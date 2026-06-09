@@ -11,24 +11,22 @@ const createAdapter = (): RadiosoApiAdapter => ({
   createDocument: vi.fn(),
   deleteDocument: vi.fn(),
   getDocument: vi.fn().mockResolvedValue({ id: "doc-1", title: "FAQ" }),
-  getRetrievalSettings: vi.fn().mockResolvedValue({ vectorTopK: 8 }),
   getWorkspaceMcpContext: vi.fn(),
   listDocuments: vi.fn().mockResolvedValue({ documents: [{ id: "doc-1", title: "FAQ" }] }),
   reprocessDocument: vi.fn(),
   searchDocuments: vi.fn().mockResolvedValue({ results: [{ documentId: "doc-1", title: "FAQ" }] }),
   updateDocument: vi.fn(),
-  updateRetrievalSettings: vi.fn(),
 });
 
 const createToolContext = (adapter: RadiosoApiAdapter): ToolExecutionContext => ({
   adapter,
   authInfo: {
-    approvalRequiredTools: ["create_document", "update_retrieval_settings"],
-    grantedTools: ["answer_grounded", "list_documents", "create_document", "update_retrieval_settings"],
+    approvalRequiredTools: ["create_document"],
+    grantedTools: ["answer_grounded", "list_documents", "create_document"],
     sessionId: "session-1",
     upstreamApiVersion: "0.1.0",
     upstreamMcpContextVersion: "2026-04-22",
-    upstreamSupportedTools: ["answer_grounded", "list_documents", "create_document", "update_retrieval_settings"],
+    upstreamSupportedTools: ["answer_grounded", "list_documents", "create_document"],
     workspaceId: "workspace-1",
     workspaceName: "Default",
   },
@@ -45,8 +43,8 @@ describe("createReadToolDefinitions", () => {
       "get_document",
       "search_documents",
       "answer_grounded",
-      "get_retrieval_settings",
     ]);
+    expect(tools.map((tool) => tool.name)).not.toContain("get_retrieval_settings");
   });
 
   it("returns capability metadata from describe_capabilities", async () => {
@@ -57,7 +55,7 @@ describe("createReadToolDefinitions", () => {
 
     expect(result.summary).toMatch(/available/i);
     expect(result.data).toMatchObject({
-      approvalRequiredTools: expect.arrayContaining(["create_document", "update_retrieval_settings"]),
+      approvalRequiredTools: expect.arrayContaining(["create_document"]),
       readTools: expect.arrayContaining(["answer_grounded", "list_documents"]),
       upstream: expect.objectContaining({
         apiVersion: "0.1.0",
@@ -67,7 +65,11 @@ describe("createReadToolDefinitions", () => {
         id: "workspace-1",
         name: "Default",
       }),
-      writeTools: expect.arrayContaining(["create_document", "update_retrieval_settings"]),
+      writeTools: expect.arrayContaining(["create_document"]),
+    });
+    expect(result.data).toMatchObject({
+      readTools: expect.not.arrayContaining(["get_retrieval_settings"]),
+      writeTools: expect.not.arrayContaining(["update_retrieval_settings"]),
     });
   });
 

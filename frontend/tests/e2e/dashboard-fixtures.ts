@@ -36,21 +36,6 @@ export const basePlatformSettings = (): ApiSchemas["PlatformSettingsResponse"] =
     suggestedQuestionsEnabled: true,
     customInstruction: "Keep answers concise.",
   },
-  retrieval: {
-    queryRewriteEnabled: false,
-    semanticRewriteInstructions: "Keep semantic rewrites standalone.",
-    lexicalRewriteInstructions: "Prefer exact phrases.",
-    rerankEnabled: false,
-    vectorTopK: 20,
-    similarityThreshold: 0.2,
-    rerankTopK: 5,
-    retrievalStrategy: "fixed",
-    metadataFieldSuggestions: [
-      { field: "region", inferredType: "string" },
-      { field: "publishedAt", inferredType: "date" },
-    ],
-    metadataRules: [],
-  },
   channels: {
     anonymousChatEnabled: false,
     anonymousChatUrl: "http://localhost:3000/chat/public-token",
@@ -75,6 +60,26 @@ export const basePlatformSettings = (): ApiSchemas["PlatformSettingsResponse"] =
 });
 
 export type PlatformSettingsFixture = ReturnType<typeof basePlatformSettings>;
+
+export const baseRetrievalDefaults = (): ApiSchemas["RetrievalDefaultsResponse"] => ({
+  queryRewriteEnabled: false,
+  semanticRewriteInstructions: "Keep semantic rewrites standalone.",
+  lexicalRewriteInstructions: "Prefer exact phrases.",
+  suggestedQuestionsEnabled: true,
+  suggestedQuestionsCount: 3,
+  rerankEnabled: false,
+  vectorTopK: 20,
+  rerankTopK: 5,
+  retrievalStrategy: "fixed",
+  customInstruction: "Keep answers concise.",
+  metadataFieldSuggestions: [
+    { field: "region", inferredType: "string" },
+    { field: "publishedAt", inferredType: "date" },
+  ],
+  metadataRules: [],
+});
+
+export type RetrievalDefaultsFixture = ReturnType<typeof baseRetrievalDefaults>;
 
 export const baseIngestionSettings = (): ApiSchemas["IngestionSettings"] => ({
   workspaceId,
@@ -327,6 +332,7 @@ export const installDashboardApiMocks = async (
   page: Page,
   options: {
     platformSettings?: PlatformSettingsFixture;
+    retrievalDefaults?: RetrievalDefaultsFixture;
     documentList?: unknown;
     documentDetails?: Record<string, Record<string, unknown>>;
     settingsUpdates?: unknown[];
@@ -349,6 +355,7 @@ export const installDashboardApiMocks = async (
   } = {},
 ) => {
   let platformSettings = options.platformSettings ?? basePlatformSettings();
+  const retrievalDefaults = options.retrievalDefaults ?? baseRetrievalDefaults();
   let ingestionSettings = options.ingestionSettings ?? baseIngestionSettings();
   let agentSettings = buildDefaultAgentSettings(platformSettings);
   let channelsLifecycle = buildDefaultChannelsLifecycle(platformSettings);
@@ -697,6 +704,11 @@ export const installDashboardApiMocks = async (
       return;
     }
 
+    if (request.method() === "GET" && path === "/settings/retrieval-defaults") {
+      await json(route, retrievalDefaults);
+      return;
+    }
+
     if (request.method() === "GET" && path === "/settings/credentials") {
       await json(route, {
         encryptionConfigured: providerEncryptionConfigured,
@@ -791,10 +803,6 @@ export const installDashboardApiMocks = async (
         assistant: {
           ...platformSettings.assistant,
           ...(body.assistant ?? {}),
-        },
-        retrieval: {
-          ...platformSettings.retrieval,
-          ...(body.retrieval ?? {}),
         },
         channels: {
           ...platformSettings.channels,

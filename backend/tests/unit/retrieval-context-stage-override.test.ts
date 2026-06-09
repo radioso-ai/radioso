@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { createSystemRetrievalDefaultsProvider } from "../../src/app/composition/retrievalDefaultsProvider.js";
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
 import { RetrievalContextStageService } from "../../src/modules/retrieval/services/retrievalContextStage.js";
+import { RETRIEVAL_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 import type { RetrievalSettingsRecord } from "../../src/modules/settings/contracts/retrieval.js";
+import { defaultRetrievalSettings } from "../../src/modules/settings/contracts/retrieval.js";
 import { createRetrievalSkillSettingsResolver } from "../../src/app/composition/skillSettingsResolver.js";
 
 const baseSettings = (workspaceId: string): RetrievalSettingsRecord => ({
@@ -22,10 +25,16 @@ const baseSettings = (workspaceId: string): RetrievalSettingsRecord => ({
   updatedAt: new Date(),
 });
 
+const withStableTimestamps = (settings: RetrievalSettingsRecord): RetrievalSettingsRecord => ({
+  ...settings,
+  createdAt: new Date(0),
+  updatedAt: new Date(0),
+});
+
 describe("RetrievalContextStageService retrievalSettingsOverride", () => {
-  it("returns workspace settings unchanged when no override is provided", async () => {
+  it("returns system defaults stamped with the request workspace when no override is provided", async () => {
     const stage = new RetrievalContextStageService(
-      { async getForWorkspace(id: string) { return baseSettings(id); } } as never,
+      createSystemRetrievalDefaultsProvider(),
       new ConversationContextService(),
     );
 
@@ -35,14 +44,18 @@ describe("RetrievalContextStageService retrievalSettingsOverride", () => {
       history: [],
     });
 
-    expect(result.settings.vectorTopK).toBe(20);
-    expect(result.settings.similarityThreshold).toBe(0.2);
+    expect(result.settings).toMatchObject({
+      ...defaultRetrievalSettings("ws-1"),
+      createdAt: result.settings.createdAt,
+      updatedAt: result.settings.updatedAt,
+    });
+    expect(result.settings.similarityThreshold).toBe(RETRIEVAL_BEHAVIOR.defaultSimilarityThreshold);
     expect(result.settings.workspaceId).toBe("ws-1");
   });
 
-  it("shallow-merges retrievalSettingsOverride over workspace settings", async () => {
+  it("shallow-merges retrievalSettingsOverride over system defaults", async () => {
     const stage = new RetrievalContextStageService(
-      { async getForWorkspace(id: string) { return baseSettings(id); } } as never,
+      createSystemRetrievalDefaultsProvider(),
       new ConversationContextService(),
     );
 
@@ -63,7 +76,7 @@ describe("RetrievalContextStageService retrievalSettingsOverride", () => {
 
   it("preserves the resolved workspaceId even if override tries to change it", async () => {
     const stage = new RetrievalContextStageService(
-      { async getForWorkspace(id: string) { return baseSettings(id); } } as never,
+      createSystemRetrievalDefaultsProvider(),
       new ConversationContextService(),
     );
 
@@ -77,10 +90,10 @@ describe("RetrievalContextStageService retrievalSettingsOverride", () => {
     expect(result.settings.workspaceId).toBe("ws-1");
   });
 
-  it("does not mutate the persisted record returned by the settings service", async () => {
-    const persisted = baseSettings("ws-1");
+  it("does not mutate the defaults record returned by the provider", async () => {
+    const defaults = baseSettings("ws-1");
     const stage = new RetrievalContextStageService(
-      { async getForWorkspace() { return persisted; } } as never,
+      { getDefaults() { return defaults; } },
       new ConversationContextService(),
     );
 
@@ -91,29 +104,36 @@ describe("RetrievalContextStageService retrievalSettingsOverride", () => {
       retrievalSettingsOverride: { vectorTopK: 999 },
     });
 
-    expect(persisted.vectorTopK).toBe(20);
+    expect(defaults.vectorTopK).toBe(20);
   });
 
-  it("never writes through the settings service when override is set", async () => {
-    const update = vi.fn();
+  it("uses the defaults provider for the resolution base instead of workspace retrieval settings", async () => {
+    const getDefaults = vi.fn((workspaceId: string) => baseSettings(workspaceId));
     const stage = new RetrievalContextStageService(
-      { async getForWorkspace(id: string) { return baseSettings(id); }, updateForWorkspace: update } as never,
+      { getDefaults },
       new ConversationContextService(),
+      createRetrievalSkillSettingsResolver(),
     );
 
-    await stage.execute({
+    const result = await stage.execute({
       workspaceId: "ws-1",
       query: "q",
       history: [],
-      retrievalSettingsOverride: { vectorTopK: 5 },
+      agentSkillSettings: {
+        "retrieval.answer": {
+          rerankTopK: 7,
+        },
+      },
     });
 
-    expect(update).not.toHaveBeenCalled();
+    expect(getDefaults).toHaveBeenCalledWith("ws-1");
+    expect(result.settings.vectorTopK).toBe(20);
+    expect(result.settings.rerankTopK).toBe(7);
   });
 
-  it("resolves agent retrieval skill settings over workspace defaults", async () => {
+  it("resolves agent retrieval skill settings over system defaults", async () => {
     const stage = new RetrievalContextStageService(
-      { async getForWorkspace(id: string) { return baseSettings(id); } } as never,
+      createSystemRetrievalDefaultsProvider(),
       new ConversationContextService(),
       createRetrievalSkillSettingsResolver(),
     );
@@ -137,7 +157,7 @@ describe("RetrievalContextStageService retrievalSettingsOverride", () => {
 
   it("resolves suggested question overrides from the retrieval answer skill settings", async () => {
     const stage = new RetrievalContextStageService(
-      { async getForWorkspace(id: string) { return baseSettings(id); } } as never,
+      createSystemRetrievalDefaultsProvider(),
       new ConversationContextService(),
       createRetrievalSkillSettingsResolver(),
     );
@@ -174,17 +194,7 @@ describe("RetrievalContextStageService retrievalSettingsOverride", () => {
     expect(inherited.settings.suggestedQuestionsCount).toBe(3);
   });
 
-  it("resolves agent metadata rules as the effective retrieval metadata rules and inherits them when absent", async () => {
-    const workspaceRule = {
-      id: "workspace-rule",
-      field: "region",
-      valueType: "string",
-      operator: "equals",
-      value: "eu",
-      effect: "boost",
-      enabled: true,
-      triggerMode: "always_on",
-    } as const;
+  it("resolves agent metadata rules as the effective retrieval metadata rules and inherits defaults when absent", async () => {
     const agentRule = {
       id: "agent-rule",
       field: "tier",
@@ -195,12 +205,8 @@ describe("RetrievalContextStageService retrievalSettingsOverride", () => {
       enabled: true,
       triggerMode: "always_on",
     } as const;
-    const defaults = {
-      ...baseSettings("ws-1"),
-      metadataRules: [workspaceRule],
-    };
     const stage = new RetrievalContextStageService(
-      { async getForWorkspace() { return defaults; } } as never,
+      createSystemRetrievalDefaultsProvider(),
       new ConversationContextService(),
       createRetrievalSkillSettingsResolver(),
     );
@@ -226,16 +232,15 @@ describe("RetrievalContextStageService retrievalSettingsOverride", () => {
       },
     });
 
-    expect(inherited.settings.metadataRules).toEqual([workspaceRule]);
+    expect(inherited.settings.metadataRules).toEqual([]);
     expect(overridden.settings.metadataRules).toHaveLength(1);
     expect(overridden.settings.metadataRules[0]).toMatchObject(agentRule);
-    expect(overridden.settings.metadataRules).not.toEqual([workspaceRule]);
+    expect(overridden.settings.metadataRules).not.toEqual([]);
   });
 
-  it("keeps empty agent skill settings at today's workspace-default behavior", async () => {
-    const defaults = baseSettings("ws-1");
+  it("keeps empty agent skill settings at today's untuned workspace-default behavior", async () => {
     const stage = new RetrievalContextStageService(
-      { async getForWorkspace() { return defaults; } } as never,
+      createSystemRetrievalDefaultsProvider(),
       new ConversationContextService(),
       createRetrievalSkillSettingsResolver(),
     );
@@ -252,7 +257,59 @@ describe("RetrievalContextStageService retrievalSettingsOverride", () => {
       agentSkillSettings: {},
     });
 
-    expect(withEmptySkillSettings.settings).toEqual(withoutSkillSettings.settings);
+    expect(withStableTimestamps(withEmptySkillSettings.settings)).toEqual(
+      withStableTimestamps(withoutSkillSettings.settings),
+    );
+    expect(withEmptySkillSettings.settings).toMatchObject({
+      ...defaultRetrievalSettings("ws-1"),
+      createdAt: withEmptySkillSettings.settings.createdAt,
+      updatedAt: withEmptySkillSettings.settings.updatedAt,
+    });
+  });
+
+  it("applies per-turn overrides after agent overrides", async () => {
+    const stage = new RetrievalContextStageService(
+      createSystemRetrievalDefaultsProvider(),
+      new ConversationContextService(),
+      createRetrievalSkillSettingsResolver(),
+    );
+
+    const result = await stage.execute({
+      workspaceId: "ws-1",
+      query: "q",
+      history: [],
+      agentSkillSettings: {
+        "retrieval.answer": {
+          queryRewriteEnabled: true,
+          vectorTopK: 7,
+          rerankTopK: 8,
+        },
+      },
+      retrievalSettingsOverride: {
+        vectorTopK: 4,
+      },
+    });
+
+    expect(result.settings.queryRewriteEnabled).toBe(true);
+    expect(result.settings.vectorTopK).toBe(4);
+    expect(result.settings.rerankTopK).toBe(8);
+    expect(result.settings.suggestedQuestionsCount).toBe(3);
+  });
+});
+
+describe("RetrievalDefaultsProvider", () => {
+  it("returns the system retrieval defaults with no behavior drift from an untuned workspace", () => {
+    const provider = createSystemRetrievalDefaultsProvider();
+    const workspaceId = "ws-1";
+    const defaults = provider.getDefaults(workspaceId);
+    const untunedWorkspaceDefaults = defaultRetrievalSettings(workspaceId);
+
+    expect({
+      ...defaults,
+      createdAt: untunedWorkspaceDefaults.createdAt,
+      updatedAt: untunedWorkspaceDefaults.updatedAt,
+    }).toEqual(untunedWorkspaceDefaults);
+    expect(defaults.similarityThreshold).toBe(RETRIEVAL_BEHAVIOR.defaultSimilarityThreshold);
   });
 });
 

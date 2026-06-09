@@ -188,8 +188,7 @@ describe('dashboard route state', () => {
     })
 
     expect(parseDashboardRoute(['settings'], new URLSearchParams({ tab: 'retrieval' }))).toEqual({
-      section: 'knowledge',
-      knowledgeTab: 'retrieval',
+      section: 'settings',
     })
   })
 

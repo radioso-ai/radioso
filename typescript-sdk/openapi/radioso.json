@@ -401,7 +401,7 @@
           "mcpContextVersion": {
             "type": "string",
             "enum": [
-              "2026-05-06"
+              "2026-06-09"
             ]
           },
           "supportedTools": {
@@ -414,12 +414,10 @@
                 "delete_document",
                 "describe_capabilities",
                 "get_document",
-                "get_retrieval_settings",
                 "list_documents",
                 "reprocess_document",
                 "search_documents",
-                "update_document",
-                "update_retrieval_settings"
+                "update_document"
               ]
             }
           },

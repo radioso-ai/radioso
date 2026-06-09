@@ -645,7 +645,7 @@ export function WorkspaceAssistantChannelsTab({
   const apiAccessExample = useMemo(() => {
     const apiBasePath = process.env.NEXT_PUBLIC_API_BASE_PATH ?? '/backend/api/v1'
     const origin = typeof window === 'undefined' ? 'https://your-radioso-host' : window.location.origin
-    return `curl ${origin}${apiBasePath}/settings/retrieval \\\n  -H "Authorization: Bearer <token>"`
+    return `curl ${origin}${apiBasePath}/settings/retrieval-defaults \\\n  -H "Authorization: Bearer <token>"`
   }, [])
   const retrievalSettingsViewState = resolveAssistantRetrievalSettingsViewState({
     isAssistantBehaviorLoading,

@@ -1529,8 +1529,8 @@ export interface components {
             /** @enum {string} */
             apiVersion: "0.1.0";
             /** @enum {string} */
-            mcpContextVersion: "2026-05-06";
-            supportedTools: ("answer_grounded" | "create_document" | "delete_document" | "describe_capabilities" | "get_document" | "get_retrieval_settings" | "list_documents" | "reprocess_document" | "search_documents" | "update_document" | "update_retrieval_settings")[];
+            mcpContextVersion: "2026-06-09";
+            supportedTools: ("answer_grounded" | "create_document" | "delete_document" | "describe_capabilities" | "get_document" | "list_documents" | "reprocess_document" | "search_documents" | "update_document")[];
             /** Format: uuid */
             workspaceId: string;
             workspaceName: string;

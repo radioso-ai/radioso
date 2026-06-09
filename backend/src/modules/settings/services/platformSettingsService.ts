@@ -5,11 +5,6 @@ import { getWebsiteEmbedSurfaceSettings, isAgentBootstrapActive } from "../../ag
 import { buildPublicAssistantLogoUrl } from "../../../app/http/shared/assistantLogoUrl.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
-import type { RetrievalSettingsRecord } from "../domain/retrievalSettings.js";
-import {
-  DEFAULT_RETRIEVAL_STRATEGY_PREFERENCE,
-  validateRetrievalSettings,
-} from "../domain/retrievalSettings.js";
 import { validateWebsiteEmbedSettings } from "../domain/websiteEmbedSettings.js";
 import {
   DefaultWebsiteEmbedIntegrationProvider,
@@ -17,21 +12,15 @@ import {
 } from "../domain/websiteEmbedIntegration.js";
 import type {
   PlatformChannelsSettingsSection,
-  PlatformRetrievalSettingsSection,
   PlatformSettingsPatch,
   PlatformSettingsResource,
 } from "../domain/platformSettings.js";
-import type { RetrievalSettingsService } from "../contracts/services.js";
 import { resolvePublicLaunchLifecycle } from "../../accessGrants/public.js";
 
 export interface PlatformSettingsServiceDependencies {
   workspaceRepository: Pick<WorkspaceRepositoryPort, "findById">;
   agentService: Pick<AgentService, "resolve" | "update" | "withRotatedTokens">;
   accessGrantService?: Pick<AccessGrantService, "resolvePublicLaunchGrant">;
-  retrievalSettingsService: Pick<
-    RetrievalSettingsService,
-    "getForWorkspace" | "listMetadataFieldSuggestions" | "updateForWorkspace"
-  >;
   auditService?: Pick<AuditService, "record">;
   publicChatBaseUrl?: string;
   websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
@@ -50,11 +39,7 @@ export class PlatformSettingsService {
   }
 
   async getForWorkspace(workspaceId: string): Promise<PlatformSettingsResource> {
-    const [workspace, retrievalSettings, metadataFieldSuggestions] = await Promise.all([
-      this.dependencies.workspaceRepository.findById(workspaceId),
-      this.dependencies.retrievalSettingsService.getForWorkspace(workspaceId),
-      this.dependencies.retrievalSettingsService.listMetadataFieldSuggestions(workspaceId),
-    ]);
+    const workspace = await this.dependencies.workspaceRepository.findById(workspaceId);
 
     if (!workspace) {
       throw notFound("Workspace not found");
@@ -63,7 +48,6 @@ export class PlatformSettingsService {
 
     return {
       assistant: this.buildAssistantSection(agent),
-      retrieval: this.buildRetrievalSection(retrievalSettings, metadataFieldSuggestions),
       channels: await this.buildChannelsSection(agent, workspace),
     };
   }
@@ -73,35 +57,20 @@ export class PlatformSettingsService {
     patch: PlatformSettingsPatch,
     context: PlatformSettingsUpdateContext = {},
   ): Promise<PlatformSettingsResource> {
-    const [workspace, retrievalSettings] = await Promise.all([
-      this.dependencies.workspaceRepository.findById(workspaceId),
-      this.dependencies.retrievalSettingsService.getForWorkspace(workspaceId),
-    ]);
+    const workspace = await this.dependencies.workspaceRepository.findById(workspaceId);
 
     if (!workspace) {
       throw notFound("Workspace not found");
     }
 
     let currentAgent = await this.dependencies.agentService.resolve(workspaceId);
-    let currentRetrievalSettings = retrievalSettings;
 
     if (patch.assistant || patch.channels) {
       currentAgent = await this.updateAgentSections(workspaceId, currentAgent, workspace, patch, context);
     }
 
-    if (this.hasRetrievalSettingsPatch(patch)) {
-      currentRetrievalSettings = await this.updateRetrievalSections(
-        workspaceId,
-        currentRetrievalSettings,
-        patch,
-      );
-    }
-
-    const metadataFieldSuggestions = await this.dependencies.retrievalSettingsService.listMetadataFieldSuggestions(workspaceId);
-
     return {
       assistant: this.buildAssistantSection(currentAgent),
-      retrieval: this.buildRetrievalSection(currentRetrievalSettings, metadataFieldSuggestions),
       channels: await this.buildChannelsSection(currentAgent, workspace),
     };
   }
@@ -246,38 +215,6 @@ export class PlatformSettingsService {
     }
   }
 
-  private async updateRetrievalSections(
-    workspaceId: string,
-    existing: RetrievalSettingsRecord,
-    patch: PlatformSettingsPatch,
-  ): Promise<RetrievalSettingsRecord> {
-    const retrieval = patch.retrieval ?? {};
-    const next = validateRetrievalSettings({
-      ...existing,
-      queryRewriteEnabled: retrieval.queryRewriteEnabled ?? existing.queryRewriteEnabled,
-      semanticRewriteInstructions: retrieval.semanticRewriteInstructions ?? existing.semanticRewriteInstructions,
-      lexicalRewriteInstructions: retrieval.lexicalRewriteInstructions ?? existing.lexicalRewriteInstructions,
-      suggestedQuestionsEnabled: existing.suggestedQuestionsEnabled,
-      suggestedQuestionsCount: existing.suggestedQuestionsCount,
-      rerankEnabled: retrieval.rerankEnabled ?? existing.rerankEnabled,
-      vectorTopK: retrieval.vectorTopK ?? existing.vectorTopK,
-      similarityThreshold: retrieval.similarityThreshold ?? existing.similarityThreshold,
-      rerankTopK: retrieval.rerankTopK ?? existing.rerankTopK,
-      metadataRules: retrieval.metadataRules ?? existing.metadataRules,
-      customInstruction: existing.customInstruction,
-      retrievalStrategy: retrieval.retrievalStrategy ?? existing.retrievalStrategy,
-    });
-
-    return (await this.dependencies.retrievalSettingsService.updateForWorkspace(workspaceId, next)) ?? {
-      ...existing,
-      ...next,
-    };
-  }
-
-  private hasRetrievalSettingsPatch(patch: PlatformSettingsPatch): boolean {
-    return Boolean(patch.retrieval);
-  }
-
   private buildAssistantSection(agent: AgentRecord) {
     return {
       assistantName: agent.name,
@@ -288,24 +225,6 @@ export class PlatformSettingsService {
       suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
       customInstruction: agent.customInstruction,
       assistantLogoUrl: this.buildAssistantLogoUrl(agent),
-    };
-  }
-
-  private buildRetrievalSection(
-    settings: RetrievalSettingsRecord,
-    metadataFieldSuggestions: PlatformRetrievalSettingsSection["metadataFieldSuggestions"],
-  ): PlatformRetrievalSettingsSection {
-    return {
-      queryRewriteEnabled: settings.queryRewriteEnabled,
-      semanticRewriteInstructions: settings.semanticRewriteInstructions,
-      lexicalRewriteInstructions: settings.lexicalRewriteInstructions,
-      rerankEnabled: settings.rerankEnabled,
-      vectorTopK: settings.vectorTopK,
-      similarityThreshold: settings.similarityThreshold,
-      rerankTopK: settings.rerankTopK,
-      metadataRules: settings.metadataRules,
-      metadataFieldSuggestions,
-      retrievalStrategy: settings.retrievalStrategy ?? DEFAULT_RETRIEVAL_STRATEGY_PREFERENCE,
     };
   }
 

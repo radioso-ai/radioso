@@ -8,7 +8,6 @@ import { DocumentSourcesView } from '@/components/dashboard/document-sources-vie
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { SaveStateIndicator } from '@/components/dashboard/shared/save-state-indicator'
 import { IngestionSettingsPanel } from '@/components/dashboard/settings/ingestion-settings-panel'
-import { RetrievalSettingsPanel } from '@/components/dashboard/settings/retrieval-settings-panel'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 
@@ -31,15 +30,9 @@ export function KnowledgeView({
     state: 'idle' | 'saved' | 'saving' | 'error'
     message?: string | null
   }>({ state: 'idle' })
-  const [retrievalSaveState, setRetrievalSaveState] = useState<{
-    state: 'idle' | 'saved' | 'saving' | 'error'
-    message?: string | null
-  }>({ state: 'idle' })
 
   const activeSaveState =
-    activeTab === 'retrieval'
-      ? retrievalSaveState
-      : activeTab === 'ingestion'
+    activeTab === 'ingestion'
         ? ingestionSaveState
         : { state: 'idle' as const }
 
@@ -63,19 +56,15 @@ export function KnowledgeView({
     element.scrollIntoView({ block: 'start', behavior: 'auto' })
   }, [accountId, routeState, router])
 
-  if (activeTab === 'ingestion' || activeTab === 'retrieval') {
+  if (activeTab === 'ingestion') {
     return (
       <DashboardPage
-        title={activeTab === 'ingestion' ? 'Ingestion' : 'Retrieval'}
+        title="Ingestion"
         titleAccessory={saveStateAccessory}
         contentClassName="flex flex-col overflow-hidden p-0"
         contentScroll={false}
       >
-        {activeTab === 'ingestion' ? (
-          <IngestionSettingsPanel onSaveStateChange={setIngestionSaveState} />
-        ) : (
-          <RetrievalSettingsPanel onSaveStateChange={setRetrievalSaveState} />
-        )}
+        <IngestionSettingsPanel onSaveStateChange={setIngestionSaveState} />
       </DashboardPage>
     )
   }

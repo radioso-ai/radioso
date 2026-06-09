@@ -22,12 +22,10 @@ describe("workspace MCP context contract", () => {
         "create_document",
         "describe_capabilities",
         "get_document",
-        "get_retrieval_settings",
         "list_documents",
         "reprocess_document",
         "search_documents",
         "update_document",
-        "update_retrieval_settings",
       ]),
       workspaceId: token.workspaceId,
       workspaceName: "Default",
@@ -55,7 +53,6 @@ describe("workspace MCP context contract", () => {
       "search_documents",
     ]);
     expect(response.body.supportedTools).not.toContain("create_document");
-    expect(response.body.supportedTools).not.toContain("update_retrieval_settings");
   });
 
   it("rejects unauthenticated MCP context requests", async () => {

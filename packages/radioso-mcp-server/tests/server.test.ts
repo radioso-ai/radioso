@@ -15,9 +15,12 @@ describe("createRadiosoMcpServer", () => {
       serverName: "radioso-test",
     });
 
-    expect(server.toolDefinitions).toHaveLength(11);
-    expect(server.toolDefinitions.map((tool) => tool.name)).toContain("answer_grounded");
-    expect(server.toolDefinitions.map((tool) => tool.name)).toContain("update_retrieval_settings");
+    const toolNames = server.toolDefinitions.map((tool) => tool.name);
+
+    expect(server.toolDefinitions).toHaveLength(9);
+    expect(toolNames).toContain("answer_grounded");
+    expect(toolNames).not.toContain("get_retrieval_settings");
+    expect(toolNames).not.toContain("update_retrieval_settings");
   });
 
   it("filters tool registration to the allowed session catalog", () => {

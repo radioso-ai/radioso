@@ -2,10 +2,9 @@ import type { InternalClientConfig } from "../core/config.js";
 import { requestJson } from "../core/http.js";
 import type { components } from "./types.js";
 
-export type RetrievalSettings = components["schemas"]["RetrievalSettings"];
-export type UpdateRetrievalSettingsRequest = components["schemas"]["UpdateRetrievalSettingsRequest"];
 export type IngestionSettings = components["schemas"]["IngestionSettings"];
 export type UpdateIngestionSettingsRequest = components["schemas"]["UpdateIngestionSettingsRequest"];
+export type RetrievalDefaultsResponse = components["schemas"]["RetrievalDefaultsResponse"];
 export type GeneralSettingsResponse = components["schemas"]["GeneralSettingsResponse"];
 export type UpdateGeneralSettingsRequest = components["schemas"]["UpdateGeneralSettingsRequest"];
 export type Agent = components["schemas"]["Agent"];
@@ -69,25 +68,17 @@ export interface UpdateDocumentRequest {
 export class GeneratedRadiosoClient {
   constructor(private readonly config: InternalClientConfig) {}
 
-  getRetrievalSettings(): Promise<RetrievalSettings> {
-    return requestJson(this.config, {
-      method: "GET",
-      path: "/api/v1/settings/retrieval",
-    });
-  }
-
-  updateRetrievalSettings(body: UpdateRetrievalSettingsRequest): Promise<RetrievalSettings> {
-    return requestJson(this.config, {
-      method: "PUT",
-      path: "/api/v1/settings/retrieval",
-      body,
-    });
-  }
-
   getIngestionSettings(): Promise<IngestionSettings> {
     return requestJson(this.config, {
       method: "GET",
       path: "/api/v1/settings/ingestion",
+    });
+  }
+
+  getRetrievalDefaults(): Promise<RetrievalDefaultsResponse> {
+    return requestJson(this.config, {
+      method: "GET",
+      path: "/api/v1/settings/retrieval-defaults",
     });
   }
 

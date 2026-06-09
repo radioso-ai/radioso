@@ -1,17 +1,18 @@
 ---
 title: Settings
-description: Read and update agent, retrieval, ingestion, and public-surface settings, then requeue documents when ingestion behavior changes.
+description: Read and update ingestion, public-surface, credentials, and model settings, then inspect read-only retrieval defaults.
 ---
 
 # Settings
 
-Settings are workspace-scoped. They control how Radioso retrieves, processes, and presents information through the default workspace agent and public surfaces.
+Settings are workspace-scoped. They control how Radioso processes documents, presents public surfaces, stores provider credentials, and selects models.
+
+Retrieval configuration is not a workspace setting. It lives on each agent's `retrieval.answer` skill settings. The settings API exposes read-only retrieval defaults so the agent Skills tab can show inherited values.
 
 ## Relevant endpoints
 
 ```text
-GET /api/v1/settings/retrieval
-PUT /api/v1/settings/retrieval
+GET /api/v1/settings/retrieval-defaults
 GET /api/v1/settings/ingestion
 PUT /api/v1/settings/ingestion
 POST /api/v1/settings/ingestion/reprocess
@@ -28,30 +29,35 @@ PUT /api/v1/settings/llm-models
 
 ## How it works
 
-There are four setting groups:
+There are four main setting groups:
 
-- retrieval settings for ranking, citations, and rewrite behavior
 - ingestion settings for chunking behavior
 - general settings for anonymous chat, assistant defaults, and Enterprise website widget behavior
-- platform settings that merge `assistant`, `retrieval`, and `channels` into one resource
+- platform settings that merge assistant and channel behavior into one resource
+- model and credential settings for provider access
 
 When ingestion settings change, you can requeue eligible documents so the new chunking behavior is applied to existing content.
 
-## Retrieval settings
+## Retrieval defaults
 
-This payload includes fields such as:
+`GET /api/v1/settings/retrieval-defaults` returns the system retrieval defaults for the authenticated workspace. It is read-only.
+
+The response includes inherited retrieval values such as:
 
 - `queryRewriteEnabled`
 - `semanticRewriteInstructions`
 - `lexicalRewriteInstructions`
 - `rerankEnabled`
 - `vectorTopK`
-- `similarityThreshold`
 - `rerankTopK`
+- `retrievalStrategy`
 - `metadataRules`
 - `customInstruction`
+- `metadataFieldSuggestions`
 
-For tuning guidance, also read [SDK retrieval settings](/sdk/retrieval-settings).
+`metadataRules` is empty in the system defaults response. `metadataFieldSuggestions` is workspace-aware and comes from indexed document metadata. The agent Skills tab uses this endpoint to show inherited values and suggested metadata fields before saving per-agent overrides in `skillSettings["retrieval.answer"]`.
+
+To configure retrieval answer behavior, update the agent rather than the settings resource. Retrieval-only API calls, such as `POST /api/v1/retrieval/answer`, use system defaults and still accept per-call request controls such as `metadataFilter`.
 
 ## Ingestion settings
 

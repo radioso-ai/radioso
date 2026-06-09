@@ -1,12 +1,12 @@
 # Metadata Rules
 
 ## Summary
-Always-on rules that boost or filter candidates using document metadata.
+Per-agent rules that boost or filter candidates using document metadata.
 
 ## Details
 ### Overview
 
-Metadata rules guide retrieval using structured document fields rather than text alone.
+Metadata rules guide this agent's retrieval using structured document fields rather than text alone.
 
 Examples:
 
@@ -38,8 +38,8 @@ Filter says:
 
 ### Risk Profile
 
-These rules are powerful because they run all the time.
+These rules are powerful because they run whenever this agent uses the `retrieval.answer` skill.
 
-That means a bad rule can quietly distort retrieval for the whole workspace.
+That means a bad rule can quietly distort retrieval for this agent.
 
 If retrieval suddenly feels blind or strangely biased, metadata rules are one of the first things to inspect.

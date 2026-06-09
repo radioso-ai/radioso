@@ -1,9 +1,7 @@
 import type { RadiosoMcpConfig } from "./config.js";
-import type { components } from "./generated/openapiTypes.js";
 import type {
   DocumentListResult,
   JsonRecord,
-  RetrievalSettingsRecord,
   WorkspaceMcpContextRecord,
 } from "./types.js";
 
@@ -33,7 +31,6 @@ export interface RadiosoApiAdapter {
     };
     metadataFilter?: Record<string, unknown>;
   }): Promise<unknown>;
-  getRetrievalSettings(): Promise<RetrievalSettingsRecord>;
   createDocument(body: {
     title: string;
     content: string;
@@ -51,13 +48,10 @@ export interface RadiosoApiAdapter {
   ): Promise<unknown>;
   deleteDocument(documentId: string): Promise<void>;
   reprocessDocument(documentId: string): Promise<unknown>;
-  updateRetrievalSettings(body: RetrievalSettingsRecord): Promise<unknown>;
 }
 
 type FetchLike = typeof fetch;
 type CapabilityErrorCode = "resource_not_found" | "unsupported_capability";
-
-type PlatformSettingsRecord = components["schemas"]["PlatformSettingsResponse"];
 
 interface RequestOptions {
   notFoundCode?: CapabilityErrorCode;
@@ -131,12 +125,6 @@ export const createRadiosoApiAdapter = (
     return data as TResult;
   };
 
-  const toRetrievalSettings = (settings: PlatformSettingsRecord): RetrievalSettingsRecord => ({
-    ...settings.retrieval,
-    suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
-    customInstruction: settings.assistant.customInstruction,
-  });
-
   return {
     answerGrounded: (body) =>
       request("/api/v1/retrieval/answer", {
@@ -157,9 +145,6 @@ export const createRadiosoApiAdapter = (
         method: "DELETE",
       }),
     getDocument: (documentId) => request(`/api/v1/document/${documentId}`),
-    getRetrievalSettings: async () => toRetrievalSettings(
-      await request<PlatformSettingsRecord>("/api/v1/settings", {}, { notFoundCode: "unsupported_capability" }),
-    ),
     getWorkspaceMcpContext: () =>
       request("/api/v1/workspace/mcp/context", {}, { notFoundCode: "unsupported_capability" }),
     listDocuments: (query) => {
@@ -189,25 +174,5 @@ export const createRadiosoApiAdapter = (
         body: JSON.stringify(body),
         method: "PUT",
       }),
-    updateRetrievalSettings: (body) =>
-      request("/api/v1/settings", {
-        body: JSON.stringify({
-          assistant: {
-            suggestedQuestionsEnabled: body.suggestedQuestionsEnabled,
-            customInstruction: body.customInstruction,
-          },
-          retrieval: {
-            queryRewriteEnabled: body.queryRewriteEnabled,
-            semanticRewriteInstructions: body.semanticRewriteInstructions,
-            lexicalRewriteInstructions: body.lexicalRewriteInstructions,
-            rerankEnabled: body.rerankEnabled,
-            vectorTopK: body.vectorTopK,
-            similarityThreshold: body.similarityThreshold,
-            rerankTopK: body.rerankTopK,
-            metadataRules: body.metadataRules,
-          },
-        }),
-        method: "PUT",
-      }, { notFoundCode: "unsupported_capability" }),
   };
 };

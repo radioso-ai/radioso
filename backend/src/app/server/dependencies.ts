@@ -3,6 +3,7 @@ import {
   createDefaultApplicationComposition,
   createDefaultAgentSkillSettingsRegistry,
   createRetrievalSkillSettingsResolver,
+  createSystemRetrievalDefaultsProvider,
   createDefaultDocumentJobDispatcher,
   type ApplicationModule,
 } from "../composition/index.js";
@@ -118,8 +119,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     auditService: infrastructure.auditService,
     documentRepository: repositories.documentRepository,
     ingestionSettingsRepository: repositories.ingestionSettingsRepository,
-    productAnalyticsService: infrastructure.productAnalyticsService,
-    retrievalSettingsRepository: repositories.retrievalSettingsRepository,
     supportedEmbeddingModels,
     workspaceIngestionReprocessService,
   });
@@ -130,7 +129,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const workspaceLlmCapabilitySettingsService = buildWorkspaceLlmCapabilitySettingsService({
     auditService: infrastructure.auditService,
     capabilityRepository: repositories.retrievalSettingsRepository,
-    retrievalSettingsService: settings.retrievalSettingsService,
     logger,
   });
   const llmCapabilityResolver = buildLlmCapabilityResolver({
@@ -159,6 +157,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceIngestionReprocessService,
     errorReporter: infrastructure.errorReportingService,
   });
+  const retrievalDefaultsProvider = createSystemRetrievalDefaultsProvider();
+  const skillSettingsResolver = createRetrievalSkillSettingsResolver();
   const retrieval = buildRetrievalServices({
     auditService: infrastructure.auditService,
     database: infrastructure.database,
@@ -167,8 +167,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     ingestionSettingsService: settings.ingestionSettingsService,
     llmRegistry,
     logger,
-    retrievalSettingsService: settings.retrievalSettingsService,
-    skillSettingsResolver: createRetrievalSkillSettingsResolver(),
+    retrievalDefaultsProvider,
+    skillSettingsResolver,
     telemetryService: infrastructure.telemetryService,
     usageEventRecorder: infrastructure.usageEventRecorder,
   });
@@ -183,7 +183,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const agentService = new AgentService(
     repositories.agentRepository,
     repositories.workspaceRepository,
-    settings.retrievalSettingsService,
     repositories.documentSourceRepository,
     resolveEmbedConfigCacheInvalidator({
       projectId: env.GOOGLE_CLOUD_PROJECT,
@@ -219,7 +218,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceRepository: repositories.workspaceRepository,
     agentService,
     accessGrantService: access.accessGrantService,
-    retrievalSettingsService: settings.retrievalSettingsService,
     auditService: infrastructure.auditService,
     publicChatBaseUrl: env.PUBLIC_CHAT_BASE_URL,
     websiteEmbedIntegration: composition.websiteEmbedIntegration,
@@ -286,7 +284,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repositories.conversationRepository,
     repositories.messageRepository,
     repositories.agentRepository,
-    settings.retrievalSettingsService,
+    retrievalDefaultsProvider,
+    skillSettingsResolver,
     evalRepository,
   );
   const evalCaseService = new EvalCaseService(evalRepository);
@@ -296,8 +295,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       retrieval.retrievalPipeline,
       chat.chatGateway,
       llmCapabilityResolver,
-      settings.retrievalSettingsService,
+      retrievalDefaultsProvider,
       chat.answerPresentation,
+      skillSettingsResolver,
     ),
     new ChatGatewayLlmJudge(chat.chatGateway),
     chat.workbenchReplayRunner,
@@ -332,8 +332,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceService: workspace.workspaceService,
     workspaceSummaryService: workspace.workspaceSummaryService,
     ingestionSettingsService: settings.ingestionSettingsService,
-    retrievalSettingsService: settings.retrievalSettingsService,
     chunkRepository: repositories.chunkRepository,
+    documentRepository: repositories.documentRepository,
     documentIngestionService: documents.documentIngestionService,
     documentSourceRepository: repositories.documentSourceRepository,
     documentImportService: documents.documentImportService,
@@ -356,6 +356,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     assistantHistoryService: chat.assistantHistoryService,
     retrievalSearchService: retrieval.retrievalSearchService,
     retrievalAnswerService: chat.retrievalAnswerService,
+    retrievalDefaultsProvider,
     actionDispatchWorker: chat.actionDispatchWorker,
     evalSnapshotService,
     evalCaseService,

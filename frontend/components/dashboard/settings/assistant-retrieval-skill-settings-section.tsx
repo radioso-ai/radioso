@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import type { AgentSourceScope, DocumentSourceListItem, RetrievalMetadataRule, RetrievalSettings } from '@/lib/api'
+import type { AgentSourceScope, DocumentSourceListItem, RetrievalDefaults, RetrievalMetadataRule } from '@/lib/api'
 import type { RetrievalSkillSettingsOverride, RetrievalStrategy } from '@/lib/retrieval-skill-settings'
 
 const hasOverride = <K extends keyof RetrievalSkillSettingsOverride>(
@@ -133,7 +133,7 @@ export function AssistantRetrievalSkillSettingsSection({
   sourceListError = null,
   onSourceScopeChange,
 }: {
-  defaults: RetrievalSettings
+  defaults: RetrievalDefaults
   value: RetrievalSkillSettingsOverride
   onChange: (next: RetrievalSkillSettingsOverride) => void
   sourceScope: AgentSourceScope
@@ -288,7 +288,7 @@ export function AssistantRetrievalSkillSettingsSection({
                     <FieldHeader
                       doc={retrievalSettingDocs.retrievalStrategy}
                       htmlFor="agentRetrievalStrategy"
-                      inherited={defaults.retrievalStrategy}
+                      inherited={defaults.retrievalStrategy ?? 'fixed'}
                       overridden={hasOverride(value, 'retrievalStrategy')}
                       onClear={() => clearField('retrievalStrategy')}
                     />

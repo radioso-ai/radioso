@@ -1,6 +1,6 @@
 export type DashboardSection = 'agents' | 'knowledge' | 'activity' | 'quality' | 'eval' | 'settings' | 'account'
 export type AgentTab = 'chat' | 'behavior' | 'channels'
-export type KnowledgeTab = 'documents' | 'sources' | 'ingestion' | 'retrieval'
+export type KnowledgeTab = 'documents' | 'sources' | 'ingestion'
 export type SettingsTab = 'workspace' | 'providers'
 export type AccountTab = 'members' | 'usage'
 export type HistoryFilter = 'all' | 'chat' | 'search' | 'contact'
@@ -214,7 +214,7 @@ const parseAgentTab = (value: string | null): AgentTab | undefined => {
 const isValidAgentId = (value: string): boolean => UUID_PATTERN.test(value)
 
 const parseKnowledgeTab = (value: string | null): KnowledgeTab | undefined => {
-  if (value === 'documents' || value === 'sources' || value === 'ingestion' || value === 'retrieval') {
+  if (value === 'documents' || value === 'sources' || value === 'ingestion') {
     return value
   }
 
@@ -557,7 +557,7 @@ const parseLegacySettingsRoute = (
   if (legacyTab === 'channels' || legacyTab === 'connectors') {
     return { section: 'agents', agentTab: 'channels', ...(anchor ? { anchor } : {}) }
   }
-  if (legacyTab === 'ingestion' || legacyTab === 'retrieval') {
+  if (legacyTab === 'ingestion') {
     return { section: 'knowledge', knowledgeTab: legacyTab, ...(anchor ? { anchor } : {}) }
   }
   // Members moved out of Settings into the Account area.

@@ -1,5 +1,5 @@
-import type { RetrievalSettingsService } from "../../settings/contracts/services.js";
 import type { RetrievalSettingsRecord } from "../../settings/contracts/retrieval.js";
+import type { RetrievalDefaultsProvider } from "../domain/retrievalDefaultsProvider.js";
 import { ConversationContextService } from "./conversationContextService.js";
 import type { RetrievalContextStage as RetrievalContextStageContract, RetrievalPipelineRequest } from "./retrievalPipelineStages.js";
 
@@ -9,13 +9,13 @@ export interface SkillSettingsResolver {
 
 export class RetrievalContextStageService implements RetrievalContextStageContract {
   constructor(
-    private readonly retrievalSettingsService: RetrievalSettingsService,
+    private readonly retrievalDefaultsProvider: RetrievalDefaultsProvider,
     private readonly conversationContextService: ConversationContextService,
     private readonly skillSettingsResolver?: SkillSettingsResolver,
   ) {}
 
   async execute(input: RetrievalPipelineRequest) {
-    const baseSettings = await this.retrievalSettingsService.getForWorkspace(input.workspaceId);
+    const baseSettings = this.retrievalDefaultsProvider.getDefaults(input.workspaceId);
     const agentResolvedSettings = this.skillSettingsResolver
       ? this.skillSettingsResolver.resolve(
           "retrieval.answer",
@@ -24,7 +24,7 @@ export class RetrievalContextStageService implements RetrievalContextStageContra
         )
       : baseSettings;
     const settings = input.retrievalSettingsOverride
-      ? { ...agentResolvedSettings, ...input.retrievalSettingsOverride, workspaceId: baseSettings.workspaceId }
+      ? { ...agentResolvedSettings, ...input.retrievalSettingsOverride, workspaceId: input.workspaceId }
       : agentResolvedSettings;
     const contextWindow = this.conversationContextService.select({
       history: input.history,

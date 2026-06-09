@@ -55,6 +55,17 @@ const draftDirective = {
   tags: ["step:onboarding:answer_release"],
 };
 
+const replayDraftDirective = {
+  ...draftDirective,
+  priority: null,
+  requiredCapabilities: [],
+  dependsOn: [],
+  excludes: [],
+  routes: [],
+  description: null,
+  metadata: {},
+};
+
 const installCoachMocks = async (
   page: Page,
   requestBodies: unknown[],
@@ -178,7 +189,7 @@ test("operator coaches a captured turn, previews a drafted directive, and valida
       mode: "full_assistant",
       snapshotId,
       agentConfigOverride: {
-        authoredDirectives: [draftDirective],
+        authoredDirectives: [replayDraftDirective],
       },
     },
   });

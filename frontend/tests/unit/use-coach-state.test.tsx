@@ -9,7 +9,7 @@ import {
   useCoachState,
   type CoachStateDeps,
 } from '@/components/dashboard/workbench/use-coach-state'
-import type { AgentSettings, DirectiveDraftResponse } from '@/lib/api'
+import type { AgentSettings, Directive, DirectiveDraftResponse } from '@/lib/api'
 import type { WorkbenchSeedTurn } from '@/components/dashboard/workbench/use-workbench-state'
 
 const agent = {
@@ -41,6 +41,24 @@ const draft: DirectiveDraftResponse = {
   rationale: 'The coaching is behavioral.',
 }
 
+const existingDirective: Directive = {
+  id: 'directive-existing',
+  agentId: 'agent-1',
+  name: 'Saved tone',
+  condition: { kind: 'contextual', description: 'When discussing roadmap timing' },
+  action: 'Set expectations with dates.',
+  priority: 40,
+  requiredCapabilities: ['retrieval.answer'],
+  dependsOn: ['represent-organization'],
+  excludes: ['too-casual'],
+  routes: ['retrieval'],
+  tags: ['saved'],
+  description: 'Existing saved behavior.',
+  metadata: { owner: 'ops' },
+  createdAt: '2026-06-01T09:00:00.000Z',
+  updatedAt: '2026-06-01T09:00:00.000Z',
+}
+
 const replayResponse = {
   run: {
     id: 'run-1',
@@ -60,6 +78,7 @@ type HookResult = ReturnType<typeof useCoachState>
 function renderCoachHook(input: {
   deps: CoachStateDeps
   seed?: WorkbenchSeedTurn | null
+  existingDirectives?: Directive[]
 }) {
   const container = document.createElement('div')
   document.body.appendChild(container)
@@ -71,6 +90,7 @@ function renderCoachHook(input: {
     latest = useCoachState({
       selectedAgent: agent,
       seedTurn: currentSeed,
+      existingDirectives: input.existingDirectives,
       deps: input.deps,
     })
     return null
@@ -121,14 +141,54 @@ describe('coach state', () => {
         name: 'Use release note specifics',
         condition: { kind: 'always' },
         action: 'Answer with concrete release note details.',
+        priority: null,
+        requiredCapabilities: [],
+        dependsOn: [],
+        excludes: [],
+        routes: [],
         tags: ['step:onboarding:answer'],
+        description: null,
+        metadata: {},
       }],
+    })
+  })
+
+  it('replays existing directives before the draft directive', () => {
+    expect(buildCoachReplayOverride(draft.directive, [existingDirective])).toEqual({
+      authoredDirectives: [
+        {
+          name: 'Saved tone',
+          condition: { kind: 'contextual', description: 'When discussing roadmap timing' },
+          action: 'Set expectations with dates.',
+          priority: 40,
+          requiredCapabilities: ['retrieval.answer'],
+          dependsOn: ['represent-organization'],
+          excludes: ['too-casual'],
+          routes: ['retrieval'],
+          tags: ['saved'],
+          description: 'Existing saved behavior.',
+          metadata: { owner: 'ops' },
+        },
+        {
+          name: 'Use release note specifics',
+          condition: { kind: 'always' },
+          action: 'Answer with concrete release note details.',
+          priority: null,
+          requiredCapabilities: [],
+          dependsOn: [],
+          excludes: [],
+          routes: [],
+          tags: ['step:onboarding:answer'],
+          description: null,
+          metadata: {},
+        },
+      ],
     })
   })
 
   it('drafts, captures a snapshot, previews replay, and validates with tags', async () => {
     const deps = createDeps()
-    const hook = renderCoachHook({ deps })
+    const hook = renderCoachHook({ deps, existingDirectives: [existingDirective] })
     roots.push(hook)
 
     expect(hook.current.status).toBe('idle')
@@ -150,7 +210,7 @@ describe('coach state', () => {
     })
     expect(deps.replay).toHaveBeenCalledWith({
       snapshotId: 'snapshot-1',
-      agentConfigOverride: buildCoachReplayOverride(draft.directive),
+      agentConfigOverride: buildCoachReplayOverride(draft.directive, [existingDirective]),
     })
     expect(hook.current.status).toBe('preview')
     expect(hook.current.preview?.replay.answer).toBe('Next answer.')

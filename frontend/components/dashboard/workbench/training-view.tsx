@@ -1,13 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { CheckCircle2, GraduationCap, Lightbulb, WandSparkles } from 'lucide-react'
 
 import { AssistantMessageContent } from '@/components/dashboard/chat-citations'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import type { AgentSettings, ChatConversationTurn } from '@/lib/api'
+import { directivesApi, type AgentSettings, type ChatConversationTurn, type Directive } from '@/lib/api'
 import type { WorkbenchSeedTurn } from './use-workbench-state'
 import { useCoachState } from './use-coach-state'
 
@@ -53,7 +53,22 @@ export function TrainingView({
   seedTurn: WorkbenchSeedTurn
   onOpenDocument: (documentId: string) => void
 }) {
-  const coach = useCoachState({ selectedAgent, seedTurn })
+  const [existingDirectives, setExistingDirectives] = useState<Directive[]>([])
+  useEffect(() => {
+    let cancelled = false
+    void directivesApi.listDirectives(selectedAgent.id)
+      .then((response) => {
+        if (!cancelled) setExistingDirectives(response.directives)
+      })
+      .catch(() => {
+        if (!cancelled) setExistingDirectives([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedAgent.id])
+
+  const coach = useCoachState({ selectedAgent, seedTurn, existingDirectives })
   const [coachingText, setCoachingText] = useState('')
   const previewAnswer = coach.preview?.replay.answer
     ?? coach.preview?.replay.run.observedOutput.answer

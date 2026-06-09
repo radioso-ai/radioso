@@ -1,5 +1,6 @@
 import type {
   ConversationEngine,
+  Directive,
   ConversationRoutineActivator,
   ConversationRoutineRunner,
   ConversationRoutineStore,
@@ -225,6 +226,9 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
 export const attemptRoutineTurnWithConversationEngine = async (input: {
   engine: ConversationEngine;
   session: PreparedSession;
+  accountId?: string;
+  directives?: Directive[];
+  directiveRuntime?: RouteScopedDirectiveRuntime;
   routineStore: ConversationRoutineStore;
   routineRunner: ConversationRoutineRunner;
   routineActivator: ConversationRoutineActivator;
@@ -233,6 +237,9 @@ export const attemptRoutineTurnWithConversationEngine = async (input: {
   const result = await input.engine.attemptRoutine(
     createAttemptRoutineInput({
       session: input.session,
+      accountId: input.accountId,
+      directives: input.directives,
+      directiveRuntime: input.directiveRuntime,
       routineStore: input.routineStore,
       routineRunner: input.routineRunner,
       routineActivator: input.routineActivator,

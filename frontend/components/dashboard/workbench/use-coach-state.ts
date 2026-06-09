@@ -7,13 +7,14 @@ import {
   evalsApi,
   workbenchApi,
   type AgentSettings,
+  type Directive,
   type DirectiveDraftDirective,
   type DirectiveDraftRequest,
   type DirectiveDraftResponse,
   type DirectiveMutationResponse,
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
-import type { WorkbenchReplayRunResponse } from '@/lib/api-eval'
+import type { AgentConfigOverrideInput, WorkbenchReplayRunResponse } from '@/lib/api-eval'
 import type { WorkbenchSeedTurn } from './use-workbench-state'
 
 export type CoachStatus = 'idle' | 'drafting' | 'preview' | 'validating' | 'done' | 'error'
@@ -44,6 +45,10 @@ const defaultDeps: CoachStateDeps = {
   captureSnapshot: evalsApi.captureSnapshot,
 }
 
+type ReplayOverrideDirective = NonNullable<AgentConfigOverrideInput['authoredDirectives']>[number]
+type ReplaySourceDirective = Pick<ReplayOverrideDirective, 'name' | 'condition' | 'action'> &
+  Partial<Omit<ReplayOverrideDirective, 'name' | 'condition' | 'action'>>
+
 export const buildCoachDraftRequest = (
   coachingText: string,
   seedTurn: WorkbenchSeedTurn,
@@ -55,24 +60,39 @@ export const buildCoachDraftRequest = (
   },
 })
 
+export const toReplayOverrideDirective = (directive: ReplaySourceDirective): ReplayOverrideDirective => ({
+  name: directive.name,
+  condition: directive.condition,
+  action: directive.action,
+  priority: directive.priority ?? null,
+  requiredCapabilities: directive.requiredCapabilities ?? [],
+  dependsOn: directive.dependsOn ?? [],
+  excludes: directive.excludes ?? [],
+  routes: directive.routes ?? [],
+  tags: [...(directive.tags ?? [])],
+  description: directive.description ?? null,
+  metadata: directive.metadata ?? {},
+})
+
 export const buildCoachReplayOverride = (
   directive: DirectiveDraftDirective,
-): { authoredDirectives: Array<Record<string, unknown>> } => ({
-  authoredDirectives: [{
-    name: directive.name,
-    condition: directive.condition,
-    action: directive.action,
-    tags: [...directive.tags],
-  }],
+  existingDirectives: Directive[] = [],
+): Pick<AgentConfigOverrideInput, 'authoredDirectives'> => ({
+  authoredDirectives: [
+    ...existingDirectives.map(toReplayOverrideDirective),
+    toReplayOverrideDirective(directive),
+  ],
 })
 
 export function useCoachState({
   selectedAgent,
   seedTurn,
+  existingDirectives = [],
   deps = defaultDeps,
 }: {
   selectedAgent: AgentSettings
   seedTurn: WorkbenchSeedTurn | null
+  existingDirectives?: Directive[]
   deps?: CoachStateDeps
 }) {
   const [state, setState] = useState<CoachState>({
@@ -138,7 +158,7 @@ export function useCoachState({
       setSnapshotId(activeSnapshotId)
       const replay = await deps.replay({
         snapshotId: activeSnapshotId,
-        agentConfigOverride: buildCoachReplayOverride(draft.directive),
+        agentConfigOverride: buildCoachReplayOverride(draft.directive, existingDirectives),
       })
       setState({
         status: 'preview',
@@ -154,7 +174,7 @@ export function useCoachState({
         error: getApiErrorMessage(error, 'Failed to draft and preview coaching.'),
       })
     }
-  }, [deps, seedTurn, selectedAgent.id, snapshotId])
+  }, [deps, existingDirectives, seedTurn, selectedAgent.id, snapshotId])
 
   const validate = useCallback(async () => {
     if (!state.preview) {

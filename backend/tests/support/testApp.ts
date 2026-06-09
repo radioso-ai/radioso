@@ -94,6 +94,10 @@ import {
 import { DefaultAllowCapabilityPolicy, registeredCapabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
 import {
+  NoopOrganizationCreationGuard,
+  type OrganizationCreationGuard,
+} from "../../src/shared/domain/organizationCreationGuard.js";
+import {
   ChainedPublicChatActionAdvertiser,
   NoopPublicChatActionAdvertiser,
   type PublicChatActionAdvertiserPort,
@@ -172,6 +176,7 @@ export const createTestEnv = (): Env => ({
   SESSION_TTL_HOURS: 168,
   AUTH_RATE_LIMIT_WINDOW_MS: 60_000,
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: 10,
+  EE_MAX_ORGS_PER_USER_PER_MONTH: 10,
   PASSWORD_RESET_TOKEN_TTL_MINUTES: 30,
   EMAIL_VERIFICATION_TOKEN_TTL_MINUTES: 30,
   UPLOAD_RATE_LIMIT_MAX_ATTEMPTS: 20,
@@ -257,6 +262,7 @@ export const createTestDependencies = (overrides: {
   abuseControlRepository?: AbuseControlRepositoryPort;
   fallbackReplyComposer?: FallbackReplyComposer;
   usageLimitPolicy?: UsageLimitPolicy;
+  organizationCreationGuard?: OrganizationCreationGuard;
   answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
   publicChatActionAdvertiser?: PublicChatActionAdvertiserPort;
   applicationRouteMounts?: ApplicationRouteMount[];
@@ -291,6 +297,7 @@ export const createTestDependencies = (overrides: {
     }),
   });
   const usageLimitPolicy = overrides.usageLimitPolicy ?? new NoopUsageLimitPolicy();
+  const organizationCreationGuard = overrides.organizationCreationGuard ?? new NoopOrganizationCreationGuard();
   const persistentErrorReportingService = new ErrorReportingService({
     enabled: env.OBSERVABILITY_ENABLED,
     environment: env.OBSERVABILITY_ENVIRONMENT,
@@ -779,6 +786,7 @@ export const createTestDependencies = (overrides: {
     productAnalyticsService,
     capabilityPolicy,
     usageLimitPolicy,
+    organizationCreationGuard,
     publicChatActionAdvertiser,
     contactHistoryProvider: new NoopContactHistoryProvider(),
     applicationRouteMounts: overrides.applicationRouteMounts ?? [],
@@ -804,6 +812,7 @@ export const createTestDependencies = (overrides: {
       workspaceService,
       accountAccessService,
       accountInvitationService,
+      organizationCreationGuard,
     }),
     accessGrantService,
     passwordResetService: new PasswordResetService({
@@ -954,6 +963,7 @@ export const createTestApp = (overrides: {
   abuseControlRepository?: AbuseControlRepositoryPort;
   fallbackReplyComposer?: FallbackReplyComposer;
   usageLimitPolicy?: UsageLimitPolicy;
+  organizationCreationGuard?: OrganizationCreationGuard;
   answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
   publicChatActionAdvertiser?: PublicChatActionAdvertiserPort;
   applicationRouteMounts?: ApplicationRouteMount[];

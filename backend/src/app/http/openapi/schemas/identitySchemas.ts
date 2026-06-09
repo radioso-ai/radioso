@@ -13,6 +13,7 @@ import {
   accountMembershipParamsSchema,
   accountSwitchSchema,
   createAccountInvitationSchema,
+  createAccountSchema,
   updateMembershipRoleSchema,
   workspaceGrantParamsSchema,
   workspaceGrantSchema,
@@ -221,6 +222,11 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     }),
   );
 
+  const CreateAccountRequestSchema = registry.register(
+    "CreateAccountRequest",
+    createAccountSchema,
+  );
+
   const InvitationDetailsResponseSchema = registry.register(
     "InvitationDetailsResponse",
     z.object({
@@ -264,6 +270,7 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     AccessibleAccountSchema,
     AccessibleAccountsResponseSchema,
     CreateAccountInvitationResponseSchema,
+    CreateAccountRequestSchema,
     InvitationDetailsResponseSchema,
     invitationTokenParamsSchema,
     workspaceGrantParamsSchema,

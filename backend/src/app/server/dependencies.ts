@@ -233,10 +233,17 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
           await hook({ accountId, database: infrastructure.database, logger });
         }
       };
+  const organizationCreationGuardRegistration = composition.organizationCreationGuardRegistration;
+  const organizationCreationGuard = organizationCreationGuardRegistration
+    ? typeof organizationCreationGuardRegistration === "function"
+      ? organizationCreationGuardRegistration({ database: infrastructure.database, logger })
+      : organizationCreationGuardRegistration
+    : composition.organizationCreationGuard;
   const authService = buildAuthService({
     access,
     auditService: infrastructure.auditService,
     env,
+    organizationCreationGuard,
     onAccountCreated,
     repositories,
     workspaceService: workspace.workspaceService,
@@ -323,6 +330,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     productAnalyticsService: infrastructure.productAnalyticsService,
     capabilityPolicy: composition.capabilityPolicy,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
+    organizationCreationGuard,
     publicChatActionAdvertiser: chat.publicChatActionAdvertiser,
     contactHistoryProvider: chat.contactHistoryProvider,
     applicationRouteMounts: composition.routeMounts,

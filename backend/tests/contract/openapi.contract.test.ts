@@ -45,4 +45,19 @@ describe("openapi contract", () => {
     expect(bearerAuth).not.toEqual(sessionCookie);
     expect(document.paths?.["/api/v1/document/"]?.post?.security).toEqual([{ bearerAuth: [] }]);
   });
+
+  it("documents organization creation rate limit and EE override admin routes", () => {
+    const document = createOpenApiDocument();
+
+    expect(document.paths?.["/api/v1/account/accounts"]?.post?.responses?.[429]).toBeDefined();
+    expect(document.paths?.["/api/v1/ee/usage-limits/org-creation/users/{userId}"]?.get?.security).toEqual([
+      { bearerAuth: [] },
+    ]);
+    expect(document.paths?.["/api/v1/ee/usage-limits/org-creation/users/{userId}"]?.put?.security).toEqual([
+      { bearerAuth: [] },
+    ]);
+    expect(document.paths?.["/api/v1/ee/usage-limits/org-creation/users/{userId}"]?.delete?.security).toEqual([
+      { bearerAuth: [] },
+    ]);
+  });
 });

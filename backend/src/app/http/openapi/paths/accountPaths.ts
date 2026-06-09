@@ -63,6 +63,51 @@ export const registerAccountManagementPaths = (
 
   registry.registerPath({
     method: "post",
+    path: "/api/v1/account/accounts",
+    tags: ["Account"],
+    summary: "Create an additional organization for the current user",
+    operationId: "createOrganization",
+    security: [{ [security.sessionCookieScheme.name]: [] }],
+    request: {
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: schemas.CreateAccountRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      201: {
+        description: "Organization created",
+        content: {
+          "application/json": {
+            schema: schemas.LoginResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      429: {
+        description: "Monthly organization creation limit reached",
+        content: {
+          "application/json": {
+            schema: schemas.OrganizationCreationRateLimitExceededSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
     path: "/api/v1/account/invitations",
     tags: ["Account"],
     summary: "Create an account invitation",

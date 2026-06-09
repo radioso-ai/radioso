@@ -100,6 +100,7 @@ const envSchema = z.object({
   CONNECTOR_PUBLIC_BASE_URL: emptyStringToUndefined(z.string().url()),
   AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
+  EE_MAX_ORGS_PER_USER_PER_MONTH: z.coerce.number().int().min(0).default(10),
   PASSWORD_RESET_TOKEN_TTL_MINUTES: z.coerce.number().int().positive().default(30),
   EMAIL_VERIFICATION_TOKEN_TTL_MINUTES: z.coerce.number().int().positive().default(30),
   UPLOAD_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(20),

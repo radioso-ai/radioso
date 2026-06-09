@@ -31,6 +31,8 @@ import type { MetricsRegistry } from "../../shared/observability/metrics/metrics
 import { buildTelemetrySinks, type TelemetrySinkBundle } from "../../shared/observability/telemetry/buildTelemetrySinks.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
+import type { OrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
+import { NoopOrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
 import { DefaultAllowCapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import { DefaultTurnSelectionStrategy, type TurnSelectionStrategy } from "../../modules/chat/composition.js";
@@ -79,6 +81,8 @@ export interface ApplicationComposition {
   chunkingProvider?: ReturnType<typeof createApplicationExtensionRegistry>["chunkingProvider"];
   websiteEmbedIntegration?: ReturnType<typeof createApplicationExtensionRegistry>["websiteEmbedIntegration"];
   usageLimitPolicyRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageLimitPolicyRegistration"];
+  organizationCreationGuard: OrganizationCreationGuard;
+  organizationCreationGuardRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["organizationCreationGuardRegistration"];
   usageEventRecorderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageEventRecorderRegistration"];
   publicChatActionAdvertiserRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["publicChatActionAdvertiserRegistrations"];
   routineRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["routineRegistrations"];
@@ -134,6 +138,12 @@ export const createDefaultApplicationComposition = (options: {
     chunkingProvider: registry.chunkingProvider,
     websiteEmbedIntegration: registry.websiteEmbedIntegration,
     usageLimitPolicyRegistration: registry.usageLimitPolicyRegistration,
+    organizationCreationGuard: registry.organizationCreationGuardRegistration
+      ? typeof registry.organizationCreationGuardRegistration === "function"
+        ? new NoopOrganizationCreationGuard()
+        : registry.organizationCreationGuardRegistration
+      : new NoopOrganizationCreationGuard(),
+    organizationCreationGuardRegistration: registry.organizationCreationGuardRegistration,
     usageEventRecorderRegistration: registry.usageEventRecorderRegistration,
     publicChatActionAdvertiserRegistrations: registry.publicChatActionAdvertiserRegistrations,
     routineRegistrations: registry.routineRegistrations,

@@ -115,6 +115,125 @@
           "status"
         ]
       },
+      "OrganizationCreationRateLimitExceeded": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "rate_limit_exceeded"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object",
+                "properties": {
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "used": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "periodStart": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "resetAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "limit",
+                  "used",
+                  "periodStart",
+                  "resetAt"
+                ]
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "details"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "OrganizationCreationOverride": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "monthlyLimit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "unlimited": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "userId",
+          "monthlyLimit",
+          "unlimited",
+          "updatedAt"
+        ]
+      },
+      "OrganizationCreationOverrideResponse": {
+        "type": "object",
+        "properties": {
+          "override": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrganizationCreationOverride"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "override"
+        ]
+      },
+      "OrganizationCreationOverrideRequest": {
+        "type": "object",
+        "properties": {
+          "monthlyLimit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          }
+        },
+        "required": [
+          "monthlyLimit"
+        ]
+      },
       "RegisterResponse": {
         "type": "object",
         "properties": {
@@ -881,6 +1000,19 @@
               "acceptanceUrl"
             ]
           }
+        ]
+      },
+      "CreateAccountRequest": {
+        "type": "object",
+        "properties": {
+          "organizationName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        },
+        "required": [
+          "organizationName"
         ]
       },
       "InvitationDetailsResponse": {
@@ -9117,6 +9249,60 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Create an additional organization for the current user",
+        "operationId": "createOrganization",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAccountRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Organization created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Monthly organization creation limit reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationCreationRateLimitExceeded"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/account/invitations": {
@@ -15173,6 +15359,146 @@
           },
           "429": {
             "description": "Workbench replay rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ee/usage-limits/org-creation/users/{userId}": {
+      "get": {
+        "tags": [
+          "Enterprise Usage Limits"
+        ],
+        "summary": "Get a user's organization creation limit override",
+        "operationId": "getOrganizationCreationOverride",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Organization creation override returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationCreationOverrideResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Admin token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Enterprise Usage Limits"
+        ],
+        "summary": "Set a user's organization creation limit override",
+        "operationId": "setOrganizationCreationOverride",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationCreationOverrideRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Organization creation override updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationCreationOverrideResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Admin token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Enterprise Usage Limits"
+        ],
+        "summary": "Delete a user's organization creation limit override",
+        "operationId": "deleteOrganizationCreationOverride",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Organization creation override removed"
+          },
+          "401": {
+            "description": "Admin token required",
             "content": {
               "application/json": {
                 "schema": {

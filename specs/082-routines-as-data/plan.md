@@ -60,9 +60,10 @@ Split decided during delivery: 3a is a large, risky engine refactor; 3b is indep
 - Action registry carries `requiredCapabilities` per action type; publish-time validation (fills the Slice-1 validator TODO seam) + enqueue-time check in `chatTurnLifecycle` (analogous to skills' `firstDeniedCapability`), reusing `CapabilityPolicy`.
 - **Tests**: publish rejects an over-permission action; enqueue blocks it at runtime.
 
-### Slice 4 — Versioning + stable identity + in-flight pinning + scope-tag orphan protection (P2 / US4) — *needs #664*
-- `routine_state` pins the **definition version** it started on; explicit **migrate-vs-finish** policy for in-flight sessions on republish; recompile **preserves stable step ids**; **orphaned directive scope tags** (`step:<routineId>:<stepId>`, per #664) detected and surfaced on edit (the orphan-observability follow-up #664 defers).
-- **Tests**: in-flight conversation continues on its pinned version after republish; new conversation gets the new version; edit preserves step ids so a step-scoped directive does not orphan; removing a scoped step surfaces the orphan rather than dropping it.
+### Slice 4 — DEFERRED to an Agent-Config Versioning feature (was: routine versioning + scope-tag orphan)
+Decided 2026-06-09: the hard part (the `step:<routineId>:<stepId>` scope-tag **orphan**) is a **cross-resource consistency** problem — directives and routines must pin to the same coherent agent config — which **per-resource versioning cannot solve; only agent-level versioning can**. Building routine-only versioning here would be a bespoke mechanism we'd discard once agent versioning lands. Generalizes the existing `agentSnapshot`/`freezeAgent` (079) and subsumes routine versions + directive scope consistency + eval snapshots.
+- **In 082 now (near-free)**: a published `routine_definition` is **immutable per version** (publish snapshots a new row), so in-flight pinning (`routine_state` → the version it activated) is trivial to add when needed; no orphan machinery required meanwhile.
+- **Out of 082**: migrate-vs-finish policy, stable-id-across-recompile guarantees, and scope-tag orphan detection → the Agent-Config Versioning spec.
 
 ### Slice 5 — Authoring UI: token-aware structured editor (P1/P3 UX) — *needs Slices 1–3 APIs*
 - Step blocks (numbered, prose body) + insertable **variable / action / handoff chips** + guideline references; validation surfaced **in author terms**; no canvas.

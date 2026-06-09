@@ -2,7 +2,7 @@ import type { ConversationModelGateway, TurnContext } from "@radioso/conversatio
 
 import { capabilityNames } from "../../../shared/domain/capabilityPolicy.js";
 import {
-  contactRoutine,
+  contactRoutineDefinition,
   CONTACT_SEND_ACTION_TYPE,
   CONTACT_INTENT_SKILL_NAME,
   CONTACT_INTENT_NAME,
@@ -14,6 +14,7 @@ import {
   type PublicChatActionAdvertiserPort,
   type PublicChatIntakeAction,
 } from "../../../modules/chat/composition.js";
+import { compileRoutineDefinition } from "../../../modules/routines/public.js";
 import { WorkspaceRepository } from "../../../db/repositories/workspaceRepository.js";
 import { AccountMembershipRepository } from "../../../db/repositories/accountMembershipRepository.js";
 import { AgentRepository } from "../../../db/repositories/agentRepository.js";
@@ -81,7 +82,10 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
   id: "radioso-contact-routine",
   name: "Radioso Contact Routine",
   register(context) {
-    context.registerRoutine({ routine: contactRoutine, activates: activatesOnContactIntent });
+    context.registerRoutine({
+      routine: compileRoutineDefinition(contactRoutineDefinition),
+      activates: activatesOnContactIntent,
+    });
     context.registerActionHandler({
       type: CONTACT_SEND_ACTION_TYPE,
       requiredCapabilities: [capabilityNames.humanContact.request],

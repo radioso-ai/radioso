@@ -49,6 +49,11 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
   const steps = [...definition.steps].sort((left, right) => left.ordinal - right.ordinal);
   const terminals = [...definition.terminals].sort((left, right) => left.ordinal - right.ordinal);
   const stepIds = new Set(steps.map((step) => step.stableStepId));
+  const actionTerminalIds = new Set(
+    terminals
+      .filter((terminal) => terminal.kind === "action")
+      .map((terminal) => terminal.stableStepId),
+  );
   const stepById = new Map(steps.map((step) => [step.stableStepId, step]));
   const terminalIds = new Set(terminals.map((terminal) => terminal.stableStepId));
   const nodeIds = new Set([...stepIds, ...terminalIds]);
@@ -82,11 +87,11 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
   }
 
   for (const transition of definition.transitions) {
-    if (!stepIds.has(transition.fromStep)) {
+    if (!stepIds.has(transition.fromStep) && !actionTerminalIds.has(transition.fromStep)) {
       diagnostics.push({
         code: "dangling_step_reference",
         location: `transition:${transition.fromStep}->${transition.toRef}`,
-        message: `dangling step reference: transition starts at unknown step "${transition.fromStep}".`,
+        message: `dangling step reference: transition starts at unknown step or action terminal "${transition.fromStep}".`,
       });
     }
     if (!nodeIds.has(transition.toRef)) {

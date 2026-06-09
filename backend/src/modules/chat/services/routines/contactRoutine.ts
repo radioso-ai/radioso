@@ -1,4 +1,4 @@
-import type { Routine } from "@radioso/conversation-contract";
+import type { RoutineDefinition } from "../../../routines/public.js";
 
 /** The action type the contact routine emits; the registered handler dispatches it. */
 export const CONTACT_SEND_ACTION_TYPE = "contact.send";
@@ -17,27 +17,103 @@ export const CONTACT_INTENT_SKILL_NAME = "human_contact.request";
 export const CONTACT_INTENT_NAME = "explicit_contact_request";
 
 /**
- * A chat-only contact routine: it gathers an email and a message through chat steps,
- * then emits a `contact.send` action (fire-and-forget) and confirms. There is no skill
- * step — the side effect is dispatched out of band by the action handler, so the
- * conversation never blocks on sending. The step `action` strings steer the reply
- * wording (the LLM renders them, multilingually); the routine hard-codes no copy.
+ * A chat-only contact routine authored as RoutineDefinition data: it gathers an
+ * email and a message through chat steps, then emits a `contact.send` action
+ * (fire-and-forget) and confirms. There is no skill step — the side effect is
+ * dispatched out of band by the action handler, so the conversation never blocks on
+ * sending. The step instructions steer the reply wording (the LLM renders them,
+ * multilingually); the routine hard-codes no copy.
  */
-export const contactRoutine: Routine = {
-  id: CONTACT_ROUTINE_ID,
-  rootStepId: "ask_email",
+export const contactRoutineDefinition: RoutineDefinition = {
+  id: "builtin_contact_request_v1",
+  agentId: "builtin",
+  name: CONTACT_ROUTINE_ID,
+  version: 1,
+  status: "published",
+  activation: {
+    triggerDescription: "The user asks a human to follow up with them.",
+    gateRef: CONTACT_INTENT_SKILL_NAME,
+    priority: 100,
+  },
+  slots: [],
   steps: [
-    { id: "ask_email", kind: "chat", action: "Ask the user for the email address where they can be reached." },
-    { id: "ask_message", kind: "chat", action: "Ask the user for the message they would like to send." },
-    { id: "send", kind: "action", actionType: CONTACT_SEND_ACTION_TYPE },
-    { id: "done", kind: "terminal", action: "Confirm their request was sent and that someone will follow up. Ask what you can help with next." },
-    { id: "cancelled", kind: "terminal", action: "Acknowledge that the contact request was cancelled and that they do not need to provide anything else." },
+    {
+      stableStepId: "ask_email",
+      kind: "chat",
+      instruction: "Ask the user for the email address where they can be reached.",
+      toolRef: null,
+      ordinal: 0,
+      metadata: {},
+    },
+    {
+      stableStepId: "ask_message",
+      kind: "chat",
+      instruction: "Ask the user for the message they would like to send.",
+      toolRef: null,
+      ordinal: 1,
+      metadata: {},
+    },
   ],
   transitions: [
-    { from: "ask_email", to: "cancelled", condition: "the user declined, cancelled, refused, or said they no longer want to continue the contact request" },
-    { from: "ask_email", to: "ask_message", condition: "the user provided a valid email address and did not decline or cancel the contact request" },
-    { from: "ask_message", to: "cancelled", condition: "the user declined, cancelled, refused, or said they no longer want to continue the contact request" },
-    { from: "ask_message", to: "send", condition: "the user provided the message they want to send and did not decline or cancel the contact request" },
-    { from: "send", to: "done", condition: "the contact request was emitted" },
+    {
+      fromStep: "ask_email",
+      toRef: "cancelled",
+      guardKind: "llm",
+      guardText: "the user declined, cancelled, refused, or said they no longer want to continue the contact request",
+      ordinal: 0,
+    },
+    {
+      fromStep: "ask_email",
+      toRef: "ask_message",
+      guardKind: "llm",
+      guardText: "the user provided a valid email address and did not decline or cancel the contact request",
+      ordinal: 1,
+    },
+    {
+      fromStep: "ask_message",
+      toRef: "cancelled",
+      guardKind: "llm",
+      guardText: "the user declined, cancelled, refused, or said they no longer want to continue the contact request",
+      ordinal: 2,
+    },
+    {
+      fromStep: "ask_message",
+      toRef: "send",
+      guardKind: "llm",
+      guardText: "the user provided the message they want to send and did not decline or cancel the contact request",
+      ordinal: 3,
+    },
+    {
+      fromStep: "send",
+      toRef: "done",
+      guardKind: "llm",
+      guardText: "the contact request was emitted",
+      ordinal: 4,
+    },
   ],
+  terminals: [
+    {
+      stableStepId: "send",
+      kind: "action",
+      instruction: null,
+      actionType: CONTACT_SEND_ACTION_TYPE,
+      ordinal: 0,
+    },
+    {
+      stableStepId: "done",
+      kind: "complete",
+      instruction: "Confirm their request was sent and that someone will follow up. Ask what you can help with next.",
+      actionType: null,
+      ordinal: 1,
+    },
+    {
+      stableStepId: "cancelled",
+      kind: "complete",
+      instruction: "Acknowledge that the contact request was cancelled and that they do not need to provide anything else.",
+      actionType: null,
+      ordinal: 2,
+    },
+  ],
+  createdAt: new Date("2026-06-09T00:00:00.000Z"),
+  updatedAt: new Date("2026-06-09T00:00:00.000Z"),
 };

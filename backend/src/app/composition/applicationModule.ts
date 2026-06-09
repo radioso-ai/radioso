@@ -27,6 +27,7 @@ import type {
   RoutineRegistration,
   TurnSelectionStrategy,
 } from "../../modules/chat/composition.js";
+import type { PublishedRoutineRegistrationSource } from "./routineDefinitionSource.js";
 import type { DirectiveMatcherPort } from "../../modules/directives/public.js";
 import type { DirectiveMatchGatewayFactory } from "../../shared/infra/llm/contextualGateways.js";
 import type { AppDependencies } from "../server/types.js";
@@ -188,6 +189,7 @@ export interface ApplicationExtensionRegistry {
   websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
   publicChatActionAdvertiserRegistrations: ApplicationPublicChatActionAdvertiserRegistration[];
   routineRegistrations: RoutineRegistration[];
+  publishedRoutineRegistrationSource?: PublishedRoutineRegistrationSource;
   actionHandlerRegistrations: ApplicationActionHandlerRegistration[];
   contactHistoryProviderRegistration?: ApplicationContactHistoryProviderRegistration;
   answerFeedbackHistoryProviderRegistration?: ApplicationAnswerFeedbackHistoryProviderRegistration;
@@ -228,6 +230,7 @@ export interface ApplicationModuleRegistrationContext {
   registerWebsiteEmbedIntegration(provider: WebsiteEmbedIntegrationProvider): void;
   registerPublicChatActionAdvertiser(provider: ApplicationPublicChatActionAdvertiserRegistration): void;
   registerRoutine(registration: RoutineRegistration): void;
+  registerPublishedRoutineSource(source: PublishedRoutineRegistrationSource): void;
   registerActionHandler(registration: ApplicationActionHandlerRegistration): void;
   registerContactHistoryProvider(provider: ApplicationContactHistoryProviderRegistration): void;
   registerAnswerFeedbackHistoryProvider(provider: ApplicationAnswerFeedbackHistoryProviderRegistration): void;
@@ -323,6 +326,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerRoutine(registration) {
     registry.routineRegistrations.push(registration);
+  },
+  registerPublishedRoutineSource(source) {
+    registry.publishedRoutineRegistrationSource = source;
   },
   registerActionHandler(registration) {
     registry.actionHandlerRegistrations.push(registration);

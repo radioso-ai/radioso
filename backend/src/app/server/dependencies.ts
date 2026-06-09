@@ -7,6 +7,7 @@ import {
   type ApplicationModule,
 } from "../composition/index.js";
 import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService } from "../../modules/agents/public.js";
+import { RoutineDefinitionService } from "../../modules/routines/public.js";
 import { createDirectiveCoherenceChecker } from "@radioso/conversation-defaults";
 import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloudCdnEmbedConfigCacheInvalidator.js";
 import { PlatformSettingsService } from "../../modules/settings/composition.js";
@@ -280,6 +281,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     }),
     registeredCapabilityNames,
   });
+  const routineDefinitionService = new RoutineDefinitionService({
+    agentRepository: repositories.agentRepository,
+    repository: repositories.routineDefinitionRepository,
+  });
 
   const evalRepository = new EvalRepository(infrastructure.database);
   const evalSnapshotService = new EvalSnapshotService(
@@ -363,6 +368,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     platformSettingsService,
     agentService,
     authoredDirectiveService,
+    routineDefinitionService,
     agentSurfaceExtensions,
     skillCatalogService,
     accountRepository: repositories.accountRepository,

@@ -175,6 +175,126 @@ export const registerAgentsPaths = (
   });
 
   registry.registerPath({
+    method: "get",
+    path: "/api/v1/agents/{agentId}/routines",
+    tags: ["Agents"],
+    summary: "List routine definitions for an agent",
+    operationId: "listAgentRoutines",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.AgentParamsSchema },
+    responses: {
+      200: { description: "Routine definitions returned", content: { "application/json": { schema: schemas.RoutineDefinitionListResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/agents/{agentId}/routines/{routineId}",
+    tags: ["Agents"],
+    summary: "Get a routine definition for an agent",
+    operationId: "getAgentRoutine",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.RoutineDefinitionParamsSchema },
+    responses: {
+      200: { description: "Routine definition returned", content: { "application/json": { schema: schemas.RoutineDefinitionGetResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent or routine definition not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/{agentId}/routines",
+    tags: ["Agents"],
+    summary: "Create a draft routine definition for an agent",
+    operationId: "createAgentRoutine",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.AgentParamsSchema,
+      body: {
+        required: true,
+        content: { "application/json": { schema: schemas.RoutineDefinitionCreateRequestSchema } },
+      },
+    },
+    responses: {
+      201: { description: "Draft routine definition created", content: { "application/json": { schema: schemas.RoutineDefinitionSaveResponseSchema } } },
+      400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "patch",
+    path: "/api/v1/agents/{agentId}/routines/{routineId}",
+    tags: ["Agents"],
+    summary: "Update a draft routine definition for an agent",
+    operationId: "updateAgentRoutine",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.RoutineDefinitionParamsSchema,
+      body: {
+        required: true,
+        content: { "application/json": { schema: schemas.RoutineDefinitionUpdateRequestSchema } },
+      },
+    },
+    responses: {
+      200: { description: "Draft routine definition updated", content: { "application/json": { schema: schemas.RoutineDefinitionSaveResponseSchema } } },
+      400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent or routine definition not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/{agentId}/routines/{routineId}/validate",
+    tags: ["Agents"],
+    summary: "Validate a routine definition for an agent",
+    operationId: "validateAgentRoutine",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.RoutineDefinitionParamsSchema },
+    responses: {
+      200: { description: "Routine validation returned", content: { "application/json": { schema: schemas.RoutineDefinitionValidateResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent or routine definition not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/{agentId}/routines/{routineId}/publish",
+    tags: ["Agents"],
+    summary: "Publish a draft routine definition for an agent",
+    operationId: "publishAgentRoutine",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.RoutineDefinitionParamsSchema },
+    responses: {
+      200: { description: "Routine definition published", content: { "application/json": { schema: schemas.RoutineDefinitionSaveResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent or routine definition not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      422: { description: "Routine definition is invalid", content: { "application/json": { schema: schemas.RoutineDefinitionPublishRejectedResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "delete",
+    path: "/api/v1/agents/{agentId}/routines/{routineId}",
+    tags: ["Agents"],
+    summary: "Delete a draft routine definition for an agent",
+    operationId: "deleteAgentRoutine",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.RoutineDefinitionParamsSchema },
+    responses: {
+      204: { description: "Draft routine definition deleted" },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent or draft routine definition not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
     method: "post",
     path: "/api/v1/agents/{agentId}/assistant-logo",
     tags: ["Agents"],

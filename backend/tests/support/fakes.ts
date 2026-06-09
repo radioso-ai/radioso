@@ -61,6 +61,12 @@ import type {
   WorkspaceLlmCapabilityPreference,
   WorkspaceLlmCapabilityPreferenceInput,
 } from "../../src/modules/settings/contracts/llmCapability.js";
+import {
+  routineDefinitionDraftInputSchema,
+  type RoutineDefinition,
+  type RoutineDefinitionDraftInput,
+  type RoutineDefinitionRepositoryPort,
+} from "../../src/modules/routines/public.js";
 import type { WorkspaceLlmCapabilityPreferencesRepositoryPort } from "../../src/modules/settings/contracts/services.js";
 import type { LlmProviderName } from "../../src/shared/infra/llm/providerTypes.js";
 import type {
@@ -1130,6 +1136,90 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
       }
     }
     return count;
+  }
+}
+
+export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort {
+  readonly items = new Map<string, RoutineDefinition>();
+
+  async listByAgent(agentId: string): Promise<RoutineDefinition[]> {
+    return [...this.items.values()]
+      .filter((definition) => definition.agentId === agentId)
+      .sort((left, right) =>
+        left.status.localeCompare(right.status) ||
+        left.name.localeCompare(right.name) ||
+        left.version - right.version ||
+        left.createdAt.getTime() - right.createdAt.getTime() ||
+        left.id.localeCompare(right.id)
+      );
+  }
+
+  async findById(agentId: string, id: string): Promise<RoutineDefinition | null> {
+    const item = this.items.get(id);
+    return item && item.agentId === agentId ? item : null;
+  }
+
+  async createDraft(agentId: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition> {
+    const draft = routineDefinitionDraftInputSchema.parse(input);
+    const now = new Date();
+    const definition: RoutineDefinition = {
+      id: randomUUID(),
+      agentId,
+      version: 1,
+      status: "draft",
+      ...draft,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.items.set(definition.id, definition);
+    return definition;
+  }
+
+  async updateDraft(agentId: string, id: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition> {
+    const existing = await this.findById(agentId, id);
+    if (!existing || existing.status !== "draft") {
+      throw new Error(`Routine definition ${id} not found`);
+    }
+    const draft = routineDefinitionDraftInputSchema.parse(input);
+    const updated: RoutineDefinition = {
+      ...existing,
+      ...draft,
+      updatedAt: new Date(),
+    };
+    this.items.set(id, updated);
+    return updated;
+  }
+
+  async publish(agentId: string, draftId: string): Promise<RoutineDefinition> {
+    const draft = await this.findById(agentId, draftId);
+    if (!draft) {
+      throw new Error(`Routine definition ${draftId} not found`);
+    }
+    const version = Math.max(
+      0,
+      ...[...this.items.values()]
+        .filter((definition) => definition.agentId === agentId && definition.name === draft.name)
+        .map((definition) => definition.version),
+    ) + 1;
+    const now = new Date();
+    const published: RoutineDefinition = {
+      ...draft,
+      id: randomUUID(),
+      version,
+      status: "published",
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.items.set(published.id, published);
+    return published;
+  }
+
+  async deleteDraft(agentId: string, id: string): Promise<boolean> {
+    const existing = await this.findById(agentId, id);
+    if (!existing || existing.status !== "draft") {
+      return false;
+    }
+    return this.items.delete(id);
   }
 }
 

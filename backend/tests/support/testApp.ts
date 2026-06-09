@@ -23,6 +23,7 @@ import { RetrievalTurnController } from "../../src/modules/chat/services/retriev
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
 import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService } from "../../src/modules/agents/public.js";
+import { RoutineDefinitionService } from "../../src/modules/routines/public.js";
 import {
   type FallbackReplyComposer,
 } from "../../src/modules/chat/services/fallbackReplyComposer.js";
@@ -131,6 +132,7 @@ import {
   InMemoryAbuseControlRepository,
   InMemoryAccessGrantRepository,
   InMemoryWorkspaceProviderCredentialsRepository,
+  InMemoryRoutineDefinitionRepository,
 } from "./fakes.js";
 
 export const createTestEnv = (): Env => ({
@@ -232,6 +234,7 @@ interface TestRepositories {
   conversationRepository: InMemoryConversationRepository;
   messageRepository: InMemoryMessageRepository;
   agentRepository: InMemoryAgentRepository;
+  routineDefinitionRepository: InMemoryRoutineDefinitionRepository;
 }
 
 const appDependencyMap = new WeakMap<object, AppDependencies>();
@@ -645,6 +648,7 @@ export const createTestDependencies = (overrides: {
   connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY!);
   const connectorDb = new InMemoryConnectorDatabase();
   const agentRepository = new InMemoryAgentRepository(createDefaultAgentSkillSettingsRegistry());
+  const routineDefinitionRepository = new InMemoryRoutineDefinitionRepository();
   const accessGrantService = new AccessGrantService({
     repository: accessGrantRepository,
     originMatcher: new DefaultOriginMatcher(),
@@ -671,6 +675,10 @@ export const createTestDependencies = (overrides: {
       },
     },
     registeredCapabilityNames,
+  });
+  const routineDefinitionService = new RoutineDefinitionService({
+    agentRepository,
+    repository: routineDefinitionRepository,
   });
   const agentSurfaceExtensions = new AgentSurfaceExtensionRegistry();
   // Mimic an EE deployment for OSS contract/unit tests so the runtime gate on
@@ -874,6 +882,7 @@ export const createTestDependencies = (overrides: {
     platformSettingsService,
     agentService,
     authoredDirectiveService,
+    routineDefinitionService,
     agentSurfaceExtensions,
     skillCatalogService,
     accountRepository,
@@ -926,6 +935,7 @@ export const createTestDependencies = (overrides: {
       conversationRepository,
       messageRepository,
       agentRepository,
+      routineDefinitionRepository,
     },
   };
 };

@@ -1807,7 +1807,7 @@ components:
       properties:
         provider:
           type: string
-          enum: &a19
+          enum: &a26
             - openai
             - openai-compatible
             - gemini
@@ -2683,6 +2683,644 @@ components:
       required:
         - directive
         - coherence
+    RoutineDefinitionCreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        activation:
+          type: object
+          properties:
+            triggerDescription:
+              type: string
+              minLength: 1
+              maxLength: 2000
+            gateRef:
+              type:
+                - string
+                - "null"
+              minLength: 1
+              maxLength: 300
+            priority:
+              type: integer
+          required:
+            - triggerDescription
+            - priority
+          additionalProperties: false
+        slots:
+          type: array
+          items:
+            type: object
+            properties:
+              stableSlotId:
+                type: string
+                minLength: 1
+                maxLength: 120
+                pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+              key:
+                type: string
+                minLength: 1
+                maxLength: 120
+                pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+              type:
+                type: string
+                enum: &a12
+                  - text
+                  - number
+                  - boolean
+                  - email
+                  - date
+              required:
+                type: boolean
+              description:
+                type:
+                  - string
+                  - "null"
+                minLength: 1
+                maxLength: 1000
+              ordinal:
+                type: integer
+                minimum: 0
+            required:
+              - stableSlotId
+              - key
+              - type
+              - required
+              - ordinal
+            additionalProperties: false
+          default: &a13 []
+        steps:
+          type: array
+          items:
+            type: object
+            properties:
+              stableStepId:
+                type: string
+                minLength: 1
+                maxLength: 120
+                pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+              kind:
+                type: string
+                enum: &a14
+                  - chat
+                  - tool
+                  - fork
+              instruction:
+                type: string
+                minLength: 1
+                maxLength: 4000
+              toolRef:
+                type:
+                  - string
+                  - "null"
+                minLength: 1
+                maxLength: 300
+              ordinal:
+                type: integer
+                minimum: 0
+              metadata:
+                type: object
+                additionalProperties: {}
+                default: &a15 {}
+            required:
+              - stableStepId
+              - kind
+              - instruction
+              - ordinal
+            additionalProperties: false
+          minItems: 1
+        transitions:
+          type: array
+          items:
+            type: object
+            properties:
+              fromStep:
+                type: string
+                minLength: 1
+                maxLength: 120
+                pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+              toRef:
+                type: string
+                minLength: 1
+                maxLength: 120
+                pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+              guardKind:
+                type: string
+                enum: &a16
+                  - llm
+                  - always
+                  - fallback
+              guardText:
+                type:
+                  - string
+                  - "null"
+                minLength: 1
+                maxLength: 2000
+              ordinal:
+                type: integer
+                minimum: 0
+            required:
+              - fromStep
+              - toRef
+              - guardKind
+              - ordinal
+            additionalProperties: false
+          default: &a17 []
+        terminals:
+          type: array
+          items:
+            type: object
+            properties:
+              stableStepId:
+                type: string
+                minLength: 1
+                maxLength: 120
+                pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+              kind:
+                type: string
+                enum: &a18
+                  - complete
+                  - handoff
+                  - action
+              instruction:
+                type:
+                  - string
+                  - "null"
+                minLength: 1
+                maxLength: 4000
+              actionType:
+                type:
+                  - string
+                  - "null"
+                minLength: 1
+                maxLength: 300
+              ordinal:
+                type: integer
+                minimum: 0
+            required:
+              - stableStepId
+              - kind
+              - ordinal
+            additionalProperties: false
+          minItems: 1
+      required:
+        - name
+        - activation
+        - steps
+        - terminals
+      additionalProperties: false
+    RoutineDefinitionUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        activation:
+          type: object
+          properties:
+            triggerDescription:
+              type: string
+              minLength: 1
+              maxLength: 2000
+            gateRef:
+              type:
+                - string
+                - "null"
+              minLength: 1
+              maxLength: 300
+            priority:
+              type: integer
+          required:
+            - triggerDescription
+            - priority
+          additionalProperties: false
+        slots:
+          type: array
+          items:
+            type: object
+            properties:
+              stableSlotId:
+                type: string
+                minLength: 1
+                maxLength: 120
+                pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+              key:
+                type: string
+                minLength: 1
+                maxLength: 120
+                pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+              type:
+                type: string
+                enum: *a12
+              required:
+                type: boolean
+              description:
+                type:
+                  - string
+                  - "null"
+                minLength: 1
+                maxLength: 1000
+              ordinal:
+                type: integer
+                minimum: 0
+            required:
+              - stableSlotId
+              - key
+              - type
+              - required
+              - ordinal
+            additionalProperties: false
+          default: *a13
+        steps:
+          type: array
+          items:
+            type: object
+            properties:
+              stableStepId:
+                type: string
+                minLength: 1
+                maxLength: 120
+                pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+              kind:
+                type: string
+                enum: *a14
+              instruction:
+                type: string
+                minLength: 1
+                maxLength: 4000
+              toolRef:
+                type:
+                  - string
+                  - "null"
+                minLength: 1
+                maxLength: 300
+              ordinal:
+                type: integer
+                minimum: 0
+              metadata:
+                type: object
+                additionalProperties: {}
+                default: *a15
+            required:
+              - stableStepId
+              - kind
+              - instruction
+              - ordinal
+            additionalProperties: false
+          minItems: 1
+        transitions:
+          type: array
+          items:
+            type: object
+            properties:
+              fromStep:
+                type: string
+                minLength: 1
+                maxLength: 120
+                pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+              toRef:
+                type: string
+                minLength: 1
+                maxLength: 120
+                pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+              guardKind:
+                type: string
+                enum: *a16
+              guardText:
+                type:
+                  - string
+                  - "null"
+                minLength: 1
+                maxLength: 2000
+              ordinal:
+                type: integer
+                minimum: 0
+            required:
+              - fromStep
+              - toRef
+              - guardKind
+              - ordinal
+            additionalProperties: false
+          default: *a17
+        terminals:
+          type: array
+          items:
+            type: object
+            properties:
+              stableStepId:
+                type: string
+                minLength: 1
+                maxLength: 120
+                pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+              kind:
+                type: string
+                enum: *a18
+              instruction:
+                type:
+                  - string
+                  - "null"
+                minLength: 1
+                maxLength: 4000
+              actionType:
+                type:
+                  - string
+                  - "null"
+                minLength: 1
+                maxLength: 300
+              ordinal:
+                type: integer
+                minimum: 0
+            required:
+              - stableStepId
+              - kind
+              - ordinal
+            additionalProperties: false
+          minItems: 1
+      required:
+        - name
+        - activation
+        - steps
+        - terminals
+      additionalProperties: false
+    RoutineValidationResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        diagnostics:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                enum:
+                  - unreachable_step
+                  - missing_terminal
+                  - dangling_action_reference
+                  - dangling_step_reference
+                  - declared_unused_slot
+                  - referenced_undeclared_slot
+                  - attempt_limit_without_fallback
+              location:
+                type: string
+              message:
+                type: string
+            required:
+              - code
+              - location
+              - message
+      required:
+        - ok
+        - diagnostics
+    RoutineDefinition:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        activation:
+          type: object
+          properties:
+            triggerDescription:
+              type: string
+              minLength: 1
+              maxLength: 2000
+            gateRef:
+              type:
+                - string
+                - "null"
+              minLength: 1
+              maxLength: 300
+            priority:
+              type: integer
+          required:
+            - triggerDescription
+            - priority
+          additionalProperties: false
+        slots:
+          type: array
+          items:
+            type: object
+            properties:
+              stableSlotId:
+                type: string
+                minLength: 1
+                maxLength: 120
+                pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+              key:
+                type: string
+                minLength: 1
+                maxLength: 120
+                pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+              type:
+                type: string
+                enum: *a12
+              required:
+                type: boolean
+              description:
+                type:
+                  - string
+                  - "null"
+                minLength: 1
+                maxLength: 1000
+              ordinal:
+                type: integer
+                minimum: 0
+            required:
+              - stableSlotId
+              - key
+              - type
+              - required
+              - ordinal
+            additionalProperties: false
+          default: *a13
+        steps:
+          type: array
+          items:
+            type: object
+            properties:
+              stableStepId:
+                type: string
+                minLength: 1
+                maxLength: 120
+                pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+              kind:
+                type: string
+                enum: *a14
+              instruction:
+                type: string
+                minLength: 1
+                maxLength: 4000
+              toolRef:
+                type:
+                  - string
+                  - "null"
+                minLength: 1
+                maxLength: 300
+              ordinal:
+                type: integer
+                minimum: 0
+              metadata:
+                type: object
+                additionalProperties: {}
+                default: *a15
+            required:
+              - stableStepId
+              - kind
+              - instruction
+              - ordinal
+            additionalProperties: false
+          minItems: 1
+        transitions:
+          type: array
+          items:
+            type: object
+            properties:
+              fromStep:
+                type: string
+                minLength: 1
+                maxLength: 120
+                pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+              toRef:
+                type: string
+                minLength: 1
+                maxLength: 120
+                pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+              guardKind:
+                type: string
+                enum: *a16
+              guardText:
+                type:
+                  - string
+                  - "null"
+                minLength: 1
+                maxLength: 2000
+              ordinal:
+                type: integer
+                minimum: 0
+            required:
+              - fromStep
+              - toRef
+              - guardKind
+              - ordinal
+            additionalProperties: false
+          default: *a17
+        terminals:
+          type: array
+          items:
+            type: object
+            properties:
+              stableStepId:
+                type: string
+                minLength: 1
+                maxLength: 120
+                pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+              kind:
+                type: string
+                enum: *a18
+              instruction:
+                type:
+                  - string
+                  - "null"
+                minLength: 1
+                maxLength: 4000
+              actionType:
+                type:
+                  - string
+                  - "null"
+                minLength: 1
+                maxLength: 300
+              ordinal:
+                type: integer
+                minimum: 0
+            required:
+              - stableStepId
+              - kind
+              - ordinal
+            additionalProperties: false
+          minItems: 1
+        id:
+          type: string
+          format: uuid
+        agentId:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum:
+            - draft
+            - published
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - name
+        - activation
+        - steps
+        - terminals
+        - id
+        - agentId
+        - version
+        - status
+        - createdAt
+        - updatedAt
+      additionalProperties: false
+    RoutineDefinitionListResponse:
+      type: object
+      properties:
+        routines:
+          type: array
+          items:
+            $ref: "#/components/schemas/RoutineDefinition"
+      required:
+        - routines
+    RoutineDefinitionGetResponse:
+      type: object
+      properties:
+        routine:
+          $ref: "#/components/schemas/RoutineDefinition"
+      required:
+        - routine
+    RoutineDefinitionSaveResponse:
+      type: object
+      properties:
+        routine:
+          $ref: "#/components/schemas/RoutineDefinition"
+        validation:
+          $ref: "#/components/schemas/RoutineValidationResult"
+      required:
+        - routine
+        - validation
+    RoutineDefinitionValidateResponse:
+      type: object
+      properties:
+        validation:
+          $ref: "#/components/schemas/RoutineValidationResult"
+      required:
+        - validation
+    RoutineDefinitionPublishRejectedResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          enum:
+            - Routine definition is invalid
+        validation:
+          $ref: "#/components/schemas/RoutineValidationResult"
+      required:
+        - error
+        - validation
     PublicChatSessionResponse:
       type: object
       properties:
@@ -3774,7 +4412,7 @@ components:
               type: string
             selectionMode:
               type: string
-              enum: &a14
+              enum: &a21
                 - deterministic
                 - probabilistic
             selectionReason:
@@ -3785,7 +4423,7 @@ components:
               maximum: 1
             callerSurface:
               type: string
-              enum: &a15
+              enum: &a22
                 - assistant
                 - retrieval_api
                 - sdk
@@ -3822,7 +4460,7 @@ components:
                 - used
             outcome:
               type: string
-              enum: &a16
+              enum: &a23
                 - success
                 - unsupported
                 - forbidden
@@ -3859,14 +4497,14 @@ components:
                     additionalProperties: {}
                 evidenceStatus:
                   type: string
-                  enum: &a12
+                  enum: &a19
                     - found
                     - missing
                     - partial
                     - not_applicable
                 supportStatus:
                   type: string
-                  enum: &a13
+                  enum: &a20
                     - supported
                     - unsupported
                     - not_checked
@@ -4326,10 +4964,10 @@ components:
             additionalProperties: {}
         evidenceStatus:
           type: string
-          enum: *a12
+          enum: *a19
         supportStatus:
           type: string
-          enum: *a13
+          enum: *a20
         groundingOutcome:
           type: string
     SkillDiagnosticDefinition:
@@ -4343,7 +4981,7 @@ components:
           type: string
         selectionMode:
           type: string
-          enum: *a14
+          enum: *a21
         selectionReason:
           type: string
         selectionConfidence:
@@ -4352,7 +4990,7 @@ components:
           maximum: 1
         callerSurface:
           type: string
-          enum: *a15
+          enum: *a22
         capabilityChecks:
           type: array
           items:
@@ -4383,7 +5021,7 @@ components:
             - used
         outcome:
           type: string
-          enum: *a16
+          enum: *a23
         error:
           type: object
           properties:
@@ -4415,10 +5053,10 @@ components:
                 additionalProperties: {}
             evidenceStatus:
               type: string
-              enum: *a12
+              enum: *a19
             supportStatus:
               type: string
-              enum: *a13
+              enum: *a20
             groundingOutcome:
               type: string
       required:
@@ -4467,7 +5105,7 @@ components:
           type: array
           items:
             type: string
-            enum: *a15
+            enum: *a22
         requiredCapabilities:
           type: array
           items:
@@ -4494,7 +5132,7 @@ components:
               type: array
               items:
                 type: string
-                enum: *a15
+                enum: *a22
             intent:
               type: object
               properties:
@@ -5376,7 +6014,7 @@ components:
           format: uuid
         value:
           type: string
-          enum: &a17
+          enum: &a24
             - up
             - down
         comment:
@@ -5385,7 +6023,7 @@ components:
             - "null"
         actorType:
           type: string
-          enum: &a18
+          enum: &a25
             - authenticated_user
             - api_token
             - anonymous_user
@@ -5445,14 +6083,14 @@ components:
           format: uuid
         value:
           type: string
-          enum: *a17
+          enum: *a24
         comment:
           type:
             - string
             - "null"
         actorType:
           type: string
-          enum: *a18
+          enum: *a25
         actorId:
           type: string
         accountId:
@@ -7342,7 +7980,7 @@ paths:
       parameters:
         - schema:
             type: string
-            enum: *a19
+            enum: *a26
           required: true
           name: provider
           in: path
@@ -7383,7 +8021,7 @@ paths:
       parameters:
         - schema:
             type: string
-            enum: *a19
+            enum: *a26
           required: true
           name: provider
           in: path
@@ -7799,6 +8437,297 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/routines:
+    get:
+      tags:
+        - Agents
+      summary: List routine definitions for an agent
+      operationId: listAgentRoutines
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      responses:
+        "200":
+          description: Routine definitions returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutineDefinitionListResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      tags:
+        - Agents
+      summary: Create a draft routine definition for an agent
+      operationId: createAgentRoutine
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoutineDefinitionCreateRequest"
+      responses:
+        "201":
+          description: Draft routine definition created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutineDefinitionSaveResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/routines/{routineId}:
+    get:
+      tags:
+        - Agents
+      summary: Get a routine definition for an agent
+      operationId: getAgentRoutine
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: routineId
+          in: path
+      responses:
+        "200":
+          description: Routine definition returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutineDefinitionGetResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent or routine definition not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      tags:
+        - Agents
+      summary: Update a draft routine definition for an agent
+      operationId: updateAgentRoutine
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: routineId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoutineDefinitionUpdateRequest"
+      responses:
+        "200":
+          description: Draft routine definition updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutineDefinitionSaveResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent or routine definition not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags:
+        - Agents
+      summary: Delete a draft routine definition for an agent
+      operationId: deleteAgentRoutine
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: routineId
+          in: path
+      responses:
+        "204":
+          description: Draft routine definition deleted
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent or draft routine definition not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/routines/{routineId}/validate:
+    post:
+      tags:
+        - Agents
+      summary: Validate a routine definition for an agent
+      operationId: validateAgentRoutine
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: routineId
+          in: path
+      responses:
+        "200":
+          description: Routine validation returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutineDefinitionValidateResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent or routine definition not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/routines/{routineId}/publish:
+    post:
+      tags:
+        - Agents
+      summary: Publish a draft routine definition for an agent
+      operationId: publishAgentRoutine
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: routineId
+          in: path
+      responses:
+        "200":
+          description: Routine definition published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutineDefinitionSaveResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent or routine definition not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Routine definition is invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoutineDefinitionPublishRejectedResponse"
   /api/v1/agents/{agentId}/assistant-logo:
     post:
       tags:
@@ -7959,7 +8888,7 @@ paths:
       operationId: listSkills
       security:
         - bearerAuth: []
-        - &a20
+        - &a27
           sessionCookie: []
           workspaceSelection: []
       responses:
@@ -7983,7 +8912,7 @@ paths:
       operationId: getSkill
       security:
         - bearerAuth: []
-        - *a20
+        - *a27
       parameters:
         - schema:
             type: string
@@ -9956,7 +10885,7 @@ paths:
                           properties:
                             provider:
                               type: string
-                              enum: &a21
+                              enum: &a28
                                 - openai
                                 - openai-compatible
                                 - gemini
@@ -10011,7 +10940,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: *a21
+                          enum: *a28
                         model:
                           type: string
                       required:

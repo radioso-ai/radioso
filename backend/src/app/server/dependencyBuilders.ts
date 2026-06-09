@@ -4,6 +4,7 @@ import { AccountRepository } from "../../db/repositories/accountRepository.js";
 import { ActionRequestRepository } from "../../db/repositories/actionRequestRepository.js";
 import { AccessGrantRepository } from "../../db/repositories/accessGrantRepository.js";
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
+import { RoutineDefinitionRepository } from "../../db/repositories/routineDefinitionRepository.js";
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
 import { createConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
 import type { AgentSkillSettingsRegistry, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
@@ -254,6 +255,7 @@ export const buildRepositories = (
   messageRepository: new MessageRepository(database),
   passwordResetTokenRepository: new PasswordResetTokenRepository(database),
   retrievalSettingsRepository: new RetrievalSettingsRepository(database),
+  routineDefinitionRepository: new RoutineDefinitionRepository(database),
   sessionRepository: new SessionRepository(database),
   userRepository: new UserRepository(database),
   websiteCrawlJobRepository: new WebsiteCrawlJobRepository(database),

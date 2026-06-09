@@ -82,6 +82,7 @@ export interface ApplicationComposition {
   usageEventRecorderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageEventRecorderRegistration"];
   publicChatActionAdvertiserRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["publicChatActionAdvertiserRegistrations"];
   routineRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["routineRegistrations"];
+  publishedRoutineRegistrationSource: ReturnType<typeof createApplicationExtensionRegistry>["publishedRoutineRegistrationSource"];
   actionHandlerRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["actionHandlerRegistrations"];
   contactHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["contactHistoryProviderRegistration"];
   answerFeedbackHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["answerFeedbackHistoryProviderRegistration"];
@@ -137,6 +138,7 @@ export const createDefaultApplicationComposition = (options: {
     usageEventRecorderRegistration: registry.usageEventRecorderRegistration,
     publicChatActionAdvertiserRegistrations: registry.publicChatActionAdvertiserRegistrations,
     routineRegistrations: registry.routineRegistrations,
+    publishedRoutineRegistrationSource: registry.publishedRoutineRegistrationSource,
     actionHandlerRegistrations: registry.actionHandlerRegistrations,
     contactHistoryProviderRegistration: registry.contactHistoryProviderRegistration,
     answerFeedbackHistoryProviderRegistration: registry.answerFeedbackHistoryProviderRegistration,

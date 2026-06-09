@@ -79,6 +79,7 @@ function renderCoachHook(input: {
   deps: CoachStateDeps
   seed?: WorkbenchSeedTurn | null
   existingDirectives?: Directive[]
+  directivesStatus?: 'loading' | 'ready' | 'error'
 }) {
   const container = document.createElement('div')
   document.body.appendChild(container)
@@ -91,6 +92,7 @@ function renderCoachHook(input: {
       selectedAgent: agent,
       seedTurn: currentSeed,
       existingDirectives: input.existingDirectives,
+      directivesStatus: input.directivesStatus ?? 'ready',
       deps: input.deps,
     })
     return null
@@ -230,6 +232,40 @@ describe('coach state', () => {
       },
     })
     expect(hook.current.status).toBe('done')
+  })
+
+  it('blocks coaching while existing directives are loading', async () => {
+    const deps = createDeps()
+    const hook = renderCoachHook({ deps, directivesStatus: 'loading' })
+    roots.push(hook)
+
+    expect(hook.current.canSubmit).toBe(false)
+
+    await act(async () => {
+      await hook.current.submitCoaching('Answer with release note specifics.')
+    })
+
+    expect(hook.current.status).toBe('error')
+    expect(hook.current.error).toBe('Wait for existing directives to load before drafting coaching.')
+    expect(deps.draftDirective).not.toHaveBeenCalled()
+    expect(deps.replay).not.toHaveBeenCalled()
+  })
+
+  it('blocks coaching when existing directives failed to load', async () => {
+    const deps = createDeps()
+    const hook = renderCoachHook({ deps, directivesStatus: 'error' })
+    roots.push(hook)
+
+    expect(hook.current.canSubmit).toBe(false)
+
+    await act(async () => {
+      await hook.current.submitCoaching('Answer with release note specifics.')
+    })
+
+    expect(hook.current.status).toBe('error')
+    expect(hook.current.error).toBe("Couldn't load existing directives. Reload before coaching so the preview matches what gets saved.")
+    expect(deps.draftDirective).not.toHaveBeenCalled()
+    expect(deps.replay).not.toHaveBeenCalled()
   })
 
   it('enters error state when draft fails', async () => {

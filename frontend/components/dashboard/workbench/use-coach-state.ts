@@ -18,6 +18,7 @@ import type { AgentConfigOverrideInput, WorkbenchReplayRunResponse } from '@/lib
 import type { WorkbenchSeedTurn } from './use-workbench-state'
 
 export type CoachStatus = 'idle' | 'drafting' | 'preview' | 'validating' | 'done' | 'error'
+export type DirectivesLoadStatus = 'loading' | 'ready' | 'error'
 
 export interface CoachPreview {
   draft: DirectiveDraftResponse
@@ -88,11 +89,13 @@ export function useCoachState({
   selectedAgent,
   seedTurn,
   existingDirectives = [],
+  directivesStatus,
   deps = defaultDeps,
 }: {
   selectedAgent: AgentSettings
   seedTurn: WorkbenchSeedTurn | null
   existingDirectives?: Directive[]
+  directivesStatus: DirectivesLoadStatus
   deps?: CoachStateDeps
 }) {
   const [state, setState] = useState<CoachState>({
@@ -115,8 +118,13 @@ export function useCoachState({
   }, [seedIdentity])
 
   const canSubmit = useMemo(
-    () => Boolean(seedTurn?.assistantTurn) && state.status !== 'drafting' && state.status !== 'validating',
-    [seedTurn?.assistantTurn, state.status],
+    () => (
+      directivesStatus === 'ready'
+      && Boolean(seedTurn?.assistantTurn)
+      && state.status !== 'drafting'
+      && state.status !== 'validating'
+    ),
+    [directivesStatus, seedTurn?.assistantTurn, state.status],
   )
 
   const submitCoaching = useCallback(async (coachingText: string) => {
@@ -126,6 +134,16 @@ export function useCoachState({
         ...current,
         status: 'error',
         error: 'Load an assistant turn before coaching.',
+      }))
+      return
+    }
+    if (directivesStatus !== 'ready') {
+      setState((current) => ({
+        ...current,
+        status: 'error',
+        error: directivesStatus === 'loading'
+          ? 'Wait for existing directives to load before drafting coaching.'
+          : "Couldn't load existing directives. Reload before coaching so the preview matches what gets saved.",
       }))
       return
     }
@@ -174,7 +192,7 @@ export function useCoachState({
         error: getApiErrorMessage(error, 'Failed to draft and preview coaching.'),
       })
     }
-  }, [deps, existingDirectives, seedTurn, selectedAgent.id, snapshotId])
+  }, [deps, directivesStatus, existingDirectives, seedTurn, selectedAgent.id, snapshotId])
 
   const validate = useCallback(async () => {
     if (!state.preview) {

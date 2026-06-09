@@ -9,7 +9,15 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { directivesApi, type AgentSettings, type ChatConversationTurn, type Directive } from '@/lib/api'
 import type { WorkbenchSeedTurn } from './use-workbench-state'
-import { useCoachState } from './use-coach-state'
+import { useCoachState, type DirectivesLoadStatus } from './use-coach-state'
+
+const directivesLoadErrorMessage = "Couldn't load existing directives - reload before coaching so the preview matches what gets saved."
+
+type DirectivesLoadState = {
+  agentId: string
+  status: DirectivesLoadStatus
+  directives: Directive[]
+}
 
 function TranscriptTurn({
   turn,
@@ -53,27 +61,57 @@ export function TrainingView({
   seedTurn: WorkbenchSeedTurn
   onOpenDocument: (documentId: string) => void
 }) {
-  const [existingDirectives, setExistingDirectives] = useState<Directive[]>([])
+  const [existingDirectives, setExistingDirectives] = useState<DirectivesLoadState>({
+    agentId: selectedAgent.id,
+    status: 'loading',
+    directives: [],
+  })
   useEffect(() => {
     let cancelled = false
     void directivesApi.listDirectives(selectedAgent.id)
       .then((response) => {
-        if (!cancelled) setExistingDirectives(response.directives)
+        if (!cancelled) {
+          setExistingDirectives({
+            agentId: selectedAgent.id,
+            status: 'ready',
+            directives: response.directives,
+          })
+        }
       })
       .catch(() => {
-        if (!cancelled) setExistingDirectives([])
+        if (!cancelled) {
+          setExistingDirectives({
+            agentId: selectedAgent.id,
+            status: 'error',
+            directives: [],
+          })
+        }
       })
     return () => {
       cancelled = true
     }
   }, [selectedAgent.id])
+  const activeDirectives = existingDirectives.agentId === selectedAgent.id
+    ? existingDirectives
+    : { agentId: selectedAgent.id, status: 'loading' as const, directives: [] }
 
-  const coach = useCoachState({ selectedAgent, seedTurn, existingDirectives })
+  const coach = useCoachState({
+    selectedAgent,
+    seedTurn,
+    existingDirectives: activeDirectives.directives,
+    directivesStatus: activeDirectives.status,
+  })
   const [coachingText, setCoachingText] = useState('')
   const previewAnswer = coach.preview?.replay.answer
     ?? coach.preview?.replay.run.observedOutput.answer
     ?? ''
   const diagnosis = coach.preview?.draft.diagnosis
+  let draftButtonLabel = 'Draft directive'
+  if (activeDirectives.status === 'loading') {
+    draftButtonLabel = 'Loading directives…'
+  } else if (coach.status === 'drafting') {
+    draftButtonLabel = 'Drafting'
+  }
 
   return (
     <section className="space-y-4">
@@ -127,9 +165,15 @@ export function TrainingView({
             />
             <Button type="submit" className="gap-1.5" disabled={!coach.canSubmit || coach.status === 'drafting'}>
               <WandSparkles className="h-3.5 w-3.5" />
-              {coach.status === 'drafting' ? 'Drafting' : 'Draft directive'}
+              {draftButtonLabel}
             </Button>
           </form>
+
+          {activeDirectives.status === 'error' ? (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+              {directivesLoadErrorMessage}
+            </div>
+          ) : null}
 
           {coach.error ? (
             <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">

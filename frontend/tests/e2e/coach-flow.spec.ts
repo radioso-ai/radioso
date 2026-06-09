@@ -69,7 +69,25 @@ const replayDraftDirective = {
 const installCoachMocks = async (
   page: Page,
   requestBodies: unknown[],
+  directivesListReady: Promise<void> = Promise.resolve(),
 ) => {
+  await page.route(`**/backend/api/v1/agents/${defaultAgentId}/directives`, async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+
+    await directivesListReady;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        directives: [],
+        builtIns: [],
+      }),
+    });
+  });
+
   await page.route(`**/backend/api/v1/agents/${defaultAgentId}/directives/draft`, async (route) => {
     const body = route.request().postDataJSON();
     requestBodies.push({ endpoint: "draft", body });
@@ -148,18 +166,25 @@ const installCoachMocks = async (
 test("operator coaches a captured turn, previews a drafted directive, and validates it", async ({ page }) => {
   const requestBodies: unknown[] = [];
   const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
+  let resolveDirectivesList: () => void = () => undefined;
+  const directivesListReady = new Promise<void>((resolve) => {
+    resolveDirectivesList = resolve;
+  });
 
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     conversationDetail: seededConversation,
     directiveUpdates,
   });
-  await installCoachMocks(page, requestBodies);
+  await installCoachMocks(page, requestBodies, directivesListReady);
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=chat&replayConversationId=${conversationId}&replayMessageId=${assistantMessageId}`);
 
   await expect(page.getByRole("heading", { name: "Training" })).toBeVisible();
   await expect(page.getByText("It changed some workbench things.").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Loading directives…" })).toBeDisabled();
+  resolveDirectivesList();
+  await expect(page.getByRole("button", { name: "Draft directive" })).toBeEnabled();
 
   await page.getByLabel("Coach your AI agent on how to respond").fill("Use concrete workbench release details.");
   await page.getByRole("button", { name: "Draft directive" }).click();

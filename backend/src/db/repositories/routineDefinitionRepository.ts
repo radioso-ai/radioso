@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { QueryResultRow } from "pg";
+import type { PoolClient, QueryResultRow } from "pg";
 
 import type { Database } from "../../shared/infra/database.js";
 import {
@@ -196,16 +196,18 @@ export class RoutineDefinitionRepository {
   async createDraft(agentId: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition> {
     const draft = routineDefinitionDraftInputSchema.parse(input);
     const id = randomUUID();
-    await this.database.queryOne<{ id: string }>(
-      `INSERT INTO routine_definition (
-         id, agent_id, version, name, status, activation_trigger_description,
-         activation_gate_ref, activation_priority
-       )
-       VALUES ($1, $2, 1, $3, 'draft', $4, $5, $6)
-       RETURNING id::text`,
-      [id, agentId, draft.name, draft.activation.triggerDescription, draft.activation.gateRef, draft.activation.priority],
-    );
-    await this.replaceChildren(id, draft);
+    await this.database.withTransaction(async (client) => {
+      await client.query<{ id: string }>(
+        `INSERT INTO routine_definition (
+           id, agent_id, version, name, status, activation_trigger_description,
+           activation_gate_ref, activation_priority
+         )
+         VALUES ($1, $2, 1, $3, 'draft', $4, $5, $6)
+         RETURNING id::text`,
+        [id, agentId, draft.name, draft.activation.triggerDescription, draft.activation.gateRef, draft.activation.priority],
+      );
+      await this.replaceChildren(client, id, draft);
+    });
     const loaded = await this.findById(agentId, id);
     if (!loaded) {
       throw new Error(`routine_definition_not_found:${id}`);
@@ -215,17 +217,19 @@ export class RoutineDefinitionRepository {
 
   async updateDraft(agentId: string, id: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition> {
     const draft = routineDefinitionDraftInputSchema.parse(input);
-    await this.database.execute(
-      `UPDATE routine_definition
-       SET name = $3,
-           activation_trigger_description = $4,
-           activation_gate_ref = $5,
-           activation_priority = $6,
-           updated_at = NOW()
-       WHERE agent_id = $1 AND id = $2 AND status = 'draft'`,
-      [agentId, id, draft.name, draft.activation.triggerDescription, draft.activation.gateRef, draft.activation.priority],
-    );
-    await this.replaceChildren(id, draft);
+    await this.database.withTransaction(async (client) => {
+      await client.query(
+        `UPDATE routine_definition
+         SET name = $3,
+             activation_trigger_description = $4,
+             activation_gate_ref = $5,
+             activation_priority = $6,
+             updated_at = NOW()
+         WHERE agent_id = $1 AND id = $2 AND status = 'draft'`,
+        [agentId, id, draft.name, draft.activation.triggerDescription, draft.activation.gateRef, draft.activation.priority],
+      );
+      await this.replaceChildren(client, id, draft);
+    });
     const loaded = await this.findById(agentId, id);
     if (!loaded) {
       throw new Error(`routine_definition_not_found:${id}`);
@@ -238,31 +242,41 @@ export class RoutineDefinitionRepository {
     if (!draft) {
       throw new Error(`routine_definition_not_found:${draftId}`);
     }
-    const versionRow = await this.database.queryOne<{ version: number }>(
-      `SELECT COALESCE(MAX(version), 0) + 1 AS version
-       FROM routine_definition
-       WHERE agent_id = $1 AND name = $2`,
-      [agentId, draft.name],
-    );
     const id = randomUUID();
-    await this.database.queryOne<{ id: string }>(
-      `INSERT INTO routine_definition (
-         id, agent_id, version, name, status, activation_trigger_description,
-         activation_gate_ref, activation_priority
-       )
-       VALUES ($1, $2, $3, $4, 'published', $5, $6, $7)
-       RETURNING id::text`,
-      [
-        id,
-        agentId,
-        versionRow.version,
-        draft.name,
-        draft.activation.triggerDescription,
-        draft.activation.gateRef,
-        draft.activation.priority,
-      ],
-    );
-    await this.replaceChildren(id, draft);
+    await this.database.withTransaction(async (client) => {
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+        [`routine_definition_publish:${agentId}:${draft.name}`],
+      );
+      const versionResult = await client.query<{ version: number }>(
+        `SELECT COALESCE(MAX(version), 0) + 1 AS version
+         FROM routine_definition
+         WHERE agent_id = $1 AND name = $2`,
+        [agentId, draft.name],
+      );
+      const versionRow = versionResult.rows[0];
+      if (!versionRow) {
+        throw new Error("routine_definition_version_not_found");
+      }
+      await client.query<{ id: string }>(
+        `INSERT INTO routine_definition (
+           id, agent_id, version, name, status, activation_trigger_description,
+           activation_gate_ref, activation_priority
+         )
+         VALUES ($1, $2, $3, $4, 'published', $5, $6, $7)
+         RETURNING id::text`,
+        [
+          id,
+          agentId,
+          versionRow.version,
+          draft.name,
+          draft.activation.triggerDescription,
+          draft.activation.gateRef,
+          draft.activation.priority,
+        ],
+      );
+      await this.replaceChildren(client, id, draft);
+    });
     const loaded = await this.findById(agentId, id);
     if (!loaded) {
       throw new Error(`routine_definition_not_found:${id}`);
@@ -280,35 +294,35 @@ export class RoutineDefinitionRepository {
     return Boolean(row);
   }
 
-  private async replaceChildren(definitionId: string, input: RoutineDefinitionDraftInput): Promise<void> {
-    await this.database.execute(`DELETE FROM routine_slot WHERE definition_id = $1`, [definitionId]);
-    await this.database.execute(`DELETE FROM routine_step WHERE definition_id = $1`, [definitionId]);
-    await this.database.execute(`DELETE FROM routine_transition WHERE definition_id = $1`, [definitionId]);
-    await this.database.execute(`DELETE FROM routine_terminal WHERE definition_id = $1`, [definitionId]);
+  private async replaceChildren(client: Pick<PoolClient, "query">, definitionId: string, input: RoutineDefinitionDraftInput): Promise<void> {
+    await client.query(`DELETE FROM routine_slot WHERE definition_id = $1`, [definitionId]);
+    await client.query(`DELETE FROM routine_step WHERE definition_id = $1`, [definitionId]);
+    await client.query(`DELETE FROM routine_transition WHERE definition_id = $1`, [definitionId]);
+    await client.query(`DELETE FROM routine_terminal WHERE definition_id = $1`, [definitionId]);
 
     for (const slot of input.slots) {
-      await this.database.execute(
+      await client.query(
         `INSERT INTO routine_slot (definition_id, stable_slot_id, key, type, required, description, ordinal)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [definitionId, slot.stableSlotId, slot.key, slot.type, slot.required, slot.description, slot.ordinal],
       );
     }
     for (const step of input.steps) {
-      await this.database.execute(
+      await client.query(
         `INSERT INTO routine_step (definition_id, stable_step_id, kind, instruction, tool_ref, ordinal, metadata)
          VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
         [definitionId, step.stableStepId, step.kind, step.instruction, step.toolRef, step.ordinal, JSON.stringify(step.metadata)],
       );
     }
     for (const transition of input.transitions) {
-      await this.database.execute(
+      await client.query(
         `INSERT INTO routine_transition (definition_id, from_step, to_ref, guard_kind, guard_text, ordinal)
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [definitionId, transition.fromStep, transition.toRef, transition.guardKind, transition.guardText, transition.ordinal],
       );
     }
     for (const terminal of input.terminals) {
-      await this.database.execute(
+      await client.query(
         `INSERT INTO routine_terminal (definition_id, stable_step_id, kind, instruction, action_type, ordinal)
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [definitionId, terminal.stableStepId, terminal.kind, terminal.instruction, terminal.actionType, terminal.ordinal],

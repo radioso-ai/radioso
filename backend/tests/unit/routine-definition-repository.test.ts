@@ -5,11 +5,16 @@ import type { Database } from "../../src/shared/infra/database.js";
 import type { RoutineDefinition } from "../../src/modules/routines/public.js";
 
 const mockDatabase = () => {
+  const mockClient = {
+    query: vi.fn().mockResolvedValue({ rows: [] }),
+  };
   const db = {
     query: vi.fn().mockResolvedValue([]),
     queryOptional: vi.fn(),
     queryOne: vi.fn(),
     execute: vi.fn().mockResolvedValue(1),
+    withTransaction: vi.fn(async (cb: (client: typeof mockClient) => Promise<unknown>) => cb(mockClient)),
+    mockClient,
   };
   return db as unknown as Database & typeof db;
 };
@@ -93,16 +98,18 @@ describe("RoutineDefinitionRepository", () => {
 
   it("creates a draft parent plus child rows", async () => {
     const db = mockDatabase();
-    db.queryOne.mockResolvedValue(loadedRow());
     db.queryOptional.mockResolvedValue(loadedRow());
 
     await new RoutineDefinitionRepository(db).createDraft("agent_1", draftInput());
 
-    expect(db.queryOne.mock.calls[0]![0]).toContain("INSERT INTO routine_definition");
-    expect(db.execute.mock.calls.map((call) => call[0]).join("\n")).toContain("INSERT INTO routine_slot");
-    expect(db.execute.mock.calls.map((call) => call[0]).join("\n")).toContain("INSERT INTO routine_step");
-    expect(db.execute.mock.calls.map((call) => call[0]).join("\n")).toContain("INSERT INTO routine_transition");
-    expect(db.execute.mock.calls.map((call) => call[0]).join("\n")).toContain("INSERT INTO routine_terminal");
+    expect(db.withTransaction).toHaveBeenCalledOnce();
+    expect(db.mockClient.query.mock.calls[0]![0]).toContain("INSERT INTO routine_definition");
+    const sql = db.mockClient.query.mock.calls.map((call) => call[0]).join("\n");
+    expect(sql).toContain("INSERT INTO routine_slot");
+    expect(sql).toContain("INSERT INTO routine_step");
+    expect(sql).toContain("INSERT INTO routine_transition");
+    expect(sql).toContain("INSERT INTO routine_terminal");
+    expect(db.queryOptional).toHaveBeenCalledOnce();
   });
 
   it("updates a draft and replaces child rows in routine tables only", async () => {
@@ -111,8 +118,9 @@ describe("RoutineDefinitionRepository", () => {
 
     await new RoutineDefinitionRepository(db).updateDraft("agent_1", "def_1", draftInput());
 
-    expect(db.execute.mock.calls[0]![0]).toContain("UPDATE routine_definition");
-    const sql = db.execute.mock.calls.map((call) => call[0]).join("\n");
+    expect(db.withTransaction).toHaveBeenCalledOnce();
+    expect(db.mockClient.query.mock.calls[0]![0]).toContain("UPDATE routine_definition");
+    const sql = db.mockClient.query.mock.calls.map((call) => call[0]).join("\n");
     expect(sql).toContain("DELETE FROM routine_slot");
     expect(sql).toContain("DELETE FROM routine_step");
     expect(sql).toContain("DELETE FROM routine_transition");
@@ -126,15 +134,20 @@ describe("RoutineDefinitionRepository", () => {
     db.queryOptional
       .mockResolvedValueOnce(loadedRow())
       .mockResolvedValueOnce({ ...loadedRow(), id: "def_2", version: 2, status: "published" });
-    db.queryOne
-      .mockResolvedValueOnce({ version: 2 })
-      .mockResolvedValueOnce({ ...loadedRow(), id: "def_2", version: 2, status: "published" });
+    db.mockClient.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ version: 2 }] });
 
     const published = await new RoutineDefinitionRepository(db).publish("agent_1", "def_1");
 
     expect(published.version).toBe(2);
     expect(published.status).toBe("published");
-    expect(db.queryOne.mock.calls[0]![0]).toContain("COALESCE(MAX(version), 0) + 1");
-    expect(db.queryOne.mock.calls[1]![0]).toContain("INSERT INTO routine_definition");
+    expect(db.withTransaction).toHaveBeenCalledOnce();
+    expect(db.mockClient.query.mock.calls[0]![0]).toContain("pg_advisory_xact_lock");
+    expect(db.mockClient.query.mock.calls[1]![0]).toContain("COALESCE(MAX(version), 0) + 1");
+    expect(db.mockClient.query.mock.calls[2]![0]).toContain("INSERT INTO routine_definition");
+    const sql = db.mockClient.query.mock.calls.map((call) => call[0]).join("\n");
+    expect(sql).toContain("INSERT INTO routine_slot");
+    expect(db.queryOptional).toHaveBeenCalledTimes(2);
   });
 });

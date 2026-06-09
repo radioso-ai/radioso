@@ -3,6 +3,7 @@ import type { ConversationModelGateway, TurnContext } from "@radioso/conversatio
 import type { RoutineRegistration } from "../../modules/chat/composition.js";
 import type { RoutineDefinitionRepository } from "../../db/repositories/routineDefinitionRepository.js";
 import { compileRoutineDefinition } from "../../modules/routines/public.js";
+import { renderPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 
 export interface PublishedRoutineRegistrationSource {
   load(input: { agentId: string }): Promise<RoutineRegistration[]>;
@@ -23,14 +24,6 @@ const parseActivationDecision = (text: string): boolean => {
   }
 };
 
-const activationPrompt = (triggerDescription: string, gateRef: string | null): string =>
-  [
-    "Decide whether the routine should activate for the current user turn.",
-    "Return only compact JSON with a boolean field named activate.",
-    `Trigger: ${triggerDescription}`,
-    gateRef ? `Gate: ${gateRef}` : null,
-  ].filter((line): line is string => line !== null).join("\n");
-
 const activateWithTrigger = async (
   input: {
     turn: TurnContext;
@@ -40,7 +33,10 @@ const activateWithTrigger = async (
   },
 ): Promise<{ variables?: Record<string, unknown> } | null> => {
   const decision = await input.modelGateway.complete({
-    systemPrompt: activationPrompt(input.triggerDescription, input.gateRef),
+    systemPrompt: renderPromptTemplate("chat/routine-data-activation.md", {
+      triggerDescription: input.triggerDescription,
+      gateNote: input.gateRef ? `Gate: ${input.gateRef}` : "",
+    }),
     messages: [
       {
         role: "user",

@@ -1,5 +1,40 @@
 # Routine Authoring API Notes
 
+## Follow-ups (2026-06-09)
+
+- Wrapped `RoutineDefinitionRepository.createDraft`, `updateDraft`, and `publish` parent and child-table writes in `database.withTransaction(...)`; `publish` now takes a transaction-scoped advisory lock for the agent/name key, then calculates the next version and inserts the published snapshot inside the same transaction. Repository unit coverage now asserts writes through the transaction client.
+- Moved the routine data activation system prompt from inline composition code to `backend/prompts/chat/routine-data-activation.md`, rendered with `renderPromptTemplate(...)`.
+
+Verification:
+
+```text
+pnpm --dir backend exec vitest run tests/unit/routine-definition-repository.test.ts tests/unit/routine-definition-service.test.ts tests/unit/routine-definition-composition.test.ts tests/unit/routine-definition-domain.test.ts
+
+ RUN  v4.1.8 /Users/dm/conductor/workspaces/radioso/seville/backend
+
+
+ Test Files  4 passed (4)
+      Tests  18 passed (18)
+   Start at  13:22:30
+   Duration  321ms (transform 315ms, setup 79ms, import 361ms, tests 21ms, environment 0ms)
+```
+
+```text
+pnpm --dir backend exec tsc -p tsconfig.json --noEmit
+```
+
+No output; exit code 0.
+
+```text
+pnpm --dir backend run lint:boundaries
+
+> radioso-backend@0.1.0 lint:boundaries /Users/dm/conductor/workspaces/radioso/seville/backend
+> depcruise --config dependency-cruiser.config.cjs src
+
+
+✔ no dependency violations found (556 modules, 1255 dependencies cruised)
+```
+
 ## Independent verification (orchestrator, 2026-06-09)
 
 Codex's sandbox blocked socket binding (`listen EPERM`), so it could not run the contract tests (supertest) or `test:contract`. Re-verified in the installed workspace:

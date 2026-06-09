@@ -700,7 +700,6 @@ describe("agents contract", () => {
           name: "answer-directly-first",
           condition: { kind: "contextual", description: "When the user asks for an operational decision." },
           action: "Answer the operational decision first, then provide supporting context only if it changes the next step.",
-          tags: [],
         },
         diagnosis: "directive_recommended",
         rationale: "The coaching asks for reusable answer behavior.",

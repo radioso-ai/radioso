@@ -49,6 +49,73 @@ export type DirectiveDraftRequest = ApiSchemas['DirectiveDraftRequest']
 export type DirectiveDraftResponse = ApiSchemas['DirectiveDraftResponse']
 export type DirectiveDraftDirective = ApiSchemas['DirectiveDraftDirective']
 
+export type RoutineDefinitionStatus = 'draft' | 'published'
+export type RoutineSlotType = 'text' | 'number' | 'boolean' | 'email' | 'date'
+export type RoutineStepKind = 'chat' | 'tool' | 'fork'
+export type RoutineGuardKind = 'llm' | 'always' | 'fallback' | 'slot_filled' | 'outcome' | 'counter'
+export type RoutineTerminalKind = 'complete' | 'handoff' | 'action'
+export type RoutineValidationCode =
+  | 'unreachable_step'
+  | 'missing_terminal'
+  | 'dangling_action_reference'
+  | 'dangling_step_reference'
+  | 'declared_unused_slot'
+  | 'referenced_undeclared_slot'
+  | 'unregistered_action_type'
+  | 'action_capability_denied'
+  | 'attempt_limit_without_fallback'
+  | 'outcome_guard_on_non_tool_step'
+  | 'structured_guard_missing_parameter'
+
+export type RoutineValidationDiagnostic = {
+  code: RoutineValidationCode
+  location: string
+  message: string
+}
+export type RoutineValidationResult = {
+  ok: boolean
+  diagnostics: RoutineValidationDiagnostic[]
+}
+export type RoutineSlot = Omit<ApiSchemas['RoutineDefinition']['slots'][number], 'type'> & { type: RoutineSlotType }
+export type RoutineStep = Omit<ApiSchemas['RoutineDefinition']['steps'][number], 'kind'> & { kind: RoutineStepKind }
+export type RoutineTransition = Omit<ApiSchemas['RoutineDefinition']['transitions'][number], 'guardKind'> & {
+  guardKind: RoutineGuardKind
+}
+export type RoutineTerminal = Omit<ApiSchemas['RoutineDefinition']['terminals'][number], 'kind'> & {
+  kind: RoutineTerminalKind
+}
+export type RoutineDefinitionDraft = {
+  name: string
+  activation: {
+    triggerDescription: string
+    gateRef?: string | null
+    priority: number
+  }
+  slots: RoutineSlot[]
+  steps: RoutineStep[]
+  transitions: RoutineTransition[]
+  terminals: RoutineTerminal[]
+}
+export type RoutineDefinition = RoutineDefinitionDraft & {
+  id: string
+  agentId: string
+  version: number
+  status: RoutineDefinitionStatus
+  createdAt: string
+  updatedAt: string
+}
+export type RoutineDefinitionListResponse = { routines: RoutineDefinition[] }
+export type RoutineDefinitionGetResponse = { routine: RoutineDefinition }
+export type RoutineDefinitionSaveResponse = {
+  routine: RoutineDefinition
+  validation: RoutineValidationResult
+}
+export type RoutineDefinitionValidateResponse = { validation: RoutineValidationResult }
+export type RoutineDefinitionPublishRejectedResponse = {
+  error: 'Routine definition is invalid'
+  validation: RoutineValidationResult
+}
+
 export type AssistantBehaviorSettings = Pick<
   RetrievalDefaults,
   'suggestedQuestionsEnabled' | 'customInstruction'

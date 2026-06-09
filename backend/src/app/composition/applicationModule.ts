@@ -150,6 +150,7 @@ export interface ApplicationDirectiveRegistration {
  */
 export interface ApplicationActionHandlerRegistration {
   type: string;
+  requiredCapabilities?: string[];
   handler:
     | ActionHandler
     | ((context: {

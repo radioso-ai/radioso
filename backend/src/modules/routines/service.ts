@@ -1,13 +1,19 @@
 import { randomUUID } from "node:crypto";
 
 import { badRequest, notFound } from "../../shared/domain/errors.js";
+import { DefaultAllowCapabilityPolicy, type CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
+import type { ActionCapabilityMap } from "../../shared/domain/actionCapabilities.js";
 import {
   routineDefinitionDraftInputSchema,
   type RoutineDefinition,
   type RoutineDefinitionDraftInput,
 } from "./domain.js";
 import { compileRoutineDefinition } from "./compiler.js";
-import { validateRoutineDefinition, type RoutineValidationResult } from "./validator.js";
+import {
+  validateRoutineDefinition,
+  type RoutineValidationDiagnostic,
+  type RoutineValidationResult,
+} from "./validator.js";
 
 export interface RoutineDefinitionRepositoryPort {
   listByAgent(agentId: string): Promise<RoutineDefinition[]>;
@@ -35,6 +41,8 @@ export interface RoutineDefinitionServiceOptions {
     findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<unknown | null>;
   };
   repository: RoutineDefinitionRepositoryPort;
+  actionCapabilities?: ActionCapabilityMap;
+  capabilityPolicy?: CapabilityPolicy;
 }
 
 const draftDefinitionFromInput = (agentId: string, input: RoutineDefinitionDraftInput): RoutineDefinition => ({
@@ -48,7 +56,11 @@ const draftDefinitionFromInput = (agentId: string, input: RoutineDefinitionDraft
 });
 
 export class RoutineDefinitionService {
-  constructor(private readonly options: RoutineDefinitionServiceOptions) {}
+  private readonly capabilityPolicy: CapabilityPolicy;
+
+  constructor(private readonly options: RoutineDefinitionServiceOptions) {
+    this.capabilityPolicy = options.capabilityPolicy ?? new DefaultAllowCapabilityPolicy();
+  }
 
   async list(workspaceId: string, agentId: string): Promise<RoutineDefinition[]> {
     await this.requireAgent(workspaceId, agentId);
@@ -117,6 +129,10 @@ export class RoutineDefinitionService {
     if (!validation.ok) {
       return { rejected: true, validation };
     }
+    const actionValidation = await this.validateActionAuthorization(workspaceId, routine, validation);
+    if (!actionValidation.ok) {
+      return { rejected: true, validation: actionValidation };
+    }
     compileRoutineDefinition(routine);
     const published = await this.options.repository.publish(agentId, id);
     return {
@@ -154,5 +170,43 @@ export class RoutineDefinitionService {
       throw notFound("Routine definition not found");
     }
     return routine;
+  }
+
+  private async validateActionAuthorization(
+    workspaceId: string,
+    routine: RoutineDefinition,
+    validation: RoutineValidationResult,
+  ): Promise<RoutineValidationResult> {
+    if (!this.options.actionCapabilities) {
+      return validation;
+    }
+
+    const diagnostics: RoutineValidationDiagnostic[] = [...validation.diagnostics];
+    for (const terminal of routine.terminals) {
+      if (terminal.kind !== "action" || !terminal.actionType) {
+        continue;
+      }
+      if (!this.options.actionCapabilities.has(terminal.actionType)) {
+        diagnostics.push({
+          code: "unregistered_action_type",
+          location: `terminal:${terminal.stableStepId}`,
+          message: `unregistered action type: action terminal "${terminal.stableStepId}" references "${terminal.actionType}", but no action handler is registered for that type.`,
+        });
+        continue;
+      }
+
+      for (const capability of this.options.actionCapabilities.requiredCapabilitiesFor(terminal.actionType)) {
+        const decision = await this.capabilityPolicy.can({ capability, workspaceId });
+        if (!decision.allowed) {
+          diagnostics.push({
+            code: "action_capability_denied",
+            location: `terminal:${terminal.stableStepId}`,
+            message: `action capability denied: action "${terminal.actionType}" requires capability "${capability}" for this workspace.`,
+          });
+        }
+      }
+    }
+
+    return { ok: diagnostics.length === 0, diagnostics };
   }
 }

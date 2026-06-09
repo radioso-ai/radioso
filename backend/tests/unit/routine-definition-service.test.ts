@@ -9,6 +9,8 @@ import {
   type RoutineDefinitionDraftInput,
   type RoutineDefinitionRepositoryPort,
 } from "../../src/modules/routines/public.js";
+import { capabilityNames, type CapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
+import type { ActionCapabilityMap } from "../../src/shared/domain/actionCapabilities.js";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const agentId = "22222222-2222-4222-8222-222222222222";
@@ -129,7 +131,50 @@ const invalidDraft = (): RoutineDefinitionDraftInput => ({
   }],
 });
 
-const createService = () => {
+const actionDraft = (actionType: string): RoutineDefinitionDraftInput => ({
+  ...validDraft(),
+  transitions: [{
+    fromStep: "step_collect_topic",
+    toRef: "terminal_action",
+    guardKind: "always",
+    guardText: null,
+    ordinal: 0,
+  }],
+  terminals: [{
+    stableStepId: "terminal_action",
+    kind: "action",
+    instruction: null,
+    actionType,
+    ordinal: 1,
+  }],
+});
+
+class FakeActionCapabilityMap implements ActionCapabilityMap {
+  constructor(private readonly capabilitiesByType: Map<string, string[]>) {}
+
+  has(type: string): boolean {
+    return this.capabilitiesByType.has(type);
+  }
+
+  requiredCapabilitiesFor(type: string): string[] {
+    return this.capabilitiesByType.get(type) ?? [];
+  }
+}
+
+class FakeCapabilityPolicy implements CapabilityPolicy {
+  constructor(private readonly deniedCapabilities = new Set<string>()) {}
+
+  async can(input: { capability: string }): Promise<{ allowed: boolean; reason?: string }> {
+    return this.deniedCapabilities.has(input.capability)
+      ? { allowed: false, reason: "capability_denied" }
+      : { allowed: true };
+  }
+}
+
+const createService = (options: {
+  actionCapabilities?: ActionCapabilityMap;
+  capabilityPolicy?: CapabilityPolicy;
+} = {}) => {
   const repository = new FakeRoutineDefinitionRepository();
   const service = new RoutineDefinitionService({
     repository,
@@ -140,6 +185,7 @@ const createService = () => {
           : null;
       },
     },
+    ...options,
   });
   return { repository, service };
 };
@@ -187,6 +233,79 @@ describe("RoutineDefinitionService", () => {
       validation: {
         ok: true,
         diagnostics: [],
+      },
+    });
+  });
+
+  it("rejects publishing an action terminal when the workspace lacks the required capability", async () => {
+    const { repository, service } = createService({
+      actionCapabilities: new FakeActionCapabilityMap(new Map([
+        ["contact.send", [capabilityNames.humanContact.request]],
+      ])),
+      capabilityPolicy: new FakeCapabilityPolicy(new Set([capabilityNames.humanContact.request])),
+    });
+    const draft = await service.createDraft(workspaceId, agentId, actionDraft("contact.send"));
+
+    const result = await service.publish(workspaceId, agentId, draft.routine.id);
+
+    expect(result).toMatchObject({
+      rejected: true,
+      validation: {
+        ok: false,
+        diagnostics: [
+          expect.objectContaining({
+            code: "action_capability_denied",
+            location: "terminal:terminal_action",
+          }),
+        ],
+      },
+    });
+    expect("rejected" in result && result.validation.diagnostics[0]?.message).toContain("contact.send");
+    expect("rejected" in result && result.validation.diagnostics[0]?.message).toContain(capabilityNames.humanContact.request);
+    expect(await repository.listByAgent(agentId)).toHaveLength(1);
+  });
+
+  it("rejects publishing an action terminal for an unregistered action type", async () => {
+    const { service } = createService({
+      actionCapabilities: new FakeActionCapabilityMap(new Map()),
+      capabilityPolicy: new FakeCapabilityPolicy(),
+    });
+    const draft = await service.createDraft(workspaceId, agentId, actionDraft("unknown.send"));
+
+    const result = await service.publish(workspaceId, agentId, draft.routine.id);
+
+    expect(result).toMatchObject({
+      rejected: true,
+      validation: {
+        ok: false,
+        diagnostics: [
+          expect.objectContaining({
+            code: "unregistered_action_type",
+            location: "terminal:terminal_action",
+          }),
+        ],
+      },
+    });
+    expect("rejected" in result && result.validation.diagnostics[0]?.message).toContain("unknown.send");
+  });
+
+  it("publishes an action terminal when the workspace has the required capability", async () => {
+    const { service } = createService({
+      actionCapabilities: new FakeActionCapabilityMap(new Map([
+        ["contact.send", [capabilityNames.humanContact.request]],
+      ])),
+      capabilityPolicy: new FakeCapabilityPolicy(),
+    });
+    const draft = await service.createDraft(workspaceId, agentId, actionDraft("contact.send"));
+
+    const result = await service.publish(workspaceId, agentId, draft.routine.id);
+
+    expect(result).toMatchObject({
+      routine: {
+        status: "published",
+      },
+      validation: {
+        ok: true,
       },
     });
   });

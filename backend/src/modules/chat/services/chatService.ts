@@ -13,6 +13,9 @@ import type {
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { AuditService } from "../../audit/contracts/index.js";
+import type { CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
+import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilities.js";
+import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
@@ -168,6 +171,9 @@ export interface ChatServiceOptions {
   /** Optional: when wired, routine-emitted fire-and-forget actions are enqueued to the outbox. */
   actionOutbox?: ChatActionOutboxPort;
   assistantTurnPersistence?: AssistantTurnPersistencePort;
+  actionCapabilities?: ActionCapabilityMap;
+  capabilityPolicy?: CapabilityPolicy;
+  logger?: Pick<AppLogger, "warn">;
   /** Optional: durable per-session routine state store (with {@link routineProvider}). */
   routineStore?: ConversationRoutineStore;
   /** Optional: registered routines + activation. Empty/absent leaves turns unchanged. */
@@ -207,6 +213,9 @@ export class ChatService {
       conversationEngine,
       actionOutbox,
       assistantTurnPersistence,
+      actionCapabilities,
+      capabilityPolicy,
+      logger,
       routineStore,
       routineProvider,
     } = options;
@@ -227,6 +236,9 @@ export class ChatService {
       productAnalyticsService,
       actionOutbox,
       assistantTurnPersistence,
+      actionCapabilities,
+      capabilityPolicy,
+      logger,
     );
     this.chatSessionPreparer = new ChatSessionPreparer(
       conversationRepository,

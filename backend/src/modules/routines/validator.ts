@@ -7,6 +7,8 @@ export type RoutineValidationCode =
   | "dangling_step_reference"
   | "declared_unused_slot"
   | "referenced_undeclared_slot"
+  | "unregistered_action_type"
+  | "action_capability_denied"
   | "attempt_limit_without_fallback"
   | "outcome_guard_on_non_tool_step"
   | "structured_guard_missing_parameter";

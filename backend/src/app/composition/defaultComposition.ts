@@ -32,6 +32,7 @@ import { buildTelemetrySinks, type TelemetrySinkBundle } from "../../shared/obse
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
 import { DefaultAllowCapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
+import { StaticActionCapabilityMap, type ActionCapabilityMap } from "../../shared/domain/actionCapabilities.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import { DefaultTurnSelectionStrategy, type TurnSelectionStrategy } from "../../modules/chat/composition.js";
 import type { DirectiveMatcherPort } from "../../modules/directives/public.js";
@@ -66,6 +67,7 @@ import {
 
 export interface ApplicationComposition {
   capabilityPolicy: CapabilityPolicy;
+  actionCapabilityMap: ActionCapabilityMap;
   connectors: ReturnType<typeof createApplicationExtensionRegistry>["connectors"];
   telemetrySinks: ReturnType<typeof createApplicationExtensionRegistry>["telemetrySinks"];
   productAnalyticsSinks: ReturnType<typeof createApplicationExtensionRegistry>["productAnalyticsSinks"];
@@ -122,6 +124,7 @@ export const createDefaultApplicationComposition = (options: {
 
   return {
     capabilityPolicy: registry.capabilityPolicy ?? new DefaultAllowCapabilityPolicy(),
+    actionCapabilityMap: new StaticActionCapabilityMap(registry.actionHandlerRegistrations),
     connectors: registry.connectors,
     telemetrySinks: registry.telemetrySinks,
     productAnalyticsSinks: registry.productAnalyticsSinks,

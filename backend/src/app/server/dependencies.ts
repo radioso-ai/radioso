@@ -282,6 +282,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const routineDefinitionService = new RoutineDefinitionService({
     agentRepository: repositories.agentRepository,
     repository: repositories.routineDefinitionRepository,
+    actionCapabilities: composition.actionCapabilityMap,
+    capabilityPolicy: composition.capabilityPolicy,
   });
   const directiveAuthorService = new DirectiveAuthorService({
     repository: repositories.agentRepository,

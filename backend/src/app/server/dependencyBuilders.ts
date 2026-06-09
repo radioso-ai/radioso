@@ -893,6 +893,9 @@ export const buildChatServices = (input: {
     // dispatched out of band by `actionDispatchWorker` in the worker process.
     actionOutbox,
     assistantTurnPersistence: new PostgresAssistantTurnPersistence(input.database),
+    actionCapabilities: input.composition.actionCapabilityMap,
+    capabilityPolicy: input.composition.capabilityPolicy,
+    logger: input.logger,
     // Routine resume/activate per turn — present only when routines are registered.
     routineStore: new RoutineStateRepository(input.database),
     routineProvider,

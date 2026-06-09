@@ -1,5 +1,6 @@
 import type { ConversationModelGateway, TurnContext } from "@radioso/conversation-contract";
 
+import { capabilityNames } from "../../../shared/domain/capabilityPolicy.js";
 import {
   contactRoutine,
   CONTACT_SEND_ACTION_TYPE,
@@ -83,6 +84,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
     context.registerRoutine({ routine: contactRoutine, activates: activatesOnContactIntent });
     context.registerActionHandler({
       type: CONTACT_SEND_ACTION_TYPE,
+      requiredCapabilities: [capabilityNames.humanContact.request],
       handler: ({ database, logger, mailService, assertPublicWebsiteUrl }) => {
         const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
           new WorkspaceRepository(database),

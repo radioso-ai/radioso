@@ -7,8 +7,9 @@ import {
   createDefaultWebsiteCrawlJobConsumer,
   createDefaultWebsiteCrawlJobDispatcher,
 } from "../../src/app/composition/defaultComposition.js";
-import { DefaultTurnSelectionStrategy } from "../../src/modules/chat/composition.js";
+import { CONTACT_SEND_ACTION_TYPE, DefaultTurnSelectionStrategy } from "../../src/modules/chat/composition.js";
 import type { DirectiveMatcherPort } from "../../src/modules/directives/public.js";
+import { capabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 import { AmqpDocumentJobConsumer, AmqpDocumentJobDispatcher } from "../../src/modules/documents/infra/amqpDocumentJobQueue.js";
 import { NoopDocumentJobDispatcher } from "../../src/modules/documents/services/documentJobDispatcher.js";
 import { CloudTasksWebsiteCrawlJobDispatcher, AmqpWebsiteCrawlJobDispatcher } from "../../src/modules/websiteCrawler/jobQueue.js";
@@ -68,6 +69,10 @@ describe("default application composition", () => {
     expect(composition.answerFeedbackHistoryProviderRegistration).toBeTypeOf("function");
     expect(composition.agentSurfaceExtensions.map((extension) => extension.key)).toEqual(["websiteEmbed"]);
     expect(composition.websiteEmbedIntegration).toBeDefined();
+    expect(composition.actionCapabilityMap.has(CONTACT_SEND_ACTION_TYPE)).toBe(true);
+    expect(composition.actionCapabilityMap.requiredCapabilitiesFor(CONTACT_SEND_ACTION_TYPE)).toEqual([
+      capabilityNames.humanContact.request,
+    ]);
   });
 
   it("applies optional connector contributions through module registration", async () => {

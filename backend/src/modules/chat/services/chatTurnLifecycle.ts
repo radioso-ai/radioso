@@ -2,6 +2,9 @@ import { createHash, randomUUID } from "node:crypto";
 
 import type { ConversationTrace, RoutineActionRequest } from "@radioso/conversation-contract";
 import type { AuditEventInput, AuditService } from "../../audit/contracts/index.js";
+import { DefaultAllowCapabilityPolicy, type CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
+import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilities.js";
+import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import {
@@ -279,6 +282,7 @@ export const buildTurnTraceForPresentation = (
 export class ChatTurnLifecycle {
   private readonly activitySummaryPresenter = new ActivitySummaryPresenter();
   private readonly activityTracePresenter = new ActivityTracePresenter();
+  private readonly capabilityPolicy: CapabilityPolicy;
 
   constructor(
     private readonly conversationRepository: ConversationRepositoryPort,
@@ -289,7 +293,12 @@ export class ChatTurnLifecycle {
     // enqueued to the outbox at turn completion. Absent leaves turns unchanged.
     private readonly actionOutbox?: ChatActionOutboxPort,
     private readonly assistantTurnPersistence?: AssistantTurnPersistencePort,
-  ) {}
+    private readonly actionCapabilities?: ActionCapabilityMap,
+    capabilityPolicy?: CapabilityPolicy,
+    private readonly logger?: Pick<AppLogger, "warn">,
+  ) {
+    this.capabilityPolicy = capabilityPolicy ?? new DefaultAllowCapabilityPolicy();
+  }
 
   /** Enqueue routine-emitted fire-and-forget actions to the outbox (idempotent). */
   private async enqueueTurnActions(input: {
@@ -311,6 +320,56 @@ export class ChatTurnLifecycle {
         idempotencyKey: actionIdempotencyKey(input.conversationId, action.type, action.payload),
       });
     }
+  }
+
+  private async filterAuthorizedActions(input: {
+    actions: RoutineActionRequest[] | undefined;
+    workspaceId: string;
+    conversationId: string;
+  }): Promise<RoutineActionRequest[] | undefined> {
+    if (!this.actionCapabilities || !input.actions?.length) {
+      return input.actions;
+    }
+
+    const authorized: RoutineActionRequest[] = [];
+    for (const action of input.actions) {
+      const denial = await this.firstDeniedActionCapability(action.type, input.workspaceId);
+      if (denial) {
+        this.logger?.warn(
+          {
+            workspaceId: input.workspaceId,
+            conversationId: input.conversationId,
+            actionType: action.type,
+            reason: denial.reason,
+            capability: denial.capability,
+          },
+          "Routine action blocked by capability policy",
+        );
+        continue;
+      }
+      authorized.push(action);
+    }
+
+    return authorized.length > 0 ? authorized : undefined;
+  }
+
+  private async firstDeniedActionCapability(
+    actionType: string,
+    workspaceId: string,
+  ): Promise<{ reason: string; capability?: string } | null> {
+    if (!this.actionCapabilities) {
+      return null;
+    }
+    if (!this.actionCapabilities.has(actionType)) {
+      return { reason: "unregistered_action_type" };
+    }
+    for (const capability of this.actionCapabilities.requiredCapabilitiesFor(actionType)) {
+      const decision = await this.capabilityPolicy.can({ capability, workspaceId });
+      if (!decision.allowed) {
+        return { reason: decision.reason ?? "capability_denied", capability };
+      }
+    }
+    return null;
   }
 
   async completeAssistantTurn(input: {
@@ -349,12 +408,17 @@ export class ChatTurnLifecycle {
 
     let assistantMessage: MessageRecord;
     const successAuditEvent = this.buildAssistantTurnSuccessAuditEvent(presentation.successInput);
+    const authorizedActions = await this.filterAuthorizedActions({
+      actions: input.actions,
+      workspaceId: input.workspaceId,
+      conversationId: input.session.conversation.id,
+    });
     if (this.assistantTurnPersistence) {
       assistantMessage = await this.assistantTurnPersistence.completeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,
         conversationId: input.session.conversation.id,
-        actions: input.actions,
+        actions: authorizedActions,
         routineStateTransition: input.routineStateTransition,
         assistantMessage: presentation.assistantMessage,
         auditEvent: successAuditEvent,
@@ -365,7 +429,7 @@ export class ChatTurnLifecycle {
       // Fallback for tests and non-DB hosts. Production wires a transaction port so
       // outbox enqueue, routine state, assistant message, touch, and audit commit together.
       await this.enqueueTurnActions({
-        actions: input.actions,
+        actions: authorizedActions,
         workspaceId: input.workspaceId,
         accountId: input.accountId,
         conversationId: input.session.conversation.id,

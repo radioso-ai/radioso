@@ -366,12 +366,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       execution: RetrievalExecutionMetadataSchema.optional(),
       parsedQuery: ParsedQuerySchema.optional(),
       retrievalSubqueries: z.array(RetrievalSubquerySchema).optional(),
-      responseIntent: z.enum(["retrieval", "social_only", "assistant_identity"]).optional().openapi({
-        description: "High-level user-turn intent inferred before routing. This is independent from the assistant route reason.",
-      }),
       retrievalSkipped: z.boolean().optional(),
-      intentConfidence: z.number().min(0).max(1).optional(),
-      intentFallbackApplied: z.boolean().optional(),
       responseLanguagePolicy: z.enum(["match_user_question"]).optional(),
       candidateCounts: CandidateCountsSchema.optional(),
       appliedConstraints: z.array(AppliedConstraintSchema).optional(),
@@ -514,19 +509,9 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     }),
   );
 
-  const RetrievalAnswerUnsupportedSchema = registry.register(
-    "RetrievalAnswerUnsupported",
-    z.object({
-      outcome: z.literal("unsupported"),
-      code: z.literal("unsupported_query_type"),
-      reason: z.enum(["social_only", "assistant_identity"]),
-      message: z.literal("This request is outside retrieval scope."),
-    }),
-  );
-
   const RetrievalAnswerResponseSchema = registry.register(
     "RetrievalAnswerResponse",
-    z.union([RetrievalAnswerSuccessSchema, RetrievalAnswerUnsupportedSchema]),
+    RetrievalAnswerSuccessSchema,
   );
 
   const sourceParamsSchema = z.object({
@@ -590,7 +575,6 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     RetrievalSearchResponseSchema,
     RetrievalAnswerEvidenceSchema,
     RetrievalAnswerSuccessSchema,
-    RetrievalAnswerUnsupportedSchema,
     RetrievalAnswerResponseSchema,
   });
 };

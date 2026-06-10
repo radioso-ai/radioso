@@ -17,15 +17,20 @@ import type { AgentRecord, AgentService } from "../../agents/public.js";
 import { DEFAULT_CONTACT_REQUEST_DELIVERY, defaultAgentBrandingSettings, isAgentRetrievalEnabled } from "../../agents/public.js";
 import { defaultWebsiteEmbedSettings } from "../../settings/contracts/websiteEmbed.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
-import { CHAT_TURN_ROUTE, ChatTurnIntentService, type ChatTurnRoute } from "./chatTurnIntentService.js";
+import { CHAT_TURN_ROUTE, type ChatTurnRoute } from "../../../shared/domain/chatTurnRoute.js";
 import { normalizeRewriteContinuityState } from "./rewriteContinuityState.js";
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import type { DirectiveSteeringResult } from "../../directives/public.js";
 import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
+import type { TurnRouting } from "./turnRouter.js";
 
 interface ChatAnswerAuditMetadata {
   rewriteContinuityState?: RewriteContinuityState;
 }
+
+const defaultTurnFraming = (): TurnRouting["framing"] => ({
+  isIdentityQuestion: false,
+});
 
 export interface PreparedSession {
   agent: AgentRecord;
@@ -33,6 +38,7 @@ export interface PreparedSession {
   history: MessageRecord[];
   retrieval: Awaited<ReturnType<RetrievalPipelineService["run"]>>;
   turnRoute: ChatTurnRoute;
+  turnFraming?: TurnRouting["framing"];
   userMessage: MessageRecord;
   pageContext?: AssistantPageContext | null;
   priorRewriteContinuityState?: RewriteContinuityState;
@@ -71,8 +77,6 @@ export interface PrepareChatSessionOptions {
 }
 
 export class ChatSessionPreparer {
-  private readonly chatTurnIntentService = new ChatTurnIntentService();
-
   constructor(
     private readonly conversationRepository: ConversationRepositoryPort,
     private readonly messageRepository: MessageRepositoryPort,
@@ -131,7 +135,8 @@ export class ChatSessionPreparer {
           conversation: persistedConversation,
           history,
           retrieval: directOnlyTurn.retrieval,
-          turnRoute: CHAT_TURN_ROUTE.SOCIAL_ONLY,
+          turnRoute: CHAT_TURN_ROUTE.DIRECT,
+          turnFraming: defaultTurnFraming(),
           userMessage,
           pageContext: input.pageContext ?? null,
           priorRewriteContinuityState: rewriteContinuityState,
@@ -146,6 +151,7 @@ export class ChatSessionPreparer {
       history,
       retrieval,
       turnRoute,
+      turnFraming: defaultTurnFraming(),
       userMessage,
       pageContext: input.pageContext ?? null,
       priorRewriteContinuityState: rewriteContinuityState,
@@ -168,16 +174,21 @@ export class ChatSessionPreparer {
     };
   }
 
-  async prepareRetrieval(input: PrepareChatSessionInput, session: PreparedSession): Promise<PreparedSession> {
+  async prepareRetrieval(
+    input: PrepareChatSessionInput,
+    session: PreparedSession,
+    framing: TurnRouting["framing"] = defaultTurnFraming(),
+  ): Promise<PreparedSession> {
     const pipelineInput = this.buildPipelineInput(input, session.agent, session.history, session.conversation, session.userMessage);
     const { retrieval, turnRoute } = isAgentRetrievalEnabled(session.agent)
       ? await this.prepareRetrievalEnabledTurn(pipelineInput)
-      : this.prepareDirectOnlyTurn(pipelineInput, session.agent);
+      : this.prepareDirectOnlyTurn(pipelineInput, session.agent, framing);
 
     return {
       ...session,
       retrieval,
       turnRoute,
+      turnFraming: framing,
       ...this.stagedSpineFor(retrieval),
     };
   }
@@ -189,14 +200,22 @@ export class ChatSessionPreparer {
    * without grounding, rather than being forced through retrieval. Unlike the
    * skip-retrieval stub, this still produces a real prompt via the answer path.
    */
-  async prepareDirect(input: PrepareChatSessionInput, session: PreparedSession): Promise<PreparedSession> {
-    const pipelineInput = this.buildPipelineInput(input, session.agent, session.history, session.conversation, session.userMessage);
+  async prepareDirect(
+    input: PrepareChatSessionInput,
+    session: PreparedSession,
+    framing: TurnRouting["framing"] = defaultTurnFraming(),
+  ): Promise<PreparedSession> {
+    const pipelineInput = {
+      ...this.buildPipelineInput(input, session.agent, session.history, session.conversation, session.userMessage),
+      retrievalSettingsOverride: { queryRewriteEnabled: false },
+    };
     if (!isAgentRetrievalEnabled(session.agent)) {
-      const { retrieval, turnRoute } = this.prepareDirectOnlyTurn(pipelineInput, session.agent);
+      const { retrieval, turnRoute } = this.prepareDirectOnlyTurn(pipelineInput, session.agent, framing);
       return {
         ...session,
         retrieval,
         turnRoute,
+        turnFraming: framing,
         ...this.stagedSpineFor(retrieval),
       };
     }
@@ -216,7 +235,8 @@ export class ChatSessionPreparer {
     return {
       ...session,
       retrieval,
-      turnRoute: CHAT_TURN_ROUTE.SOCIAL_ONLY,
+      turnRoute: CHAT_TURN_ROUTE.DIRECT,
+      turnFraming: framing,
       ...this.stagedSpineFor(retrieval),
     };
   }
@@ -253,35 +273,33 @@ export class ChatSessionPreparer {
 
   private async prepareRetrievalEnabledTurn(pipelineInput: RetrievalPipelineRequest) {
     const interpretation = await this.retrievalTurn.interpret(pipelineInput);
-    const turnRoute = this.chatTurnIntentService.resolve({
-      responseIntent: interpretation.interpretation.result.responseIntent,
-    });
     const interpretedWithExecution = {
       ...interpretation,
       request: {
         ...interpretation.request,
         execution: {
           surface: "assistant" as const,
-          path: turnRoute === CHAT_TURN_ROUTE.RETRIEVAL ? "assistant_retrieval" as const : "assistant_direct" as const,
-          retrievalInvoked: turnRoute === CHAT_TURN_ROUTE.RETRIEVAL,
+          path: "assistant_retrieval" as const,
+          retrievalInvoked: true,
         },
       },
     };
     const retrieval = await this.retrievalTurn.dispatch({
       interpreted: interpretedWithExecution,
-      withRetrieval: turnRoute === CHAT_TURN_ROUTE.RETRIEVAL,
+      withRetrieval: true,
     });
 
-    return { retrieval, turnRoute };
+    return { retrieval, turnRoute: CHAT_TURN_ROUTE.RETRIEVAL };
   }
 
   private prepareDirectOnlyTurn(
     input: RetrievalPipelineRequest,
     agent: AgentRecord,
+    framing: TurnRouting["framing"] = defaultTurnFraming(),
   ) {
     const now = new Date().toISOString();
     return {
-      turnRoute: CHAT_TURN_ROUTE.SOCIAL_ONLY,
+      turnRoute: CHAT_TURN_ROUTE.DIRECT,
       retrieval: {
         rewrittenQuery: input.query,
         contexts: [],
@@ -309,13 +327,22 @@ export class ChatSessionPreparer {
           lexicalCandidateCount: 0,
           normalizedCandidateCount: 0,
           finalContextCount: 0,
-          responseIntent: "social_only" as const,
           retrievalSkipped: true,
           candidateFallbackApplied: false,
           fallbackApplied: false,
           rewriteEligible: false,
           rewriteRan: false,
           materialDisagreement: false,
+          rewriteProposal: {
+            rewrittenQuery: input.query,
+            semanticQuery: input.query,
+            lexicalQuery: input.query,
+            responseLanguagePolicy: "match_user_question" as const,
+            turnKind: "fresh_subject" as const,
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0,
+          },
           triggerAnalysis: {
             status: "skipped_non_retrieval" as const,
             consideredRules: [],
@@ -334,6 +361,7 @@ export class ChatSessionPreparer {
           links: [],
         },
       },
+      turnFraming: framing,
     };
   }
 

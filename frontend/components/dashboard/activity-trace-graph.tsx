@@ -172,10 +172,10 @@ const summaryLine = (stage: ActivityStage): string => {
 
   switch (stage.kind) {
     case 'routing': {
-      const intent = outputs.responseIntent as string | undefined
-      if (intent === 'retrieval') return 'evidence needed'
-      if (intent === 'social_only') return 'social'
-      if (intent === 'assistant_identity') return 'identity'
+      const retrievalInvoked = outputs.retrievalInvoked as boolean | undefined
+      if (retrievalInvoked === true) return 'evidence needed'
+      if (stage.reason === 'assistant_identity') return 'identity'
+      if (retrievalInvoked === false) return 'direct'
       return stage.reason ?? ''
     }
     case 'context': {

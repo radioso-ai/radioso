@@ -45,8 +45,7 @@ export {
 } from "./domain.js";
 export { retrievalAnswerSkillDefinition } from "./definitions/retrieval.answer.js";
 export { builtInSkillCatalogEntries, createDefaultSkillCatalogRegistry } from "./defaultCatalog.js";
-export { socialAnswerSkillDefinition } from "./definitions/social_only.js";
-export { assistantIdentityAnswerSkillDefinition } from "./definitions/assistant_identity.js";
+export { directAnswerSkillDefinition } from "./definitions/direct.js";
 export { SkillCatalogService, type SkillCatalogContext } from "./skillCatalogService.js";
 export {
   SkillCatalogRegistry,

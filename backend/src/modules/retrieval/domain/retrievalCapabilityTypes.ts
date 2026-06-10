@@ -1,5 +1,5 @@
 import type { ChatCitation } from "../../chat/contracts/answerTypes.js";
-import type { RetrievalExecutionSurface, ActivityTrace, ResponseIntent } from "./retrievalPipelineTypes.js";
+import type { RetrievalExecutionSurface, ActivityTrace } from "./retrievalPipelineTypes.js";
 import type { ActivitySummary } from "./retrievalPipelineTypes.js";
 
 export interface RetrievalConversationContext {
@@ -61,11 +61,4 @@ export interface RetrievalAnswerSuccess {
   activityTrace: ActivityTrace;
 }
 
-export interface RetrievalAnswerUnsupported {
-  outcome: "unsupported";
-  code: "unsupported_query_type";
-  reason: Exclude<ResponseIntent, "retrieval">;
-  message: "This request is outside retrieval scope.";
-}
-
-export type RetrievalAnswerResult = RetrievalAnswerSuccess | RetrievalAnswerUnsupported;
+export type RetrievalAnswerResult = RetrievalAnswerSuccess;

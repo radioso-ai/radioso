@@ -263,7 +263,7 @@ describe("retrieval answer contract", () => {
     });
   });
 
-  it("returns a typed unsupported result for non-retrieval requests", async () => {
+  it("attempts retrieval for conversational requests instead of rejecting them", async () => {
     const { app, dependencies } = createTestApp({
       queryRewriteGateway: {
         async rewrite(input) {
@@ -271,7 +271,6 @@ describe("retrieval answer contract", () => {
             rewrittenQuery: input.query,
             semanticQuery: input.query,
             lexicalQuery: input.query,
-            responseIntent: "social_only",
             turnKind: "fresh_subject",
             relatedEntities: [],
             unresolved: false,
@@ -298,12 +297,10 @@ describe("retrieval answer contract", () => {
       });
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({
-      outcome: "unsupported",
-      code: "unsupported_query_type",
-      reason: "social_only",
-      message: "This request is outside retrieval scope.",
-    });
+    // Retrieval no longer classifies turn intent; a conversational query is
+    // attempted as a retrieval query rather than returned as "unsupported".
+    expect(response.body.outcome).toBe("answer");
+    expect(response.body).not.toHaveProperty("code");
   });
 
   it("documents retrieval answer in the generated schema", () => {
@@ -312,6 +309,5 @@ describe("retrieval answer contract", () => {
     expect(spec).toContain("/api/v1/retrieval/answer:");
     expect(spec).toContain("RetrievalAnswerRequest:");
     expect(spec).toContain("RetrievalAnswerResponse:");
-    expect(spec).toContain("unsupported_query_type");
   });
 });

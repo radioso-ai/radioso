@@ -46,12 +46,12 @@ describe("route-scoped directive steering", () => {
       registrations: [
         { directive: directive("global") },
         { directive: directive("retrieval-only"), routes: ["retrieval"] },
-        { directive: directive("social-only"), routes: ["social_only"] },
+        { directive: directive("social-only"), routes: ["direct"] },
       ],
     });
 
     const retrieval = await steering.steer({ workspaceId: "w1", turnContext: { route: "retrieval" } });
-    const social = await steering.steer({ workspaceId: "w1", turnContext: { route: "social_only" } });
+    const social = await steering.steer({ workspaceId: "w1", turnContext: { route: "direct" } });
 
     expect(retrieval.matches.map((match) => match.directive.name)).toEqual(["global", "retrieval-only"]);
     expect(social.matches.map((match) => match.directive.name)).toEqual(["global", "social-only"]);
@@ -68,7 +68,7 @@ describe("route-scoped directive steering", () => {
     });
 
     const retrieval = await steering.steer({ workspaceId: "w1", turnContext: { route: "retrieval" } });
-    const social = await steering.steer({ workspaceId: "w1", turnContext: { route: "social_only" } });
+    const social = await steering.steer({ workspaceId: "w1", turnContext: { route: "direct" } });
 
     expect(retrieval.matches.map((match) => match.directive.name)).toEqual([
       "concise-readable-formatting",
@@ -224,7 +224,7 @@ describe("route-scoped directive steering", () => {
       ],
     });
 
-    const social = await steering.steer({ workspaceId: "w1", turnContext: { route: "social_only" } });
+    const social = await steering.steer({ workspaceId: "w1", turnContext: { route: "direct" } });
 
     expect(social.matches.map((match) => match.directive.action)).toEqual([
       "Apply custom represent-organization steering.",
@@ -249,7 +249,7 @@ describe("route-scoped directive steering", () => {
     });
     const social = await steering.steer({
       workspaceId: "w1",
-      turnContext: { route: "social_only" },
+      turnContext: { route: "direct" },
       additionalDirectives: [authored],
     });
 

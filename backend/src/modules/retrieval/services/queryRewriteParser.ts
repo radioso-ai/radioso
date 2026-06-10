@@ -4,7 +4,7 @@ import type {
   StructuredRewriteResult,
   TriggerAnalysisResult,
 } from "../domain/retrievalPipelineTypes.js";
-import { RESPONSE_INTENT, REWRITE_TURN_KIND } from "../domain/retrievalPipelineTypes.js";
+import { REWRITE_TURN_KIND } from "../domain/retrievalPipelineTypes.js";
 import { DEFAULT_RESPONSE_LANGUAGE_POLICY } from "./queryRewriteDefaults.js";
 
 export const truncateTriggerInstruction = (value: string): string => value.trim().replace(/\s+/g, " ").slice(0, 160);
@@ -57,19 +57,6 @@ export const parseStructuredRewrite = (raw: string): StructuredRewriteResult => 
         : typeof parsed.rewrittenQuery === "string"
           ? parsed.rewrittenQuery
           : "",
-    responseIntent:
-      typeof parsed.responseIntent === "string"
-        ? (
-            parsed.responseIntent === RESPONSE_INTENT.SOCIAL_ONLY
-            || parsed.responseIntent === RESPONSE_INTENT.ASSISTANT_IDENTITY
-            || parsed.responseIntent === RESPONSE_INTENT.RETRIEVAL
-              ? parsed.responseIntent
-              : RESPONSE_INTENT.RETRIEVAL
-          )
-        : RESPONSE_INTENT.RETRIEVAL,
-    intentTopic: typeof parsed.intentTopic === "string" ? parsed.intentTopic : undefined,
-    inScopeRequest: typeof parsed.inScopeRequest === "string" ? parsed.inScopeRequest : undefined,
-    outsideScopeRequest: typeof parsed.outsideScopeRequest === "string" ? parsed.outsideScopeRequest : undefined,
     responseLanguagePolicy:
       typeof parsed.responseLanguagePolicy === "string" && parsed.responseLanguagePolicy === "match_user_question"
         ? parsed.responseLanguagePolicy

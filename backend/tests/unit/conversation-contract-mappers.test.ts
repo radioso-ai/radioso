@@ -198,9 +198,9 @@ describe("conversation contract mappers", () => {
       diagnostics: { retrievalSkipped: true },
     } as unknown as RetrievalPipelineResult;
 
-    expect(toPreparedStagedContext(skipped, "social_only.answer").source).toBe("social_only.answer");
-    expect(toPreparedStagedContext(skipped, "assistant_identity.answer").source).toBe(
-      "assistant_identity.answer",
+    expect(toPreparedStagedContext(skipped, "direct.answer").source).toBe("direct.answer");
+    expect(toPreparedStagedContext(skipped, "direct.answer").source).toBe(
+      "direct.answer",
     );
   });
 });

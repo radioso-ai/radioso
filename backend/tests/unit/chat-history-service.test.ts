@@ -318,7 +318,6 @@ describe("chat history service", () => {
           finalContextCount: 5,
           candidateFallbackApplied: false,
           fallbackApplied: false,
-          responseIntent: "retrieval",
           retrievalSkipped: false,
           triggerAnalysis: {
             status: "applied",

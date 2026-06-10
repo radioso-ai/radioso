@@ -4,15 +4,14 @@ import {
   inlineSupportedLinksDirective,
   representOrganizationDirective,
 } from "../../directives/public.js";
-import { CHAT_TURN_ROUTE } from "./chatTurnIntentService.js";
+import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 
 const DEFAULT_ROUTES_BY_DIRECTIVE = new WeakMap<Directive, string[]>([
   [
     conciseReadableFormattingDirective,
     [
       CHAT_TURN_ROUTE.RETRIEVAL,
-      CHAT_TURN_ROUTE.SOCIAL_ONLY,
-      CHAT_TURN_ROUTE.ASSISTANT_IDENTITY,
+      CHAT_TURN_ROUTE.DIRECT,
     ],
   ],
   [representOrganizationDirective, [CHAT_TURN_ROUTE.RETRIEVAL]],

@@ -57,6 +57,20 @@ export {
   type TurnSelectionInput,
 } from "./services/turnSelectionStrategy.js";
 export {
+  ChatGatewayTurnRouterGateway,
+  LlmTurnRouter,
+  ModelTurnRouterGateway,
+  buildTurnRouterPrompt,
+  normalizeTurnRouting,
+  parseTurnRouting,
+  type TurnRouter,
+  type TurnRouterGateway,
+  type TurnRouterGatewayInput,
+  type TurnRouterGatewayResult,
+  type TurnRouterInput,
+  type TurnRouting,
+} from "./services/turnRouter.js";
+export {
   SkillRetrievalTurnDispatch,
   DirectRetrievalTurnDispatch,
   RetrievalTurnController,

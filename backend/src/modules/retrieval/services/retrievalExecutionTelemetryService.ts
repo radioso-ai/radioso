@@ -1,5 +1,4 @@
 import type {
-  ResponseIntent,
   ResponseLanguagePolicy,
   RetrievalExecutionDiagnostics,
   RetrievalExecutionMetadata,
@@ -48,10 +47,7 @@ export class RetrievalExecutionTelemetryService {
     normalizedCandidateCount: number;
     finalContextCount: number;
     queryEmbeddingDurationMs?: number;
-    responseIntent?: ResponseIntent;
     retrievalSkipped?: boolean;
-    intentConfidence?: number;
-    intentFallbackApplied?: boolean;
     parsedQuery?: ParsedQueryInterpretation;
     appliedConstraints?: AppliedConstraint[];
     candidateFallbackApplied: boolean;
@@ -111,7 +107,6 @@ export class RetrievalExecutionTelemetryService {
           retrievalSubqueryCount: input.retrievalSubqueries?.length ?? 0,
           rewriteEligible: input.rewriteEligible ?? false,
           rewriteRan: input.rewriteRan ?? false,
-          responseIntent: input.responseIntent,
           retrievalSkipped: input.retrievalSkipped ?? false,
           rejectionReason: input.rejectionReason,
           fallbackReason: input.fallbackReason,
@@ -129,7 +124,6 @@ export class RetrievalExecutionTelemetryService {
         tags: {
           rewrite_status: input.rewriteStatus,
           rerank_status: input.rerankStatus,
-          response_intent: input.responseIntent ?? "unknown",
           fallback_applied: diagnostics.fallbackApplied ? "true" : "false",
           execution_surface: input.execution?.surface ?? "unknown",
           execution_path: input.execution?.path ?? "unknown",
@@ -167,5 +161,4 @@ const buildRetrievalTelemetryTraceAttributes = (
   "retrieval.context.final.count": boundedTraceCount(input.finalContextCount),
   "retrieval.constraint.count": boundedTraceCount(input.appliedConstraints?.length),
   "retrieval.subquery.count": boundedTraceCount(input.retrievalSubqueries?.length),
-  "retrieval.response.intent": input.responseIntent,
 });

@@ -10,11 +10,7 @@ import type { FallbackReplyComposer } from "./fallbackReplyComposer.js";
 import type { TurnSkill } from "./turnOutcome.js";
 import { AssistantReplyComposer } from "./assistantReplyComposer.js";
 import { RetrievalAnswerComposer, createRetrievalTurnSkill } from "./retrievalTurnSkill.js";
-import { SOCIAL_REPLY_CONFIG, createSocialTurnSkill } from "./socialTurnSkill.js";
-import {
-  ASSISTANT_IDENTITY_REPLY_CONFIG,
-  createAssistantIdentityTurnSkill,
-} from "./assistantIdentityTurnSkill.js";
+import { DIRECT_REPLY_CONFIG, createDirectTurnSkill } from "./directTurnSkill.js";
 
 export interface ChatTurnRuntimeDependencies {
   chatGateway: ChatGateway;
@@ -40,7 +36,7 @@ export interface ChatTurnRuntime {
  * Assembles the chat module's turn runtime. Composition supplies the external
  * collaborators (gateway, fallback composer, suggestion service, capability
  * provider); this factory owns which terminal-answer capabilities exist
- * (retrieval, social, identity) and how their composers are wired. Adding a
+ * (retrieval, direct) and how their composers are wired. Adding a
  * capability is a registration here, not a branch in the host's turn loop — the
  * host receives `turnSkills` and selects among them by route.
  */
@@ -62,22 +58,13 @@ export const buildChatTurnRuntime = (
         deps.fallbackReplyComposer,
       ),
     ),
-    createSocialTurnSkill(
+    createDirectTurnSkill(
       new AssistantReplyComposer(
         answerSupport,
         deps.chatGateway,
         chatAnswerPresenter,
         deps.fallbackReplyComposer,
-        SOCIAL_REPLY_CONFIG,
-      ),
-    ),
-    createAssistantIdentityTurnSkill(
-      new AssistantReplyComposer(
-        answerSupport,
-        deps.chatGateway,
-        chatAnswerPresenter,
-        deps.fallbackReplyComposer,
-        ASSISTANT_IDENTITY_REPLY_CONFIG,
+        DIRECT_REPLY_CONFIG,
       ),
     ),
   ];

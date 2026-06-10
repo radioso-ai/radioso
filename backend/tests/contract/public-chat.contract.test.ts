@@ -426,7 +426,16 @@ describe("public chat contract", () => {
         yield "works[[1]].";
       },
     };
-    const { app } = createTestApp({ chatGateway: streamingGateway });
+    // Force the retrieval path so this test exercises grounded streaming +
+    // citation reconciliation rather than the greeting/direct shortcut.
+    const { app } = createTestApp({
+      chatGateway: streamingGateway,
+      turnRouter: {
+        async classify() {
+          return { route: "retrieval" as const, framing: { isIdentityQuestion: false } };
+        },
+      },
+    });
     const session = await issueTestSession(app, "public-chat-stream@example.com");
 
     await request(app)

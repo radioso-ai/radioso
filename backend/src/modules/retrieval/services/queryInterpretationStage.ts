@@ -1,9 +1,7 @@
-import { RESPONSE_INTENT } from "../domain/retrievalPipelineTypes.js";
 import type { ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { QueryRewriteService } from "./queryRewriteService.js";
-import { SharedAnswerInstructionBuilder } from "./sharedAnswerInstructionBuilder.js";
 import type { QueryInterpretationStage as QueryInterpretationStageContract, RetrievalContextStageResult } from "./retrievalPipelineStages.js";
 
 const fallbackUsageContext = (workspaceId: string): Omit<ModelCallUsageContext, "operation"> => ({
@@ -13,8 +11,6 @@ const fallbackUsageContext = (workspaceId: string): Omit<ModelCallUsageContext, 
 });
 
 export class QueryInterpretationStageService implements QueryInterpretationStageContract {
-  private readonly answerInstructionBuilder = new SharedAnswerInstructionBuilder();
-
   constructor(private readonly queryRewriteService: QueryRewriteService) {}
 
   async execute(input: RetrievalContextStageResult) {
@@ -46,11 +42,9 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       enabled: input.settings.queryRewriteEnabled,
       semanticRewriteInstructions: input.settings.semanticRewriteInstructions,
       lexicalRewriteInstructions: input.settings.lexicalRewriteInstructions,
-      answerScopeReference: this.buildAnswerScopeReference(input),
       workspaceContext,
       usageContext: { ...usageContext, operation: "query_interpretation", attemptKey: "rewrite" },
     });
-    const responseIntent = rewrittenQuery.responseIntent;
     const parsedQueryBase = originalParsedQuery;
     const preparedParsedQuery = prepareQueries(
       parsedQueryBase,
@@ -93,30 +87,20 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
               responseLanguagePolicy: rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
             },
           ];
-    const triggerAnalysis = responseIntent === RESPONSE_INTENT.RETRIEVAL
-      ? await this.queryRewriteService.analyzeTriggers({
-          query: input.request.query,
-          activeQuery,
-          contextMessages: [],
-          metadataRules: input.settings.metadataRules ?? [],
-          workspaceContext,
-          usageContext: { ...usageContext, operation: "trigger_analysis", attemptKey: "trigger_analysis" },
-        })
-      : {
-          status: "skipped_non_retrieval" as const,
-          consideredRules: [],
-          matchedRuleIds: [],
-          unmatchedRuleIds: [],
-          matchCount: 0,
-          matcherVersion: "non_retrieval",
-        };
+    const triggerAnalysis = await this.queryRewriteService.analyzeTriggers({
+      query: input.request.query,
+      activeQuery,
+      contextMessages: [],
+      metadataRules: input.settings.metadataRules ?? [],
+      workspaceContext,
+      usageContext: { ...usageContext, operation: "trigger_analysis", attemptKey: "trigger_analysis" },
+    });
 
     return {
       ...input,
       originalParsedQuery,
       originalPreparedQuery,
       rewrittenQuery,
-      responseIntent,
       activeQuery,
       activeParsedQuery,
       activeSemanticQuery: activeParsedQuery.semanticQuery || activeQuery,
@@ -126,20 +110,5 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       promptHistoryReset: shouldResetPromptHistory,
       continuityDecision,
     };
-  }
-
-  private buildAnswerScopeReference(input: RetrievalContextStageResult): string | undefined {
-    const includeResponseBehavior = input.request.responseBehaviorEnabled ?? input.request.responseIdentity !== null;
-    if (!includeResponseBehavior) {
-      return undefined;
-    }
-
-    const customInstruction = input.request.responseBehavior?.customInstruction ?? input.settings.customInstruction;
-    const block = this.answerInstructionBuilder.buildScopeReferenceBlock({
-      responseIdentity: input.request.responseIdentity,
-      customInstruction,
-    });
-
-    return block.trim() ? block : undefined;
   }
 }

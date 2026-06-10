@@ -39,7 +39,6 @@ export interface QueryRewriteGatewayInput {
   contextMessages: MessageRecord[];
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
-  answerScopeReference?: string;
   workspaceContext?: LlmCapabilityResolveInput;
   usageContext: ModelCallUsageContext;
 }
@@ -82,7 +81,6 @@ export class ModelQueryRewriteGateway implements QueryRewriteGateway {
         context: formatConversationContext(input.contextMessages),
         semanticRewriteInstructions: input.semanticRewriteInstructions,
         lexicalRewriteInstructions: input.lexicalRewriteInstructions,
-        answerScopeReference: input.answerScopeReference,
         query: input.query,
       }),
       reasoningEffort: RETRIEVAL_BEHAVIOR.queryInterpretation.reasoningEffort,
@@ -112,7 +110,6 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
     contextMessages: MessageRecord[];
     semanticRewriteInstructions?: string;
     lexicalRewriteInstructions?: string;
-    answerScopeReference?: string;
   }): Promise<StructuredRewriteResult> {
     const response = await this.client.chat.completions.create({
       model: this.model,
@@ -123,7 +120,6 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
             context: formatConversationContext(input.contextMessages),
             semanticRewriteInstructions: input.semanticRewriteInstructions,
             lexicalRewriteInstructions: input.lexicalRewriteInstructions,
-            answerScopeReference: input.answerScopeReference,
             query: input.query,
           }),
         },

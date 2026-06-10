@@ -4,7 +4,6 @@ import type { ConversationRecord } from "../../src/db/repositories/conversationR
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
 import { ChatSessionPreparer } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import type { RetrievalTurnPort } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
-import { RESPONSE_INTENT } from "../../src/modules/retrieval/public.js";
 import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 import {
   createAuditService,
@@ -83,7 +82,6 @@ describe("ChatSessionPreparer suggested-question settings", () => {
           context: { result: {} as never, startedAt: Date.now(), durationMs: 0 },
           interpretation: {
             result: {
-              responseIntent: RESPONSE_INTENT.RETRIEVAL,
             },
             startedAt: Date.now(),
             durationMs: 0,
@@ -180,7 +178,6 @@ describe("ChatSessionPreparer suggested-question settings", () => {
           context: { result: {} as never, startedAt: Date.now(), durationMs: 0 },
           interpretation: {
             result: {
-              responseIntent: RESPONSE_INTENT.RETRIEVAL,
             },
             startedAt: Date.now(),
             durationMs: 0,

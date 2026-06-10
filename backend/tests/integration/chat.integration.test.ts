@@ -1390,13 +1390,17 @@ describe("chat integration", () => {
   it("routes social-only turns away from retrieval while keeping answer instructions available", async () => {
     let observedPrompt = "";
     const { app, dependencies } = createTestApp({
+      turnRouter: {
+        async classify() {
+          return { route: "direct" as const, framing: { isIdentityQuestion: false } };
+        },
+      },
       queryRewriteGateway: {
         async rewrite(input) {
           return {
             rewrittenQuery: input.query,
             semanticQuery: input.query,
             lexicalQuery: input.query,
-            responseIntent: "social_only" as const,
             turnKind: "ambiguous" as const,
             relatedEntities: [],
             unresolved: false,
@@ -1440,9 +1444,7 @@ describe("chat integration", () => {
     expect(response.body.answer.length).toBeGreaterThan(0);
     expect(response.body.citations ?? []).toEqual([]);
     expect(response.body.debug.activitySummary).toMatchObject({
-      responseIntent: "social_only",
       retrievalSkipped: true,
-      intentConfidence: 0.95,
     });
     expect(response.body.debug.activitySummary.candidateCounts).toEqual({
       semantic: 0,
@@ -1464,7 +1466,6 @@ describe("chat integration", () => {
             rewrittenQuery: input.query,
             semanticQuery: input.query,
             lexicalQuery: input.query,
-            responseIntent: "social_only" as const,
             turnKind: "ambiguous" as const,
             relatedEntities: [],
             unresolved: false,
@@ -1503,15 +1504,14 @@ describe("chat integration", () => {
       .send({ message: "thanks", stream: false, includeDebug: true })
       .expect(200);
 
-    expect(rewriteCalls).toBe(1);
+    // A direct turn never reaches retrieval, so query rewrite is not invoked.
+    expect(rewriteCalls).toBe(0);
     expect(response.body.debug.route).toEqual({
       type: "direct",
       reason: "social_only",
     });
     expect(response.body.debug.activitySummary).toMatchObject({
-      responseIntent: "social_only",
       retrievalSkipped: true,
-      intentConfidence: 0.95,
       rewrite: {
         status: "skipped",
         eligible: false,
@@ -1523,13 +1523,17 @@ describe("chat integration", () => {
   it("routes assistant-identity-only turns through the same non-retrieval path", async () => {
     let observedPrompt = "";
     const { app, dependencies } = createTestApp({
+      turnRouter: {
+        async classify() {
+          return { route: "direct" as const, framing: { isIdentityQuestion: true } };
+        },
+      },
       queryRewriteGateway: {
         async rewrite(input) {
           return {
             rewrittenQuery: input.query,
             semanticQuery: input.query,
             lexicalQuery: input.query,
-            responseIntent: "assistant_identity" as const,
             turnKind: "ambiguous" as const,
             relatedEntities: [],
             unresolved: false,
@@ -1573,9 +1577,7 @@ describe("chat integration", () => {
     expect(response.body.answer.length).toBeGreaterThan(0);
     expect(response.body.citations ?? []).toEqual([]);
     expect(response.body.debug.activitySummary).toMatchObject({
-      responseIntent: "assistant_identity",
       retrievalSkipped: true,
-      intentConfidence: 0.91,
       execution: {
         surface: "assistant",
         path: "assistant_direct",
@@ -1616,7 +1618,6 @@ describe("chat integration", () => {
             rewrittenQuery: input.query,
             semanticQuery: input.query,
             lexicalQuery: input.query,
-            responseIntent: "assistant_identity" as const,
             turnKind: "ambiguous" as const,
             relatedEntities: [],
             unresolved: false,
@@ -1696,7 +1697,6 @@ describe("chat integration", () => {
             rewrittenQuery: "what retreats are coming up Spring Retreat",
             semanticQuery: "what retreats are coming up Spring Retreat",
             lexicalQuery: "\"Spring Retreat\" retreats",
-            responseIntent: "retrieval" as const,
             turnKind: "fresh_subject" as const,
             relatedEntities: [],
             unresolved: false,
@@ -1745,7 +1745,6 @@ describe("chat integration", () => {
       ]),
     );
     expect(response.body.debug.activitySummary).toMatchObject({
-      responseIntent: "retrieval",
       retrievalSkipped: false,
     });
   });
@@ -1767,7 +1766,6 @@ describe("chat integration", () => {
             rewrittenQuery: "Thanks for the help",
             semanticQuery: "Thanks for the help",
             lexicalQuery: "Thanks for the help",
-            responseIntent: "social_only" as const,
             turnKind: "ambiguous" as const,
             relatedEntities: [],
             unresolved: false,
@@ -1816,9 +1814,7 @@ describe("chat integration", () => {
       ]),
     );
     expect(response.body.debug.activitySummary).toMatchObject({
-      responseIntent: "retrieval",
       retrievalSkipped: false,
-      intentFallbackApplied: true,
     });
   });
 

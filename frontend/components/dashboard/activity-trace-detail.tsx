@@ -189,13 +189,6 @@ const joinHumanList = (values: string[]): string => {
 
 const formatLabel = (value: unknown) => (typeof value === 'string' ? value.replaceAll('_', ' ') : undefined)
 
-const formatIntent = (value: unknown): string | undefined => {
-  if (value === 'social_only') return 'Conversational message'
-  if (value === 'assistant_identity') return 'Question about the assistant'
-  if (value === 'retrieval') return 'Workspace knowledge question'
-  return formatLabel(value)
-}
-
 const asChunkList = (value: unknown): ChunkRef[] =>
   Array.isArray(value)
     ? value.filter(
@@ -218,10 +211,9 @@ const deriveExplanation = (stage: ActivityStage): string | null => {
 
   switch (stage.kind) {
     case 'routing': {
-      const intent = outputs.responseIntent as string | undefined
-      if (intent === 'retrieval') return 'Classified as a knowledge question — routing to document search.'
-      if (intent === 'social_only') return 'Classified as conversational — replying directly.'
-      if (intent === 'assistant_identity') return 'Classified as a question about the assistant itself.'
+      const retrievalInvoked = outputs.retrievalInvoked as boolean | undefined
+      if (retrievalInvoked === true) return 'Routed to document search.'
+      if (stage.reason === 'assistant_identity') return 'Routed to a direct assistant identity reply.'
       return outputs.retrievalInvoked ? 'Routed to the retrieval pipeline.' : 'Responding without retrieval.'
     }
     case 'context': {
@@ -619,7 +611,6 @@ function RoutingStageOverview({ stage }: { stage: ActivityStage }) {
         <KeyValueList
           rows={[
             { label: 'Surface', value: formatLabel(inputs.surface) },
-            { label: 'Intent', value: formatIntent(outputs.responseIntent) },
             { label: 'Activity route', value: retrievalInvoked === true ? 'Workspace document answer' : retrievalInvoked === false ? 'Direct assistant reply' : undefined },
             { label: 'Route reason', value: stage.reason },
             { label: 'Latency', value: metrics.latencyMs as number | undefined },

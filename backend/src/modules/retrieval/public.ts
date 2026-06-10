@@ -4,7 +4,6 @@ import type { ResponseIdentity } from "../../shared/domain/responseIdentity.js";
 import type { RetrievalSettingsRecord } from "../settings/contracts/retrieval.js";
 import type {
   FinalPromptContext,
-  ResponseIntent,
   ResponseLanguagePolicy,
   RetrievalExecutionDiagnostics,
   ActivityTrace,
@@ -51,7 +50,6 @@ export type {
   RewriteStatus,
   RewriteTurnKind,
   RewrittenRetrievalQuery,
-  ResponseIntent,
   StructuredRewriteResult,
   TriggerAnalysisResult,
   TriggerAnalysisStatus,
@@ -69,7 +67,6 @@ export {
   type RetrievalSkillSettingsOverride,
 } from "./domain/retrievalSkillSettings.js";
 export {
-  RESPONSE_INTENT,
   REWRITE_STATUS,
   REWRITE_TURN_KIND,
 } from "./domain/retrievalPipelineTypes.js";
@@ -77,7 +74,6 @@ export type {
   RetrievalAnswerRequest,
   RetrievalAnswerResult,
   RetrievalAnswerSuccess,
-  RetrievalAnswerUnsupported,
   RetrievalConversationContext,
   RetrievalSearchRequest,
   RetrievalSearchResult,
@@ -94,6 +90,7 @@ export {
   OpenAIEmbeddingGateway,
 } from "./services/embeddingService.js";
 export { resolveContextSourceUrl } from "./services/contextSourceUrl.js";
+export { SharedAnswerInstructionBuilder } from "./services/sharedAnswerInstructionBuilder.js";
 export type { EmbeddingGateway, EmbeddingService } from "./services/embeddingService.js";
 export type { PromptBuildResult } from "./services/promptBuilder.js";
 export type { RetrievalDefaultsProvider } from "./domain/retrievalDefaultsProvider.js";
@@ -184,11 +181,7 @@ export interface RetrievalPipelineResult {
 
 export interface RetrievalPipelineInterpretationResult {
   request: RetrievalPipelineRequest;
-  interpretation: {
-    result: {
-      responseIntent?: ResponseIntent;
-    };
-  };
+  interpretation: unknown;
 }
 
 export interface RetrievalPipelineService {

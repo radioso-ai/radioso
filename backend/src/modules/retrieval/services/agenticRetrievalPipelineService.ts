@@ -3,7 +3,6 @@ import type {
   RetrievalExecutionDiagnostics,
   RetrievalSource,
 } from "../domain/retrievalPipelineTypes.js";
-import { RESPONSE_INTENT } from "../domain/retrievalPipelineTypes.js";
 import type { AgenticRetrievalRunner } from "./agenticRetrievalRunner.js";
 import type { RegisteredChunk } from "./agenticTools/index.js";
 import type { IngestionSettingsReaderPort } from "./candidateRetrievalStage.js";
@@ -38,10 +37,8 @@ export interface AgenticRetrievalPipelineServiceDeps {
  * can call the same `RetrievalPipelineService` interface regardless of mode.
  *
  * - `interpret` and `runWithoutRetrieval` delegate to the deterministic
- *   instance — intent classification and the non-retrieval response path are
- *   the same in both modes.
- * - `runInterpreted` dispatches: non-retrieval intents fall back to the
- *   deterministic non-retrieval result; retrieval intents run the agent and
+ *   instance — the non-retrieval response path is the same in both modes.
+ * - `runInterpreted` dispatches retrieval turns to the agent and
  *   assemble a `RetrievalPipelineResult` from its selected chunks using the
  *   existing `PromptBuilder` for synthesis prompt construction.
  *
@@ -68,10 +65,6 @@ export class AgenticRetrievalPipelineService implements RetrievalPipelinePort {
   }
 
   async runInterpreted(input: RetrievalPipelineInterpretationResult): Promise<RetrievalPipelineResult> {
-    if (input.interpretation.result.responseIntent !== RESPONSE_INTENT.RETRIEVAL) {
-      return this.deps.deterministic.runWithoutRetrieval(input);
-    }
-
     const settings = input.context.result.settings;
     const responseBehavior = input.request.responseBehavior;
     const rewrittenQuery = input.interpretation.result.rewrittenQuery;
@@ -129,10 +122,7 @@ export class AgenticRetrievalPipelineService implements RetrievalPipelinePort {
       lexicalCandidateCount: searchStats.lexicalCandidateCount,
       normalizedCandidateCount: searchStats.mergedCandidateCount,
       finalContextCount: contexts.length,
-      responseIntent: input.interpretation.result.responseIntent,
       retrievalSkipped: false,
-      intentConfidence: rewrittenQuery.confidence,
-      intentFallbackApplied: rewrittenQuery.status === "fallback",
       parsedQuery: input.interpretation.result.originalPreparedQuery,
       candidateFallbackApplied: false,
       fallbackApplied: runResult.terminatedReason !== "completed",

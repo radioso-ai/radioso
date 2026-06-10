@@ -130,7 +130,7 @@ const session = (): PreparedSession => {
     conversation: conversation(),
     history: [],
     retrieval,
-    turnRoute: "social_only",
+    turnRoute: "direct",
     userMessage: message(),
     directiveSteering: {
       rules: [],
@@ -421,7 +421,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
     });
 
     expect(matched).toEqual([{
-      turnContext: { query: "Where is my order?", route: "social_only" },
+      turnContext: { query: "Where is my order?", route: "direct" },
       directives: ["brief"],
     }]);
     expect(selectedDirectiveSets).toEqual([["brief"]]);

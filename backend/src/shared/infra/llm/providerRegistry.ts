@@ -163,6 +163,15 @@ export class LlmProviderRegistry {
   }
 
   /**
+   * Inference pipeline for the cheap classifier tier (the `rewrite` capability),
+   * used by the turn router. Keeps lightweight per-turn classification off the
+   * heavier `chat` answer model.
+   */
+  createRewriteInferencePipeline(usageEventRecorder?: UsageEventRecorder): ModelInferencePipeline {
+    return this.createInferencePipeline(this.config.rewrite, usageEventRecorder);
+  }
+
+  /**
    * Returns a provider-agnostic tool-calling gateway for the agentic retrieval
    * runner. Wraps whichever provider is configured for the `chat` capability
    * — the same provider the assistant already uses for its final answer.

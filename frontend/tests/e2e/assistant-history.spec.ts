@@ -59,7 +59,6 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
         label: "Routing",
         status: "applied",
         outputs: {
-          responseIntent: "retrieval",
           retrievalInvoked: true,
           retrievalSkipped: false,
         },

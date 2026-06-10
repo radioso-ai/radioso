@@ -46,7 +46,7 @@ const session = (): PreparedSession =>
     conversation: { id: "conv_1" },
     history: [],
     userMessage: { id: "msg_1" },
-    turnRoute: "social_only",
+    turnRoute: "direct",
     directiveSteering: { rules: [], matches: [], omissions: [] },
     stagedContext: [],
     retrieval: {

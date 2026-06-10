@@ -9,7 +9,6 @@ import {
 import type { RetrievalPipelineService } from "./retrievalPipelineService.js";
 import { ActivitySummaryPresenter } from "./activitySummaryPresenter.js";
 import { ActivityTracePresenter } from "./activityTracePresenter.js";
-import { RESPONSE_INTENT } from "../domain/retrievalPipelineTypes.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
 import type {
   RetrievalAnswerRequest,
@@ -86,18 +85,6 @@ export class RetrievalAnswerService {
       execution,
       usageContext,
     });
-    const responseIntent = interpretation.interpretation.result.responseIntent;
-    if (responseIntent && responseIntent !== RESPONSE_INTENT.RETRIEVAL) {
-      const unsupported: RetrievalAnswerResult = {
-        outcome: "unsupported",
-        code: "unsupported_query_type",
-        reason: responseIntent,
-        message: "This request is outside retrieval scope.",
-      };
-      await this.recordAuditUnsupported(input, execution, responseIntent);
-      return unsupported;
-    }
-
     const retrieval = await this.dependencies.retrievalPipeline.runInterpreted(interpretation);
     const directiveSteering = await this.dependencies.directiveSteering?.steer({
       workspaceId: input.workspaceId,
@@ -225,27 +212,6 @@ export class RetrievalAnswerService {
         activitySummary: result.activitySummary,
         activityTrace: result.activityTrace,
         retrieval: diagnostics,
-      },
-    });
-  }
-
-  private async recordAuditUnsupported(
-    input: RetrievalAnswerRequest,
-    execution: { surface: "retrieval" | "mcp_capability"; path: "retrieval_answer" | "mcp_grounded_answer"; retrievalInvoked: true },
-    reason: string,
-  ): Promise<void> {
-    if (!this.dependencies.auditService) {
-      return;
-    }
-    await this.dependencies.auditService.record({
-      workspaceId: input.workspaceId,
-      eventType: "retrieval.answer",
-      eventStatus: "success",
-      metadata: {
-        execution,
-        query: input.query,
-        outcome: "unsupported",
-        reason,
       },
     });
   }

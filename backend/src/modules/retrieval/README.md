@@ -41,8 +41,9 @@ imports from `services/` or `infra/`.
 
 ## Common Change Paths
 
-- Query rewrite or routing: `queryRewrite*`, `rewritePolicyService.ts`,
-  `domain/lexicalQueryPlan.ts`.
+- Query rewrite: `queryRewrite*`, `rewritePolicyService.ts`,
+  `domain/lexicalQueryPlan.ts`. Turn routing belongs to the chat module's
+  `TurnRouter`; retrieval rewrite should only reshape retrieval queries.
 - Candidate ranking or filtering: `candidate*`, `metadataRuleScoringService.ts`,
   `attributeMatchScoringService.ts`, `rerankService.ts`.
 - Context and prompt shape: `contextSelectionStage.ts`,

@@ -64,7 +64,7 @@ const normalizeLauncherLabel = (value: string | undefined): string => {
   return value.trim().replace(/\s+/g, " ");
 };
 
-export const validateWebsiteEmbedSettings = (
+const normalizeWebsiteEmbedSettings = (
   input: WebsiteEmbedSettingsInput,
 ): WebsiteEmbedSettingsRecord => {
   const defaults = defaultWebsiteEmbedSettings();
@@ -72,25 +72,49 @@ export const validateWebsiteEmbedSettings = (
     .map(normalizeWebsiteEmbedOrigin)
     .filter((origin): origin is string => Boolean(origin));
 
-  const uniqueOrigins = [...new Set(origins)];
-  const websiteEmbedEnabled = input.websiteEmbedEnabled ?? defaults.websiteEmbedEnabled;
-
-  // An enabled embed with no listed origin is allow-none: it would reject every
-  // site and silently never load. `*` counts as the allow-all origin entry.
-  if (websiteEmbedEnabled && uniqueOrigins.length === 0) {
-    throw new Error(
-      'At least one allowed origin is required when website embed is enabled (use "*" to allow all)',
-    );
-  }
-
   return {
-    websiteEmbedEnabled,
+    websiteEmbedEnabled: input.websiteEmbedEnabled ?? defaults.websiteEmbedEnabled,
     websiteEmbedToken: input.websiteEmbedToken ?? defaults.websiteEmbedToken,
-    websiteEmbedAllowedOrigins: uniqueOrigins,
+    websiteEmbedAllowedOrigins: [...new Set(origins)],
     websiteEmbedLauncherLabel: normalizeLauncherLabel(input.websiteEmbedLauncherLabel),
     websiteEmbedLauncherPosition: input.websiteEmbedLauncherPosition ?? defaults.websiteEmbedLauncherPosition,
     websiteEmbedTheme: input.websiteEmbedTheme ?? defaults.websiteEmbedTheme,
     websiteEmbedCopy: input.websiteEmbedCopy ?? defaults.websiteEmbedCopy,
     websiteEmbedExpertOverrides: input.websiteEmbedExpertOverrides ?? defaults.websiteEmbedExpertOverrides,
   };
+};
+
+// Write path: reject caller input that would persist an unusable embed.
+export const validateWebsiteEmbedSettings = (
+  input: WebsiteEmbedSettingsInput,
+): WebsiteEmbedSettingsRecord => {
+  const normalized = normalizeWebsiteEmbedSettings(input);
+
+  // An enabled embed with no listed origin is allow-none: it would reject every
+  // site and silently never load. `*` counts as the allow-all origin entry.
+  if (normalized.websiteEmbedEnabled && normalized.websiteEmbedAllowedOrigins.length === 0) {
+    throw new Error(
+      'At least one allowed origin is required when website embed is enabled (use "*" to allow all)',
+    );
+  }
+
+  return normalized;
+};
+
+// Read path: tolerate any previously-persisted state. Legacy rows can carry
+// websiteEmbedEnabled=true with no stored origins (e.g. left behind when 081 moved
+// the origin allow-list onto per-agent access grants). Reads must never throw on
+// stored data, so coercion degrades that contradictory state to allow-none (disabled)
+// — the same runtime effect an enabled-but-originless embed already has — instead of
+// enforcing the write-time invariant.
+export const coerceWebsiteEmbedSettings = (
+  input: WebsiteEmbedSettingsInput,
+): WebsiteEmbedSettingsRecord => {
+  const normalized = normalizeWebsiteEmbedSettings(input);
+
+  if (normalized.websiteEmbedEnabled && normalized.websiteEmbedAllowedOrigins.length === 0) {
+    return { ...normalized, websiteEmbedEnabled: false };
+  }
+
+  return normalized;
 };

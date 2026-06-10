@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  coerceWebsiteEmbedSettings,
   defaultWebsiteEmbedSettings,
   isAllowedWebsiteEmbedOrigin,
   validateWebsiteEmbedSettings,
@@ -86,6 +87,35 @@ describe("website embed settings", () => {
         websiteEmbedAllowedOrigins: [],
       }),
     ).toMatchObject({ websiteEmbedEnabled: false, websiteEmbedAllowedOrigins: [] });
+  });
+
+  it("coerces a stored enabled-but-originless embed to disabled instead of throwing", () => {
+    // Read path: legacy/migrated rows can persist enabled=true with no origins.
+    // Listing such a workspace must never throw (otherwise org switching 500s).
+    expect(() =>
+      coerceWebsiteEmbedSettings({
+        websiteEmbedEnabled: true,
+        websiteEmbedAllowedOrigins: [],
+      }),
+    ).not.toThrow();
+    expect(
+      coerceWebsiteEmbedSettings({
+        websiteEmbedEnabled: true,
+        websiteEmbedAllowedOrigins: [],
+      }),
+    ).toMatchObject({ websiteEmbedEnabled: false, websiteEmbedAllowedOrigins: [] });
+  });
+
+  it("preserves a valid stored enabled embed on the read path", () => {
+    expect(
+      coerceWebsiteEmbedSettings({
+        websiteEmbedEnabled: true,
+        websiteEmbedAllowedOrigins: ["https://example.com"],
+      }),
+    ).toMatchObject({
+      websiteEmbedEnabled: true,
+      websiteEmbedAllowedOrigins: ["https://example.com"],
+    });
   });
 
   it("matches approved origins by normalized origin only", () => {

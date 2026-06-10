@@ -4,6 +4,7 @@ export {
   DEFAULT_WEBSITE_EMBED_SCRIPT_PATH,
   defaultWebsiteEmbedTheme,
   defaultWebsiteEmbedSettings,
+  coerceWebsiteEmbedSettings,
   isAllowedWebsiteEmbedOrigin,
   validateWebsiteEmbedSettings,
   websiteEmbedLauncherPositions,

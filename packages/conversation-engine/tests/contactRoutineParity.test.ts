@@ -122,7 +122,9 @@ const buildInput = (
   routineActivator: {
     // Start the contact routine on the explicit pill click (intent_click metadata).
     activate: vi.fn(async ({ turn }) =>
-      turn.inputEvent.metadata?.method === "intent_click" ? { routineId: "human_contact.request" } : null,
+      turn.inputEvent.metadata?.method === "intent_click"
+        ? { kind: "activate", routineId: "human_contact.request" }
+        : null,
     ),
   },
 });

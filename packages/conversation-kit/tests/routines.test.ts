@@ -25,6 +25,9 @@ const routineGateway = (): ConversationModelGateway => ({
         ? { text: '{"condition": 1, "offTopic": false, "variables": {"name": "Sam"}}' }
         : { text: '{"condition": null, "offTopic": false, "variables": {}}' };
     }
+    if (systemPrompt?.includes("Rank whether the latest user message wants to start any registered routine")) {
+      return { text: '{"matches":[{"routineId":"signup","confidence":0.95}]}' };
+    }
     if (systemPrompt?.includes("Write only the message to the user")) {
       return systemPrompt.includes("Ask the user for their name")
         ? { text: "What is your name?" }
@@ -38,8 +41,10 @@ describe("conversation kit routines", () => {
   it("activates a registered routine, then resumes it to a terminal step across turns", async () => {
     const registration: RoutineRegistration = {
       routine: signupRoutine,
-      // Host-owned activation: start the routine on the first turn it is consulted.
-      activates: async () => ({}),
+      trigger: {
+        description: "The user wants to sign up.",
+        priority: 0,
+      },
     };
     const kit = createConversationKit({
       modelGateway: routineGateway(),

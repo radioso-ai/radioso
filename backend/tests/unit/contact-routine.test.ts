@@ -88,8 +88,10 @@ const echoRenderer: ConversationRoutineStepRenderer = {
 const registry = new RoutineRegistry([
   {
     routine: contactRoutine,
-    activates: async ({ turn }) =>
-      turn.inputEvent.metadata?.method === "intent_click" ? {} : null,
+    trigger: {
+      description: "User wants to contact a human",
+      priority: 100,
+    },
   },
 ]);
 
@@ -112,7 +114,18 @@ const buildInput = (content: string, store: ConversationRoutineStore, events: Co
   composer: { compose: vi.fn(async () => ({ answer: "normal answer" })) },
   routineStore: store,
   routineRunner: new DefaultRoutineRunner([contactRoutine], scriptedSelector, echoRenderer),
-  routineActivator: registry.activator({ complete: vi.fn(async () => ({ text: "" })) }),
+  routineActivator: registry.activator({
+    complete: vi.fn(async () => ({
+      text: JSON.stringify({
+        matches: [
+          {
+            routineId: contactRoutine.id,
+            confidence: content === "I want to contact you" ? 0.95 : 0.1,
+          },
+        ],
+      }),
+    })),
+  }),
 });
 
 describe("contact routine — end-to-end through the engine (action emission)", () => {

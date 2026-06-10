@@ -55,7 +55,7 @@ describe("ClarificationStateRepository", () => {
     expect(saveParams![0]).toBe(pending().sessionId);
     expect(saveParams![2]).toBe(JSON.stringify(pending().candidates));
     const [loadSql] = db.queryOptional.mock.calls[0]!;
-    expect(loadSql).toContain("status IN ('pending', 'resolved', 'declined')");
+    expect(loadSql).toContain("status = 'pending'");
   });
 
   it("upserts a single pending row per session", async () => {
@@ -89,7 +89,7 @@ describe("ClarificationStateRepository", () => {
     const repository = new ClarificationStateRepository(db);
 
     await repository.clear({ sessionId: pending().sessionId, outcome: "declined" });
-    const loaded = await repository.loadPending({ sessionId: pending().sessionId });
+    const loaded = await repository.loadRecent({ sessionId: pending().sessionId });
 
     const [clearSql, clearParams] = db.execute.mock.calls[0]!;
     expect(clearSql).toContain("status = $2");

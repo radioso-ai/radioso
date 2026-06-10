@@ -373,7 +373,7 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     const input: ProcessTurnInput = {
       ...createInput(),
       routineStore: { loadActive: vi.fn(async () => null), save: vi.fn(async () => {}), clear: vi.fn(async () => {}) },
-      routineActivator: { activate: vi.fn(async () => ({ routineId: "contact" })) },
+      routineActivator: { activate: vi.fn(async () => ({ kind: "activate", routineId: "contact" })) },
       routineRunner: { resume: vi.fn(async () => ({ response: { answer: "What's your email?" }, nextState: started })) },
     };
 
@@ -510,7 +510,7 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     const input: ProcessTurnInput = {
       ...createInput(),
       routineStore: { loadActive: vi.fn(async () => null), save: vi.fn(async () => {}), clear: vi.fn(async () => {}) },
-      routineActivator: { activate: vi.fn(async () => ({ routineId: "contact", variables: { email: "a@b.c" } })) },
+      routineActivator: { activate: vi.fn(async () => ({ kind: "activate", routineId: "contact", variables: { email: "a@b.c" } })) },
       routineRunner: {
         resume: vi.fn(async () => ({ response: { answer: "What's your message?" }, nextState: { ...activeState, variables: { email: "a@b.c" } } })),
       },

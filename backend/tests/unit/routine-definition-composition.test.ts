@@ -20,30 +20,20 @@ const definition: RoutineDefinition = {
 };
 
 describe("DB-backed routine composition source", () => {
-  it("loads published definitions, compiles them, and preserves existing registry activation shape", async () => {
+  it("loads published definitions, compiles them, and preserves trigger metadata for ranked activation", async () => {
     const repository = {
       listPublishedByAgent: vi.fn(async () => [definition]),
     } as Pick<RoutineDefinitionRepository, "listPublishedByAgent">;
     const source = createPublishedRoutineRegistrationSource(repository);
 
     const registrations = await source.load({ agentId: "agent_1" });
-    const activation = await registrations[0]!.activates({
-      turn: {
-        agent: { id: "agent_1" },
-        sessionId: "conv_1",
-        inputEvent: { kind: "message", content: "help" },
-        history: [],
-        stagedContext: [],
-        steering: [],
-      },
-      modelGateway: {
-        complete: async () => ({ text: "{\"activate\":true}" }),
-      },
-    });
 
     expect(repository.listPublishedByAgent).toHaveBeenCalledWith("agent_1");
     expect(registrations[0]!.routine.id).toBe("routine:agent_1:handoff:v1");
-    expect(activation).toEqual({});
+    expect(registrations[0]!.trigger).toEqual({
+      description: "The user asks for help.",
+      priority: 7,
+    });
   });
 
   it("returns no registrations when an agent has no published routine definitions", async () => {

@@ -196,7 +196,19 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       engineTrace: engineTrace(),
       actions: [{ type: "contact.send", payload: { email: "alex@example.com" } }],
       routineStateTransition: { kind: "clear", sessionId: "conv_1" },
+      clarificationTransition: {
+        kind: "save",
+        pending: {
+          sessionId: "conv_1",
+          source: "test_surface",
+          candidates: [{ id: "a", label: "Alpha", confidence: 0.8, payload: { opaque: "a" } }],
+          askedEventId: "assistant_msg_1",
+          status: "pending",
+          expiresAt: "2026-06-10T12:00:00.000Z",
+        },
+      },
       commitRoutineState: vi.fn(async () => {}),
+      commitClarificationState: vi.fn(async () => {}),
     });
 
     expect(actionOutbox.enqueue).not.toHaveBeenCalled();
@@ -207,6 +219,17 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
     expect(persisted.actions).toEqual([{ type: "contact.send", payload: { email: "alex@example.com" } }]);
     expect(persisted.routineStateTransition).toEqual({ kind: "clear", sessionId: "conv_1" });
+    expect(persisted.clarificationTransition).toEqual({
+      kind: "save",
+      pending: {
+        sessionId: "conv_1",
+        source: "test_surface",
+        candidates: [{ id: "a", label: "Alpha", confidence: 0.8, payload: { opaque: "a" } }],
+        askedEventId: "assistant_msg_1",
+        status: "pending",
+        expiresAt: "2026-06-10T12:00:00.000Z",
+      },
+    });
     expect(persisted.assistantMessage.id).toEqual(expect.any(String));
     expect(persisted.auditEvent.metadata?.assistantMessageId).toBe(persisted.assistantMessage.id);
     expect(records[0]).toBe(persisted.auditEvent);
@@ -242,6 +265,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       enqueue: vi.fn(async () => ({ id: "action_1", duplicate: false })),
     };
     const commitRoutineState = vi.fn(async () => {});
+    const commitClarificationState = vi.fn(async () => {});
     const logger = {
       warn: vi.fn(),
     };
@@ -273,12 +297,24 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       ],
       routineStateTransition: { kind: "clear", sessionId: "conv_1" },
       commitRoutineState,
+      clarificationTransition: {
+        kind: "save",
+        pending: {
+          sessionId: "conv_1",
+          source: "test_surface",
+          candidates: [{ id: "a", label: "Alpha", confidence: 0.8, payload: {} }],
+          status: "pending",
+          expiresAt: "2026-06-10T12:00:00.000Z",
+        },
+      },
+      commitClarificationState,
     })).rejects.toThrow("routine_action_authorization_denied");
 
     expect(assistantTurnPersistence.completeAssistantTurn).not.toHaveBeenCalled();
     expect(messageRepository.create).not.toHaveBeenCalled();
     expect(actionOutbox.enqueue).not.toHaveBeenCalled();
     expect(commitRoutineState).not.toHaveBeenCalled();
+    expect(commitClarificationState).not.toHaveBeenCalled();
     expect(auditService.logRecorded).not.toHaveBeenCalled();
     expect(auditService.record).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledWith(
@@ -331,6 +367,12 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       answerStartedAt: Date.now(),
       stream: false,
       actions: [{ type: "contact.send", payload: { email: "alex@example.com" } }],
+      clarificationTransition: {
+        kind: "clear",
+        sessionId: "conv_1",
+        outcome: "resolved",
+      },
+      commitClarificationState: vi.fn(async () => {}),
     });
 
     expect(actionOutbox.enqueue).toHaveBeenCalledWith(expect.objectContaining({
@@ -342,6 +384,67 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       idempotencyKey: expect.stringMatching(/^routine-action:conv_1:contact\.send:/),
     }));
     expect(records).toHaveLength(1);
+  });
+
+  it("commits clarification state on the fallback path after actions and before the assistant message", async () => {
+    const order: string[] = [];
+    const auditService = {
+      record: vi.fn(async () => {
+        order.push("audit");
+      }),
+      updateChatAnswerSuggestions: vi.fn(async () => {}),
+    } as unknown as AuditService;
+    const conversationRepository = {
+      touch: vi.fn(async () => {
+        order.push("touch");
+      }),
+    } as unknown as ConversationRepositoryPort;
+    const messageRepository = {
+      create: vi.fn(async () => {
+        order.push("message");
+        return { id: "assistant_msg_1" };
+      }),
+    } as unknown as MessageRepositoryPort;
+    const actionOutbox: ChatActionOutboxPort = {
+      enqueue: vi.fn(async () => {
+        order.push("action");
+        return { id: "action_1", duplicate: false };
+      }),
+    };
+    const commitClarificationState = vi.fn(async () => {
+      order.push("clarification");
+    });
+    const lifecycle = new ChatTurnLifecycle(
+      conversationRepository,
+      messageRepository,
+      auditService,
+      undefined,
+      actionOutbox,
+    );
+
+    await lifecycle.completeAssistantTurn({
+      workspaceId: "workspace_1",
+      accountId: "account_1",
+      session: session(),
+      presentation: presentation(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      actions: [{ type: "contact.send", payload: { email: "alex@example.com" } }],
+      clarificationTransition: {
+        kind: "save",
+        pending: {
+          sessionId: "conv_1",
+          source: "test_surface",
+          candidates: [{ id: "a", label: "Alpha", confidence: 0.8, payload: {} }],
+          status: "pending",
+          expiresAt: "2026-06-10T12:00:00.000Z",
+        },
+      },
+      commitClarificationState,
+    });
+
+    expect(commitClarificationState).toHaveBeenCalledOnce();
+    expect(order.slice(0, 3)).toEqual(["action", "clarification", "message"]);
   });
 
   it("persists a turnTrace envelope with the retrieval activity trace as a leaf on the dispatch stage", async () => {

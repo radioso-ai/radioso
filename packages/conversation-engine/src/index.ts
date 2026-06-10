@@ -705,3 +705,9 @@ export class DefaultConversationEngine implements ConversationEngine {
 export const createConversationEngine = (): ConversationEngine => new DefaultConversationEngine();
 
 export { DefaultRoutineRunner } from "./routineRunner.js";
+export {
+  clarificationStage,
+  decideClarification,
+  orderClarificationCandidates,
+  type ClarificationDecisionContext,
+} from "./clarification.js";

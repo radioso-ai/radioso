@@ -68,6 +68,11 @@ export {
   RoutineStepRenderer,
 } from "./routineStepRenderer.js";
 export {
+  DEFAULT_CLARIFICATION_QUESTION_PROMPT,
+  DEFAULT_CLARIFICATION_REPLY_MAP_PROMPT,
+  DefaultClarifier,
+} from "./clarifier.js";
+export {
   createDirectiveCoherenceChecker,
   createDirectiveCoherenceGate,
   DEFAULT_DIRECTIVE_COHERENCE_PROMPT,

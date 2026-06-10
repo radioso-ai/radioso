@@ -40,6 +40,7 @@ import {
   capabilitySubTrace,
 } from "./chatTraceLeaves.js";
 import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
+import type { CapturedClarificationTransition } from "./clarification/deferredClarificationStore.js";
 
 const DISPATCH_STAGE_ID_PREFIX = "dispatch:";
 
@@ -135,6 +136,7 @@ export interface AssistantTurnPersistencePort {
     conversationId: string;
     actions?: RoutineActionRequest[];
     routineStateTransition?: CapturedRoutineTransition | null;
+    clarificationTransition?: CapturedClarificationTransition | null;
     assistantMessage: MessageCreateInput;
     auditEvent: AuditEventInput;
   }): Promise<MessageRecord>;
@@ -402,6 +404,8 @@ export class ChatTurnLifecycle {
      */
     commitRoutineState?: () => Promise<void>;
     routineStateTransition?: CapturedRoutineTransition | null;
+    commitClarificationState?: () => Promise<void>;
+    clarificationTransition?: CapturedClarificationTransition | null;
   }): Promise<CompletedAssistantTurn> {
     const presentation = buildTurnTraceForPresentation({
       workspaceId: input.workspaceId,
@@ -427,6 +431,7 @@ export class ChatTurnLifecycle {
         conversationId: input.session.conversation.id,
         actions: input.actions,
         routineStateTransition: input.routineStateTransition,
+        clarificationTransition: input.clarificationTransition,
         assistantMessage: presentation.assistantMessage,
         auditEvent: successAuditEvent,
       });
@@ -442,6 +447,7 @@ export class ChatTurnLifecycle {
         conversationId: input.session.conversation.id,
       });
       await input.commitRoutineState?.();
+      await input.commitClarificationState?.();
       assistantMessage = await this.messageRepository.create(presentation.assistantMessage);
       await this.finalizeAssistantTurn(presentation.successInput);
     }

@@ -130,6 +130,51 @@ describe("routine defaults", () => {
     expect(vi.mocked(gw.complete).mock.calls[0]?.[0].systemPrompt).toContain("Ask the user for their email address.");
   });
 
+  it("injects the agent scope and an out-of-scope decline rule into the routine reply prompt", async () => {
+    const gw = gateway("ok");
+    const scopedTurn: TurnContext = {
+      ...turn,
+      agent: { id: "a", name: "Ananda", instructions: ["Help only with Ananda Europe programs and events."] },
+    };
+    await new RoutineStepRenderer(gw).render({
+      step: currentStep,
+      steering: [{ action: "Ask the user for their email address.", source: "routine", lifespan: "response" }],
+      turn: scopedTurn,
+    });
+
+    const systemPrompt = vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt;
+    expect(systemPrompt).toContain("Ananda");
+    expect(systemPrompt).toContain("Help only with Ananda Europe programs and events.");
+    expect(systemPrompt).toContain("do not answer or perform it");
+    expect(systemPrompt).toContain("Never produce off-scope content");
+  });
+
+  it("keeps only declared slots when a routine declares a slot schema", async () => {
+    const slotted: Routine = {
+      ...routine,
+      slots: [{ id: "s_email", key: "email", type: "email", required: true }],
+    };
+    const selector = new RoutineNextStepSelector(
+      gateway('{"condition": 1, "variables": {"email": "a@b.c", "message": "write me code", "<name>": "x"}}'),
+    );
+
+    await expect(selector.select({ routine: slotted, state, currentStep, transitions, turn })).resolves.toEqual({
+      nextStepId: "ask_message",
+      variables: { email: "a@b.c" },
+    });
+  });
+
+  it("drops echoed placeholder keys even when no slot schema is declared", async () => {
+    const selector = new RoutineNextStepSelector(
+      gateway('{"condition": 1, "variables": {"email": "a@b.c", "<name>": "x"}}'),
+    );
+
+    await expect(selector.select({ routine, state, currentStep, transitions, turn })).resolves.toEqual({
+      nextStepId: "ask_message",
+      variables: { email: "a@b.c" },
+    });
+  });
+
   it("expires active routine state after the configured TTL", async () => {
     let now = 1000;
     const store = new InMemoryConversationRoutineStore({ ttlMs: 50, now: () => now });

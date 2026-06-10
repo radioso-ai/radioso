@@ -31,6 +31,18 @@ const projectStep = (step: RoutineStep): SteeringRule[] =>
       }]
     : [];
 
+const SLOT_REFERENCE = /\{\{\s*slot\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu;
+
+/**
+ * Substitute `{{slot.<key>}}` references in a step's instruction with the values the
+ * routine has captured so far, so a confirmation like "call you at {{slot.phone}}"
+ * renders the real value rather than leaking the raw token to the user. A reference to
+ * a slot not captured yet resolves to an empty string, not the literal token.
+ */
+const interpolateSlots = (text: string, variables: Record<string, unknown>): string =>
+  text.replace(SLOT_REFERENCE, (_match, key: string) =>
+    Object.prototype.hasOwnProperty.call(variables, key) ? String(variables[key] ?? "") : "");
+
 const hasTypedSlotSchema = (routine: Routine): boolean =>
   Array.isArray(routine.slots) && routine.slots.length > 0;
 
@@ -317,13 +329,18 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     }
 
     const nextState: RoutineState = { ...state, path, variables, attempts, status: "active" };
-    const baseSteering = projectStep(step);
+    // Fill the captured slot values into the step's instruction before it reaches the
+    // renderer, so references like "{{slot.phone}}" render the real value.
+    const renderedStep = step.action
+      ? { ...step, action: interpolateSlots(step.action, variables) }
+      : step;
+    const baseSteering = projectStep(renderedStep);
     const steering = input.steeringResolver
       ? await input.steeringResolver.resolve({ step, baseSteering, turn })
       : baseSteering;
 
     const response = await this.renderer.render({
-      step,
+      step: renderedStep,
       steering,
       turn,
     });

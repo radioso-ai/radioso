@@ -13,7 +13,7 @@ responsibility-limited; new domain logic goes in the new named modules.
 
 ## Phase 1: Setup
 
-- [ ] T001 Verify branch `085-clarification-capability` is current and `pnpm install` is clean at repo root (no code changes; baseline `pnpm run ci:local -- origin/main` optional but record any pre-existing failures, cf. flaky websiteCrawler DELETE test)
+- [X] T001 Verify branch `085-clarification-capability` is current and `pnpm install` is clean at repo root (no code changes; baseline `pnpm run ci:local -- origin/main` optional but record any pre-existing failures, cf. flaky websiteCrawler DELETE test)
 
 ## Phase 2: Foundational (blocking prerequisites for all stories)
 
@@ -104,11 +104,11 @@ responsibility-limited; new domain logic goes in the new named modules.
 
 ## Phase 6: Polish & Cross-Cutting
 
-- [ ] T040 [P] Docs (read `docs/document-writer-prompt.md` first): update `docs/architecture/assistant-turn-spine.md` (clarification stage, resolve-pending ordering, suppressed-ask rule) and `docs/architecture/conversational-routines.md` (ranked one-call activation replaces first-match; trigger metadata registration)
-- [ ] T041 [P] Docs portal: add clarification behavior + debug-view entry under `docs-portal/content/` (operator-facing: when the assistant asks, how to read the trace); verify `cd docs-portal && pnpm run build`
-- [ ] T042 [P] Update local briefs if ownership moved: `docs/architecture/code-map.md` conversation-engine + retrieval entries (new clarification module, senseGroupingService)
+- [X] T040 [P] Docs (read `docs/document-writer-prompt.md` first): update `docs/architecture/assistant-turn-spine.md` (clarification stage, resolve-pending ordering, suppressed-ask rule) and `docs/architecture/conversational-routines.md` (ranked one-call activation replaces first-match; trigger metadata registration)
+- [X] T041 [P] Docs portal: add clarification behavior + debug-view entry under `docs-portal/content/` (operator-facing: when the assistant asks, how to read the trace); verify `cd docs-portal && pnpm run build`
+- [X] T042 [P] Update local briefs if ownership moved: `docs/architecture/code-map.md` conversation-engine + retrieval entries (new clarification module, senseGroupingService)
 - [ ] T043 Re-affirm in PR body: message-queue impact none; OpenAPI unchanged (open stage kind); no `.env` changes; observability = trace stage + `clarification_decisions_total`
-- [ ] T044 Multilingual test pass (SC-006): non-English question phrasing + reply mapping covered in T005/T015 fixtures across ≥2 languages — verify present, add if missed
+- [X] T044 Multilingual test pass (SC-006): non-English question phrasing + reply mapping covered in T005/T015 fixtures across ≥2 languages — verify present, add if missed
 - [ ] T045 Run full `pnpm run ci:local -- origin/main`; investigate failures against clean origin/main before attributing (CI latent-breakage memory); record results for the PR body
 - [ ] T046 Execute quickstart.md manual validation (US1/US2/US3) against `./run-dev.sh` stack; capture evidence for the PR
 

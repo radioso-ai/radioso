@@ -71,6 +71,7 @@ const AGENT_SECTION_META: Record<Exclude<AgentSectionId, 'chat'>, { title: strin
   'website-embed': { title: 'Website widget', mode: 'channels' },
   'api-channel': { title: 'API', mode: 'channels' },
   'mcp-channel': { title: 'MCP', mode: 'channels' },
+  'whatsapp-channel': { title: 'WhatsApp', mode: 'channels' },
   danger: { title: 'Danger zone', mode: 'assistant' },
 }
 

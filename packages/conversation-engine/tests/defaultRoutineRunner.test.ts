@@ -75,6 +75,33 @@ describe("DefaultRoutineRunner", () => {
     });
   });
 
+  it("substitutes captured slot values into the rendered step instruction", async () => {
+    const slotRoutine: Routine = {
+      id: "contact",
+      rootStepId: "confirm",
+      steps: [{ id: "confirm", kind: "chat", action: "Confirm we will call you at {{slot.phone}}." }],
+      transitions: [],
+    };
+    // A dedicated renderer that echoes the projected step instruction it receives.
+    const renderer: ConversationRoutineStepRenderer = {
+      render: vi.fn(async ({ steering }) => ({ answer: steering[0]?.action ?? "", metadata: {} })),
+    };
+    const runner = new DefaultRoutineRunner(
+      [slotRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "confirm" })) },
+      renderer,
+    );
+
+    const result = await runner.resume({
+      turn,
+      state: state(["confirm"], { phone: "555-1234" }),
+    });
+
+    // The captured value is filled into the instruction; the raw token is never shown.
+    expect(result.response.answer).toBe("Confirm we will call you at 555-1234.");
+    expect(result.response.answer).not.toContain("{{slot.phone}}");
+  });
+
   it("clears state (null next) when the routine reaches a terminal step", async () => {
     const runner = new DefaultRoutineRunner(
       [routine],

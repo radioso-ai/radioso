@@ -7,6 +7,8 @@
   },
   "scripts": {
     "check:api-contracts": "pnpm --dir backend run generate:openapi && node scripts/check-api-contracts.mjs",
+    "generate:prompts": "node scripts/generate-default-prompts.mjs",
+    "check:prompts": "node scripts/generate-default-prompts.mjs --check",
     "ci:local": "bash scripts/local-ci-checks.sh"
   },
   "pnpm": {

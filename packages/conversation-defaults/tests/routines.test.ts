@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it, vi } from "vitest";
@@ -39,14 +40,30 @@ const state: RoutineState = { sessionId: "s1", routineId: "contact", path: ["ask
 
 const gateway = (text: string): ConversationModelGateway => ({ complete: vi.fn(async () => ({ text })) });
 const testDirectory = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(testDirectory, "../../..");
 const backendPrompt = (relativePath: string): string =>
-  readFileSync(path.resolve(testDirectory, "../../../backend/prompts", relativePath), "utf8").trimEnd();
+  readFileSync(path.resolve(repoRoot, "backend/prompts", relativePath), "utf8").trimEnd();
 
 describe("routine defaults", () => {
+  it("exports non-empty package fallback prompts", () => {
+    expect(DEFAULT_DIRECTIVE_MATCH_SYSTEM_PROMPT.trim()).not.toBe("");
+    expect(DEFAULT_ROUTINE_NEXT_STEP_PROMPT.trim()).not.toBe("");
+    expect(DEFAULT_ROUTINE_STEP_REPLY_PROMPT.trim()).not.toBe("");
+  });
+
   it("keeps package fallback prompts byte-equal to the backend prompt files", () => {
     expect(DEFAULT_DIRECTIVE_MATCH_SYSTEM_PROMPT).toBe(backendPrompt("chat/directive-match.md"));
     expect(DEFAULT_ROUTINE_NEXT_STEP_PROMPT).toBe(backendPrompt("chat/routine-next-step.md"));
     expect(DEFAULT_ROUTINE_STEP_REPLY_PROMPT).toBe(backendPrompt("chat/routine-step-reply.md"));
+  });
+
+  it("keeps generated fallback prompt artifacts current", () => {
+    const result = spawnSync("node", ["scripts/generate-default-prompts.mjs", "--check"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+
+    expect(result.status, result.stderr || result.stdout).toBe(0);
   });
 
   it("activates the first registered routine whose registration claims the turn", async () => {

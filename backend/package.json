@@ -38,7 +38,7 @@
     "test:unit": "pnpm run build:conversation-defaults && pnpm run build:conversation-engine && pnpm run build:mcp && vitest run tests/unit",
     "test:composition": "pnpm run build:conversation-defaults && pnpm run build:conversation-engine && pnpm run build:mcp && vitest run tests/unit/capability-policy.test.ts tests/unit/application-modules.test.ts tests/unit/default-composition.test.ts tests/unit/document-capability-policy.test.ts",
     "test:integration": "pnpm run build:conversation-defaults && pnpm run build:conversation-engine && pnpm run build:mcp && vitest run tests/integration",
-    "test:contract": "pnpm run build:conversation-defaults && pnpm run build:conversation-engine && pnpm run build:mcp && pnpm run generate:openapi && node ../scripts/check-api-contracts.mjs && pnpm run generate:skills -- --check && vitest run tests/contract",
+    "test:contract": "pnpm run build:conversation-defaults && pnpm run build:conversation-engine && pnpm run build:mcp && pnpm run generate:openapi && node ../scripts/check-api-contracts.mjs && pnpm --dir .. run check:prompts && pnpm run generate:skills -- --check && vitest run tests/contract",
     "test:persistence": "pnpm run build:conversation-defaults && pnpm run build:conversation-engine && pnpm run build:mcp && vitest run tests/integration/persistence.integration.test.ts",
     "validate:architecture": "node ../scripts/validate-architecture-boundaries.mjs"
   },

@@ -29,7 +29,11 @@ on the same message, the one with the higher **priority** wins.
 
 Slots are the values the routine collects, such as an email or an order number.
 For each slot, set a key, a type (text, number, boolean, email, or date), and
-whether it is required. Reference a slot inside a step with `{{slot.<key>}}`.
+whether it is required. Reference a slot inside a step or terminal with
+`{{slot.<key>}}`; at run time it is replaced with the value collected so far. Only
+reference a slot once it has been collected — for example in a confirmation. A
+reference to a slot the routine has not captured yet resolves to nothing, so do not
+use `{{slot.<key>}}` in the step that asks for it (just describe what to ask).
 
 ### Steps
 

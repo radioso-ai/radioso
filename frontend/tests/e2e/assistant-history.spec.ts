@@ -341,14 +341,59 @@ test("turn flow shows clarification decisions and candidates", async ({ page }) 
           stream: false,
           citationCount: 0,
           answerOutcome: "clarification_asked",
-          activitySummary: null,
-          activityTrace: null,
+          // A retrieval-sense ask happens post-retrieval, so a real turn carries
+          // the retrieval activity trace (the Debug/Flow entry points key off it).
+          activitySummary: {
+            execution: {
+              surface: "assistant",
+              path: "assistant_retrieval",
+              retrievalInvoked: true,
+            },
+            candidateCounts: { semantic: 2, lexical: 0, merged: 2, final: 2 },
+            fallbackApplied: false,
+            rerankStatus: "skipped",
+            rewrite: {
+              status: "skipped",
+              eligible: false,
+              ran: false,
+              materialDisagreement: false,
+            },
+          },
+          activityTrace: {
+            summary: {
+              execution: {
+                surface: "assistant",
+                path: "assistant_retrieval",
+                retrievalInvoked: true,
+              },
+              candidateCounts: { semantic: 2, lexical: 0, merged: 2, final: 2 },
+              fallbackApplied: false,
+              rerankStatus: "skipped",
+            },
+            stages: [
+              {
+                stageId: "context",
+                kind: "context",
+                label: "Context",
+                status: "applied",
+                metrics: { selectedHistoryCount: 1 },
+              },
+              {
+                stageId: "answer",
+                kind: "answer_outcome",
+                label: "Answer outcome",
+                status: "applied",
+                outputs: { outcome: "clarification_asked" },
+              },
+            ],
+            links: [{ fromStageId: "context", toStageId: "answer", kind: "sequence" }],
+          },
           turnTrace,
           route: {
             generator: "assistant",
             routeType: "retrieval",
             routeReason: "clarification",
-            retrievalInvoked: false,
+            retrievalInvoked: true,
           },
         },
       },
@@ -363,21 +408,31 @@ test("turn flow shows clarification decisions and candidates", async ({ page }) 
 
   await page.goto(`/w/${workspaceKey}/activity`);
   await page.getByRole("button", { name: /Tell me about yoga/ }).click();
+  await expect(page).toHaveURL(/itemKind=chat/);
+
+  // The Flow button only renders once the Debug pane is open (same flow as the
+  // turn-flow test above).
+  await page.getByRole("button", { name: "Debug" }).click();
   await page.getByRole("button", { name: "Flow" }).click();
 
   await expect(page.getByText("Turn flow", { exact: true })).toBeVisible();
   await expect(page.getByText("Clarification", { exact: true }).first()).toBeVisible();
 
-  await page.getByText("Clarification", { exact: true }).first().click();
-  await expect(page.getByText("retrieval_sense")).toBeVisible();
-  await expect(page.getByText("asked", { exact: true })).toBeVisible();
-  await expect(page.getByText("too_close")).toBeVisible();
-  await expect(page.getByText("0.03")).toBeVisible();
-  await expect(page.getByText("Hatha yoga")).toBeVisible();
-  await expect(page.getByText("0.73")).toBeVisible();
-  await expect(page.getByText("Raja yoga")).toBeVisible();
-  await expect(page.getByText("0.7", { exact: true })).toBeVisible();
-  await expect(page.getByText("chosen:hatha")).toBeVisible();
+  // The minimap panel overlaps node hit-targets in the small test viewport, so a
+  // positional click cannot land; dispatch the click on the node element itself
+  // (React Flow's onNodeClick is a synthetic click listener on the node wrapper).
+  await page.getByTestId("rf__node-spine:clarification").dispatchEvent("click");
+
+  const stageDetail = page.getByTestId("turn-flow-stage-detail");
+  await expect(stageDetail.getByText("retrieval_sense")).toBeVisible();
+  await expect(stageDetail.getByText("asked", { exact: true })).toBeVisible();
+  await expect(stageDetail.getByText("too_close")).toBeVisible();
+  await expect(stageDetail.getByText("0.03")).toBeVisible();
+  await expect(stageDetail.getByText("Hatha yoga")).toBeVisible();
+  await expect(stageDetail.getByText("0.73")).toBeVisible();
+  await expect(stageDetail.getByText("Raja yoga")).toBeVisible();
+  await expect(stageDetail.getByText("0.7", { exact: true })).toBeVisible();
+  await expect(stageDetail.getByText("chosen:hatha")).toBeVisible();
 });
 
 test("activity filtered pages request one offset-backed page", async ({ page }) => {

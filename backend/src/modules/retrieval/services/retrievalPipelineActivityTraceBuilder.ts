@@ -147,16 +147,15 @@ export class RetrievalPipelineActivityTraceBuilder {
             originalQuery: stages.request.query,
           },
           outputs: {
-            responseIntent: stages.interpretation.result.responseIntent,
             retrievalSkipped: true,
             promptHistoryCount: stages.interpretation.result.promptHistory.length,
             responseLanguagePolicy: stages.interpretation.result.rewrittenQuery.responseLanguagePolicy,
             continuityDecision: stages.interpretation.result.continuityDecision,
           },
           metrics: {
-            intentConfidence: Number(stages.interpretation.result.rewrittenQuery.confidence.toFixed(3)),
+            rewriteConfidence: Number(stages.interpretation.result.rewrittenQuery.confidence.toFixed(3)),
           },
-          reason: "Retrieval was intentionally skipped for a non-retrieval chat turn.",
+          reason: "Retrieval was intentionally skipped for a direct chat turn.",
         },
       ],
       links: [

@@ -2985,14 +2985,7 @@ export interface components {
             execution?: components["schemas"]["RetrievalExecutionMetadata"];
             parsedQuery?: components["schemas"]["ParsedQuery"];
             retrievalSubqueries?: components["schemas"]["RetrievalSubquery"][];
-            /**
-             * @description High-level user-turn intent inferred before routing. This is independent from the assistant route reason.
-             * @enum {string}
-             */
-            responseIntent?: "retrieval" | "social_only" | "assistant_identity";
             retrievalSkipped?: boolean;
-            intentConfidence?: number;
-            intentFallbackApplied?: boolean;
             /** @enum {string} */
             responseLanguagePolicy?: "match_user_question";
             candidateCounts?: components["schemas"]["CandidateCounts"];
@@ -3185,17 +3178,21 @@ export interface components {
                 activityTrace: components["schemas"]["ActivityTrace"];
             };
         };
-        RetrievalAnswerUnsupported: {
+        RetrievalAnswerResponse: {
             /** @enum {string} */
-            outcome: "unsupported";
-            /** @enum {string} */
-            code: "unsupported_query_type";
-            /** @enum {string} */
-            reason: "social_only" | "assistant_identity";
-            /** @enum {string} */
-            message: "This request is outside retrieval scope.";
+            outcome: "answer";
+            answer: string;
+            citations?: components["schemas"]["Citation"][];
+            validation: {
+                /** @enum {string} */
+                status: "supported" | "unsupported" | "not_checked";
+            };
+            debug?: {
+                evidence: components["schemas"]["RetrievalAnswerEvidence"][];
+                activitySummary: components["schemas"]["ActivitySummary"];
+                activityTrace: components["schemas"]["ActivityTrace"];
+            };
         };
-        RetrievalAnswerResponse: components["schemas"]["RetrievalAnswerSuccess"] | components["schemas"]["RetrievalAnswerUnsupported"];
         SkillAvailability: {
             /** @enum {string} */
             state: "available" | "forbidden" | "unavailable";

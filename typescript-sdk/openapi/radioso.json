@@ -6036,24 +6036,7 @@
               "$ref": "#/components/schemas/RetrievalSubquery"
             }
           },
-          "responseIntent": {
-            "type": "string",
-            "enum": [
-              "retrieval",
-              "social_only",
-              "assistant_identity"
-            ],
-            "description": "High-level user-turn intent inferred before routing. This is independent from the assistant route reason."
-          },
           "retrievalSkipped": {
-            "type": "boolean"
-          },
-          "intentConfidence": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          },
-          "intentFallbackApplied": {
             "type": "boolean"
           },
           "responseLanguagePolicy": {
@@ -6706,50 +6689,67 @@
           "validation"
         ]
       },
-      "RetrievalAnswerUnsupported": {
+      "RetrievalAnswerResponse": {
         "type": "object",
         "properties": {
           "outcome": {
             "type": "string",
             "enum": [
-              "unsupported"
+              "answer"
             ]
           },
-          "code": {
-            "type": "string",
-            "enum": [
-              "unsupported_query_type"
+          "answer": {
+            "type": "string"
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            }
+          },
+          "validation": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "supported",
+                  "unsupported",
+                  "not_checked"
+                ]
+              }
+            },
+            "required": [
+              "status"
             ]
           },
-          "reason": {
-            "type": "string",
-            "enum": [
-              "social_only",
-              "assistant_identity"
-            ]
-          },
-          "message": {
-            "type": "string",
-            "enum": [
-              "This request is outside retrieval scope."
+          "debug": {
+            "type": "object",
+            "properties": {
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RetrievalAnswerEvidence"
+                }
+              },
+              "activitySummary": {
+                "$ref": "#/components/schemas/ActivitySummary"
+              },
+              "activityTrace": {
+                "$ref": "#/components/schemas/ActivityTrace"
+              }
+            },
+            "required": [
+              "evidence",
+              "activitySummary",
+              "activityTrace"
             ]
           }
         },
         "required": [
           "outcome",
-          "code",
-          "reason",
-          "message"
-        ]
-      },
-      "RetrievalAnswerResponse": {
-        "anyOf": [
-          {
-            "$ref": "#/components/schemas/RetrievalAnswerSuccess"
-          },
-          {
-            "$ref": "#/components/schemas/RetrievalAnswerUnsupported"
-          }
+          "answer",
+          "validation"
         ]
       },
       "SkillAvailability": {

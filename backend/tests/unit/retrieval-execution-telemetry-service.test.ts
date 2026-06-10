@@ -134,7 +134,6 @@ describe("retrieval execution telemetry service", () => {
         effectiveQuery: "BM25",
         semanticQuery: "BM25",
         lexicalQuery: "BM25",
-        responseIntent: "retrieval",
         rewriteApplied: true,
         retrievalEligible: true,
         status: "applied",

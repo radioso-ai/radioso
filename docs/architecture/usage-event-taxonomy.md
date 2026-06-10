@@ -35,8 +35,9 @@ values. Replays of the same provider attempt must reuse the same key.
 | Surface | Operation | Caller | Lineage |
 |---------|-----------|--------|---------|
 | `assistant` | `answer` | Assistant chat answer generation, including grounded and no-context fallback answers | account, workspace, conversation, user message |
+| `assistant` | `turn_router` | Assistant turn routing before retrieval or direct answer selection | account when available, workspace, conversation, user message |
 | `assistant` | `bootstrap_greeting` | Assistant bootstrap greeting generation | account when available, workspace, request |
-| `retrieval` | `query_interpretation` | Retrieval query rewrite and intent interpretation | account when available, workspace, request |
+| `retrieval` | `query_interpretation` | Retrieval query rewrite and query interpretation | account when available, workspace, request |
 | `retrieval` | `trigger_analysis` | Retrieval metadata trigger analysis | account when available, workspace, request |
 | `retrieval` | `query_embedding` | Retrieval semantic query embeddings, including agentic semantic search | account when available, workspace, request |
 | `retrieval` | `agent_step` | Agentic retrieval model planning step | account when available, workspace, request |
@@ -47,11 +48,11 @@ values. Replays of the same provider attempt must reuse the same key.
 | `mcp_capability` | `query_embedding` | MCP-backed retrieval answer semantic query embeddings | account when available, workspace, request |
 | `mcp_capability` | `rerank` | MCP-backed retrieval answer model reranking | account when available, workspace, request |
 | `mcp_capability` | `grounded_answer` | MCP-backed retrieval answer generation | account when available, workspace, request |
-| `documents` | `query_interpretation` | Document search query rewrite and intent interpretation | workspace, search request |
+| `documents` | `query_interpretation` | Document search query rewrite and query interpretation | workspace, search request |
 | `documents` | `query_embedding` | Document search semantic query embeddings | workspace, search request |
 | `documents` | `rerank` | Document search model reranking | workspace, search request |
 | `documents` | `semantic_chunking_embedding` | Document processing semantic chunking embeddings | workspace, document job |
-| `eval` | `query_interpretation` | Eval replay query rewrite and intent interpretation | workspace, eval run |
+| `eval` | `query_interpretation` | Eval replay query rewrite and query interpretation | workspace, eval run |
 | `eval` | `trigger_analysis` | Eval replay metadata trigger analysis | workspace, eval run |
 | `eval` | `query_embedding` | Eval replay semantic query embeddings | workspace, eval run |
 | `eval` | `agent_step` | Eval replay agentic retrieval model planning step | workspace, eval run |

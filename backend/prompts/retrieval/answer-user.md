@@ -4,11 +4,8 @@ Conversation so far:
 Original latest user question:
 {{original_query}}
 
-Scope-filtered answer request:
+Answer request:
 {{query}}
-
-Outside-scope subrequest to decline without answering:
-{{outside_scope_request}}
 
 Standalone retrieval query:
 {{retrieval_query}}

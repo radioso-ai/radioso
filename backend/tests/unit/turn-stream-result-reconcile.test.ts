@@ -9,7 +9,7 @@ import type { PreparedSession } from "../../src/modules/chat/services/chatSessio
 import type { FallbackReplyComposer } from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import { SUGGESTIONS_SENTINEL } from "../../src/modules/chat/services/groundedAnswerEnvelope.js";
 import { RetrievalAnswerComposer } from "../../src/modules/chat/services/retrievalTurnSkill.js";
-import { SOCIAL_REPLY_CONFIG } from "../../src/modules/chat/services/socialTurnSkill.js";
+import { DIRECT_REPLY_CONFIG } from "../../src/modules/chat/services/directTurnSkill.js";
 import type { TurnStreamResult } from "../../src/modules/chat/services/turnOutcome.js";
 import type { RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 
@@ -164,7 +164,7 @@ describe("assistant-voice streaming carries its own suggestions", () => {
       chatGateway,
       presenter(),
       fallbackReplyComposer,
-      SOCIAL_REPLY_CONFIG,
+      DIRECT_REPLY_CONFIG,
     );
 
     const { chunks, result } = await drain(
@@ -180,7 +180,7 @@ describe("assistant-voice streaming carries its own suggestions", () => {
     expect(result.hasStreamedAnswer).toBe(true);
     expect(result.streamedAnswer).toBe("Hello! How can I help?");
     expect(result.finalPresentation.answer).toBe("Hello! How can I help?");
-    expect(result.finalPresentation.skillName).toBe(SOCIAL_REPLY_CONFIG.skillName);
+    expect(result.finalPresentation.skillName).toBe(DIRECT_REPLY_CONFIG.skillName);
     // Assistant-voice replies settle their own suggestions onto the presentation;
     // the host must not re-expand planned suggestions for them.
     expect(result.suggestions.mode).toBe("presentation");

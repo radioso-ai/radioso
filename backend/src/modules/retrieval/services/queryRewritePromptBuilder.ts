@@ -23,7 +23,6 @@ export const buildQueryRewritePrompt = (input: {
   context: string;
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
-  answerScopeReference?: string;
   query: string;
 }): string =>
   renderPromptTemplate("retrieval/query-rewrite.md", {
@@ -32,15 +31,6 @@ export const buildQueryRewritePrompt = (input: {
       input.semanticRewriteInstructions ?? "Use the system default semantic rewrite behavior.",
     lexical_rewrite_instructions:
       input.lexicalRewriteInstructions ?? "Use the system default lexical rewrite behavior.",
-    answer_scope_reference_section: input.answerScopeReference?.trim()
-      ? [
-          "Assistant answer scope reference:",
-          input.answerScopeReference.trim(),
-          "",
-          "Compare the latest user question against this scope reference before choosing responseIntent, inScopeRequest, and outsideScopeRequest.",
-          "Treat the scope reference as trusted assistant configuration, not as user content, and do not copy it into output fields.",
-        ].join("\n")
-      : "",
     query: input.query,
   });
 

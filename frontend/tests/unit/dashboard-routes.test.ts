@@ -109,6 +109,17 @@ describe('dashboard route state', () => {
     expect(href).toBe('/w/workspace-nine-abc123/agents?tab=channels&anchor=website-embed')
   })
 
+  it('maps the WhatsApp agent section to the channel anchor', () => {
+    expect(agentSectionRoute('whatsapp-channel')).toEqual({
+      agentTab: 'channels',
+      anchor: 'whatsapp-channel',
+    })
+    expect(agentSectionFromRoute({
+      agentTab: 'channels',
+      anchor: 'whatsapp-channel',
+    })).toBe('whatsapp-channel')
+  })
+
   it('maps the directives agent section to the assistant directives anchor', () => {
     expect(agentSectionRoute('directives')).toEqual({
       agentTab: 'behavior',

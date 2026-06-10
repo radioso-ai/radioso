@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, ChevronLeft, DatabaseZap, ExternalLink, FolderOpen, Globe, KeyRound, Link as LinkIcon, RefreshCw, ShieldAlert, Trash2, UserRound, Wrench } from 'lucide-react'
+import { Building2, ChevronLeft, DatabaseZap, ExternalLink, FolderOpen, Globe, KeyRound, Link as LinkIcon, MessageCircle, RefreshCw, ShieldAlert, Trash2, UserRound, Wrench } from 'lucide-react'
 
 import { ApiChannelCard } from '@/components/dashboard/settings/api-channel-card'
 import { AssistantBehaviorSection } from '@/components/dashboard/settings/assistant-behavior-section'
@@ -11,6 +11,7 @@ import { AssistantIdentityAppearanceSection } from '@/components/dashboard/setti
 import { AssistantPreviewRail } from '@/components/dashboard/settings/assistant-preview-rail'
 import { AssistantRetrievalSkillSettingsSection } from '@/components/dashboard/settings/assistant-retrieval-skill-settings-section'
 import { AssistantRoutinesSection } from '@/components/dashboard/settings/assistant-routines-section'
+import { ConnectorSetupDialog } from '@/components/dashboard/documents/connector-setup-dialog'
 import { McpChannelCard } from '@/components/dashboard/settings/mcp-channel-card'
 import { SettingsRow, SettingsRowList } from '@/components/dashboard/settings/settings-row-list'
 import { type AgentSectionId } from '@/lib/dashboard-areas'
@@ -79,13 +80,14 @@ const writeCachedOrganizationName = (accountId: string, organizationName: string
 
 type GeneralSettingsUpdateInput = Parameters<typeof generalSettingsApi.updateGeneralSettings>[0]
 
-type ChannelId = 'public-chat-link' | 'website-embed' | 'api-channel' | 'mcp-channel'
+type ChannelId = 'public-chat-link' | 'website-embed' | 'api-channel' | 'mcp-channel' | 'whatsapp-channel'
 
 const CHANNEL_TITLES: Record<ChannelId, string> = {
   'public-chat-link': 'Public chat link',
   'website-embed': 'Website chat widget',
   'api-channel': 'API channel',
   'mcp-channel': 'MCP channel',
+  'whatsapp-channel': 'WhatsApp',
 }
 
 const CONTACT_REQUEST_EMAIL_RECIPIENT_LIMIT = 5
@@ -285,11 +287,12 @@ export function WorkspaceAssistantChannelsTab({
   const [apiTokenError, setApiTokenError] = useState<string | null>(null)
   const [isApiTokenLoading, setIsApiTokenLoading] = useState(false)
   const [selectedChannel, setSelectedChannel] = useState<ChannelId | null>(null)
+  const [whatsappSetupOpen, setWhatsappSetupOpen] = useState(false)
   // When the second column drives selection, render exactly one section and
   // skip the in-page channel index/back affordance.
   const showSection = (id: AgentSectionId) => !agentSection || agentSection === id
   const isChannelId = (id: AgentSectionId | undefined): id is ChannelId =>
-    id === 'public-chat-link' || id === 'website-embed' || id === 'api-channel' || id === 'mcp-channel'
+    id === 'public-chat-link' || id === 'website-embed' || id === 'api-channel' || id === 'mcp-channel' || id === 'whatsapp-channel'
   const resolvedChannel: ChannelId | null = isChannelId(agentSection) ? agentSection : selectedChannel
   const channelIndexEnabled = !agentSection
   const organizationDraftVersionRef = useRef(0)
@@ -1270,6 +1273,12 @@ export function WorkspaceAssistantChannelsTab({
                 description="Connect Model Context Protocol clients to this agent."
                 onClick={() => setSelectedChannel('mcp-channel')}
               />
+              <SettingsRow
+                icon={<MessageCircle className="h-5 w-5 text-primary" />}
+                title={CHANNEL_TITLES['whatsapp-channel']}
+                description="Reply to WhatsApp Business messages with this agent."
+                onClick={() => setSelectedChannel('whatsapp-channel')}
+              />
             </SettingsRowList>
           </section>
           ) : null}
@@ -1376,6 +1385,30 @@ export function WorkspaceAssistantChannelsTab({
           {mode === 'channels' && !isAnonLoading && resolvedChannel === 'mcp-channel' ? (
           <section id="mcp-channel" className="space-y-6 scroll-mt-24">
             <McpChannelCard workspaceId={activeWorkspaceId} />
+          </section>
+          ) : null}
+
+          {mode === 'channels' && !isAnonLoading && resolvedChannel === 'whatsapp-channel' ? (
+          <section id="whatsapp-channel" className="space-y-6 scroll-mt-24">
+            <SettingsCard
+              icon={<MessageCircle className="h-5 w-5 text-primary" />}
+              title="WhatsApp"
+              description="Connect a WhatsApp Business phone number so inbound messages can be answered by this agent."
+              headerEnd={
+                <Button type="button" onClick={() => setWhatsappSetupOpen(true)}>
+                  Configure WhatsApp
+                </Button>
+              }
+            >
+              <p className="text-sm text-muted-foreground">
+                Configure the Meta phone number ID, access token, app secret, and webhook verification token from the connector setup.
+              </p>
+            </SettingsCard>
+            <ConnectorSetupDialog
+              open={whatsappSetupOpen}
+              connectorId="whatsapp"
+              onOpenChange={setWhatsappSetupOpen}
+            />
           </section>
           ) : null}
 

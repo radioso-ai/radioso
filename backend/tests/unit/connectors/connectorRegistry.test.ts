@@ -1,3 +1,5 @@
+import express, { Router, type Request, type Response } from "express";
+import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ConfigFieldDefinition, ConnectorContext, ConnectorPlugin } from "@radioso/connector-api";
@@ -89,6 +91,36 @@ describe("ConnectorRegistry", () => {
 
     await registry.shutdownAll();
     expect(events).toContain("shutdown-x");
+  });
+
+  it("scopes plugin HTTP mounts under the connector id", async () => {
+    const registry = new ConnectorRegistry();
+    const mountHandler = vi.fn((_req: Request, res: Response) => res.status(204).end());
+    registry.register(createFakePlugin({
+      id: "scoped",
+      initialize: async (context) => {
+        const router = Router({ mergeParams: true });
+        router.post("/", mountHandler);
+        context.http.mount("/:workspaceId/webhook", router);
+      },
+    }));
+
+    await registry.initializeAll({
+      db: {} as any,
+      logger: { info: () => {}, error: () => {}, warn: () => {} } as any,
+      chat: { answer: async () => ({ conversationId: "conversation-1", answer: "ok" }) } as any,
+      ingestion: {
+        ingest: async () => ({ documentId: "doc-1", status: "queued" }),
+        deleteByExternalId: async () => false,
+        ensureSource: async () => ({ id: "src-1" }),
+      } as any,
+    });
+
+    const app = express();
+    app.use("/api/connectors", registry.getRouter());
+
+    await request(app).post("/api/connectors/scoped/workspace-1/webhook").expect(204);
+    expect(mountHandler).toHaveBeenCalledTimes(1);
   });
 
   it("continues initializing other plugins if one fails", async () => {

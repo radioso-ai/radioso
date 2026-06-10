@@ -243,6 +243,143 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
   await expect(page.getByText("Turn flow", { exact: true })).toHaveCount(0);
 });
 
+test("turn flow shows clarification decisions and candidates", async ({ page }) => {
+  const conversationId = "conversation-clarification";
+  const assistantMessageId = "assistant-message-clarification";
+  const historyList = {
+    conversations: [
+      {
+        id: conversationId,
+        sourceChannel: null,
+        sourceOrigin: null,
+        anonymousSessionId: null,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        messageCount: 2,
+        userMessageCount: 1,
+        assistantMessageCount: 1,
+        preview: "Tell me about yoga",
+      },
+    ],
+    total: 1,
+    nextCursor: null,
+    hasMore: false,
+  };
+  const turnTrace = {
+    version: 1,
+    spine: {
+      traceId: "conversation-turn-clarification",
+      startedAt: nowIso,
+      completedAt: nowIso,
+      stages: [
+        { id: "gather", kind: "gather", status: "applied", outputs: { historyCount: 0 } },
+        { id: "directives", kind: "directive_match", status: "skipped", outputs: { matchCount: 0 } },
+        {
+          id: "selection",
+          kind: "skill_selection",
+          status: "applied",
+          outputs: { selectedSkills: ["retrieval.answer"], reason: "evidence_required" },
+        },
+        {
+          id: "clarification",
+          kind: "clarification",
+          status: "applied",
+          outputs: {
+            surface: "retrieval_sense",
+            decision: "asked",
+            reason: "too_close",
+            margin: 0.03,
+            candidates: [
+              { id: "hatha", label: "Hatha yoga", confidence: 0.73 },
+              { id: "raja", label: "Raja yoga", confidence: 0.7 },
+            ],
+            mappingOutcome: "chosen:hatha",
+          },
+        },
+        {
+          id: "dispatch:retrieval.answer",
+          kind: "skill_dispatch",
+          status: "applied",
+          outputs: { skillName: "retrieval.answer", outcomeStatus: "completed" },
+        },
+        { id: "compose", kind: "compose", status: "applied", outputs: { outcomeCount: 1 } },
+      ],
+    },
+  };
+  const conversationDetail = {
+    conversationId,
+    workspaceId,
+    sourceChannel: null,
+    sourceOrigin: null,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    messageCount: 2,
+    userMessageCount: 1,
+    assistantMessageCount: 1,
+    messagesTotal: 2,
+    messageWindowOffset: 0,
+    messageWindowLimit: 50,
+    hasOlderMessages: false,
+    nextCursor: null,
+    messages: [
+      {
+        id: "user-message-clarification",
+        role: "user",
+        content: "Tell me about yoga",
+        createdAt: nowIso,
+      },
+      {
+        id: assistantMessageId,
+        role: "assistant",
+        content: "Do you mean Hatha yoga or Raja yoga?",
+        createdAt: nowIso,
+        citations: [],
+        answerSegments: [{ text: "Do you mean Hatha yoga or Raja yoga?" }],
+        debug: {
+          eventStatus: "success",
+          recordedAt: nowIso,
+          stream: false,
+          citationCount: 0,
+          answerOutcome: "clarification_asked",
+          activitySummary: null,
+          activityTrace: null,
+          turnTrace,
+          route: {
+            generator: "assistant",
+            routeType: "retrieval",
+            routeReason: "clarification",
+            retrievalInvoked: false,
+          },
+        },
+      },
+    ],
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList,
+    conversationDetail,
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.getByRole("button", { name: /Tell me about yoga/ }).click();
+  await page.getByRole("button", { name: "Flow" }).click();
+
+  await expect(page.getByText("Turn flow", { exact: true })).toBeVisible();
+  await expect(page.getByText("Clarification", { exact: true }).first()).toBeVisible();
+
+  await page.getByText("Clarification", { exact: true }).first().click();
+  await expect(page.getByText("retrieval_sense")).toBeVisible();
+  await expect(page.getByText("asked", { exact: true })).toBeVisible();
+  await expect(page.getByText("too_close")).toBeVisible();
+  await expect(page.getByText("0.03")).toBeVisible();
+  await expect(page.getByText("Hatha yoga")).toBeVisible();
+  await expect(page.getByText("0.73")).toBeVisible();
+  await expect(page.getByText("Raja yoga")).toBeVisible();
+  await expect(page.getByText("0.7", { exact: true })).toBeVisible();
+  await expect(page.getByText("chosen:hatha")).toBeVisible();
+});
+
 test("activity filtered pages request one offset-backed page", async ({ page }) => {
   const requestLog: string[] = [];
   const historyList = {

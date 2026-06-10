@@ -90,8 +90,11 @@ describe("chat integration", () => {
     const routineGateway: ChatGateway = {
       async answer(input) {
         calls.push({ systemPrompt: input.systemPrompt });
-        if (input.systemPrompt?.includes("You decide whether to activate a routine")) {
-          return "{\"activate\":true}";
+        if (input.systemPrompt?.includes("wants to start any registered routine")) {
+          const routineId = input.systemPrompt.match(/id: (\S+)/)?.[1];
+          return JSON.stringify({
+            matches: routineId ? [{ routineId, confidence: 0.95, variables: {} }] : [],
+          });
         }
         if (input.systemPrompt?.includes("conditions")) {
           return "{}";
@@ -122,7 +125,7 @@ describe("chat integration", () => {
       .expect(200);
 
     expect(response.body.answer).toBe("Routine intake reply from the published definition.");
-    expect(calls.some((call) => call.systemPrompt?.includes("You decide whether to activate a routine"))).toBe(true);
+    expect(calls.some((call) => call.systemPrompt?.includes("wants to start any registered routine"))).toBe(true);
 
     const messages = await repositories.messageRepository.listByConversationId(workspaceId, response.body.conversationId);
     expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);

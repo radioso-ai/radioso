@@ -493,7 +493,6 @@ const reconstructActivityTrace = (input: {
         surface: execution?.surface,
       },
       outputs: {
-        responseIntent: input.diagnostics.responseIntent,
         retrievalInvoked: input.route?.retrievalInvoked,
         retrievalSkipped: input.diagnostics.retrievalSkipped,
       },
@@ -518,15 +517,11 @@ const reconstructActivityTrace = (input: {
         originalQuery: input.diagnostics.parsedQuery?.originalQuery,
         semanticQuery: input.diagnostics.parsedQuery?.semanticQuery,
         lexicalQuery: input.diagnostics.parsedQuery?.lexicalQuery,
-        responseIntent: input.diagnostics.responseIntent,
         retrievalSubqueries: input.diagnostics.retrievalSubqueries,
         rewriteEligible: input.diagnostics.rewriteEligible,
         rewriteRan: input.diagnostics.rewriteRan,
         continuityDecision: input.diagnostics.continuityDecision,
       },
-      metrics: typeof input.diagnostics.intentConfidence === "number"
-        ? { rewriteConfidence: input.diagnostics.intentConfidence }
-        : undefined,
       reason: input.diagnostics.rejectionReason ?? input.diagnostics.fallbackReason,
     });
   }

@@ -36,11 +36,11 @@ const strategy: TurnSelectionStrategy = {
 
 describe("ChatTurnSkillSelector", () => {
   const retrieval = skillStub("retrieval.answer", (s) => s.turnRoute === "retrieval");
-  const social = skillStub("social_only.answer", (s) => s.turnRoute === "social_only");
+  const social = skillStub("direct.answer", (s) => s.turnRoute === "direct");
   const selector = new ChatTurnSkillSelector([retrieval, social], strategy);
 
   it("resolves the terminal skill whose selects() claims the prepared turn", () => {
-    expect(selector.resolveSkill(session("social_only"))).toBe(social);
+    expect(selector.resolveSkill(session("direct"))).toBe(social);
     expect(selector.resolveSkill(session("retrieval"))).toBe(retrieval);
   });
 
@@ -49,10 +49,10 @@ describe("ChatTurnSkillSelector", () => {
   });
 
   it("produces the engine-shaped decision naming the resolved skill", () => {
-    const { skill, decision } = selector.select(session("social_only"));
+    const { skill, decision } = selector.select(session("direct"));
     expect(skill).toBe(social);
     expect(decision.selected).toEqual([
-      { skillName: "social_only.answer", reason: "turn_selection_strategy" },
+      { skillName: "direct.answer", reason: "turn_selection_strategy" },
     ]);
     // The path-layer strategy informs the reason, not which skill is chosen.
     expect(decision.reason).toBe("candidates:retrieval");

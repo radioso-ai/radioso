@@ -79,7 +79,6 @@ const buildInput = (rewrittenContexts: RetrievedChunk[]): CandidateRetrievalStag
     status: "applied",
     semanticQuery: "when is the next family camp?",
     lexicalQuery: "next family camp",
-    responseIntent: "retrieval",
     responseLanguagePolicy: "match_user_question",
     retrievalSubqueries: [
       {
@@ -94,7 +93,6 @@ const buildInput = (rewrittenContexts: RetrievedChunk[]): CandidateRetrievalStag
     retrievalEligible: true,
     confidence: 0.9,
   },
-  responseIntent: "retrieval",
   activeQuery: "when is the next family camp?",
   activeParsedQuery: {
     originalQuery: "when is the next family camp?",

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
 import { buildAssistantReplyPrompt } from "../../src/modules/chat/services/assistantReplyPromptBuilder.js";
-import { CHAT_TURN_ROUTE } from "../../src/modules/chat/services/chatTurnIntentService.js";
+import { CHAT_TURN_ROUTE } from "../../src/shared/domain/chatTurnRoute.js";
 
 const historyMessage = (overrides: Partial<MessageRecord>): MessageRecord => ({
   id: "message-1",
@@ -17,7 +17,7 @@ const historyMessage = (overrides: Partial<MessageRecord>): MessageRecord => ({
 describe("non-retrieval answer prompt builder", () => {
   it("instructs social replies to loop back to the configured assistant scope", () => {
     const prompt = buildAssistantReplyPrompt({
-      route: CHAT_TURN_ROUTE.SOCIAL_ONLY,
+      route: CHAT_TURN_ROUTE.DIRECT,
       responseIdentity: {
         name: "Vikram",
       },
@@ -34,7 +34,7 @@ describe("non-retrieval answer prompt builder", () => {
         }),
       ],
       query: "Thanks!",
-      intentTopic: "gratitude",
+      framing: { intentTopic: "gratitude", isIdentityQuestion: false },
     });
 
     expect(prompt).toContain("Detected intent topic: gratitude");
@@ -47,15 +47,18 @@ describe("non-retrieval answer prompt builder", () => {
 
   it("treats detected intent topic as evidence for scope handling instead of answer authority", () => {
     const prompt = buildAssistantReplyPrompt({
-      route: CHAT_TURN_ROUTE.SOCIAL_ONLY,
+      route: CHAT_TURN_ROUTE.DIRECT,
       responseIdentity: {
         name: "Vikram",
       },
       answerInstructionBlock: "Configured response instructions:\nHelp visitors choose retreats and courses.",
       history: [],
       query: "sqrt(5)",
-      intentTopic: "math problem",
-      outsideScopeRequest: "solve sqrt(5)",
+      framing: {
+        intentTopic: "math problem",
+        outsideScopeRequest: "solve sqrt(5)",
+        isIdentityQuestion: false,
+      },
     });
 
     expect(prompt).toContain("Detected intent topic: math problem");
@@ -72,7 +75,8 @@ describe("non-retrieval answer prompt builder", () => {
 
   it("instructs identity replies to describe the configured scope when asked what the assistant can do", () => {
     const prompt = buildAssistantReplyPrompt({
-      route: CHAT_TURN_ROUTE.ASSISTANT_IDENTITY,
+      route: CHAT_TURN_ROUTE.DIRECT,
+      framing: { isIdentityQuestion: true },
       responseIdentity: {
         name: "Vikram",
       },
@@ -88,7 +92,7 @@ describe("non-retrieval answer prompt builder", () => {
 
   it("renders matched steering directives into the prompt", () => {
     const prompt = buildAssistantReplyPrompt({
-      route: CHAT_TURN_ROUTE.SOCIAL_ONLY,
+      route: CHAT_TURN_ROUTE.DIRECT,
       answerInstructionBlock: "Configured response instructions:\nHelp visitors choose retreats and courses.",
       history: [],
       query: "Thanks!",

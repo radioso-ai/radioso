@@ -59,7 +59,7 @@ describe("retrieval answer integration", () => {
     expect(history.body.conversations).toEqual([]);
   });
 
-  it("returns typed unsupported outcomes for non-retrieval requests", async () => {
+  it("attempts retrieval for conversational requests instead of rejecting them", async () => {
     const { app } = createTestApp({
       queryRewriteGateway: {
         async rewrite(input) {
@@ -67,7 +67,6 @@ describe("retrieval answer integration", () => {
             rewrittenQuery: input.query,
             semanticQuery: input.query,
             lexicalQuery: input.query,
-            responseIntent: "social_only",
             turnKind: "fresh_subject",
             relatedEntities: [],
             unresolved: false,
@@ -76,7 +75,7 @@ describe("retrieval answer integration", () => {
         },
       },
     });
-    const session = await issueTestSession(app, "retrieval-answer-unsupported-integration@example.com");
+    const session = await issueTestSession(app, "retrieval-answer-conversational-integration@example.com");
     const headers = adminSessionHeaders(session);
 
     const response = await request(app)
@@ -85,12 +84,12 @@ describe("retrieval answer integration", () => {
       .send({ query: "thanks for the help" })
       .expect(200);
 
-    expect(response.body).toEqual({
-      outcome: "unsupported",
-      code: "unsupported_query_type",
-      reason: "social_only",
-      message: "This request is outside retrieval scope.",
-    });
+    // The retrieval-answer API is a pure retrieval surface: it no longer
+    // classifies turn intent, so a conversational query is attempted as a
+    // retrieval query (yielding a grounded answer) rather than returned as a
+    // separate "unsupported" outcome.
+    expect(response.body.outcome).toBe("answer");
+    expect(response.body).not.toHaveProperty("code");
   });
 
   it("marks MCP capability diagnostics separately from direct retrieval answer clients", async () => {

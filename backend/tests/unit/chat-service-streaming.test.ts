@@ -76,6 +76,22 @@ const makeChatService = (
     routineProvider: ChatServiceOptions["routineProvider"];
     actionOutbox?: ChatServiceOptions["actionOutbox"];
   },
+  turnRouter: ChatServiceOptions["turnRouter"] = {
+    async classify(input) {
+      const normalized = input.query.toLowerCase().trim();
+      const identity =
+        normalized.includes("who are you") ||
+        normalized.includes("your name") ||
+        normalized.includes("what do you do") ||
+        normalized.includes("what you do");
+      const direct =
+        identity ||
+        normalized.startsWith("thanks") ||
+        normalized === "i need help" ||
+        ["thank you", "ok", "okay", "got it", "hello", "hi"].includes(normalized);
+      return { route: direct ? "direct" : "retrieval", framing: { isIdentityQuestion: identity } };
+    },
+  },
 ): ChatService =>
   new ChatService({
     conversationRepository,
@@ -95,6 +111,7 @@ const makeChatService = (
     agentService,
     directiveSteering,
     selectionStrategy,
+    turnRouter,
     conversationEngine,
     routineStore: routine?.routineStore,
     routineProvider: routine?.routineProvider,
@@ -160,7 +177,6 @@ const asChatActivityPipeline = (pipeline: Record<string, unknown>) => {
           startedAt: Date.now(),
           durationMs: 1,
           result: {
-            responseIntent: "retrieval",
           },
         },
       };
@@ -177,7 +193,6 @@ const asChatActivityPipeline = (pipeline: Record<string, unknown>) => {
 describe("chat service streaming", () => {
   const createIntentRoutedNoContextPipeline = (input: {
     query: string;
-    responseIntent: "social_only" | "assistant_identity";
     responseIdentity?: {
       name: string;
     };
@@ -233,7 +248,6 @@ describe("chat service streaming", () => {
           startedAt: Date.now(),
           durationMs: 1,
           result: {
-            responseIntent: input.responseIntent,
           },
         },
       };
@@ -265,10 +279,7 @@ describe("chat service streaming", () => {
           finalContextCount: 0,
           candidateFallbackApplied: false,
           fallbackApplied: false,
-          responseIntent: input.responseIntent,
           retrievalSkipped: true,
-          intentConfidence: 0.9,
-          intentFallbackApplied: false,
           parsedQuery: {
             originalQuery: input.query,
             semanticQuery: input.query,
@@ -285,7 +296,6 @@ describe("chat service streaming", () => {
           },
         },
         trace: {
-          traceId: `trace-${input.responseIntent}`,
           startedAt: new Date().toISOString(),
           stages: [
             { stageId: "diagnostics", kind: "diagnostics", label: "Diagnostics", status: "skipped" },
@@ -579,7 +589,6 @@ describe("chat service streaming", () => {
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(createIntentRoutedNoContextPipeline({
         query: "I need help",
-        responseIntent: "social_only",
       })) as never),
       chatGateway,
       auditService,
@@ -625,7 +634,6 @@ describe("chat service streaming", () => {
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(createIntentRoutedNoContextPipeline({
         query: "I need help",
-        responseIntent: "social_only",
       })) as never),
       chatGateway,
       auditService,
@@ -663,9 +671,9 @@ describe("chat service streaming", () => {
     const engineTrace = metadata.turnTrace?.spine;
     expect(engineTrace).toBeDefined();
     const selectionStage = engineTrace?.stages?.find((stage) => stage.kind === "skill_selection");
-    // The engine routes on the turn's intent: a social_only turn selects the social
-    // answer skill (not retrieval) — selection is genuinely capability-based now.
-    expect(selectionStage?.outputs?.selectedSkills).toContain("social_only.answer");
+    // The engine routes on the turn route: a direct turn selects the direct answer
+    // skill (not retrieval), so selection is genuinely capability-based now.
+    expect(selectionStage?.outputs?.selectedSkills).toContain("direct.answer");
     expect(engineTrace?.stages?.some((stage) => stage.kind === "skill_dispatch")).toBe(true);
     expect(response.answer).toBe("Normal answer.");
   });
@@ -688,7 +696,6 @@ describe("chat service streaming", () => {
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(createIntentRoutedNoContextPipeline({
         query: "I need help",
-        responseIntent: "social_only",
       })) as never),
       chatGateway,
       auditService,
@@ -726,7 +733,7 @@ describe("chat service streaming", () => {
     const engineTrace = metadata.turnTrace?.spine;
     expect(engineTrace).toBeDefined();
     expect(engineTrace?.stages?.find((stage) => stage.kind === "skill_selection")?.outputs?.selectedSkills)
-      .toContain("social_only.answer");
+      .toContain("direct.answer");
     expect(engineTrace?.stages?.some((stage) => stage.kind === "compose")).toBe(true);
   });
 
@@ -1502,7 +1509,6 @@ describe("chat service streaming", () => {
     const auditService = createAuditService();
     const retrievalPipeline = createIntentRoutedNoContextPipeline({
       query: "What is your name and what do you do?",
-      responseIntent: "assistant_identity",
       responseIdentity: {
         name: "Marta",
       },
@@ -1542,7 +1548,6 @@ describe("chat service streaming", () => {
     const auditService = createAuditService();
     const retrievalPipeline = createIntentRoutedNoContextPipeline({
       query: "What is your name?",
-      responseIntent: "assistant_identity",
       responseIdentity: {
         name: "Marta",
       },
@@ -1580,7 +1585,6 @@ describe("chat service streaming", () => {
     const auditService = createAuditService();
     const retrievalPipeline = createIntentRoutedNoContextPipeline({
       query: "What is your name?",
-      responseIntent: "assistant_identity",
       responseIdentity: {
         name: "Marta",
       },
@@ -1627,7 +1631,6 @@ describe("chat service streaming", () => {
     const auditService = createAuditService();
     const retrievalPipeline = createIntentRoutedNoContextPipeline({
       query: "What do you do?",
-      responseIntent: "assistant_identity",
       responseIdentity: {
         name: "Marta",
       },
@@ -1674,7 +1677,6 @@ describe("chat service streaming", () => {
     const auditService = createAuditService();
     const retrievalPipeline = createIntentRoutedNoContextPipeline({
       query: "What do you do?",
-      responseIntent: "assistant_identity",
       responseIdentity: {
         name: "Marta",
       },
@@ -1807,7 +1809,6 @@ describe("chat service streaming", () => {
             finalContextCount: 0,
             candidateFallbackApplied: false,
             fallbackApplied: true,
-            responseIntent: "retrieval",
             retrievalSkipped: false,
             parsedQuery: {
               semanticQuery: "I like potato chips",
@@ -4431,7 +4432,6 @@ describe("chat service streaming", () => {
             startedAt: Date.now(),
             durationMs: 1,
             result: {
-              responseIntent: "social_only",
             },
           },
         };
@@ -4467,10 +4467,7 @@ describe("chat service streaming", () => {
             finalContextCount: 0,
             candidateFallbackApplied: false,
             fallbackApplied: false,
-            responseIntent: "social_only",
             retrievalSkipped: true,
-            intentConfidence: 0.96,
-            intentFallbackApplied: false,
             parsedQuery: {
               originalQuery: "Thanks for the help",
               semanticQuery: "Thanks for the help",
@@ -4534,9 +4531,7 @@ describe("chat service streaming", () => {
     });
     expect(response.citations).toBeUndefined();
     expect(response.activitySummary).toMatchObject({
-      responseIntent: "social_only",
       retrievalSkipped: true,
-      intentConfidence: 0.96,
     });
     expect(response.activityTrace.stages).toEqual(
       expect.arrayContaining([
@@ -4571,7 +4566,7 @@ describe("chat service streaming", () => {
       }),
     );
     const socialMessages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
-    expect(socialMessages.find((message) => message.role === "assistant")?.skillName).toBe("social_only.answer");
+    expect(socialMessages.find((message) => message.role === "assistant")?.skillName).toBe("direct.answer");
   });
 
   it("routes assistant-identity turns through the same non-retrieval path without regex checks", async () => {
@@ -4635,7 +4630,6 @@ describe("chat service streaming", () => {
             startedAt: Date.now(),
             durationMs: 1,
             result: {
-              responseIntent: "assistant_identity",
             },
           },
         };
@@ -4669,10 +4663,7 @@ describe("chat service streaming", () => {
             finalContextCount: 0,
             candidateFallbackApplied: false,
             fallbackApplied: false,
-            responseIntent: "assistant_identity",
             retrievalSkipped: true,
-            intentConfidence: 0.9,
-            intentFallbackApplied: false,
             parsedQuery: {
               originalQuery: "Remind me what you do around here",
               semanticQuery: "Remind me what you do around here",
@@ -4729,14 +4720,13 @@ describe("chat service streaming", () => {
       reason: "assistant_identity",
     });
     expect(response.activitySummary).toMatchObject({
-      responseIntent: "assistant_identity",
       retrievalSkipped: true,
     });
     expect(observedPrompt).toContain("Answer Instructions:");
     expect(observedPrompt).toContain("Vikram");
     expect(observedPrompt).toContain("Keep the reply brief.");
     const identityMessages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
-    expect(identityMessages.find((message) => message.role === "assistant")?.skillName).toBe("assistant_identity.answer");
+    expect(identityMessages.find((message) => message.role === "assistant")?.skillName).toBe("direct.answer");
   });
 
   it("adds explicit missing-identity guidance when assistant identity is not configured", async () => {
@@ -4746,7 +4736,6 @@ describe("chat service streaming", () => {
     let observedPrompt = "";
     const retrievalPipeline = createIntentRoutedNoContextPipeline({
       query: "Who are you?",
-      responseIntent: "assistant_identity",
     });
     const chatGateway: ChatGateway = {
       async answer({ prompt }) {
@@ -4773,7 +4762,7 @@ describe("chat service streaming", () => {
     });
 
     expect(observedPrompt).toContain("Identity status: not_configured");
-    expect(observedPrompt).toContain("Say that you are the assistant that can answer the user's questions.");
+    expect(observedPrompt).toContain("say that you are the assistant that can answer the user's questions.");
   });
 
 });

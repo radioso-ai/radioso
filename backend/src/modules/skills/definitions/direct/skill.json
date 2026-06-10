@@ -1,7 +1,7 @@
 {
-  "name": "assistant_identity.answer",
-  "displayName": "Assistant identity",
-  "description": "Answer questions about the assistant itself — who it is and what it can do — from its configured identity, without retrieval.",
+  "name": "direct.answer",
+  "displayName": "Direct answer",
+  "description": "Answer conversationally in the assistant's own voice without retrieval.",
   "owner": "assistant",
   "executionClass": "interactive",
   "supportedCallers": ["assistant"],
@@ -30,9 +30,9 @@
   "steps": [],
   "outcomes": [
     {
-      "name": "assistant_identity",
-      "displayName": "Identity reply",
-      "description": "The assistant answered about itself from its configured identity.",
+      "name": "direct",
+      "displayName": "Direct reply",
+      "description": "The assistant replied conversationally without grounding in workspace evidence.",
       "status": "completed",
       "tone": "info"
     }

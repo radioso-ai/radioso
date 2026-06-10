@@ -168,7 +168,6 @@ export interface OpenApiSchemaCatalog {
   RetrievalAnswerRequestSchema: z.ZodTypeAny;
   RetrievalAnswerResponseSchema: z.ZodTypeAny;
   RetrievalAnswerSuccessSchema: z.ZodTypeAny;
-  RetrievalAnswerUnsupportedSchema: z.ZodTypeAny;
   RetrievalExecutionMetadataSchema: z.ZodTypeAny;
   ActivitySummarySchema: z.ZodTypeAny;
   RetrievalMetadataRuleSchema: z.ZodTypeAny;

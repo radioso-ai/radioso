@@ -5,7 +5,7 @@ import type { IngestionSettingsRecord } from "../../src/modules/settings/contrac
 import type { AgenticRetrievalRunResult, AgenticRetrievalRunner } from "../../src/modules/retrieval/services/agenticRetrievalRunner.js";
 import { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilder.js";
 import type { RegisteredChunk } from "../../src/modules/retrieval/services/agenticTools/index.js";
-import { RESPONSE_INTENT, REWRITE_STATUS } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
+import { REWRITE_STATUS } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
 import type { ActivityTrace } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
 import { defaultRetrievalSettings } from "../../src/modules/settings/contracts/retrieval.js";
 import type {
@@ -27,7 +27,6 @@ const baseSettings = (overrides: Partial<ReturnType<typeof defaultRetrievalSetti
 const buildInterpretation = (
   request: RetrievalPipelineRequest,
   overrides: {
-    responseIntent?: typeof RESPONSE_INTENT[keyof typeof RESPONSE_INTENT];
     semanticQuery?: string;
     retrievalEligible?: boolean;
   } = {},
@@ -56,14 +55,12 @@ const buildInterpretation = (
         effectiveQuery: overrides.semanticQuery ?? request.query,
         semanticQuery: overrides.semanticQuery ?? request.query,
         lexicalQuery: request.query,
-        responseIntent: overrides.responseIntent ?? RESPONSE_INTENT.RETRIEVAL,
         responseLanguagePolicy: "match_user_question",
         rewriteApplied: Boolean(overrides.semanticQuery),
         retrievalEligible: overrides.retrievalEligible ?? true,
         status: REWRITE_STATUS.APPLIED,
         confidence: 0.9,
       },
-      responseIntent: overrides.responseIntent ?? RESPONSE_INTENT.RETRIEVAL,
       activeQuery: overrides.semanticQuery ?? request.query,
       activeParsedQuery: { semanticQuery: request.query, lexicalQuery: request.query, constraints: [] },
       activeSemanticQuery: overrides.semanticQuery ?? request.query,
@@ -217,54 +214,6 @@ describe("AgenticRetrievalPipelineService", () => {
     expect(result.responseIdentity).toBeNull();
     expect(detState.interpretCalls).toBe(1);
     expect(detState.runWithoutRetrievalCalls).toBe(0);
-  });
-
-  it("delegates to deterministic.runWithoutRetrieval when the interpretation is non-retrieval", async () => {
-    const detState: StubDeterministicState = { interpretCalls: 0, runWithoutRetrievalCalls: 0, lastRunWithoutRetrievalInput: null };
-    const detService = {
-      async interpret(input: RetrievalPipelineRequest) {
-        detState.interpretCalls += 1;
-        return buildInterpretation(input, { responseIntent: RESPONSE_INTENT.SOCIAL_ONLY });
-      },
-      async run(input: RetrievalPipelineRequest) {
-        const interpretation = await detService.interpret(input);
-        return detService.runInterpreted(interpretation);
-      },
-      async runInterpreted(input: RetrievalPipelineInterpretationResult) {
-        return buildEmptyResult(input);
-      },
-      async runWithoutRetrieval(input: RetrievalPipelineInterpretationResult) {
-        detState.runWithoutRetrievalCalls += 1;
-        detState.lastRunWithoutRetrievalInput = input;
-        return buildEmptyResult(input, "non-retrieval");
-      },
-    } as unknown as RetrievalPipelineService;
-    const runnerCalls = { count: 0 };
-    const runner = {
-      run: async () => {
-        runnerCalls.count += 1;
-        return {
-          selectedChunks: [],
-          rationale: null,
-          trace: emptyTrace(),
-          terminatedReason: "completed" as const,
-          stepsTaken: 0,
-          searchStats: defaultSearchStats,
-        };
-      },
-    } as unknown as AgenticRetrievalRunner;
-    const service = new AgenticRetrievalPipelineService({
-      deterministic: detService,
-      runner,
-      promptBuilder: new PromptBuilder(),
-      systemPrompt: "agentic system",
-    });
-
-    const result = await service.run(buildRequest());
-
-    expect(detState.runWithoutRetrievalCalls).toBe(1);
-    expect(runnerCalls.count).toBe(0);
-    expect(result.systemPrompt).toBe("non-retrieval");
   });
 
   it("interpret() and runWithoutRetrieval() delegate cleanly to the deterministic instance", async () => {

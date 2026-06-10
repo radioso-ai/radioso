@@ -11,7 +11,8 @@ export const DIRECTIVES_BEHAVIOR = {
 
 export const CHAT_BEHAVIOR = {
   intentRouting: {
-    nonRetrievalConfidenceThreshold: 0.85,
+    reasoningEffort: "minimal",
+    maxOutputTokens: 512,
   },
   answer: {
     // gpt-5 family reasoning models otherwise default to medium effort and burn

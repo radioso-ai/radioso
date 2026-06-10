@@ -33,6 +33,7 @@ import {
   type TurnSelectionStrategy,
 } from "./turnSelectionStrategy.js";
 import { ChatTurnSkillSelector } from "./turnSkillSelector.js";
+import type { TurnRouter } from "./turnRouter.js";
 
 export interface WorkbenchReplayResolvedConfig {
   composedInstructions?: string;
@@ -62,6 +63,8 @@ export interface WorkbenchReplayRunnerOptions {
   selectionStrategy?: TurnSelectionStrategy;
   directiveSteering?: RouteScopedDirectiveRuntime;
   conversationEngine: ConversationEngine;
+  /** Same classifier the live turn uses, so a replayed turn takes the same route. */
+  turnRouter: TurnRouter;
 }
 
 export interface WorkbenchReplayInput {
@@ -153,10 +156,12 @@ export class WorkbenchReplayRunner {
   private readonly selectionStrategy: TurnSelectionStrategy;
   private readonly directiveRuntime: RouteScopedDirectiveRuntime;
   private readonly turnSkillSelector: ChatTurnSkillSelector;
+  private readonly turnRouter: TurnRouter;
   private readonly options: WorkbenchReplayRunnerOptions;
 
   constructor(options: WorkbenchReplayRunnerOptions) {
     this.selectionStrategy = options.selectionStrategy ?? new DefaultTurnSelectionStrategy();
+    this.turnRouter = options.turnRouter;
     this.directiveRuntime = options.directiveSteering ?? noopRouteScopedDirectiveRuntime;
     this.turnSkillSelector = new ChatTurnSkillSelector(options.turnSkills, this.selectionStrategy);
     this.preparer = new ChatSessionPreparer(
@@ -191,13 +196,26 @@ export class WorkbenchReplayRunner {
       preResolvedAgent: agent,
       preResolvedHistory: input.history,
     });
-    const candidates = this.selectionStrategy.select({
-      session,
-      directives: session.directiveSteering?.matches ?? [],
+    // Route through the same classifier the live turn uses, so a replayed turn
+    // takes the same retrieval-vs-direct path (Coach/preview fidelity).
+    const routing = await this.turnRouter.classify({
+      query: input.query,
+      history: session.history,
+      responseIdentity: session.retrieval.responseIdentity,
+      customInstruction: session.agent.customInstruction,
+      workspaceContext: { workspaceId: input.workspaceId },
+      usageContext: {
+        accountId: input.accountId ?? undefined,
+        workspaceId: input.workspaceId,
+        conversationId: session.conversation.id,
+        messageId: session.userMessage.id,
+        surface: "assistant",
+        attemptKey: session.userMessage.id,
+      },
     });
-    session = candidates.includes("retrieval")
-      ? await this.preparer.prepareRetrieval(prepareInput, session)
-      : await this.preparer.prepareDirect(prepareInput, session);
+    session = routing.route === "retrieval"
+      ? await this.preparer.prepareRetrieval(prepareInput, session, routing.framing)
+      : await this.preparer.prepareDirect(prepareInput, session, routing.framing);
 
     const answerStartedAt = Date.now();
     const { presentation, result } = await runPreparedChatTurnWithConversationEngine({

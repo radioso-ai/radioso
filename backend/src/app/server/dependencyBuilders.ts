@@ -53,6 +53,8 @@ import {
   buildChatTurnRuntime,
   createRouteScopedDirectiveSteering,
   createSkillOutcomeCapabilityProvider,
+  LlmTurnRouter,
+  ModelTurnRouterGateway,
   NoopAnswerFeedbackHistoryProvider,
   NoopPublicChatActionAdvertiser,
   NoopContactHistoryProvider,
@@ -897,6 +899,14 @@ export const buildChatServices = (input: {
     ),
   );
   const conversationEngine = createConversationEngine();
+  // The router is a lightweight classifier: run it on the cheap rewrite-tier
+  // inference at minimal effort (CHAT_BEHAVIOR.intentRouting), not the heavier
+  // chat answer model/effort. Shared by live turns and workbench replay so a
+  // replayed turn takes the same route. (ChatGatewayTurnRouterGateway remains
+  // available as a workspace-model-aware alternative seam.)
+  const turnRouter = new LlmTurnRouter(
+    new ModelTurnRouterGateway(input.llmRegistry.createRewriteInferencePipeline(input.usageEventRecorder)),
+  );
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
     messageRepository: input.messageRepository,
@@ -919,6 +929,7 @@ export const buildChatServices = (input: {
     // Turn selection strategy comes from composition (default: retrieval/direct
     // terminal turn). Registerable so a host can swap it.
     selectionStrategy: input.composition.selectionStrategy,
+    turnRouter,
     // The reusable conversation engine is the chat turn spine in every
     // environment. ChatService keeps an engine-less path for tests, but
     // composition always wires it.
@@ -965,6 +976,7 @@ export const buildChatServices = (input: {
     directiveSteering,
     selectionStrategy: input.composition.selectionStrategy,
     conversationEngine,
+    turnRouter,
   });
 
   return {

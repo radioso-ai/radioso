@@ -8,7 +8,7 @@ not a privileged step.
 
 A turn moves through four phases:
 
-1. **Gather** — interpret the user's message (intent, query rewrite, routing).
+1. **Gather** — prepare the chat session and run turn routing after routines decline.
 2. **Select** — decide which skill(s) the turn needs.
 3. **Dispatch** — run the selected skill through the skill-invocation port.
 4. **Compose** — build the reply from what the skills returned.
@@ -51,6 +51,12 @@ composer still renders through the Radioso `TurnOutcomeRendererRegistry`, and
 `ChatService` continues to own session prep, the skill-intake path, lifecycle,
 persistence, audit, and billing. The engine is `ChatService`'s only turn path — it
 is a required dependency, with no engine-less fallback.
+
+Turn routing is a chat-owned step above retrieval. `TurnRouter` classifies the
+latest user turn as `retrieval` or `direct` from the raw query, recent history,
+assistant identity, and configured answer scope. Retrieval query rewrite runs only
+after a turn has been routed to retrieval; it no longer returns response intent or
+direct-answer framing.
 
 The engine's turn trace (its gather/directive/selection/dispatch/compose stages)
 is recorded on the `chat.answer` success audit event under

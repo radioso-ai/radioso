@@ -5,7 +5,7 @@ import type { ChatGateway } from "../../src/modules/chat/services/chatService.js
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../src/modules/documents/contracts/index.js";
 import { defaultAnswerDirectives } from "../../src/modules/directives/public.js";
 import type { RoutineDefinitionDraftInput } from "../../src/modules/routines/public.js";
-import { RESPONSE_INTENT, REWRITE_TURN_KIND } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
+import { REWRITE_TURN_KIND } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
 import { adminSessionHeaders, createTestApp, issueTestToken } from "../support/testApp.js";
 import { textResult } from "../support/llmStubs.js";
 
@@ -1100,7 +1100,6 @@ describe("agents contract", () => {
         async rewrite(input) {
           return {
             rewrittenQuery: input.query,
-            responseIntent: RESPONSE_INTENT.ASSISTANT_IDENTITY,
             turnKind: REWRITE_TURN_KIND.FRESH_SUBJECT,
             relatedEntities: [],
             unresolved: false,

@@ -21,7 +21,7 @@ import {
 } from "./assistantTurnOutcomeTypes.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import { buildRewriteContinuityState } from "./rewriteContinuityState.js";
-import { CHAT_TURN_ROUTE } from "./chatTurnIntentService.js";
+import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
@@ -71,7 +71,7 @@ export const getChatTurnRoute = (session: PreparedSession): ChatRoute => {
   if (session.turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL) {
     return {
       type: "direct",
-      reason: session.retrieval.diagnostics.responseIntent === "assistant_identity"
+      reason: session.turnFraming?.isIdentityQuestion
         ? "assistant_identity"
         : "social_only",
     };
@@ -186,13 +186,20 @@ export const buildTurnTraceForPresentation = (
   const activityTracePresenter = new ActivityTracePresenter();
   const route = getChatTurnRoute(input.session);
   const skillTurnOutcome = toPresentationSkillTurnOutcome(input.presentation);
-  const activitySummary = activitySummaryPresenter.present(input.session.retrieval.diagnostics, {
-    execution: {
-      surface: "assistant",
-      path: route.type === "direct" ? "assistant_direct" : "assistant_retrieval",
-      retrievalInvoked: route.type === "retrieval",
+  const activitySummary = {
+    ...activitySummaryPresenter.present(input.session.retrieval.diagnostics, {
+      execution: {
+        surface: "assistant",
+        path: route.type === "direct" ? "assistant_direct" : "assistant_retrieval",
+        retrievalInvoked: route.type === "retrieval",
+      },
+    }),
+    assistant: {
+      route: input.session.turnRoute,
+      routeReason: route.reason,
+      isIdentityQuestion: input.session.turnFraming?.isIdentityQuestion ?? false,
     },
-  });
+  };
   const activityTrace = appendDirectiveSteeringStage(
     activityTracePresenter.appendAnswerOutcome({
       trace: input.session.retrieval.trace,

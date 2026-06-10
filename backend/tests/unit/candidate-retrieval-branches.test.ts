@@ -90,7 +90,6 @@ describe("candidate retrieval branches", () => {
         effectiveQuery: "who is narayani and arudra?",
         semanticQuery: "who is narayani and arudra?",
         lexicalQuery: "who is narayani and arudra?",
-        responseIntent: "retrieval",
         retrievalSubqueries: [
           { id: "subquery_1", label: "Narayani", semanticQuery: "who is narayani", lexicalQuery: "narayani" },
           { id: "subquery_2", label: "Arudra", semanticQuery: "who is arudra", lexicalQuery: "arudra" },
@@ -100,7 +99,6 @@ describe("candidate retrieval branches", () => {
         status: "applied",
         confidence: 0.9,
       },
-      responseIntent: "retrieval",
       activeQuery: "who is narayani and arudra?",
       activeParsedQuery: {
         originalQuery: "who is narayani and arudra?",
@@ -227,14 +225,12 @@ describe("candidate retrieval branches", () => {
         effectiveQuery: "alpha beta gamma delta?",
         semanticQuery: "alpha beta gamma delta?",
         lexicalQuery: "alpha beta gamma delta?",
-        responseIntent: "retrieval",
         retrievalSubqueries: subqueries,
         rewriteApplied: true,
         retrievalEligible: true,
         status: "applied",
         confidence: 0.9,
       },
-      responseIntent: "retrieval",
       activeQuery: "alpha beta gamma delta?",
       activeParsedQuery: {
         originalQuery: "alpha beta gamma delta?",
@@ -354,7 +350,6 @@ describe("candidate retrieval branches", () => {
         effectiveQuery: "account recovery",
         semanticQuery: "account recovery",
         lexicalQuery: "account recovery",
-        responseIntent: "retrieval",
         retrievalSubqueries: [
           { id: "subquery_1", label: "account recovery", semanticQuery: "account recovery", lexicalQuery: "account recovery" },
         ],
@@ -363,7 +358,6 @@ describe("candidate retrieval branches", () => {
         status: "applied",
         confidence: 0.9,
       },
-      responseIntent: "retrieval",
       activeQuery: "account recovery",
       activeParsedQuery: {
         originalQuery: "account recovery",
@@ -481,7 +475,6 @@ describe("candidate retrieval branches", () => {
         effectiveQuery: "recover account access",
         semanticQuery: "recover account access",
         lexicalQuery: "recover account access",
-        responseIntent: "retrieval" as const,
         retrievalSubqueries: [
           { id: "subquery_1", label: "forgot password", semanticQuery: "account recovery", lexicalQuery: '"forgot password"' },
           { id: "subquery_2", label: "reset token", semanticQuery: "account recovery", lexicalQuery: '"reset token"' },
@@ -491,7 +484,6 @@ describe("candidate retrieval branches", () => {
         status: "applied" as const,
         confidence: 0.9,
       },
-      responseIntent: "retrieval" as const,
       activeQuery: "recover account access",
       activeParsedQuery: {
         originalQuery: "recover account access",

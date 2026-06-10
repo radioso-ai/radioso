@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
-import { CHAT_BEHAVIOR, RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import {
   normalizeLlmClassifierLabel,
   normalizeLlmClassifierLanguageLabel,
@@ -11,7 +11,6 @@ import {
 import type { RetrievalMetadataRule } from "../../settings/contracts/retrieval.js";
 import type {
   ConversationContextWindow,
-  ResponseIntent,
   RetrievalQueryShape,
   RetrievalSubquery,
   RewrittenRetrievalQuery,
@@ -20,12 +19,11 @@ import type {
   RewriteTurnKind,
   StructuredRewriteResult,
 } from "../domain/retrievalPipelineTypes.js";
-import { RESPONSE_INTENT, REWRITE_STATUS, REWRITE_TURN_KIND } from "../domain/retrievalPipelineTypes.js";
+import { REWRITE_STATUS, REWRITE_TURN_KIND } from "../domain/retrievalPipelineTypes.js";
 import { buildLexicalAlternativeSubqueries } from "../domain/lexicalQueryPlan.js";
 import { RewriteEligibilityService } from "./rewritePolicyService.js";
 import { DEFAULT_RESPONSE_LANGUAGE_POLICY } from "./queryRewriteDefaults.js";
 import { truncateTriggerInstruction } from "./queryRewriteParser.js";
-import { QueryRewriteRoutingPolicy } from "./queryRewriteRoutingPolicy.js";
 import type {
   QueryRewriteGateway as QueryRewriteGatewayPort,
   QueryRewriteGatewayResult as QueryRewriteGatewayResultPort,
@@ -44,8 +42,6 @@ export {
 } from "./queryRewriteGateways.js";
 
 const TRIGGER_MATCH_ENACTMENT_THRESHOLD = RETRIEVAL_BEHAVIOR.hybrid.triggerMatchEnactmentThreshold;
-const NON_RETRIEVAL_INTENT_CONFIDENCE_THRESHOLD = CHAT_BEHAVIOR.intentRouting.nonRetrievalConfidenceThreshold;
-
 const resolveFallbackUsageContext = (
   input: { workspaceContext?: LlmCapabilityResolveInput; usageContext?: ModelCallUsageContext },
   operation: string,
@@ -59,7 +55,6 @@ const resolveFallbackUsageContext = (
 
 export class QueryRewriteService {
   private readonly eligibilityService = new RewriteEligibilityService();
-  private readonly routingPolicy = new QueryRewriteRoutingPolicy();
 
   constructor(
     private readonly gateway?: QueryRewriteGatewayPort,
@@ -70,16 +65,12 @@ export class QueryRewriteService {
     query: string;
     contextWindow: ConversationContextWindow;
     enabled: boolean;
-    intentRoutingEnabled?: boolean;
     semanticRewriteInstructions?: string;
     lexicalRewriteInstructions?: string;
-    answerScopeReference?: string;
     workspaceContext?: LlmCapabilityResolveInput;
     usageContext?: ModelCallUsageContext;
   }): Promise<RewrittenRetrievalQuery> {
-    const shouldInterpret = input.enabled || input.intentRoutingEnabled !== false;
-
-    if (!shouldInterpret) {
+    if (!input.enabled) {
       return this.skipped(input.query);
     }
 
@@ -94,41 +85,11 @@ export class QueryRewriteService {
         contextMessages: input.contextWindow.selectedMessages,
         semanticRewriteInstructions: input.semanticRewriteInstructions,
         lexicalRewriteInstructions: input.lexicalRewriteInstructions,
-        answerScopeReference: input.answerScopeReference,
         workspaceContext: input.workspaceContext,
         usageContext: resolveFallbackUsageContext(input, "query_interpretation"),
       });
       const result = this.normalizeStructuredResult(input.query, rawResult);
-      const rawResponseIntent = this.normalizeResponseIntent(result.responseIntent);
-      const responseIntent = this.routingPolicy.chooseResponseIntent({
-        query: input.query,
-        result,
-        normalizedResponseIntent: rawResponseIntent,
-      });
-      const normalizedStructuredResult = {
-        ...result,
-        responseIntent,
-      };
-      const lowConfidenceNonRetrieval =
-        responseIntent !== RESPONSE_INTENT.RETRIEVAL
-        && normalizedStructuredResult.confidence < NON_RETRIEVAL_INTENT_CONFIDENCE_THRESHOLD;
-
-      if (lowConfidenceNonRetrieval) {
-        return {
-          ...this.fallback(input.query, "intent_low_confidence"),
-          confidence: normalizedStructuredResult.confidence,
-          intentFallbackApplied: true,
-          structuredResult: normalizedStructuredResult,
-        };
-      }
-
-      if (!input.enabled) {
-        return this.intentOnlyResult({
-          query: input.query,
-          result: normalizedStructuredResult,
-          responseIntent,
-        });
-      }
+      const normalizedStructuredResult = result;
 
       const semanticQuery = this.selectSemanticQuery(
         input.query,
@@ -159,15 +120,13 @@ export class QueryRewriteService {
       });
       const retrievalSubqueries = modelRetrievalSubqueries;
       const applied =
-        responseIntent !== RESPONSE_INTENT.RETRIEVAL
-        || semanticQuery !== input.query
+        semanticQuery !== input.query
         || resolvedLexicalQuery !== input.query
         || Boolean(retrievalSubqueries && retrievalSubqueries.length > 1);
 
       if (!applied) {
         return {
           ...this.fallback(input.query, "rewrite_unusable"),
-          responseIntent,
           structuredResult: {
             ...normalizedStructuredResult,
             rewrittenQuery: compatibilityRewrite,
@@ -188,9 +147,7 @@ export class QueryRewriteService {
         originalQuery: input.query,
         rewrite: structuredResult,
       });
-      const retrievalEligible = responseIntent === RESPONSE_INTENT.RETRIEVAL
-        ? eligibility.eligible
-        : false;
+      const retrievalEligible = eligibility.eligible;
 
       return {
         originalQuery: input.query,
@@ -198,15 +155,14 @@ export class QueryRewriteService {
         effectiveQuery: retrievalEligible ? semanticQuery : input.query,
         semanticQuery: retrievalEligible ? semanticQuery : input.query,
         lexicalQuery: retrievalEligible ? resolvedLexicalQuery : input.query,
-        responseIntent,
         responseLanguagePolicy,
         retrievalSubqueries: retrievalEligible ? retrievalSubqueries : undefined,
         rewriteApplied: retrievalEligible,
         retrievalEligible,
-        status: retrievalEligible || responseIntent !== RESPONSE_INTENT.RETRIEVAL ? REWRITE_STATUS.APPLIED : REWRITE_STATUS.REJECTED,
+        status: retrievalEligible ? REWRITE_STATUS.APPLIED : REWRITE_STATUS.REJECTED,
         confidence: normalizedStructuredResult.confidence ?? 0.5,
         structuredResult,
-        rejectionReason: responseIntent === RESPONSE_INTENT.RETRIEVAL ? eligibility.rejectionReason : undefined,
+        rejectionReason: eligibility.rejectionReason,
       };
     } catch {
       return this.fallback(input.query, "rewrite_failed");
@@ -326,7 +282,6 @@ export class QueryRewriteService {
       retrievalEligible: false,
       status: REWRITE_STATUS.SKIPPED,
       confidence: 0,
-      responseIntent: RESPONSE_INTENT.RETRIEVAL,
     };
   }
 
@@ -343,44 +298,7 @@ export class QueryRewriteService {
       retrievalEligible: false,
       status: REWRITE_STATUS.FALLBACK,
       confidence: 0,
-      responseIntent: RESPONSE_INTENT.RETRIEVAL,
       fallbackReason: reason,
-    };
-  }
-
-  private intentOnlyResult(input: {
-    query: string;
-    result: StructuredRewriteResult;
-    responseIntent: ResponseIntent;
-  }): RewrittenRetrievalQuery {
-    if (input.responseIntent === RESPONSE_INTENT.RETRIEVAL) {
-      return {
-        ...this.skipped(input.query),
-        confidence: input.result.confidence,
-        responseLanguagePolicy: input.result.responseLanguagePolicy ?? DEFAULT_RESPONSE_LANGUAGE_POLICY,
-        structuredResult: input.result,
-      };
-    }
-
-    return {
-      originalQuery: input.query,
-      rewrittenQuery: input.query,
-      effectiveQuery: input.query,
-      semanticQuery: input.query,
-      lexicalQuery: input.query,
-      responseIntent: input.responseIntent,
-      responseLanguagePolicy: input.result.responseLanguagePolicy ?? DEFAULT_RESPONSE_LANGUAGE_POLICY,
-      retrievalSubqueries: undefined,
-      rewriteApplied: false,
-      retrievalEligible: false,
-      status: REWRITE_STATUS.SKIPPED,
-      confidence: input.result.confidence,
-      structuredResult: {
-        ...input.result,
-        rewrittenQuery: input.query,
-        semanticQuery: input.query,
-        lexicalQuery: input.query,
-      },
     };
   }
 
@@ -410,10 +328,6 @@ export class QueryRewriteService {
         rewrittenQuery: this.normalizeRewrite(result.rewrittenQuery),
         semanticQuery,
         lexicalQuery,
-        responseIntent: this.normalizeResponseIntent(result.responseIntent),
-        intentTopic: this.normalizeIntentTopic(result.intentTopic),
-        inScopeRequest: this.normalizeScopeRequest(result.inScopeRequest),
-        outsideScopeRequest: this.normalizeScopeRequest(result.outsideScopeRequest),
         responseLanguagePolicy,
         responseLanguage: this.normalizeResponseLanguage(result.responseLanguage),
         queryShape: this.normalizeQueryShape(result.queryShape),
@@ -430,10 +344,6 @@ export class QueryRewriteService {
       rewrittenQuery: this.normalizeRewrite(result?.rewrittenQuery ?? originalQuery),
       semanticQuery: this.normalizeRewrite(result?.semanticQuery ?? result?.rewrittenQuery ?? originalQuery),
       lexicalQuery: this.normalizeLexicalRewrite(result?.lexicalQuery ?? result?.rewrittenQuery ?? originalQuery),
-      responseIntent: RESPONSE_INTENT.RETRIEVAL,
-      intentTopic: undefined,
-      inScopeRequest: undefined,
-      outsideScopeRequest: undefined,
       responseLanguagePolicy: DEFAULT_RESPONSE_LANGUAGE_POLICY,
       responseLanguage: undefined,
       queryShape: undefined,
@@ -568,44 +478,6 @@ export class QueryRewriteService {
           .filter((value): value is string => Boolean(value)),
       ),
     ].slice(0, 8);
-  }
-
-  private normalizeResponseIntent(value?: string): ResponseIntent {
-    switch (value) {
-      case RESPONSE_INTENT.SOCIAL_ONLY:
-      case RESPONSE_INTENT.ASSISTANT_IDENTITY:
-      case RESPONSE_INTENT.RETRIEVAL:
-        return value;
-      default:
-        return RESPONSE_INTENT.RETRIEVAL;
-    }
-  }
-
-  private normalizeIntentTopic(value?: string): string | undefined {
-    if (typeof value !== "string") {
-      return undefined;
-    }
-
-    return this.normalizeClassifierLabel(value);
-  }
-
-  private normalizeScopeRequest(value?: string): string | undefined {
-    if (typeof value !== "string") {
-      return undefined;
-    }
-
-    const normalized = value
-      .replace(/[`#_~[\]()]/g, "")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 240)
-      .trim();
-
-    if (normalized.toLowerCase() === "null") {
-      return undefined;
-    }
-
-    return normalized.length > 0 ? normalized : undefined;
   }
 
   private selectResolvedSubjectLexicalQuery(input: {

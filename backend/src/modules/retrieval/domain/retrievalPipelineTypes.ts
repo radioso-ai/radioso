@@ -41,14 +41,6 @@ export const REWRITE_TURN_KIND = {
 
 export type RewriteTurnKind = (typeof REWRITE_TURN_KIND)[keyof typeof REWRITE_TURN_KIND];
 
-export const RESPONSE_INTENT = {
-  RETRIEVAL: "retrieval",
-  SOCIAL_ONLY: "social_only",
-  ASSISTANT_IDENTITY: "assistant_identity",
-} as const;
-
-export type ResponseIntent = (typeof RESPONSE_INTENT)[keyof typeof RESPONSE_INTENT];
-
 export type ResponseLanguagePolicy = "match_user_question";
 
 export type RetrievalAnswerShapeName =
@@ -67,10 +59,6 @@ export interface StructuredRewriteResult {
   rewrittenQuery: string;
   semanticQuery?: string;
   lexicalQuery?: string;
-  responseIntent?: ResponseIntent;
-  intentTopic?: string;
-  inScopeRequest?: string;
-  outsideScopeRequest?: string;
   responseLanguagePolicy?: ResponseLanguagePolicy;
   responseLanguage?: string;
   queryShape?: RetrievalQueryShape;
@@ -144,7 +132,6 @@ export interface RewrittenRetrievalQuery {
   effectiveQuery: string;
   semanticQuery: string;
   lexicalQuery: string;
-  responseIntent: ResponseIntent;
   responseLanguagePolicy?: ResponseLanguagePolicy;
   retrievalSubqueries?: RetrievalSubquery[];
   rewriteApplied: boolean;
@@ -152,7 +139,6 @@ export interface RewrittenRetrievalQuery {
   status: RewriteStatus;
   confidence: number;
   structuredResult?: StructuredRewriteResult;
-  intentFallbackApplied?: boolean;
   fallbackReason?: string;
   rejectionReason?: string;
 }
@@ -242,10 +228,7 @@ export interface ActivitySummary {
     reason?: string;
     responseLanguagePolicy?: ResponseLanguagePolicy;
   }>;
-  responseIntent?: ResponseIntent;
   retrievalSkipped?: boolean;
-  intentConfidence?: number;
-  intentFallbackApplied?: boolean;
   responseLanguagePolicy?: ResponseLanguagePolicy;
   candidateCounts?: {
     semantic: number;
@@ -313,10 +296,7 @@ export interface RetrievalExecutionDiagnostics {
   normalizedCandidateCount: number;
   finalContextCount: number;
   queryEmbeddingDurationMs?: number;
-  responseIntent?: ResponseIntent;
   retrievalSkipped?: boolean;
-  intentConfidence?: number;
-  intentFallbackApplied?: boolean;
   parsedQuery?: ParsedQueryInterpretation;
   appliedConstraints?: AppliedConstraint[];
   candidateFallbackApplied: boolean;

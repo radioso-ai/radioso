@@ -91,14 +91,14 @@ responsibility-limited; new domain logic goes in the new named modules.
 
 ### Tests first
 
-- [ ] T035 [P] [US3] Failing frontend unit tests in `frontend/tests/unit/turn-flow.test.ts` + `frontend/tests/unit/turn-trace.test.ts`: `clarification` stage → first-class flow node (label, detail ref), label mapping, graph edges around the node for both claimed-turn (ask) and pass-through (auto-pick) shapes
-- [ ] T036 [P] [US3] Failing/extended Playwright spec in `frontend/tests/e2e/assistant-history.spec.ts` (or focused new spec): operator opens debug view of a clarification turn → Clarification node visible → detail shows candidates + decision (use the existing trace-fixture pattern of that spec)
+- [X] T035 [P] [US3] Failing frontend unit tests in `frontend/tests/unit/turn-flow.test.ts` + `frontend/tests/unit/turn-trace.test.ts`: `clarification` stage → first-class flow node (label, detail ref), label mapping, graph edges around the node for both claimed-turn (ask) and pass-through (auto-pick) shapes
+- [X] T036 [P] [US3] Failing/extended Playwright spec in `frontend/tests/e2e/assistant-history.spec.ts` (or focused new spec): operator opens debug view of a clarification turn → Clarification node visible → detail shows candidates + decision (use the existing trace-fixture pattern of that spec)
 
 ### Implementation
 
-- [ ] T037 [US3] Add `clarification` to the stage label map in `frontend/lib/turn-trace.ts` and the flow-graph node construction in `frontend/lib/turn-flow.ts` — make T035 green
-- [ ] T038 [US3] Add `ClarificationStageDetail` renderer in `frontend/components/dashboard/spine-stage-detail.tsx` (candidates with labels/confidence, decision, reason, mapping outcome; no payloads) — make T036 green
-- [ ] T039 [US3] Run `cd frontend && pnpm test && pnpm run lint`; run the trace-view Playwright spec
+- [X] T037 [US3] Add `clarification` to the stage label map in `frontend/lib/turn-trace.ts` and the flow-graph node construction in `frontend/lib/turn-flow.ts` — make T035 green
+- [X] T038 [US3] Add `ClarificationStageDetail` renderer in `frontend/components/dashboard/spine-stage-detail.tsx` (candidates with labels/confidence, decision, reason, mapping outcome; no payloads) — make T036 green
+- [X] T039 [US3] Run `cd frontend && pnpm test && pnpm run lint`; run the trace-view Playwright spec
 
 **Checkpoint**: all three stories independently validated.
 

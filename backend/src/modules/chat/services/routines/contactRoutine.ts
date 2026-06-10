@@ -35,6 +35,11 @@ export const contactRoutineDefinition: RoutineDefinition = {
     gateRef: CONTACT_INTENT_SKILL_NAME,
     priority: 100,
   },
+  // Slots are intentionally not declared here: the validator requires every declared
+  // slot to be referenced via `{{slot.key}}` templating, which would mean restructuring
+  // the action payload. The selector's placeholder-echo drop already prevents the
+  // malformed "<name>" key, so capture stays clean without a schema. Declaring + wiring
+  // typed slots for this routine is tracked as a follow-up.
   slots: [],
   steps: [
     {

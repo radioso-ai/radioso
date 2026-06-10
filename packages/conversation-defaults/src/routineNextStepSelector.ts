@@ -136,6 +136,32 @@ const parseDecision = (raw: string): ParsedDecision => {
   }
 };
 
+// Structural check: a literal template placeholder (e.g. "<name>") echoed verbatim by
+// the model from the prompt example — never a real slot key.
+const PLACEHOLDER_KEY_PATTERN = /^<.*>$/;
+
+/**
+ * Keep only legitimately captured slot values. Drops placeholder keys the model echoes
+ * from the prompt example, and — when the routine declares a slot schema — restricts
+ * capture to declared slot keys so a bundled off-topic request cannot smuggle arbitrary
+ * keys (or free-form turn text) into the action payload. Schema-less routines keep their
+ * legacy free-form capture, minus placeholder echoes.
+ */
+const sanitizeVariables = (
+  variables: Record<string, unknown>,
+  routine: Routine,
+): Record<string, unknown> => {
+  const declaredKeys = new Set((routine.slots ?? []).map((slot) => slot.key));
+  return Object.fromEntries(
+    Object.entries(variables).filter(([key]) => {
+      if (PLACEHOLDER_KEY_PATTERN.test(key)) {
+        return false;
+      }
+      return declaredKeys.size === 0 || declaredKeys.has(key);
+    }),
+  );
+};
+
 /**
  * Decides which step a routine turn lands on by asking the model which outgoing
  * transition's condition holds, capturing any slot variables — the host-side
@@ -190,7 +216,7 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
     if (conditionMatched) {
       return {
         nextStepId: input.transitions[decision.condition! - 1]!.to,
-        variables: decision.variables,
+        variables: sanitizeVariables(decision.variables, input.routine),
       };
     }
 
@@ -202,6 +228,6 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
 
     // Otherwise the user is still on this step but hasn't satisfied it → stay (a re-ask),
     // keeping any captured variables so partial progress is not lost.
-    return { nextStepId: input.currentStep.id, variables: decision.variables };
+    return { nextStepId: input.currentStep.id, variables: sanitizeVariables(decision.variables, input.routine) };
   }
 }

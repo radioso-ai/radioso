@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { DefaultConversationEngine } from "../src/index.js";
 import type {
+  ClarificationCandidate,
   ConversationEvent,
   ProcessTurnStreamEvent,
   ProcessTurnStreamInput,
@@ -397,6 +398,80 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
       "routine_activate",
       "directive_steering",
     ]);
+  });
+
+  it("asks a clarification question when routine activation returns comparable candidates", async () => {
+    const candidates: ClarificationCandidate[] = [
+      {
+        id: "demo",
+        label: "Demo call",
+        description: "User wants to book a demo.",
+        confidence: 0.82,
+        payload: { routineId: "demo", variables: { company: "Acme" } },
+      },
+      {
+        id: "support",
+        label: "Support call",
+        description: "User wants help from support.",
+        confidence: 0.79,
+        payload: { routineId: "support", variables: { topic: "billing" } },
+      },
+    ];
+    const clarificationStore = { loadPending: vi.fn(), save: vi.fn(async () => {}), clear: vi.fn() };
+    const clarifier = {
+      phraseQuestion: vi.fn(async () => "Do you want a demo call or a support call?"),
+      mapReply: vi.fn(),
+    };
+    const input: ProcessTurnInput = {
+      ...createInput(),
+      routineStore: { loadActive: vi.fn(async () => null), save: vi.fn(), clear: vi.fn() },
+      routineActivator: { activate: vi.fn(async () => ({ kind: "clarify", candidates })) },
+      routineRunner: { resume: vi.fn() },
+      clarifier,
+      clarificationStore,
+    };
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(clarifier.phraseQuestion).toHaveBeenCalledWith({
+      candidates,
+      turn: expect.objectContaining({ sessionId: "session_1" }),
+    });
+    expect(clarificationStore.save).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "session_1",
+      source: "routine_activation",
+      candidates,
+      status: "pending",
+      askedEventId: expect.any(String),
+      expiresAt: expect.any(Date),
+    }));
+    expect(input.routineRunner!.resume).not.toHaveBeenCalled();
+    expect(input.routineStore!.save).not.toHaveBeenCalled();
+    expect(input.selector.select).not.toHaveBeenCalled();
+    expect(input.dispatcher.dispatch).not.toHaveBeenCalled();
+    expect(input.composer.compose).not.toHaveBeenCalled();
+    expect(input.stores.appendEvent).toHaveBeenCalledTimes(2);
+    expect(result.response.answer).toBe("Do you want a demo call or a support call?");
+    expect(result.events).toHaveLength(2);
+    expect(result.events[1]).toMatchObject({
+      role: "assistant",
+      kind: "assistant.response",
+      content: "Do you want a demo call or a support call?",
+    });
+    expect(result.decision.reason).toBe("routine_activation_clarification");
+    expect(result.trace.stages.map((stage) => stage.kind)).toEqual([
+      "message",
+      "gather",
+      "clarification",
+    ]);
+    expect(result.trace.stages.find((stage) => stage.kind === "clarification")?.outputs).toMatchObject({
+      surface: "routine_activation",
+      decision: "asked",
+      candidates: [
+        { id: "demo", label: "Demo call", confidence: 0.82 },
+        { id: "support", label: "Support call", confidence: 0.79 },
+      ],
+    });
   });
 
   it("declines activation and runs the normal turn when the activator returns null", async () => {

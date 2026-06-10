@@ -1,8 +1,7 @@
 /**
  * Contract note for clarification capability 085: this file now exposes the
- * generic clarification contracts. A later implementation slice will widen
- * ConversationRoutineActivator to return an activation/clarification union; this
- * foundational slice intentionally leaves that activator shape unchanged.
+ * generic clarification contracts and widens ConversationRoutineActivator to return
+ * an activation/clarification union for routine activation clarification.
  */
 
 export type ConversationRole = "system" | "user" | "assistant" | "tool";
@@ -664,7 +663,15 @@ export interface ConversationRoutineRunner {
  * the turn to normal selection. The new routine begins at its root step.
  */
 export interface ConversationRoutineActivator {
-  activate(input: { turn: TurnContext }): Promise<{ routineId: string; variables?: Record<string, unknown> } | null>;
+  activate(input: {
+    turn: TurnContext;
+    loopGuardCandidateIds?: string[];
+    suppressClarificationAsk?: boolean;
+  }): Promise<
+    | { kind: "activate"; routineId: string; variables?: Record<string, unknown> }
+    | { kind: "clarify"; candidates: ClarificationCandidate[] }
+    | null
+  >;
 }
 
 export interface ProcessTurnInput {
@@ -689,6 +696,10 @@ export interface ProcessTurnInput {
   routineStore?: ConversationRoutineStore;
   routineRunner?: ConversationRoutineRunner;
   routineActivator?: ConversationRoutineActivator;
+  clarifier?: ConversationClarifier;
+  clarificationStore?: ConversationClarificationStore;
+  loopGuardCandidateIds?: string[];
+  suppressNewClarification?: boolean;
 }
 
 export interface ProcessTurnStreamInput extends Omit<ProcessTurnInput, "composer"> {
@@ -712,6 +723,10 @@ export interface AttemptRoutineInput {
   routineStore?: ConversationRoutineStore;
   routineRunner?: ConversationRoutineRunner;
   routineActivator?: ConversationRoutineActivator;
+  clarifier?: ConversationClarifier;
+  clarificationStore?: ConversationClarificationStore;
+  loopGuardCandidateIds?: string[];
+  suppressNewClarification?: boolean;
 }
 
 export interface ProcessTurnResult {

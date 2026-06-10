@@ -15,9 +15,9 @@ export {
   RoutineNextStepSelector,
   RoutineRegistry,
   RoutineStepRenderer,
+  DefaultClarifier,
   type RoutineRegistration,
 } from "@radioso/conversation-defaults";
-export { classifyContactIntent } from "./services/routines/contactActivationClassifier.js";
 export {
   RoutineChatModelGateway,
   type RoutineModelTurnContext,

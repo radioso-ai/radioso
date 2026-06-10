@@ -7,6 +7,7 @@ import type {
 } from "@radioso/conversation-contract";
 
 import type { Database } from "../../shared/infra/database.js";
+import type { RecentClarificationReader } from "../../modules/chat/services/clarification/pendingClarificationResolver.js";
 
 export const DEFAULT_CLARIFICATION_STATE_TTL_MS = 30 * 60 * 1000;
 
@@ -47,7 +48,7 @@ const mapRow = (row: ClarificationStateRow): PendingClarification => ({
   expiresAt: row.expires_at,
 });
 
-export class ClarificationStateRepository implements ConversationClarificationStore {
+export class ClarificationStateRepository implements ConversationClarificationStore, RecentClarificationReader {
   constructor(
     private readonly database: Database,
     private readonly ttlMs: number = DEFAULT_CLARIFICATION_STATE_TTL_MS,
@@ -58,7 +59,7 @@ export class ClarificationStateRepository implements ConversationClarificationSt
       `SELECT session_id, source, candidates, asked_event_id, status, expires_at
          FROM clarification_states
         WHERE session_id = $1
-          AND status IN ('pending', 'resolved', 'declined')
+          AND status = 'pending'
         ORDER BY updated_at DESC
         LIMIT 1`,
       [input.sessionId],
@@ -73,6 +74,22 @@ export class ClarificationStateRepository implements ConversationClarificationSt
           WHERE session_id = $1`,
         [input.sessionId],
       );
+      return null;
+    }
+    return mapRow(row);
+  }
+
+  async loadRecent(input: { sessionId: string }): Promise<PendingClarification | null> {
+    const row = await this.database.queryOptional<ClarificationStateRow>(
+      `SELECT session_id, source, candidates, asked_event_id, status, expires_at
+         FROM clarification_states
+        WHERE session_id = $1
+          AND status IN ('resolved', 'declined', 'expired')
+        ORDER BY updated_at DESC
+        LIMIT 1`,
+      [input.sessionId],
+    );
+    if (!row || row.expires_at.getTime() <= Date.now()) {
       return null;
     }
     return mapRow(row);

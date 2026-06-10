@@ -22,6 +22,7 @@ import type {
   TurnContext,
   TurnOutcome,
 } from "@radioso/conversation-contract";
+import { clarificationStage } from "./clarification.js";
 
 const nowIso = (): string => new Date().toISOString();
 
@@ -270,6 +271,7 @@ const createInputEvent = (input: AttemptRoutineInput): ConversationEvent => ({
 });
 
 const createResponseEvent = (sessionId: string, response: RenderableTurn): ConversationEvent => ({
+  id: `assistant-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
   sessionId,
   kind: "assistant.response",
   role: "assistant",
@@ -480,9 +482,80 @@ export class DefaultConversationEngine implements ConversationEngine {
       if (!input.routineActivator) {
         return null;
       }
-      const activation = await input.routineActivator.activate({ turn: baseTurn });
+      const activation = await input.routineActivator.activate({
+        turn: baseTurn,
+        ...(input.loopGuardCandidateIds ? { loopGuardCandidateIds: input.loopGuardCandidateIds } : {}),
+        ...(input.suppressNewClarification ? { suppressClarificationAsk: input.suppressNewClarification } : {}),
+      });
       if (!activation) {
         return null;
+      }
+      if (activation.kind === "clarify") {
+        if (!input.clarifier || !input.clarificationStore) {
+          return null;
+        }
+        const answer = await input.clarifier.phraseQuestion({
+          candidates: activation.candidates,
+          turn: baseTurn,
+        });
+        const response: RenderableTurn = { answer };
+        const events: ConversationEvent[] = [];
+        const inputEvent = createInputEvent(input);
+        await input.stores.appendEvent(inputEvent);
+        events.push(inputEvent);
+        const responseEvent = createResponseEvent(input.sessionId, response);
+        await input.stores.appendEvent(responseEvent);
+        events.push(responseEvent);
+        await input.clarificationStore.save({
+          sessionId: input.sessionId,
+          source: "routine_activation",
+          candidates: activation.candidates,
+          askedEventId: responseEvent.id,
+          status: "pending",
+          expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+        });
+        const messageStage = stage({
+          id: "message",
+          kind: "message",
+          status: "applied",
+          outputs: {
+            eventId: input.inputEvent.id,
+            kind: input.inputEvent.kind,
+            contentLength: input.inputEvent.content.length,
+            locale: input.inputEvent.locale ?? undefined,
+          },
+        });
+        const historyRefs = history.slice(-HISTORY_TAIL_LIMIT).map((entry, index, slice) => ({
+          index: history.length - slice.length + index,
+          role: entry.role,
+          messageId: entry.id,
+          contentLength: entry.content?.length ?? 0,
+          createdAt: entry.createdAt,
+        }));
+        const gatherStage = stage({
+          id: "gather",
+          kind: "gather",
+          status: "applied",
+          outputs: { historyCount: history.length, history: historyRefs },
+        });
+        return createProcessTurnResult({
+          sessionId: input.sessionId,
+          events,
+          decision: {
+            selected: [],
+            reason: "routine_activation_clarification",
+          },
+          outcomes: [],
+          response,
+          trace: createTrace([
+            messageStage,
+            gatherStage,
+            clarificationStage({
+              surface: "routine_activation",
+              decision: { kind: "ask", candidates: activation.candidates },
+            }),
+          ]),
+        });
       }
       state = {
         sessionId: input.sessionId,

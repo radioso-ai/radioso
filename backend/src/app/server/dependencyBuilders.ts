@@ -6,6 +6,7 @@ import { AccessGrantRepository } from "../../db/repositories/accessGrantReposito
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
 import { RoutineDefinitionRepository } from "../../db/repositories/routineDefinitionRepository.js";
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
+import { ClarificationStateRepository } from "../../db/repositories/clarificationStateRepository.js";
 import { createConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
 import type { AgentSkillSettingsRegistry, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
 import { AuditEventRepository } from "../../db/repositories/auditEventRepository.js";
@@ -59,8 +60,10 @@ import {
   resolveCitationArtifacts,
   RetrievalTurnController,
   RoutineRegistry,
+  RoutineChatModelGateway,
   RoutineNextStepSelector,
   RoutineStepRenderer,
+  DefaultClarifier,
   type RoutineRegistration,
   SkillRetrievalTurnDispatch,
   WorkbenchReplayRunner,
@@ -147,6 +150,9 @@ import { createMailService } from "../../modules/mail/public.js";
 import { createLogger, type AppLogger } from "../../shared/observability/logger.js";
 import { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
 import { createPublishedRoutineRegistrationSource } from "../composition/routineDefinitionSource.js";
+import { ChatAnswerSupport } from "../../modules/chat/services/chatAnswerSupport.js";
+import { recordClarificationDecision } from "../../modules/chat/services/clarification/clarificationMetrics.js";
+import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import {
   createDefaultAnalyticsSinks,
   createDefaultErrorSinks,
@@ -679,6 +685,7 @@ export const buildChatServices = (input: {
   llmCapabilityResolver: LlmCapabilityResolver;
   logger: AppLogger;
   messageRepository: MessageRepository;
+  metricsRegistry?: MetricsRegistry | null;
   productAnalyticsService: ProductAnalyticsService;
   routineDefinitionRepository: RoutineDefinitionRepository;
   mailService: ReturnType<typeof buildInfrastructure>["mailService"];
@@ -690,6 +697,7 @@ export const buildChatServices = (input: {
   errorReporter: ErrorReporter;
 }) => {
   const chatGateway = input.llmRegistry.createChatGateway(input.usageEventRecorder);
+  const routineActivationPolicy = { floor: 0.4, margin: 0.15, maxOptions: 4 };
   const directiveMatchGatewayFactory = input.composition.directiveMatchGatewayFactory ??
     new ContextualDirectiveMatchGatewayFactory(
       {
@@ -870,7 +878,10 @@ export const buildChatServices = (input: {
       const routineRegistry = new RoutineRegistry([
         ...input.composition.routineRegistrations,
         ...publishedRegistrations,
-      ]);
+      ], {
+        policy: routineActivationPolicy,
+        promptTemplate: loadPromptTemplate("chat/routine-ranked-activation.md"),
+      });
       if (routineRegistry.isEmpty) {
         return null;
       }
@@ -897,6 +908,8 @@ export const buildChatServices = (input: {
     ),
   );
   const conversationEngine = createConversationEngine();
+  const clarificationStore = new ClarificationStateRepository(input.database);
+  const chatAnswerSupport = new ChatAnswerSupport();
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
     messageRepository: input.messageRepository,
@@ -933,6 +946,24 @@ export const buildChatServices = (input: {
     // Routine resume/activate per turn — present only when routines are registered.
     routineStore: new RoutineStateRepository(input.database),
     routineProvider,
+    clarifierFactory: ({ session, accountId }) => new DefaultClarifier(
+      new RoutineChatModelGateway(chatGateway, {
+        workspaceContext: chatAnswerSupport.buildChatWorkspaceContext(session),
+        usageContext: {
+          ...chatAnswerSupport.buildChatUsageContext(session, accountId, "clarification"),
+          operation: "clarification",
+        },
+      }),
+      {
+        questionPromptTemplate: loadPromptTemplate("chat/clarification-question.md"),
+        replyMapPromptTemplate: loadPromptTemplate("chat/clarification-reply-map.md"),
+      },
+    ),
+    clarificationStore,
+    ...(input.metricsRegistry
+      ? { recordClarificationDecision: (decision: Parameters<typeof recordClarificationDecision>[1]) =>
+          recordClarificationDecision(input.metricsRegistry!, decision) }
+      : {}),
   });
   const chatBootstrapService = new ChatBootstrapService(
     input.workspaceRepository,

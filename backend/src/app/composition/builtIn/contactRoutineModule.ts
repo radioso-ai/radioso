@@ -1,5 +1,3 @@
-import type { ConversationModelGateway, TurnContext } from "@radioso/conversation-contract";
-
 import { capabilityNames } from "../../../shared/domain/capabilityPolicy.js";
 import {
   contactRoutineDefinition,
@@ -10,7 +8,6 @@ import {
   ContactSendActionHandler,
   FetchContactWebhookHttpClient,
   WorkspaceOwnerContactRecipientResolver,
-  classifyContactIntent,
   type PublicChatActionAdvertiserPort,
   type PublicChatIntakeAction,
 } from "../../../modules/chat/composition.js";
@@ -46,37 +43,11 @@ class ContactIntakeActionAdvertiser implements PublicChatActionAdvertiserPort {
 }
 
 /**
- * Starts the contact routine for an agent that enabled contact requests, on either
- * trigger: the explicit "contact a human" pill click (fast path, no LLM), or — for a
- * typed message — an LLM judgement that the user wants a human to follow up. The
- * per-agent flag is gated here (not just at the advertiser) so a crafted request can't
- * start the flow on an assistant that has the capability turned off, and so the LLM
- * intent check only runs for opted-in assistants.
- */
-const activatesOnContactIntent = async ({
-  turn,
-  modelGateway,
-}: {
-  turn: TurnContext;
-  modelGateway: ConversationModelGateway;
-}) => {
-  if (turn.agent.metadata?.contactRequestsEnabled !== true) {
-    return null;
-  }
-  const metadata = turn.inputEvent.metadata;
-  const intent = metadata?.intent as { skillName?: string } | undefined;
-  if (metadata?.method === "intent_click" && intent?.skillName === CONTACT_INTENT_SKILL_NAME) {
-    return {};
-  }
-  return (await classifyContactIntent(modelGateway, turn)) ? {} : null;
-};
-
-/**
  * Wires the built-in contact request feature: the chat-only contact routine (activated
- * by the existing public-chat "contact a human" button), the `contact.send` action
- * handler (emails the gathered request to the workspace owner by default), and the
- * intake advertiser that surfaces the button. All generic — a host swaps the recipient
- * by registering its own handler, or removes this module to drop the feature.
+ * by ranked routine activation), the `contact.send` action handler (emails the gathered
+ * request to the workspace owner by default), and the intake advertiser that surfaces
+ * the button. All generic — a host swaps the recipient by registering its own handler,
+ * or removes this module to drop the feature.
  */
 export const createContactRoutineApplicationModule = (): ApplicationModule => ({
   id: "radioso-contact-routine",
@@ -84,7 +55,10 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
   register(context) {
     context.registerRoutine({
       routine: compileRoutineDefinition(contactRoutineDefinition),
-      activates: activatesOnContactIntent,
+      trigger: {
+        description: contactRoutineDefinition.activation.triggerDescription,
+        priority: contactRoutineDefinition.activation.priority,
+      },
     });
     context.registerActionHandler({
       type: CONTACT_SEND_ACTION_TYPE,

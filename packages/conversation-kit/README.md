@@ -88,10 +88,9 @@ const signup: RoutineRegistration = {
     ],
     transitions: [{ from: "ask_name", to: "done", condition: "the user provided their name" }],
   },
-  // Return {} (optionally with seed variables) to start, or null to decline.
-  activates: async ({ turn, modelGateway }) => {
-    const shouldStart = await detectSignupIntent(turn, modelGateway);
-    return shouldStart ? {} : null;
+  trigger: {
+    description: "The user wants to sign up.",
+    priority: 0,
   },
 };
 

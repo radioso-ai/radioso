@@ -2,6 +2,8 @@ import { normalizeProviderCredentialError } from "../../../shared/infra/llm/prov
 import { traceAsyncIterable, traceOperation } from "../../../shared/observability/tracing/operations.js";
 import type {
   ConversationEngine,
+  ConversationClarificationStore,
+  ConversationClarifier,
   ConversationModelGateway,
   ConversationRoutineActivator,
   ConversationRoutineRunner,
@@ -9,6 +11,7 @@ import type {
   ConversationTrace,
   RenderableTurn,
   RoutineActionRequest,
+  TurnContext,
 } from "@radioso/conversation-contract";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
@@ -69,6 +72,21 @@ import {
   DeferredRoutineStore,
   type CapturedRoutineTransition,
 } from "./routines/deferredRoutineStore.js";
+import {
+  DeferredClarificationStore,
+  type CapturedClarificationTransition,
+} from "./clarification/deferredClarificationStore.js";
+import {
+  resolvePendingClarification,
+  type PendingClarificationResolution,
+  type RecentClarificationReader,
+} from "./clarification/pendingClarificationResolver.js";
+import type { ClarificationMetricDecision } from "./clarification/clarificationMetrics.js";
+import {
+  toConversationAgentConfig,
+  toConversationInputEvent,
+  toConversationMessages,
+} from "./conversationContractMappers.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
@@ -181,6 +199,10 @@ export interface ChatServiceOptions {
   routineStore?: ConversationRoutineStore;
   /** Optional: registered routines + activation. Empty/absent leaves turns unchanged. */
   routineProvider?: ChatRoutineProvider;
+  clarifier?: ConversationClarifier;
+  clarifierFactory?: (input: { session: PreparedSession; accountId?: string }) => ConversationClarifier;
+  clarificationStore?: ConversationClarificationStore & Partial<RecentClarificationReader>;
+  recordClarificationDecision?: (input: { surface: string; decision: ClarificationMetricDecision }) => void;
 }
 
 export class ChatService {
@@ -198,6 +220,10 @@ export class ChatService {
   private readonly answerSupport = new ChatAnswerSupport();
   private readonly routineStore?: ConversationRoutineStore;
   private readonly routineProvider?: ChatRoutineProvider;
+  private readonly clarifier?: ConversationClarifier;
+  private readonly clarifierFactory?: (input: { session: PreparedSession; accountId?: string }) => ConversationClarifier;
+  private readonly clarificationStore?: ConversationClarificationStore & Partial<RecentClarificationReader>;
+  private readonly recordClarificationDecision?: (input: { surface: string; decision: ClarificationMetricDecision }) => void;
 
   constructor(options: ChatServiceOptions) {
     const {
@@ -221,9 +247,17 @@ export class ChatService {
       logger,
       routineStore,
       routineProvider,
+      clarifier,
+      clarifierFactory,
+      clarificationStore,
+      recordClarificationDecision,
     } = options;
     this.routineStore = routineStore;
     this.routineProvider = routineProvider;
+    this.clarifier = clarifier;
+    this.clarifierFactory = clarifierFactory;
+    this.clarificationStore = clarificationStore;
+    this.recordClarificationDecision = recordClarificationDecision;
     this.chatGateway = chatGateway;
     this.auditService = auditService;
     this.usageLimitPolicy = usageLimitPolicy;
@@ -268,15 +302,22 @@ export class ChatService {
   private async attemptRoutineTurn(
     session: PreparedSession,
     accountId: string | undefined,
+    clarification?: {
+      store?: DeferredClarificationStore;
+      resolution?: PendingClarificationResolution;
+      clarifier?: ConversationClarifier;
+    },
   ): Promise<{
     presentation: ChatPresentedAnswer;
     engineTrace?: ConversationTrace;
     actions?: RoutineActionRequest[];
     routineStateTransition?: CapturedRoutineTransition | null;
+    clarificationTransition?: CapturedClarificationTransition | null;
     // Flushes the routine-state transition the engine made this turn. Called by the
     // lifecycle only after the turn's actions are durably enqueued, so a crash before
     // enqueue leaves the routine recoverable rather than advanced past a lost action.
     commitRoutineState: () => Promise<void>;
+    commitClarificationState?: () => Promise<void>;
   } | null> {
     if (!this.routineStore || !this.routineProvider) {
       return null;
@@ -292,7 +333,11 @@ export class ChatService {
     if (!routineTurnPorts) {
       return null;
     }
+    const activator = clarification?.resolution?.kind === "routine_activation"
+      ? clarification.resolution.activator
+      : routineTurnPorts.activator;
     const deferredStore = new DeferredRoutineStore(this.routineStore);
+    const deferredClarificationStore = clarification?.store;
     const outcome = await attemptRoutineTurnWithConversationEngine({
       engine: this.conversationEngine,
       session,
@@ -300,19 +345,81 @@ export class ChatService {
       directiveRuntime: this.directiveRuntime,
       routineStore: deferredStore,
       routineRunner: routineTurnPorts.runner,
-      routineActivator: routineTurnPorts.activator,
+      routineActivator: activator,
+      clarifier: clarification?.clarifier ?? this.clarifier,
+      clarificationStore: deferredClarificationStore,
+      loopGuardCandidateIds: clarification?.resolution?.kind === "normal"
+        ? clarification.resolution.loopGuardCandidateIds
+        : undefined,
+      suppressNewClarification: clarification?.resolution?.suppressNewClarification,
       presentRoutineReply: (response) => this.chatAnswerPresenter.presentNonRetrievalAnswer(response.answer),
     });
     if (!outcome) {
       return null;
     }
+    this.recordTraceClarificationDecisions(outcome.result.trace);
     return {
       presentation: outcome.presentation,
       engineTrace: outcome.result.trace,
       actions: outcome.result.actions,
       routineStateTransition: deferredStore.getTransition(),
+      clarificationTransition: deferredClarificationStore?.getTransition(),
       commitRoutineState: () => deferredStore.commit(),
+      commitClarificationState: deferredClarificationStore ? () => deferredClarificationStore.commit() : undefined,
     };
+  }
+
+  private buildClarificationTurn(session: PreparedSession): TurnContext {
+    return {
+      agent: toConversationAgentConfig(session.agent),
+      sessionId: session.conversation.id,
+      inputEvent: toConversationInputEvent(session.userMessage),
+      history: toConversationMessages(session.history),
+      stagedContext: [],
+      steering: [],
+    };
+  }
+
+  private recordTraceClarificationDecisions(trace?: ConversationTrace): void {
+    if (!trace || !this.recordClarificationDecision) {
+      return;
+    }
+    for (const stage of trace.stages) {
+      if (stage.kind !== "clarification") {
+        continue;
+      }
+      const outputs = stage.outputs ?? {};
+      const surface = typeof outputs.surface === "string" ? outputs.surface : "unknown";
+      const decision = typeof outputs.decision === "string" ? outputs.decision : "";
+      if (decision === "asked" || decision === "auto_picked" || decision === "suppressed") {
+        this.recordClarificationDecision({ surface, decision });
+      }
+    }
+  }
+
+  private async resolvePendingForTurn(session: PreparedSession, accountId?: string): Promise<{
+    store?: DeferredClarificationStore;
+    resolution?: PendingClarificationResolution;
+    clarifier?: ConversationClarifier;
+  }> {
+    const clarifier = this.clarifierFactory?.({ session, accountId }) ?? this.clarifier;
+    if (!clarifier || !this.clarificationStore) {
+      return {};
+    }
+    const store = new DeferredClarificationStore(this.clarificationStore);
+    const resolution = await resolvePendingClarification({
+      store,
+      recentReader: typeof this.clarificationStore.loadRecent === "function"
+        ? this.clarificationStore as RecentClarificationReader
+        : undefined,
+      clarifier,
+      turn: this.buildClarificationTurn(session),
+    });
+    if (resolution.resolvedPending) {
+      const decision = resolution.kind === "routine_activation" ? "mapped" : (resolution.outcome ?? "declined");
+      this.recordClarificationDecision?.({ surface: "routine_activation", decision });
+    }
+    return { store, resolution, clarifier };
   }
 
   /**
@@ -413,6 +520,7 @@ export class ChatService {
 
     try {
       session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
+      const clarification = await this.resolvePendingForTurn(session, input.accountId);
       const candidates = this.selectionStrategy.select({
         session,
         directives: session.directiveSteering?.matches ?? [],
@@ -420,7 +528,7 @@ export class ChatService {
       // A routine is a multi-turn skill: attempt it before grounding. If it claims the
       // turn, there is no retrieval — the routine renders its own reply.
       const routineStartedAt = Date.now();
-      const routineTurn = await this.attemptRoutineTurn(session, input.accountId);
+      const routineTurn = await this.attemptRoutineTurn(session, input.accountId, clarification);
       if (routineTurn) {
         const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
           workspaceId: input.workspaceId,
@@ -433,6 +541,8 @@ export class ChatService {
           actions: routineTurn.actions,
           routineStateTransition: routineTurn.routineStateTransition,
           commitRoutineState: routineTurn.commitRoutineState,
+          clarificationTransition: routineTurn.clarificationTransition,
+          commitClarificationState: routineTurn.commitClarificationState,
         });
         assistantMessageId = completedTurn.assistantMessageId;
         await usageReservation.commit();
@@ -455,6 +565,8 @@ export class ChatService {
         stream: input.stream,
         engineTrace,
         actions,
+        clarificationTransition: clarification.store?.getTransition(),
+        commitClarificationState: clarification.store ? () => clarification.store!.commit() : undefined,
       });
       assistantMessageId = completedTurn.assistantMessageId;
       await usageReservation.commit();
@@ -528,6 +640,7 @@ export class ChatService {
 
     try {
       session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
+      const clarification = await this.resolvePendingForTurn(session, input.accountId);
 
       yield {
         type: "conversation",
@@ -542,7 +655,7 @@ export class ChatService {
       // A routine is a multi-turn skill: attempt it before grounding. If it claims the
       // turn, stream its rendered reply and finish — no retrieval.
       const routineStartedAt = Date.now();
-      const routineTurn = await this.attemptRoutineTurn(session, input.accountId);
+      const routineTurn = await this.attemptRoutineTurn(session, input.accountId, clarification);
       if (routineTurn) {
         // Durably enqueue the action + advance routine state + persist the reply BEFORE
         // streaming the confirmation. The routine reply is rendered whole (not token-
@@ -560,6 +673,8 @@ export class ChatService {
           actions: routineTurn.actions,
           routineStateTransition: routineTurn.routineStateTransition,
           commitRoutineState: routineTurn.commitRoutineState,
+          clarificationTransition: routineTurn.clarificationTransition,
+          commitClarificationState: routineTurn.commitClarificationState,
         });
         assistantMessageId = completedTurn.assistantMessageId;
         await usageReservation.commit();
@@ -627,6 +742,8 @@ export class ChatService {
         stream: input.stream,
         engineTrace,
         actions,
+        clarificationTransition: clarification.store?.getTransition(),
+        commitClarificationState: clarification.store ? () => clarification.store!.commit() : undefined,
       });
       assistantMessageId = completedTurn.assistantMessageId;
       await usageReservation.commit();

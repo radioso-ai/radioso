@@ -49,6 +49,24 @@ const pending = (overrides: Partial<PendingClarification> = {}): PendingClarific
   ...overrides,
 });
 
+const retrievalSensePending = (): PendingClarification => pending({
+  source: "retrieval_sense",
+  candidates: [
+    {
+      id: "doc-hatha",
+      label: "Hatha yoga",
+      confidence: 0.6,
+      payload: { documentIds: ["doc-hatha", "doc-hatha-es"] },
+    },
+    {
+      id: "doc-raja",
+      label: "Raja yoga",
+      confidence: 0.58,
+      payload: { documentIds: ["doc-raja"] },
+    },
+  ],
+});
+
 const storeWith = (pendingState: PendingClarification | null): ConversationClarificationStore & {
   loadPending: ReturnType<typeof vi.fn>;
   clear: ReturnType<typeof vi.fn>;
@@ -166,5 +184,26 @@ describe("resolvePendingClarification", () => {
 
     expect(resolved.resolvedPending).toBe(true);
     expect(resolved.suppressNewClarification).toBe(true);
+  });
+
+  it("maps a chosen retrieval-sense clarification to a one-turn document scope", async () => {
+    const store = storeWith(retrievalSensePending());
+
+    const resolved = await resolvePendingClarification({
+      store,
+      clarifier: {
+        phraseQuestion: vi.fn(),
+        mapReply: vi.fn(async () => ({ kind: "chosen" as const, id: "doc-hatha" })),
+      },
+      turn: turn("hatha"),
+    });
+
+    expect(store.clear).toHaveBeenCalledWith({ sessionId: "conv_1", outcome: "resolved" });
+    expect(resolved).toEqual({
+      kind: "retrieval_sense",
+      resolvedPending: true,
+      suppressNewClarification: true,
+      documentScope: ["doc-hatha", "doc-hatha-es"],
+    });
   });
 });

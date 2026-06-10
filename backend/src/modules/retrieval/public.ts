@@ -138,6 +138,7 @@ export {
   deriveChunkSection,
   deriveDocumentSubject,
 } from "./services/subjectIdentityService.js";
+export { documentScopeFromClarificationCandidate } from "./services/senseGroupingService.js";
 
 export interface RetrievalResponseBehavior {
   customInstruction?: string;

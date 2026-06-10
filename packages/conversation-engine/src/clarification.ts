@@ -2,7 +2,12 @@ import type {
   ClarificationCandidate,
   ClarificationDecision,
   ClarificationPolicy,
+  ConversationClarificationStore,
+  ConversationClarifier,
   ConversationTraceStage,
+  PendingClarification,
+  RecentClarificationReader,
+  TurnContext,
 } from "@radioso/conversation-contract";
 
 const nowIso = (): string => new Date().toISOString();
@@ -11,6 +16,14 @@ export interface ClarificationDecisionContext {
   suppressAsk?: boolean;
   loopGuardCandidateIds?: string[];
   priorities?: Record<string, number>;
+}
+
+export interface PendingClarificationResolution {
+  resolvedPending: boolean;
+  suppressNewClarification?: boolean;
+  loopGuardCandidateIds?: string[];
+  outcome?: "resolved" | "declined" | "expired";
+  chosen?: { source: string; candidate: ClarificationCandidate };
 }
 
 const candidatePriority = (
@@ -44,6 +57,47 @@ const sameCandidateSet = (left: string[], right: string[]): boolean => {
   const normalizedLeft = [...left].sort();
   const normalizedRight = [...right].sort();
   return normalizedLeft.every((id, index) => id === normalizedRight[index]);
+};
+
+const isExpired = (pending: PendingClarification): boolean =>
+  new Date(pending.expiresAt).getTime() <= Date.now();
+
+const candidateIds = (pending: PendingClarification): string[] =>
+  pending.candidates.map((candidate) => candidate.id);
+
+export const resolvePendingClarification = async (input: {
+  store: ConversationClarificationStore;
+  recentReader?: RecentClarificationReader;
+  clarifier: ConversationClarifier;
+  turn: TurnContext;
+}): Promise<PendingClarificationResolution> => {
+  const pending = await input.store.loadPending({ sessionId: input.turn.sessionId });
+  if (!pending) {
+    const recent = await input.recentReader?.loadRecent({ sessionId: input.turn.sessionId });
+    return recent && recent.status !== "pending" && !isExpired(recent)
+      ? { resolvedPending: false, loopGuardCandidateIds: candidateIds(recent) }
+      : { resolvedPending: false };
+  }
+
+  if (isExpired(pending)) {
+    await input.store.clear({ sessionId: pending.sessionId, outcome: "expired" });
+    return { resolvedPending: true, suppressNewClarification: true, outcome: "expired" };
+  }
+
+  const mapping = await input.clarifier.mapReply({ candidates: pending.candidates, turn: input.turn });
+  if (mapping.kind !== "chosen") {
+    await input.store.clear({ sessionId: pending.sessionId, outcome: "declined" });
+    return { resolvedPending: true, suppressNewClarification: true, outcome: "declined" };
+  }
+
+  await input.store.clear({ sessionId: pending.sessionId, outcome: "resolved" });
+  const candidate = pending.candidates.find((item) => item.id === mapping.id);
+  return {
+    resolvedPending: true,
+    suppressNewClarification: true,
+    outcome: "resolved",
+    ...(candidate ? { chosen: { source: pending.source, candidate } } : {}),
+  };
 };
 
 export const decideClarification = (

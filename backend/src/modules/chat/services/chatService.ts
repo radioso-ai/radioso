@@ -11,6 +11,7 @@ import type {
   ConversationTrace,
   ClarificationCandidate,
   ClarificationPolicy,
+  RecentClarificationReader,
   RenderableTurn,
   RoutineActionRequest,
   TurnContext,
@@ -82,8 +83,8 @@ import {
 import {
   resolvePendingClarification,
   type PendingClarificationResolution,
-  type RecentClarificationReader,
 } from "./clarification/pendingClarificationResolver.js";
+import { documentScopeFromClarificationCandidate } from "../../retrieval/public.js";
 import type { ClarificationMetricDecision } from "./clarification/clarificationMetrics.js";
 import {
   toConversationAgentConfig,
@@ -476,18 +477,6 @@ export class ChatService {
     };
   }
 
-  private documentScopeFromCandidate(candidate: ClarificationCandidate): string[] | undefined {
-    const payload = candidate.payload;
-    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-      return undefined;
-    }
-    const documentIds = (payload as { documentIds?: unknown }).documentIds;
-    if (!Array.isArray(documentIds) || documentIds.some((id) => typeof id !== "string")) {
-      return undefined;
-    }
-    return [...new Set(documentIds)];
-  }
-
   private async maybeClarifyRetrievalSense(input: {
     session: PreparedSession;
     accountId?: string;
@@ -542,7 +531,7 @@ export class ChatService {
         candidates,
         decision,
         ...(decision.kind === "auto_pick"
-          ? { documentScope: this.documentScopeFromCandidate(decision.candidate) }
+          ? { documentScope: documentScopeFromClarificationCandidate(decision.candidate) }
           : {}),
       };
     }

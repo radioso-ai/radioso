@@ -40,6 +40,20 @@ export interface SenseEmbeddingReader {
   }): Promise<Map<string, number[]>>;
 }
 
+export const documentScopeFromClarificationCandidate = (
+  candidate: ClarificationCandidate,
+): string[] | undefined => {
+  const payload = candidate.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+  const documentIds = (payload as { documentIds?: unknown }).documentIds;
+  if (!Array.isArray(documentIds) || documentIds.some((id) => typeof id !== "string")) {
+    return undefined;
+  }
+  return [...new Set(documentIds)];
+};
+
 export class PostgresSenseEmbeddingReader implements SenseEmbeddingReader {
   constructor(private readonly database: Pick<Database, "query">) {}
 

@@ -1,9 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import type { ClarificationCandidate, ClarificationPolicy } from "@radioso/conversation-contract";
+import type {
+  ClarificationCandidate,
+  ClarificationPolicy,
+  ConversationClarificationStore,
+  PendingClarification,
+  RecentClarificationReader,
+  TurnContext,
+} from "@radioso/conversation-contract";
 import {
   clarificationStage,
   decideClarification,
+  resolvePendingClarification,
 } from "../src/clarification.js";
 
 const policy: ClarificationPolicy = {
@@ -16,6 +24,37 @@ const candidate = (overrides: Partial<ClarificationCandidate> & Pick<Clarificati
   label: `Option ${overrides.id}`,
   payload: { opaque: overrides.id },
   ...overrides,
+});
+
+const turn = (content = "choose alpha"): TurnContext => ({
+  agent: { id: "agent_1", name: "Support" },
+  sessionId: "session_1",
+  inputEvent: { id: "msg_1", kind: "message", content },
+  history: [],
+  stagedContext: [],
+  steering: [],
+});
+
+const pending = (overrides: Partial<PendingClarification> = {}): PendingClarification => ({
+  sessionId: "session_1",
+  source: "test_surface",
+  candidates: [
+    candidate({ id: "alpha", label: "Alpha", confidence: 0.82, payload: { opaque: "alpha" } }),
+    candidate({ id: "beta", label: "Beta", confidence: 0.79, payload: { opaque: "beta" } }),
+  ],
+  askedEventId: "assistant_1",
+  status: "pending",
+  expiresAt: new Date("2099-01-01T00:00:00.000Z"),
+  ...overrides,
+});
+
+const storeWith = (pendingState: PendingClarification | null): ConversationClarificationStore & {
+  loadPending: ReturnType<typeof vi.fn>;
+  clear: ReturnType<typeof vi.fn>;
+} => ({
+  loadPending: vi.fn(async () => pendingState),
+  save: vi.fn(),
+  clear: vi.fn(async () => {}),
 });
 
 describe("decideClarification", () => {
@@ -152,5 +191,90 @@ describe("clarificationStage", () => {
       mappingOutcome: "mapped:a",
     });
     expect(JSON.stringify(stage)).not.toContain("secret");
+  });
+});
+
+describe("resolvePendingClarification", () => {
+  it("maps a reply, clears as resolved, and returns the chosen opaque candidate with its source", async () => {
+    const current = pending();
+    const store = storeWith(current);
+    const clarifier = {
+      phraseQuestion: vi.fn(),
+      mapReply: vi.fn(async () => ({ kind: "chosen" as const, id: "alpha" })),
+    };
+
+    const resolved = await resolvePendingClarification({
+      store,
+      clarifier,
+      turn: turn("alpha"),
+    });
+
+    expect(clarifier.mapReply).toHaveBeenCalledWith({ candidates: current.candidates, turn: expect.objectContaining({ sessionId: "session_1" }) });
+    expect(store.clear).toHaveBeenCalledWith({ sessionId: "session_1", outcome: "resolved" });
+    expect(resolved).toEqual({
+      resolvedPending: true,
+      suppressNewClarification: true,
+      outcome: "resolved",
+      chosen: { source: "test_surface", candidate: current.candidates[0] },
+    });
+  });
+
+  it("clears declined and unrelated replies without exposing a chosen candidate", async () => {
+    const store = storeWith(pending());
+
+    const resolved = await resolvePendingClarification({
+      store,
+      clarifier: {
+        phraseQuestion: vi.fn(),
+        mapReply: vi.fn(async () => ({ kind: "unrelated" as const })),
+      },
+      turn: turn("what is pricing?"),
+    });
+
+    expect(store.clear).toHaveBeenCalledWith({ sessionId: "session_1", outcome: "declined" });
+    expect(resolved).toEqual({
+      resolvedPending: true,
+      suppressNewClarification: true,
+      outcome: "declined",
+    });
+  });
+
+  it("expires stale pending clarification without calling the mapper", async () => {
+    const store = storeWith(pending({ expiresAt: new Date("2020-01-01T00:00:00.000Z") }));
+    const clarifier = {
+      phraseQuestion: vi.fn(),
+      mapReply: vi.fn(),
+    };
+
+    const resolved = await resolvePendingClarification({ store, clarifier, turn: turn() });
+
+    expect(clarifier.mapReply).not.toHaveBeenCalled();
+    expect(store.clear).toHaveBeenCalledWith({ sessionId: "session_1", outcome: "expired" });
+    expect(resolved).toEqual({
+      resolvedPending: true,
+      suppressNewClarification: true,
+      outcome: "expired",
+    });
+  });
+
+  it("returns recently completed candidate ids for loop guard when no pending row exists", async () => {
+    const recentReader: RecentClarificationReader = {
+      loadRecent: vi.fn(async () => pending({ status: "declined" })),
+    };
+
+    const resolved = await resolvePendingClarification({
+      store: storeWith(null),
+      recentReader,
+      clarifier: {
+        phraseQuestion: vi.fn(),
+        mapReply: vi.fn(),
+      },
+      turn: turn(),
+    });
+
+    expect(resolved).toEqual({
+      resolvedPending: false,
+      loopGuardCandidateIds: ["alpha", "beta"],
+    });
   });
 });

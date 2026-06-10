@@ -58,7 +58,11 @@ export type {
   SkillStepOverride,
   SkillTransientGuidance,
 } from "./skillTypes.js";
-export { RoutineRegistry, type RoutineRegistration } from "./routineRegistry.js";
+export {
+  conversationRoutineActivatorFromCandidate,
+  RoutineRegistry,
+  type RoutineRegistration,
+} from "./routineRegistry.js";
 export {
   DEFAULT_ROUTINE_NEXT_STEP_PROMPT,
   RoutineNextStepSelector,

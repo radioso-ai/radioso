@@ -402,6 +402,15 @@ export interface ConversationClarificationStore {
   clear(input: { sessionId: string; outcome?: ClarificationClearOutcome }): Promise<void>;
 }
 
+/**
+ * Optional read-side companion for clarification stores. It lives with the store
+ * port because hosts own persistence/indexing; the engine only consumes the
+ * capability when a host provides it.
+ */
+export interface RecentClarificationReader {
+  loadRecent(input: { sessionId: string }): Promise<PendingClarification | null>;
+}
+
 export type ClarificationReplyMapping =
   | { kind: "chosen"; id: string }
   | { kind: "declined" }

@@ -782,5 +782,7 @@ export {
   clarificationStage,
   decideClarification,
   orderClarificationCandidates,
+  resolvePendingClarification,
   type ClarificationDecisionContext,
+  type PendingClarificationResolution,
 } from "./clarification.js";

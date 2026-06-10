@@ -5,13 +5,11 @@ import type {
   ConversationClarificationStore,
   ConversationRoutineActivator,
   PendingClarification,
+  RecentClarificationReader,
   TurnContext,
 } from "@radioso/conversation-contract";
 
-import {
-  resolvePendingClarification,
-  type RecentClarificationReader,
-} from "../../src/modules/chat/services/clarification/pendingClarificationResolver.js";
+import { resolvePendingClarification } from "../../src/modules/chat/services/clarification/pendingClarificationResolver.js";
 
 const candidates: ClarificationCandidate[] = [
   {

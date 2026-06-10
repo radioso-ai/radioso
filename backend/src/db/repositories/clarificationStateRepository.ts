@@ -4,10 +4,10 @@ import type {
   ConversationClarificationStore,
   PendingClarification,
   PendingClarificationStatus,
+  RecentClarificationReader,
 } from "@radioso/conversation-contract";
 
 import type { Database } from "../../shared/infra/database.js";
-import type { RecentClarificationReader } from "../../modules/chat/services/clarification/pendingClarificationResolver.js";
 
 export const DEFAULT_CLARIFICATION_STATE_TTL_MS = 30 * 60 * 1000;
 

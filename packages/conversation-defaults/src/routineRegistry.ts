@@ -58,6 +58,22 @@ const routinesBlock = (registrations: readonly RoutineRegistration[]): string =>
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
 
+export const conversationRoutineActivatorFromCandidate = (
+  candidate: ClarificationCandidate,
+): ConversationRoutineActivator | null => {
+  const payload = isRecord(candidate.payload) ? candidate.payload : null;
+  if (!payload || typeof payload.routineId !== "string") {
+    return null;
+  }
+  const routineId = payload.routineId;
+  const variables = isRecord(payload.variables) ? payload.variables : undefined;
+  return {
+    async activate() {
+      return { kind: "activate", routineId, variables };
+    },
+  };
+};
+
 const parseRankedMatches = (raw: string, knownIds: Set<string>): RankedRoutineMatch[] | null => {
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -168,10 +184,8 @@ export class RoutineRegistry {
         if (decision.kind === "ask") {
           return { kind: "clarify", candidates: decision.candidates };
         }
-        const payload = isRecord(decision.candidate.payload) ? decision.candidate.payload : {};
-        const routineId = typeof payload.routineId === "string" ? payload.routineId : decision.candidate.id;
-        const variables = isRecord(payload.variables) ? payload.variables : undefined;
-        return { kind: "activate", routineId, variables };
+        return (await conversationRoutineActivatorFromCandidate(decision.candidate)?.activate({ turn }))
+          ?? { kind: "activate", routineId: decision.candidate.id, variables: undefined };
       },
     };
   }

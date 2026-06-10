@@ -71,8 +71,10 @@ matching routine starts with no question asked.
    **When** the visitor sends that message, **Then** the routine starts immediately
    with no clarifying question (no behavior change versus today).
 6. **Given** an agent with many published routines, **When** any message arrives,
-   **Then** activation is decided in a single evaluation over all candidates (turn
-   latency does not grow per published routine the way today's one-by-one checks do).
+   **Then** activation is decided with a single activation model call over all
+   candidates — no per-routine model calls and no sequential per-routine model
+   latency the way today's one-by-one checks incur (prompt size still grows with
+   routine count; call count does not).
 7. **Given** two routines matching comparably where one has a higher authored
    activation priority, **When** a visitor sends an ambiguous message, **Then** the
    higher-priority routine activates silently — authored priority is the operator's
@@ -502,9 +504,10 @@ pause/resume.
 - **SC-003**: Zero behavior change on clear-winner, unique-priority, and
   unambiguous cases: existing routine-activation and retrieval test suites pass
   unchanged, and no clarifying question appears in the unambiguous test set.
-- **SC-004**: A conversation turn's activation cost no longer grows with each
-  published routine (single ranked evaluation), measured on an agent with 10
-  published routines versus 1.
+- **SC-004**: Routine activation makes no per-routine model calls and incurs no
+  sequential per-routine model latency: one activation model call regardless of
+  routine count, measured as one call for an agent with 10 published routines
+  versus one call for an agent with 1.
 - **SC-005**: Operators can see every clarification decision (asked, auto-picked,
   or suppressed; candidates; outcome) as a first-class node in the conversation
   debug turn-flow view, verified by frontend tests.

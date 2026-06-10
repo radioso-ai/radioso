@@ -153,6 +153,7 @@ export interface RetrievalPipelineRequest {
   responseBehavior?: RetrievalResponseBehavior;
   responseLanguagePolicy?: ResponseLanguagePolicy;
   metadataFilter?: Record<string, unknown>;
+  documentScope?: string[];
   sourceScope?: RetrievalSourceScope;
   usageContext?: Omit<ModelCallUsageContext, "operation">;
   agentSkillSettings?: Record<string, unknown>;

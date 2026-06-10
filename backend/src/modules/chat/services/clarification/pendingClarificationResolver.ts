@@ -18,6 +18,12 @@ export type PendingClarificationResolution =
       activator: ConversationRoutineActivator;
     }
   | {
+      kind: "retrieval_sense";
+      resolvedPending: true;
+      suppressNewClarification: true;
+      documentScope: string[];
+    }
+  | {
       kind: "normal";
       resolvedPending: boolean;
       suppressNewClarification?: boolean;
@@ -49,6 +55,16 @@ const forcedRoutineActivator = (pending: PendingClarification, candidateId: stri
       return { kind: "activate", routineId, variables };
     },
   };
+};
+
+const retrievalDocumentScope = (pending: PendingClarification, candidateId: string): string[] | null => {
+  const candidate = pending.candidates.find((item) => item.id === candidateId);
+  const payload = payloadRecord(candidate?.payload);
+  const documentIds = payload?.documentIds;
+  if (!Array.isArray(documentIds) || documentIds.some((id) => typeof id !== "string")) {
+    return null;
+  }
+  return [...new Set(documentIds)];
 };
 
 export const resolvePendingClarification = async (input: {
@@ -85,6 +101,17 @@ export const resolvePendingClarification = async (input: {
         resolvedPending: true,
         suppressNewClarification: true,
         activator,
+      };
+    }
+  }
+  if (pending.source === "retrieval_sense") {
+    const documentScope = retrievalDocumentScope(pending, mapping.id);
+    if (documentScope && documentScope.length > 0) {
+      return {
+        kind: "retrieval_sense",
+        resolvedPending: true,
+        suppressNewClarification: true,
+        documentScope,
       };
     }
   }

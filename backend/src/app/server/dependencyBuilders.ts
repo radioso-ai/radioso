@@ -96,13 +96,17 @@ import {
   AgenticRetrievalRunner,
   EmbeddingService,
   GatewayQueryRewritePortAdapter,
+  ModelSenseLabelGateway,
   PgLexicalSearch,
+  PostgresSenseEmbeddingReader,
   PgVectorChunkStorage,
   PgVectorSearch,
   PromptBuilder,
   RetrievalAnswerExecutor,
   RetrievalAnswerService,
+  SenseGroupingService,
   createDefaultRetrievalServices,
+  type RetrievalSensePolicy,
   type RetrievalPipelinePort,
 } from "../../modules/retrieval/composition.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
@@ -698,6 +702,14 @@ export const buildChatServices = (input: {
 }) => {
   const chatGateway = input.llmRegistry.createChatGateway(input.usageEventRecorder);
   const routineActivationPolicy = { floor: 0.4, margin: 0.15, maxOptions: 4 };
+  const retrievalSensePolicy: RetrievalSensePolicy = {
+    minGroupShare: 0.3,
+    // Euclidean centroid distance over involved chunk embeddings. The value is
+    // intentionally conservative for v1 fixtures: it filters near-duplicate
+    // document groups while allowing clearly distinct senses to label once.
+    separationThreshold: 0.4,
+    maxOptions: 4,
+  };
   const directiveMatchGatewayFactory = input.composition.directiveMatchGatewayFactory ??
     new ContextualDirectiveMatchGatewayFactory(
       {
@@ -909,6 +921,14 @@ export const buildChatServices = (input: {
   );
   const conversationEngine = createConversationEngine();
   const clarificationStore = new ClarificationStateRepository(input.database);
+  const retrievalSenseDetector = new SenseGroupingService({
+    policy: retrievalSensePolicy,
+    embeddingReader: new PostgresSenseEmbeddingReader(input.database),
+    labelGateway: new ModelSenseLabelGateway(
+      input.llmRegistry.createChatInferencePipeline(input.usageEventRecorder),
+      loadPromptTemplate("chat/clarification-sense-labels.md"),
+    ),
+  });
   const chatAnswerSupport = new ChatAnswerSupport();
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
@@ -960,6 +980,12 @@ export const buildChatServices = (input: {
       },
     ),
     clarificationStore,
+    retrievalSenseDetector,
+    retrievalSenseClarificationPolicy: {
+      floor: 0,
+      margin: 0.15,
+      maxOptions: retrievalSensePolicy.maxOptions,
+    },
     ...(input.metricsRegistry
       ? { recordClarificationDecision: (decision: Parameters<typeof recordClarificationDecision>[1]) =>
           recordClarificationDecision(input.metricsRegistry!, decision) }

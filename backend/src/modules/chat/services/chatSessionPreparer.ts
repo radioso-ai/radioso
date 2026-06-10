@@ -58,6 +58,7 @@ export interface PrepareChatSessionInput {
   query: string;
   inputMetadata?: UserMessageInputMetadata;
   metadataFilter?: Record<string, unknown>;
+  documentScope?: string[];
   pageContext?: AssistantPageContext | null;
   sourceChannel?: string | null;
   anonymousSessionId?: string | null;
@@ -240,6 +241,7 @@ export class ChatSessionPreparer {
       responseBehaviorEnabled: true,
       agentSkillSettings: agent.skillSettings,
       metadataFilter: input.metadataFilter,
+      documentScope: input.documentScope,
       sourceScope: agent.sourceScope,
       usageContext: {
         workspaceId: input.workspaceId,

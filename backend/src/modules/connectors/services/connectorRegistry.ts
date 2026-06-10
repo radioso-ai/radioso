@@ -124,7 +124,7 @@ export class ConnectorRegistry {
           chat: context.chat,
           ingestion: context.ingestion,
           state: this.createPluginState(context.db, plugin.id),
-          http: this.createHttpHost(),
+          http: this.createHttpHost(plugin.id),
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -729,10 +729,12 @@ export class ConnectorRegistry {
     };
   }
 
-  private createHttpHost(): ConnectorHttpHost {
+  private createHttpHost(connectorId: string): ConnectorHttpHost {
     return {
       mount: (path, router) => {
-        this.router.use(path, router);
+        const connectorPath = `/${connectorId}`;
+        const mountPath = path.startsWith("/") ? path : `/${path}`;
+        this.router.use(`${connectorPath}${mountPath}`, router);
       },
     };
   }

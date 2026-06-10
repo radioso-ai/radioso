@@ -13,9 +13,9 @@
 
 ## Requirement Completeness
 
-- [x] No [NEEDS CLARIFICATION] markers remain — the four open scope questions were answered by the requestor before drafting (recorded in Assumptions)
+- [x] No [NEEDS CLARIFICATION] markers remain — the four open scope questions were answered by the requestor before drafting (recorded in Assumptions); the six review findings from revision 1 are resolved in the Capability Contracts section
 - [x] Requirements are testable and unambiguous
-- [x] UI tasks captured for user-facing features — no new UI surfaces in v1 (plain assistant messages; trace stage renders in the existing debug view), so no UI Tasks subsection
+- [x] UI tasks captured for user-facing features — US3 has a UI Tasks subsection (turn-flow graph node + detail panel + tests); end-user surface stays plain assistant messages
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
 - [x] All acceptance scenarios are defined
@@ -34,3 +34,4 @@
 
 - Items marked incomplete require spec updates before `/speckit.clarify` or `/speckit.plan`.
 - The ranked multi-routine activation matcher is deliberately in scope (FR-007): code inspection showed the "preserved seam" described in issue #667 is an obligation in the 082 plan, not implemented behavior.
+- Revision 2 resolves the six pre-approval findings: (1) pending-store port + atomic turn-commit contract, (2) Clarifier/detector split with opaque payload + surface-owned resolution handlers, (3) concrete ranked-activation contract (single evaluation, confidence semantics, gate/priority interaction, variables, determinism), (4) sense-detector contract (input stage, grouping method, confidence, label source, answer constraint), (5) active-routine/yield decision (suppressed-ask mode), (6) explicit frontend turn-flow rendering work in US3/FR-011.

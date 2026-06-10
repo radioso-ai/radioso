@@ -154,8 +154,7 @@ import { createMailService } from "../../modules/mail/public.js";
 import { createLogger, type AppLogger } from "../../shared/observability/logger.js";
 import { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
 import { createPublishedRoutineRegistrationSource } from "../composition/routineDefinitionSource.js";
-import { ChatAnswerSupport } from "../../modules/chat/services/chatAnswerSupport.js";
-import { recordClarificationDecision } from "../../modules/chat/services/clarification/clarificationMetrics.js";
+import { ChatAnswerSupport, recordClarificationDecision } from "../../modules/chat/composition.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import {
   createDefaultAnalyticsSinks,

@@ -5,8 +5,10 @@ import type {
   RecentClarificationReader,
   TurnContext,
 } from "@radioso/conversation-contract";
-import { conversationRoutineActivatorFromCandidate } from "@radioso/conversation-defaults";
-import { resolvePendingClarification as resolveEnginePendingClarification } from "@radioso/conversation-engine";
+import {
+  conversationRoutineActivatorFromCandidate,
+  resolveEnginePendingClarification,
+} from "./composition.js";
 import { documentScopeFromClarificationCandidate } from "../../../retrieval/public.js";
 
 export type PendingClarificationResolution =

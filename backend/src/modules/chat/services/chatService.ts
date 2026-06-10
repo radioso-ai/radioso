@@ -16,7 +16,7 @@ import type {
   RoutineActionRequest,
   TurnContext,
 } from "@radioso/conversation-contract";
-import { clarificationStage, decideClarification } from "@radioso/conversation-engine";
+import { clarificationStage, decideClarification } from "./clarification/composition.js";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { AuditService } from "../../audit/contracts/index.js";

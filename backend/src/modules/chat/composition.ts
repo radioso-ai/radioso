@@ -111,3 +111,8 @@ export type {
   ChatActionSuggestionContext,
   ChatActionSuggestionProvider,
 } from "./services/actionSuggestions/chatActionSuggestionProvider.js";
+export {
+  recordClarificationDecision,
+  type ClarificationMetricDecision,
+} from "./services/clarification/clarificationMetrics.js";
+export { ChatAnswerSupport } from "./services/chatAnswerSupport.js";

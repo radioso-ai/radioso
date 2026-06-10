@@ -28,6 +28,7 @@ import { WorkspaceGrantRepository } from "../../db/repositories/workspaceGrantRe
 import { WorkspaceRepository } from "../../db/repositories/workspaceRepository.js";
 import { WorkspaceTokenRepository } from "../../db/repositories/workspaceTokenRepository.js";
 import { PostgresAssistantTurnPersistence } from "../../modules/chat/infra/postgresAssistantTurnPersistence.js";
+import { registeredCapabilityNames } from "../../shared/domain/capabilityPolicy.js";
 import { AccountAccessService, AccountInvitationService } from "../../modules/account/public.js";
 import { AccessGrantService, DefaultOriginMatcher } from "../../modules/accessGrants/public.js";
 import { AgentService } from "../../modules/agents/public.js";
@@ -872,7 +873,7 @@ export const buildChatServices = (input: {
     },
   });
   const routineProvider: ChatRoutineProvider = {
-    async forTurn({ modelGateway, agentId }) {
+    async forTurn({ modelGateway, agentId, workspaceId }) {
       let publishedRegistrations: RoutineRegistration[];
       try {
         publishedRegistrations = await publishedRoutineSource.load({ agentId });
@@ -886,10 +887,26 @@ export const buildChatServices = (input: {
         );
         publishedRegistrations = [];
       }
-      const routineRegistry = new RoutineRegistry([
+      const registrations = [
         ...input.composition.routineRegistrations,
         ...publishedRegistrations,
-      ], {
+      ];
+      const gatedRegistrations = [];
+      for (const registration of registrations) {
+        const gateRef = registration.trigger.gateRef;
+        if (!gateRef || !registeredCapabilityNames.has(gateRef)) {
+          gatedRegistrations.push(registration);
+          continue;
+        }
+        const decision = await input.composition.capabilityPolicy.can({
+          capability: gateRef,
+          workspaceId,
+        });
+        if (decision.allowed) {
+          gatedRegistrations.push(registration);
+        }
+      }
+      const routineRegistry = new RoutineRegistry(gatedRegistrations, {
         policy: routineActivationPolicy,
         promptTemplate: loadPromptTemplate("chat/routine-ranked-activation.md"),
       });

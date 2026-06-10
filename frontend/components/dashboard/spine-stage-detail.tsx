@@ -339,6 +339,7 @@ export interface ClarificationStageDetailView {
   reason?: string
   margin?: number
   candidates: ClarificationCandidateDetail[]
+  chosenCandidateId?: string
   mappingOutcome?: string
 }
 
@@ -368,6 +369,7 @@ export const buildClarificationStageDetail = (
     reason: asString(outputs.reason),
     margin: asNumber(outputs.margin),
     candidates,
+    chosenCandidateId: asString(outputs.chosenCandidateId),
     mappingOutcome: stringifyDetailValue(outputs.mappingOutcome),
   }
 }

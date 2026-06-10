@@ -25,6 +25,7 @@ export const createPublishedRoutineRegistrationSource = (
           trigger: {
             description: definition.activation.triggerDescription,
             priority: definition.activation.priority,
+            ...(definition.activation.gateRef ? { gateRef: definition.activation.gateRef } : {}),
           },
         });
       } catch (error) {

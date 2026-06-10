@@ -9,14 +9,12 @@ import type {
   ConversationRoutineRunner,
   ConversationRoutineStore,
   ConversationTrace,
-  ClarificationCandidate,
   ClarificationPolicy,
   RecentClarificationReader,
   RenderableTurn,
   RoutineActionRequest,
   TurnContext,
 } from "@radioso/conversation-contract";
-import { clarificationStage, decideClarification } from "./clarification/composition.js";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { AuditService } from "../../audit/contracts/index.js";
@@ -84,14 +82,16 @@ import {
   resolvePendingClarification,
   type PendingClarificationResolution,
 } from "./clarification/pendingClarificationResolver.js";
-import { documentScopeFromClarificationCandidate } from "../../retrieval/public.js";
+import {
+  evaluateRetrievalSenseClarification,
+  type RetrievalSenseDetectorPort,
+} from "../../retrieval/public.js";
 import type { ClarificationMetricDecision } from "./clarification/clarificationMetrics.js";
 import {
   toConversationAgentConfig,
   toConversationInputEvent,
   toConversationMessages,
 } from "./conversationContractMappers.js";
-import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
@@ -168,19 +168,11 @@ export interface ChatRoutineProvider {
   forTurn(input: {
     modelGateway: ConversationModelGateway;
     agentId: string;
+    workspaceId?: string;
   }): Promise<{
     activator: ConversationRoutineActivator;
     runner: ConversationRoutineRunner;
   } | null>;
-}
-
-export interface RetrievalSenseDetectorPort {
-  detect(input: {
-    workspaceId: string;
-    rankedCandidates: PreparedSession["retrieval"]["contexts"];
-    conversationLanguage?: string;
-    usageContext?: ModelCallUsageContext;
-  }): Promise<ClarificationCandidate[]>;
 }
 
 /**
@@ -355,6 +347,7 @@ export class ChatService {
     const routineTurnPorts = await this.routineProvider.forTurn({
       modelGateway,
       agentId: session.agent.id,
+      workspaceId: session.conversation.workspaceId,
     });
     if (!routineTurnPorts) {
       return null;
@@ -459,14 +452,10 @@ export class ChatService {
     return active?.status === "active";
   }
 
-  private conversationTraceWithClarification(
+  private conversationTraceWithStage(
     trace: ConversationTrace,
-    input: { candidates: ClarificationCandidate[]; decision: ReturnType<typeof decideClarification> },
+    stage: ConversationTrace["stages"][number],
   ): ConversationTrace {
-    const stage = clarificationStage({
-      surface: "retrieval_sense",
-      decision: input.decision,
-    });
     const previous = trace.stages.at(-1);
     return {
       ...trace,
@@ -492,21 +481,22 @@ export class ChatService {
     engineTrace: ConversationTrace;
   } | {
     kind: "continue";
-    candidates: ClarificationCandidate[];
-    decision: ReturnType<typeof decideClarification>;
+    stage?: ConversationTrace["stages"][number];
     documentScope?: string[];
   } | null> {
     if (
-      !this.retrievalSenseDetector ||
       !input.clarification.store ||
       !input.clarification.clarifier ||
       input.clarification.resolution?.suppressNewClarification
     ) {
       return null;
     }
-    const candidates = await this.retrievalSenseDetector.detect({
+    const effect = await evaluateRetrievalSenseClarification({
+      detector: this.retrievalSenseDetector,
       workspaceId: input.session.conversation.workspaceId,
       rankedCandidates: input.session.retrieval.contexts,
+      conversationId: input.session.conversation.id,
+      messageId: input.session.userMessage.id,
       conversationLanguage: input.session.agent.assistantDefaultLocale ?? undefined,
       usageContext: {
         workspaceId: input.session.conversation.workspaceId,
@@ -516,36 +506,32 @@ export class ChatService {
         operation: "clarification",
         attemptKey: input.session.userMessage.id,
       },
+      policy: this.retrievalSenseClarificationPolicy,
+      suppressAsk: input.activeRoutineAtTurnStart,
+      suppressNewClarification: input.clarification.resolution?.suppressNewClarification,
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
     });
-    if (candidates.length === 0) {
+    if (!effect) {
       return null;
     }
-    const decision = decideClarification(candidates, this.retrievalSenseClarificationPolicy, {
-      suppressAsk: input.activeRoutineAtTurnStart,
-    });
-    const engineTrace = this.conversationTraceWithClarification(input.session.turnTrace, { candidates, decision });
-    this.recordTraceClarificationDecisions(engineTrace);
-    if (decision.kind !== "ask") {
+    const engineTrace = effect.stage
+      ? this.conversationTraceWithStage(input.session.turnTrace, effect.stage)
+      : input.session.turnTrace;
+    if (effect.stage) {
+      this.recordTraceClarificationDecisions(engineTrace);
+    }
+    if (effect.kind !== "ask") {
       return {
         kind: "continue",
-        candidates,
-        decision,
-        ...(decision.kind === "auto_pick"
-          ? { documentScope: documentScopeFromClarificationCandidate(decision.candidate) }
-          : {}),
+        ...(effect.stage ? { stage: effect.stage } : {}),
+        ...(effect.documentScope ? { documentScope: effect.documentScope } : {}),
       };
     }
     const answer = await input.clarification.clarifier.phraseQuestion({
-      candidates: decision.candidates,
+      candidates: effect.candidates,
       turn: this.buildClarificationTurn(input.session),
     });
-    await input.clarification.store.save({
-      sessionId: input.session.conversation.id,
-      source: "retrieval_sense",
-      candidates: decision.candidates,
-      status: "pending",
-      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
-    });
+    await input.clarification.store.save(effect.pending);
     return {
       kind: "ask",
       presentation: this.chatAnswerPresenter.presentNonRetrievalAnswer(answer),
@@ -708,11 +694,8 @@ export class ChatService {
         ? { presentation: clarificationTurn.presentation, engineTrace: clarificationTurn.engineTrace, actions: undefined }
         : await this.renderTurn(session, input);
       const { presentation, actions } = renderedTurn;
-      const engineTrace = clarificationTurn?.kind === "continue" && renderedTurn.engineTrace
-        ? this.conversationTraceWithClarification(renderedTurn.engineTrace, {
-            candidates: clarificationTurn.candidates,
-            decision: clarificationTurn.decision,
-          })
+      const engineTrace = clarificationTurn?.kind === "continue" && clarificationTurn.stage && renderedTurn.engineTrace
+        ? this.conversationTraceWithStage(renderedTurn.engineTrace, clarificationTurn.stage)
         : renderedTurn.engineTrace;
       const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
         workspaceId: input.workspaceId,
@@ -908,11 +891,8 @@ export class ChatService {
         engineTrace = event.engineTrace;
         actions = event.actions;
       }
-      if (clarificationTurn?.kind === "continue" && engineTrace) {
-        engineTrace = this.conversationTraceWithClarification(engineTrace, {
-          candidates: clarificationTurn.candidates,
-          decision: clarificationTurn.decision,
-        });
+      if (clarificationTurn?.kind === "continue" && clarificationTurn.stage && engineTrace) {
+        engineTrace = this.conversationTraceWithStage(engineTrace, clarificationTurn.stage);
       }
       if (!finalPresentation || !suggestions) {
         throw new Error("chat_stream_missing_final_presentation");

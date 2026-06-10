@@ -19,6 +19,9 @@ export interface RoutineRegistration {
   trigger: {
     description: string;
     priority: number;
+    gateRef?: string;
+    eligible?: (input: { turn: TurnContext }) => boolean;
+    explicitClaim?: (input: { turn: TurnContext }) => { variables?: Record<string, unknown> } | null;
   };
 }
 
@@ -137,15 +140,28 @@ export class RoutineRegistry {
         loopGuardCandidateIds?: string[];
         suppressClarificationAsk?: boolean;
       }) => {
-        if (this.registrations.length === 0) {
+        const eligibleRegistrations = this.registrations.filter((registration) =>
+          registration.trigger.eligible?.({ turn }) ?? true
+        );
+        if (eligibleRegistrations.length === 0) {
           return null;
         }
-        const knownIds = new Set(this.registrations.map((registration) => registration.routine.id));
-        const byId = new Map(this.registrations.map((registration) => [registration.routine.id, registration]));
+        for (const registration of eligibleRegistrations) {
+          const claim = registration.trigger.explicitClaim?.({ turn });
+          if (claim) {
+            return {
+              kind: "activate",
+              routineId: registration.routine.id,
+              variables: claim.variables,
+            };
+          }
+        }
+        const knownIds = new Set(eligibleRegistrations.map((registration) => registration.routine.id));
+        const byId = new Map(eligibleRegistrations.map((registration) => [registration.routine.id, registration]));
         const { text } = await modelGateway.complete({
           messages: turnMessages(turn),
           systemPrompt: renderPromptTemplate("chat/routine-ranked-activation.md", this.promptTemplate, {
-            routines: routinesBlock(this.registrations),
+            routines: routinesBlock(eligibleRegistrations),
             latestMessage: turn.inputEvent.content,
           }),
           metadata: {
@@ -171,7 +187,7 @@ export class RoutineRegistry {
           };
         });
         const priorities = Object.fromEntries(
-          this.registrations.map((registration) => [registration.routine.id, registration.trigger.priority]),
+          eligibleRegistrations.map((registration) => [registration.routine.id, registration.trigger.priority]),
         );
         const decision = decideClarification(candidates, this.policy, {
           priorities,
@@ -184,8 +200,16 @@ export class RoutineRegistry {
         if (decision.kind === "ask") {
           return { kind: "clarify", candidates: decision.candidates };
         }
-        return (await conversationRoutineActivatorFromCandidate(decision.candidate)?.activate({ turn }))
-          ?? { kind: "activate", routineId: decision.candidate.id, variables: undefined };
+        const activation = (await conversationRoutineActivatorFromCandidate(decision.candidate)?.activate({ turn }))
+          ?? { kind: "activate" as const, routineId: decision.candidate.id, variables: undefined };
+        return {
+          ...activation,
+          decisionMetadata: {
+            consideredCandidates: candidates,
+            decision,
+            reason: decision.reason,
+          },
+        };
       },
     };
   }

@@ -447,8 +447,8 @@ export class ChatTurnLifecycle {
         conversationId: input.session.conversation.id,
       });
       await input.commitRoutineState?.();
-      await input.commitClarificationState?.();
       assistantMessage = await this.messageRepository.create(presentation.assistantMessage);
+      await input.commitClarificationState?.();
       await this.finalizeAssistantTurn(presentation.successInput);
     }
 

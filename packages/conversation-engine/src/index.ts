@@ -478,6 +478,7 @@ export class DefaultConversationEngine implements ConversationEngine {
     };
 
     let state = resuming ? active! : null;
+    let activationClarificationStage: ConversationTraceStage | null = null;
     if (!state) {
       if (!input.routineActivator) {
         return null;
@@ -489,6 +490,15 @@ export class DefaultConversationEngine implements ConversationEngine {
       });
       if (!activation) {
         return null;
+      }
+      if (activation.kind === "activate" && activation.decisionMetadata) {
+        activationClarificationStage = clarificationStage({
+          surface: "routine_activation",
+          decision: activation.decisionMetadata.decision,
+          consideredCandidates: activation.decisionMetadata.consideredCandidates,
+          reason: activation.decisionMetadata.reason,
+          margin: activation.decisionMetadata.margin,
+        });
       }
       if (activation.kind === "clarify") {
         if (!input.clarifier || !input.clarificationStore) {
@@ -661,6 +671,9 @@ export class DefaultConversationEngine implements ConversationEngine {
         answerLength: result.response.answer.length,
       },
     });
+    const routineTraceStages = activationClarificationStage
+      ? [messageStage, gatherStage, activationClarificationStage, routineStage, directiveSteeringStage]
+      : [messageStage, gatherStage, routineStage, directiveSteeringStage];
 
     return createProcessTurnResult({
       sessionId: input.sessionId,
@@ -675,7 +688,7 @@ export class DefaultConversationEngine implements ConversationEngine {
       handoff: result.terminal?.kind === "handoff"
         ? { routineId: state.routineId, stepId: result.terminal.stepId }
         : undefined,
-      trace: createTrace([messageStage, gatherStage, routineStage, directiveSteeringStage]),
+      trace: createTrace(routineTraceStages),
     });
   }
 

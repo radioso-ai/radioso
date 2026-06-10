@@ -42,6 +42,15 @@ class ContactIntakeActionAdvertiser implements PublicChatActionAdvertiserPort {
   }
 }
 
+const isContactIntentClick = (metadata: Record<string, unknown> | undefined): boolean => {
+  const intent = metadata?.intent;
+  return metadata?.method === "intent_click" &&
+    !!intent &&
+    typeof intent === "object" &&
+    !Array.isArray(intent) &&
+    (intent as { skillName?: unknown }).skillName === CONTACT_INTENT_SKILL_NAME;
+};
+
 /**
  * Wires the built-in contact request feature: the chat-only contact routine (activated
  * by ranked routine activation), the `contact.send` action handler (emails the gathered
@@ -58,6 +67,11 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
       trigger: {
         description: contactRoutineDefinition.activation.triggerDescription,
         priority: contactRoutineDefinition.activation.priority,
+        ...(contactRoutineDefinition.activation.gateRef
+          ? { gateRef: contactRoutineDefinition.activation.gateRef }
+          : {}),
+        eligible: ({ turn }) => turn.agent.metadata?.contactRequestsEnabled === true,
+        explicitClaim: ({ turn }) => isContactIntentClick(turn.inputEvent.metadata) ? {} : null,
       },
     });
     context.registerActionHandler({

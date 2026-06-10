@@ -176,12 +176,17 @@ const decisionCandidates = (decision: ClarificationDecision): ClarificationCandi
 export const clarificationStage = (input: {
   surface: string;
   decision: ClarificationDecision;
+  consideredCandidates?: ClarificationCandidate[];
   reason?: string;
   margin?: number;
   mappingOutcome?: string;
 }): ConversationTraceStage => {
   const timestamp = nowIso();
   const reason = input.reason ?? (input.decision.kind === "auto_pick" ? input.decision.reason : undefined);
+  const consideredCandidates = input.consideredCandidates ?? decisionCandidates(input.decision);
+  const chosenCandidateId = input.decision.kind === "auto_pick"
+    ? input.decision.candidate.id
+    : undefined;
   return {
     id: "clarification",
     kind: "clarification",
@@ -193,7 +198,8 @@ export const clarificationStage = (input: {
       decision: decisionName(input.decision),
       ...(reason ? { reason } : {}),
       ...(input.margin !== undefined ? { margin: input.margin } : {}),
-      candidates: traceCandidates(decisionCandidates(input.decision)),
+      ...(chosenCandidateId ? { chosenCandidateId } : {}),
+      candidates: traceCandidates(consideredCandidates),
       ...(input.mappingOutcome ? { mappingOutcome: input.mappingOutcome } : {}),
     },
   };

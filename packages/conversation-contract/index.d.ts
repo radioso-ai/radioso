@@ -381,6 +381,13 @@ export type ClarificationDecision =
   | { kind: "ask"; candidates: ClarificationCandidate[] }
   | { kind: "none" };
 
+export interface RoutineActivationDecisionMetadata {
+  consideredCandidates: ClarificationCandidate[];
+  decision: ClarificationDecision;
+  reason?: string;
+  margin?: number;
+}
+
 export type PendingClarificationStatus = "pending" | "resolved" | "declined" | "expired";
 
 /** Conversation-scoped pending clarification row, including the presented opaque candidates. */
@@ -677,7 +684,12 @@ export interface ConversationRoutineActivator {
     loopGuardCandidateIds?: string[];
     suppressClarificationAsk?: boolean;
   }): Promise<
-    | { kind: "activate"; routineId: string; variables?: Record<string, unknown> }
+    | {
+        kind: "activate";
+        routineId: string;
+        variables?: Record<string, unknown>;
+        decisionMetadata?: RoutineActivationDecisionMetadata;
+      }
     | { kind: "clarify"; candidates: ClarificationCandidate[] }
     | null
   >;

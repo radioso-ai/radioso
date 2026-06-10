@@ -35,7 +35,7 @@ Don't cluster all suggestions around the same entity; prefer conceptual or expla
 Use explicit visible nouns rather than pronouns or demonstratives when the referent might be unclear.
 
 Suggestion language
-Write each suggestion in the same language as the markdown answer above. Ignore the language of excerpts, titles, and URLs when choosing the suggestion language.
+Write every suggestion in the exact same language as the markdown answer above — that language is the user's, not the excerpts'. Each suggestion is grounded in a Result N excerpt, but the excerpt fixes only the suggestion's topic, never its language: translate the grounded concept into the answer's language. Even when every Result N excerpt, title, and URL is in a different language, the suggestions must still be written in the answer's language. Never emit a suggestion in the language of the excerpts when that differs from the answer.
 
 Hidden context
 Excerpts may inspire broad themes, adjacent directions, useful examples, comparisons, or next steps.

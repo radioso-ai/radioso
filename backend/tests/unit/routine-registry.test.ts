@@ -43,7 +43,14 @@ describe("RoutineRegistry", () => {
 
     const decision = await registry.activator(gateway).activate({ turn });
 
-    expect(decision).toEqual({ kind: "activate", routineId: "b", variables: { email: "x@y.z" } });
+    expect(decision).toMatchObject({
+      kind: "activate",
+      routineId: "b",
+      variables: { email: "x@y.z" },
+      decisionMetadata: {
+        decision: { kind: "auto_pick", reason: "clear_margin" },
+      },
+    });
     expect(gateway.complete).toHaveBeenCalledTimes(1);
   });
 

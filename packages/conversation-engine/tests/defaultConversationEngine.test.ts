@@ -400,6 +400,57 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     ]);
   });
 
+  it("emits clarification trace metadata before routine activation for silent auto-picks", async () => {
+    const started: RoutineState = { ...activeState, path: ["ask_email"] };
+    const candidate: ClarificationCandidate = {
+      id: "contact",
+      label: "Contact",
+      confidence: 0.91,
+      payload: { routineId: "contact" },
+    };
+    const input: ProcessTurnInput = {
+      ...createInput(),
+      routineStore: { loadActive: vi.fn(async () => null), save: vi.fn(async () => {}), clear: vi.fn(async () => {}) },
+      routineActivator: {
+        activate: vi.fn(async () => ({
+          kind: "activate",
+          routineId: "contact",
+          decisionMetadata: {
+            consideredCandidates: [
+              candidate,
+              { id: "demo", label: "Demo", confidence: 0.72, payload: { routineId: "demo" } },
+            ],
+            decision: { kind: "auto_pick", candidate, reason: "clear_margin" },
+            reason: "clear_margin",
+            margin: 0.19,
+          },
+        })),
+      },
+      routineRunner: { resume: vi.fn(async () => ({ response: { answer: "What's your email?" }, nextState: started })) },
+    };
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(result.trace.stages.map((stage) => stage.kind)).toEqual([
+      "message",
+      "gather",
+      "clarification",
+      "routine_activate",
+      "directive_steering",
+    ]);
+    expect(result.trace.stages.find((stage) => stage.kind === "clarification")?.outputs).toMatchObject({
+      surface: "routine_activation",
+      decision: "auto_picked",
+      reason: "clear_margin",
+      margin: 0.19,
+      chosenCandidateId: "contact",
+      candidates: [
+        { id: "contact", label: "Contact", confidence: 0.91 },
+        { id: "demo", label: "Demo", confidence: 0.72 },
+      ],
+    });
+  });
+
   it("asks a clarification question when routine activation returns comparable candidates", async () => {
     const candidates: ClarificationCandidate[] = [
       {

@@ -36,6 +36,9 @@ describe("contact routine application module", () => {
     expect(registry.routineRegistrations[0]?.trigger).toEqual({
       description: contactRoutineDefinition.activation.triggerDescription,
       priority: contactRoutineDefinition.activation.priority,
+      gateRef: contactRoutineDefinition.activation.gateRef,
+      eligible: expect.any(Function),
+      explicitClaim: expect.any(Function),
     });
     expect(registry.actionHandlerRegistrations.map((r) => r.type)).toEqual([CONTACT_SEND_ACTION_TYPE]);
     expect(registry.actionHandlerRegistrations[0]?.requiredCapabilities).toEqual([
@@ -56,5 +59,42 @@ describe("contact routine application module", () => {
     ]);
     expect(await build(false).getPublicIntakeActions?.({ workspaceId: "ws_1", agentId: "a" })).toEqual([]);
     expect("handle" in build(true)).toBe(false);
+  });
+
+  it("keeps contact activation behind the agent flag and claims intent-click metadata deterministically", () => {
+    const registration = applyModule().routineRegistrations[0]!;
+    const baseTurn = {
+      agent: { id: "agent_1", metadata: { contactRequestsEnabled: true } },
+      sessionId: "conv_1",
+      inputEvent: { kind: "message" as const, content: "ignored" },
+      history: [],
+      stagedContext: [],
+      steering: [],
+    };
+
+    expect(registration.trigger.eligible?.({ turn: {
+      ...baseTurn,
+      agent: { id: "agent_1", metadata: { contactRequestsEnabled: false } },
+    } })).toBe(false);
+    expect(registration.trigger.eligible?.({ turn: baseTurn })).toBe(true);
+    expect(registration.trigger.explicitClaim?.({ turn: {
+      ...baseTurn,
+      inputEvent: {
+        kind: "message" as const,
+        content: "",
+        metadata: {
+          method: "intent_click",
+          intent: { skillName: CONTACT_INTENT_SKILL_NAME },
+        },
+      },
+    } })).toEqual({});
+    expect(registration.trigger.explicitClaim?.({ turn: {
+      ...baseTurn,
+      inputEvent: {
+        kind: "message" as const,
+        content: "contact a human",
+        metadata: { method: "message" },
+      },
+    } })).toBeNull();
   });
 });

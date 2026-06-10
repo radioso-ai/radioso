@@ -235,6 +235,45 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     expect(records[0]).toBe(persisted.auditEvent);
   });
 
+  it("does not commit a fallback clarification save when assistant message creation fails", async () => {
+    const auditService = {
+      record: vi.fn(async () => {}),
+      updateChatAnswerSuggestions: vi.fn(async () => {}),
+    } as unknown as AuditService;
+    const conversationRepository = {
+      touch: vi.fn(async () => {}),
+    } as unknown as ConversationRepositoryPort;
+    const messageRepository = {
+      create: vi.fn(async () => {
+        throw new Error("message write failed");
+      }),
+    } as unknown as MessageRepositoryPort;
+    const commitClarificationState = vi.fn(async () => {});
+    const lifecycle = new ChatTurnLifecycle(conversationRepository, messageRepository, auditService);
+
+    await expect(lifecycle.completeAssistantTurn({
+      workspaceId: "workspace_1",
+      session: session(),
+      presentation: presentation(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      engineTrace: engineTrace(),
+      clarificationTransition: {
+        kind: "save",
+        pending: {
+          sessionId: "conv_1",
+          source: "test_surface",
+          candidates: [{ id: "a", label: "Alpha", confidence: 0.8, payload: { opaque: "a" } }],
+          status: "pending",
+          expiresAt: "2026-06-10T12:00:00.000Z",
+        },
+      },
+      commitClarificationState,
+    })).rejects.toThrow("message write failed");
+
+    expect(commitClarificationState).not.toHaveBeenCalled();
+  });
+
   it("fails a routine turn with a runtime-denied action before persisting a false success", async () => {
     const auditService = {
       record: vi.fn(async () => {}),
@@ -386,7 +425,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     expect(records).toHaveLength(1);
   });
 
-  it("commits clarification state on the fallback path after actions and before the assistant message", async () => {
+  it("commits clarification state on the fallback path after the assistant message", async () => {
     const order: string[] = [];
     const auditService = {
       record: vi.fn(async () => {
@@ -444,7 +483,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     });
 
     expect(commitClarificationState).toHaveBeenCalledOnce();
-    expect(order.slice(0, 3)).toEqual(["action", "clarification", "message"]);
+    expect(order.slice(0, 3)).toEqual(["action", "message", "clarification"]);
   });
 
   it("persists a turnTrace envelope with the retrieval activity trace as a leaf on the dispatch stage", async () => {

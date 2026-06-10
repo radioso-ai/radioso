@@ -61,10 +61,17 @@ describe("RoutineRegistry ranked activation", () => {
     expect(gw.complete).toHaveBeenCalledTimes(1);
     expect(vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt).toContain("routine_0");
     expect(vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt).toContain("routine_9");
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       kind: "activate",
       routineId: "routine_7",
       variables: { requestedSlot: "morning" },
+    });
+    expect(result?.kind === "activate" ? result.decisionMetadata : null).toMatchObject({
+      decision: { kind: "auto_pick", reason: "clear_margin" },
+      consideredCandidates: [
+        { id: "routine_7", confidence: 0.9 },
+        { id: "routine_2", confidence: 0.2 },
+      ],
     });
   });
 
@@ -113,7 +120,7 @@ describe("RoutineRegistry ranked activation", () => {
       registration("weak", { priority: 100 }),
     ], { policy }).activator(gw).activate({ turn });
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       kind: "activate",
       routineId: "lower-confidence-priority",
       variables: undefined,
@@ -150,5 +157,53 @@ describe("RoutineRegistry ranked activation", () => {
       registration("demo"),
       registration("support"),
     ], { policy }).activator(gw).activate({ turn })).resolves.toBeNull();
+  });
+
+  it("filters ineligible routines before prompting and candidate construction", async () => {
+    const gw = gateway(rankedJson([
+      { routineId: "enabled", confidence: 0.82 },
+    ]));
+
+    const result = await new RoutineRegistry([
+      registration("disabled", {
+        description: "Disabled routine must not be ranked",
+        eligible: () => false,
+      }),
+      registration("enabled", {
+        description: "Enabled routine can be ranked",
+        eligible: () => true,
+      }),
+    ], { policy }).activator(gw).activate({ turn });
+
+    expect(gw.complete).toHaveBeenCalledTimes(1);
+    const prompt = vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt;
+    expect(prompt).toContain("enabled");
+    expect(prompt).not.toContain("disabled");
+    expect(prompt).not.toContain("Disabled routine must not be ranked");
+    expect(result).toMatchObject({ kind: "activate", routineId: "enabled", variables: undefined });
+  });
+
+  it("activates the first eligible explicit claim without a gateway call", async () => {
+    const gw = gateway(rankedJson([]));
+
+    const result = await new RoutineRegistry([
+      registration("disabled", {
+        eligible: () => false,
+        explicitClaim: () => ({ variables: { source: "disabled" } }),
+      }),
+      registration("claimed", {
+        explicitClaim: () => ({ variables: { source: "button" } }),
+      }),
+      registration("later", {
+        explicitClaim: () => ({ variables: { source: "later" } }),
+      }),
+    ], { policy }).activator(gw).activate({ turn });
+
+    expect(gw.complete).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      kind: "activate",
+      routineId: "claimed",
+      variables: { source: "button" },
+    });
   });
 });

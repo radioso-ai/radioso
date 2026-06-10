@@ -22,6 +22,7 @@ describe('buildClarificationStageDetail', () => {
             payload: { documentContent: 'must not render' },
           },
         ],
+        chosenCandidateId: 'hatha',
         mappingOutcome: { outcome: 'chosen', candidateId: 'hatha' },
       },
     }
@@ -32,6 +33,7 @@ describe('buildClarificationStageDetail', () => {
       reason: 'too_close',
       margin: 0.03,
       candidates: [{ id: 'hatha', label: 'Hatha yoga', confidence: 0.73 }],
+      chosenCandidateId: 'hatha',
       mappingOutcome: '{"outcome":"chosen","candidateId":"hatha"}',
     })
   })

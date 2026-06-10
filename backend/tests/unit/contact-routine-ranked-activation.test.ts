@@ -36,7 +36,14 @@ describe("contact routine ranked activation", () => {
     ], { policy: { floor: 0.4, margin: 0.15, maxOptions: 4 } });
 
     await expect(registry.activator(gateway).activate({ turn: turn("I would like to contact a human.") }))
-      .resolves.toEqual({ kind: "activate", routineId: contactRoutine.id, variables: undefined });
+      .resolves.toMatchObject({
+        kind: "activate",
+        routineId: contactRoutine.id,
+        variables: undefined,
+        decisionMetadata: {
+          decision: { kind: "auto_pick", reason: "clear_margin" },
+        },
+      });
     expect(gateway.complete).toHaveBeenCalledTimes(1);
     expect(gateway.complete.mock.calls[0]![0].systemPrompt).toContain("The user asks a human to follow up with them.");
   });

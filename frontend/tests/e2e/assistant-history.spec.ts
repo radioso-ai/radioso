@@ -293,6 +293,7 @@ test("turn flow shows clarification decisions and candidates", async ({ page }) 
               { id: "hatha", label: "Hatha yoga", confidence: 0.73 },
               { id: "raja", label: "Raja yoga", confidence: 0.7 },
             ],
+            chosenCandidateId: "hatha",
             mappingOutcome: "chosen:hatha",
           },
         },

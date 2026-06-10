@@ -63,10 +63,13 @@ describe("routine defaults", () => {
 
     expect(registry.routines.map((candidate) => candidate.id)).toEqual(["a", "b"]);
     expect(registry.isEmpty).toBe(false);
-    await expect(registry.activator(activationGateway).activate({ turn })).resolves.toEqual({
+    await expect(registry.activator(activationGateway).activate({ turn })).resolves.toMatchObject({
       kind: "activate",
       routineId: "b",
       variables: { email: "x@y.z" },
+      decisionMetadata: {
+        decision: { kind: "auto_pick", reason: "clear_margin" },
+      },
     });
     expect(activationGateway.complete).toHaveBeenCalledTimes(1);
   });

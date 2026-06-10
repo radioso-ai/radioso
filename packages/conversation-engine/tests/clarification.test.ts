@@ -192,6 +192,35 @@ describe("clarificationStage", () => {
     });
     expect(JSON.stringify(stage)).not.toContain("secret");
   });
+
+  it("records all considered candidates and the chosen id for auto-picks", () => {
+    const stage = clarificationStage({
+      surface: "routine_activation",
+      decision: {
+        kind: "auto_pick",
+        candidate: candidate({ id: "demo", label: "Demo call", confidence: 0.82, payload: { secret: "payload" } }),
+        reason: "priority",
+      },
+      consideredCandidates: [
+        candidate({ id: "support", label: "Support call", confidence: 0.83, payload: { secret: "payload" } }),
+        candidate({ id: "demo", label: "Demo call", confidence: 0.82, payload: { secret: "payload" } }),
+      ],
+      margin: 0.01,
+    });
+
+    expect(stage.outputs).toEqual({
+      surface: "routine_activation",
+      decision: "auto_picked",
+      reason: "priority",
+      margin: 0.01,
+      chosenCandidateId: "demo",
+      candidates: [
+        { id: "support", label: "Support call", confidence: 0.83 },
+        { id: "demo", label: "Demo call", confidence: 0.82 },
+      ],
+    });
+    expect(JSON.stringify(stage)).not.toContain("secret");
+  });
 });
 
 describe("resolvePendingClarification", () => {

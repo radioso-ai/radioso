@@ -60,6 +60,66 @@ are resolved without a model call, so the flow is predictable:
 Like directive conditions, an `llm` guard is never a keyword list. Radioso is
 multilingual; the model judges by meaning, in any language.
 
+## Engineer fixture notation
+
+Routine document fixtures use a compact text notation for golden tests,
+debugging, and diffs. This notation is **not an authoring surface**. Operators
+author routines in the dashboard outline or, while it remains available, the
+transitional form view.
+
+The fixture serializer is canonical, so reflowing text on serialize is expected.
+The format uses grammar tokens, not localized product copy.
+
+Common markers:
+
+- `@name` references a declared variable or registered action.
+- `#id` references a flow target, either a step anchor or an end anchor.
+- `{#id}` declares the stable id for a step.
+- `-> #id` or `→ #id` creates a transition to a target.
+- `↺N` marks a counter-bounded retry edge.
+- `[status]` marks an outcome guard.
+- `[needs @a, @b]` marks a `slot_filled` guard.
+- `?` after a variable key marks it optional.
+
+The fixture shape mirrors the routine draft:
+
+```text
+---
+name: Contact support
+trigger: visitor wants a person to follow up
+priority: 10
+---
+
+## Variables
+- email: email - where the team should reply
+- message: text - what the visitor needs help with
+
+## Steps
+1. Ask for @email. {#ask_email}
+   -> #ask_message
+
+2. Ask what they need help with; save it as @message. {#ask_message}
+   -> #send_contact
+
+3. Run @contact.send. {#send_contact}
+   -> #done [success]
+   -> #retry ↺2
+   -> #handoff
+
+## Ends
+- done [complete]: Confirm the request was sent.
+- handoff [handoff]: Hand the visitor to a person.
+```
+
+Fixture parsing maps back to `RoutineDefinitionDraft`: front matter maps to the
+routine name and activation, `## Variables` maps to slots, numbered anchored
+items map to steps, transition lines map to guards, and `## Ends` maps to
+terminals. The current stored enum values are:
+
+- step kind: `chat`, `tool`, `action`
+- guard kind: `llm`, `default`, `slot_filled`, `outcome`, `counter`
+- terminal kind: `complete`, `handoff`
+
 ## How it runs
 
 On each turn, before normal skill selection, the engine checks for a routine:

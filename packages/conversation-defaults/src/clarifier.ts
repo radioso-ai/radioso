@@ -16,7 +16,21 @@ Use only these options:
 
 Return only the question.`;
 
-export const DEFAULT_CLARIFICATION_REPLY_MAP_PROMPT = `Map the user's latest reply to one clarification option.
+export const DEFAULT_CLARIFICATION_REPLY_MAP_PROMPT = `Map the user's latest reply to one of the presented clarification options.
+
+The options below are numbered in the same order they were offered to the user,
+so positional references resolve against that numbering. Judge by meaning in the
+conversation language.
+
+Return "chosen" whenever the reply points to one option in any way, including a
+label or paraphrase, a positional or ordinal reference (for example "the first
+one", "the second one", "the last one", "number 2", "option 2") resolved against
+the numbered order below, or accepting a single option that was offered.
+
+Return "declined" only when the user explicitly rejects every option (for example
+neither, none, or cancel). Return "unrelated" only when the reply changes the
+subject to something none of the options cover. When the reply plausibly points
+to one option, prefer "chosen" over "declined" or "unrelated".
 
 Options:
 {{options}}

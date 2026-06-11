@@ -1,7 +1,7 @@
-# Implementation Plan: 082 Amendment Authoring Surface Slices 1-2
+# Implementation Plan: 082 Amendment Authoring Surface Slices 1-3
 
 **Branch**: `routine-text-composer` | **Spec**: `specs/082-routines-as-data/amendment-authoring-surface.md`
-**Scope**: §12 item 1 delivered; §12 item 2 adds the two FR-018 schema cuts plus the counter-exhausted default-edge runtime golden test.
+**Scope**: §12 items 1-2 delivered; §12 item 3 adds the frontend outline editor and per-routine form/outline toggle only.
 
 ## Summary
 
@@ -14,6 +14,8 @@ Slice 2 performs only the FR-018 schema cuts:
 
 Out of scope for slice 2: UI, prompt assets, new endpoints, AMQP changes, export/import, and the later outline editor/drafting assist.
 
+Slice 3 implements the structured outline editor as a client-side projection of `RoutineDefinitionDraft`. It reuses the existing routine create/update/validate/publish endpoints unchanged. The outline adapter lives in `frontend/lib/routine-outline.ts`, as a sibling of `routine-form.ts`, and owns all outline inference: step kind from action mentions / existing action fields, guard kind from branch row structure, and terminal kind from the handoff chip. The existing form remains available through a per-routine toggle, and both views project through the same draft so switching views does not lose data.
+
 ## Technical Context
 
 - Backend TypeScript on Node.js 24.
@@ -25,6 +27,9 @@ Out of scope for slice 2: UI, prompt assets, new endpoints, AMQP changes, export
 - Code-first OpenAPI owner in this branch: `backend/src/app/http/openapi/schemas/agentSchemas.ts`, which imports the Zod routine definition schema from `backend/src/modules/routines/domain.ts`; generated artifacts are `backend/openapi.yaml`, `backend/openapi.json`, `typescript-sdk/openapi/radioso.{yaml,json}`, `typescript-sdk/src/generated/types.ts`, and `packages/radioso-mcp-server/src/generated/openapiTypes.ts`.
 - Latest migration on branch and `origin/main` is `088_clarification_states.sql`; slice 2 migration is `089_routine_default_guard_schema_cut.sql`.
 - Tests: Vitest unit tests under `backend/tests/unit/`.
+- Slice 3 frontend owner module: `frontend/lib/routine-outline.ts`.
+- Slice 3 UI owner: `frontend/components/dashboard/settings/assistant-routines-section.tsx`.
+- Slice 3 tests: `frontend/tests/unit/routine-outline.test.ts` for pure adapter round trips, and `frontend/tests/e2e/routines-settings.spec.ts` for visible authoring/toggle/validation behavior.
 
 ## Constitution Check
 
@@ -37,6 +42,16 @@ Out of scope for slice 2: UI, prompt assets, new endpoints, AMQP changes, export
 - **Contracts and queues**: slice 2 changes public authoring enum contracts, so update the code-first OpenAPI registry and regenerate backend OpenAPI, SDK, and MCP generated types. Message-queue impact review: no document worker dispatch, AMQP queue payload, retry semantics, queue tests, or queue docs change is expected because neither routine step kinds nor routine guard kinds are carried by worker queue payloads; verify by search and record evidence in `slice-doc2-notes.md`.
 - **Docs parity**: update docs and spec artifacts that enumerate routine step/guard kinds, including the engineer-facing fixture notation and parent spec/plan references. Follow `docs/document-writer-prompt.md` before editing product docs.
 - **Observability**: no new runtime path, worker job, queue handoff, provider call, retry, fallback, or operator-visible latency. No logs/metrics/spans needed.
+
+### Slice 3 Constitution Check
+
+- **Spec-first**: this plan extends the approved amendment §12 item 3 only.
+- **Frontend testing**: adapter unit tests are appropriate because the adapter is non-visual projection logic. User-visible behavior is covered by Playwright in the routines settings spec.
+- **API contracts**: no backend endpoint, OpenAPI, SDK, MCP, connector, or worker contract changes. Existing `/routines`, `/validate`, and `/publish` endpoints are reused.
+- **Message queue**: no AMQP or document-worker impact; this is a dashboard authoring projection only.
+- **Modularity**: projection and inference live in one frontend adapter module. The React component owns visible controls and calls the adapter rather than duplicating draft inference.
+- **Docs parity**: minimally update `docs/authoring-routines.md` after reading `docs/document-writer-prompt.md`.
+- **Observability**: SC-016 retirement-trigger instrumentation is skipped in this slice because the existing authoring API has no view-origin field and adding one would be a contract/backend analytics change. Record this in slice notes.
 
 ## Module Design
 
@@ -66,6 +81,23 @@ Out of scope for slice 2: UI, prompt assets, new endpoints, AMQP changes, export
 ### Dependency Direction
 
 `routines/document` may import the existing routines domain type. Existing routines public exports may re-export the document port. Engine and contract packages remain independent and receive only compiled `Routine` graphs through existing paths.
+
+### Slice 3 Outline Adapter Design
+
+- `frontend/lib/routine-outline.ts` knows the outline state, stable-id slugging, `{{slot.key}}` variable display/projection, lightweight action mention encoding, and validator diagnostic targeting by stable id.
+- The adapter does not call APIs, render UI, or introduce document AST persistence.
+- Step labels are stored in `step.metadata.outlineLabel` when authored through the outline view; `stableStepId` remains the durable id. If no label metadata exists, the adapter displays the stable id.
+- Terminal rows use the current terminal `stableStepId` as the visible label because the current terminal contract has no metadata field. Changing that would be a backend contract change and is left for the drafting-assist/document-contract slice.
+- Branch row inference:
+  - `counterLimit` present ⇒ `counter`.
+  - `outcomeStatus` present ⇒ `outcome`.
+  - non-empty prose condition ⇒ `llm`.
+  - otherwise ⇒ `default`.
+- Step inference:
+  - existing draft `actionType` or `toolRef` survives.
+  - an inline action mention from the configured action options sets `kind` to `action` or `tool`; if no known action is present, the step is `chat`.
+- Terminal inference:
+  - the Handoff chip maps to `kind: "handoff"`; absence maps to `complete`.
 
 ### Slice 2 Runtime And Contract Design
 

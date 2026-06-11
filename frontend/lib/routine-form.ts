@@ -31,6 +31,7 @@ export type RoutineStepForm = {
   instruction: string
   toolRef: string
   actionType: string
+  metadata: Record<string, unknown>
   transitions: RoutineTransitionForm[]
 }
 
@@ -50,6 +51,8 @@ export type RoutineFormState = {
   steps: RoutineStepForm[]
   terminals: RoutineTerminalForm[]
 }
+
+export type RoutineDraftHeader = Pick<RoutineFormState, 'name' | 'activation'>
 
 export type DiagnosticTarget = {
   scope: 'routine' | 'slot' | 'step' | 'transition' | 'terminal'
@@ -90,6 +93,7 @@ export const createEmptyRoutineForm = (): RoutineFormState => ({
     instruction: '',
     toolRef: '',
     actionType: '',
+    metadata: {},
     transitions: [],
   }],
   terminals: [{
@@ -113,6 +117,7 @@ export const createStepForm = (index: number): RoutineStepForm => ({
   instruction: '',
   toolRef: '',
   actionType: '',
+  metadata: {},
   transitions: [],
 })
 
@@ -165,6 +170,7 @@ export const routineToForm = (routine: RoutineDefinition): RoutineFormState => {
       instruction: step.instruction,
       toolRef: step.toolRef ?? '',
       actionType: step.actionType ?? '',
+      metadata: step.metadata ?? {},
       transitions: transitionsByStep.get(step.stableStepId) ?? [],
     })),
     terminals: [...routine.terminals].sort((left, right) => left.ordinal - right.ordinal).map((terminal) => ({
@@ -175,13 +181,17 @@ export const routineToForm = (routine: RoutineDefinition): RoutineFormState => {
   }
 }
 
-export const formToRoutineDraft = (form: RoutineFormState): RoutineDefinitionDraft => {
+export const formToRoutineDraft = (
+  form: RoutineFormState,
+  options: { header?: RoutineDraftHeader } = {},
+): RoutineDefinitionDraft => {
+  const header = options.header ?? form
   let transitionOrdinal = 0
   return {
-    name: form.name.trim(),
+    name: header.name.trim(),
     activation: {
-      triggerDescription: form.activation.triggerDescription.trim(),
-      priority: Number.parseInt(form.activation.priority, 10) || 0,
+      triggerDescription: header.activation.triggerDescription.trim(),
+      priority: Number.parseInt(header.activation.priority, 10) || 0,
     },
     slots: form.slots.map((slot, index) => {
       const key = slugify(slot.key, `slot_${index + 1}`).replace(/[^A-Za-z0-9_]/gu, '_')
@@ -201,7 +211,7 @@ export const formToRoutineDraft = (form: RoutineFormState): RoutineDefinitionDra
       toolRef: step.kind === 'tool' ? nullableText(step.toolRef) : null,
       ...(step.kind === 'action' ? { actionType: nullableText(step.actionType) } : {}),
       ordinal: index,
-      metadata: {},
+      metadata: step.metadata ?? {},
     })),
     transitions: form.steps.flatMap((step) =>
       step.transitions.map((transition) => ({

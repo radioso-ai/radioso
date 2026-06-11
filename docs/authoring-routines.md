@@ -11,8 +11,18 @@ about building one.
 ## Where to author
 
 Open an agent and go to **Routines** in the settings. The page lists the agent's
-routines and lets you create a new one. The same actions are available over the
-API under `/api/v1/agents/<agentId>/routines`.
+routines and lets you create a new one.
+
+Each routine can be edited in two views:
+
+- **Outline** is the default authoring view. It shows variables, ordered step
+  cards, branch rows, and ends. Use this when writing or reviewing a routine.
+- **Form** is the existing detailed view. It exposes the underlying draft fields
+  for operators who need that level of control.
+
+Both views edit the same routine draft. Switching between them does not create a
+second copy of the routine. The same actions are available over the API under
+`/api/v1/agents/<agentId>/routines`.
 
 ## Building a routine
 
@@ -27,17 +37,22 @@ on the same message, the one with the higher **priority** wins.
 
 ### Slots
 
-Slots are the values the routine collects, such as an email or an order number.
-For each slot, set a key, a type (text, number, boolean, email, or date), and
-whether it is required. Reference a slot inside a step or terminal with
-`{{slot.<key>}}`; at run time it is replaced with the value collected so far. Only
-reference a slot once it has been collected — for example in a confirmation. A
-reference to a slot the routine has not captured yet resolves to nothing, so do not
-use `{{slot.<key>}}` in the step that asks for it (just describe what to ask).
+Variables are the values the routine collects, such as an email or an order
+number. Declare each variable once with a key, type (text, number, boolean,
+email, or date), whether it is required, and a short description.
+
+In the outline view, type `@`-style references or use the insert menu to place a
+variable in a step instruction. The saved draft stores this as
+`{{slot.<key>}}`. At run time it is replaced with the value collected so far.
+Only reference a variable once it has been collected, such as in a confirmation.
 
 ### Steps
 
-Steps are the units of the flow. Two kinds are available:
+Steps are the units of the flow. In the outline view, each step has a label and
+an instruction. The label is for the author; the stable step id is kept behind
+the scenes so published versions and traces do not break when the label changes.
+
+In the form view, two step kinds are available:
 
 - A **chat** step asks the user for something or tells them something. Write the
   instruction in plain language; the assistant turns it into a reply.
@@ -48,26 +63,31 @@ Steps are the units of the flow. Two kinds are available:
 If a user supplies several values in one message, the routine can advance through
 several steps at once instead of asking for each in turn.
 
-### Transitions and guards
+### Branches and transitions
 
-A transition connects one step to the next. Its **guard** decides when the edge is
-taken:
+A branch row connects one step to another step or end. Row order is precedence:
+the first matching branch wins, and a row with no condition is the default path.
+In the outline view, you do not choose guard kinds directly. The draft infers
+them from the row:
 
-- `always` — go to the next step unconditionally.
+- `default` — go when no condition, outcome, or counter is attached. If it is
+  the only branch, it is the normal next step. If other branches exist, it is the
+  last path.
 - `slot_filled` — go once the named slots are present.
 - `outcome` — branch on the result of the preceding action.
-- `counter` — go once a step has been tried a set number of times (for "try
-  twice, then hand off").
-- `fallback` — go only when no other guard matched.
+- `counter` — bound a retry or loop with a maximum attempt count. When the
+  counter is exhausted, the default branch is used.
 - `llm` — let the model decide, based on a condition you describe. This is the
   only guard that depends on the model.
 
-Prefer the non-`llm` guards where you can; they are predictable.
+Prefer structured rows where you can; they are predictable. Keep ordinary
+in-step nuance in the instruction instead of making it a branch.
 
 ### Terminals
 
-A terminal ends the flow. Use `complete` when the task is done, or `handoff` to
-escalate to a person.
+An end finishes the flow. In the outline view, turn on the **Handoff** chip when
+the end should escalate to a person. Without that chip, the end is a normal
+completion.
 
 ## Validate and publish
 
@@ -86,9 +106,9 @@ version. Conversations already running keep the version they started on.
 2. Slots: `email` (email, required), `message` (text, required).
 3. Steps: a chat step "Ask for their email address" → a chat step "Ask for the
    message they want to send" → an action step that submits the contact request.
-4. Transitions: `slot_filled` on `email`, then `slot_filled` on `message`, then
-   `always` into the action.
-5. Terminal: `complete`, "Confirm the request was sent."
+4. Branches: use default branches to move through the happy path, and add a
+   handoff end if the flow needs escalation.
+5. End: `complete`, "Confirm the request was sent."
 
 This is the built-in contact flow, expressed as an authored routine.
 

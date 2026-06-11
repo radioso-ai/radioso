@@ -202,6 +202,21 @@ describe('routine form transforms', () => {
       'default',
     ])
   })
+
+  it('preserves step metadata so alternate authoring projections do not lose labels', () => {
+    const metadataRoutine: RoutineDefinition = {
+      ...routine,
+      steps: [{
+        ...routine.steps[0]!,
+        metadata: { outlineLabel: 'Ask for email' },
+      }],
+    }
+
+    const form = routineToForm(metadataRoutine)
+
+    expect(form.steps[0]?.metadata).toEqual({ outlineLabel: 'Ask for email' })
+    expect(formToRoutineDraft(form).steps[0]?.metadata).toEqual({ outlineLabel: 'Ask for email' })
+  })
 })
 
 describe('routine diagnostic mapping', () => {

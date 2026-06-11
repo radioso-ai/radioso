@@ -1,4 +1,4 @@
-# Tasks: 082 Amendment Authoring Surface Slices 1-2
+# Tasks: 082 Amendment Authoring Surface Slices 1-3
 
 **Input**: `specs/082-routines-as-data/amendment-authoring-surface.md`
 **Plan**: `specs/082-routines-as-data/plan-authoring-surface.md`
@@ -66,3 +66,26 @@
 Tests T003-T005 must be authored before implementation T006-T009. Validation T010-T012 depends on implementation. Review and local commit depend on validation.
 
 Slice 2 tests T019-T021 must be authored before implementation T022-T025. Contract generation T026 depends on schema/OpenAPI source edits. Docs T027 and notes T031 depend on final representation decisions. Reviews T032-T033 depend on validation evidence.
+
+## Phase 9: Slice 3 Planning And Tests First
+
+- [X] T035 Verify branch `routine-text-composer`, read amendment §4/§12 item 3, slice-doc1 notes, slice-doc2 notes, frontend local README briefs, and docs writer prompt.
+- [X] T036 Extend `specs/082-routines-as-data/plan-authoring-surface.md` and `specs/082-routines-as-data/tasks-authoring-surface.md` for slice 3 boundaries, tests, docs, and validation.
+- [X] T037 [P] Add failing adapter round-trip tests in `frontend/tests/unit/routine-outline.test.ts` for outline state → draft → outline state identity across llm/default/outcome/counter guards, handoff ends, loops, action mentions, and legacy normalized values.
+- [X] T038 [P] Extend `frontend/tests/e2e/routines-settings.spec.ts` for authoring a multi-step outline routine with branch row, counter, handoff end, absent enum pickers, toggle round-trip, and inline validation on the offending step card.
+
+## Phase 10: Slice 3 Outline Adapter And UI
+
+- [X] T039 Implement the client-only outline projection and diagnostic mapping in `frontend/lib/routine-outline.ts`.
+- [X] T040 Add the per-routine outline/form toggle and outline editor controls in `frontend/components/dashboard/settings/assistant-routines-section.tsx`, reusing existing shadcn/Radix primitives and the current authoring APIs.
+- [X] T041 Keep save/validate/publish behavior on the existing routine API and ensure switching outline ↔ form projects through one draft without losing data.
+- [X] T042 Update `docs/authoring-routines.md` minimally to mention outline authoring alongside the form and correct the current default guard wording.
+
+## Phase 11: Slice 3 Validation And Handoff
+
+- [X] T043 Run focused frontend unit tests for the outline adapter and existing form adapter.
+- [X] T044 Run `cd frontend && pnpm test`.
+- [X] T045 Run `cd frontend && pnpm run lint`.
+- [X] T046 Attempt `cd frontend && pnpm run build` and record the result honestly.
+- [X] T047 Record implementation decisions, skipped retirement-trigger instrumentation rationale, and validation evidence in `specs/082-routines-as-data/slice-doc3-notes.md`.
+- [X] T048 Leave changes uncommitted for EM verification; do not push or open a PR.

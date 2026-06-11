@@ -229,7 +229,7 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
     }
     const hasFallbackTerminal = definition.transitions.some((transition) =>
       transition.fromStep === step.stableStepId &&
-      transition.guardKind === "fallback" &&
+      transition.guardKind === "default" &&
       terminalIds.has(transition.toRef)
     );
     if (!hasFallbackTerminal) {
@@ -249,7 +249,7 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
       terminalIds.has(transition.toRef) ||
       definition.transitions.some((candidate) =>
         candidate.fromStep === transition.fromStep &&
-        candidate.guardKind === "fallback" &&
+        candidate.guardKind === "default" &&
         terminalIds.has(candidate.toRef)
       );
     if (!hasTerminalPath) {

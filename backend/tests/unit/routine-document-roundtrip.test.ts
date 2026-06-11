@@ -71,11 +71,11 @@ const fullDraft = (): RoutineDefinitionDraftInput => ({
     { fromStep: "gather", toRef: "lookup", guardKind: "slot_filled", guardText: "{{slot.email}}", outcomeStatus: null, counterLimit: null, ordinal: 0 },
     { fromStep: "lookup", toRef: "review", guardKind: "outcome", guardText: null, outcomeStatus: "success", counterLimit: null, ordinal: 1 },
     { fromStep: "lookup", toRef: "retry", guardKind: "outcome", guardText: null, outcomeStatus: "failure", counterLimit: null, ordinal: 2 },
-    { fromStep: "lookup", toRef: "handoff_human", guardKind: "fallback", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 3 },
+    { fromStep: "lookup", toRef: "handoff_human", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 3 },
     { fromStep: "retry", toRef: "lookup", guardKind: "counter", guardText: null, outcomeStatus: null, counterLimit: 2, ordinal: 4 },
-    { fromStep: "retry", toRef: "handoff_human", guardKind: "fallback", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 5 },
+    { fromStep: "retry", toRef: "handoff_human", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 5 },
     { fromStep: "review", toRef: "notify", guardKind: "llm", guardText: "the visitor accepts email updates", outcomeStatus: null, counterLimit: null, ordinal: 6 },
-    { fromStep: "notify", toRef: "done", guardKind: "always", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 7 },
+    { fromStep: "notify", toRef: "done", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 7 },
   ],
   terminals: [
     { stableStepId: "done", kind: "complete", instruction: "Confirm the order support case is open for {{slot.email}}.", ordinal: 0 },
@@ -103,6 +103,39 @@ describe("routine document model round trips", () => {
     expect(parsed.diagnostics).toEqual([]);
     expect(result.diagnostics).toEqual([]);
     expect(result.draft).toEqual(fullDraft());
+  });
+
+  it("normalizes legacy always and fallback fixture guard aliases to default", () => {
+    const text = `---
+name: legacy-defaults
+trigger: support
+priority: 1
+---
+
+## Variables
+- email: email - Email address.
+
+## Steps
+
+1. Ask for @email. {#ask}
+   -> #done [always]
+
+2. Ask whether they need a human. {#branch}
+   if they need help -> #handoff
+   -> #done [fallback]
+
+## Ends
+- done [complete]: Done for @email.
+- handoff [handoff]: Hand off.
+`;
+
+    const result = routineDocumentToDraft(parseRoutineDocumentFixture(text).document);
+
+    expect(result.draft.transitions).toEqual([
+      expect.objectContaining({ fromStep: "ask", toRef: "done", guardKind: "default" }),
+      expect.objectContaining({ fromStep: "branch", toRef: "handoff", guardKind: "llm" }),
+      expect.objectContaining({ fromStep: "branch", toRef: "done", guardKind: "default" }),
+    ]);
   });
 
   it("keeps branch-vs-nuance structural and detects token-less branch beats", () => {
@@ -185,7 +218,7 @@ priority: 1
             branches: [{
               fromStepId: "confirm_email",
               target: { kind: "end", stableId: "done" },
-              guard: { kind: "always" },
+              guard: { kind: "default" },
               ordinal: 0,
             }],
           },
@@ -194,8 +227,8 @@ priority: 1
       }],
     };
     expect(routineDocumentToDraft(document).draft.transitions).toEqual([
-      expect.objectContaining({ fromStep: "ask_email", toRef: "confirm_email", guardKind: "always", ordinal: 0 }),
-      expect.objectContaining({ fromStep: "confirm_email", toRef: "done", guardKind: "always", ordinal: 1 }),
+      expect.objectContaining({ fromStep: "ask_email", toRef: "confirm_email", guardKind: "default", ordinal: 0 }),
+      expect.objectContaining({ fromStep: "confirm_email", toRef: "done", guardKind: "default", ordinal: 1 }),
     ]);
 
     const text = `---
@@ -226,7 +259,7 @@ priority: 1
       {
         fromStep: "ask_email",
         toRef: "confirm_email",
-        guardKind: "always",
+        guardKind: "default",
         guardText: null,
         outcomeStatus: null,
         counterLimit: null,
@@ -235,7 +268,7 @@ priority: 1
       {
         fromStep: "confirm_email",
         toRef: "done",
-        guardKind: "always",
+        guardKind: "default",
         guardText: null,
         outcomeStatus: null,
         counterLimit: null,
@@ -367,10 +400,10 @@ priority: 10
           counterLimit: null,
           ordinal: 0,
         },
-        { fromStep: "s4", toRef: "s5", guardKind: "fallback", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 1 },
+        { fromStep: "s4", toRef: "s5", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 1 },
         { fromStep: "s4_no_match", toRef: "s4", guardKind: "counter", guardText: null, outcomeStatus: null, counterLimit: 2, ordinal: 2 },
-        { fromStep: "s4_no_match", toRef: "handoff_no_account", guardKind: "fallback", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 3 },
-        { fromStep: "s5", toRef: "complete", guardKind: "always", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 4 },
+        { fromStep: "s4_no_match", toRef: "handoff_no_account", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 3 },
+        { fromStep: "s5", toRef: "complete", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 4 },
       ],
       terminals: [
         { stableStepId: "complete", kind: "complete", instruction: "Continue the order flow.", ordinal: 0 },

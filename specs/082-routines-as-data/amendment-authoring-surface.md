@@ -116,16 +116,16 @@ Today's authoring forces five enumerated choices. The document model removes the
 
 | Existing toggle (`domain.ts:16-20`) | Disposition |
 |---|---|
-| **Step `kind`** `chat\|tool\|fork\|action` | **Inferred from the token**: no action mention → `chat`; Action mention → `tool`/`action` (tool-vs-action from the action catalog entry, not a per-step choice). **`fork` deleted** — it is a phantom (UI never exposes it; `compiler.ts:100` treats it as `chat`). |
+| **Step `kind`** `chat\|tool\|action` | **Inferred from the token**: no action mention → `chat`; Action mention → `tool`/`action` (tool-vs-action from the action catalog entry, not a per-step choice). **`fork` is deleted** — it was a phantom (UI never exposed it; the compiler treated it as `chat`). |
 | **Slot `type`** `text\|number\|boolean\|email\|date` | **Kept, moved off the flow** onto a one-time Variable declaration (defaults to `text`). Adds zero weight to the step prose. |
 | **Slot `required`** | **Kept on the declaration**, not the flow. |
-| **Transition `guardKind`** `llm\|always\|fallback\|slot_filled\|outcome\|counter` | **Collapses to ~0 authoring choices** — see §8. The author writes a prose condition, leaves it absent (default edge), or attaches a counter chip; the projection assigns the kind from structural context. |
+| **Transition `guardKind`** `llm\|default\|slot_filled\|outcome\|counter` | **Collapses to ~0 authoring choices** — see §8. The author writes a prose condition, leaves it absent (default edge), or attaches a counter chip; the projection assigns the kind from structure. Runtime derives whether a `default` edge behaves like a sole unconditioned exit or a last-resort fallback from its siblings. |
 | **Terminal `kind`** `complete\|handoff` | **Inferred**: `handoff` = the Handoff chip on an end; `complete` = the natural flow end. |
 
 Two are true (small, separate) **schema cuts**, done as their own refactors with runtime/migration impact, not folded into the projection:
 
 - **Delete `fork`** from `routineStepKinds` (dead value).
-- **Merge `always` + `fallback`** into a single "default/unconditioned edge" concept; the runtime distinguishes by whether the edge has conditioned siblings.
+- **Merge `always` + `fallback`** into a single stored `default` / unconditioned-edge concept; the runtime distinguishes by whether the edge has conditioned siblings.
 
 **Bonus:** the token reframing dissolves the long-standing **action-as-terminal wart** (slice-6 note + review bug P1-2): actions become tokens *inside* steps (fire-and-forget); terminals are only `complete` (flow end) or `handoff` (chip).
 
@@ -156,10 +156,10 @@ Because steps are **declared anchors** (§2) rather than positions inferred from
 |---|---|---|
 | branch row: `if <prose>` → target | conditioned edge to target | `llm`, `condition` = the prose, **verbatim** |
 | branch leaving an `@Action` (tool) step with a status chosen from the action's declared enum | success / failure / status branches | `outcome` |
-| a target with no condition ("otherwise…") | the default edge | the merged default edge of §7 (`always` if sole exit, else `fallback`) |
+| a target with no condition ("otherwise…") | the default edge | `default` |
 | next step in the outline, no explicit branch | implicit fall-through | default edge to next node |
 | branch row targeting an earlier step | back-edge (graph is cyclic by design) | per the rules above |
-| counter chip (`max N`) on a loop/retry row | bound; exits to the fallback | `counter` |
+| counter chip (`max N`) on a loop/retry row | bound; exits to the default edge when exhausted | `counter` |
 
 The author selects **no** guard kind. A compound `A OR B OR C` is a single prose condition on one `llm` edge — mixed conditions cannot be one structured guard, so they compile to `llm` (consistent with "one edge = one guard kind").
 
@@ -167,7 +167,7 @@ The author selects **no** guard kind. A compound `A OR B OR C` is a single prose
 
 Sibling branches evaluate in **row/document order** = `ordinal` = first match wins. Structured guards short-circuit first; `llm` edges are weighed by the selector after; the condition-less default ("otherwise") is the last resort. The author controls precedence purely by ordering branch rows, default last.
 
-**Counter-exhausted fallback is the first runtime golden test.** The worked example below asserts, in passing, that the counter-exhausted path lands on the default/fallback edge. That claim becomes the first golden runtime test of the slice-3a guard semantics (`counter` exhausts → forced default edge), pinned with runtime + round-trip tests rather than asserted here.
+**Counter-exhausted fallback is the first runtime golden test.** The worked example below asserts, in passing, that the counter-exhausted path lands on the default edge. That claim becomes the first golden runtime test of the slice-3a guard semantics (`counter` exhausts → forced default edge), pinned with runtime + round-trip tests rather than asserted here.
 
 ### 8.4 Worked example
 
@@ -192,7 +192,7 @@ Compiles to:
   - → **`s5`**, default edge (the complementary "found" path).
 - **`s4_no_match`** — chat step, collects `@email`. Edges:
   - → **`s4`** (loop, "return to step 1"), `llm` condition = *"they provide another email"*, bounded by `counter` (max 2).
-  - → **Handoff** terminal, condition = *"no other email"*; the counter-exhausted path also lands here as the fallback.
+  - → **Handoff** terminal, condition = *"no other email"*; the counter-exhausted path also lands here through the default edge.
 
 The parenthetical "confirm order_id" never became an edge (no destination) — it rode into `s4`'s instruction.
 
@@ -319,7 +319,7 @@ gate: <optional gate ref>
 | `@key` inside prose | `{{slot.key}}` in the stored `instruction` / `guardText` (serializer reverses `{{slot.x}}` → `@x`); a `@key` in a step instruction is also its capture point (drives `collectsSlots`) |
 | numbered item + `{#id}` | `steps[]` `{stableStepId=id, instruction, ordinal}`; **kind inferred** — an `@action` mention in the step ⇒ `tool`/`action` (per the action catalog), else `chat` |
 | `@action_ref` in a step | `step.toolRef` / `step.actionType` |
-| `→ #id` (no marker) | transition `{toRef=id}`, guard = default (`always` if sole exit, else `fallback` — the §7 merge) |
+| `→ #id` (no marker) | transition `{toRef=id}`, `guardKind: "default"` |
 | `if <prose> → #id` | guard `llm`, `guardText = <prose>` (verbatim) |
 | `→ #id [status]` | guard `outcome`, `outcomeStatus = status` |
 | `→ #id [needs @a, @b]` | guard `slot_filled` over `{a, b}` |

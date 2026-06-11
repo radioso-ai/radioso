@@ -47,8 +47,10 @@ const validRoutineDraft = (overrides: Partial<RoutineDefinitionDraftInput> = {})
   transitions: [{
     fromStep: "step_collect_topic",
     toRef: "terminal_complete",
-    guardKind: "always",
+    guardKind: "default",
     guardText: null,
+    outcomeStatus: null,
+    counterLimit: null,
     ordinal: 0,
   }],
   terminals: [{
@@ -82,8 +84,10 @@ const invalidRoutineDraft = (): RoutineDefinitionDraftInput =>
     transitions: [{
       fromStep: "step_collect_topic",
       toRef: "missing_step",
-      guardKind: "always",
+      guardKind: "default",
       guardText: null,
+      outcomeStatus: null,
+      counterLimit: null,
       ordinal: 0,
     }],
   });

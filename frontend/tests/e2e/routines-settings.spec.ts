@@ -40,7 +40,7 @@ test("agent routines settings create, validate, publish, and persist", async ({ 
   await page.getByLabel("Transition 1 target").click();
   await page.getByRole("option", { name: "complete" }).click();
   await page.getByLabel("Transition 1 guard").click();
-  await page.getByRole("option", { name: "always" }).click();
+  await page.getByRole("option", { name: "default" }).click();
   await page.getByLabel("Terminal 1 id").fill("complete");
   await page.getByLabel("Terminal 1 instruction").fill("Confirm the request was captured.");
 
@@ -80,7 +80,7 @@ test("agent routines settings create, validate, publish, and persist", async ({ 
       transitions: [{
         fromStep: "ask_email",
         toRef: "complete",
-        guardKind: "always",
+        guardKind: "default",
         guardText: null,
         outcomeStatus: null,
         counterLimit: null,

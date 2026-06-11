@@ -58,8 +58,7 @@ export interface RoutineDocumentVariable {
 }
 
 export type RoutineDocumentGuard =
-  | { kind: "always" }
-  | { kind: "fallback" }
+  | { kind: "default" }
   | { kind: "llm"; text: string }
   | { kind: "slot_filled"; slots: string[] }
   | { kind: "outcome"; status: string }

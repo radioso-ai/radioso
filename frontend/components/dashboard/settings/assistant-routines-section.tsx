@@ -43,7 +43,7 @@ import {
 } from '@/lib/routine-form'
 
 const slotTypes: RoutineSlotType[] = ['text', 'number', 'boolean', 'email', 'date']
-const guardKinds: RoutineGuardKind[] = ['always', 'llm', 'slot_filled', 'outcome', 'counter', 'fallback']
+const guardKinds: RoutineGuardKind[] = ['llm', 'slot_filled', 'outcome', 'counter', 'default']
 const stepKinds: Array<'chat' | 'action'> = ['chat', 'action']
 const terminalKinds: RoutineTerminalKind[] = ['complete', 'handoff']
 

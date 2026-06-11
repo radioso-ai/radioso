@@ -27,7 +27,7 @@ export type RoutineTransitionForm = {
 
 export type RoutineStepForm = {
   stableStepId: string
-  kind: Exclude<RoutineStepKind, 'fork'>
+  kind: RoutineStepKind
   instruction: string
   toolRef: string
   actionType: string
@@ -65,6 +65,17 @@ const nullableText = (value: string): string | null => {
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : null
 }
+
+type LegacyRoutineStepKind = RoutineStepKind | 'fork'
+type LegacyRoutineGuardKind = RoutineGuardKind | 'always' | 'fallback'
+
+const normalizeStepKind = (kind: LegacyRoutineStepKind): RoutineStepKind => (
+  kind === 'fork' ? 'chat' : kind
+)
+
+const normalizeGuardKind = (kind: LegacyRoutineGuardKind): RoutineGuardKind => (
+  kind === 'always' || kind === 'fallback' ? 'default' : kind
+)
 
 export const createEmptyRoutineForm = (): RoutineFormState => ({
   name: '',
@@ -114,7 +125,7 @@ export const createTerminalForm = (index: number): RoutineTerminalForm => ({
 export const createTransitionForm = (fromStep: string, toRef: string): RoutineTransitionForm => ({
   fromStep,
   toRef,
-  guardKind: 'always',
+  guardKind: 'default',
   guardText: '',
   outcomeStatus: '',
   counterLimit: '',
@@ -127,7 +138,7 @@ export const routineToForm = (routine: RoutineDefinition): RoutineFormState => {
     forms.push({
       fromStep: transition.fromStep,
       toRef: transition.toRef,
-      guardKind: transition.guardKind,
+      guardKind: normalizeGuardKind(transition.guardKind as LegacyRoutineGuardKind),
       guardText: transition.guardText ?? '',
       outcomeStatus: transition.outcomeStatus ?? '',
       counterLimit: transition.counterLimit ? String(transition.counterLimit) : '',
@@ -150,7 +161,7 @@ export const routineToForm = (routine: RoutineDefinition): RoutineFormState => {
     })),
     steps: [...routine.steps].sort((left, right) => left.ordinal - right.ordinal).map((step) => ({
       stableStepId: step.stableStepId,
-      kind: step.kind === 'fork' ? 'chat' : step.kind,
+      kind: normalizeStepKind(step.kind as LegacyRoutineStepKind),
       instruction: step.instruction,
       toolRef: step.toolRef ?? '',
       actionType: step.actionType ?? '',

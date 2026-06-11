@@ -53,9 +53,7 @@ export const routineDraftToDocument = (draft: RoutineDefinitionDraftInput): Rout
             ? { kind: "outcome", status: transition.outcomeStatus ?? transition.guardText ?? "" }
             : transition.guardKind === "counter"
               ? { kind: "counter", limit: transition.counterLimit ?? Number.parseInt(transition.guardText ?? "", 10) }
-              : transition.guardKind === "fallback"
-                ? { kind: "fallback" }
-                : { kind: "always" };
+              : { kind: "default" };
     const branch: RoutineDocumentBranch = {
       fromStepId: transition.fromStep,
       target: {
@@ -152,7 +150,7 @@ export const routineDocumentToDraft = (document: RoutineDocument): RoutineDocume
       transitionDrafts.push({
         fromStep: step.stableStepId,
         toRef: nextStep.stableStepId,
-        guardKind: "always",
+        guardKind: "default",
         guardText: null,
         outcomeStatus: null,
         counterLimit: null,

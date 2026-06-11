@@ -42,7 +42,7 @@ const routine = {
   transitions: [{
     fromStep: 'ask_email',
     toRef: 'complete',
-    guardKind: 'always',
+    guardKind: 'default',
     guardText: null,
     outcomeStatus: null,
     counterLimit: null,
@@ -63,7 +63,7 @@ describe('routine form transforms', () => {
     expect(form.steps[0]?.transitions).toEqual([{
       fromStep: 'ask_email',
       toRef: 'complete',
-      guardKind: 'always',
+      guardKind: 'default',
       guardText: '',
       outcomeStatus: '',
       counterLimit: '',
@@ -106,7 +106,7 @@ describe('routine form transforms', () => {
         key: 'customer_email',
         description: 'Email address',
       }],
-      transitions: [{ fromStep: 'step_1', toRef: 'complete', guardKind: 'always' }],
+      transitions: [{ fromStep: 'step_1', toRef: 'complete', guardKind: 'default' }],
     })
   })
 
@@ -129,7 +129,7 @@ describe('routine form transforms', () => {
         {
           fromStep: 'ask_email',
           toRef: 'send',
-          guardKind: 'always',
+          guardKind: 'default',
           guardText: null,
           outcomeStatus: null,
           counterLimit: null,
@@ -138,7 +138,7 @@ describe('routine form transforms', () => {
         {
           fromStep: 'send',
           toRef: 'complete',
-          guardKind: 'always',
+          guardKind: 'default',
           guardText: null,
           outcomeStatus: null,
           counterLimit: null,
@@ -156,7 +156,7 @@ describe('routine form transforms', () => {
       transitions: [{
         fromStep: 'send',
         toRef: 'complete',
-        guardKind: 'always',
+        guardKind: 'default',
       }],
     })
     expect(formToRoutineDraft(form).steps[1]).toMatchObject({
@@ -165,6 +165,42 @@ describe('routine form transforms', () => {
       actionType: 'contact.send',
     })
     expect(formToRoutineDraft(form).transitions).toEqual(actionRoutine.transitions)
+  })
+
+  it('normalizes legacy fork steps and unconditioned guards from older payloads', () => {
+    const legacyRoutine = {
+      ...routine,
+      steps: [{
+        ...routine.steps[0]!,
+        kind: 'fork',
+      }],
+      transitions: [
+        {
+          ...routine.transitions[0]!,
+          guardKind: 'always',
+        },
+        {
+          ...routine.transitions[0]!,
+          guardKind: 'fallback',
+          ordinal: 1,
+        },
+      ],
+    } as unknown as RoutineDefinition
+
+    const form = routineToForm(legacyRoutine)
+
+    expect(form.steps[0]).toMatchObject({
+      kind: 'chat',
+      transitions: [
+        expect.objectContaining({ guardKind: 'default' }),
+        expect.objectContaining({ guardKind: 'default' }),
+      ],
+    })
+    expect(formToRoutineDraft(form).steps[0]?.kind).toBe('chat')
+    expect(formToRoutineDraft(form).transitions.map((transition) => transition.guardKind)).toEqual([
+      'default',
+      'default',
+    ])
   })
 })
 

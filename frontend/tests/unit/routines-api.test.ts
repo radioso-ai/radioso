@@ -46,7 +46,7 @@ const routineDraft = {
   transitions: [{
     fromStep: 'ask_email',
     toRef: 'complete',
-    guardKind: 'always' as const,
+    guardKind: 'default' as const,
     guardText: null,
     outcomeStatus: null,
     counterLimit: null,

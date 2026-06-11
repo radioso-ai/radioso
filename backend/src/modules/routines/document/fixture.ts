@@ -217,6 +217,9 @@ const parseGuardTail = (
   }
   const marker = markerMatch?.[1]?.trim();
   if (marker) {
+    if (marker === "always" || marker === "fallback" || marker === "default") {
+      return { kind: "default" };
+    }
     const needs = needsPattern.exec(marker);
     if (needs?.[1]) {
       return {
@@ -226,7 +229,7 @@ const parseGuardTail = (
     }
     return { kind: "outcome", status: marker };
   }
-  return { kind: "always" };
+  return { kind: "default" };
 };
 
 export const parseRoutineDocumentFixture = (
@@ -394,13 +397,6 @@ export const parseRoutineDocumentFixture = (
     for (const branch of step.branches) {
       if (terminalIds.has(branch.target.stableId)) {
         branch.target.kind = "end";
-      }
-    }
-    if (step.branches.length > 1) {
-      for (const branch of step.branches) {
-        if (branch.guard.kind === "always") {
-          branch.guard = { kind: "fallback" };
-        }
       }
     }
   }

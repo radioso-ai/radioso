@@ -2520,7 +2520,6 @@ components:
                 enum: &a15
                   - chat
                   - tool
-                  - fork
                   - action
               instruction:
                 type: string
@@ -2571,8 +2570,7 @@ components:
                 type: string
                 enum: &a17
                   - llm
-                  - always
-                  - fallback
+                  - default
                   - slot_filled
                   - outcome
                   - counter

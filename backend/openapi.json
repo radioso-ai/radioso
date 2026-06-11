@@ -3730,7 +3730,6 @@
                   "enum": [
                     "chat",
                     "tool",
-                    "fork",
                     "action"
                   ]
                 },
@@ -3796,8 +3795,7 @@
                   "type": "string",
                   "enum": [
                     "llm",
-                    "always",
-                    "fallback",
+                    "default",
                     "slot_filled",
                     "outcome",
                     "counter"
@@ -3994,7 +3992,6 @@
                   "enum": [
                     "chat",
                     "tool",
-                    "fork",
                     "action"
                   ]
                 },
@@ -4060,8 +4057,7 @@
                   "type": "string",
                   "enum": [
                     "llm",
-                    "always",
-                    "fallback",
+                    "default",
                     "slot_filled",
                     "outcome",
                     "counter"
@@ -4307,7 +4303,6 @@
                   "enum": [
                     "chat",
                     "tool",
-                    "fork",
                     "action"
                   ]
                 },
@@ -4373,8 +4368,7 @@
                   "type": "string",
                   "enum": [
                     "llm",
-                    "always",
-                    "fallback",
+                    "default",
                     "slot_filled",
                     "outcome",
                     "counter"

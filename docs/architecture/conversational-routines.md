@@ -45,13 +45,15 @@ A routine definition has four parts.
 A transition's guard decides, on a turn, whether its edge is taken. Most guards
 are resolved without a model call, so the flow is predictable:
 
-- `always` — take this edge unconditionally.
+- `default` — the unconditioned edge. If it is the only exit, the engine takes
+  it immediately. If there are conditioned sibling edges, it is the last resort
+  after those siblings do not match.
 - `slot_filled` — take it once the named slots are present.
 - `outcome` — take it based on the result of the preceding action.
-- `counter` — take it once a step has been attempted a set number of times. This
-  is how "try twice, then hand off" works, with a real count rather than the model
+- `counter` — allow a bounded retry while a step is still under its attempt
+  limit. Once the counter is exhausted, the default edge is forced. This is how
+  "try twice, then hand off" works, with a real count rather than the model
   guessing.
-- `fallback` — take it only when no other edge matched.
 - `llm` — the model judges a described condition by meaning. This is the only
   guard that consults the model, and it is the only place a transition can vary.
 

@@ -2457,7 +2457,7 @@ export interface components {
             steps: {
                 stableStepId: string;
                 /** @enum {string} */
-                kind: "chat" | "tool" | "fork" | "action";
+                kind: "chat" | "tool" | "action";
                 instruction: string;
                 toolRef?: string | null;
                 actionType?: string | null;
@@ -2472,7 +2472,7 @@ export interface components {
                 fromStep: string;
                 toRef: string;
                 /** @enum {string} */
-                guardKind: "llm" | "always" | "fallback" | "slot_filled" | "outcome" | "counter";
+                guardKind: "llm" | "default" | "slot_filled" | "outcome" | "counter";
                 guardText?: string | null;
                 outcomeStatus?: string | null;
                 counterLimit?: number | null;
@@ -2506,7 +2506,7 @@ export interface components {
             steps: {
                 stableStepId: string;
                 /** @enum {string} */
-                kind: "chat" | "tool" | "fork" | "action";
+                kind: "chat" | "tool" | "action";
                 instruction: string;
                 toolRef?: string | null;
                 actionType?: string | null;
@@ -2521,7 +2521,7 @@ export interface components {
                 fromStep: string;
                 toRef: string;
                 /** @enum {string} */
-                guardKind: "llm" | "always" | "fallback" | "slot_filled" | "outcome" | "counter";
+                guardKind: "llm" | "default" | "slot_filled" | "outcome" | "counter";
                 guardText?: string | null;
                 outcomeStatus?: string | null;
                 counterLimit?: number | null;
@@ -2564,7 +2564,7 @@ export interface components {
             steps: {
                 stableStepId: string;
                 /** @enum {string} */
-                kind: "chat" | "tool" | "fork" | "action";
+                kind: "chat" | "tool" | "action";
                 instruction: string;
                 toolRef?: string | null;
                 actionType?: string | null;
@@ -2579,7 +2579,7 @@ export interface components {
                 fromStep: string;
                 toRef: string;
                 /** @enum {string} */
-                guardKind: "llm" | "always" | "fallback" | "slot_filled" | "outcome" | "counter";
+                guardKind: "llm" | "default" | "slot_filled" | "outcome" | "counter";
                 guardText?: string | null;
                 outcomeStatus?: string | null;
                 counterLimit?: number | null;

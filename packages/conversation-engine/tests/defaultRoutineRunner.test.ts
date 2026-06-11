@@ -410,7 +410,7 @@ describe("DefaultRoutineRunner skill (tool) steps", () => {
     expect(result.nextState).toBeNull();
   });
 
-  it("routes to a handoff terminal through a counter guard on the second failed attempt", async () => {
+  it("routes to a default handoff when the counter retry is exhausted", async () => {
     const retryRoutine: Routine = {
       id: "order",
       rootStepId: "ask",
@@ -423,8 +423,8 @@ describe("DefaultRoutineRunner skill (tool) steps", () => {
       transitions: [
         { from: "ask", to: "lookup", condition: "ready" },
         { from: "alternate_email", to: "lookup", condition: "alternate email provided" },
-        { from: "lookup", to: "handoff", condition: "attempt limit reached", guard: { kind: "counter", limit: 2 } },
-        { from: "lookup", to: "alternate_email", condition: "not found", guard: { kind: "outcome", status: "not_found" } },
+        { from: "lookup", to: "alternate_email", condition: "retry available", guard: { kind: "counter", limit: 2 } },
+        { from: "lookup", to: "handoff", condition: "default", guard: { kind: "default" } },
       ],
     };
     const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({ nextStepId: "lookup" }));
@@ -455,6 +455,44 @@ describe("DefaultRoutineRunner skill (tool) steps", () => {
     expect(second.actions).toBeUndefined();
   });
 
+  it("forces the default edge when a counter guard is exhausted", async () => {
+    const counterDefaultRoutine: Routine = {
+      id: "counter_default",
+      rootStepId: "collect",
+      steps: [
+        { id: "collect", kind: "chat", action: "Ask for a new email." },
+        { id: "lookup", kind: "skill", skillName: "order_lookup" },
+        { id: "handoff", kind: "terminal", action: "Hand off.", metadata: { terminalKind: "handoff" } },
+      ],
+      transitions: [
+        { from: "collect", to: "lookup", condition: "default", guard: { kind: "default" } },
+        { from: "lookup", to: "collect", condition: "retry limit available", guard: { kind: "counter", limit: 2 } },
+        { from: "lookup", to: "handoff", condition: "default", guard: { kind: "default" } },
+      ],
+    };
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({ nextStepId: "lookup" }));
+    const dispatch = vi.fn(async () => ({ status: "not_found" as const }));
+    const runner = new DefaultRoutineRunner([counterDefaultRoutine], { select }, { render: vi.fn(echoRenderer.render) }, { dispatch });
+
+    const result = await runner.resume({
+      turn,
+      state: {
+        sessionId: "session_1",
+        routineId: "counter_default",
+        path: ["collect", "lookup", "collect"],
+        variables: {},
+        status: "active",
+        attempts: { collect: 2, lookup: 2 },
+      },
+    });
+
+    expect(select).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(result.response.answer).toContain("handoff");
+    expect(result.nextState).toBeNull();
+    expect(result.terminal).toEqual({ kind: "handoff", stepId: "handoff" });
+  });
+
   it("uses a slot_filled guard purely before falling back to the selector", async () => {
     const slotRoutine: Routine = {
       id: "slot_guard",
@@ -480,7 +518,7 @@ describe("DefaultRoutineRunner skill (tool) steps", () => {
     expect(result.nextState).toBeNull();
   });
 
-  it("advances always-guarded transitions deterministically without consulting the selector", async () => {
+  it("advances sole default transitions deterministically without consulting the selector", async () => {
     const alwaysRoutine: Routine = {
       id: "always_guard",
       rootStepId: "ask_email",
@@ -489,7 +527,7 @@ describe("DefaultRoutineRunner skill (tool) steps", () => {
         { id: "done", kind: "terminal", action: "Confirm." },
       ],
       transitions: [
-        { from: "ask_email", to: "done", condition: "always", guard: { kind: "always" } },
+        { from: "ask_email", to: "done", condition: "default", guard: { kind: "default" } },
       ],
     };
     const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({ nextStepId: "ask_email" }));

@@ -7,6 +7,8 @@ import { RetrievalContextStageService } from "../../src/modules/retrieval/servic
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
 import { RetrievalDiagnosticsStageService } from "../../src/modules/retrieval/services/retrievalDiagnosticsStage.js";
 import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
+import { PromptAssemblyStageService } from "../../src/modules/retrieval/services/promptAssemblyStage.js";
+import type { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilder.js";
 import {
   buildCandidatePreparationTraceAttributes,
   buildCandidateRetrievalTraceAttributes,
@@ -16,6 +18,75 @@ import {
 } from "../../src/modules/retrieval/services/retrievalPipelineStages.js";
 
 describe("retrieval pipeline stages", () => {
+  it("assembles answer prompts with the detector response language from the request", () => {
+    const calls: Array<Parameters<PromptBuilder["build"]>[0]> = [];
+    const promptBuilder = {
+      build(input: Parameters<PromptBuilder["build"]>[0]) {
+        calls.push(input);
+        return {
+          systemPrompt: "system",
+          prompt: "prompt",
+          citations: [],
+        };
+      },
+    } as unknown as PromptBuilder;
+    const stage = new PromptAssemblyStageService(promptBuilder);
+
+    const result = stage.execute({
+      request: {
+        workspaceId: "workspace-1",
+        query: "What is meditation?",
+        history: [],
+        responseIdentity: null,
+        responseLanguage: "English",
+        responseBehavior: { citationDisplayEnabled: true },
+      },
+      settings: {
+        workspaceId: "workspace-1",
+        queryRewriteEnabled: true,
+        semanticRewriteInstructions: "",
+        lexicalRewriteInstructions: "",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        customInstruction: "",
+        metadataRules: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      rewrittenQuery: {
+        originalQuery: "What is meditation?",
+        rewrittenQuery: "What is meditation?",
+        effectiveQuery: "What is meditation?",
+        semanticQuery: "What is meditation?",
+        lexicalQuery: "What is meditation?",
+        responseLanguagePolicy: "match_user_question",
+        rewriteApplied: false,
+        retrievalEligible: false,
+        status: "skipped",
+        confidence: 0,
+        structuredResult: {
+          rewrittenQuery: "What is meditation?",
+          turnKind: "fresh_subject",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.5,
+          responseLanguage: "Italian",
+        },
+      },
+      activeQuery: "What is meditation?",
+      promptHistory: [],
+      contexts: [],
+    } as never);
+
+    expect(calls[0]?.settings.responseLanguage).toBe("English");
+    expect(calls[0]?.settings.responseLanguagePolicy).toBe("match_user_question");
+    expect(result.responseSettings.responseLanguagePolicy).toBe("match_user_question");
+  });
+
   it("builds privacy-safe bounded retrieval span attributes", () => {
     const request = {
       workspaceId: "workspace-1",

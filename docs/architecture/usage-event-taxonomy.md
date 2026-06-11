@@ -36,14 +36,17 @@ values. Replays of the same provider attempt must reuse the same key.
 |---------|-----------|--------|---------|
 | `assistant` | `answer` | Assistant chat answer generation, including grounded and no-context fallback answers | account, workspace, conversation, user message |
 | `assistant` | `turn_router` | Assistant turn routing before retrieval or direct answer selection | account when available, workspace, conversation, user message |
+| `assistant` | `response_language_detection` | Assistant per-turn response language detection | account when available, workspace, conversation, user message |
 | `assistant` | `bootstrap_greeting` | Assistant bootstrap greeting generation | account when available, workspace, request |
 | `retrieval` | `query_interpretation` | Retrieval query rewrite and query interpretation | account when available, workspace, request |
+| `retrieval` | `response_language_detection` | Retrieval answer response language detection | account when available, workspace, request |
 | `retrieval` | `trigger_analysis` | Retrieval metadata trigger analysis | account when available, workspace, request |
 | `retrieval` | `query_embedding` | Retrieval semantic query embeddings, including agentic semantic search | account when available, workspace, request |
 | `retrieval` | `agent_step` | Agentic retrieval model planning step | account when available, workspace, request |
 | `retrieval` | `rerank` | Retrieval model reranking, including agentic rerank tool calls | account when available, workspace, request |
 | `retrieval` | `grounded_answer` | Retrieval API grounded answer generation | account when available, workspace, request |
 | `mcp_capability` | `query_interpretation` | MCP-backed retrieval answer query interpretation | account when available, workspace, request |
+| `mcp_capability` | `response_language_detection` | MCP-backed retrieval answer response language detection | account when available, workspace, request |
 | `mcp_capability` | `trigger_analysis` | MCP-backed retrieval metadata trigger analysis | account when available, workspace, request |
 | `mcp_capability` | `query_embedding` | MCP-backed retrieval answer semantic query embeddings | account when available, workspace, request |
 | `mcp_capability` | `rerank` | MCP-backed retrieval answer model reranking | account when available, workspace, request |
@@ -53,6 +56,7 @@ values. Replays of the same provider attempt must reuse the same key.
 | `documents` | `rerank` | Document search model reranking | workspace, search request |
 | `documents` | `semantic_chunking_embedding` | Document processing semantic chunking embeddings | workspace, document job |
 | `eval` | `query_interpretation` | Eval replay query rewrite and query interpretation | workspace, eval run |
+| `eval` | `response_language_detection` | Eval replay response language detection | workspace, eval run |
 | `eval` | `trigger_analysis` | Eval replay metadata trigger analysis | workspace, eval run |
 | `eval` | `query_embedding` | Eval replay semantic query embeddings | workspace, eval run |
 | `eval` | `agent_step` | Eval replay agentic retrieval model planning step | workspace, eval run |

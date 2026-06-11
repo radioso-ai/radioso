@@ -6,7 +6,6 @@ import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/worksp
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import {
   normalizeLlmClassifierLabel,
-  normalizeLlmClassifierLanguageLabel,
 } from "../../../shared/domain/llmClassifierFields.js";
 import type { RetrievalMetadataRule } from "../../settings/contracts/retrieval.js";
 import type {
@@ -14,7 +13,6 @@ import type {
   RetrievalQueryShape,
   RetrievalSubquery,
   RewrittenRetrievalQuery,
-  ResponseLanguagePolicy,
   TriggerAnalysisResult,
   RewriteTurnKind,
   StructuredRewriteResult,
@@ -322,14 +320,13 @@ export class QueryRewriteService {
     if (result && "turnKind" in result) {
       const semanticQuery = this.normalizeRewrite(result.semanticQuery ?? result.rewrittenQuery);
       const lexicalQuery = this.normalizeLexicalRewrite(result.lexicalQuery ?? result.rewrittenQuery);
-      const responseLanguagePolicy = this.normalizeResponseLanguagePolicy(result.responseLanguagePolicy);
+      const responseLanguagePolicy = DEFAULT_RESPONSE_LANGUAGE_POLICY;
 
       return {
         rewrittenQuery: this.normalizeRewrite(result.rewrittenQuery),
         semanticQuery,
         lexicalQuery,
         responseLanguagePolicy,
-        responseLanguage: this.normalizeResponseLanguage(result.responseLanguage),
         queryShape: this.normalizeQueryShape(result.queryShape),
         retrievalSubqueries: this.normalizeRetrievalSubqueries(result.retrievalSubqueries),
         turnKind: this.normalizeTurnKind(result.turnKind),
@@ -345,7 +342,6 @@ export class QueryRewriteService {
       semanticQuery: this.normalizeRewrite(result?.semanticQuery ?? result?.rewrittenQuery ?? originalQuery),
       lexicalQuery: this.normalizeLexicalRewrite(result?.lexicalQuery ?? result?.rewrittenQuery ?? originalQuery),
       responseLanguagePolicy: DEFAULT_RESPONSE_LANGUAGE_POLICY,
-      responseLanguage: undefined,
       queryShape: undefined,
       retrievalSubqueries: undefined,
       turnKind: REWRITE_TURN_KIND.REFERENTIAL_FOLLOWUP,
@@ -405,7 +401,7 @@ export class QueryRewriteService {
           semanticQuery,
           lexicalQuery,
           reason: this.normalizeOptionalRewrite(subquery?.reason),
-          responseLanguagePolicy: this.normalizeResponseLanguagePolicy(subquery?.responseLanguagePolicy),
+          responseLanguagePolicy: DEFAULT_RESPONSE_LANGUAGE_POLICY,
         };
       })
       .filter((subquery): subquery is NonNullable<typeof subquery> => subquery !== null)
@@ -452,14 +448,6 @@ export class QueryRewriteService {
       .replace(/^query:\s*/i, "")
       .replace(/\s+/g, " ")
       .trim();
-  }
-
-  private normalizeResponseLanguagePolicy(value?: string): ResponseLanguagePolicy {
-    return value === "match_user_question" ? value : DEFAULT_RESPONSE_LANGUAGE_POLICY;
-  }
-
-  private normalizeResponseLanguage(value?: string): string | undefined {
-    return normalizeLlmClassifierLanguageLabel(value);
   }
 
   private normalizeClassifierLabel(value?: string): string | undefined {

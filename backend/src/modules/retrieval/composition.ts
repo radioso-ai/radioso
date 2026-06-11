@@ -4,6 +4,7 @@ import type { LlmProviderRegistry } from "../../shared/infra/llm/providerRegistr
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
 import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
+import { LlmResponseLanguageDetector } from "../../shared/services/responseLanguageDetector.js";
 import type { RetrievalDefaultsProvider } from "./domain/retrievalDefaultsProvider.js";
 import { CandidatePreparationService } from "./services/candidatePreparationService.js";
 import { ConversationContextService } from "./services/conversationContextService.js";
@@ -132,6 +133,7 @@ export const createDefaultRetrievalServices = (input: {
     undefined,
     input.ingestionSettingsService,
     input.skillSettingsResolver,
+    new LlmResponseLanguageDetector(input.llmRegistry.createRewriteInferencePipeline(input.usageEventRecorder)),
   );
   const retrievalSearchService = new RetrievalSearchService(retrievalPipeline);
 

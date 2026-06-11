@@ -149,6 +149,7 @@ export interface RetrievalPipelineRequest {
   responseBehaviorEnabled?: boolean;
   responseBehavior?: RetrievalResponseBehavior;
   responseLanguagePolicy?: ResponseLanguagePolicy;
+  responseLanguage?: string;
   metadataFilter?: Record<string, unknown>;
   sourceScope?: RetrievalSourceScope;
   usageContext?: Omit<ModelCallUsageContext, "operation">;
@@ -174,6 +175,7 @@ export interface RetrievalPipelineResult {
     suggestedQuestionsCount: number;
     customInstruction?: string;
     responseLanguagePolicy?: ResponseLanguagePolicy;
+    responseLanguage?: string;
   };
   diagnostics: RetrievalExecutionDiagnostics;
   trace: ActivityTrace;

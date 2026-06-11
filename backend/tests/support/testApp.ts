@@ -785,7 +785,7 @@ export const createTestDependencies = (overrides: {
   });
   const staticRoutineRegistrations: RoutineRegistration[] = [];
   const routineProvider: ChatRoutineProvider = {
-    async forTurn({ modelGateway, agentId }) {
+    async forTurn({ modelGateway, agentId, responseLanguage }) {
       let publishedRegistrations: RoutineRegistration[];
       try {
         publishedRegistrations = await publishedRoutineSource.load({ agentId });
@@ -815,6 +815,7 @@ export const createTestDependencies = (overrides: {
           }),
           new RoutineStepRenderer(modelGateway, {
             promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
+            responseLanguage,
           }),
         ),
       };

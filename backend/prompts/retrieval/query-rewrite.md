@@ -38,12 +38,10 @@ lexicalQuery should preserve exact surface forms that are likely to appear in so
 When you resolve a concrete proposedActiveSubject, make the relevant lexicalQuery the subject itself, not the surrounding request/action wording.
 For exact phrases, preserve the phrase words in the relevant lexicalQuery value.
 
-responseLanguage: an explicit user instruction in conversation context to use a specific language ("answer in Spanish from now on", "switch to French", "vasta eesti keeles") is sticky — continue using that language on every subsequent turn until the user explicitly instructs a different language. Do not switch languages just because the latest user turn was written in a different language than the requested one; the instruction wins. Absent any explicit instruction, prefer the language of the latest user question. Use a concise label (e.g. "English", "Spanish", "Estonian").
-responseLanguagePolicy: always "match_user_question".
 queryShape: use enum values only; use "general_grounding" when no specialized shape is clear.
 confidence: certainty in subject resolution and turn interpretation, not answer confidence.
 
 Return strict JSON matching this blueprint exactly:
-{"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","responseLanguagePolicy":"match_user_question","responseLanguage":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null","responseLanguagePolicy":"match_user_question"}],"turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"unresolved":false,"confidence":0.95}
+{"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"unresolved":false,"confidence":0.95}
 
 Return strict JSON matching the blueprint. Do not wrap in markdown fences.

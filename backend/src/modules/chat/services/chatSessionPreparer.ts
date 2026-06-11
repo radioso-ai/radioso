@@ -42,6 +42,8 @@ export interface PreparedSession {
   userMessage: MessageRecord;
   pageContext?: AssistantPageContext | null;
   priorRewriteContinuityState?: RewriteContinuityState;
+  /** Shared per-turn response language label detected from the user message and history. */
+  responseLanguage?: string;
   /** Behavioral steering matched for this turn; consumed by the answer composer and the trace. */
   directiveSteering?: DirectiveSteeringResult;
   /**

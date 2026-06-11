@@ -1,5 +1,5 @@
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
-import { traceAsyncIterable, traceOperation } from "../../../shared/observability/tracing/operations.js";
+import { setTraceAttributes, traceAsyncIterable, traceOperation } from "../../../shared/observability/tracing/operations.js";
 import type {
   ConversationEngine,
   ConversationModelGateway,
@@ -70,6 +70,7 @@ import {
   type CapturedRoutineTransition,
 } from "./routines/deferredRoutineStore.js";
 import type { TurnRouter, TurnRouting } from "./turnRouter.js";
+import type { ResponseLanguageDetector } from "../../../shared/services/responseLanguageDetector.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
@@ -146,6 +147,7 @@ export interface ChatRoutineProvider {
   forTurn(input: {
     modelGateway: ConversationModelGateway;
     agentId: string;
+    responseLanguage?: string | Promise<string | undefined>;
   }): Promise<{
     activator: ConversationRoutineActivator;
     runner: ConversationRoutineRunner;
@@ -183,6 +185,8 @@ export interface ChatServiceOptions {
   routineStore?: ConversationRoutineStore;
   /** Optional: registered routines + activation. Empty/absent leaves turns unchanged. */
   routineProvider?: ChatRoutineProvider;
+  /** Optional shared per-turn language detector for routine, direct, and retrieval replies. */
+  responseLanguageDetector?: ResponseLanguageDetector;
 }
 
 export class ChatService {
@@ -201,6 +205,7 @@ export class ChatService {
   private readonly routineStore?: ConversationRoutineStore;
   private readonly routineProvider?: ChatRoutineProvider;
   private readonly turnRouter: TurnRouter;
+  private readonly responseLanguageDetector?: ResponseLanguageDetector;
 
   constructor(options: ChatServiceOptions) {
     const {
@@ -225,9 +230,11 @@ export class ChatService {
       logger,
       routineStore,
       routineProvider,
+      responseLanguageDetector,
     } = options;
     this.routineStore = routineStore;
     this.routineProvider = routineProvider;
+    this.responseLanguageDetector = responseLanguageDetector;
     this.chatGateway = chatGateway;
     this.auditService = auditService;
     this.usageLimitPolicy = usageLimitPolicy;
@@ -273,6 +280,7 @@ export class ChatService {
   private async attemptRoutineTurn(
     session: PreparedSession,
     accountId: string | undefined,
+    responseLanguage: Promise<string | undefined>,
   ): Promise<{
     presentation: ChatPresentedAnswer;
     engineTrace?: ConversationTrace;
@@ -293,6 +301,7 @@ export class ChatService {
     const routineTurnPorts = await this.routineProvider.forTurn({
       modelGateway,
       agentId: session.agent.id,
+      responseLanguage,
     });
     if (!routineTurnPorts) {
       return null;
@@ -317,6 +326,43 @@ export class ChatService {
       actions: outcome.result.actions,
       routineStateTransition: deferredStore.getTransition(),
       commitRoutineState: () => deferredStore.commit(),
+    };
+  }
+
+  private detectResponseLanguage(
+    input: {
+      workspaceId: string;
+      accountId?: string;
+      query: string;
+    },
+    session: PreparedSession,
+  ): Promise<string | undefined> {
+    if (!this.responseLanguageDetector) {
+      return Promise.resolve(undefined);
+    }
+    return this.responseLanguageDetector.detect({
+      query: input.query,
+      history: session.history,
+      workspaceContext: { workspaceId: input.workspaceId },
+      usageContext: {
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        conversationId: session.conversation.id,
+        messageId: session.userMessage.id,
+        surface: "assistant",
+        operation: "response_language_detection",
+        attemptKey: "response_language",
+      },
+    }).then((result) => {
+      setTraceAttributes({ "chat.response.language": result.responseLanguage });
+      return result.responseLanguage;
+    }).catch(() => undefined);
+  }
+
+  private withResponseLanguage(session: PreparedSession, responseLanguage: string | undefined): PreparedSession {
+    return {
+      ...session,
+      responseLanguage,
     };
   }
 
@@ -418,11 +464,13 @@ export class ChatService {
 
     try {
       session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
+      const responseLanguagePromise = this.detectResponseLanguage(input, session);
       // A routine is a multi-turn skill: attempt it before grounding. If it claims the
       // turn, there is no retrieval — the routine renders its own reply.
       const routineStartedAt = Date.now();
-      const routineTurn = await this.attemptRoutineTurn(session, input.accountId);
+      const routineTurn = await this.attemptRoutineTurn(session, input.accountId, responseLanguagePromise);
       if (routineTurn) {
+        session = this.withResponseLanguage(session, await responseLanguagePromise);
         const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
           workspaceId: input.workspaceId,
           accountId: input.accountId,
@@ -444,6 +492,7 @@ export class ChatService {
       session = routing.route === CHAT_TURN_ROUTE.RETRIEVAL
         ? await this.chatSessionPreparer.prepareRetrieval(input, session, routing.framing)
         : await this.chatSessionPreparer.prepareDirect(input, session, routing.framing);
+      session = this.withResponseLanguage(session, await responseLanguagePromise);
       const answerStartedAt = Date.now();
       const { presentation, engineTrace, actions } = await this.renderTurn(session, input);
       const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
@@ -528,6 +577,7 @@ export class ChatService {
 
     try {
       session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
+      const responseLanguagePromise = this.detectResponseLanguage(input, session);
 
       yield {
         type: "conversation",
@@ -537,8 +587,9 @@ export class ChatService {
       // A routine is a multi-turn skill: attempt it before grounding. If it claims the
       // turn, stream its rendered reply and finish — no retrieval.
       const routineStartedAt = Date.now();
-      const routineTurn = await this.attemptRoutineTurn(session, input.accountId);
+      const routineTurn = await this.attemptRoutineTurn(session, input.accountId, responseLanguagePromise);
       if (routineTurn) {
+        session = this.withResponseLanguage(session, await responseLanguagePromise);
         // Durably enqueue the action + advance routine state + persist the reply BEFORE
         // streaming the confirmation. The routine reply is rendered whole (not token-
         // streamed), so delaying the chunk costs nothing — but it means the visitor only
@@ -570,6 +621,7 @@ export class ChatService {
       session = routing.route === CHAT_TURN_ROUTE.RETRIEVAL
         ? await this.chatSessionPreparer.prepareRetrieval(input, session, routing.framing)
         : await this.chatSessionPreparer.prepareDirect(input, session, routing.framing);
+      session = this.withResponseLanguage(session, await responseLanguagePromise);
       const answerStartedAt = Date.now();
 
       // Route to the capability that claims this turn and stream its answer. When

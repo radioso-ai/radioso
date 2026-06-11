@@ -26,6 +26,7 @@ export interface RetrievalPipelineRequest {
   responseBehaviorEnabled?: boolean;
   responseBehavior?: RetrievalResponseBehavior;
   responseLanguagePolicy?: ResponseLanguagePolicy;
+  responseLanguage?: string;
   metadataFilter?: Record<string, unknown>;
   sourceScope?: RetrievalSourceScope;
   sourceFilter?: RetrievalSourceFilter;
@@ -109,6 +110,7 @@ export interface PromptAssemblyStageResult extends ContextSelectionStageResult {
     suggestedQuestionsCount: RetrievalSettingsRecord["suggestedQuestionsCount"];
     customInstruction?: RetrievalSettingsRecord["customInstruction"];
     responseLanguagePolicy?: ResponseLanguagePolicy;
+    responseLanguage?: string;
   };
 }
 
@@ -209,6 +211,7 @@ type TracePromptAssemblyInput = TraceContextSelectionInput & {
     suggestedQuestionsEnabled?: unknown;
     suggestedQuestionsCount?: number;
     responseLanguagePolicy?: unknown;
+    responseLanguage?: unknown;
   };
 };
 
@@ -219,6 +222,7 @@ export const RETRIEVAL_TRACE_SPAN_NAMES = {
   pipelineNoRetrieval: "retrieval.pipeline.no_retrieval",
   context: "retrieval.stage.context",
   queryInterpretation: "retrieval.stage.query_interpretation",
+  responseLanguageDetection: "retrieval.stage.response_language_detection",
   answerShapeSelection: "retrieval.stage.answer_shape_selection",
   candidateRetrieval: "retrieval.stage.candidate_retrieval",
   candidatePreparation: "retrieval.stage.candidate_preparation",
@@ -309,4 +313,5 @@ export const buildPromptAssemblyTraceAttributes = (result: TracePromptAssemblyIn
     "retrieval.response.suggested_questions.enabled": result.responseSettings?.suggestedQuestionsEnabled,
     "retrieval.response.suggested_questions.count": boundedTraceCount(result.responseSettings?.suggestedQuestionsCount),
     "retrieval.response.language_policy": result.responseSettings?.responseLanguagePolicy,
+    "retrieval.response.language": result.responseSettings?.responseLanguage,
   });

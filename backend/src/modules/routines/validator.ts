@@ -10,10 +10,13 @@ export const routineValidationCodes = [
   "referenced_undeclared_slot",
   "unregistered_action_type",
   "action_capability_denied",
+  "invalid_webhook_destination_ref",
+  "unknown_webhook_destination",
   "attempt_limit_without_fallback",
   "outcome_guard_on_non_tool_step",
   "structured_guard_missing_parameter",
   "unsupported_tool_step",
+  "completion_export_missing_destination",
 ] as const;
 
 export type RoutineValidationCode = (typeof routineValidationCodes)[number];
@@ -63,6 +66,14 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
       code: "missing_terminal",
       location: `routine:${definition.name}`,
       message: `missing terminal: routine "${definition.name}" must declare at least one terminal.`,
+    });
+  }
+
+  if (definition.completionExport?.enabled && definition.completionExport.destinationRef.trim().length === 0) {
+    diagnostics.push({
+      code: "completion_export_missing_destination",
+      location: "completionExport.destinationRef",
+      message: "completion export missing destination: enabled completion export must reference a webhook destination.",
     });
   }
 

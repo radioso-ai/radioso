@@ -4,6 +4,7 @@ import type { QueryResultRow } from "pg";
 
 import type { ProductAnalyticsSink } from "../../shared/analytics/productAnalyticsSink.js";
 import type { ErrorSink } from "../../shared/errors/errorSink.js";
+import type { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
 import type { TelemetrySink } from "../../shared/observability/telemetry/telemetrySink.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type {
@@ -168,6 +169,8 @@ export interface ApplicationActionHandlerRegistration {
         database: Database;
         env: Env;
         logger: AppLogger;
+        auditService: AuditService;
+        telemetryService: TelemetryService;
         mailService: MailTransportPort;
         assertPublicWebsiteUrl: (url: string) => Promise<void>;
       }) => ActionHandler);

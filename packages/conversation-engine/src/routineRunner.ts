@@ -56,6 +56,17 @@ const collectedSlotsFor = (step: RoutineStep): string[] => {
 const hasVariable = (variables: Record<string, unknown>, key: string): boolean =>
   Object.prototype.hasOwnProperty.call(variables, key);
 
+const declaredSlotVariables = (
+  routine: Routine,
+  variables: Record<string, unknown>,
+): Record<string, unknown> =>
+  Object.fromEntries(
+    (routine.slots ?? [])
+      .map((slot) => slot.key)
+      .filter((key) => hasVariable(variables, key))
+      .map((key) => [key, variables[key]]),
+  );
+
 const isSatisfiedSlotCollectionStep = (
   routine: Routine,
   step: RoutineStep,
@@ -80,6 +91,37 @@ const terminalKindFor = (step: RoutineStep): "complete" | "handoff" | "action" |
   }
   const kind = step.metadata?.terminalKind;
   return kind === "handoff" || kind === "action" || kind === "complete" ? kind : "complete";
+};
+
+const completionExportActionFor = (
+  routine: Routine,
+  step: RoutineStep,
+  terminalKind: "complete" | "handoff" | "action" | null,
+  variables: Record<string, unknown>,
+): RoutineActionRequest | null => {
+  const completionExport = routine.completionExport;
+  if (
+    !completionExport?.enabled ||
+    !completionExport.destinationRef ||
+    (terminalKind !== "complete" && terminalKind !== "handoff") ||
+    !completionExport.triggerKinds.includes(terminalKind)
+  ) {
+    return null;
+  }
+
+  return {
+    type: "webhook.send",
+    payload: {
+      destinationRef: completionExport.destinationRef,
+      source: {
+        routineId: routine.id,
+        stepId: step.id,
+        terminalKind,
+        status: "completed",
+      },
+      data: declaredSlotVariables(routine, variables),
+    },
+  };
 };
 
 /**
@@ -346,6 +388,10 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     });
 
     const terminalKind = terminalKindFor(step);
+    const completionExportAction = completionExportActionFor(routine, step, terminalKind, variables);
+    if (completionExportAction) {
+      actions.push(completionExportAction);
+    }
     return {
       response,
       // A terminal step ends the routine — clear its state.

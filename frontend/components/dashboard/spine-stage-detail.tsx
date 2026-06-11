@@ -327,6 +327,107 @@ interface ConsideredCandidate {
   reason?: string
 }
 
+export interface ClarificationCandidateDetail {
+  id?: string
+  label: string
+  confidence?: number
+}
+
+export interface ClarificationStageDetailView {
+  surface?: string
+  decision?: string
+  reason?: string
+  margin?: number
+  candidates: ClarificationCandidateDetail[]
+  chosenCandidateId?: string
+  mappingOutcome?: string
+}
+
+const stringifyDetailValue = (value: unknown): string | undefined => {
+  if (typeof value === 'string' && value.length > 0) return value
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  if (typeof value === 'boolean') return String(value)
+  if (isRecord(value) || Array.isArray(value)) return JSON.stringify(value)
+  return undefined
+}
+
+export const buildClarificationStageDetail = (
+  stage: ConversationTraceStage,
+): ClarificationStageDetailView => {
+  const outputs = (stage.outputs ?? {}) as Record<string, unknown>
+  const candidates = asArray(outputs.candidates)
+    .filter(isRecord)
+    .map((candidate, index): ClarificationCandidateDetail => ({
+      id: asString(candidate.id),
+      label: asString(candidate.label) ?? asString(candidate.id) ?? `Candidate ${index + 1}`,
+      confidence: asNumber(candidate.confidence),
+    }))
+
+  return {
+    surface: asString(outputs.surface),
+    decision: asString(outputs.decision),
+    reason: asString(outputs.reason),
+    margin: asNumber(outputs.margin),
+    candidates,
+    chosenCandidateId: asString(outputs.chosenCandidateId),
+    mappingOutcome: stringifyDetailValue(outputs.mappingOutcome),
+  }
+}
+
+function ClarificationStageDetail({ stage }: { stage: ConversationTraceStage }) {
+  const detail = buildClarificationStageDetail(stage)
+
+  return (
+    <div className="space-y-4">
+      <StageHeader stage={stage} />
+      <Section label="Decision">
+        <div className="flex flex-wrap items-center gap-2">
+          {detail.surface ? (
+            <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+              {detail.surface}
+            </span>
+          ) : null}
+          {detail.decision ? (
+            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+              {detail.decision}
+            </span>
+          ) : (
+            <span className="text-sm text-muted-foreground">No decision recorded.</span>
+          )}
+        </div>
+        {(detail.reason || typeof detail.margin === 'number' || detail.mappingOutcome) ? (
+          <KeyValueGrid
+            record={{
+              ...(detail.reason ? { reason: detail.reason } : {}),
+              ...(typeof detail.margin === 'number' ? { margin: detail.margin } : {}),
+              ...(detail.mappingOutcome ? { mappingOutcome: detail.mappingOutcome } : {}),
+            }}
+          />
+        ) : null}
+      </Section>
+      <Section label={`Candidates (${detail.candidates.length})`}>
+        {detail.candidates.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No candidates recorded for this decision.</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {detail.candidates.map((candidate, idx) => (
+              <li
+                key={candidate.id ?? candidate.label ?? idx}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/60 bg-muted/20 p-2.5"
+              >
+                <span className="text-sm font-medium text-foreground">{candidate.label}</span>
+                {typeof candidate.confidence === 'number' ? (
+                  <span className="font-mono text-xs text-muted-foreground">{candidate.confidence}</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+    </div>
+  )
+}
+
 function SkillSelectionStageDetail({ stage }: { stage: ConversationTraceStage }) {
   const outputs = (stage.outputs ?? {}) as Record<string, unknown>
   const reason = asString(outputs.reason)
@@ -613,6 +714,8 @@ export function SpineStageDetail({
       return <DirectiveMatchStageDetail stage={stage} />
     case 'skill_selection':
       return <SkillSelectionStageDetail stage={stage} />
+    case 'clarification':
+      return <ClarificationStageDetail stage={stage} />
     case 'compose':
       return <ComposeStageDetail stage={stage} ctx={ctx} />
     case 'routine_resume':

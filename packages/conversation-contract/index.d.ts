@@ -1,3 +1,9 @@
+/**
+ * Contract note for clarification capability 085: this file now exposes the
+ * generic clarification contracts and widens ConversationRoutineActivator to return
+ * an activation/clarification union for routine activation clarification.
+ */
+
 export type ConversationRole = "system" | "user" | "assistant" | "tool";
 
 export interface ConversationMessage {
@@ -344,6 +350,85 @@ export interface ConversationModelGateway {
   }): Promise<{ text: string; metadata?: Record<string, unknown> }>;
 }
 
+/**
+ * A detector-supplied option for a generic clarification decision. The payload is
+ * opaque to the Clarifier and is interpreted only by the originating surface.
+ */
+export interface ClarificationCandidate {
+  id: string;
+  label: string;
+  description?: string;
+  /** Ordinal confidence within this candidate set only; never compare across sets. */
+  confidence: number;
+  payload: unknown;
+}
+
+/** Per-surface policy for deciding whether candidates are clear enough to avoid asking. */
+export interface ClarificationPolicy {
+  /** Minimum confidence required for a candidate to remain in the decision set. */
+  floor: number;
+  /** Top-vs-runner-up gap that counts as a clear winner. */
+  margin: number;
+  /** Maximum number of candidates presented in a clarifying question. */
+  maxOptions: number;
+}
+
+export type ClarificationAutoPickReason = "clear_margin" | "priority" | "suppressed" | "loop_guard";
+
+/** Pure clarification decision returned by engine-layer policy evaluation. */
+export type ClarificationDecision =
+  | { kind: "auto_pick"; candidate: ClarificationCandidate; reason: ClarificationAutoPickReason }
+  | { kind: "ask"; candidates: ClarificationCandidate[] }
+  | { kind: "none" };
+
+export interface RoutineActivationDecisionMetadata {
+  consideredCandidates: ClarificationCandidate[];
+  decision: ClarificationDecision;
+  reason?: string;
+  margin?: number;
+}
+
+export type PendingClarificationStatus = "pending" | "resolved" | "declined" | "expired";
+
+/** Conversation-scoped pending clarification row, including the presented opaque candidates. */
+export interface PendingClarification {
+  sessionId: string;
+  source: string;
+  candidates: ClarificationCandidate[];
+  askedEventId?: string;
+  status: PendingClarificationStatus;
+  expiresAt: string | Date;
+}
+
+export type ClarificationClearOutcome = "resolved" | "declined" | "expired";
+
+/** Durable port for the at-most-one pending clarification in a conversation. */
+export interface ConversationClarificationStore {
+  loadPending(input: { sessionId: string }): Promise<PendingClarification | null>;
+  save(pending: PendingClarification): Promise<void>;
+  clear(input: { sessionId: string; outcome?: ClarificationClearOutcome }): Promise<void>;
+}
+
+/**
+ * Optional read-side companion for clarification stores. It lives with the store
+ * port because hosts own persistence/indexing; the engine only consumes the
+ * capability when a host provides it.
+ */
+export interface RecentClarificationReader {
+  loadRecent(input: { sessionId: string }): Promise<PendingClarification | null>;
+}
+
+export type ClarificationReplyMapping =
+  | { kind: "chosen"; id: string }
+  | { kind: "declined" }
+  | { kind: "unrelated" };
+
+/** LLM-backed clarifier port for phrasing questions and mapping free-text replies. */
+export interface ConversationClarifier {
+  phraseQuestion(input: { candidates: ClarificationCandidate[]; turn: TurnContext }): Promise<string>;
+  mapReply(input: { candidates: ClarificationCandidate[]; turn: TurnContext }): Promise<ClarificationReplyMapping>;
+}
+
 export interface ConversationSkillDispatcher {
   dispatch(input: {
     skill: SkillDefinition;
@@ -426,6 +511,12 @@ export interface RoutineActionRequest {
   payload: Record<string, unknown>;
 }
 
+export interface RoutineCompletionExport {
+  enabled: boolean;
+  triggerKinds: Array<"complete" | "handoff">;
+  destinationRef: string;
+}
+
 export interface RoutineTransition {
   from: string;
   to: string;
@@ -460,6 +551,8 @@ export interface Routine {
   slots?: RoutineSlotSchema[];
   steps: RoutineStep[];
   transitions: RoutineTransition[];
+  /** Optional terminal-triggered export emitted as a generic routine action. */
+  completionExport?: RoutineCompletionExport;
   metadata?: Record<string, unknown>;
 }
 
@@ -594,7 +687,20 @@ export interface ConversationRoutineRunner {
  * the turn to normal selection. The new routine begins at its root step.
  */
 export interface ConversationRoutineActivator {
-  activate(input: { turn: TurnContext }): Promise<{ routineId: string; variables?: Record<string, unknown> } | null>;
+  activate(input: {
+    turn: TurnContext;
+    loopGuardCandidateIds?: string[];
+    suppressClarificationAsk?: boolean;
+  }): Promise<
+    | {
+        kind: "activate";
+        routineId: string;
+        variables?: Record<string, unknown>;
+        decisionMetadata?: RoutineActivationDecisionMetadata;
+      }
+    | { kind: "clarify"; candidates: ClarificationCandidate[] }
+    | null
+  >;
 }
 
 export interface ProcessTurnInput {
@@ -619,6 +725,10 @@ export interface ProcessTurnInput {
   routineStore?: ConversationRoutineStore;
   routineRunner?: ConversationRoutineRunner;
   routineActivator?: ConversationRoutineActivator;
+  clarifier?: ConversationClarifier;
+  clarificationStore?: ConversationClarificationStore;
+  loopGuardCandidateIds?: string[];
+  suppressNewClarification?: boolean;
 }
 
 export interface ProcessTurnStreamInput extends Omit<ProcessTurnInput, "composer"> {
@@ -642,6 +752,10 @@ export interface AttemptRoutineInput {
   routineStore?: ConversationRoutineStore;
   routineRunner?: ConversationRoutineRunner;
   routineActivator?: ConversationRoutineActivator;
+  clarifier?: ConversationClarifier;
+  clarificationStore?: ConversationClarificationStore;
+  loopGuardCandidateIds?: string[];
+  suppressNewClarification?: boolean;
 }
 
 export interface ProcessTurnResult {

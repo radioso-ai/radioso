@@ -135,6 +135,12 @@ export {
   deriveChunkSection,
   deriveDocumentSubject,
 } from "./services/subjectIdentityService.js";
+export { documentScopeFromClarificationCandidate } from "./services/senseGroupingService.js";
+export {
+  evaluateRetrievalSenseClarification,
+  type RetrievalSenseClarificationEffect,
+  type RetrievalSenseDetectorPort,
+} from "./services/retrievalSenseClarification.js";
 
 export interface RetrievalResponseBehavior {
   customInstruction?: string;
@@ -151,6 +157,7 @@ export interface RetrievalPipelineRequest {
   responseLanguagePolicy?: ResponseLanguagePolicy;
   responseLanguage?: string;
   metadataFilter?: Record<string, unknown>;
+  documentScope?: string[];
   sourceScope?: RetrievalSourceScope;
   usageContext?: Omit<ModelCallUsageContext, "operation">;
   agentSkillSettings?: Record<string, unknown>;

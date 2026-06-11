@@ -91,6 +91,12 @@ export {
   type RetrievalPipelineResult,
 } from "./services/retrievalPipelineService.js";
 export { RetrievalSearchService } from "./services/retrievalSearchService.js";
+export {
+  ModelSenseLabelGateway,
+  PostgresSenseEmbeddingReader,
+  SenseGroupingService,
+  type RetrievalSensePolicy,
+} from "./services/senseGroupingService.js";
 export { AgenticRetrievalRunner } from "./services/agenticRetrievalRunner.js";
 export {
   AgenticRetrievalPipelineService,

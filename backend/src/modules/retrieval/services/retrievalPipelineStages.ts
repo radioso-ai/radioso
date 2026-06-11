@@ -28,6 +28,7 @@ export interface RetrievalPipelineRequest {
   responseLanguagePolicy?: ResponseLanguagePolicy;
   responseLanguage?: string;
   metadataFilter?: Record<string, unknown>;
+  documentScope?: string[];
   sourceScope?: RetrievalSourceScope;
   sourceFilter?: RetrievalSourceFilter;
   execution?: RetrievalExecutionMetadata;

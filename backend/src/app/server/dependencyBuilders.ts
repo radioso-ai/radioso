@@ -6,6 +6,7 @@ import { AccessGrantRepository } from "../../db/repositories/accessGrantReposito
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
 import { RoutineDefinitionRepository } from "../../db/repositories/routineDefinitionRepository.js";
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
+import { ClarificationStateRepository } from "../../db/repositories/clarificationStateRepository.js";
 import { createConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
 import type { AgentSkillSettingsRegistry, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
 import { AuditEventRepository } from "../../db/repositories/auditEventRepository.js";
@@ -28,6 +29,7 @@ import { WorkspaceRepository } from "../../db/repositories/workspaceRepository.j
 import { WorkspaceTokenRepository } from "../../db/repositories/workspaceTokenRepository.js";
 import { LlmResponseLanguageDetector } from "../../shared/services/responseLanguageDetector.js";
 import { PostgresAssistantTurnPersistence } from "../../modules/chat/infra/postgresAssistantTurnPersistence.js";
+import { registeredCapabilityNames } from "../../shared/domain/capabilityPolicy.js";
 import { AccountAccessService, AccountInvitationService } from "../../modules/account/public.js";
 import { AccessGrantService, DefaultOriginMatcher } from "../../modules/accessGrants/public.js";
 import { AgentService } from "../../modules/agents/public.js";
@@ -62,8 +64,10 @@ import {
   resolveCitationArtifacts,
   RetrievalTurnController,
   RoutineRegistry,
+  RoutineChatModelGateway,
   RoutineNextStepSelector,
   RoutineStepRenderer,
+  DefaultClarifier,
   type RoutineRegistration,
   SkillRetrievalTurnDispatch,
   WorkbenchReplayRunner,
@@ -96,13 +100,17 @@ import {
   AgenticRetrievalRunner,
   EmbeddingService,
   GatewayQueryRewritePortAdapter,
+  ModelSenseLabelGateway,
   PgLexicalSearch,
+  PostgresSenseEmbeddingReader,
   PgVectorChunkStorage,
   PgVectorSearch,
   PromptBuilder,
   RetrievalAnswerExecutor,
   RetrievalAnswerService,
+  SenseGroupingService,
   createDefaultRetrievalServices,
+  type RetrievalSensePolicy,
   type RetrievalPipelinePort,
 } from "../../modules/retrieval/composition.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
@@ -114,6 +122,13 @@ import {
   type WorkspaceProviderCredentialsRepositoryPort,
 } from "../../db/repositories/workspaceProviderCredentialsRepository.js";
 import { WorkspaceProviderCredentialsService } from "../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
+import { WebhookDestinationRepository } from "../../db/repositories/webhookDestinationRepository.js";
+import {
+  DefaultWebhookDestinationAdapter,
+  WebhookDestinationService,
+  type WebhookDestinationPublicAdapter,
+  type WebhookDestinationRuntimePort,
+} from "../../modules/webhooks/public.js";
 import { WorkspaceLlmCapabilitySettingsService } from "../../modules/settings/composition.js";
 import type { WorkspaceLlmCapabilityPreferencesRepositoryPort } from "../../modules/settings/composition.js";
 import { WorkspaceLlmCapabilityResolver } from "../composition/workspaceLlmCapabilityResolver.js";
@@ -150,6 +165,8 @@ import { createMailService } from "../../modules/mail/public.js";
 import { createLogger, type AppLogger } from "../../shared/observability/logger.js";
 import { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
 import { createPublishedRoutineRegistrationSource } from "../composition/routineDefinitionSource.js";
+import { ChatAnswerSupport, recordClarificationDecision } from "../../modules/chat/composition.js";
+import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import {
   createDefaultAnalyticsSinks,
   createDefaultErrorSinks,
@@ -270,6 +287,7 @@ export const buildRepositories = (
   abuseControlRepository: new AbuseControlRepository(database),
   accountInvitationRepository: new AccountInvitationRepository(database),
   workspaceProviderCredentialsRepository: new WorkspaceProviderCredentialsRepository(database),
+  webhookDestinationRepository: new WebhookDestinationRepository(database),
 });
 
 export const buildAccessServices = (input: {
@@ -337,6 +355,25 @@ export const buildWorkspaceProviderCredentialsService = (input: {
   }
   return service;
 };
+
+export const buildWebhookDestinationAdapter = (input: {
+  auditService: AuditPort;
+  env: Pick<Env, "CONNECTOR_ENCRYPTION_KEY" | "NODE_ENV">;
+  logger: Pick<AppLogger, "warn">;
+  repositories: {
+    webhookDestinationRepository: WebhookDestinationRepository;
+    routineDefinitionRepository: Pick<RoutineDefinitionRepository, "listPublishedRoutineNamesReferencingDestination">;
+  };
+  assertPublicUrl: (url: string) => Promise<void>;
+}): WebhookDestinationPublicAdapter =>
+  new DefaultWebhookDestinationAdapter(new WebhookDestinationService({
+    repository: input.repositories.webhookDestinationRepository,
+    auditService: input.auditService,
+    encryption: { key: input.env.CONNECTOR_ENCRYPTION_KEY },
+    assertPublicUrl: input.assertPublicUrl,
+    allowHttpLoopback: false,
+    routineReferences: input.repositories.routineDefinitionRepository,
+  }));
 
 export const buildWorkspaceLlmCapabilitySettingsService = (input: {
   auditService: AuditPort;
@@ -682,6 +719,9 @@ export const buildChatServices = (input: {
   llmCapabilityResolver: LlmCapabilityResolver;
   logger: AppLogger;
   messageRepository: MessageRepository;
+  metricsRegistry?: MetricsRegistry | null;
+  telemetryService: TelemetryService;
+  webhookDestinations: WebhookDestinationRuntimePort;
   productAnalyticsService: ProductAnalyticsService;
   routineDefinitionRepository: RoutineDefinitionRepository;
   mailService: ReturnType<typeof buildInfrastructure>["mailService"];
@@ -693,6 +733,15 @@ export const buildChatServices = (input: {
   errorReporter: ErrorReporter;
 }) => {
   const chatGateway = input.llmRegistry.createChatGateway(input.usageEventRecorder);
+  const routineActivationPolicy = { floor: 0.4, margin: 0.15, maxOptions: 4 };
+  const retrievalSensePolicy: RetrievalSensePolicy = {
+    minGroupShare: 0.3,
+    // Euclidean centroid distance over involved chunk embeddings. The value is
+    // intentionally conservative for v1 fixtures: it filters near-duplicate
+    // document groups while allowing clearly distinct senses to label once.
+    separationThreshold: 0.4,
+    maxOptions: 4,
+  };
   const directiveMatchGatewayFactory = input.composition.directiveMatchGatewayFactory ??
     new ContextualDirectiveMatchGatewayFactory(
       {
@@ -829,6 +878,9 @@ export const buildChatServices = (input: {
               database: input.database,
               env: input.env,
               logger: input.logger,
+              auditService: input.auditService,
+              telemetryService: input.telemetryService,
+              webhookDestinations: input.webhookDestinations,
               mailService: input.mailService,
               assertPublicWebsiteUrl: input.assertPublicWebsiteUrl,
             })
@@ -856,7 +908,7 @@ export const buildChatServices = (input: {
     },
   });
   const routineProvider: ChatRoutineProvider = {
-    async forTurn({ modelGateway, agentId, responseLanguage }) {
+    async forTurn({ modelGateway, agentId, workspaceId, responseLanguage }) {
       let publishedRegistrations: RoutineRegistration[];
       try {
         publishedRegistrations = await publishedRoutineSource.load({ agentId });
@@ -870,10 +922,29 @@ export const buildChatServices = (input: {
         );
         publishedRegistrations = [];
       }
-      const routineRegistry = new RoutineRegistry([
+      const registrations = [
         ...input.composition.routineRegistrations,
         ...publishedRegistrations,
-      ]);
+      ];
+      const gatedRegistrations = [];
+      for (const registration of registrations) {
+        const gateRef = registration.trigger.gateRef;
+        if (!gateRef || !registeredCapabilityNames.has(gateRef)) {
+          gatedRegistrations.push(registration);
+          continue;
+        }
+        const decision = await input.composition.capabilityPolicy.can({
+          capability: gateRef,
+          workspaceId,
+        });
+        if (decision.allowed) {
+          gatedRegistrations.push(registration);
+        }
+      }
+      const routineRegistry = new RoutineRegistry(gatedRegistrations, {
+        policy: routineActivationPolicy,
+        promptTemplate: loadPromptTemplate("chat/routine-ranked-activation.md"),
+      });
       if (routineRegistry.isEmpty) {
         return null;
       }
@@ -901,6 +972,16 @@ export const buildChatServices = (input: {
     ),
   );
   const conversationEngine = createConversationEngine();
+  const clarificationStore = new ClarificationStateRepository(input.database);
+  const retrievalSenseDetector = new SenseGroupingService({
+    policy: retrievalSensePolicy,
+    embeddingReader: new PostgresSenseEmbeddingReader(input.database),
+    labelGateway: new ModelSenseLabelGateway(
+      input.llmRegistry.createChatInferencePipeline(input.usageEventRecorder),
+      loadPromptTemplate("chat/clarification-sense-labels.md"),
+    ),
+  });
+  const chatAnswerSupport = new ChatAnswerSupport();
   // The router is a lightweight classifier: run it on the cheap rewrite-tier
   // inference at minimal effort (CHAT_BEHAVIOR.intentRouting), not the heavier
   // chat answer model/effort. Shared by live turns and workbench replay so a
@@ -950,6 +1031,30 @@ export const buildChatServices = (input: {
     // Routine resume/activate per turn — present only when routines are registered.
     routineStore: new RoutineStateRepository(input.database),
     routineProvider,
+    clarifierFactory: ({ session, accountId }) => new DefaultClarifier(
+      new RoutineChatModelGateway(chatGateway, {
+        workspaceContext: chatAnswerSupport.buildChatWorkspaceContext(session),
+        usageContext: {
+          ...chatAnswerSupport.buildChatUsageContext(session, accountId, "clarification"),
+          operation: "clarification",
+        },
+      }),
+      {
+        questionPromptTemplate: loadPromptTemplate("chat/clarification-question.md"),
+        replyMapPromptTemplate: loadPromptTemplate("chat/clarification-reply-map.md"),
+      },
+    ),
+    clarificationStore,
+    retrievalSenseDetector,
+    retrievalSenseClarificationPolicy: {
+      floor: 0,
+      margin: 0.15,
+      maxOptions: retrievalSensePolicy.maxOptions,
+    },
+    ...(input.metricsRegistry
+      ? { recordClarificationDecision: (decision: Parameters<typeof recordClarificationDecision>[1]) =>
+          recordClarificationDecision(input.metricsRegistry!, decision) }
+      : {}),
   });
   const chatBootstrapService = new ChatBootstrapService(
     input.workspaceRepository,

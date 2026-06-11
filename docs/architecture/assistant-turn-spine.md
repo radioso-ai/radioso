@@ -65,8 +65,8 @@ chat replies. Standalone retrieval answer pipelines run the same detector beside
 query interpretation and pass the label into prompt assembly. Query rewrite does
 not own response-language selection.
 
-The engine's turn trace (its gather/directive/selection/dispatch/compose stages)
-is recorded on the `chat.answer` success audit event under
+The engine's turn trace (its gather/directive/selection/clarification/dispatch/
+compose stages) is recorded on the `chat.answer` success audit event under
 `metadata.conversationEngine.trace`, alongside the retrieval-derived
 `activityTrace`. This is audit-only observability; the user-facing answer and
 activity trace are unchanged.
@@ -98,12 +98,40 @@ dispatch, and on the retrieval *result type* for composition. The headless
 `retrieval.*` API, SDK, and MCP surfaces are unchanged — they call retrieval
 directly, as before.
 
+## Clarification resolves before routines
+
+Clarification is a turn-level capability for cases where matching produced
+several comparable candidates and the assistant should not guess. It is not a
+routine, a retrieval rule, or a hard-coded keyword list.
+
+At the start of a turn, before routine activation is attempted, chat checks
+whether the conversation has a pending clarification. The reply is mapped to one
+of three outcomes:
+
+- a chosen candidate
+- "none of these"
+- an unrelated message
+
+If the user chooses a routine-activation candidate, the stored candidate payload
+is converted back into a forced routine activation. The routine starts as if it
+had been activated directly, including activation variables captured from the
+original ambiguous turn.
+
+If the user chooses a retrieval-sense candidate, the stored payload becomes a
+`documentScope` for the resolving turn. Retrieval then answers using only the
+chosen document group.
+
+"None of these" and unrelated replies clear the pending clarification and the
+latest message proceeds as a normal turn. A turn that resolves a pending
+clarification does not create a new one in the same turn, and the same question
+is not asked twice in a row.
+
 ## Routines run before selection
 
-Before normal skill selection, the turn checks for a **routine** — a stateful flow
-that runs across several turns. If a routine is active for the session it resumes
-at its saved step; otherwise the turn checks whether any of the agent's published
-routines should activate, and the highest-priority matching trigger wins.
+After pending clarification is resolved and before normal skill selection, the
+turn checks for a **routine** — a stateful flow that runs across several turns. If
+a routine is active for the session it resumes at its saved step; otherwise the
+turn checks whether any of the agent's published routines should activate.
 
 A routine does not add a new steering channel. Its current step is projected into a
 directive, so it steers the reply through the same matched-directive set as any
@@ -119,6 +147,31 @@ and runs them through the engine's routine runner. The authoring data model,
 compiler, and validator live in `backend/src/modules/routines/`; the runtime lives
 in `packages/conversation-engine/`. See
 [Conversational routines](./conversational-routines.md).
+
+## Clarification appears on the spine
+
+The turn trace records clarification as a first-class `clarification` stage. The
+stage can appear in two shapes:
+
+- **Claimed ask turn** — routine activation or retrieval sense detection decides
+  the candidates are too close to choose silently. The assistant asks one
+  clarifying question, the pending clarification is saved with the turn, and no
+  candidate executes on that turn.
+- **Pass-through turn** — the system silently picks a candidate because there is
+  a clear winner, a unique authored priority winner, loop-guard suppression, or
+  active-routine suppression. The trace records the candidate set and reason,
+  then the turn continues to routine activation or retrieval dispatch.
+
+Clarification asks are suppressed while routine state is active, including turns
+where the routine yields as off-topic to normal answering. Detectors may still
+run, but the Clarifier auto-picks the top candidate and records the decision as
+suppressed. This keeps active routine state and pending clarification state from
+competing to interpret the visitor's next message.
+
+The retrieval-sense detector runs only on conversational retrieval turns, after
+retrieval has produced candidates and before the grounded answer is composed.
+Standalone retrieval answer, document search, SDK retrieval, and MCP retrieval
+surfaces do not ask clarifying questions.
 
 ## Adding a skill
 

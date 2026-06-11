@@ -1,6 +1,8 @@
 import type {
   AttemptRoutineInput,
   ConversationEvent,
+  ConversationClarificationStore,
+  ConversationClarifier,
   ConversationModelGateway,
   ConversationRoutineActivator,
   ConversationRoutineRunner,
@@ -48,6 +50,10 @@ export interface ChatProcessTurnInputOptions {
   routineStore?: ConversationRoutineStore;
   routineRunner?: ConversationRoutineRunner;
   routineActivator?: ConversationRoutineActivator;
+  clarifier?: ConversationClarifier;
+  clarificationStore?: ConversationClarificationStore;
+  loopGuardCandidateIds?: string[];
+  suppressNewClarification?: boolean;
 }
 
 export interface ChatProcessTurnStreamInputOptions extends Omit<ChatProcessTurnInputOptions, "composer"> {
@@ -135,6 +141,10 @@ export const createChatProcessTurnInput = (options: ChatProcessTurnInputOptions)
     ...(options.routineStore ? { routineStore: options.routineStore } : {}),
     ...(options.routineRunner ? { routineRunner: options.routineRunner } : {}),
     ...(options.routineActivator ? { routineActivator: options.routineActivator } : {}),
+    ...(options.clarifier ? { clarifier: options.clarifier } : {}),
+    ...(options.clarificationStore ? { clarificationStore: options.clarificationStore } : {}),
+    ...(options.loopGuardCandidateIds ? { loopGuardCandidateIds: options.loopGuardCandidateIds } : {}),
+    ...(options.suppressNewClarification ? { suppressNewClarification: options.suppressNewClarification } : {}),
   };
 };
 
@@ -154,6 +164,10 @@ export interface AttemptRoutineInputOptions {
   routineStore?: ConversationRoutineStore;
   routineRunner?: ConversationRoutineRunner;
   routineActivator?: ConversationRoutineActivator;
+  clarifier?: ConversationClarifier;
+  clarificationStore?: ConversationClarificationStore;
+  loopGuardCandidateIds?: string[];
+  suppressNewClarification?: boolean;
 }
 
 /**
@@ -181,5 +195,9 @@ export const createAttemptRoutineInput = (options: AttemptRoutineInputOptions): 
     ...(options.routineStore ? { routineStore: options.routineStore } : {}),
     ...(options.routineRunner ? { routineRunner: options.routineRunner } : {}),
     ...(options.routineActivator ? { routineActivator: options.routineActivator } : {}),
+    ...(options.clarifier ? { clarifier: options.clarifier } : {}),
+    ...(options.clarificationStore ? { clarificationStore: options.clarificationStore } : {}),
+    ...(options.loopGuardCandidateIds ? { loopGuardCandidateIds: options.loopGuardCandidateIds } : {}),
+    ...(options.suppressNewClarification ? { suppressNewClarification: options.suppressNewClarification } : {}),
   };
 };

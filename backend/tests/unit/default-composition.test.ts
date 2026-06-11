@@ -7,7 +7,7 @@ import {
   createDefaultWebsiteCrawlJobConsumer,
   createDefaultWebsiteCrawlJobDispatcher,
 } from "../../src/app/composition/defaultComposition.js";
-import { CONTACT_SEND_ACTION_TYPE, DefaultTurnSelectionStrategy } from "../../src/modules/chat/composition.js";
+import { CONTACT_SEND_ACTION_TYPE, DefaultTurnSelectionStrategy, WEBHOOK_SEND_ACTION_TYPE } from "../../src/modules/chat/composition.js";
 import type { OrganizationCreationGuard } from "../../src/shared/domain/organizationCreationGuard.js";
 import type { DirectiveMatcherPort } from "../../src/modules/directives/public.js";
 import { capabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
@@ -59,6 +59,7 @@ describe("default application composition", () => {
       "radioso-usage-reporting",
       "radioso-quality",
       "radioso-contact-routine",
+      "radioso-webhook-send",
     ]);
     expect(composition.directiveRegistrations.map((registration) => registration.directive.name)).toEqual([
       "concise-readable-formatting",
@@ -76,6 +77,8 @@ describe("default application composition", () => {
     expect(composition.actionCapabilityMap.requiredCapabilitiesFor(CONTACT_SEND_ACTION_TYPE)).toEqual([
       capabilityNames.humanContact.request,
     ]);
+    expect(composition.actionCapabilityMap.has(WEBHOOK_SEND_ACTION_TYPE)).toBe(true);
+    expect(composition.actionCapabilityMap.requiredCapabilitiesFor(WEBHOOK_SEND_ACTION_TYPE)).toEqual([]);
     expect(composition.organizationCreationGuardRegistration).toBeUndefined();
   });
 
@@ -102,6 +105,7 @@ describe("default application composition", () => {
       "radioso-usage-reporting",
       "radioso-quality",
       "radioso-contact-routine",
+      "radioso-webhook-send",
       "connector-module",
     ]);
   });

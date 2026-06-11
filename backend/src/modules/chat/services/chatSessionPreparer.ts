@@ -66,6 +66,7 @@ export interface PrepareChatSessionInput {
   query: string;
   inputMetadata?: UserMessageInputMetadata;
   metadataFilter?: Record<string, unknown>;
+  documentScope?: string[];
   pageContext?: AssistantPageContext | null;
   sourceChannel?: string | null;
   anonymousSessionId?: string | null;
@@ -262,6 +263,7 @@ export class ChatSessionPreparer {
       responseBehaviorEnabled: true,
       agentSkillSettings: agent.skillSettings,
       metadataFilter: input.metadataFilter,
+      documentScope: input.documentScope,
       sourceScope: agent.sourceScope,
       usageContext: {
         workspaceId: input.workspaceId,
@@ -388,6 +390,7 @@ export class ChatSessionPreparer {
         assistantLinkUtmEnabled: true,
         citationDisplayEnabled: true,
         contactRequestsEnabled: false,
+        webhookExportsEnabled: false,
         contactRequestDelivery: DEFAULT_CONTACT_REQUEST_DELIVERY,
         retrievalEnabled: true,
         sourceScope: { mode: "all" },
@@ -439,6 +442,7 @@ export class ChatSessionPreparer {
       assistantLinkUtmEnabled: true,
       citationDisplayEnabled: true,
       contactRequestsEnabled: false,
+      webhookExportsEnabled: false,
       contactRequestDelivery: DEFAULT_CONTACT_REQUEST_DELIVERY,
       retrievalEnabled: true,
       sourceScope: { mode: "all" },

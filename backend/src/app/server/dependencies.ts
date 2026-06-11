@@ -31,6 +31,7 @@ import {
   buildWorkspaceIngestionReprocessService,
   buildWorkspaceLlmCapabilitySettingsService,
   buildWorkspaceProviderCredentialsService,
+  buildWebhookDestinationAdapter,
   buildWorkspaceServices,
   listSupportedEmbeddingModels,
 } from "./dependencyBuilders.js";
@@ -105,6 +106,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     env,
     logger,
     repositories,
+  });
+  const webhookDestinations = buildWebhookDestinationAdapter({
+    auditService: infrastructure.auditService,
+    env,
+    logger,
+    repositories,
+    assertPublicUrl: assertPublicWebsiteUrl,
   });
   // Build the registry first (no resolver yet) so we can compute supported embedding
   // models; embedding stays env-default and doesn't need the workspace-aware resolver.
@@ -208,6 +216,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     mailService: infrastructure.mailService,
     messageRepository: repositories.messageRepository,
+    metricsRegistry: infrastructure.metricsRegistry,
+    telemetryService: infrastructure.telemetryService,
+    webhookDestinations,
     productAnalyticsService: infrastructure.productAnalyticsService,
     routineDefinitionRepository: repositories.routineDefinitionRepository,
     retrievalPipeline: retrieval.retrievalPipeline,
@@ -293,6 +304,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repository: repositories.routineDefinitionRepository,
     actionCapabilities: composition.actionCapabilityMap,
     capabilityPolicy: composition.capabilityPolicy,
+    webhookDestinations: {
+      existsByIdAndWorkspace: async (inputWorkspaceId, destinationId) =>
+        webhookDestinations.existsByIdAndWorkspace(inputWorkspaceId, destinationId),
+    },
   });
   const directiveAuthorService = new DirectiveAuthorService({
     repository: repositories.agentRepository,
@@ -353,6 +368,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceSessionService: workspace.workspaceSessionService,
     abuseControlService: chat.abuseControlService,
     workspaceProviderCredentialsService,
+    webhookDestinations,
     workspaceLlmCapabilitySettingsService,
     auditService: infrastructure.auditService,
     mailService: infrastructure.mailService,

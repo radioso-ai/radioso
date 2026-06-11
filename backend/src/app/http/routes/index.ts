@@ -13,6 +13,7 @@ import { createObservabilityRoutes } from "./observabilityRoutes.js";
 import { createSettingsRoutes } from "./settingsRoutes.js";
 import { createSettingsCredentialsRoutes } from "./settingsCredentialsRoutes.js";
 import { createSettingsLlmModelsRoutes } from "./settingsLlmModelsRoutes.js";
+import { createSettingsWebhookDestinationRoutes } from "./settingsWebhookDestinationRoutes.js";
 import { createWorkspaceRoutes } from "./workspaceRoutes.js";
 import { createMcpContextRoutes } from "./mcpContextRoutes.js";
 import { createRetrievalRoutes } from "./retrievalRoutes.js";
@@ -55,6 +56,7 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   router.use("/api/v1/settings", createSettingsRoutes(dependencies));
   router.use("/api/v1/settings/credentials", createSettingsCredentialsRoutes(dependencies));
   router.use("/api/v1/settings/llm-models", createSettingsLlmModelsRoutes(dependencies));
+  router.use("/api/v1/settings/webhook-destinations", createSettingsWebhookDestinationRoutes(dependencies));
   router.use("/api/v1/connectors", createConnectorRoutes(dependencies));
   router.use("/api/v1/document", createDocumentRoutes(dependencies));
   router.use("/api/v1/evals", createEvalRoutes({

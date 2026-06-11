@@ -15,9 +15,9 @@ export {
   RoutineNextStepSelector,
   RoutineRegistry,
   RoutineStepRenderer,
+  DefaultClarifier,
   type RoutineRegistration,
 } from "@radioso/conversation-defaults";
-export { classifyContactIntent } from "./services/routines/contactActivationClassifier.js";
 export {
   RoutineChatModelGateway,
   type RoutineModelTurnContext,
@@ -33,6 +33,21 @@ export {
   type ContactWorkspaceLookup,
   type ContactMembershipLookup,
 } from "./services/actions/contactSendActionHandler.js";
+export {
+  FetchWebhookHttpClient,
+  createSignedWebhookHeaders,
+  verifyWebhookSignature,
+  type WebhookHttpClient,
+  type WebhookUrlGuard,
+} from "./services/actions/webhookDelivery.js";
+export {
+  ConversationAgentWebhookPermissionResolver,
+  WebhookSendActionHandler,
+  WEBHOOK_SEND_ACTION_TYPE,
+  type WebhookSendDeliveryOutcomeRecorder,
+  type WebhookSendHttpClient,
+  type WebhookSendPermissionResolver,
+} from "./services/actions/webhookSendActionHandler.js";
 export {
   contactRoutineDefinition,
   CONTACT_ROUTINE_ID,
@@ -125,3 +140,8 @@ export type {
   ChatActionSuggestionContext,
   ChatActionSuggestionProvider,
 } from "./services/actionSuggestions/chatActionSuggestionProvider.js";
+export {
+  recordClarificationDecision,
+  type ClarificationMetricDecision,
+} from "./services/clarification/clarificationMetrics.js";
+export { ChatAnswerSupport } from "./services/chatAnswerSupport.js";

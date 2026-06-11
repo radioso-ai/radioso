@@ -115,4 +115,93 @@ describe('envelopeToFlowGraph', () => {
     expect(edge(graph, 'skill', 'leaf:routine')).toBeDefined()
     expect(edge(graph, 'leaf:routine', 'outcome')).toBeDefined()
   })
+
+  it('places clarification between the engine and skill path on pass-through turns', () => {
+    const base = envelope()
+    base.spine.stages.splice(4, 0, {
+      id: 'clarification',
+      kind: 'clarification',
+      status: 'applied',
+      outputs: {
+        surface: 'retrieval_sense',
+        decision: 'auto_picked',
+        reason: 'clear_margin',
+        candidates: [
+          { id: 'hatha', label: 'Hatha yoga', confidence: 0.78 },
+          { id: 'raja', label: 'Raja yoga', confidence: 0.51 },
+        ],
+      },
+    })
+
+    const graph = envelopeToFlowGraph(base)
+    const node = graph.nodes.find((n) => n.id === 'spine:clarification')
+
+    expect(node).toMatchObject({
+      nodeKind: 'stage',
+      label: 'Clarification',
+      sublabel: 'auto picked',
+      status: 'applied',
+      detail: { kind: 'spine', spineStageId: 'clarification' },
+    })
+    expect(edge(graph, 'engine', 'spine:clarification')?.kind).toBe('sequence')
+    expect(edge(graph, 'spine:clarification', 'skill')?.kind).toBe('sequence')
+    expect(edge(graph, 'engine', 'skill')).toBeUndefined()
+  })
+
+  it('places clarification before the outcome on claimed routine turns', () => {
+    const claimed: TurnTraceEnvelope = {
+      version: 1,
+      spine: {
+        traceId: 'conversation-turn-2',
+        startedAt: '2026-01-01T00:00:00.000Z',
+        stages: [
+          {
+            id: 'message',
+            kind: 'message',
+            status: 'applied',
+            outputs: { kind: 'user.chat', eventId: 'msg_user_2', contentLength: 12 },
+          },
+          { id: 'gather', kind: 'gather', status: 'applied', outputs: { historyCount: 0 } },
+          { id: 'directives', kind: 'directive_match', status: 'skipped', outputs: { matchCount: 0 } },
+          {
+            id: 'selection',
+            kind: 'skill_selection',
+            status: 'skipped',
+            outputs: { reason: 'routine_claimed_turn' },
+          },
+          {
+            id: 'clarification',
+            kind: 'clarification',
+            status: 'applied',
+            outputs: {
+              surface: 'routine_activation',
+              decision: 'asked',
+              reason: 'too_close',
+              margin: 0.03,
+              candidates: [
+                { id: 'demo', label: 'Book a demo', confidence: 0.73 },
+                { id: 'support', label: 'Book support', confidence: 0.7 },
+              ],
+            },
+          },
+          {
+            id: 'routine_activate',
+            kind: 'routine_activate',
+            status: 'applied',
+            outputs: { answerLength: 64 },
+          },
+        ],
+      },
+    }
+
+    const graph = envelopeToFlowGraph(claimed)
+
+    expect(graph.nodes.find((n) => n.id === 'spine:clarification')).toMatchObject({
+      label: 'Clarification',
+      detail: { kind: 'spine', spineStageId: 'clarification' },
+    })
+    expect(edge(graph, 'engine', 'spine:clarification')?.kind).toBe('sequence')
+    expect(edge(graph, 'spine:clarification', 'outcome')?.kind).toBe('sequence')
+    expect(edge(graph, 'engine', 'outcome')).toBeUndefined()
+  })
 })

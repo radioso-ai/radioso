@@ -149,6 +149,68 @@ describe("retrieval streaming owns its grounded-miss reconcile", () => {
   });
 });
 
+describe("retrieval scope gate declines wholly out-of-scope turns", () => {
+  // A gateway that WOULD answer the off-scope question if the grounded path ran —
+  // the gate must short-circuit before it is ever reached.
+  const leakyGateway: ChatGateway = {
+    async answer() {
+      return "sqrt(59) is approximately 7.681.";
+    },
+    async *streamAnswer() {
+      yield "sqrt(59) is approximately 7.681.";
+    },
+  };
+  const citedGateway: ChatGateway = {
+    async answer() {
+      return "Retreats run each spring[[1]].";
+    },
+    async *streamAnswer() {
+      yield "Retreats run each spring[[1]]. It is well supported.";
+      yield `\n${SUGGESTIONS_SENTINEL}\n${plannedEnvelopeTail}`;
+    },
+  };
+  const withFraming = (
+    session: PreparedSession,
+    framing: { inScopeRequest?: string; outsideScopeRequest?: string },
+  ): PreparedSession => {
+    (session as { turnFraming?: unknown }).turnFraming = { isIdentityQuestion: false, ...framing };
+    return session;
+  };
+
+  it("declines (non-streaming) via the grounded-miss composer without computing the answer", async () => {
+    const composer = new RetrievalAnswerComposer(new ChatAnswerSupport(), leakyGateway, presenter(), fallbackReplyComposer);
+    const session = withFraming(baseSession({ contexts: [groundedContext] }), { outsideScopeRequest: "calculate sqrt(59)" });
+
+    const presentation = await composer.composeAnswer(session, "what is sqrt(59)?", undefined, undefined);
+
+    expect(presentation.answer).toBe(GROUNDED_MISS);
+    expect(presentation.answer).not.toContain("7.681");
+  });
+
+  it("declines (streaming) the wholly out-of-scope turn", async () => {
+    const composer = new RetrievalAnswerComposer(new ChatAnswerSupport(), leakyGateway, presenter(), fallbackReplyComposer);
+    const session = withFraming(baseSession({ contexts: [groundedContext] }), { outsideScopeRequest: "reverse a linked list in TypeScript" });
+
+    const { chunks, result } = await drain(composer.streamAnswer(session, "reverse a linked list in TS", undefined, undefined));
+
+    expect(chunks).toEqual([GROUNDED_MISS]);
+    expect(result.finalPresentation.answer).toBe(GROUNDED_MISS);
+  });
+
+  it("does NOT gate a turn with an in-scope request (proceeds to grounded answer)", async () => {
+    const composer = new RetrievalAnswerComposer(new ChatAnswerSupport(), citedGateway, presenter(), fallbackReplyComposer);
+    const session = withFraming(baseSession({ contexts: [groundedContext] }), {
+      inScopeRequest: "tell me about retreats",
+      outsideScopeRequest: "calculate sqrt(59)",
+    });
+
+    const { result } = await drain(composer.streamAnswer(session, "tell me about retreats and sqrt(59)", undefined, undefined));
+
+    expect(result.finalPresentation.answer).not.toBe(GROUNDED_MISS);
+    expect(result.finalPresentation.citations ?? []).toHaveLength(1);
+  });
+});
+
 describe("assistant-voice streaming carries its own suggestions", () => {
   it("returns its reply as finalPresentation and signals presentation-sourced suggestions", async () => {
     const chatGateway: ChatGateway = {

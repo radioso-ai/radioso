@@ -77,6 +77,63 @@ describe("edge cases", () => {
     expect(result.systemPrompt).toContain("decline in the team's voice");
     expect(result.systemPrompt).toContain("Do not frame any decline around missing documents");
   });
+
+  it("preserves a caller-supplied response language through retrieval prompt assembly", async () => {
+    const service = new RetrievalPipelineService(
+      {
+        getDefaults() {
+          return {
+            workspaceId: "a1",
+            queryRewriteEnabled: false,
+            rerankEnabled: false,
+            vectorTopK: 20,
+            similarityThreshold: 0.2,
+            rerankTopK: 5,
+            suggestedQuestionsEnabled: true,
+            suggestedQuestionsCount: 3,
+            citationDisplayEnabled: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+        },
+      } as never,
+      {
+        async embedChunks() {
+          return [[1, 0, 0]];
+        },
+      } as never,
+      {
+        async search() {
+          return [];
+        },
+      },
+      {
+        async search() {
+          return [];
+        },
+      },
+      new ConversationContextService(),
+      new QueryRewriteService(),
+      new CandidatePreparationService(),
+      new AttributeMatchScoringService(),
+      new RerankService(),
+      new PromptContextSelectorService(),
+      new PromptBuilder(),
+      new RetrievalExecutionTelemetryService(),
+    );
+
+    const interpretation = await service.interpret({
+      workspaceId: "a1",
+      query: "What is the API rate limit?",
+      history: [],
+      responseLanguage: "English",
+    });
+    const result = await service.runInterpreted(interpretation);
+
+    expect(result.responseSettings.responseLanguage).toBe("English");
+    expect(result.systemPrompt).toContain("Respond in English.");
+  });
+
   it("falls back to the original query when rewrite assistance errors", async () => {
     const service = new QueryRewriteService({
       async rewrite() {

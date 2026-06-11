@@ -16,7 +16,7 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
         responseIdentity: input.request.responseIdentity,
         customInstruction: includeResponseBehavior ? customInstruction : undefined,
         responseLanguagePolicy: input.rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
-        responseLanguage: input.rewrittenQuery.structuredResult?.responseLanguage,
+        responseLanguage: input.request.responseLanguage,
       },
       contexts: input.contexts,
     });
@@ -32,6 +32,7 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
         suggestedQuestionsCount: includeResponseBehavior ? input.settings.suggestedQuestionsCount : 0,
         customInstruction: includeResponseBehavior ? customInstruction : undefined,
         responseLanguagePolicy: input.rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
+        responseLanguage: input.request.responseLanguage,
       },
     };
   }

@@ -72,6 +72,7 @@ export interface RetrievalPipelineResult {
     suggestedQuestionsCount: number;
     customInstruction?: string;
     responseLanguagePolicy?: import("../domain/retrievalPipelineTypes.js").ResponseLanguagePolicy;
+    responseLanguage?: string;
   };
   diagnostics: RetrievalExecutionDiagnostics;
   trace: import("../domain/retrievalPipelineTypes.js").ActivityTrace;
@@ -283,6 +284,7 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
           customInstruction: responseBehavior?.customInstruction ?? input.context.result.settings.customInstruction,
           responseLanguagePolicy: input.interpretation.result.rewrittenQuery.responseLanguagePolicy ??
             "match_user_question",
+          responseLanguage: input.interpretation.result.request.responseLanguage,
         };
         const diagnostics: RetrievalExecutionDiagnostics = {
           execution: input.request.execution,

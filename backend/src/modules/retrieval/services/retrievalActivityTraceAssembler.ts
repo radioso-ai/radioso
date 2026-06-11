@@ -324,6 +324,7 @@ export class ActivityTraceAssembler {
         settings: {
           citationDisplayEnabled: prompt.responseSettings.citationDisplayEnabled,
           responseLanguagePolicy: prompt.responseSettings.responseLanguagePolicy,
+          responseLanguage: prompt.responseSettings.responseLanguage,
         },
         outputs: {
           citations: prompt.citations.map((citation) => ({

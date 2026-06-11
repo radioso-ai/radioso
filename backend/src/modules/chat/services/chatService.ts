@@ -1,5 +1,5 @@
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
-import { traceAsyncIterable, traceOperation } from "../../../shared/observability/tracing/operations.js";
+import { setTraceAttributes, traceAsyncIterable, traceOperation } from "../../../shared/observability/tracing/operations.js";
 import type {
   ConversationEngine,
   ConversationClarificationStore,
@@ -93,6 +93,7 @@ import {
   toConversationMessages,
 } from "./conversationContractMappers.js";
 import type { TurnRouter, TurnRouting } from "./turnRouter.js";
+import type { ResponseLanguageDetector } from "../../../shared/services/responseLanguageDetector.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
@@ -170,6 +171,7 @@ export interface ChatRoutineProvider {
     modelGateway: ConversationModelGateway;
     agentId: string;
     workspaceId?: string;
+    responseLanguage?: string | Promise<string | undefined>;
   }): Promise<{
     activator: ConversationRoutineActivator;
     runner: ConversationRoutineRunner;
@@ -207,6 +209,8 @@ export interface ChatServiceOptions {
   routineStore?: ConversationRoutineStore;
   /** Optional: registered routines + activation. Empty/absent leaves turns unchanged. */
   routineProvider?: ChatRoutineProvider;
+  /** Optional shared per-turn language detector for routine, direct, and retrieval replies. */
+  responseLanguageDetector?: ResponseLanguageDetector;
   clarifier?: ConversationClarifier;
   clarifierFactory?: (input: { session: PreparedSession; accountId?: string }) => ConversationClarifier;
   clarificationStore?: ConversationClarificationStore & Partial<RecentClarificationReader>;
@@ -237,6 +241,7 @@ export class ChatService {
   private readonly retrievalSenseDetector?: RetrievalSenseDetectorPort;
   private readonly retrievalSenseClarificationPolicy: ClarificationPolicy;
   private readonly turnRouter: TurnRouter;
+  private readonly responseLanguageDetector?: ResponseLanguageDetector;
 
   constructor(options: ChatServiceOptions) {
     const {
@@ -261,6 +266,7 @@ export class ChatService {
       logger,
       routineStore,
       routineProvider,
+      responseLanguageDetector,
       clarifier,
       clarifierFactory,
       clarificationStore,
@@ -270,6 +276,7 @@ export class ChatService {
     } = options;
     this.routineStore = routineStore;
     this.routineProvider = routineProvider;
+    this.responseLanguageDetector = responseLanguageDetector;
     this.clarifier = clarifier;
     this.clarifierFactory = clarifierFactory;
     this.clarificationStore = clarificationStore;
@@ -325,6 +332,7 @@ export class ChatService {
   private async attemptRoutineTurn(
     session: PreparedSession,
     accountId: string | undefined,
+    responseLanguage: Promise<string | undefined>,
     clarification?: {
       store?: DeferredClarificationStore;
       resolution?: PendingClarificationResolution;
@@ -353,6 +361,7 @@ export class ChatService {
       modelGateway,
       agentId: session.agent.id,
       workspaceId: session.conversation.workspaceId,
+      responseLanguage,
     });
     if (!routineTurnPorts) {
       return null;
@@ -544,6 +553,43 @@ export class ChatService {
     };
   }
 
+  private detectResponseLanguage(
+    input: {
+      workspaceId: string;
+      accountId?: string;
+      query: string;
+    },
+    session: PreparedSession,
+  ): Promise<string | undefined> {
+    if (!this.responseLanguageDetector) {
+      return Promise.resolve(undefined);
+    }
+    return this.responseLanguageDetector.detect({
+      query: input.query,
+      history: session.history,
+      workspaceContext: { workspaceId: input.workspaceId },
+      usageContext: {
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        conversationId: session.conversation.id,
+        messageId: session.userMessage.id,
+        surface: "assistant",
+        operation: "response_language_detection",
+        attemptKey: "response_language",
+      },
+    }).then((result) => {
+      setTraceAttributes({ "chat.response.language": result.responseLanguage });
+      return result.responseLanguage;
+    }).catch(() => undefined);
+  }
+
+  private withResponseLanguage(session: PreparedSession, responseLanguage: string | undefined): PreparedSession {
+    return {
+      ...session,
+      responseLanguage,
+    };
+  }
+
   /**
    * Produces the answer for a prepared turn. The conversation engine drives
    * selection + dispatch and renders the outcome through the shared registry,
@@ -642,13 +688,15 @@ export class ChatService {
 
     try {
       session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
+      const responseLanguagePromise = this.detectResponseLanguage(input, session);
       const clarification = await this.resolvePendingForTurn(session, input.accountId);
       const activeRoutineAtTurnStart = await this.hasActiveRoutine(session);
       // A routine is a multi-turn skill: attempt it before grounding. If it claims the
       // turn, there is no retrieval — the routine renders its own reply.
       const routineStartedAt = Date.now();
-      const routineTurn = await this.attemptRoutineTurn(session, input.accountId, clarification);
+      const routineTurn = await this.attemptRoutineTurn(session, input.accountId, responseLanguagePromise, clarification);
       if (routineTurn) {
+        session = this.withResponseLanguage(session, await responseLanguagePromise);
         const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
           workspaceId: input.workspaceId,
           accountId: input.accountId,
@@ -678,6 +726,7 @@ export class ChatService {
       const retrievalInput = clarification.resolution?.kind === "retrieval_sense"
         ? { ...input, documentScope: clarification.resolution.documentScope }
         : input;
+      session = this.withResponseLanguage(session, await responseLanguagePromise);
       session = groundTurn
         ? await this.chatSessionPreparer.prepareRetrieval(retrievalInput, session, routing.framing)
         : await this.chatSessionPreparer.prepareDirect(input, session, routing.framing);
@@ -787,6 +836,7 @@ export class ChatService {
 
     try {
       session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
+      const responseLanguagePromise = this.detectResponseLanguage(input, session);
       const clarification = await this.resolvePendingForTurn(session, input.accountId);
       const activeRoutineAtTurnStart = await this.hasActiveRoutine(session);
 
@@ -798,8 +848,9 @@ export class ChatService {
       // A routine is a multi-turn skill: attempt it before grounding. If it claims the
       // turn, stream its rendered reply and finish — no retrieval.
       const routineStartedAt = Date.now();
-      const routineTurn = await this.attemptRoutineTurn(session, input.accountId, clarification);
+      const routineTurn = await this.attemptRoutineTurn(session, input.accountId, responseLanguagePromise, clarification);
       if (routineTurn) {
+        session = this.withResponseLanguage(session, await responseLanguagePromise);
         // Durably enqueue the action + advance routine state + persist the reply BEFORE
         // streaming the confirmation. The routine reply is rendered whole (not token-
         // streamed), so delaying the chunk costs nothing — but it means the visitor only
@@ -839,6 +890,7 @@ export class ChatService {
       const retrievalInput = clarification.resolution?.kind === "retrieval_sense"
         ? { ...input, documentScope: clarification.resolution.documentScope }
         : input;
+      session = this.withResponseLanguage(session, await responseLanguagePromise);
       session = groundTurn
         ? await this.chatSessionPreparer.prepareRetrieval(retrievalInput, session, routing.framing)
         : await this.chatSessionPreparer.prepareDirect(input, session, routing.framing);

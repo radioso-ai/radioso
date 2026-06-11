@@ -39,4 +39,30 @@ describe("RoutineStepRenderer", () => {
     });
     expect(vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt).toContain("Confirm the request was sent.");
   });
+
+  it("injects the detected response language when provided", async () => {
+    const gw = gateway("What is your email address?");
+    await new RoutineStepRenderer(gw, { responseLanguage: "English" }).render({
+      step: { id: "ask_email", kind: "chat", action: "Ask for email." },
+      steering: [],
+      turn,
+    });
+
+    const call = vi.mocked(gw.complete).mock.calls[0]![0];
+    expect(call.systemPrompt).toContain("Respond in English.");
+    expect(call.systemPrompt).not.toContain("Always reply in the same language as the user's most recent message");
+  });
+
+  it("keeps the relative language fallback when no detected label is available", async () => {
+    const gw = gateway("What is your email address?");
+    await new RoutineStepRenderer(gw).render({
+      step: { id: "ask_email", kind: "chat", action: "Ask for email." },
+      steering: [],
+      turn,
+    });
+
+    const call = vi.mocked(gw.complete).mock.calls[0]![0];
+    expect(call.systemPrompt).toContain("Always reply in the same language as the user's most recent message");
+    expect(call.systemPrompt).not.toContain("Respond in English.");
+  });
 });

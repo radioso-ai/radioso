@@ -35,11 +35,7 @@ export const parseStructuredRewrite = (raw: string): StructuredRewriteResult => 
                 ? (entry as { semanticQuery: string }).semanticQuery
                 : "",
           reason: typeof (entry as { reason?: unknown }).reason === "string" ? (entry as { reason: string }).reason : undefined,
-          responseLanguagePolicy:
-            typeof (entry as { responseLanguagePolicy?: unknown }).responseLanguagePolicy === "string" &&
-            (entry as { responseLanguagePolicy: string }).responseLanguagePolicy === "match_user_question"
-              ? "match_user_question"
-              : DEFAULT_RESPONSE_LANGUAGE_POLICY,
+          responseLanguagePolicy: DEFAULT_RESPONSE_LANGUAGE_POLICY,
         }))
     : undefined;
 
@@ -57,11 +53,7 @@ export const parseStructuredRewrite = (raw: string): StructuredRewriteResult => 
         : typeof parsed.rewrittenQuery === "string"
           ? parsed.rewrittenQuery
           : "",
-    responseLanguagePolicy:
-      typeof parsed.responseLanguagePolicy === "string" && parsed.responseLanguagePolicy === "match_user_question"
-        ? parsed.responseLanguagePolicy
-        : DEFAULT_RESPONSE_LANGUAGE_POLICY,
-    responseLanguage: typeof parsed.responseLanguage === "string" ? parsed.responseLanguage : undefined,
+    responseLanguagePolicy: DEFAULT_RESPONSE_LANGUAGE_POLICY,
     queryShape:
       typeof parsed.queryShape === "string" &&
       (

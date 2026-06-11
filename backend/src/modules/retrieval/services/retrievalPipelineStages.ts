@@ -223,7 +223,6 @@ export const RETRIEVAL_TRACE_SPAN_NAMES = {
   pipelineNoRetrieval: "retrieval.pipeline.no_retrieval",
   context: "retrieval.stage.context",
   queryInterpretation: "retrieval.stage.query_interpretation",
-  responseLanguageDetection: "retrieval.stage.response_language_detection",
   answerShapeSelection: "retrieval.stage.answer_shape_selection",
   candidateRetrieval: "retrieval.stage.candidate_retrieval",
   candidatePreparation: "retrieval.stage.candidate_preparation",

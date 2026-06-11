@@ -28,7 +28,6 @@ import { RetrievalDiagnosticsStageService } from "./retrievalDiagnosticsStage.js
 import { RetrievalPipelineActivityTraceBuilder } from "./retrievalPipelineActivityTraceBuilder.js";
 import { MetadataRuleScoringService } from "./metadataRuleScoringService.js";
 import { selectRetrievalAnswerShape } from "./retrievalShapeResolver.js";
-import type { ResponseLanguageDetection, ResponseLanguageDetector } from "../../../shared/services/responseLanguageDetector.js";
 import {
   RETRIEVAL_TRACE_SPAN_NAMES,
   buildCandidatePreparationTraceAttributes,
@@ -90,7 +89,6 @@ export interface RetrievalPipelineInterpretationResult {
   traceStartedAtMs: number;
   context: MeasuredStage<RetrievalContextStageResult>;
   interpretation: MeasuredStage<QueryInterpretationStageResult>;
-  responseLanguage?: MeasuredStage<ResponseLanguageDetection>;
 }
 
 /**
@@ -132,7 +130,6 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
     _semanticQueryConstraintService?: unknown,
     ingestionSettingsService?: IngestionSettingsService,
     skillSettingsResolver?: SkillSettingsResolver,
-    private readonly responseLanguageDetector?: ResponseLanguageDetector,
   ) {
     this.retrievalContextStage = new RetrievalContextStageService(
       retrievalDefaultsProvider,
@@ -172,55 +169,18 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
         () => this.retrievalContextStage.execute(request),
         buildRetrievalContextTraceAttributes,
       );
-      const responseLanguagePromise = this.responseLanguageDetector
-        ? this.measureTraced(
-            RETRIEVAL_TRACE_SPAN_NAMES.responseLanguageDetection,
-            buildRetrievalContextTraceAttributes(context.result),
-            () => this.responseLanguageDetector!.detect({
-              query: request.query,
-              history: context.result.contextWindow.selectedMessages,
-              workspaceContext: { workspaceId: request.workspaceId },
-              usageContext: {
-                ...request.usageContext!,
-                operation: "response_language_detection",
-                attemptKey: "response_language",
-              },
-            }).catch((): ResponseLanguageDetection => ({})),
-            (result) => ({
-              "retrieval.response.language": result.responseLanguage,
-            }),
-          )
-        : undefined;
-      const interpretationPromise = this.measureTraced(
+      const interpretation = await this.measureTraced(
         RETRIEVAL_TRACE_SPAN_NAMES.queryInterpretation,
         buildRetrievalContextTraceAttributes(context.result),
         () => this.queryInterpretationStage.execute(context.result),
         buildQueryInterpretationTraceAttributes,
       );
-      const [interpretation, responseLanguage] = await Promise.all([
-        interpretationPromise,
-        responseLanguagePromise,
-      ]);
-      const detectedLanguage = responseLanguage?.result.responseLanguage;
-      const interpretationWithLanguage = detectedLanguage
-        ? {
-            ...interpretation,
-            result: {
-              ...interpretation.result,
-              request: {
-                ...interpretation.result.request,
-                responseLanguage: detectedLanguage,
-              },
-            },
-          }
-        : interpretation;
 
       return {
         request,
         traceStartedAtMs,
         context,
-        interpretation: interpretationWithLanguage,
-        responseLanguage,
+        interpretation,
       };
     });
   }

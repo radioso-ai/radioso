@@ -726,10 +726,10 @@ export class ChatService {
       const retrievalInput = clarification.resolution?.kind === "retrieval_sense"
         ? { ...input, documentScope: clarification.resolution.documentScope }
         : input;
+      session = this.withResponseLanguage(session, await responseLanguagePromise);
       session = groundTurn
         ? await this.chatSessionPreparer.prepareRetrieval(retrievalInput, session, routing.framing)
         : await this.chatSessionPreparer.prepareDirect(input, session, routing.framing);
-      session = this.withResponseLanguage(session, await responseLanguagePromise);
       const answerStartedAt = Date.now();
       const clarificationTurn = groundTurn
         ? await this.maybeClarifyRetrievalSense({
@@ -890,10 +890,10 @@ export class ChatService {
       const retrievalInput = clarification.resolution?.kind === "retrieval_sense"
         ? { ...input, documentScope: clarification.resolution.documentScope }
         : input;
+      session = this.withResponseLanguage(session, await responseLanguagePromise);
       session = groundTurn
         ? await this.chatSessionPreparer.prepareRetrieval(retrievalInput, session, routing.framing)
         : await this.chatSessionPreparer.prepareDirect(input, session, routing.framing);
-      session = this.withResponseLanguage(session, await responseLanguagePromise);
       const answerStartedAt = Date.now();
       const clarificationTurn = groundTurn
         ? await this.maybeClarifyRetrievalSense({

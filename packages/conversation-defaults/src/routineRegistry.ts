@@ -61,6 +61,13 @@ const routinesBlock = (registrations: readonly RoutineRegistration[]): string =>
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
 
+const routineLabel = (routine: Routine): string => {
+  const name = isRecord(routine.metadata) && typeof routine.metadata.name === "string"
+    ? routine.metadata.name.trim()
+    : "";
+  return name || routine.id;
+};
+
 export const conversationRoutineActivatorFromCandidate = (
   candidate: ClarificationCandidate,
 ): ConversationRoutineActivator | null => {
@@ -177,7 +184,7 @@ export class RoutineRegistry {
           const registration = byId.get(match.routineId)!;
           return {
             id: registration.routine.id,
-            label: registration.routine.id,
+            label: routineLabel(registration.routine),
             description: registration.trigger.description,
             confidence: match.confidence,
             payload: {

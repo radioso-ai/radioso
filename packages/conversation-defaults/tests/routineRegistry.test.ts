@@ -23,18 +23,20 @@ const turn: TurnContext = {
   steering: [],
 };
 
-const routine = (id: string): Routine => ({
+const routine = (id: string, name?: string): Routine => ({
   id,
   rootStepId: "start",
   steps: [],
   transitions: [],
+  ...(name ? { metadata: { name } } : {}),
 });
 
 const registration = (
   id: string,
   trigger: Partial<RoutineRegistration["trigger"]> = {},
+  name?: string,
 ): RoutineRegistration => ({
-  routine: routine(id),
+  routine: routine(id, name),
   trigger: {
     description: `User wants ${id}`,
     priority: 0,
@@ -82,8 +84,8 @@ describe("RoutineRegistry ranked activation", () => {
     ]));
 
     const result = await new RoutineRegistry([
-      registration("demo", { description: "User wants to book a product demo" }),
-      registration("support", { description: "User wants to book a support call" }),
+      registration("demo", { description: "User wants to book a product demo" }, "Book a product demo"),
+      registration("support", { description: "User wants to book a support call" }, "Book a support call"),
     ], { policy }).activator(gw).activate({ turn });
 
     expect(result).toEqual({
@@ -91,14 +93,14 @@ describe("RoutineRegistry ranked activation", () => {
       candidates: [
         expect.objectContaining({
           id: "demo",
-          label: "demo",
+          label: "Book a product demo",
           description: "User wants to book a product demo",
           confidence: 0.82,
           payload: { routineId: "demo", variables: { company: "Acme" } },
         }),
         expect.objectContaining({
           id: "support",
-          label: "support",
+          label: "Book a support call",
           description: "User wants to book a support call",
           confidence: 0.79,
           payload: { routineId: "support", variables: { topic: "billing" } },

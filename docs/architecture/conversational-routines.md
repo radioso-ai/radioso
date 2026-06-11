@@ -64,9 +64,8 @@ On each turn, before normal skill selection, the engine checks for a routine:
 
 1. If a routine is already active for the session, it resumes at its saved step.
 2. Otherwise it checks whether any of the agent's published routines should
-   activate. A routine declares a trigger; the model judges whether it applies. If
-   more than one could activate, the routine with the higher authored priority
-   wins.
+   activate. Each routine registration carries trigger metadata:
+   `{ description, priority }`.
 3. The active step is captured, its slots are filled from the user's message, and
    the routine advances along the first guard that holds. A message that supplies
    several values at once can advance through several steps in one turn.
@@ -77,6 +76,42 @@ A routine keeps its position and captured values in session state until it
 completes or expires. If an action cannot run — for example, the agent no longer
 holds its capability — the turn fails rather than confirming a success that did
 not happen.
+
+## Activation and clarification
+
+Routine activation evaluates all eligible routine triggers together in one ranked
+model call. The engine no longer asks each routine, one by one, whether it wants
+the turn.
+
+The ranked activation input is the latest user message plus the full eligible
+routine list. Each routine contributes its trigger description and authored
+priority. Capability gates are applied before ranking, so a gated-off routine is
+not considered and cannot appear in a clarifying question.
+
+The activation result is a per-routine confidence score and any activation
+variables that can already be extracted from the original message. The decision
+order is:
+
+1. Drop candidates below the confidence floor.
+2. If the top routine clears the margin over the runner-up, start it silently.
+3. If the top candidates are too close but one of them has a unique highest
+   authored priority, start that routine silently.
+4. Otherwise ask one clarifying question with up to four options.
+
+Priority is explicit operator arbitration. It breaks close calls only when one
+candidate has a unique highest priority. If comparable candidates also tie on
+priority, the assistant asks instead of guessing.
+
+When the visitor answers a routine clarification, the pending choice resolves
+before the next routine attempt. A chosen option starts the selected routine at
+its first step and preserves activation variables extracted from the ambiguous
+turn. "None of these" or an unrelated reply clears the pending clarification and
+the latest message proceeds normally.
+
+While a routine is active, clarification asks are suppressed, including turns the
+routine yields as off-topic. The system may still record that candidates were
+close, but it silently picks the top candidate so the active routine remains the
+only state waiting on the visitor's next message.
 
 ## Authoring a routine
 

@@ -240,7 +240,7 @@ describe("routine definition compiler and validator", () => {
 
   it("runs an authored two-slot/two-step compiled routine through the existing 069 runtime", async () => {
     const routine = compileRoutineDefinition(baseDefinition());
-    const registry = new RoutineRegistry([{ routine, activates: async () => ({}) }]);
+    const registry = new RoutineRegistry([{ routine, trigger: { description: "Start test routine", priority: 0 } }]);
     const rows = new Map<string, RoutineState>();
     const store: ConversationRoutineStore = {
       loadActive: async ({ sessionId }) => rows.get(sessionId) ?? null,
@@ -284,7 +284,11 @@ describe("routine definition compiler and validator", () => {
       composer: { compose: async () => ({ answer: "normal" }) },
       routineStore: store,
       routineRunner: new DefaultRoutineRunner([routine], selector, renderer),
-      routineActivator: registry.activator({ complete: async () => ({ text: "" }) }),
+      routineActivator: registry.activator({
+        complete: async () => ({
+          text: JSON.stringify({ matches: [{ routineId: routine.id, confidence: 0.95 }] }),
+        }),
+      }),
     });
 
     const engine = createConversationEngine();

@@ -4,7 +4,7 @@ import type {
   ConversationTraceStage,
   TurnTraceEnvelope,
 } from '@/lib/api'
-import { getCapabilitySubTrace, resolveCapabilityLeaf } from '@/lib/turn-trace'
+import { getCapabilitySubTrace, resolveCapabilityLeaf, spineStageLabel } from '@/lib/turn-trace'
 
 /**
  * Flattens a {@link TurnTraceEnvelope} into a single connected flow graph:
@@ -91,6 +91,11 @@ const messageSummary = (stage: ConversationTraceStage): string | undefined => {
   return typeof length === 'number' && length > 0 ? `${length} chars` : undefined
 }
 
+const clarificationSummary = (stage: ConversationTraceStage): string | undefined => {
+  const decision = asString((stage.outputs ?? {}).decision)
+  return decision?.replaceAll('_', ' ')
+}
+
 const deriveOutcome = (
   spine: ConversationTrace,
   dispatch: ConversationTraceStage | undefined,
@@ -147,6 +152,7 @@ export const envelopeToFlowGraph = (envelope: TurnTraceEnvelope): TurnFlowGraph 
   const gather = findStage(spine, 'gather')
   const directives = findStage(spine, 'directive_match')
   const selection = findStage(spine, 'skill_selection')
+  const clarification = findStage(spine, 'clarification')
   const dispatch = spine.stages.find((stage) => stage.kind === 'skill_dispatch')
   const compose = findStage(spine, 'compose')
   // Routine turns never run compose; their assistant reply is carried on the
@@ -191,6 +197,19 @@ export const envelopeToFlowGraph = (envelope: TurnTraceEnvelope): TurnFlowGraph 
 
   // Skill dispatch and its capability path.
   let tailId = engineId
+  if (clarification) {
+    const clarificationId = `spine:${clarification.id}`
+    nodes.push({
+      id: clarificationId,
+      nodeKind: 'stage',
+      label: spineStageLabel(clarification),
+      sublabel: clarificationSummary(clarification),
+      status: clarification.status,
+      detail: { kind: 'spine', spineStageId: clarification.id },
+    })
+    edges.push({ id: `e:${tailId}->${clarificationId}`, source: tailId, target: clarificationId, kind: 'sequence' })
+    tailId = clarificationId
+  }
   if (dispatch) {
     const skillId = 'skill'
     const subTrace = getCapabilitySubTrace(dispatch)
@@ -205,7 +224,7 @@ export const envelopeToFlowGraph = (envelope: TurnTraceEnvelope): TurnFlowGraph 
       capabilityNamespace: leaf?.namespace,
       detail: { kind: 'spine', spineStageId: dispatch.id },
     })
-    edges.push({ id: 'e:engine->skill', source: engineId, target: skillId, kind: 'sequence' })
+    edges.push({ id: `e:${tailId}->skill`, source: tailId, target: skillId, kind: 'sequence' })
     tailId = skillId
 
     if (leaf?.kind === 'activity-trace') {

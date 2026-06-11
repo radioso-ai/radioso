@@ -7,6 +7,9 @@ import { RetrievalContextStageService } from "../../src/modules/retrieval/servic
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
 import { RetrievalDiagnosticsStageService } from "../../src/modules/retrieval/services/retrievalDiagnosticsStage.js";
 import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
+import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
+import { CandidatePreparationStageService } from "../../src/modules/retrieval/services/candidatePreparationStage.js";
+import { MetadataRuleScoringService } from "../../src/modules/retrieval/services/metadataRuleScoringService.js";
 import {
   buildCandidatePreparationTraceAttributes,
   buildCandidateRetrievalTraceAttributes,
@@ -14,8 +17,102 @@ import {
   buildQueryInterpretationTraceAttributes,
   buildRetrievalPipelineTraceAttributes,
 } from "../../src/modules/retrieval/services/retrievalPipelineStages.js";
+import { hathaRajaYogaCandidates } from "../fixtures/retrievalSenseCorpus.js";
+
+const baseCandidateRetrievalInput = (documentScope?: string[]) => ({
+  request: {
+    workspaceId: "workspace-1",
+    query: "tell me about yoga",
+    history: [],
+    ...(documentScope ? { documentScope } : {}),
+  },
+  settings: {
+    workspaceId: "workspace-1",
+    queryRewriteEnabled: false,
+    semanticRewriteInstructions: "",
+    lexicalRewriteInstructions: "",
+    suggestedQuestionsEnabled: true,
+    suggestedQuestionsCount: 3,
+    rerankEnabled: false,
+    vectorTopK: 20,
+    similarityThreshold: 0.2,
+    rerankTopK: 5,
+    customInstruction: "",
+    metadataRules: [],
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+  contextWindow: { selectedMessages: [], truncated: false, selectionReason: "full-history" },
+  originalParsedQuery: { semanticQuery: "yoga", lexicalQuery: "yoga", constraints: [] },
+  originalPreparedQuery: { semanticQuery: "yoga", lexicalQuery: "yoga", constraints: [] },
+  rewrittenQuery: {
+    originalQuery: "tell me about yoga",
+    rewrittenQuery: "tell me about yoga",
+    effectiveQuery: "tell me about yoga",
+    semanticQuery: "yoga",
+    lexicalQuery: "yoga",
+    responseIntent: "retrieval" as const,
+    rewriteApplied: false,
+    retrievalEligible: true,
+    status: "skipped" as const,
+    confidence: 1,
+  },
+  responseIntent: "retrieval" as const,
+  activeQuery: "tell me about yoga",
+  activeParsedQuery: { semanticQuery: "yoga", lexicalQuery: "yoga", constraints: [] },
+  activeSemanticQuery: "yoga",
+  activeRetrievalSubqueries: [],
+  triggerAnalysis: {
+    status: "skipped_not_configured" as const,
+    consideredRules: [],
+    matchedRuleIds: [],
+    unmatchedRuleIds: [],
+    matchCount: 0,
+    matcherVersion: "none",
+  },
+  promptHistory: [],
+  promptHistoryReset: false,
+  continuityDecision: "unchanged" as const,
+  activeEmbedding: [],
+  activeEmbeddingDurationMs: 0,
+  originalContexts: [],
+  rewrittenContexts: hathaRajaYogaCandidates().slice(0, 4),
+  lexicalContexts: [],
+  retrievalBranches: [],
+  vectorFallbackApplied: false,
+});
 
 describe("retrieval pipeline stages", () => {
+  it("applies documentScope at candidate preparation before rerank inputs are built", async () => {
+    const stage = new CandidatePreparationStageService(
+      new CandidatePreparationService(),
+      new MetadataRuleScoringService(),
+    );
+
+    const result = await stage.execute(baseCandidateRetrievalInput(["doc-raja"]));
+
+    expect(result.normalizedCandidates.map((candidate) => candidate.documentId)).toEqual(["doc-raja", "doc-raja"]);
+    expect(result.mergedCandidates.map((candidate) => candidate.documentId)).toEqual(["doc-raja", "doc-raja"]);
+    expect(result.scoredCandidates.map((candidate) => candidate.documentId)).toEqual(["doc-raja", "doc-raja"]);
+  });
+
+  it("keeps absent documentScope behavior identical", async () => {
+    const stage = new CandidatePreparationStageService(
+      new CandidatePreparationService(),
+      new MetadataRuleScoringService(),
+    );
+    const input = baseCandidateRetrievalInput();
+
+    const result = await stage.execute(input);
+
+    expect(result.normalizedCandidates.map((candidate) => candidate.chunkId)).toEqual(
+      hathaRajaYogaCandidates().slice(0, 4).map((candidate) => candidate.chunkId),
+    );
+    expect(result.mergedCandidates.map((candidate) => candidate.chunkId)).toEqual(
+      hathaRajaYogaCandidates().slice(0, 4).map((candidate) => candidate.chunkId),
+    );
+  });
+
   it("builds privacy-safe bounded retrieval span attributes", () => {
     const request = {
       workspaceId: "workspace-1",

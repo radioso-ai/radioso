@@ -32,6 +32,7 @@ describe('spineStageLabel', () => {
   it('maps known spine kinds to friendly labels and humanizes unknowns', () => {
     expect(spineStageLabel({ id: 'g', kind: 'gather', status: 'applied' })).toBe('Gather')
     expect(spineStageLabel({ id: 'd', kind: 'skill_dispatch', status: 'applied' })).toBe('Dispatch')
+    expect(spineStageLabel({ id: 'c', kind: 'clarification', status: 'applied' })).toBe('Clarification')
     expect(spineStageLabel({ id: 'x', kind: 'custom_phase', status: 'applied' })).toBe('custom phase')
   })
 })

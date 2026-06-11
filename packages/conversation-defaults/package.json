@@ -21,10 +21,10 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@radioso/conversation-contract": "workspace:*"
+    "@radioso/conversation-contract": "workspace:*",
+    "@radioso/conversation-engine": "workspace:*"
   },
   "devDependencies": {
-    "@radioso/conversation-engine": "workspace:*",
     "@types/node": "^24.3.0",
     "typescript": "^5.9.2",
     "vitest": "^4.1.8"

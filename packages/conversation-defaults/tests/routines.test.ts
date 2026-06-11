@@ -66,20 +66,29 @@ describe("routine defaults", () => {
     expect(result.status, result.stderr || result.stdout).toBe(0);
   });
 
-  it("activates the first registered routine whose registration claims the turn", async () => {
-    const first = vi.fn(async () => null);
+  it("activates the ranked routine selected by the shared matcher", async () => {
+    const activationGateway = gateway(JSON.stringify({
+      matches: [
+        { routineId: "a", confidence: 0.1 },
+        { routineId: "b", confidence: 0.9, variables: { email: "x@y.z" } },
+      ],
+    }));
     const registry = new RoutineRegistry([
-      { routine: { ...routine, id: "a" }, activates: first },
-      { routine: { ...routine, id: "b" }, activates: vi.fn(async () => ({ variables: { email: "x@y.z" } })) },
+      { routine: { ...routine, id: "a" }, trigger: { description: "Start a", priority: 0 } },
+      { routine: { ...routine, id: "b" }, trigger: { description: "Start b", priority: 0 } },
     ]);
 
     expect(registry.routines.map((candidate) => candidate.id)).toEqual(["a", "b"]);
     expect(registry.isEmpty).toBe(false);
-    await expect(registry.activator().activate({ turn })).resolves.toEqual({
+    await expect(registry.activator(activationGateway).activate({ turn })).resolves.toMatchObject({
+      kind: "activate",
       routineId: "b",
       variables: { email: "x@y.z" },
+      decisionMetadata: {
+        decision: { kind: "auto_pick", reason: "clear_margin" },
+      },
     });
-    expect(first).toHaveBeenCalledWith({ turn });
+    expect(activationGateway.complete).toHaveBeenCalledTimes(1);
   });
 
   it("selects a transition from balanced JSON output and captures variables", async () => {

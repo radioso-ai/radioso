@@ -81,4 +81,70 @@ describe("PostgresAssistantTurnPersistence", () => {
     expect(params?.[4]).toBe(JSON.stringify({ ask_email: 1, ask_message: 2 }));
     expect(params?.[5]).toBe("active");
   });
+
+  it("applies clarification transitions inside the assistant turn transaction", async () => {
+    const calls: QueryCall[] = [];
+    const client = {
+      query: vi.fn(async (sql: string, params?: unknown[]) => {
+        calls.push([sql, params]);
+        if (sql.includes("RETURNING id, conversation_id")) {
+          return queryResult([{
+            id: "assistant_msg_1",
+            conversation_id: "conv_1",
+            workspace_id: "workspace_1",
+            role: "assistant",
+            content: "Which one?",
+            metadata_json: {},
+            skill_name: null,
+            skill_outcome: null,
+            skill_status: null,
+            created_at: new Date("2026-06-09T00:00:00.000Z"),
+          }]);
+        }
+        return queryResult([]);
+      }),
+    };
+    const database = {
+      withTransaction: vi.fn(async (callback: (transactionClient: PoolClient) => Promise<unknown>) =>
+        callback(client as unknown as PoolClient)
+      ),
+    } as unknown as Database;
+
+    await new PostgresAssistantTurnPersistence(database, 60_000).completeAssistantTurn({
+      workspaceId: "workspace_1",
+      conversationId: "conv_1",
+      assistantMessage: {
+        id: "assistant_msg_1",
+        conversationId: "conv_1",
+        workspaceId: "workspace_1",
+        role: "assistant",
+        content: "Which one?",
+      },
+      auditEvent: {
+        eventType: "chat.answer",
+        eventStatus: "success",
+        workspaceId: "workspace_1",
+        metadata: {},
+      },
+      clarificationTransition: {
+        kind: "save",
+        pending: {
+          sessionId: "conv_1",
+          source: "test_surface",
+          candidates: [{ id: "a", label: "Alpha", confidence: 0.8, payload: { opaque: "a" } }],
+          askedEventId: "assistant_msg_1",
+          status: "pending",
+          expiresAt: "2026-06-10T12:00:00.000Z",
+        },
+      },
+    });
+
+    const clarificationCall = calls.find(([sql]) => sql.includes("INSERT INTO clarification_states"));
+    expect(clarificationCall).toBeDefined();
+    expect(calls.findIndex(([sql]) => sql.includes("INSERT INTO clarification_states")))
+      .toBeLessThan(calls.findIndex(([sql]) => sql.includes("INSERT INTO messages")));
+    expect(clarificationCall![1]?.[2]).toBe(JSON.stringify([
+      { id: "a", label: "Alpha", confidence: 0.8, payload: { opaque: "a" } },
+    ]));
+  });
 });

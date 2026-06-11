@@ -23,6 +23,7 @@ const SPINE_STAGE_LABELS: Record<string, string> = {
   compose: 'Compose',
   routine_resume: 'Routine',
   routine_activate: 'Routine',
+  clarification: 'Clarification',
 }
 
 export const spineStageLabel = (stage: ConversationTraceStage): string =>

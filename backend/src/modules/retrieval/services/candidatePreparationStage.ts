@@ -16,11 +16,15 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
   ) {}
 
   async execute(input: CandidateRetrievalStageResult): Promise<CandidatePreparationStageResult> {
-    const normalizedCandidates = this.candidatePreparationService.prepare({
+    const preparedCandidates = this.candidatePreparationService.prepare({
       original: input.originalContexts,
       rewritten: input.rewrittenContexts,
       lexical: input.lexicalContexts,
     });
+    const documentScope = input.request.documentScope;
+    const normalizedCandidates = documentScope && documentScope.length > 0
+      ? preparedCandidates.filter((candidate) => new Set(documentScope).has(candidate.documentId))
+      : preparedCandidates;
     const minimumUsefulCandidateCount = RETRIEVAL_BEHAVIOR.hybrid.minimumUsefulCandidateCount;
     const alwaysOnRules = (input.settings.metadataRules ?? []).filter(
       (rule) => rule.enabled && rule.triggerMode !== "match_turn",

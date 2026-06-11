@@ -1,6 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { ConversationModelGateway, TurnContext } from "@radioso/conversation-contract";
-
 import {
   ApplicationModuleCoordinator,
   createApplicationExtensionRegistry,
@@ -15,30 +13,9 @@ import {
 import { compileRoutineDefinition } from "../../src/modules/routines/public.js";
 import { capabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 
-const turnWith = (
-  metadata: Record<string, unknown> | undefined,
-  contactRequestsEnabled = true,
-): TurnContext => ({
-  agent: { id: "a", name: "A", metadata: { contactRequestsEnabled } },
-  sessionId: "conv_1",
-  inputEvent: { kind: "message", content: "contact", metadata },
-  history: [],
-  stagedContext: [],
-  steering: [],
-});
-
-const intentClick = { method: "intent_click", intent: { skillName: CONTACT_INTENT_SKILL_NAME } };
-
 const agentServiceWith = (contactRequestsEnabled: boolean) => ({
   resolve: async () => ({ contactRequestsEnabled }),
 });
-
-const gatewayReturning = (text: string): ConversationModelGateway => ({ complete: async () => ({ text }) });
-const failingGateway: ConversationModelGateway = {
-  complete: async () => {
-    throw new Error("model gateway should not be called");
-  },
-};
 
 const applyModule = () => {
   const registry = createApplicationExtensionRegistry();
@@ -56,34 +33,18 @@ describe("contact routine application module", () => {
     expect(registry.routineRegistrations.map((r) => r.routine.id)).toEqual([
       compileRoutineDefinition(contactRoutineDefinition).id,
     ]);
+    expect(registry.routineRegistrations[0]?.trigger).toEqual({
+      description: contactRoutineDefinition.activation.triggerDescription,
+      priority: contactRoutineDefinition.activation.priority,
+      gateRef: contactRoutineDefinition.activation.gateRef,
+      eligible: expect.any(Function),
+      explicitClaim: expect.any(Function),
+    });
     expect(registry.actionHandlerRegistrations.map((r) => r.type)).toEqual([CONTACT_SEND_ACTION_TYPE]);
     expect(registry.actionHandlerRegistrations[0]?.requiredCapabilities).toEqual([
       capabilityNames.humanContact.request,
     ]);
     expect(registry.publicChatActionAdvertiserRegistrations).toHaveLength(1);
-  });
-
-  it("activates on the explicit contact pill click (fast path, no LLM call)", async () => {
-    const { activates } = applyModule().routineRegistrations[0]!;
-
-    // Enabled agent + the contact intent → activate without touching the model.
-    expect(await activates({ turn: turnWith(intentClick, true), modelGateway: failingGateway })).toEqual({});
-    // Same intent, but the agent has contact requests disabled → no activation, no LLM.
-    expect(await activates({ turn: turnWith(intentClick, false), modelGateway: failingGateway })).toBeNull();
-  });
-
-  it("activates on a typed message only when the model judges contact intent, and only for enabled agents", async () => {
-    const { activates } = applyModule().routineRegistrations[0]!;
-    const typed = { method: "typed" };
-
-    expect(
-      await activates({ turn: turnWith(typed, true), modelGateway: gatewayReturning('{"wantsContact": true}') }),
-    ).toEqual({});
-    expect(
-      await activates({ turn: turnWith(typed, true), modelGateway: gatewayReturning('{"wantsContact": false}') }),
-    ).toBeNull();
-    // Disabled agent → declines without calling the model.
-    expect(await activates({ turn: turnWith(typed, false), modelGateway: failingGateway })).toBeNull();
   });
 
   it("advertises the contact action only when the agent enabled it", async () => {
@@ -98,5 +59,42 @@ describe("contact routine application module", () => {
     ]);
     expect(await build(false).getPublicIntakeActions?.({ workspaceId: "ws_1", agentId: "a" })).toEqual([]);
     expect("handle" in build(true)).toBe(false);
+  });
+
+  it("keeps contact activation behind the agent flag and claims intent-click metadata deterministically", () => {
+    const registration = applyModule().routineRegistrations[0]!;
+    const baseTurn = {
+      agent: { id: "agent_1", metadata: { contactRequestsEnabled: true } },
+      sessionId: "conv_1",
+      inputEvent: { kind: "message" as const, content: "ignored" },
+      history: [],
+      stagedContext: [],
+      steering: [],
+    };
+
+    expect(registration.trigger.eligible?.({ turn: {
+      ...baseTurn,
+      agent: { id: "agent_1", metadata: { contactRequestsEnabled: false } },
+    } })).toBe(false);
+    expect(registration.trigger.eligible?.({ turn: baseTurn })).toBe(true);
+    expect(registration.trigger.explicitClaim?.({ turn: {
+      ...baseTurn,
+      inputEvent: {
+        kind: "message" as const,
+        content: "",
+        metadata: {
+          method: "intent_click",
+          intent: { skillName: CONTACT_INTENT_SKILL_NAME },
+        },
+      },
+    } })).toEqual({});
+    expect(registration.trigger.explicitClaim?.({ turn: {
+      ...baseTurn,
+      inputEvent: {
+        kind: "message" as const,
+        content: "contact a human",
+        metadata: { method: "message" },
+      },
+    } })).toBeNull();
   });
 });

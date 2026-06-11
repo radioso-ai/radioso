@@ -128,7 +128,7 @@ export function TurnFlowOverlay({
             showMiniMap
           />
         </div>
-        <div className="min-h-0 overflow-y-auto border-l border-border p-4">
+        <div data-testid="turn-flow-stage-detail" className="min-h-0 overflow-y-auto border-l border-border p-4">
           <NodeDetail
             node={activeNode}
             spineStages={envelope.spine.stages}

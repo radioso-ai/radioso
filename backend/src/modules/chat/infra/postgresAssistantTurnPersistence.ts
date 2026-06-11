@@ -12,6 +12,7 @@ import {
   type AssistantTurnPersistencePort,
 } from "../services/chatTurnLifecycle.js";
 import type { CapturedRoutineTransition } from "../services/routines/deferredRoutineStore.js";
+import type { CapturedClarificationTransition } from "../services/clarification/deferredClarificationStore.js";
 
 type CompleteAssistantTurnInput = Parameters<AssistantTurnPersistencePort["completeAssistantTurn"]>[0];
 
@@ -111,6 +112,50 @@ const applyRoutineStateTransition = async (
   await client.query(`DELETE FROM routine_states WHERE session_id = $1`, [transition.sessionId]);
 };
 
+const saveClarificationState = async (
+  client: PoolClient,
+  pending: Extract<CapturedClarificationTransition, { kind: "save" }>["pending"],
+): Promise<void> => {
+  await client.query(
+    `INSERT INTO clarification_states (session_id, source, candidates, asked_event_id, status, expires_at, updated_at)
+     VALUES ($1, $2, $3::jsonb, $4, $5, $6, now())
+     ON CONFLICT (session_id) DO UPDATE SET
+       source = EXCLUDED.source,
+       candidates = EXCLUDED.candidates,
+       asked_event_id = EXCLUDED.asked_event_id,
+       status = EXCLUDED.status,
+       expires_at = EXCLUDED.expires_at,
+       updated_at = now()`,
+    [
+      pending.sessionId,
+      pending.source,
+      JSON.stringify(pending.candidates),
+      pending.askedEventId ?? null,
+      pending.status,
+      new Date(pending.expiresAt).toISOString(),
+    ],
+  );
+};
+
+const applyClarificationTransition = async (
+  client: PoolClient,
+  transition: CapturedClarificationTransition | null | undefined,
+): Promise<void> => {
+  if (!transition) {
+    return;
+  }
+  if (transition.kind === "save") {
+    await saveClarificationState(client, transition.pending);
+    return;
+  }
+  await client.query(
+    `UPDATE clarification_states
+        SET status = $2, updated_at = now()
+      WHERE session_id = $1`,
+    [transition.sessionId, transition.outcome ?? "resolved"],
+  );
+};
+
 export class PostgresAssistantTurnPersistence implements AssistantTurnPersistencePort {
   constructor(
     private readonly database: Database,
@@ -121,6 +166,7 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
     return this.database.withTransaction(async (client) => {
       await enqueueActions(client, input);
       await applyRoutineStateTransition(client, input.routineStateTransition, this.routineStateTtlMs);
+      await applyClarificationTransition(client, input.clarificationTransition);
 
       const messageId = input.assistantMessage.id ?? randomUUID();
       const messageResult = await client.query<MessageRow>(

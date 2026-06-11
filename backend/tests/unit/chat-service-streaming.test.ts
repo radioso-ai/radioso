@@ -331,7 +331,7 @@ describe("chat service streaming", () => {
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
       forTurn: async () => ({
-        activator: { activate: async () => ({ routineId: "contact.request" }) },
+        activator: { activate: async () => ({ kind: "activate", routineId: "contact.request" }) },
         runner: {
           resume: async () => ({
             response: { answer: "What is your email?" },
@@ -389,7 +389,7 @@ describe("chat service streaming", () => {
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
       forTurn: async () => ({
-        activator: { activate: async () => ({ routineId: "contact.request" }) },
+        activator: { activate: async () => ({ kind: "activate", routineId: "contact.request" }) },
         runner: {
           resume: async () => ({
             response: { answer: "Got it — someone will be in touch." },

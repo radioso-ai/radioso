@@ -63,6 +63,20 @@ describe("DefaultClarifier", () => {
       .resolves.toEqual({ kind: "chosen", id: "support" });
   });
 
+  it("maps exact option ids and labels without asking the model", async () => {
+    const modelGateway = gateway('{"kind":"declined"}');
+    const clarifier = new DefaultClarifier(modelGateway, {
+      questionPromptTemplate: "unused",
+      replyMapPromptTemplate: "unused",
+    });
+
+    await expect(clarifier.mapReply({ candidates, turn: turn(" Soporte   tecnico ") }))
+      .resolves.toEqual({ kind: "chosen", id: "support" });
+    await expect(clarifier.mapReply({ candidates, turn: turn("BILLING") }))
+      .resolves.toEqual({ kind: "chosen", id: "billing" });
+    expect(modelGateway.complete).not.toHaveBeenCalled();
+  });
+
   it("maps declined and unrelated replies", async () => {
     const declinedGateway = gateway('{"kind":"declined"}');
     const unrelatedGateway = gateway('{"kind":"unrelated"}');

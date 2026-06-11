@@ -40,6 +40,30 @@ const optionsBlock = (candidates: ClarificationCandidate[]): string =>
     })
     .join("\n\n");
 
+const normalizeReplyChoice = (value: string): string =>
+  value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+
+const mapExactReplyChoice = (
+  reply: string,
+  candidates: ClarificationCandidate[],
+): ClarificationReplyMapping | null => {
+  const normalizedReply = normalizeReplyChoice(reply);
+  if (!normalizedReply) {
+    return null;
+  }
+
+  for (const candidate of candidates) {
+    if (
+      normalizeReplyChoice(candidate.id) === normalizedReply ||
+      normalizeReplyChoice(candidate.label) === normalizedReply
+    ) {
+      return { kind: "chosen", id: candidate.id };
+    }
+  }
+
+  return null;
+};
+
 const extractJsonObject = (raw: string): string | null => {
   const start = raw.indexOf("{");
   if (start < 0) {
@@ -128,6 +152,11 @@ export class DefaultClarifier implements ConversationClarifier {
   }
 
   async mapReply(input: { candidates: ClarificationCandidate[]; turn: TurnContext }): Promise<ClarificationReplyMapping> {
+    const exactChoice = mapExactReplyChoice(input.turn.inputEvent.content, input.candidates);
+    if (exactChoice) {
+      return exactChoice;
+    }
+
     const systemPrompt = renderPromptTemplate("chat/clarification-reply-map.md", this.replyMapPromptTemplate, {
       options: optionsBlock(input.candidates),
       conversationLanguage: input.turn.inputEvent.locale ?? "the conversation language",

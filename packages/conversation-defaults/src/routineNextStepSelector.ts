@@ -11,43 +11,10 @@ import type {
   TurnContext,
 } from "@radioso/conversation-contract";
 
+import { DEFAULT_ROUTINE_NEXT_STEP_PROMPT } from "./generated/defaultPrompts.js";
 import { renderPromptTemplate } from "./promptTemplate.js";
 
-export const DEFAULT_ROUTINE_NEXT_STEP_PROMPT = `You are guiding a user through a structured, multi-step routine. Decide what should
-happen next, based on what the user just said.
-
-The current step's instruction to the user was:
-{{currentStep}}
-
-{{skillResult}}
-
-The possible next steps are numbered below. Each has a condition describing when it
-applies. A condition may be written in any language and the conversation may be in
-any language — judge by meaning, not by matching words.
-
-{{conditions}}
-
-{{slotSchema}}
-
-Return a JSON object:
-
-{"condition": <number or null>, "offTopic": <true or false>, "variables": {"<name>": "<value the user provided this turn>"}}
-
-Rules:
-
-- "condition": the number of exactly one condition that clearly holds, or null to stay
-  on the current step (for example, the user has not yet provided what was asked).
-- If a condition says the user declined, cancelled, refused, or wants to stop the
-  routine, choose that condition when the latest user message has that meaning, instead
-  of returning null to re-ask the current step.
-- "offTopic": true when the user's latest message is a *different* question or request
-  that deserves its own answer right now (for example they changed the subject or asked
-  about something unrelated to the current step), instead of trying to provide what the
-  step asked for. Otherwise false. When you return a condition number, "offTopic" must
-  be false.
-- "variables": only values the user actually provided this turn (for example an email
-  address or a message). Use an empty object {} when there are none.
-- Return only the JSON object, with no other text.`;
+export { DEFAULT_ROUTINE_NEXT_STEP_PROMPT } from "./generated/defaultPrompts.js";
 
 const turnMessages = (turn: TurnContext): ConversationMessage[] => [
   ...turn.history,
@@ -136,6 +103,32 @@ const parseDecision = (raw: string): ParsedDecision => {
   }
 };
 
+// Structural check: a literal template placeholder (e.g. "<name>") echoed verbatim by
+// the model from the prompt example — never a real slot key.
+const PLACEHOLDER_KEY_PATTERN = /^<.*>$/;
+
+/**
+ * Keep only legitimately captured slot values. Drops placeholder keys the model echoes
+ * from the prompt example, and — when the routine declares a slot schema — restricts
+ * capture to declared slot keys so a bundled off-topic request cannot smuggle arbitrary
+ * keys (or free-form turn text) into the action payload. Schema-less routines keep their
+ * legacy free-form capture, minus placeholder echoes.
+ */
+const sanitizeVariables = (
+  variables: Record<string, unknown>,
+  routine: Routine,
+): Record<string, unknown> => {
+  const declaredKeys = new Set((routine.slots ?? []).map((slot) => slot.key));
+  return Object.fromEntries(
+    Object.entries(variables).filter(([key]) => {
+      if (PLACEHOLDER_KEY_PATTERN.test(key)) {
+        return false;
+      }
+      return declaredKeys.size === 0 || declaredKeys.has(key);
+    }),
+  );
+};
+
 /**
  * Decides which step a routine turn lands on by asking the model which outgoing
  * transition's condition holds, capturing any slot variables — the host-side
@@ -190,7 +183,7 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
     if (conditionMatched) {
       return {
         nextStepId: input.transitions[decision.condition! - 1]!.to,
-        variables: decision.variables,
+        variables: sanitizeVariables(decision.variables, input.routine),
       };
     }
 
@@ -202,6 +195,6 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
 
     // Otherwise the user is still on this step but hasn't satisfied it → stay (a re-ask),
     // keeping any captured variables so partial progress is not lost.
-    return { nextStepId: input.currentStep.id, variables: decision.variables };
+    return { nextStepId: input.currentStep.id, variables: sanitizeVariables(decision.variables, input.routine) };
   }
 }

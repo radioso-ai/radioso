@@ -111,7 +111,7 @@ const preparedSession = (): PreparedSession => ({
       links: [],
     },
   } as unknown as RetrievalPipelineResult,
-  turnRoute: "social_only",
+  turnRoute: "direct",
   userMessage: message({
     inputMetadata: { method: "intent_click", intent: { skillName: "order.status" } },
   }),
@@ -300,7 +300,7 @@ describe("createChatProcessTurnInput", () => {
         selectionReason: "test matcher",
       }),
     ]);
-    expect(matchedTurnContexts).toEqual([{ query: "Where is my order?", route: "social_only" }]);
+    expect(matchedTurnContexts).toEqual([{ query: "Where is my order?", route: "direct" }]);
     expect(session.directiveSteering).toMatchObject({
       rules: [{ action: "Keep it brief.", source: "directive", lifespan: "response" }],
       matches: [expect.objectContaining({ directive })],
@@ -488,7 +488,7 @@ describe("createAttemptRoutineInput", () => {
         selectionReason: "test matcher",
       }),
     ]);
-    expect(matchedTurnContexts).toEqual([{ query: "Where is my order?", route: "social_only" }]);
+    expect(matchedTurnContexts).toEqual([{ query: "Where is my order?", route: "direct" }]);
     expect(session.directiveSteering).toMatchObject({
       rules: [{ action: "Keep the routine answer precise.", source: "directive", lifespan: "response" }],
       matches: [expect.objectContaining({ directive })],

@@ -9,8 +9,7 @@
  */
 export const CHAT_TURN_ROUTE = {
   RETRIEVAL: "retrieval",
-  SOCIAL_ONLY: "social_only",
-  ASSISTANT_IDENTITY: "assistant_identity",
+  DIRECT: "direct",
 } as const;
 
 export type ChatTurnRoute = (typeof CHAT_TURN_ROUTE)[keyof typeof CHAT_TURN_ROUTE];

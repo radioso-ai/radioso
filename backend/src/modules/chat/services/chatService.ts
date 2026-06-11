@@ -31,7 +31,7 @@ import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import type { ChatResponse } from "../types/chatResponses.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
-import { CHAT_TURN_ROUTE } from "./chatTurnIntentService.js";
+import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
@@ -92,6 +92,7 @@ import {
   toConversationInputEvent,
   toConversationMessages,
 } from "./conversationContractMappers.js";
+import type { TurnRouter, TurnRouting } from "./turnRouter.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
@@ -193,6 +194,7 @@ export interface ChatServiceOptions {
   agentService?: Pick<AgentService, "resolve">;
   directiveSteering?: RouteScopedDirectiveRuntime;
   selectionStrategy?: TurnSelectionStrategy;
+  turnRouter: TurnRouter;
   /** The reusable conversation engine drives every chat turn; composition always wires it. */
   conversationEngine: ConversationEngine;
   /** Optional: when wired, routine-emitted fire-and-forget actions are enqueued to the outbox. */
@@ -234,6 +236,7 @@ export class ChatService {
   private readonly recordClarificationDecision?: (input: { surface: string; decision: ClarificationMetricDecision }) => void;
   private readonly retrievalSenseDetector?: RetrievalSenseDetectorPort;
   private readonly retrievalSenseClarificationPolicy: ClarificationPolicy;
+  private readonly turnRouter: TurnRouter;
 
   constructor(options: ChatServiceOptions) {
     const {
@@ -249,6 +252,7 @@ export class ChatService {
       agentService,
       directiveSteering = noopRouteScopedDirectiveRuntime,
       selectionStrategy = new DefaultTurnSelectionStrategy(),
+      turnRouter,
       conversationEngine,
       actionOutbox,
       assistantTurnPersistence,
@@ -280,6 +284,7 @@ export class ChatService {
     this.auditService = auditService;
     this.usageLimitPolicy = usageLimitPolicy;
     this.selectionStrategy = selectionStrategy;
+    this.turnRouter = turnRouter;
     this.conversationEngine = conversationEngine;
     this.directiveRuntime = directiveSteering;
     this.chatAnswerPresenter = turnRuntime.chatAnswerPresenter;
@@ -639,10 +644,6 @@ export class ChatService {
       session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
       const clarification = await this.resolvePendingForTurn(session, input.accountId);
       const activeRoutineAtTurnStart = await this.hasActiveRoutine(session);
-      const candidates = this.selectionStrategy.select({
-        session,
-        directives: session.directiveSteering?.matches ?? [],
-      });
       // A routine is a multi-turn skill: attempt it before grounding. If it claims the
       // turn, there is no retrieval — the routine renders its own reply.
       const routineStartedAt = Date.now();
@@ -667,16 +668,19 @@ export class ChatService {
         return completedTurn.response;
       }
 
-      // Selection is authoritative: ground only if the strategy selected
-      // retrieval; otherwise answer directly (no forced fallthrough to retrieval).
+      // The router is authoritative: ground only when the turn routes to
+      // retrieval; otherwise answer directly. When a pending clarification resolved
+      // to a retrieval sense, carry its document scope into grounded preparation.
+      const routing = await this.routeTurn(input, session);
+      const groundTurn = routing.route === CHAT_TURN_ROUTE.RETRIEVAL;
       const retrievalInput = clarification.resolution?.kind === "retrieval_sense"
         ? { ...input, documentScope: clarification.resolution.documentScope }
         : input;
-      session = candidates.includes("retrieval")
-        ? await this.chatSessionPreparer.prepareRetrieval(retrievalInput, session)
-        : await this.chatSessionPreparer.prepareDirect(input, session);
+      session = groundTurn
+        ? await this.chatSessionPreparer.prepareRetrieval(retrievalInput, session, routing.framing)
+        : await this.chatSessionPreparer.prepareDirect(input, session, routing.framing);
       const answerStartedAt = Date.now();
-      const clarificationTurn = candidates.includes("retrieval")
+      const clarificationTurn = groundTurn
         ? await this.maybeClarifyRetrievalSense({
             session,
             accountId: input.accountId,
@@ -688,7 +692,7 @@ export class ChatService {
         session = await this.chatSessionPreparer.prepareRetrieval({
           ...input,
           documentScope: clarificationTurn.documentScope,
-        }, session);
+        }, session, routing.framing);
       }
       const renderedTurn = clarificationTurn?.kind === "ask"
         ? { presentation: clarificationTurn.presentation, engineTrace: clarificationTurn.engineTrace, actions: undefined }
@@ -789,11 +793,6 @@ export class ChatService {
         conversationId: session.conversation.id,
       };
 
-      const candidates = this.selectionStrategy.select({
-        session,
-        directives: session.directiveSteering?.matches ?? [],
-      });
-
       // A routine is a multi-turn skill: attempt it before grounding. If it claims the
       // turn, stream its rendered reply and finish — no retrieval.
       const routineStartedAt = Date.now();
@@ -828,16 +827,19 @@ export class ChatService {
         return;
       }
 
-      // Selection is authoritative: ground only if the strategy selected
-      // retrieval; otherwise answer directly (no forced fallthrough to retrieval).
+      // The router is authoritative: ground only when the turn routes to
+      // retrieval; otherwise answer directly. When a pending clarification resolved
+      // to a retrieval sense, carry its document scope into grounded preparation.
+      const routing = await this.routeTurn(input, session);
+      const groundTurn = routing.route === CHAT_TURN_ROUTE.RETRIEVAL;
       const retrievalInput = clarification.resolution?.kind === "retrieval_sense"
         ? { ...input, documentScope: clarification.resolution.documentScope }
         : input;
-      session = candidates.includes("retrieval")
-        ? await this.chatSessionPreparer.prepareRetrieval(retrievalInput, session)
-        : await this.chatSessionPreparer.prepareDirect(input, session);
+      session = groundTurn
+        ? await this.chatSessionPreparer.prepareRetrieval(retrievalInput, session, routing.framing)
+        : await this.chatSessionPreparer.prepareDirect(input, session, routing.framing);
       const answerStartedAt = Date.now();
-      const clarificationTurn = candidates.includes("retrieval")
+      const clarificationTurn = groundTurn
         ? await this.maybeClarifyRetrievalSense({
             session,
             accountId: input.accountId,
@@ -849,7 +851,7 @@ export class ChatService {
         session = await this.chatSessionPreparer.prepareRetrieval({
           ...input,
           documentScope: clarificationTurn.documentScope,
-        }, session);
+        }, session, routing.framing);
       }
       if (clarificationTurn?.kind === "ask") {
         const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
@@ -995,6 +997,35 @@ export class ChatService {
     );
     const actionMergedSuggestions = actionSuggestionsResult.suggestions ?? [];
     return { suggestions: [...actionMergedSuggestions, ...questionSuggestions] };
+  }
+
+  private async routeTurn(
+    input: {
+      workspaceId: string;
+      accountId?: string;
+      query: string;
+    },
+    session: PreparedSession,
+  ): Promise<TurnRouting> {
+    const routing = await this.turnRouter.classify({
+      query: input.query,
+      history: session.history,
+      responseIdentity: session.retrieval.responseIdentity,
+      customInstruction: session.agent.customInstruction,
+      workspaceContext: { workspaceId: input.workspaceId },
+      usageContext: {
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        conversationId: session.conversation.id,
+        messageId: session.userMessage.id,
+        surface: "assistant",
+        attemptKey: session.userMessage.id,
+      },
+    });
+    return {
+      route: routing.route,
+      framing: routing.framing,
+    };
   }
 
 }

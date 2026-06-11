@@ -30,6 +30,17 @@ The key point is that connector config is not one global schema. The body depend
 
 Connector detail responses also include `syncState`. This shows whether a sync is queued or running, the latest backfill completion time, latest sync attempt, upstream modified cursor, and count ingested by the last sync.
 
+## Built-in connectors
+
+Radioso ships with these connector types:
+
+- `wordpress`: syncs WordPress pages and posts into workspace documents. It supports push webhooks and optional manual sync.
+- `whatsapp`: receives WhatsApp Business Cloud API messages, sends them through assistant chat, and replies through WhatsApp. It does not support manual sync.
+
+For WhatsApp, configure the phone number ID, access token, app secret, business account ID, and generated webhook verify token. Use the connector detail's `webhookUrl` as the Meta webhook callback URL. Radioso verifies `X-Hub-Signature-256`, ignores duplicate message IDs, and stores message logs for retry and recovery.
+
+WhatsApp text messages are sent through assistant chat. Non-text WhatsApp messages are not converted into assistant user turns. If you configure an unsupported-message reply, Radioso sends that exact reply through WhatsApp; otherwise those messages are recorded as skipped.
+
 ## Save connector config
 
 Use:

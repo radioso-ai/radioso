@@ -1,5 +1,6 @@
 import type { ConnectorRegistry } from "../services/connectorRegistry.js";
 import { WordpressConnector } from "./wordpress/wordpressConnector.js";
+import { WhatsAppPlugin } from "./whatsapp/whatsappPlugin.js";
 
 /**
  * Registers the connector plugins that ship with the core application.
@@ -7,4 +8,5 @@ import { WordpressConnector } from "./wordpress/wordpressConnector.js";
  */
 export const registerBuiltInConnectors = (registry: ConnectorRegistry): void => {
   registry.register(new WordpressConnector());
+  registry.register(new WhatsAppPlugin());
 };

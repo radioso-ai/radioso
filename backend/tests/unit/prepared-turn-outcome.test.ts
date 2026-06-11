@@ -37,11 +37,11 @@ describe("buildPreparedTurnOutcome (A1 neutral spine)", () => {
   });
 
   it("stamps the dispatching skill name onto the staged context entries", () => {
-    const outcome = buildPreparedTurnOutcome(session(), { kind: "social_only", skillName: "social_only.answer" });
+    const outcome = buildPreparedTurnOutcome(session(), { kind: "direct", skillName: "direct.answer" });
     expect(outcome.stagedContext).toHaveLength(1);
     expect(outcome.stagedContext[0]).toMatchObject({
       kind: "retrieval",
-      source: "social_only.answer",
+      source: "direct.answer",
       data: { marker: "prepared-staged-data" },
       metadata: { contextCount: 2 },
     });

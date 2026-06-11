@@ -4,9 +4,10 @@ import { DefaultConversationEngine } from "@radioso/conversation-engine";
 import type { ConversationAgent } from "../../src/modules/agents/domain.js";
 import { projectInternalAgentConfig } from "../../src/modules/agents/agentConfig.js";
 import { WorkbenchReplayRunner } from "../../src/modules/chat/services/workbenchReplayRunner.js";
+import type { TurnRouter } from "../../src/modules/chat/services/turnRouter.js";
 import type { RetrievalTurnPort } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import type { TurnSkill } from "../../src/modules/chat/services/turnOutcome.js";
-import { RESPONSE_INTENT, type RetrievalPipelineRequest, type RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
+import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 import { createAuditService } from "../support/fakes.js";
 
 const agent = (): ConversationAgent => ({
@@ -102,7 +103,6 @@ const retrievalResult = (request: RetrievalPipelineRequest): RetrievalPipelineRe
       lexicalCandidateCount: 0,
       normalizedCandidateCount: 1,
       finalContextCount: 1,
-      responseIntent: "retrieval",
       retrievalSkipped: false,
       candidateFallbackApplied: false,
       fallbackApplied: false,
@@ -126,7 +126,6 @@ const retrievalTurn = (capturedRequests: RetrievalPipelineRequest[]): RetrievalT
       traceStartedAtMs: Date.now(),
       context: { result: {} as never, startedAt: Date.now(), durationMs: 0 },
       interpretation: {
-        result: { responseIntent: RESPONSE_INTENT.RETRIEVAL },
         startedAt: Date.now(),
         durationMs: 0,
       },
@@ -160,14 +159,24 @@ const answerSkill = (): TurnSkill => ({
   },
 });
 
+const stubTurnRouter = (route: "retrieval" | "direct" = "retrieval"): TurnRouter => ({
+  async classify() {
+    return { route, framing: { isIdentityQuestion: false } };
+  },
+});
+
 describe("WorkbenchReplayRunner", () => {
   it("runs a replay through the non-streaming engine and returns answer, citations, trace, and resolved config without repository writes", async () => {
     const capturedRequests: RetrievalPipelineRequest[] = [];
+    const classify = vi.fn(async () => ({ route: "retrieval" as const, framing: { isIdentityQuestion: false } }));
     const runner = new WorkbenchReplayRunner({
       retrievalTurn: retrievalTurn(capturedRequests),
       auditService: createAuditService(),
       turnSkills: [answerSkill()],
       conversationEngine: new DefaultConversationEngine(),
+      // Replay must route through the same classifier as the live turn, not the
+      // legacy selection strategy (Coach/preview fidelity).
+      turnRouter: { classify },
     });
 
     const result = await runner.run({
@@ -204,6 +213,7 @@ describe("WorkbenchReplayRunner", () => {
       }],
     });
     expect(capturedRequests[0]?.history).toEqual([]);
+    expect(classify).toHaveBeenCalledOnce();
   });
 
   it("does not wire routines or enqueue actions for contact-like replay queries", async () => {
@@ -214,6 +224,7 @@ describe("WorkbenchReplayRunner", () => {
       auditService: createAuditService(),
       turnSkills: [answerSkill()],
       conversationEngine: engine,
+      turnRouter: stubTurnRouter("retrieval"),
     });
 
     const result = await runner.run({

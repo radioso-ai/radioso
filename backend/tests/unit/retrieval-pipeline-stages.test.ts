@@ -158,7 +158,6 @@ describe("retrieval pipeline stages", () => {
         retrievalEligible: true,
         confidence: 0.62,
       },
-      responseIntent: "retrieval",
       promptHistory: [{}, {}, {}],
       promptHistoryReset: false,
       triggerAnalysis: {
@@ -172,7 +171,6 @@ describe("retrieval pipeline stages", () => {
     };
     expect(buildQueryInterpretationTraceAttributes(interpretationResult)).toMatchObject({
       "retrieval.rewrite.status": "fallback",
-      "retrieval.response.intent": "retrieval",
       "retrieval.query_history.count": 3,
       "retrieval.trigger.match_count": 1_000,
       "retrieval.trigger.considered_rule.count": 1_000,
@@ -274,7 +272,6 @@ describe("retrieval pipeline stages", () => {
             rewrittenQuery: "Thanks again",
             semanticQuery: "Thanks again",
             lexicalQuery: "Thanks again",
-            responseIntent: "social_only" as const,
             turnKind: "ambiguous",
             relatedEntities: [],
             unresolved: false,
@@ -336,11 +333,9 @@ describe("retrieval pipeline stages", () => {
       },
     });
 
-    expect(result.responseIntent).toBe("social_only");
-    expect(result.rewrittenQuery.responseIntent).toBe("social_only");
     expect(result.triggerAnalysis).toMatchObject({
-      status: "skipped_non_retrieval",
-      matcherVersion: "non_retrieval",
+      status: "applied",
+      matcherVersion: "should-not-run",
       matchCount: 0,
     });
   });
@@ -355,7 +350,6 @@ describe("retrieval pipeline stages", () => {
             rewrittenQuery: "Thanks",
             semanticQuery: "Thanks",
             lexicalQuery: "Thanks",
-            responseIntent: "social_only" as const,
             turnKind: "ambiguous",
             relatedEntities: [],
             unresolved: false,
@@ -410,18 +404,16 @@ describe("retrieval pipeline stages", () => {
       },
     });
 
-    expect(rewriteCalls).toBe(1);
-    expect(result.responseIntent).toBe("social_only");
+    expect(rewriteCalls).toBe(0);
     expect(result.rewrittenQuery).toMatchObject({
       status: "skipped",
       rewriteApplied: false,
       retrievalEligible: false,
-      responseIntent: "social_only",
     });
     expect(result.activeQuery).toBe("Thanks");
     expect(result.triggerAnalysis).toMatchObject({
-      status: "skipped_non_retrieval",
-      matcherVersion: "non_retrieval",
+      status: "fallback",
+      matcherVersion: "fallback",
       matchCount: 0,
     });
   });
@@ -1370,14 +1362,12 @@ describe("retrieval pipeline stages", () => {
         effectiveQuery: "what about her later work?",
         semanticQuery: "what about her later work?",
         lexicalQuery: "what about her later work?",
-        responseIntent: "retrieval",
         rewriteApplied: false,
         retrievalEligible: false,
         status: "rejected",
         confidence: 0.9,
         rejectionReason: "rewrite_not_materially_different",
       },
-      responseIntent: "retrieval",
       activeQuery: "what about her later work?",
       activeParsedQuery: {
         originalQuery: "what about her later work?",

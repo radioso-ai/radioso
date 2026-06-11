@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it, vi } from "vitest";
@@ -39,14 +40,30 @@ const state: RoutineState = { sessionId: "s1", routineId: "contact", path: ["ask
 
 const gateway = (text: string): ConversationModelGateway => ({ complete: vi.fn(async () => ({ text })) });
 const testDirectory = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(testDirectory, "../../..");
 const backendPrompt = (relativePath: string): string =>
-  readFileSync(path.resolve(testDirectory, "../../../backend/prompts", relativePath), "utf8").trimEnd();
+  readFileSync(path.resolve(repoRoot, "backend/prompts", relativePath), "utf8").trimEnd();
 
 describe("routine defaults", () => {
+  it("exports non-empty package fallback prompts", () => {
+    expect(DEFAULT_DIRECTIVE_MATCH_SYSTEM_PROMPT.trim()).not.toBe("");
+    expect(DEFAULT_ROUTINE_NEXT_STEP_PROMPT.trim()).not.toBe("");
+    expect(DEFAULT_ROUTINE_STEP_REPLY_PROMPT.trim()).not.toBe("");
+  });
+
   it("keeps package fallback prompts byte-equal to the backend prompt files", () => {
     expect(DEFAULT_DIRECTIVE_MATCH_SYSTEM_PROMPT).toBe(backendPrompt("chat/directive-match.md"));
     expect(DEFAULT_ROUTINE_NEXT_STEP_PROMPT).toBe(backendPrompt("chat/routine-next-step.md"));
     expect(DEFAULT_ROUTINE_STEP_REPLY_PROMPT).toBe(backendPrompt("chat/routine-step-reply.md"));
+  });
+
+  it("keeps generated fallback prompt artifacts current", () => {
+    const result = spawnSync("node", ["scripts/generate-default-prompts.mjs", "--check"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+
+    expect(result.status, result.stderr || result.stdout).toBe(0);
   });
 
   it("activates the ranked routine selected by the shared matcher", async () => {
@@ -137,6 +154,51 @@ describe("routine defaults", () => {
 
     expect(result.answer).toBe("What's your email address?");
     expect(vi.mocked(gw.complete).mock.calls[0]?.[0].systemPrompt).toContain("Ask the user for their email address.");
+  });
+
+  it("injects the agent scope and an out-of-scope decline rule into the routine reply prompt", async () => {
+    const gw = gateway("ok");
+    const scopedTurn: TurnContext = {
+      ...turn,
+      agent: { id: "a", name: "Ananda", instructions: ["Help only with Ananda Europe programs and events."] },
+    };
+    await new RoutineStepRenderer(gw).render({
+      step: currentStep,
+      steering: [{ action: "Ask the user for their email address.", source: "routine", lifespan: "response" }],
+      turn: scopedTurn,
+    });
+
+    const systemPrompt = vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt;
+    expect(systemPrompt).toContain("Ananda");
+    expect(systemPrompt).toContain("Help only with Ananda Europe programs and events.");
+    expect(systemPrompt).toContain("do not answer or perform it");
+    expect(systemPrompt).toContain("Never produce off-scope content");
+  });
+
+  it("keeps only declared slots when a routine declares a slot schema", async () => {
+    const slotted: Routine = {
+      ...routine,
+      slots: [{ id: "s_email", key: "email", type: "email", required: true }],
+    };
+    const selector = new RoutineNextStepSelector(
+      gateway('{"condition": 1, "variables": {"email": "a@b.c", "message": "write me code", "<name>": "x"}}'),
+    );
+
+    await expect(selector.select({ routine: slotted, state, currentStep, transitions, turn })).resolves.toEqual({
+      nextStepId: "ask_message",
+      variables: { email: "a@b.c" },
+    });
+  });
+
+  it("drops echoed placeholder keys even when no slot schema is declared", async () => {
+    const selector = new RoutineNextStepSelector(
+      gateway('{"condition": 1, "variables": {"email": "a@b.c", "<name>": "x"}}'),
+    );
+
+    await expect(selector.select({ routine, state, currentStep, transitions, turn })).resolves.toEqual({
+      nextStepId: "ask_message",
+      variables: { email: "a@b.c" },
+    });
   });
 
   it("expires active routine state after the configured TTL", async () => {

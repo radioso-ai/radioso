@@ -282,9 +282,9 @@ Related docs and specs:
 
 ## Chat And Assistant
 
-Owns assistant chat orchestration, session preparation, history presentation,
-chat streaming contracts, suggestions, citations, skill intake, and answer
-presentation.
+Owns assistant chat orchestration, turn routing, session preparation, history
+presentation, chat streaming contracts, suggestions, citations, skill intake,
+and answer presentation.
 
 Should not own retrieval ranking, document persistence, provider registration
 details, or hard-coded user-facing assistant responses.
@@ -302,9 +302,11 @@ Primary internals:
 - `backend/src/modules/chat/services/assistantChatService.ts`
 - `backend/src/modules/chat/services/chatService.ts`
 - `backend/src/modules/chat/services/chatSessionPreparer.ts`
+- `backend/src/modules/chat/services/turnRouter.ts`
 - `backend/src/modules/chat/services/chatTurnLifecycle.ts`
 - `backend/src/modules/chat/services/clarification/` (host adapter for pending
   clarification resolution, deferred commit, and metrics)
+- `backend/src/modules/chat/services/directTurnSkill.ts`
 - `backend/src/modules/chat/services/groundedAnswerPromptComposer.ts`
 - `backend/prompts/`
 

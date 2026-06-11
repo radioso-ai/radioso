@@ -5,7 +5,6 @@ import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsag
 import type { RetrievalResponseBehavior } from "../public.js";
 import type {
   ConversationContextWindow,
-  ResponseIntent,
   RetrievalSubquery,
   ResponseLanguagePolicy,
   RewrittenRetrievalQuery,
@@ -47,7 +46,6 @@ export interface QueryInterpretationStageResult extends RetrievalContextStageRes
   originalParsedQuery: ParsedQueryInterpretation;
   originalPreparedQuery: ParsedQueryInterpretation;
   rewrittenQuery: RewrittenRetrievalQuery;
-  responseIntent: ResponseIntent;
   activeQuery: string;
   activeParsedQuery: ParsedQueryInterpretation;
   activeSemanticQuery: string;
@@ -173,7 +171,6 @@ type TraceQueryInterpretationInput = TraceRetrievalContextInput & {
     status?: unknown;
     retrievalEligible?: unknown;
   };
-  responseIntent?: unknown;
   promptHistory?: Array<unknown>;
   promptHistoryReset?: unknown;
   triggerAnalysis?: {
@@ -269,7 +266,6 @@ export const buildQueryInterpretationTraceAttributes = (result: TraceQueryInterp
     ...buildRetrievalPipelineTraceAttributes(result.request),
     "retrieval.rewrite.status": result.rewrittenQuery?.status,
     "retrieval.rewrite.eligible": result.rewrittenQuery?.retrievalEligible,
-    "retrieval.response.intent": result.responseIntent,
     "retrieval.query_history.count": boundedTraceCount(result.promptHistory?.length),
     "retrieval.query_history.reset": result.promptHistoryReset,
     "retrieval.trigger.status": result.triggerAnalysis?.status,

@@ -3,7 +3,7 @@ import { ChatAnswerPresenter, type ChatPresentedAnswer } from "./chatAnswerPrese
 import { BlankChatAnswerError, hasCitedAnswerSegment, isBlankChatAnswerError } from "./chatAnswerErrors.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
-import { CHAT_TURN_ROUTE } from "./chatTurnIntentService.js";
+import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
 import {
   GroundedAnswerEnvelopeReader,

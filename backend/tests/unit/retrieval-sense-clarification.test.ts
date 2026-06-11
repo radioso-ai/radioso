@@ -64,7 +64,6 @@ const retrievalResult = (request: RetrievalPipelineRequest): RetrievalPipelineRe
       lexicalCandidateCount: 0,
       normalizedCandidateCount: contexts.length,
       finalContextCount: contexts.length,
-      responseIntent: "retrieval",
       retrievalSkipped: false,
       candidateFallbackApplied: false,
       fallbackApplied: false,
@@ -151,6 +150,12 @@ const makeService = (input: {
   messageRepository: new InMemoryMessageRepository(),
   retrievalTurn: retrievalTurn(input.capturedRequests),
   chatGateway,
+  // These scenarios exercise grounded turns, so route every turn to retrieval.
+  turnRouter: {
+    async classify() {
+      return { route: "retrieval", framing: { isIdentityQuestion: false } };
+    },
+  },
   auditService: createAuditService(new InMemoryAuditEventRepository()),
   turnRuntime: buildChatTurnRuntime({
     chatGateway,

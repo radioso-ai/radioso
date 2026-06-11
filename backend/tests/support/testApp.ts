@@ -22,6 +22,7 @@ import {
   type WorkbenchReplayRunner,
 } from "../../src/modules/chat/composition.js";
 import { ChatService, type ChatGateway, type ChatRoutineProvider } from "../../src/modules/chat/services/chatService.js";
+import type { TurnRouter } from "../../src/modules/chat/services/turnRouter.js";
 import { ActionDispatchWorker } from "../../src/modules/chat/services/actions/actionDispatchWorker.js";
 import { createConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
 import { scopeTag } from "@radioso/conversation-defaults";
@@ -283,6 +284,7 @@ export const createTestDependencies = (overrides: {
   chatGateway?: ChatGateway;
   lexicalSearch?: LexicalSearchPort;
   queryRewriteGateway?: QueryRewriteGateway;
+  turnRouter?: TurnRouter;
   triggerAnalysisGateway?: TriggerAnalysisGateway;
   rerankGateway?: RerankGateway;
   envOverrides?: Partial<Env>;
@@ -659,6 +661,19 @@ export const createTestDependencies = (overrides: {
     },
   };
   const chatGateway = overrides.chatGateway ?? defaultChatGateway;
+  const turnRouter = overrides.turnRouter ?? {
+    async classify(input) {
+      const normalized = input.query.toLowerCase().trim();
+      const identity = normalized.includes("who are you") || normalized.includes("your name");
+      const direct = identity || ["thanks", "thank you", "ok", "okay", "got it", "hello", "hi"].includes(normalized);
+      return {
+        route: direct ? "direct" as const : "retrieval" as const,
+        framing: {
+          isIdentityQuestion: identity,
+        },
+      };
+    },
+  } satisfies TurnRouter;
   const workspaceService = new WorkspaceService(workspaceRepository, auditService, accountMembershipRepository);
   const workspaceSummaryService = new WorkspaceSummaryService(documentRepository, conversationRepository, {
     websiteCrawlerEnabled: env.WEBSITE_CRAWLER_ENABLED,
@@ -820,6 +835,7 @@ export const createTestDependencies = (overrides: {
     workspaceRepository,
     usageLimitPolicy,
     agentService,
+    turnRouter,
     conversationEngine: createConversationEngine(),
     routineStore: new InMemoryRoutineStateStore(),
     routineProvider,
@@ -1042,6 +1058,7 @@ export const createTestApp = (overrides: {
   chatGateway?: ChatGateway;
   lexicalSearch?: LexicalSearchPort;
   queryRewriteGateway?: QueryRewriteGateway;
+  turnRouter?: TurnRouter;
   triggerAnalysisGateway?: TriggerAnalysisGateway;
   rerankGateway?: RerankGateway;
   envOverrides?: Partial<Env>;

@@ -5,8 +5,8 @@ import {
   type AssistantBootstrapSettingsRecord,
 } from "../../modules/settings/contracts/assistantBootstrap.js";
 import {
+  coerceWebsiteEmbedSettings,
   defaultWebsiteEmbedSettings,
-  validateWebsiteEmbedSettings,
   type WebsiteEmbedLauncherPosition,
   type WebsiteEmbedSettingsRecord,
 } from "../../modules/settings/contracts/websiteEmbed.js";
@@ -58,7 +58,7 @@ const mapWorkspace = (row: WorkspaceRow): WorkspaceRecord => {
     assistantDefaultLocale: row.assistant_default_locale,
     proactiveGreetingEnabled: row.proactive_greeting_enabled ?? false,
   });
-  const websiteEmbed = validateWebsiteEmbedSettings({
+  const websiteEmbed = coerceWebsiteEmbedSettings({
     websiteEmbedEnabled: row.website_embed_enabled ?? defaultWebsiteEmbedSettings().websiteEmbedEnabled,
     websiteEmbedToken: row.website_embed_token ?? null,
     websiteEmbedAllowedOrigins: row.website_embed_allowed_origins ?? [],

@@ -160,7 +160,7 @@ describe("RoutineDraftAssistService", () => {
       JSON.stringify({ draft: { name: "missing required fields" } }),
       completion(validDraft({ name: "retry-intake" })),
     ]);
-    const { service } = createService(textGenerationClient);
+    const { service, telemetryService } = createService(textGenerationClient);
 
     const result = await service.draft(workspaceId, agentId, {
       prose: "Collect email and send contact request.",
@@ -221,5 +221,171 @@ describe("RoutineDraftAssistService", () => {
         }),
       ],
     });
+  });
+
+  it("normalizes bare brace slot references from declared slots before validation", async () => {
+    const textGenerationClient = new FakeTextClient([
+      completion(validDraft({
+        steps: [{
+          ...validDraft().steps[0],
+          instruction: "Ask for {{ email }} and confirm {{email}}.",
+        }, validDraft().steps[1]],
+      })),
+    ]);
+    const { service, telemetryService } = createService(textGenerationClient);
+
+    const result = await service.draft(workspaceId, agentId, {
+      prose: "Ask for the visitor email, send the contact request, then confirm.",
+    });
+
+    expect(result.draft.steps[0]?.instruction).toBe("Ask for {{slot.email}} and confirm {{slot.email}}.");
+    expect(result.validation.diagnostics).not.toContainEqual(expect.objectContaining({
+      code: "declared_unused_slot",
+      location: "slot:email",
+    }));
+  });
+
+  it("normalizes at-mention slot references from declared slots before validation", async () => {
+    const textGenerationClient = new FakeTextClient([
+      completion(validDraft({
+        steps: [{
+          ...validDraft().steps[0],
+          instruction: "Ask for @email before sending.",
+        }, validDraft().steps[1]],
+      })),
+    ]);
+    const { service } = createService(textGenerationClient);
+
+    const result = await service.draft(workspaceId, agentId, {
+      prose: "Ask for the visitor email, send the contact request, then confirm.",
+    });
+
+    expect(result.draft.steps[0]?.instruction).toBe("Ask for {{slot.email}} before sending.");
+    expect(result.validation).toEqual({ ok: true, diagnostics: [] });
+  });
+
+  it("normalizes mixed declared slot references across prose fields", async () => {
+    const textGenerationClient = new FakeTextClient([
+      completion(validDraft({
+        steps: [{
+          ...validDraft().steps[0],
+          instruction: "Ask for {{email}}.",
+        }, validDraft().steps[1]],
+        transitions: [
+          {
+            ...validDraft().transitions[0],
+            guardKind: "llm",
+            guardText: "Continue when @email is available.",
+          },
+          validDraft().transitions[1],
+        ],
+        terminals: [{
+          ...validDraft().terminals[0],
+          instruction: "Confirm {{ email }} is on the request.",
+        }],
+      })),
+    ]);
+    const { service } = createService(textGenerationClient);
+
+    const result = await service.draft(workspaceId, agentId, {
+      prose: "Ask for the visitor email, send the contact request, then confirm.",
+    });
+
+    expect(result.draft.steps[0]?.instruction).toBe("Ask for {{slot.email}}.");
+    expect(result.draft.transitions[0]?.guardText).toBe("Continue when {{slot.email}} is available.");
+    expect(result.draft.terminals[0]?.instruction).toBe("Confirm {{slot.email}} is on the request.");
+    expect(result.validation).toEqual({ ok: true, diagnostics: [] });
+  });
+
+  it("leaves non-declared slot-like references untouched", async () => {
+    const textGenerationClient = new FakeTextClient([
+      completion(validDraft({
+        steps: [{
+          ...validDraft().steps[0],
+          instruction: "Ask for {{product}} and @email.",
+        }, validDraft().steps[1]],
+      })),
+    ]);
+    const { service } = createService(textGenerationClient);
+
+    const result = await service.draft(workspaceId, agentId, {
+      prose: "Ask for the visitor email and product, send the contact request, then confirm.",
+    });
+
+    expect(result.draft.steps[0]?.instruction).toBe("Ask for {{product}} and {{slot.email}}.");
+    expect(result.validation).toEqual({ ok: true, diagnostics: [] });
+  });
+
+  it("runs one validation retry and returns it when diagnostics improve", async () => {
+    const textGenerationClient = new FakeTextClient([
+      completion(validDraft({
+        name: "needs-terminal-path",
+        transitions: [validDraft().transitions[0]],
+      })),
+      completion(validDraft({ name: "fixed-terminal-path" })),
+    ]);
+    const { service, telemetryService } = createService(textGenerationClient);
+
+    const result = await service.draft(workspaceId, agentId, {
+      prose: "Ask for email, send the contact request, then confirm.",
+    });
+
+    expect(textGenerationClient.calls).toHaveLength(2);
+    expect(textGenerationClient.calls[1]?.operation.attemptKey).toBe("validation_retry");
+    expect(textGenerationClient.calls[1]?.prompt).toContain("missing terminal: no terminal is reachable from the first step.");
+    expect(result.draft.name).toBe("fixed-terminal-path");
+    expect(result.validation).toEqual({ ok: true, diagnostics: [] });
+    expect(telemetryService.emit).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "routines.draft_assist.llm_call",
+      tags: expect.objectContaining({
+        attempt_key: "validation_retry",
+        failure_mode: "none",
+      }),
+    }));
+  });
+
+  it("keeps the original proposal when the validation retry is worse", async () => {
+    const textGenerationClient = new FakeTextClient([
+      completion(validDraft({
+        name: "one-diagnostic",
+        transitions: [validDraft().transitions[0]],
+      })),
+      completion(validDraft({
+        name: "two-diagnostics",
+        steps: [
+          validDraft().steps[0],
+          {
+            ...validDraft().steps[1],
+            actionType: "billing.refund",
+          },
+        ],
+        transitions: [validDraft().transitions[0]],
+      })),
+    ]);
+    const { service } = createService(textGenerationClient);
+
+    const result = await service.draft(workspaceId, agentId, {
+      prose: "Ask for email, send the contact request, then confirm.",
+    });
+
+    expect(textGenerationClient.calls).toHaveLength(2);
+    expect(result.draft.name).toBe("one-diagnostic");
+    expect(result.validation.diagnostics).toHaveLength(2);
+    expect(result.validation.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "missing_action_follow_up" }),
+      expect.objectContaining({ code: "missing_terminal" }),
+    ]));
+  });
+
+  it("does not run a validation retry for an already-valid draft", async () => {
+    const textGenerationClient = new FakeTextClient([completion(validDraft())]);
+    const { service } = createService(textGenerationClient);
+
+    const result = await service.draft(workspaceId, agentId, {
+      prose: "Ask for email, send the contact request, then confirm.",
+    });
+
+    expect(textGenerationClient.calls).toHaveLength(1);
+    expect(result.validation).toEqual({ ok: true, diagnostics: [] });
   });
 });

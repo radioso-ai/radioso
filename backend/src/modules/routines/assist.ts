@@ -101,6 +101,40 @@ const parseDraft = (raw: string): RoutineDefinitionDraftInput | null => {
   }
 };
 
+const normalizeSlotReferencesInText = (text: string | null, slotKeys: Set<string>): string | null => {
+  if (!text || slotKeys.size === 0) {
+    return text;
+  }
+  const normalizedBraces = text.replace(/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu, (match, key: string) =>
+    slotKeys.has(key) ? `{{slot.${key}}}` : match
+  );
+  return normalizedBraces.replace(/(^|[^A-Za-z0-9_])@([A-Za-z_][A-Za-z0-9_]*)\b/gu, (match, prefix: string, key: string) =>
+    slotKeys.has(key) ? `${prefix}{{slot.${key}}}` : match
+  );
+};
+
+const normalizeDraftSlotReferences = (draft: RoutineDefinitionDraftInput): RoutineDefinitionDraftInput => {
+  const slotKeys = new Set(draft.slots.map((slot) => slot.key));
+  if (slotKeys.size === 0) {
+    return draft;
+  }
+  return {
+    ...draft,
+    steps: draft.steps.map((step) => ({
+      ...step,
+      instruction: normalizeSlotReferencesInText(step.instruction, slotKeys) ?? step.instruction,
+    })),
+    transitions: draft.transitions.map((transition) => ({
+      ...transition,
+      guardText: normalizeSlotReferencesInText(transition.guardText, slotKeys),
+    })),
+    terminals: draft.terminals.map((terminal) => ({
+      ...terminal,
+      instruction: normalizeSlotReferencesInText(terminal.instruction, slotKeys),
+    })),
+  };
+};
+
 const draftDefinitionFromInput = (
   agentId: string,
   input: RoutineDefinitionDraftInput,
@@ -120,6 +154,16 @@ const invalidDraftError = () =>
     "invalid_routine_draft_assist",
     "The routine draft could not be generated as a valid routine draft. Try again or revise the procedure text.",
   );
+
+const appendValidationDiagnosticsToPrompt = (
+  prompt: string,
+  diagnostics: RoutineValidationDiagnostic[],
+): string => `${prompt}
+
+The previous routine draft matched the JSON schema but had these validation diagnostics. Revise the draft to reduce or eliminate them while preserving the operator's procedure. Return valid JSON only.
+
+Validation diagnostics:
+${diagnostics.map((diagnostic) => `- ${diagnostic.message}`).join("\n")}`;
 
 const catalogDiagnostics = (
   draft: RoutineDefinitionDraftInput,
@@ -182,7 +226,14 @@ export class RoutineDraftAssistService {
     });
     const primaryDraft = parseDraft(primary);
     if (primaryDraft) {
-      return this.finalizeDraft(agentId, primaryDraft);
+      return this.finalizeWithValidationRetry({
+        workspaceId,
+        agentId,
+        requestId,
+        prompt,
+        proseLength: parsedInput.prose.length,
+        draft: primaryDraft,
+      });
     }
 
     this.options.logger.warn({
@@ -203,7 +254,14 @@ export class RoutineDraftAssistService {
     });
     const retryDraft = parseDraft(retry);
     if (retryDraft) {
-      return this.finalizeDraft(agentId, retryDraft);
+      return this.finalizeWithValidationRetry({
+        workspaceId,
+        agentId,
+        requestId,
+        prompt,
+        proseLength: parsedInput.prose.length,
+        draft: retryDraft,
+      });
     }
 
     this.options.logger.warn({
@@ -214,6 +272,45 @@ export class RoutineDraftAssistService {
       attemptKey: "schema_retry",
     }, "routine_draft_assist_invalid_after_retry");
     throw invalidDraftError();
+  }
+
+  private async finalizeWithValidationRetry(input: {
+    workspaceId: string;
+    agentId: string;
+    requestId: string;
+    prompt: string;
+    proseLength: number;
+    draft: RoutineDefinitionDraftInput;
+  }): Promise<RoutineDraftAssistResponse> {
+    const original = this.finalizeDraft(input.agentId, input.draft);
+    if (original.validation.diagnostics.length === 0) {
+      return original;
+    }
+
+    const retry = await this.callLlm({
+      workspaceId: input.workspaceId,
+      agentId: input.agentId,
+      requestId: input.requestId,
+      prompt: appendValidationDiagnosticsToPrompt(input.prompt, original.validation.diagnostics),
+      proseLength: input.proseLength,
+      attemptKey: "validation_retry",
+    });
+    const retryDraft = parseDraft(retry);
+    if (!retryDraft) {
+      this.options.logger.warn({
+        workspaceId: input.workspaceId,
+        agentId: input.agentId,
+        requestId: input.requestId,
+        failureMode: "schema_mismatch",
+        attemptKey: "validation_retry",
+      }, "routine_draft_assist_validation_retry_schema_mismatch");
+      return original;
+    }
+
+    const corrected = this.finalizeDraft(input.agentId, retryDraft);
+    return corrected.validation.diagnostics.length <= original.validation.diagnostics.length
+      ? corrected
+      : original;
   }
 
   private async requireAgent(workspaceId: string, agentId: string): Promise<RoutineDraftAssistAgentContext> {
@@ -326,11 +423,12 @@ export class RoutineDraftAssistService {
   }
 
   private finalizeDraft(agentId: string, draft: RoutineDefinitionDraftInput): RoutineDraftAssistResponse {
-    const validation = validateRoutineDefinition(draftDefinitionFromInput(agentId, draft));
-    const catalogValidationDiagnostics = catalogDiagnostics(draft, this.actionCatalog);
+    const normalizedDraft = normalizeDraftSlotReferences(draft);
+    const validation = validateRoutineDefinition(draftDefinitionFromInput(agentId, normalizedDraft));
+    const catalogValidationDiagnostics = catalogDiagnostics(normalizedDraft, this.actionCatalog);
     const diagnostics = [...validation.diagnostics, ...catalogValidationDiagnostics];
     return {
-      draft,
+      draft: normalizedDraft,
       validation: {
         ok: diagnostics.length === 0,
         diagnostics,

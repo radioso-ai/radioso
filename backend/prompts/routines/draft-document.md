@@ -70,6 +70,8 @@ steps:
 transitions:
 - Use structural branches and fall-throughs from the procedure.
 - fromStep and toRef refer to stable step ids or terminal stableStepIds.
+- Transitions must form at least one path from the first step to a terminal.
+- If a final step has no explicit branch, add a default transition from that step to a complete terminal.
 - guardKind is:
   - "llm" for prose conditions.
   - "default" for otherwise/fall-through.
@@ -83,6 +85,8 @@ transitions:
 
 terminals:
 - Ends of the routine only.
+- Declare at least one terminal in terminals[].
+- At least one terminal must be reachable from the first step through transitions.
 - kind is "handoff" only when the procedure says to hand off or escalate to a human; otherwise "complete".
 - instruction is the terminal instruction or null.
 - ordinal is zero-based order.

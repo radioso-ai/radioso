@@ -207,3 +207,30 @@ Senior-engineer delivery review covered the diff for slice boundaries, persisten
 ## Commit Status
 
 No commit, push, or PR was created per EM instruction.
+
+## Post-ship feedback round
+
+Product-owner real-world draft-assist testing exposed two mechanical defects in `POST /agents/:agentId/routines/draft-assist`.
+
+- Slot-reference drift: the service now normalizes declared slot references in parsed proposals before validation, rewriting declared-slot `{{key}}`, `{{ key }}`, and `@key` prose references to `{{slot.key}}` across step instructions, transition guard text, and terminal instructions. Unknown slot-like references are left untouched for validation/review.
+- Unreachable terminal recovery: the prompt now explicitly requires at least one reachable terminal path and default complete transitions for unbranched final steps. Parsed proposals with validation diagnostics now receive at most one corrective `validation_retry` LLM attempt with author-facing diagnostics appended; the service returns the proposal with fewer diagnostics, using the retry on ties, and still returns draft plus validation if diagnostics remain.
+
+Verification:
+
+```bash
+cd backend && pnpm vitest run tests/unit/routine-draft-assist.test.ts
+```
+
+Result: passed, 11 tests.
+
+```bash
+cd backend && pnpm run test:unit
+```
+
+Result: failed before Vitest during `packages/conversation-engine` prebuild because TypeScript could not overwrite existing generated files:
+
+```text
+TS5033: Could not write file '/Users/dm/conductor/workspaces/radioso/seattle/packages/conversation-engine/dist/clarification.d.ts': EPERM: operation not permitted, open '/Users/dm/conductor/workspaces/radioso/seattle/packages/conversation-engine/dist/clarification.d.ts'.
+```
+
+No sandbox socket EPERM occurred in this run.

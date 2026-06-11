@@ -4,7 +4,32 @@ export {
   type CreateConversationKitOptions,
   type RunConversationTurnInput,
 } from "./composition.js";
-export { RoutineRegistry, type RoutineRegistration } from "@radioso/conversation-defaults";
+export {
+  conversationRoutineActivatorFromCandidate,
+  RoutineRegistry,
+  type RoutineRegistration,
+} from "@radioso/conversation-defaults";
+export {
+  clarificationStage,
+  decideClarification,
+  orderClarificationCandidates,
+  resolvePendingClarification,
+  type ClarificationDecisionContext,
+  type PendingClarificationResolution,
+} from "@radioso/conversation-engine";
+export type {
+  ClarificationAutoPickReason,
+  ClarificationCandidate,
+  ClarificationClearOutcome,
+  ClarificationDecision,
+  ClarificationPolicy,
+  ClarificationReplyMapping,
+  ConversationClarificationStore,
+  ConversationClarifier,
+  PendingClarification,
+  PendingClarificationStatus,
+  RecentClarificationReader,
+} from "@radioso/conversation-contract";
 export {
   createConversationKitClient,
   type ConversationKitClient,

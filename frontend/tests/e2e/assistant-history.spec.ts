@@ -242,6 +242,199 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
   await expect(page.getByText("Turn flow", { exact: true })).toHaveCount(0);
 });
 
+test("turn flow shows clarification decisions and candidates", async ({ page }) => {
+  const conversationId = "conversation-clarification";
+  const assistantMessageId = "assistant-message-clarification";
+  const historyList = {
+    conversations: [
+      {
+        id: conversationId,
+        sourceChannel: null,
+        sourceOrigin: null,
+        anonymousSessionId: null,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        messageCount: 2,
+        userMessageCount: 1,
+        assistantMessageCount: 1,
+        preview: "Tell me about yoga",
+      },
+    ],
+    total: 1,
+    nextCursor: null,
+    hasMore: false,
+  };
+  const turnTrace = {
+    version: 1,
+    spine: {
+      traceId: "conversation-turn-clarification",
+      startedAt: nowIso,
+      completedAt: nowIso,
+      stages: [
+        { id: "gather", kind: "gather", status: "applied", outputs: { historyCount: 0 } },
+        { id: "directives", kind: "directive_match", status: "skipped", outputs: { matchCount: 0 } },
+        {
+          id: "selection",
+          kind: "skill_selection",
+          status: "applied",
+          outputs: { selectedSkills: ["retrieval.answer"], reason: "evidence_required" },
+        },
+        {
+          id: "clarification",
+          kind: "clarification",
+          status: "applied",
+          outputs: {
+            surface: "retrieval_sense",
+            decision: "asked",
+            reason: "too_close",
+            margin: 0.03,
+            candidates: [
+              { id: "hatha", label: "Hatha yoga", confidence: 0.73 },
+              { id: "raja", label: "Raja yoga", confidence: 0.7 },
+            ],
+            chosenCandidateId: "hatha",
+            mappingOutcome: "chosen:hatha",
+          },
+        },
+        {
+          id: "dispatch:retrieval.answer",
+          kind: "skill_dispatch",
+          status: "applied",
+          outputs: { skillName: "retrieval.answer", outcomeStatus: "completed" },
+        },
+        { id: "compose", kind: "compose", status: "applied", outputs: { outcomeCount: 1 } },
+      ],
+    },
+  };
+  const conversationDetail = {
+    conversationId,
+    workspaceId,
+    sourceChannel: null,
+    sourceOrigin: null,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    messageCount: 2,
+    userMessageCount: 1,
+    assistantMessageCount: 1,
+    messagesTotal: 2,
+    messageWindowOffset: 0,
+    messageWindowLimit: 50,
+    hasOlderMessages: false,
+    nextCursor: null,
+    messages: [
+      {
+        id: "user-message-clarification",
+        role: "user",
+        content: "Tell me about yoga",
+        createdAt: nowIso,
+      },
+      {
+        id: assistantMessageId,
+        role: "assistant",
+        content: "Do you mean Hatha yoga or Raja yoga?",
+        createdAt: nowIso,
+        citations: [],
+        answerSegments: [{ text: "Do you mean Hatha yoga or Raja yoga?" }],
+        debug: {
+          eventStatus: "success",
+          recordedAt: nowIso,
+          stream: false,
+          citationCount: 0,
+          answerOutcome: "clarification_asked",
+          // A retrieval-sense ask happens post-retrieval, so a real turn carries
+          // the retrieval activity trace (the Debug/Flow entry points key off it).
+          activitySummary: {
+            execution: {
+              surface: "assistant",
+              path: "assistant_retrieval",
+              retrievalInvoked: true,
+            },
+            candidateCounts: { semantic: 2, lexical: 0, merged: 2, final: 2 },
+            fallbackApplied: false,
+            rerankStatus: "skipped",
+            rewrite: {
+              status: "skipped",
+              eligible: false,
+              ran: false,
+              materialDisagreement: false,
+            },
+          },
+          activityTrace: {
+            summary: {
+              execution: {
+                surface: "assistant",
+                path: "assistant_retrieval",
+                retrievalInvoked: true,
+              },
+              candidateCounts: { semantic: 2, lexical: 0, merged: 2, final: 2 },
+              fallbackApplied: false,
+              rerankStatus: "skipped",
+            },
+            stages: [
+              {
+                stageId: "context",
+                kind: "context",
+                label: "Context",
+                status: "applied",
+                metrics: { selectedHistoryCount: 1 },
+              },
+              {
+                stageId: "answer",
+                kind: "answer_outcome",
+                label: "Answer outcome",
+                status: "applied",
+                outputs: { outcome: "clarification_asked" },
+              },
+            ],
+            links: [{ fromStageId: "context", toStageId: "answer", kind: "sequence" }],
+          },
+          turnTrace,
+          route: {
+            generator: "assistant",
+            routeType: "retrieval",
+            routeReason: "clarification",
+            retrievalInvoked: true,
+          },
+        },
+      },
+    ],
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList,
+    conversationDetail,
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.getByRole("button", { name: /Tell me about yoga/ }).click();
+  await expect(page).toHaveURL(/itemKind=chat/);
+
+  // The Flow button only renders once the Debug pane is open (same flow as the
+  // turn-flow test above).
+  await page.getByRole("button", { name: "Debug" }).click();
+  await page.getByRole("button", { name: "Flow" }).click();
+
+  await expect(page.getByText("Turn flow", { exact: true })).toBeVisible();
+  await expect(page.getByText("Clarification", { exact: true }).first()).toBeVisible();
+
+  // The minimap panel overlaps node hit-targets in the small test viewport, so a
+  // positional click cannot land; dispatch the click on the node element itself
+  // (React Flow's onNodeClick is a synthetic click listener on the node wrapper).
+  await page.getByTestId("rf__node-spine:clarification").dispatchEvent("click");
+
+  const stageDetail = page.getByTestId("turn-flow-stage-detail");
+  await expect(stageDetail.getByText("retrieval_sense")).toBeVisible();
+  await expect(stageDetail.getByText("asked", { exact: true })).toBeVisible();
+  await expect(stageDetail.getByText("too_close")).toBeVisible();
+  await expect(stageDetail.getByText("0.03")).toBeVisible();
+  await expect(stageDetail.getByText("Hatha yoga")).toBeVisible();
+  await expect(stageDetail.getByText("0.73")).toBeVisible();
+  await expect(stageDetail.getByText("Raja yoga")).toBeVisible();
+  await expect(stageDetail.getByText("0.7", { exact: true })).toBeVisible();
+  await expect(stageDetail.getByText("chosen:hatha")).toBeVisible();
+});
+
 test("activity filtered pages request one offset-backed page", async ({ page }) => {
   const requestLog: string[] = [];
   const historyList = {

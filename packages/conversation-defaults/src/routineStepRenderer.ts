@@ -57,6 +57,13 @@ const instructionsBlock = (step: RoutineStep, steering: SteeringRule[]): string 
   return actions.map((action) => `- ${action}`).join("\n");
 };
 
+const fallbackResponseLanguageInstruction = `Always reply in the same language as the user's most recent message, even when your
+scope and instructions above are written in another language. Match the user's
+language, not the language of these instructions.`;
+
+const responseLanguageInstruction = (responseLanguage?: string): string =>
+  responseLanguage ? `Respond in ${responseLanguage}.` : fallbackResponseLanguageInstruction;
+
 /**
  * Renders a routine step's reply by generating a message that follows the step's
  * projected steering — the host-side `ConversationRoutineStepRenderer` the engine's
@@ -69,7 +76,7 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
 
   constructor(
     private readonly modelGateway: ConversationModelGateway,
-    options: { promptTemplate?: string } = {},
+    private readonly options: { promptTemplate?: string; responseLanguage?: string | Promise<string | undefined> } = {},
   ) {
     this.promptTemplate = options.promptTemplate ?? DEFAULT_ROUTINE_STEP_REPLY_PROMPT;
   }
@@ -79,8 +86,10 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
     steering: SteeringRule[];
     turn: TurnContext;
   }): Promise<RenderableTurn> {
+    const responseLanguage = await this.options.responseLanguage;
     const systemPrompt = renderPromptTemplate("chat/routine-step-reply.md", this.promptTemplate, {
       answer_scope_reference: scopeReferenceBlock(input.turn.agent),
+      response_language_instruction: responseLanguageInstruction(responseLanguage),
       instructions: instructionsBlock(input.step, input.steering),
     });
     const { text } = await this.modelGateway.complete({

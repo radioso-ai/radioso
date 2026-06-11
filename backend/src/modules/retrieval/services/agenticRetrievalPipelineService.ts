@@ -94,6 +94,7 @@ export class AgenticRetrievalPipelineService implements RetrievalPipelinePort {
         responseIdentity: input.request.responseIdentity,
         customInstruction: responseBehavior?.customInstruction ?? settings.customInstruction,
         responseLanguagePolicy: rewrittenQuery.responseLanguagePolicy,
+        responseLanguage: input.request.responseLanguage,
       },
     });
 
@@ -103,6 +104,7 @@ export class AgenticRetrievalPipelineService implements RetrievalPipelinePort {
       suggestedQuestionsCount: settings.suggestedQuestionsCount,
       customInstruction: responseBehavior?.customInstruction ?? settings.customInstruction,
       responseLanguagePolicy: rewrittenQuery.responseLanguagePolicy,
+      responseLanguage: input.request.responseLanguage,
     };
 
     const { searchStats } = runResult;

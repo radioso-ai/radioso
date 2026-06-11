@@ -160,7 +160,7 @@ describe("RoutineDraftAssistService", () => {
       JSON.stringify({ draft: { name: "missing required fields" } }),
       completion(validDraft({ name: "retry-intake" })),
     ]);
-    const { service, telemetryService } = createService(textGenerationClient);
+    const { service } = createService(textGenerationClient);
 
     const result = await service.draft(workspaceId, agentId, {
       prose: "Collect email and send contact request.",
@@ -232,7 +232,7 @@ describe("RoutineDraftAssistService", () => {
         }, validDraft().steps[1]],
       })),
     ]);
-    const { service, telemetryService } = createService(textGenerationClient);
+    const { service } = createService(textGenerationClient);
 
     const result = await service.draft(workspaceId, agentId, {
       prose: "Ask for the visitor email, send the contact request, then confirm.",
@@ -375,6 +375,99 @@ describe("RoutineDraftAssistService", () => {
       expect.objectContaining({ code: "missing_action_follow_up" }),
       expect.objectContaining({ code: "missing_terminal" }),
     ]));
+  });
+
+  it("keeps the original proposal when the validation retry has the same diagnostic count", async () => {
+    const originalInstruction = "Collect {{slot.email}} for the support request.";
+    const retryInstruction = "Ask only for the account email.";
+    const textGenerationClient = new FakeTextClient([
+      completion(validDraft({
+        name: "original-one-diagnostic",
+        steps: [
+          {
+            ...validDraft().steps[0],
+            instruction: originalInstruction,
+          },
+          {
+            ...validDraft().steps[1],
+            actionType: "billing.refund",
+          },
+        ],
+      })),
+      completion(validDraft({
+        name: "retry-one-diagnostic",
+        steps: [
+          {
+            ...validDraft().steps[0],
+            instruction: retryInstruction,
+          },
+          validDraft().steps[1],
+        ],
+      })),
+    ]);
+    const { service } = createService(textGenerationClient);
+
+    const result = await service.draft(workspaceId, agentId, {
+      prose: "Ask for email, send the contact request, then confirm.",
+    });
+
+    expect(textGenerationClient.calls).toHaveLength(2);
+    expect(result.draft.name).toBe("original-one-diagnostic");
+    expect(result.draft.steps[0]?.instruction).toBe(originalInstruction);
+    expect(result.draft.steps[0]?.instruction).not.toBe(retryInstruction);
+    expect(result.validation.diagnostics).toHaveLength(1);
+    expect(result.validation.diagnostics[0]).toEqual(expect.objectContaining({
+      code: "unregistered_action_type",
+    }));
+  });
+
+  it("treats normalization overflow as schema mismatch and uses the schema retry", async () => {
+    const nearLimitInstruction = `${"x".repeat(3986)} @email @email`;
+    const textGenerationClient = new FakeTextClient([
+      completion(validDraft({
+        steps: [{
+          ...validDraft().steps[0],
+          instruction: nearLimitInstruction,
+        }, validDraft().steps[1]],
+      })),
+      completion(validDraft({ name: "normalized-retry" })),
+    ]);
+    const { service, logger } = createService(textGenerationClient);
+
+    const result = await service.draft(workspaceId, agentId, {
+      prose: "Ask for the visitor email, send the contact request, then confirm.",
+    });
+
+    expect(nearLimitInstruction).toHaveLength(4000);
+    expect(textGenerationClient.calls).toHaveLength(2);
+    expect(textGenerationClient.calls[1]?.operation.attemptKey).toBe("schema_retry");
+    expect(result.draft.name).toBe("normalized-retry");
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ failureMode: "schema_mismatch", attemptKey: "primary" }),
+      "routine_draft_assist_schema_mismatch",
+    );
+  });
+
+  it("returns normalized drafts that remain under schema limits", async () => {
+    const underLimitInstruction = `${"x".repeat(3980)} @email`;
+    const textGenerationClient = new FakeTextClient([
+      completion(validDraft({
+        steps: [{
+          ...validDraft().steps[0],
+          instruction: underLimitInstruction,
+        }, validDraft().steps[1]],
+      })),
+    ]);
+    const { service } = createService(textGenerationClient);
+
+    const result = await service.draft(workspaceId, agentId, {
+      prose: "Ask for the visitor email, send the contact request, then confirm.",
+    });
+
+    expect(textGenerationClient.calls).toHaveLength(1);
+    expect(result.draft.steps[0]?.instruction).toBe(`${"x".repeat(3980)} {{slot.email}}`);
+    expect(result.draft.steps[0]?.instruction).toHaveLength(3995);
+    expect(result.validation).toEqual({ ok: true, diagnostics: [] });
   });
 
   it("does not run a validation retry for an already-valid draft", async () => {

@@ -213,7 +213,7 @@ No commit, push, or PR was created per EM instruction.
 Product-owner real-world draft-assist testing exposed two mechanical defects in `POST /agents/:agentId/routines/draft-assist`.
 
 - Slot-reference drift: the service now normalizes declared slot references in parsed proposals before validation, rewriting declared-slot `{{key}}`, `{{ key }}`, and `@key` prose references to `{{slot.key}}` across step instructions, transition guard text, and terminal instructions. Unknown slot-like references are left untouched for validation/review.
-- Unreachable terminal recovery: the prompt now explicitly requires at least one reachable terminal path and default complete transitions for unbranched final steps. Parsed proposals with validation diagnostics now receive at most one corrective `validation_retry` LLM attempt with author-facing diagnostics appended; the service returns the proposal with fewer diagnostics, using the retry on ties, and still returns draft plus validation if diagnostics remain.
+- Unreachable terminal recovery: the prompt now explicitly requires at least one reachable terminal path and default complete transitions for unbranched final steps. Parsed proposals with validation diagnostics now receive at most one corrective `validation_retry` LLM attempt with author-facing diagnostics appended; the service returns the retry only when it has strictly fewer diagnostics, preserving the original on ties, and still returns draft plus validation if diagnostics remain.
 
 Verification:
 
@@ -234,3 +234,30 @@ TS5033: Could not write file '/Users/dm/conductor/workspaces/radioso/seattle/pac
 ```
 
 No sandbox socket EPERM occurred in this run.
+
+Follow-up review fixes:
+
+- Validation retry tie-break now biases toward the original parsed proposal. A corrective retry must be strictly better by diagnostic count to replace it. Future refinement: diagnostic severity/category weighting could make "better" more nuanced than count-only, but that was intentionally left out of this patch.
+- Slot-reference normalization now participates in schema parsing. The parser normalizes declared slot references, then re-runs `routineDefinitionDraftInputSchema.safeParse`; if normalization pushes a prose field past its schema limit, that attempt is treated as the existing `schema_mismatch` and flows through the existing schema retry/error path.
+- Timeout verification for the worst-case 3 serial LLM calls: `POST /agents/:agentId/routines/draft-assist` has no route-specific timeout; `startApiRuntime` uses `app.listen`, so the effective Node HTTP defaults are `requestTimeout=300000ms`, `headersTimeout=60000ms`, `timeout=0`, and `keepAliveTimeout=5000ms`. The frontend `routinesApi.draftRoutineFromProcedure` uses the normal `request()` wrapper with browser `fetch` and no AbortController timeout. The current OpenAI/Gemini text-generation clients do not apply the embedding timeout helper to chat completions. No limit change was made because the server request budget is 300s and there is no shorter frontend timeout for this call.
+
+Follow-up verification:
+
+```bash
+cd backend && pnpm vitest run tests/unit/routine-draft-assist.test.ts
+```
+
+Result: passed, 14 tests.
+
+```bash
+cd backend && pnpm run test:unit
+```
+
+Result: failed before Vitest during `packages/conversation-engine` prebuild with generated-file write EPERMs:
+
+```text
+TS5033: Could not write file '/Users/dm/conductor/workspaces/radioso/seattle/packages/conversation-engine/dist/clarification.d.ts': EPERM: operation not permitted, open '/Users/dm/conductor/workspaces/radioso/seattle/packages/conversation-engine/dist/clarification.d.ts'.
+TS5033: Could not write file '/Users/dm/conductor/workspaces/radioso/seattle/packages/conversation-engine/dist/clarification.js': EPERM: operation not permitted, open '/Users/dm/conductor/workspaces/radioso/seattle/packages/conversation-engine/dist/clarification.js'.
+```
+
+No sandbox socket EPERM occurred in this follow-up run.

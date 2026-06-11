@@ -95,7 +95,12 @@ const parseDraft = (raw: string): RoutineDefinitionDraftInput | null => {
   try {
     const parsed = JSON.parse(cleanJsonCompletion(raw)) as unknown;
     const container = z.object({ draft: routineDefinitionDraftInputSchema }).strict().safeParse(parsed);
-    return container.success ? container.data.draft : null;
+    if (!container.success) {
+      return null;
+    }
+    const normalizedDraft = normalizeDraftSlotReferences(container.data.draft);
+    const normalizedContainer = routineDefinitionDraftInputSchema.safeParse(normalizedDraft);
+    return normalizedContainer.success ? normalizedContainer.data : null;
   } catch {
     return null;
   }
@@ -308,7 +313,7 @@ export class RoutineDraftAssistService {
     }
 
     const corrected = this.finalizeDraft(input.agentId, retryDraft);
-    return corrected.validation.diagnostics.length <= original.validation.diagnostics.length
+    return corrected.validation.diagnostics.length < original.validation.diagnostics.length
       ? corrected
       : original;
   }

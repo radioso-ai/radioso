@@ -31,7 +31,7 @@ import {
   buildWorkspaceIngestionReprocessService,
   buildWorkspaceLlmCapabilitySettingsService,
   buildWorkspaceProviderCredentialsService,
-  buildWebhookDestinationService,
+  buildWebhookDestinationAdapter,
   buildWorkspaceServices,
   listSupportedEmbeddingModels,
 } from "./dependencyBuilders.js";
@@ -107,7 +107,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     repositories,
   });
-  const webhookDestinationService = buildWebhookDestinationService({
+  const webhookDestinations = buildWebhookDestinationAdapter({
     auditService: infrastructure.auditService,
     env,
     logger,
@@ -218,6 +218,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     messageRepository: repositories.messageRepository,
     metricsRegistry: infrastructure.metricsRegistry,
     telemetryService: infrastructure.telemetryService,
+    webhookDestinations,
     productAnalyticsService: infrastructure.productAnalyticsService,
     routineDefinitionRepository: repositories.routineDefinitionRepository,
     retrievalPipeline: retrieval.retrievalPipeline,
@@ -305,7 +306,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     capabilityPolicy: composition.capabilityPolicy,
     webhookDestinations: {
       existsByIdAndWorkspace: async (inputWorkspaceId, destinationId) =>
-        webhookDestinationService.existsByIdAndWorkspace(inputWorkspaceId, destinationId),
+        webhookDestinations.existsByIdAndWorkspace(inputWorkspaceId, destinationId),
     },
   });
   const directiveAuthorService = new DirectiveAuthorService({
@@ -367,7 +368,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceSessionService: workspace.workspaceSessionService,
     abuseControlService: chat.abuseControlService,
     workspaceProviderCredentialsService,
-    webhookDestinationService,
+    webhookDestinations,
     workspaceLlmCapabilitySettingsService,
     auditService: infrastructure.auditService,
     mailService: infrastructure.mailService,

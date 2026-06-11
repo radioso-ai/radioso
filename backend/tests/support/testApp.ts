@@ -79,7 +79,10 @@ import { ConnectorRegistry } from "../../src/modules/connectors/services/connect
 import { createConnectorChatPort } from "../../src/modules/connectors/services/connectorChatPort.js";
 import { AbuseControlService } from "../../src/modules/security/services/abuseControlService.js";
 import { WorkspaceProviderCredentialsService } from "../../src/modules/security/credentials/services/workspaceProviderCredentialsService.js";
-import { WebhookDestinationService } from "../../src/modules/webhooks/public.js";
+import {
+  DefaultWebhookDestinationAdapter,
+  WebhookDestinationService,
+} from "../../src/modules/webhooks/public.js";
 import { WorkspaceLlmCapabilitySettingsService } from "../../src/modules/settings/services/workspaceLlmCapabilitySettingsService.js";
 import { buildAnalyticsSinks } from "../../src/shared/analytics/buildAnalyticsSinks.js";
 import { ProductAnalyticsService } from "../../src/shared/analytics/productAnalyticsService.js";
@@ -699,13 +702,13 @@ export const createTestDependencies = (overrides: {
   const agentRepository = new InMemoryAgentRepository(createDefaultAgentSkillSettingsRegistry());
   const routineDefinitionRepository = new InMemoryRoutineDefinitionRepository();
   const webhookDestinationRepository = new InMemoryWebhookDestinationRepository();
-  const webhookDestinationService = new WebhookDestinationService({
+  const webhookDestinations = new DefaultWebhookDestinationAdapter(new WebhookDestinationService({
     repository: webhookDestinationRepository,
     auditService,
     encryption: { key: env.CONNECTOR_ENCRYPTION_KEY },
     assertPublicUrl: async () => undefined,
     routineReferences: routineDefinitionRepository,
-  });
+  }));
   const accessGrantService = new AccessGrantService({
     repository: accessGrantRepository,
     originMatcher: new DefaultOriginMatcher(),
@@ -737,7 +740,7 @@ export const createTestDependencies = (overrides: {
     repository: routineDefinitionRepository,
     webhookDestinations: {
       existsByIdAndWorkspace: async (inputWorkspaceId, destinationId) =>
-        webhookDestinationService.existsByIdAndWorkspace(inputWorkspaceId, destinationId),
+        webhookDestinations.existsByIdAndWorkspace(inputWorkspaceId, destinationId),
     },
   });
   const chatInferencePipeline: AppDependencies["chatInferencePipeline"] = {
@@ -914,7 +917,7 @@ export const createTestDependencies = (overrides: {
     workspaceSessionService,
     abuseControlService,
     workspaceProviderCredentialsService,
-    webhookDestinationService,
+    webhookDestinations,
     workspaceLlmCapabilitySettingsService,
     authService: new AuthService({
       env,

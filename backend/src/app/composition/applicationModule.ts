@@ -48,6 +48,7 @@ import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provid
 import type { AgentService, AgentSurfaceExtension } from "../../modules/agents/public.js";
 import type { TextChunkingProviderPort } from "../../modules/retrieval/public.js";
 import type { ChatActionSuggestionProvider } from "../../modules/chat/services/actionSuggestions/chatActionSuggestionProvider.js";
+import type { WebhookDestinationRuntimePort } from "../../modules/webhooks/public.js";
 import type { Env } from "../config/env.js";
 
 export type ApplicationChatActionSuggestionProviderRegistration =
@@ -171,6 +172,7 @@ export interface ApplicationActionHandlerRegistration {
         logger: AppLogger;
         auditService: AuditService;
         telemetryService: TelemetryService;
+        webhookDestinations: WebhookDestinationRuntimePort;
         mailService: MailTransportPort;
         assertPublicWebsiteUrl: (url: string) => Promise<void>;
       }) => ActionHandler);

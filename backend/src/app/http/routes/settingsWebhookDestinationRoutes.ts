@@ -19,7 +19,7 @@ import {
 } from "../presenters/webhookDestinationPresenter.js";
 
 type SettingsWebhookDestinationDependencies = WorkspaceSessionDependencies &
-  Pick<AppDependencies, "accountAccessService" | "webhookDestinationService">;
+  Pick<AppDependencies, "accountAccessService" | "webhookDestinations">;
 
 const parseDestinationId = (raw: unknown): string => {
   const parsed = webhookDestinationIdParamSchema.shape.id.safeParse(raw);
@@ -40,7 +40,7 @@ export const createSettingsWebhookDestinationRoutes = (
   router.get("/", workspaceSession, settingsRead, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const destinations = await dependencies.webhookDestinationService.list(workspaceId);
+      const destinations = await dependencies.webhookDestinations.list(workspaceId);
       res.status(200).json({ destinations: destinations.map(presentWebhookDestination) });
     } catch (error) {
       next(error);
@@ -55,7 +55,7 @@ export const createSettingsWebhookDestinationRoutes = (
     async (req, res, next) => {
       try {
         const { accountId, workspaceId } = res.locals as { accountId: string; workspaceId: string };
-        const created = await dependencies.webhookDestinationService.create({
+        const created = await dependencies.webhookDestinations.create({
           workspaceId,
           name: req.body.name,
           url: req.body.url,
@@ -71,7 +71,7 @@ export const createSettingsWebhookDestinationRoutes = (
   router.get("/:id", workspaceSession, settingsRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const destination = await dependencies.webhookDestinationService.get(
+      const destination = await dependencies.webhookDestinations.get(
         workspaceId,
         parseDestinationId(req.params.id),
       );
@@ -89,7 +89,7 @@ export const createSettingsWebhookDestinationRoutes = (
     async (req, res, next) => {
       try {
         const { accountId, workspaceId } = res.locals as { accountId: string; workspaceId: string };
-        const destination = await dependencies.webhookDestinationService.update({
+        const destination = await dependencies.webhookDestinations.update({
           workspaceId,
           id: parseDestinationId(req.params.id),
           name: req.body.name,
@@ -106,7 +106,7 @@ export const createSettingsWebhookDestinationRoutes = (
   router.post("/:id/rotate-secret", workspaceSession, settingsManage, async (req, res, next) => {
     try {
       const { accountId, workspaceId } = res.locals as { accountId: string; workspaceId: string };
-      const rotated = await dependencies.webhookDestinationService.rotateSecret(
+      const rotated = await dependencies.webhookDestinations.rotateSecret(
         workspaceId,
         parseDestinationId(req.params.id),
         { accountId },
@@ -120,7 +120,7 @@ export const createSettingsWebhookDestinationRoutes = (
   router.delete("/:id", workspaceSession, settingsManage, async (req, res, next) => {
     try {
       const { accountId, workspaceId } = res.locals as { accountId: string; workspaceId: string };
-      await dependencies.webhookDestinationService.delete(
+      await dependencies.webhookDestinations.delete(
         workspaceId,
         parseDestinationId(req.params.id),
         { accountId },

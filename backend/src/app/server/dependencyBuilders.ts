@@ -122,7 +122,12 @@ import {
 } from "../../db/repositories/workspaceProviderCredentialsRepository.js";
 import { WorkspaceProviderCredentialsService } from "../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
 import { WebhookDestinationRepository } from "../../db/repositories/webhookDestinationRepository.js";
-import { WebhookDestinationService } from "../../modules/webhooks/public.js";
+import {
+  DefaultWebhookDestinationAdapter,
+  WebhookDestinationService,
+  type WebhookDestinationPublicAdapter,
+  type WebhookDestinationRuntimePort,
+} from "../../modules/webhooks/public.js";
 import { WorkspaceLlmCapabilitySettingsService } from "../../modules/settings/composition.js";
 import type { WorkspaceLlmCapabilityPreferencesRepositoryPort } from "../../modules/settings/composition.js";
 import { WorkspaceLlmCapabilityResolver } from "../composition/workspaceLlmCapabilityResolver.js";
@@ -350,7 +355,7 @@ export const buildWorkspaceProviderCredentialsService = (input: {
   return service;
 };
 
-export const buildWebhookDestinationService = (input: {
+export const buildWebhookDestinationAdapter = (input: {
   auditService: AuditPort;
   env: Pick<Env, "CONNECTOR_ENCRYPTION_KEY" | "NODE_ENV">;
   logger: Pick<AppLogger, "warn">;
@@ -359,15 +364,15 @@ export const buildWebhookDestinationService = (input: {
     routineDefinitionRepository: Pick<RoutineDefinitionRepository, "listPublishedRoutineNamesReferencingDestination">;
   };
   assertPublicUrl: (url: string) => Promise<void>;
-}): WebhookDestinationService =>
-  new WebhookDestinationService({
+}): WebhookDestinationPublicAdapter =>
+  new DefaultWebhookDestinationAdapter(new WebhookDestinationService({
     repository: input.repositories.webhookDestinationRepository,
     auditService: input.auditService,
     encryption: { key: input.env.CONNECTOR_ENCRYPTION_KEY },
     assertPublicUrl: input.assertPublicUrl,
     allowHttpLoopback: false,
     routineReferences: input.repositories.routineDefinitionRepository,
-  });
+  }));
 
 export const buildWorkspaceLlmCapabilitySettingsService = (input: {
   auditService: AuditPort;
@@ -715,6 +720,7 @@ export const buildChatServices = (input: {
   messageRepository: MessageRepository;
   metricsRegistry?: MetricsRegistry | null;
   telemetryService: TelemetryService;
+  webhookDestinations: WebhookDestinationRuntimePort;
   productAnalyticsService: ProductAnalyticsService;
   routineDefinitionRepository: RoutineDefinitionRepository;
   mailService: ReturnType<typeof buildInfrastructure>["mailService"];
@@ -873,6 +879,7 @@ export const buildChatServices = (input: {
               logger: input.logger,
               auditService: input.auditService,
               telemetryService: input.telemetryService,
+              webhookDestinations: input.webhookDestinations,
               mailService: input.mailService,
               assertPublicWebsiteUrl: input.assertPublicWebsiteUrl,
             })

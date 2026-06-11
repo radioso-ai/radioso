@@ -29,3 +29,11 @@ export {
   type WebhookDestinationResolver,
   type WebhookDestinationResolverContext,
 } from "./resolver.js";
+export {
+  DefaultWebhookDestinationAdapter,
+  type WebhookDestinationDeliveryOutcomePort,
+  type WebhookDestinationManagementPort,
+  type WebhookDestinationPublicAdapter,
+  type WebhookDestinationReferencePort,
+  type WebhookDestinationRuntimePort,
+} from "./adapters.js";

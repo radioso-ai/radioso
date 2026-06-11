@@ -2258,6 +2258,128 @@
           "apiKey"
         ]
       },
+      "WebhookDestination": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "lastDeliveryStatus": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "success",
+              "retry",
+              "failed",
+              "skipped"
+            ]
+          },
+          "lastDeliveryAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "url",
+          "lastDeliveryStatus",
+          "lastDeliveryAt",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "WebhookDestinationListResponse": {
+        "type": "object",
+        "properties": {
+          "destinations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookDestination"
+            }
+          }
+        },
+        "required": [
+          "destinations"
+        ]
+      },
+      "WebhookDestinationResponse": {
+        "type": "object",
+        "properties": {
+          "destination": {
+            "$ref": "#/components/schemas/WebhookDestination"
+          }
+        },
+        "required": [
+          "destination"
+        ]
+      },
+      "WebhookDestinationCreateResponse": {
+        "type": "object",
+        "properties": {
+          "destination": {
+            "$ref": "#/components/schemas/WebhookDestination"
+          },
+          "secret": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "destination",
+          "secret"
+        ]
+      },
+      "WebhookDestinationRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "name",
+          "url"
+        ],
+        "additionalProperties": false
+      },
+      "WebhookDestinationParams": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
       "WorkspaceLlmCapabilityPreference": {
         "type": [
           "object",
@@ -2721,6 +2843,9 @@
               "contactRequestsEnabled": {
                 "type": "boolean"
               },
+              "webhookExportsEnabled": {
+                "type": "boolean"
+              },
               "contactRequestDelivery": {
                 "$ref": "#/components/schemas/AgentContactRequestDelivery"
               },
@@ -2861,6 +2986,7 @@
               "assistantLinkUtmEnabled",
               "citationDisplayEnabled",
               "contactRequestsEnabled",
+              "webhookExportsEnabled",
               "contactRequestDelivery",
               "theme",
               "branding",
@@ -2913,6 +3039,9 @@
             "type": "boolean"
           },
           "contactRequestsEnabled": {
+            "type": "boolean"
+          },
+          "webhookExportsEnabled": {
             "type": "boolean"
           },
           "contactRequestDelivery": {
@@ -3880,6 +4009,32 @@
               "additionalProperties": false
             },
             "minItems": 1
+          },
+          "completionExport": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "default": false
+              },
+              "triggerKinds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "complete",
+                    "handoff"
+                  ]
+                },
+                "default": []
+              },
+              "destinationRef": {
+                "type": "string",
+                "maxLength": 300,
+                "default": ""
+              }
+            },
+            "additionalProperties": false
           }
         },
         "required": [
@@ -4144,6 +4299,32 @@
               "additionalProperties": false
             },
             "minItems": 1
+          },
+          "completionExport": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "default": false
+              },
+              "triggerKinds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "complete",
+                    "handoff"
+                  ]
+                },
+                "default": []
+              },
+              "destinationRef": {
+                "type": "string",
+                "maxLength": 300,
+                "default": ""
+              }
+            },
+            "additionalProperties": false
           }
         },
         "required": [
@@ -4177,10 +4358,13 @@
                     "referenced_undeclared_slot",
                     "unregistered_action_type",
                     "action_capability_denied",
+                    "invalid_webhook_destination_ref",
+                    "unknown_webhook_destination",
                     "attempt_limit_without_fallback",
                     "outcome_guard_on_non_tool_step",
                     "structured_guard_missing_parameter",
-                    "unsupported_tool_step"
+                    "unsupported_tool_step",
+                    "completion_export_missing_destination"
                   ]
                 },
                 "location": {
@@ -4457,6 +4641,32 @@
               "additionalProperties": false
             },
             "minItems": 1
+          },
+          "completionExport": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "default": false
+              },
+              "triggerKinds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "complete",
+                    "handoff"
+                  ]
+                },
+                "default": []
+              },
+              "destinationRef": {
+                "type": "string",
+                "maxLength": 300,
+                "default": ""
+              }
+            },
+            "additionalProperties": false
           },
           "id": {
             "type": "string",
@@ -11149,6 +11359,369 @@
         }
       }
     },
+    "/api/v1/settings/webhook-destinations": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "List workspace webhook destinations",
+        "operationId": "listWebhookDestinations",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook destinations returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDestinationListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Create a workspace webhook destination",
+        "operationId": "createWebhookDestination",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookDestinationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Webhook destination created with one-time plaintext secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDestinationCreateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Destination name already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/webhook-destinations/{id}": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Get a workspace webhook destination",
+        "operationId": "getWebhookDestination",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook destination returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDestinationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Webhook destination not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Update a workspace webhook destination",
+        "operationId": "updateWebhookDestination",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookDestinationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook destination updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDestinationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Webhook destination not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Destination name already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Delete a workspace webhook destination",
+        "operationId": "deleteWebhookDestination",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Webhook destination deleted"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Webhook destination not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Destination is referenced by published routines",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/webhook-destinations/{id}/rotate-secret": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Rotate a workspace webhook destination secret",
+        "operationId": "rotateWebhookDestinationSecret",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook destination secret rotated with one-time plaintext secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDestinationCreateResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Webhook destination not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/settings": {
       "get": {
         "tags": [
@@ -16620,6 +17193,9 @@
                           "contactRequestsEnabled": {
                             "type": "boolean"
                           },
+                          "webhookExportsEnabled": {
+                            "type": "boolean"
+                          },
                           "contactRequestDelivery": {},
                           "logo": {},
                           "theme": {
@@ -16697,6 +17273,9 @@
                         "type": "string"
                       },
                       "contactRequestsEnabled": {
+                        "type": "boolean"
+                      },
+                      "webhookExportsEnabled": {
                         "type": "boolean"
                       },
                       "contactRequestDelivery": {},

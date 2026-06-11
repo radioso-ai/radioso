@@ -293,6 +293,7 @@ const toBehaviorSettings = (agent: NormalizedAgentInput): Record<string, unknown
   assistantLinkUtmEnabled: agent.assistantLinkUtmEnabled,
   citationDisplayEnabled: agent.citationDisplayEnabled,
   contactRequestsEnabled: agent.contactRequestsEnabled,
+  webhookExportsEnabled: agent.webhookExportsEnabled,
   contactRequestDelivery: agent.contactRequestDelivery,
   logo: agent.logo,
   theme: agent.theme,
@@ -361,6 +362,7 @@ const mapAgent = (
     assistantLinkUtmEnabled: readBoolean(behavior, "assistantLinkUtmEnabled") ?? true,
     citationDisplayEnabled: readBoolean(behavior, "citationDisplayEnabled") ?? true,
     contactRequestsEnabled: readBoolean(behavior, "contactRequestsEnabled") ?? false,
+    webhookExportsEnabled: readBoolean(behavior, "webhookExportsEnabled") ?? false,
     contactRequestDelivery: readContactRequestDelivery(behavior),
     retrievalEnabled: row.retrieval_enabled,
     sourceScope: row.source_scope_mode === "selected"

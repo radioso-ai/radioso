@@ -120,6 +120,7 @@ export interface AgentConfig {
   name: string;
   customInstruction: string;
   contactRequestsEnabled: boolean;
+  webhookExportsEnabled: boolean;
   contactRequestDelivery: ConversationAgent["contactRequestDelivery"];
   logo: AgentLogoConfig | null;
   theme: ConversationAgent["theme"];
@@ -423,6 +424,10 @@ export const AGENT_CONFIG_FIELD_DESCRIPTORS = {
     portability: "portable",
     serialize: (agent) => agent.contactRequestsEnabled,
   }),
+  webhookExportsEnabled: descriptor({
+    portability: "portable",
+    serialize: (agent) => agent.webhookExportsEnabled,
+  }),
   contactRequestDelivery: descriptor({
     portability: "portable",
     serialize: (agent) => cloneJson(agent.contactRequestDelivery),
@@ -514,6 +519,7 @@ export const projectInternalAgentConfig = (agent: ConversationAgent): InternalAg
   name: agent.name,
   customInstruction: agent.customInstruction,
   contactRequestsEnabled: agent.contactRequestsEnabled,
+  webhookExportsEnabled: agent.webhookExportsEnabled,
   contactRequestDelivery: cloneJson(agent.contactRequestDelivery),
   logo: agent.logo ? cloneJson(agent.logo) : null,
   theme: cloneJson(agent.theme),
@@ -566,6 +572,7 @@ export const materializeAgentFromConfig = (
     assistantLinkUtmEnabled: retrievalAnswer.assistantLinkUtmEnabled,
     citationDisplayEnabled: retrievalAnswer.citationDisplayEnabled,
     contactRequestsEnabled: config.contactRequestsEnabled,
+    webhookExportsEnabled: config.webhookExportsEnabled,
     contactRequestDelivery: cloneJson(config.contactRequestDelivery),
     retrievalEnabled: retrievalAnswer.retrievalEnabled,
     logo: config.logo ? cloneJson(config.logo) : null,

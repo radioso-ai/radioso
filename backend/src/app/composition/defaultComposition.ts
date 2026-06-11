@@ -50,6 +50,7 @@ import { createQualityApplicationModule } from "./builtIn/qualityModule.js";
 import { createUsageReportingApplicationModule } from "./builtIn/usageReportingModule.js";
 import { createAnswerDirectivesApplicationModule } from "./builtIn/answerDirectivesModule.js";
 import { createContactRoutineApplicationModule } from "./builtIn/contactRoutineModule.js";
+import { createWebhookSendApplicationModule } from "./builtIn/webhookSendModule.js";
 import {
   createDefaultSkillCatalogRegistry,
   SkillExecutorRegistry,
@@ -122,6 +123,7 @@ export const createDefaultApplicationComposition = (options: {
     createUsageReportingApplicationModule(),
     createQualityApplicationModule(),
     createContactRoutineApplicationModule(),
+    createWebhookSendApplicationModule(),
     ...(options.modules ?? []),
   ]);
 

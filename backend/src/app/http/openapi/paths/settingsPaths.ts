@@ -15,6 +15,124 @@ export const registerSettingsPaths = (
 ) => {
   registry.registerPath({
     method: "get",
+    path: "/api/v1/settings/webhook-destinations",
+    tags: ["Settings"],
+    summary: "List workspace webhook destinations",
+    operationId: "listWebhookDestinations",
+    security: security.workspaceAdminSecurity,
+    responses: {
+      200: {
+        description: "Webhook destinations returned",
+        content: { "application/json": { schema: schemas.WebhookDestinationListResponseSchema } },
+      },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/settings/webhook-destinations",
+    tags: ["Settings"],
+    summary: "Create a workspace webhook destination",
+    operationId: "createWebhookDestination",
+    security: security.workspaceAdminSecurity,
+    request: {
+      body: {
+        required: true,
+        content: { "application/json": { schema: schemas.WebhookDestinationRequestSchema } },
+      },
+    },
+    responses: {
+      201: {
+        description: "Webhook destination created with one-time plaintext secret",
+        content: { "application/json": { schema: schemas.WebhookDestinationCreateResponseSchema } },
+      },
+      400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      409: { description: "Destination name already exists", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/settings/webhook-destinations/{id}",
+    tags: ["Settings"],
+    summary: "Get a workspace webhook destination",
+    operationId: "getWebhookDestination",
+    security: security.workspaceAdminSecurity,
+    request: { params: schemas.WebhookDestinationParamsSchema },
+    responses: {
+      200: {
+        description: "Webhook destination returned",
+        content: { "application/json": { schema: schemas.WebhookDestinationResponseSchema } },
+      },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Webhook destination not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "put",
+    path: "/api/v1/settings/webhook-destinations/{id}",
+    tags: ["Settings"],
+    summary: "Update a workspace webhook destination",
+    operationId: "updateWebhookDestination",
+    security: security.workspaceAdminSecurity,
+    request: {
+      params: schemas.WebhookDestinationParamsSchema,
+      body: {
+        required: true,
+        content: { "application/json": { schema: schemas.WebhookDestinationRequestSchema } },
+      },
+    },
+    responses: {
+      200: {
+        description: "Webhook destination updated",
+        content: { "application/json": { schema: schemas.WebhookDestinationResponseSchema } },
+      },
+      400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Webhook destination not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      409: { description: "Destination name already exists", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/settings/webhook-destinations/{id}/rotate-secret",
+    tags: ["Settings"],
+    summary: "Rotate a workspace webhook destination secret",
+    operationId: "rotateWebhookDestinationSecret",
+    security: security.workspaceAdminSecurity,
+    request: { params: schemas.WebhookDestinationParamsSchema },
+    responses: {
+      200: {
+        description: "Webhook destination secret rotated with one-time plaintext secret",
+        content: { "application/json": { schema: schemas.WebhookDestinationCreateResponseSchema } },
+      },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Webhook destination not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "delete",
+    path: "/api/v1/settings/webhook-destinations/{id}",
+    tags: ["Settings"],
+    summary: "Delete a workspace webhook destination",
+    operationId: "deleteWebhookDestination",
+    security: security.workspaceAdminSecurity,
+    request: { params: schemas.WebhookDestinationParamsSchema },
+    responses: {
+      204: { description: "Webhook destination deleted" },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Webhook destination not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      409: { description: "Destination is referenced by published routines", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
     path: "/api/v1/settings",
     tags: ["Settings"],
     summary: "Get shared workspace platform settings",

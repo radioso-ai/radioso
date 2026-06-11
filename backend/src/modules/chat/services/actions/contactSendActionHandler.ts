@@ -1,5 +1,10 @@
 import type { AgentContactRequestDelivery, AgentContactWebhook } from "../../../agents/public.js";
 import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js";
+import {
+  FetchWebhookHttpClient,
+  type WebhookHttpClient,
+  type WebhookUrlGuard,
+} from "./webhookDelivery.js";
 
 /**
  * Narrow mail port this handler needs — a host adapts its real mail transport to it.
@@ -39,21 +44,14 @@ export interface ContactAgentLookup {
   } | null>;
 }
 
-export interface ContactWebhookHttpClient {
-  post(request: {
-    url: string;
-    /** The exact bytes to send (already serialized). */
-    rawBody: string;
-    headers: Record<string, string>;
-  }): Promise<void>;
-}
+export type ContactWebhookHttpClient = WebhookHttpClient;
 
 /**
  * Asserts an outbound URL resolves to a publicly routable host (SSRF guard). A host
  * adapts the website crawler's `assertPublicWebsiteUrl` to it so this module does not
  * depend on the crawler. Throwing rejects the URL; the worker then retries/fails.
  */
-export type ContactWebhookUrlGuard = (url: string) => Promise<void>;
+export type ContactWebhookUrlGuard = WebhookUrlGuard;
 
 /** Narrow lookups the workspace-owner resolver needs (a `WorkspaceRepository` satisfies it). */
 export interface ContactWorkspaceLookup {
@@ -126,53 +124,7 @@ export class ConfiguredContactDeliveryResolver implements ContactRecipientResolv
   }
 }
 
-/** Default per-request webhook timeout — a slow endpoint must not stall action dispatch. */
-const DEFAULT_WEBHOOK_TIMEOUT_MS = 10_000;
-/** A webhook should normally not redirect; allow a couple of hops but cap them. */
-const DEFAULT_MAX_WEBHOOK_REDIRECTS = 3;
-
-export class FetchContactWebhookHttpClient implements ContactWebhookHttpClient {
-  constructor(
-    private readonly assertPublicUrl: ContactWebhookUrlGuard,
-    private readonly options: { timeoutMs?: number; maxRedirects?: number } = {},
-  ) {}
-
-  async post(request: { url: string; rawBody: string; headers: Record<string, string> }): Promise<void> {
-    const timeoutMs = this.options.timeoutMs ?? DEFAULT_WEBHOOK_TIMEOUT_MS;
-    const maxRedirects = this.options.maxRedirects ?? DEFAULT_MAX_WEBHOOK_REDIRECTS;
-    let currentUrl = request.url;
-
-    // Walk redirects manually and re-validate every hop against the SSRF policy
-    // BEFORE the request leaves the worker. `redirect: "follow"` would let fetch
-    // chase a 3xx to a private/link-local host (e.g. cloud metadata) before we
-    // could check it. A bounded timeout per hop keeps one slow endpoint from
-    // stalling the dispatch batch.
-    for (let hop = 0; hop <= maxRedirects; hop += 1) {
-      await this.assertPublicUrl(currentUrl);
-      const response = await fetch(currentUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...request.headers },
-        body: request.rawBody,
-        redirect: "manual",
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-
-      if (response.status >= 300 && response.status < 400) {
-        const location = response.headers.get("location");
-        if (!location) {
-          throw new Error(`Contact webhook redirect (${response.status}) had no location`);
-        }
-        currentUrl = new URL(location, currentUrl).toString();
-        continue;
-      }
-      if (!response.ok) {
-        throw new Error(`Contact webhook POST failed with status ${response.status}`);
-      }
-      return;
-    }
-    throw new Error(`Contact webhook exceeded ${maxRedirects} redirects`);
-  }
-}
+export class FetchContactWebhookHttpClient extends FetchWebhookHttpClient {}
 
 const asString = (value: unknown): string | null =>
   typeof value === "string" && value.trim().length > 0 ? value.trim() : null;

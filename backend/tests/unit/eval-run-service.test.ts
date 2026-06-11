@@ -57,6 +57,7 @@ const configuredAgent = (): ConversationAgent => ({
   assistantLinkUtmEnabled: false,
   citationDisplayEnabled: false,
   contactRequestsEnabled: false,
+  webhookExportsEnabled: false,
   contactRequestDelivery: {
     recipientEmails: [],
     webhook: null,

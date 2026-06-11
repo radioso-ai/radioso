@@ -64,10 +64,13 @@ export type RoutineValidationCode =
   | 'referenced_undeclared_slot'
   | 'unregistered_action_type'
   | 'action_capability_denied'
+  | 'invalid_webhook_destination_ref'
+  | 'unknown_webhook_destination'
   | 'attempt_limit_without_fallback'
   | 'outcome_guard_on_non_tool_step'
   | 'structured_guard_missing_parameter'
   | 'unsupported_tool_step'
+  | 'completion_export_missing_destination'
 
 export type RoutineValidationDiagnostic = {
   code: RoutineValidationCode
@@ -86,6 +89,7 @@ export type RoutineTransition = Omit<ApiSchemas['RoutineDefinition']['transition
 export type RoutineTerminal = Omit<ApiSchemas['RoutineDefinition']['terminals'][number], 'kind'> & {
   kind: RoutineTerminalKind
 }
+export type RoutineCompletionExport = NonNullable<ApiSchemas['RoutineDefinition']['completionExport']>
 export type RoutineDefinitionDraft = {
   name: string
   activation: {
@@ -97,6 +101,7 @@ export type RoutineDefinitionDraft = {
   steps: RoutineStep[]
   transitions: RoutineTransition[]
   terminals: RoutineTerminal[]
+  completionExport?: RoutineCompletionExport
 }
 export type RoutineDefinition = RoutineDefinitionDraft & {
   id: string
@@ -118,6 +123,12 @@ export type RoutineDefinitionPublishRejectedResponse = {
   validation: RoutineValidationResult
 }
 
+export type WebhookDestination = ApiSchemas['WebhookDestination']
+export type WebhookDestinationRequest = ApiSchemas['WebhookDestinationRequest']
+export type WebhookDestinationListResponse = ApiSchemas['WebhookDestinationListResponse']
+export type WebhookDestinationResponse = ApiSchemas['WebhookDestinationResponse']
+export type WebhookDestinationCreateResponse = ApiSchemas['WebhookDestinationCreateResponse']
+
 export type AssistantBehaviorSettings = Pick<
   RetrievalDefaults,
   'suggestedQuestionsEnabled' | 'customInstruction'
@@ -127,6 +138,7 @@ export type AssistantBehaviorSettings = Pick<
   // Per-agent "contact a human" capability. Only meaningful in the per-agent
   // (assistant) settings; the workspace-level mapping leaves it undefined.
   contactRequestsEnabled?: boolean
+  webhookExportsEnabled?: boolean
   contactRequestDelivery?: AgentContactRequestDelivery
   theme: WebsiteEmbedThemeSettings
   branding?: AgentBrandingSettings
@@ -577,6 +589,7 @@ export const agentToAssistantBehaviorSettings = (agent: AgentSettings): Assistan
   assistantLinkUtmEnabled: agent.assistantLinkUtmEnabled,
   citationDisplayEnabled: agent.citationDisplayEnabled,
   contactRequestsEnabled: agent.contactRequestsEnabled,
+  webhookExportsEnabled: agent.webhookExportsEnabled,
   contactRequestDelivery: agent.contactRequestDelivery,
   theme: agent.theme,
   branding: agent.branding,

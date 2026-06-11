@@ -91,6 +91,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       assistantLinkUtmEnabled: z.boolean(),
       citationDisplayEnabled: z.boolean(),
       contactRequestsEnabled: z.boolean(),
+      webhookExportsEnabled: z.boolean(),
       contactRequestDelivery: AgentContactRequestDeliverySchema,
       theme: z.object({
         brand: z.string(),
@@ -134,6 +135,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       assistantLinkUtmEnabled: z.boolean().optional(),
       citationDisplayEnabled: z.boolean().optional(),
       contactRequestsEnabled: z.boolean().optional(),
+      webhookExportsEnabled: z.boolean().optional(),
       contactRequestDelivery: AgentContactRequestDeliveryRequestSchema.optional(),
       theme: z.object({
         brand: z.string().optional(),

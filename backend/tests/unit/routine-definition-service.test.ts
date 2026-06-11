@@ -14,9 +14,12 @@ import type { ActionCapabilityMap } from "../../src/shared/domain/actionCapabili
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const agentId = "22222222-2222-4222-8222-222222222222";
+const knownDestinationId = "33333333-3333-4333-8333-333333333333";
+const missingDestinationId = "44444444-4444-4444-8444-444444444444";
 
 class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort {
   readonly items = new Map<string, RoutineDefinition>();
+  publishError: unknown = undefined;
 
   async listPublishedByAgent(inputAgentId: string): Promise<RoutineDefinition[]> {
     return [...this.items.values()].filter((definition) =>
@@ -63,6 +66,9 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
   }
 
   async publish(inputAgentId: string, id: string): Promise<RoutineDefinition> {
+    if (this.publishError) {
+      throw this.publishError;
+    }
     const draft = await this.findById(inputAgentId, id);
     if (!draft) {
       throw new Error("not_found");
@@ -218,6 +224,7 @@ class FakeCapabilityPolicy implements CapabilityPolicy {
 const createService = (options: {
   actionCapabilities?: ActionCapabilityMap;
   capabilityPolicy?: CapabilityPolicy;
+  knownWebhookDestinations?: Set<string>;
 } = {}) => {
   const repository = new FakeRoutineDefinitionRepository();
   const service = new RoutineDefinitionService({
@@ -227,6 +234,11 @@ const createService = (options: {
         return inputAgentId === agentId && inputWorkspaceId === workspaceId
           ? { id: agentId }
           : null;
+      },
+    },
+    webhookDestinations: {
+      async existsByIdAndWorkspace(inputWorkspaceId, destinationId) {
+        return inputWorkspaceId === workspaceId && options.knownWebhookDestinations?.has(destinationId) === true;
       },
     },
     ...options,
@@ -420,6 +432,127 @@ describe("RoutineDefinitionService", () => {
     expect(result).toMatchObject({
       routine: {
         status: "published",
+      },
+      validation: {
+        ok: true,
+      },
+    });
+  });
+
+  it("rejects publish when enabled completion export has a malformed destination ref", async () => {
+    const { repository, service } = createService();
+    const draft = await service.createDraft(workspaceId, agentId, {
+      ...validDraft(),
+      completionExport: {
+        enabled: true,
+        triggerKinds: ["complete"],
+        destinationRef: "missing-destination",
+      },
+    });
+
+    const result = await service.publish(workspaceId, agentId, draft.routine.id);
+
+    expect(result).toMatchObject({
+      rejected: true,
+      validation: {
+        ok: false,
+        diagnostics: [
+          expect.objectContaining({
+            code: "invalid_webhook_destination_ref",
+            location: "completionExport.destinationRef",
+            message: expect.stringContaining("missing-destination"),
+          }),
+        ],
+      },
+    });
+    expect(await repository.listByAgent(agentId)).toHaveLength(1);
+  });
+
+  it("rejects publish when enabled completion export references an unknown destination UUID", async () => {
+    const { repository, service } = createService();
+    const draft = await service.createDraft(workspaceId, agentId, {
+      ...validDraft(),
+      completionExport: {
+        enabled: true,
+        triggerKinds: ["complete"],
+        destinationRef: missingDestinationId,
+      },
+    });
+
+    const result = await service.publish(workspaceId, agentId, draft.routine.id);
+
+    expect(result).toMatchObject({
+      rejected: true,
+      validation: {
+        ok: false,
+        diagnostics: [
+          expect.objectContaining({
+            code: "unknown_webhook_destination",
+            location: "completionExport.destinationRef",
+            message: expect.stringContaining(missingDestinationId),
+          }),
+        ],
+      },
+    });
+    expect(await repository.listByAgent(agentId)).toHaveLength(1);
+  });
+
+  it("turns a concurrent destination delete during publish into a validation rejection", async () => {
+    const { repository, service } = createService({ knownWebhookDestinations: new Set([knownDestinationId]) });
+    const draft = await service.createDraft(workspaceId, agentId, {
+      ...validDraft(),
+      completionExport: {
+        enabled: true,
+        triggerKinds: ["complete"],
+        destinationRef: knownDestinationId,
+      },
+    });
+    repository.publishError = Object.assign(
+      new Error("published routine completion export references unknown webhook destination"),
+      {
+        code: "23503",
+        constraint: "routine_completion_export_destination_ref_published_fk",
+      },
+    );
+
+    const result = await service.publish(workspaceId, agentId, draft.routine.id);
+
+    expect(result).toMatchObject({
+      rejected: true,
+      validation: {
+        ok: false,
+        diagnostics: [
+          expect.objectContaining({
+            code: "unknown_webhook_destination",
+            location: "completionExport.destinationRef",
+            message: expect.stringContaining(knownDestinationId),
+          }),
+        ],
+      },
+    });
+  });
+
+  it("publishes when enabled completion export references a workspace destination", async () => {
+    const { service } = createService({ knownWebhookDestinations: new Set([knownDestinationId]) });
+    const draft = await service.createDraft(workspaceId, agentId, {
+      ...validDraft(),
+      completionExport: {
+        enabled: true,
+        triggerKinds: ["complete", "handoff"],
+        destinationRef: knownDestinationId,
+      },
+    });
+
+    const result = await service.publish(workspaceId, agentId, draft.routine.id);
+
+    expect(result).toMatchObject({
+      routine: {
+        status: "published",
+        completionExport: {
+          enabled: true,
+          triggerKinds: ["complete", "handoff"],
+          destinationRef: knownDestinationId,
+        },
       },
       validation: {
         ok: true,

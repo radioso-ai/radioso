@@ -23,6 +23,12 @@ PUT /api/v1/settings
 GET /api/v1/settings/credentials
 PUT /api/v1/settings/credentials/:provider
 DELETE /api/v1/settings/credentials/:provider
+GET /api/v1/settings/webhook-destinations
+POST /api/v1/settings/webhook-destinations
+GET /api/v1/settings/webhook-destinations/:id
+PUT /api/v1/settings/webhook-destinations/:id
+POST /api/v1/settings/webhook-destinations/:id/rotate-secret
+DELETE /api/v1/settings/webhook-destinations/:id
 GET /api/v1/settings/llm-models
 PUT /api/v1/settings/llm-models
 ```
@@ -35,6 +41,7 @@ There are four main setting groups:
 - general settings for anonymous chat, assistant defaults, and Enterprise website widget behavior
 - platform settings that merge assistant and channel behavior into one resource
 - model and credential settings for provider access
+- reusable webhook destinations for routine completion export
 
 When ingestion settings change, you can requeue eligible documents so the new chunking behavior is applied to existing content.
 
@@ -163,6 +170,73 @@ Workspaces can supply their own provider API keys instead of relying on the depl
 `DELETE /api/v1/settings/credentials/:provider` removes a stored key. The response is `204 No Content`, or `404` if no credential was stored for that provider.
 
 If `CONNECTOR_ENCRYPTION_KEY` is not configured on the backend, writes return `503 encryption_not_configured` and `GET` reports `"encryptionConfigured": false`. The bootstrap command generates a key automatically; operators can also produce one with `openssl rand -base64 32`.
+
+## Webhook destinations
+
+Webhook destinations are named endpoints that routines can reference by stable id.
+They are workspace-scoped. A routine stores the destination id, not the URL or the
+name, so renaming a destination does not break published routines.
+
+Create a destination with a name and an HTTPS URL:
+
+```http
+POST /api/v1/settings/webhook-destinations
+```
+
+```json
+{
+  "name": "crm-leads",
+  "url": "https://example.com/hooks/leads"
+}
+```
+
+The create response includes a signing secret once:
+
+```json
+{
+  "destination": {
+    "id": "9ce5f2c1-8e47-47d3-b75d-8608e1a4be52",
+    "name": "crm-leads",
+    "url": "https://example.com/hooks/leads",
+    "lastDeliveryStatus": null,
+    "lastDeliveryAt": null,
+    "createdAt": "2026-06-11T12:00:00.000Z",
+    "updatedAt": "2026-06-11T12:00:00.000Z"
+  },
+  "secret": "..."
+}
+```
+
+Store that secret in the receiving system. It is encrypted at rest with
+`CONNECTOR_ENCRYPTION_KEY` and is not returned by list, get, or update responses.
+Use `POST /api/v1/settings/webhook-destinations/:id/rotate-secret` to issue a new
+secret. Rotation also returns the new plaintext secret once.
+
+Destination URLs must use HTTPS and must pass the same public-host SSRF policy used
+by outbound contact webhooks. Local HTTP endpoints are not accepted by default.
+
+Deleting a destination is blocked while any published routine references it. The
+error names the published routine so you can remove or change the reference first.
+
+When a routine reaches a terminal included in its completion export trigger set,
+Radioso dispatches `webhook.send` and posts a JSON body to the destination URL
+through the existing action outbox. The request includes:
+
+- `Idempotency-Key`
+- `X-Radioso-Timestamp`
+- `X-Radioso-Signature`
+
+`X-Radioso-Signature` has the form `sha256=<hex digest>`. The digest is HMAC
+SHA-256 over `<timestamp>.<raw request body>` using the destination secret.
+Verify against the raw body bytes received by your server, not a re-serialized
+JSON object.
+
+Delivery uses the same public-host SSRF policy as outbound contact webhooks.
+Transient transport failures retry through the action outbox. A missing
+destination, missing conversation agent, or agent with webhook exports disabled is
+treated as a terminal skip. `lastDeliveryStatus` is updated to `success`,
+`retry`, `failed`, or `skipped`; `lastDeliveryAt` records when that latest outcome
+was written.
 
 ## LLM model selection
 

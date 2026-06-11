@@ -57,6 +57,10 @@ import type {
   WorkspaceProviderCredentialsRepositoryPort,
 } from "../../src/db/repositories/workspaceProviderCredentialsRepository.js";
 import type {
+  WebhookDestinationRecord,
+  WebhookDestinationRepositoryPort,
+} from "../../src/modules/webhooks/public.js";
+import type {
   WorkspaceLlmCapability,
   WorkspaceLlmCapabilityPreference,
   WorkspaceLlmCapabilityPreferenceInput,
@@ -1229,6 +1233,20 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
     }
     return this.items.delete(id);
   }
+
+  async listPublishedRoutineNamesReferencingDestination(
+    _workspaceId: string,
+    destinationId: string,
+  ): Promise<string[]> {
+    return [...this.items.values()]
+      .filter((definition) =>
+        definition.status === "published" &&
+        definition.completionExport?.enabled &&
+        definition.completionExport.destinationRef === destinationId
+      )
+      .map((definition) => definition.name)
+      .sort((left, right) => left.localeCompare(right));
+  }
 }
 
 export class InMemoryBootstrapGreetingCacheRepository implements BootstrapGreetingCacheRepositoryPort {
@@ -1351,6 +1369,109 @@ export class InMemoryWorkspaceProviderCredentialsRepository
 
   async remove(workspaceId: string, provider: LlmProviderName): Promise<boolean> {
     return this.items.delete(`${workspaceId}:${provider}`);
+  }
+}
+
+export class InMemoryWebhookDestinationRepository implements WebhookDestinationRepositoryPort {
+  readonly items = new Map<string, WebhookDestinationRecord>();
+
+  async create(input: {
+    workspaceId: string;
+    name: string;
+    url: string;
+    secretCiphertext: string;
+    encryptionKeyId: string;
+  }): Promise<WebhookDestinationRecord> {
+    const duplicate = [...this.items.values()].some((item) =>
+      item.workspaceId === input.workspaceId && item.name.toLowerCase() === input.name.toLowerCase()
+    );
+    if (duplicate) {
+      const error = new Error("duplicate key value violates unique constraint");
+      (error as Error & { code: string }).code = "23505";
+      throw error;
+    }
+    const now = new Date();
+    const record: WebhookDestinationRecord = {
+      id: randomUUID(),
+      workspaceId: input.workspaceId,
+      name: input.name,
+      url: input.url,
+      secretCiphertext: input.secretCiphertext,
+      encryptionKeyId: input.encryptionKeyId,
+      lastDeliveryStatus: null,
+      lastDeliveryAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.items.set(record.id, record);
+    return record;
+  }
+
+  async listByWorkspace(workspaceId: string): Promise<WebhookDestinationRecord[]> {
+    return [...this.items.values()]
+      .filter((item) => item.workspaceId === workspaceId)
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  async findByIdAndWorkspace(id: string, workspaceId: string): Promise<WebhookDestinationRecord | null> {
+    const item = this.items.get(id);
+    return item && item.workspaceId === workspaceId ? item : null;
+  }
+
+  async update(
+    id: string,
+    workspaceId: string,
+    input: { name: string; url: string },
+  ): Promise<WebhookDestinationRecord | null> {
+    const item = await this.findByIdAndWorkspace(id, workspaceId);
+    if (!item) {
+      return null;
+    }
+    const duplicate = [...this.items.values()].some((candidate) =>
+      candidate.id !== id &&
+      candidate.workspaceId === workspaceId &&
+      candidate.name.toLowerCase() === input.name.toLowerCase()
+    );
+    if (duplicate) {
+      const error = new Error("duplicate key value violates unique constraint");
+      (error as Error & { code: string }).code = "23505";
+      throw error;
+    }
+    const updated = { ...item, ...input, updatedAt: new Date() };
+    this.items.set(id, updated);
+    return updated;
+  }
+
+  async updateSecret(
+    id: string,
+    workspaceId: string,
+    input: { secretCiphertext: string; encryptionKeyId: string },
+  ): Promise<WebhookDestinationRecord | null> {
+    const item = await this.findByIdAndWorkspace(id, workspaceId);
+    if (!item) {
+      return null;
+    }
+    const updated = { ...item, ...input, updatedAt: new Date() };
+    this.items.set(id, updated);
+    return updated;
+  }
+
+  async recordDeliveryOutcome(id: string, workspaceId: string, status: string): Promise<void> {
+    const item = await this.findByIdAndWorkspace(id, workspaceId);
+    if (!item) {
+      return;
+    }
+    this.items.set(id, {
+      ...item,
+      lastDeliveryStatus: status,
+      lastDeliveryAt: new Date(),
+      updatedAt: new Date(),
+    });
+  }
+
+  async delete(id: string, workspaceId: string): Promise<boolean> {
+    const item = await this.findByIdAndWorkspace(id, workspaceId);
+    return item ? this.items.delete(id) : false;
   }
 }
 

@@ -215,6 +215,12 @@ export interface OpenApiSchemaCatalog {
   WorkspaceProviderCredentialSummarySchema: z.ZodTypeAny;
   WorkspaceProviderCredentialsResponseSchema: z.ZodTypeAny;
   SetWorkspaceProviderCredentialRequestSchema: z.ZodTypeAny;
+  WebhookDestinationSchema: z.ZodTypeAny;
+  WebhookDestinationListResponseSchema: z.ZodTypeAny;
+  WebhookDestinationResponseSchema: z.ZodTypeAny;
+  WebhookDestinationCreateResponseSchema: z.ZodTypeAny;
+  WebhookDestinationRequestSchema: z.ZodTypeAny;
+  WebhookDestinationParamsSchema: RouteParameterSchema;
   WorkspaceLlmCapabilityPreferenceSchema: z.ZodTypeAny;
   WorkspaceLlmModelsResponseSchema: z.ZodTypeAny;
   UpdateWorkspaceLlmModelsRequestSchema: z.ZodTypeAny;

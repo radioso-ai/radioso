@@ -30,6 +30,7 @@ const agent = (overrides: Partial<AgentRecord> = {}): AgentRecord => ({
   assistantLinkUtmEnabled: true,
   citationDisplayEnabled: true,
   contactRequestsEnabled: false,
+  webhookExportsEnabled: false,
   contactRequestDelivery: { recipientEmails: [], webhook: null },
   retrievalEnabled: true,
   sourceScope: { mode: "all" },
@@ -110,6 +111,7 @@ describe("conversation contract mappers", () => {
         workspaceId: "workspace_1",
         retrievalEnabled: true,
         contactRequestsEnabled: false,
+        webhookExportsEnabled: false,
       },
     });
   });

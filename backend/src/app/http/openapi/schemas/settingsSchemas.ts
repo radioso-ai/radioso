@@ -13,6 +13,11 @@ import {
   updateWorkspaceLlmModelsSchema,
   workspaceLlmProviderNames,
 } from "../../routes/settingsLlmModelsRoutes.js";
+import {
+  webhookDestinationBodySchema,
+  webhookDestinationIdParamSchema,
+} from "../../routes/webhookDestinationRouteSchemas.js";
+import { webhookDeliveryOutcomeStatuses } from "../../../../modules/webhooks/public.js";
 import { websiteEmbedLauncherPositions } from "../../../../modules/settings/contracts/websiteEmbed.js";
 import { embeddingModelIds } from "../../../../modules/settings/contracts/ingestion.js";
 import { chunkingStrategyIds } from "../../../../modules/retrieval/public.js";
@@ -274,6 +279,51 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
     setProviderCredentialSchema,
   );
 
+  const WebhookDestinationSchema = registry.register(
+    "WebhookDestination",
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      url: z.string(),
+      lastDeliveryStatus: z.enum(webhookDeliveryOutcomeStatuses).nullable(),
+      lastDeliveryAt: z.string().datetime().nullable(),
+      createdAt: z.string().datetime(),
+      updatedAt: z.string().datetime(),
+    }),
+  );
+
+  const WebhookDestinationListResponseSchema = registry.register(
+    "WebhookDestinationListResponse",
+    z.object({
+      destinations: z.array(WebhookDestinationSchema),
+    }),
+  );
+
+  const WebhookDestinationResponseSchema = registry.register(
+    "WebhookDestinationResponse",
+    z.object({
+      destination: WebhookDestinationSchema,
+    }),
+  );
+
+  const WebhookDestinationCreateResponseSchema = registry.register(
+    "WebhookDestinationCreateResponse",
+    z.object({
+      destination: WebhookDestinationSchema,
+      secret: z.string(),
+    }),
+  );
+
+  const WebhookDestinationRequestSchema = registry.register(
+    "WebhookDestinationRequest",
+    webhookDestinationBodySchema,
+  );
+
+  const WebhookDestinationParamsSchema = registry.register(
+    "WebhookDestinationParams",
+    webhookDestinationIdParamSchema,
+  );
+
   const WorkspaceLlmCapabilityPreferenceSchema = registry.register(
     "WorkspaceLlmCapabilityPreference",
     z.object({
@@ -321,6 +371,12 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
     WorkspaceProviderCredentialSummarySchema,
     WorkspaceProviderCredentialsResponseSchema,
     SetWorkspaceProviderCredentialRequestSchema,
+    WebhookDestinationSchema,
+    WebhookDestinationListResponseSchema,
+    WebhookDestinationResponseSchema,
+    WebhookDestinationCreateResponseSchema,
+    WebhookDestinationRequestSchema,
+    WebhookDestinationParamsSchema,
     WorkspaceLlmCapabilityPreferenceSchema,
     WorkspaceLlmModelsResponseSchema,
     UpdateWorkspaceLlmModelsRequestSchema,

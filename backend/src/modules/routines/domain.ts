@@ -11,6 +11,7 @@ export const ROUTINE_DEFINITION_LIMITS = {
   toolRef: 300,
   guardText: 2000,
   actionType: 300,
+  destinationRef: 300,
 } as const;
 
 export const routineDefinitionStatuses = ["draft", "published"] as const;
@@ -18,6 +19,7 @@ export const routineSlotTypes = ["text", "number", "boolean", "email", "date"] a
 export const routineStepKinds = ["chat", "tool", "fork", "action"] as const;
 export const routineGuardKinds = ["llm", "always", "fallback", "slot_filled", "outcome", "counter"] as const;
 export const routineTerminalKinds = ["complete", "handoff"] as const;
+export const routineCompletionExportTriggerKinds = routineTerminalKinds;
 
 const identifierPattern = /^[A-Za-z_][A-Za-z0-9_.-]*$/u;
 const slotKeyPattern = /^[A-Za-z_][A-Za-z0-9_]*$/u;
@@ -72,6 +74,30 @@ export const routineTerminalSchema = z.object({
   ordinal: z.number().int().min(0),
 }).strict();
 
+export const routineCompletionExportSchema = z.object({
+  enabled: z.boolean().default(false),
+  triggerKinds: z.array(z.enum(routineCompletionExportTriggerKinds)).default([]),
+  destinationRef: z.string().trim().max(ROUTINE_DEFINITION_LIMITS.destinationRef).default(""),
+}).strict().superRefine((value, ctx) => {
+  if (!value.enabled) {
+    return;
+  }
+  if (value.triggerKinds.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["triggerKinds"],
+      message: "completionExport.triggerKinds must include at least one terminal kind when enabled",
+    });
+  }
+  if (value.destinationRef.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["destinationRef"],
+      message: "completionExport.destinationRef is required when enabled",
+    });
+  }
+});
+
 export const routineDefinitionDraftInputSchema = z.object({
   name: trimmedText(ROUTINE_DEFINITION_LIMITS.name),
   activation: z.object({
@@ -83,6 +109,7 @@ export const routineDefinitionDraftInputSchema = z.object({
   steps: z.array(routineStepSchema).min(1),
   transitions: z.array(routineTransitionSchema).default([]),
   terminals: z.array(routineTerminalSchema).min(1),
+  completionExport: routineCompletionExportSchema.optional(),
 }).strict();
 
 export const routineDefinitionSchema = routineDefinitionDraftInputSchema.extend({
@@ -98,5 +125,7 @@ export type RoutineSlotType = typeof routineSlotTypes[number];
 export type RoutineStepKind = typeof routineStepKinds[number];
 export type RoutineGuardKind = typeof routineGuardKinds[number];
 export type RoutineTerminalKind = typeof routineTerminalKinds[number];
+export type RoutineCompletionExportTriggerKind = typeof routineCompletionExportTriggerKinds[number];
+export type RoutineCompletionExport = z.infer<typeof routineCompletionExportSchema>;
 export type RoutineDefinitionDraftInput = z.infer<typeof routineDefinitionDraftInputSchema>;
 export type RoutineDefinition = z.infer<typeof routineDefinitionSchema>;

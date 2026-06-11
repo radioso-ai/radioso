@@ -104,6 +104,23 @@ describe("routine definition compiler and validator", () => {
     ]);
   });
 
+  it("compiles completion export into the routine contract", () => {
+    const routine = compileRoutineDefinition({
+      ...baseDefinition(),
+      completionExport: {
+        enabled: true,
+        triggerKinds: ["complete"],
+        destinationRef: "33333333-3333-4333-8333-333333333333",
+      },
+    });
+
+    expect(routine.completionExport).toEqual({
+      enabled: true,
+      triggerKinds: ["complete"],
+      destinationRef: "33333333-3333-4333-8333-333333333333",
+    });
+  });
+
   it("is deterministic for the same authored document", () => {
     expect(compileRoutineDefinition(baseDefinition())).toEqual(compileRoutineDefinition(baseDefinition()));
   });

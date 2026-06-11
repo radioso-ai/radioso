@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { RoutineDefinitionRepository } from "../../src/db/repositories/routineDefinitionRepository.js";
 import type { Database } from "../../src/shared/infra/database.js";
-import type { RoutineDefinition } from "../../src/modules/routines/public.js";
+import type {
+  RoutineDefinition,
+  RoutineDefinitionDraftInput,
+} from "../../src/modules/routines/public.js";
 
 const mockDatabase = () => {
   const mockClient = {
@@ -19,7 +22,7 @@ const mockDatabase = () => {
   return db as unknown as Database & typeof db;
 };
 
-const draftInput = () => ({
+const draftInput = (): RoutineDefinitionDraftInput => ({
   name: "handoff",
   activation: {
     triggerDescription: "The user asks for a handoff.",
@@ -38,6 +41,11 @@ const draftInput = () => ({
   terminals: [
     { stableStepId: "done", kind: "complete" as const, instruction: "Confirm completion.", ordinal: 0 },
   ],
+  completionExport: {
+    enabled: true,
+    triggerKinds: ["complete"],
+    destinationRef: "33333333-3333-4333-8333-333333333333",
+  },
 });
 
 const loadedRow = () => ({
@@ -61,6 +69,11 @@ const loadedRow = () => ({
   terminals: [
     { stableStepId: "done", kind: "complete", instruction: "Confirm completion.", ordinal: 0 },
   ],
+  completion_export: {
+    enabled: true,
+    triggerKinds: ["complete"],
+    destinationRef: "33333333-3333-4333-8333-333333333333",
+  },
   created_at: new Date("2026-06-09T00:00:00.000Z"),
   updated_at: new Date("2026-06-09T00:00:00.000Z"),
 });
@@ -83,6 +96,11 @@ describe("RoutineDefinitionRepository", () => {
       steps: [{ stableStepId: "ask_name", kind: "chat", instruction: "Ask for {{slot.name}}.", toolRef: null, ordinal: 0, metadata: {} }],
       transitions: [{ fromStep: "ask_name", toRef: "done", guardKind: "counter", guardText: "2", ordinal: 0 }],
       terminals: [{ stableStepId: "done", kind: "complete", instruction: "Confirm completion.", ordinal: 0 }],
+      completionExport: {
+        enabled: true,
+        triggerKinds: ["complete"],
+        destinationRef: "33333333-3333-4333-8333-333333333333",
+      },
       createdAt: new Date("2026-06-09T00:00:00.000Z"),
       updatedAt: new Date("2026-06-09T00:00:00.000Z"),
     });
@@ -93,6 +111,7 @@ describe("RoutineDefinitionRepository", () => {
     expect(sql).toContain("routine_step");
     expect(sql).toContain("routine_transition");
     expect(sql).toContain("routine_terminal");
+    expect(sql).toContain("routine_completion_export");
     expect(params).toEqual(["agent_1"]);
   });
 
@@ -109,6 +128,7 @@ describe("RoutineDefinitionRepository", () => {
     expect(sql).toContain("INSERT INTO routine_step");
     expect(sql).toContain("INSERT INTO routine_transition");
     expect(sql).toContain("INSERT INTO routine_terminal");
+    expect(sql).toContain("INSERT INTO routine_completion_export");
     expect(db.queryOptional).toHaveBeenCalledOnce();
   });
 
@@ -125,6 +145,7 @@ describe("RoutineDefinitionRepository", () => {
     expect(sql).toContain("DELETE FROM routine_step");
     expect(sql).toContain("DELETE FROM routine_transition");
     expect(sql).toContain("DELETE FROM routine_terminal");
+    expect(sql).toContain("DELETE FROM routine_completion_export");
     expect(sql).not.toContain("agent_directives");
     expect(sql).not.toContain("routine_states");
   });
@@ -149,5 +170,20 @@ describe("RoutineDefinitionRepository", () => {
     const sql = db.mockClient.query.mock.calls.map((call) => call[0]).join("\n");
     expect(sql).toContain("INSERT INTO routine_slot");
     expect(db.queryOptional).toHaveBeenCalledTimes(2);
+  });
+
+  it("lists published routines referencing a webhook destination in a workspace", async () => {
+    const db = mockDatabase();
+    db.query.mockResolvedValue([{ name: "lead intake" }, { name: "support handoff" }]);
+
+    const names = await new RoutineDefinitionRepository(db)
+      .listPublishedRoutineNamesReferencingDestination("workspace_1", "dest_1");
+
+    expect(names).toEqual(["lead intake", "support handoff"]);
+    const [sql, params] = db.query.mock.calls[0]!;
+    expect(sql).toContain("routine_completion_export");
+    expect(sql).toContain("agents");
+    expect(sql).toContain("d.status = 'published'");
+    expect(params).toEqual(["workspace_1", "dest_1"]);
   });
 });

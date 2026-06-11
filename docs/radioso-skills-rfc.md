@@ -222,6 +222,16 @@ For example, `retrieval.answer` declares a `query` intake field and an internal 
 
 For `human_contact.request`, execution is a durable delivery pipeline, not an internal service. The submission is accepted and audited, then delivered through the workspace's configured email and/or webhook adapters.
 
+Workspace webhook destinations are the registry side of routine completion export.
+They store named HTTPS endpoints and encrypted signing secrets once per workspace.
+Routines reference a destination by stable id. The registry and reference checks do
+not introduce a new document-worker queue or AMQP queue. The routine engine emits
+a generic `webhook.send` action when a completion-export-enabled routine reaches a
+matching terminal. The action handler uses the existing routine action outbox and
+dispatch worker, signs requests with the destination secret, records latest
+delivery outcome fields on the destination, and treats missing destinations or
+disabled agent webhook export as terminal skips.
+
 ## Diagnostic Definition
 
 The shared diagnostic definition can represent deterministic and probabilistic skill execution.

@@ -16,6 +16,10 @@ import type {
   WebsiteEmbedCopyPacks,
   WebsiteEmbedExpertOverrides,
   WebsiteEmbedThemeSettings,
+  WebhookDestinationCreateResponse,
+  WebhookDestinationListResponse,
+  WebhookDestinationRequest,
+  WebhookDestinationResponse,
   WorkspaceIngestionReprocessResponse,
 } from './api-types'
 import { writeRetrievalSkillSettingsOverride } from './retrieval-skill-settings'
@@ -76,6 +80,43 @@ export const settingsApi = {
       method: "POST",
     }, { withApiToken: true })
   }
+}
+
+export const webhookDestinationsApi = {
+  async listDestinations(): Promise<WebhookDestinationListResponse> {
+    return request<WebhookDestinationListResponse>('/settings/webhook-destinations', {
+      method: 'GET',
+    }, { withApiToken: true })
+  },
+
+  async createDestination(data: WebhookDestinationRequest): Promise<WebhookDestinationCreateResponse> {
+    return request<WebhookDestinationCreateResponse>('/settings/webhook-destinations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, { withApiToken: true })
+  },
+
+  async updateDestination(
+    destinationId: string,
+    data: WebhookDestinationRequest,
+  ): Promise<WebhookDestinationResponse> {
+    return request<WebhookDestinationResponse>(`/settings/webhook-destinations/${destinationId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }, { withApiToken: true })
+  },
+
+  async rotateSecret(destinationId: string): Promise<WebhookDestinationCreateResponse> {
+    return request<WebhookDestinationCreateResponse>(`/settings/webhook-destinations/${destinationId}/rotate-secret`, {
+      method: 'POST',
+    }, { withApiToken: true })
+  },
+
+  async deleteDestination(destinationId: string): Promise<void> {
+    await request<void>(`/settings/webhook-destinations/${destinationId}`, {
+      method: 'DELETE',
+    }, { withApiToken: true })
+  },
 }
 
 export const generalSettingsApi = {
@@ -280,6 +321,7 @@ export const agentsApi = {
       assistantLinkUtmEnabled: data.assistantLinkUtmEnabled,
       citationDisplayEnabled: data.citationDisplayEnabled,
       contactRequestsEnabled: data.contactRequestsEnabled,
+      webhookExportsEnabled: data.webhookExportsEnabled,
       contactRequestDelivery: data.contactRequestDelivery,
       retrievalEnabled: data.retrievalEnabled,
       theme: data.theme,

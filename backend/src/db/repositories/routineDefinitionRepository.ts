@@ -26,6 +26,7 @@ interface RoutineDefinitionRow extends QueryResultRow {
   steps: unknown;
   transitions: unknown;
   terminals: unknown;
+  completion_export: unknown;
   created_at: Date;
   updated_at: Date;
 }
@@ -65,6 +66,7 @@ const definitionSelect = `
     COALESCE(steps.items, '[]'::json) AS steps,
     COALESCE(transitions.items, '[]'::json) AS transitions,
     COALESCE(terminals.items, '[]'::json) AS terminals,
+    completion_export.item AS completion_export,
     d.created_at,
     d.updated_at
   FROM routine_definition d
@@ -116,6 +118,15 @@ const definitionSelect = `
     FROM routine_terminal te
     WHERE te.definition_id = d.id
   ) terminals ON true
+  LEFT JOIN LATERAL (
+    SELECT json_build_object(
+      'enabled', ce.enabled,
+      'triggerKinds', ce.trigger_kinds,
+      'destinationRef', ce.destination_ref::text
+    ) AS item
+    FROM routine_completion_export ce
+    WHERE ce.definition_id = d.id
+  ) completion_export ON true
 `;
 
 const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
@@ -161,6 +172,18 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
     instruction: readNullableString(terminal, "instruction"),
     ordinal: readNumber(terminal, "ordinal"),
   })),
+  completionExport: (() => {
+    const exportRecord = asRecord(row.completion_export);
+    return {
+      enabled: readBoolean(exportRecord, "enabled"),
+      triggerKinds: Array.isArray(exportRecord.triggerKinds)
+        ? exportRecord.triggerKinds.filter((kind): kind is RoutineTerminalKind =>
+            kind === "complete" || kind === "handoff"
+          )
+        : [],
+      destinationRef: readString(exportRecord, "destinationRef"),
+    };
+  })(),
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
 });
@@ -298,11 +321,28 @@ export class RoutineDefinitionRepository {
     return Boolean(row);
   }
 
+  async listPublishedRoutineNamesReferencingDestination(workspaceId: string, destinationId: string): Promise<string[]> {
+    const rows = await this.database.query<{ name: string }>(
+      `SELECT d.name
+       FROM routine_completion_export ce
+       JOIN routine_definition d ON d.id = ce.definition_id
+       JOIN agents a ON a.id = d.agent_id
+       WHERE a.workspace_id = $1
+         AND ce.enabled = TRUE
+         AND lower(ce.destination_ref) = lower($2)
+         AND d.status = 'published'
+       ORDER BY d.name ASC, d.version ASC, d.id ASC`,
+      [workspaceId, destinationId],
+    );
+    return rows.map((row) => row.name);
+  }
+
   private async replaceChildren(client: Pick<PoolClient, "query">, definitionId: string, input: RoutineDefinitionDraftInput): Promise<void> {
     await client.query(`DELETE FROM routine_slot WHERE definition_id = $1`, [definitionId]);
     await client.query(`DELETE FROM routine_step WHERE definition_id = $1`, [definitionId]);
     await client.query(`DELETE FROM routine_transition WHERE definition_id = $1`, [definitionId]);
     await client.query(`DELETE FROM routine_terminal WHERE definition_id = $1`, [definitionId]);
+    await client.query(`DELETE FROM routine_completion_export WHERE definition_id = $1`, [definitionId]);
 
     for (const slot of input.slots) {
       await client.query(
@@ -350,6 +390,18 @@ export class RoutineDefinitionRepository {
         `INSERT INTO routine_terminal (definition_id, stable_step_id, kind, instruction, ordinal)
          VALUES ($1, $2, $3, $4, $5)`,
         [definitionId, terminal.stableStepId, terminal.kind, terminal.instruction, terminal.ordinal],
+      );
+    }
+    if (input.completionExport?.enabled) {
+      await client.query(
+        `INSERT INTO routine_completion_export (definition_id, enabled, trigger_kinds, destination_ref)
+         VALUES ($1, $2, $3, $4)`,
+        [
+          definitionId,
+          input.completionExport.enabled,
+          input.completionExport.triggerKinds,
+          input.completionExport.destinationRef,
+        ],
       );
     }
   }

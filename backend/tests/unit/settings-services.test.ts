@@ -36,6 +36,7 @@ describe("settings services", () => {
     assistantLinkUtmEnabled: true,
     citationDisplayEnabled: true,
     contactRequestsEnabled: false,
+    webhookExportsEnabled: false,
     contactRequestDelivery: { recipientEmails: [], webhook: null },
     customInstruction: "",
     retrievalEnabled: true,

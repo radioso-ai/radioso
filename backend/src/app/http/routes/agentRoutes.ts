@@ -100,6 +100,7 @@ export const agentBodySchema = z.object({
   assistantLinkUtmEnabled: z.boolean().optional(),
   citationDisplayEnabled: z.boolean().optional(),
   contactRequestsEnabled: z.boolean().optional(),
+  webhookExportsEnabled: z.boolean().optional(),
   contactRequestDelivery: contactRequestDeliverySchema,
   theme: assistantThemeSchema.optional(),
   branding: brandingSchema,

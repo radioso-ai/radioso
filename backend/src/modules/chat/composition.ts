@@ -34,6 +34,21 @@ export {
   type ContactMembershipLookup,
 } from "./services/actions/contactSendActionHandler.js";
 export {
+  FetchWebhookHttpClient,
+  createSignedWebhookHeaders,
+  verifyWebhookSignature,
+  type WebhookHttpClient,
+  type WebhookUrlGuard,
+} from "./services/actions/webhookDelivery.js";
+export {
+  ConversationAgentWebhookPermissionResolver,
+  WebhookSendActionHandler,
+  WEBHOOK_SEND_ACTION_TYPE,
+  type WebhookSendDeliveryOutcomeRecorder,
+  type WebhookSendHttpClient,
+  type WebhookSendPermissionResolver,
+} from "./services/actions/webhookSendActionHandler.js";
+export {
   contactRoutineDefinition,
   CONTACT_ROUTINE_ID,
   CONTACT_SEND_ACTION_TYPE,

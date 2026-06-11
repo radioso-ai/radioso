@@ -61,6 +61,19 @@ class MetricsTelemetrySink implements TelemetrySink {
       return;
     }
 
+    if (event.eventType === "webhook.send.delivery.completed") {
+      this.metricsRegistry.incrementCounter("webhook_send_delivery_attempts_total", {
+        help: "Total webhook.send delivery attempts by outcome.",
+        labels: {
+          outcome: event.tags?.outcome ?? "unknown",
+          reason: event.tags?.reason ?? "unknown",
+          terminal_kind: event.tags?.terminal_kind ?? "unknown",
+        },
+        value: event.metrics?.deliveryAttempt ?? 1,
+      });
+      return;
+    }
+
     if (event.eventType.startsWith("document.worker.")) {
       const labels = {
         event_type: event.eventType,

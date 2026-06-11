@@ -21,6 +21,7 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
   assistantLinkUtmEnabled: false,
   citationDisplayEnabled: false,
   contactRequestsEnabled: true,
+  webhookExportsEnabled: true,
   contactRequestDelivery: {
     recipientEmails: ["help@example.com"],
     webhook: { url: "https://hooks.example.com/contact" },
@@ -233,6 +234,7 @@ describe("serializeAgentConfig", () => {
     expect(config.name).toBe("Support Bot");
     expect(config.customInstruction).toBe("Answer with precise procurement guidance.");
     expect(config.contactRequestsEnabled).toBe(true);
+    expect(config.webhookExportsEnabled).toBe(true);
     expect(config.contactRequestDelivery).toEqual({
       recipientEmails: ["help@example.com"],
       webhook: { url: "https://hooks.example.com/contact" },
@@ -412,6 +414,7 @@ describe("serializeAgentConfig", () => {
     expect(materialized.suggestedQuestionsEnabled).toBe(agent.suggestedQuestionsEnabled);
     expect(materialized.citationDisplayEnabled).toBe(agent.citationDisplayEnabled);
     expect(materialized.contactRequestsEnabled).toBe(agent.contactRequestsEnabled);
+    expect(materialized.webhookExportsEnabled).toBe(agent.webhookExportsEnabled);
     expect(materialized.proactiveGreetingEnabled).toBe(agent.proactiveGreetingEnabled);
     expect(materialized.assistantLinkUtmEnabled).toBe(agent.assistantLinkUtmEnabled);
     expect(materialized.logo).toEqual(agent.logo);

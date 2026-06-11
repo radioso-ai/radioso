@@ -45,6 +45,7 @@ export const toConversationAgentConfig = (agent: AgentRecord): ConversationAgent
     retrievalEnabled: agent.retrievalEnabled,
     // Read by the contact routine activator to gate activation on the per-agent flag.
     contactRequestsEnabled: agent.contactRequestsEnabled,
+    webhookExportsEnabled: agent.webhookExportsEnabled,
   },
 });
 

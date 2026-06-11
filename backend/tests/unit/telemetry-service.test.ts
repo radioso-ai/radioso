@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { TelemetryService } from "../../src/shared/observability/telemetry/telemetryService.js";
+import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/buildTelemetrySinks.js";
 import type { TelemetrySink } from "../../src/shared/observability/telemetry/telemetrySink.js";
 
 const createLogger = () => ({
@@ -69,5 +70,43 @@ describe("TelemetryService", () => {
       expect.objectContaining({ err: "down", eventType: "test.event" }),
       "telemetry_sink_failed",
     );
+  });
+
+  it("counts webhook send delivery outcomes without high-cardinality labels", async () => {
+    const { metricsRegistry, sinks } = buildTelemetrySinks({ METRICS_ENABLED: true });
+    const service = new TelemetryService({
+      enabled: true,
+      environment: "test",
+      logger: createLogger() as any,
+      service: "radioso-api",
+      sinks,
+    });
+
+    await service.emit({
+      eventType: "webhook.send.delivery.completed",
+      correlation: {
+        workspaceId: "workspace-1",
+        conversationId: "conversation-1",
+        requestId: "request-1",
+      },
+      metrics: { attempt: 2, deliveryAttempt: 1 },
+      metadata: {
+        destinationRef: "33333333-3333-4333-8333-333333333333",
+        routineId: "routine-1",
+      },
+      tags: {
+        outcome: "retry",
+        reason: "handler_error",
+        terminal_kind: "complete",
+      },
+    });
+
+    const metrics = metricsRegistry?.renderPrometheus() ?? "";
+    expect(metrics).toContain("radioso_webhook_send_delivery_attempts_total");
+    expect(metrics).toContain('outcome="retry"');
+    expect(metrics).toContain('reason="handler_error"');
+    expect(metrics).toContain('terminal_kind="complete"');
+    expect(metrics).not.toContain("workspace-1");
+    expect(metrics).not.toContain("33333333-3333-4333-8333-333333333333");
   });
 });

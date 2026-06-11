@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, ChevronLeft, DatabaseZap, ExternalLink, FolderOpen, Globe, KeyRound, Link as LinkIcon, MessageCircle, RefreshCw, ShieldAlert, Trash2, UserRound, Wrench } from 'lucide-react'
+import { Building2, ChevronLeft, DatabaseZap, ExternalLink, FolderOpen, Globe, KeyRound, Link as LinkIcon, MessageCircle, RefreshCw, ShieldAlert, Trash2, UserRound, Webhook, Wrench } from 'lucide-react'
 
 import { ApiChannelCard } from '@/components/dashboard/settings/api-channel-card'
 import { AssistantBehaviorSection } from '@/components/dashboard/settings/assistant-behavior-section'
@@ -24,6 +24,7 @@ import { DEFAULT_ASSISTANT_THEME } from '@/components/dashboard/settings/assista
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
+import { WebhookDestinationsPanel } from '@/components/dashboard/settings/webhook-destinations-panel'
 import { WebsiteEmbedSettingsController } from '@/components/dashboard/settings/website-embed-settings-controller'
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
@@ -745,6 +746,7 @@ export function WorkspaceAssistantChannelsTab({
           assistantBehaviorSettings.assistantLinkUtmEnabled !== savedAssistantBehaviorSettings.assistantLinkUtmEnabled ||
           assistantBehaviorSettings.citationDisplayEnabled !== savedAssistantBehaviorSettings.citationDisplayEnabled ||
           assistantBehaviorSettings.contactRequestsEnabled !== savedAssistantBehaviorSettings.contactRequestsEnabled ||
+          assistantBehaviorSettings.webhookExportsEnabled !== savedAssistantBehaviorSettings.webhookExportsEnabled ||
           getContactRequestDeliveryKey(assistantBehaviorSettings, contactRequestEmailsText) !==
             getContactRequestDeliveryKey(savedAssistantBehaviorSettings) ||
           assistantBehaviorSettings.retrievalEnabled !== savedAssistantBehaviorSettings.retrievalEnabled ||
@@ -1050,6 +1052,8 @@ export function WorkspaceAssistantChannelsTab({
               </div>
             </SettingsCard>
 
+            <WebhookDestinationsPanel onSaveStateChange={onSaveStateChange} />
+
         </section>
         ) : null}
 
@@ -1179,6 +1183,26 @@ export function WorkspaceAssistantChannelsTab({
                   </div>
                 </div>
               ) : null}
+            </SettingsCard>
+            <SettingsCard
+              id="webhook-exports"
+              icon={<Webhook className="h-5 w-5 text-primary" />}
+              title="Webhook exports"
+              description="Allow this agent's published routines to send completion exports to workspace webhook destinations."
+              headerEnd={(
+                <Switch
+                  id="webhookExportsToggle"
+                  checked={assistantBehaviorSettings?.webhookExportsEnabled ?? false}
+                  onCheckedChange={(checked) =>
+                    updateAssistantBehaviorDraft((current) => ({ ...current, webhookExportsEnabled: checked }))
+                  }
+                  disabled={!assistantBehaviorSettings}
+                />
+              )}
+            >
+              <p className="text-sm text-muted-foreground">
+                Keep this off for agents that should never call external endpoints from routine terminals.
+              </p>
             </SettingsCard>
             <SettingsCard
               id="retrieval-answers"

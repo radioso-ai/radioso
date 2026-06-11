@@ -21,6 +21,7 @@ const agent = (): ConversationAgent => ({
   assistantLinkUtmEnabled: true,
   citationDisplayEnabled: true,
   contactRequestsEnabled: true,
+  webhookExportsEnabled: true,
   contactRequestDelivery: { recipientEmails: ["owner@example.com"], webhook: null },
   retrievalEnabled: true,
   sourceScope: { mode: "all" },

@@ -91,6 +91,7 @@ const agentConfigOverrideSchema = z
     name: z.string().min(1).max(200).optional(),
     customInstruction: z.string().max(4000).optional(),
     contactRequestsEnabled: z.boolean().optional(),
+    webhookExportsEnabled: z.boolean().optional(),
     contactRequestDelivery: z.unknown().optional(),
     logo: z.unknown().nullable().optional(),
     theme: z.record(z.string(), z.unknown()).optional(),

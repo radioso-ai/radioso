@@ -68,6 +68,7 @@ const agent = (): AgentRecord => ({
   assistantLinkUtmEnabled: true,
   citationDisplayEnabled: true,
   contactRequestsEnabled: false,
+  webhookExportsEnabled: false,
   contactRequestDelivery: { recipientEmails: [], webhook: null },
   retrievalEnabled: true,
   sourceScope: { mode: "all" },

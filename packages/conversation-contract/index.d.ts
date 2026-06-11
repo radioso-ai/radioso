@@ -511,6 +511,12 @@ export interface RoutineActionRequest {
   payload: Record<string, unknown>;
 }
 
+export interface RoutineCompletionExport {
+  enabled: boolean;
+  triggerKinds: Array<"complete" | "handoff">;
+  destinationRef: string;
+}
+
 export interface RoutineTransition {
   from: string;
   to: string;
@@ -545,6 +551,8 @@ export interface Routine {
   slots?: RoutineSlotSchema[];
   steps: RoutineStep[];
   transitions: RoutineTransition[];
+  /** Optional terminal-triggered export emitted as a generic routine action. */
+  completionExport?: RoutineCompletionExport;
   metadata?: Record<string, unknown>;
 }
 

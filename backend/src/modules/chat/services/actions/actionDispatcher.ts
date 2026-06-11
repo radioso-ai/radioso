@@ -19,6 +19,12 @@ export interface ActionHandlerContext {
  */
 export interface ActionHandler {
   handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<void>;
+  recordFailureOutcome?(input: {
+    payload: Record<string, unknown>;
+    context: ActionHandlerContext;
+    outcome: Exclude<ActionFailureOutcome, "superseded">;
+    error: string;
+  }): Promise<void>;
 }
 
 /** The narrow slice of the outbox the dispatcher drains. */
@@ -120,22 +126,48 @@ export class ActionDispatcher {
         await onFailure(request, `no_handler_for_type:${request.type}`);
         continue;
       }
+      const context: ActionHandlerContext = {
+        requestId: request.id,
+        workspaceId: request.workspaceId,
+        accountId: request.accountId,
+        conversationId: request.conversationId,
+        idempotencyKey: request.idempotencyKey,
+        attempt: request.attempts,
+      };
       try {
         await handler.handle({
           payload: request.payload,
-          context: {
-            requestId: request.id,
-            workspaceId: request.workspaceId,
-            accountId: request.accountId,
-            conversationId: request.conversationId,
-            idempotencyKey: request.idempotencyKey,
-            attempt: request.attempts,
-          },
+          context,
         });
         await this.outbox.markDispatched(request.id, request.attempts);
         dispatched += 1;
       } catch (error) {
-        await onFailure(request, error instanceof Error ? error.message : String(error));
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const outcome = await this.outbox.recordFailure(
+          request.id,
+          errorMessage,
+          request.attempts,
+          this.options.maxAttempts,
+          this.options.retryBackoffSeconds,
+        );
+        if (outcome === "failed") {
+          failed += 1;
+        } else if (outcome === "retry") {
+          retried += 1;
+        }
+        if (outcome !== "superseded") {
+          try {
+            await handler.recordFailureOutcome?.({
+              payload: request.payload,
+              context,
+              outcome,
+              error: errorMessage,
+            });
+          } catch {
+            // Delivery outcome recording is operational metadata; the outbox
+            // failure classification above remains authoritative.
+          }
+        }
       }
     }
 

@@ -145,15 +145,18 @@ const makeService = (input: {
   clarificationStore?: ConversationClarificationStore;
   routineStore?: ConversationRoutineStore;
   detector?: { detect: ReturnType<typeof vi.fn> };
+  route?: "retrieval" | "direct";
 }) => new ChatService({
   conversationRepository: new InMemoryConversationRepository(),
   messageRepository: new InMemoryMessageRepository(),
   retrievalTurn: retrievalTurn(input.capturedRequests),
   chatGateway,
-  // These scenarios exercise grounded turns, so route every turn to retrieval.
+  // Most scenarios exercise grounded turns, so route every turn to retrieval by
+  // default. A resolving retrieval-sense turn ("hatha") can route direct, so a
+  // test overrides this to assert the resolved sense still forces retrieval.
   turnRouter: {
     async classify() {
-      return { route: "retrieval", framing: { isIdentityQuestion: false } };
+      return { route: input.route ?? "retrieval", framing: { isIdentityQuestion: false } };
     },
   },
   auditService: createAuditService(new InMemoryAuditEventRepository()),
@@ -245,6 +248,38 @@ describe("retrieval sense clarification", () => {
     const response = await service.answer({
       workspaceId: "workspace-1",
       query: "hatha",
+      stream: false,
+    });
+
+    expect(capturedRequests.some((request) => request.documentScope?.includes("doc-hatha"))).toBe(true);
+    expect(response.citations?.map((citation) => citation.documentId)).toEqual(["doc-hatha"]);
+  });
+
+  it("forces grounded retrieval scoped to the resolved sense even when the router answers direct", async () => {
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const service = makeService({
+      capturedRequests,
+      // The short sense answer routes direct; the resolved sense must still ground.
+      route: "direct",
+      clarificationStore: {
+        loadPending: vi.fn(async () => ({
+          sessionId: "conv-1",
+          source: "retrieval_sense",
+          candidates: [
+            { id: "doc-hatha", label: "Hatha yoga", confidence: 0.6, payload: { documentIds: ["doc-hatha"] } },
+            { id: "doc-raja", label: "Raja yoga", confidence: 0.58, payload: { documentIds: ["doc-raja"] } },
+          ],
+          status: "pending" as const,
+          expiresAt: new Date("2099-01-01T00:00:00.000Z"),
+        })),
+        save: vi.fn(),
+        clear: vi.fn(),
+      },
+    });
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "the first one",
       stream: false,
     });
 

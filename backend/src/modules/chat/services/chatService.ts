@@ -668,11 +668,13 @@ export class ChatService {
         return completedTurn.response;
       }
 
-      // The router is authoritative: ground only when the turn routes to
-      // retrieval; otherwise answer directly. When a pending clarification resolved
-      // to a retrieval sense, carry its document scope into grounded preparation.
+      // The router is authoritative for fresh turns, but resolving a retrieval-sense
+      // clarification forces this turn through grounded retrieval scoped to the chosen
+      // sense — the short answer ("Hatha", "the first one") would otherwise route
+      // direct and silently drop the document scope.
       const routing = await this.routeTurn(input, session);
-      const groundTurn = routing.route === CHAT_TURN_ROUTE.RETRIEVAL;
+      const resolvedRetrievalSense = clarification.resolution?.kind === "retrieval_sense";
+      const groundTurn = resolvedRetrievalSense || routing.route === CHAT_TURN_ROUTE.RETRIEVAL;
       const retrievalInput = clarification.resolution?.kind === "retrieval_sense"
         ? { ...input, documentScope: clarification.resolution.documentScope }
         : input;
@@ -827,11 +829,13 @@ export class ChatService {
         return;
       }
 
-      // The router is authoritative: ground only when the turn routes to
-      // retrieval; otherwise answer directly. When a pending clarification resolved
-      // to a retrieval sense, carry its document scope into grounded preparation.
+      // The router is authoritative for fresh turns, but resolving a retrieval-sense
+      // clarification forces this turn through grounded retrieval scoped to the chosen
+      // sense — the short answer ("Hatha", "the first one") would otherwise route
+      // direct and silently drop the document scope.
       const routing = await this.routeTurn(input, session);
-      const groundTurn = routing.route === CHAT_TURN_ROUTE.RETRIEVAL;
+      const resolvedRetrievalSense = clarification.resolution?.kind === "retrieval_sense";
+      const groundTurn = resolvedRetrievalSense || routing.route === CHAT_TURN_ROUTE.RETRIEVAL;
       const retrievalInput = clarification.resolution?.kind === "retrieval_sense"
         ? { ...input, documentScope: clarification.resolution.documentScope }
         : input;

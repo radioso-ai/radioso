@@ -75,6 +75,10 @@ explicit signal, an LLM intent check, etc.; activation logic lives in your code,
 not the engine). Once a routine is active the engine resumes it across turns until
 it reaches a terminal step.
 
+Clarification helpers are exported from the kit too: policy decision/stage
+builders, the generic pending clarification resolver, clarifier/store contract
+types, and the default routine-activation candidate mapper.
+
 ```ts
 import { createConversationKit, type RoutineRegistration } from "@radioso/conversation-kit";
 
@@ -88,10 +92,9 @@ const signup: RoutineRegistration = {
     ],
     transitions: [{ from: "ask_name", to: "done", condition: "the user provided their name" }],
   },
-  // Return {} (optionally with seed variables) to start, or null to decline.
-  activates: async ({ turn, modelGateway }) => {
-    const shouldStart = await detectSignupIntent(turn, modelGateway);
-    return shouldStart ? {} : null;
+  trigger: {
+    description: "The user wants to sign up.",
+    priority: 0,
   },
 };
 

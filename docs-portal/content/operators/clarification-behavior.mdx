@@ -1,0 +1,87 @@
+---
+title: Clarification behavior
+description: How to understand assistant clarifying questions and the debug trace that records them.
+---
+
+import { Callout } from 'nextra/components'
+
+# Clarification behavior
+
+Clarification is the assistant asking the visitor to choose between comparable
+matches. It is used when the system has enough evidence to find candidates, but
+not enough evidence to choose one confidently.
+
+It is different from slot filling. Slot filling asks for a missing value inside a
+routine. Clarification chooses among options that already matched.
+
+## When the assistant asks
+
+The assistant can ask a clarifying question on conversational chat surfaces in
+two cases:
+
+- **Routine overlap** — two or more eligible routines have triggers that match the
+  visitor's message closely, and they do not have a clear priority winner.
+- **Ambiguous corpus term** — conversational retrieval finds distinct document
+  groups for the same query, such as two different senses of a term.
+
+The question is an ordinary assistant message. It is generated from candidate
+labels and descriptions, not from raw document content or hard-coded wording.
+Up to four options are shown.
+
+Standalone retrieval answer calls, document search, SDK retrieval calls, and MCP
+retrieval tools do not ask clarifying questions. They do not have a conversation
+turn to resume.
+
+## What "none of these" does
+
+When a visitor answers that none of the options is right, Radioso clears the
+pending clarification and handles the visitor's latest message as a normal turn.
+
+The same question is not asked again immediately. If the answer cannot be mapped
+to one option, the pending clarification is also cleared and the assistant
+continues best-effort.
+
+## Why the assistant sometimes picks silently
+
+A silent pick is expected when the system has enough signal to avoid interrupting
+the visitor.
+
+Radioso silently picks when:
+
+- one candidate clears the confidence margin over the next candidate
+- routine candidates are close, but one has a unique highest authored priority
+- a routine is already active, including a yielded off-topic turn
+- the loop guard would otherwise ask the same clarification again
+
+For routine activation, priority is explicit operator arbitration. If comparable
+routines also tie on priority, the assistant asks instead of guessing.
+
+For active routines, clarification asks are suppressed. This keeps the active
+routine as the only state waiting on the visitor's next message.
+
+## Reading the debug view
+
+Open the conversation debug view and look for the **Clarification** node in the
+turn flow.
+
+The node appears between the engine and the next capability path. On a turn where
+the assistant asks, it leads directly to the outcome because no routine or
+retrieval candidate executes yet. On a silent pick, the turn continues through the
+routine or retrieval path.
+
+The detail panel shows:
+
+- `surface` — where the ambiguity came from, such as `routine_activation` or
+  `retrieval_sense`
+- `decision` — `asked`, `auto_picked`, or `suppressed`
+- `reason` — why a candidate was selected silently, such as `clear_margin`,
+  `priority`, `suppressed`, or `loop_guard`
+- `candidates` — candidate ids, labels, and confidence values
+- `mappingOutcome` — how a later reply resolved, declined, or abandoned the
+  pending clarification
+
+<Callout type="info" emoji="i">
+  The clarification trace is intentionally content-safe. It records candidate
+  labels and decision data, not raw document chunks, prompts, credentials, or
+  candidate payloads.
+</Callout>

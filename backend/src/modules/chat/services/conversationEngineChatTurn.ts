@@ -1,5 +1,7 @@
 import type {
   ConversationEngine,
+  ConversationClarificationStore,
+  ConversationClarifier,
   Directive,
   ConversationRoutineActivator,
   ConversationRoutineRunner,
@@ -232,6 +234,10 @@ export const attemptRoutineTurnWithConversationEngine = async (input: {
   routineStore: ConversationRoutineStore;
   routineRunner: ConversationRoutineRunner;
   routineActivator: ConversationRoutineActivator;
+  clarifier?: ConversationClarifier;
+  clarificationStore?: ConversationClarificationStore;
+  loopGuardCandidateIds?: string[];
+  suppressNewClarification?: boolean;
   presentRoutineReply: (response: RenderableTurn) => ChatPresentedAnswer;
 }): Promise<RunPreparedChatTurnWithConversationEngineResult | null> => {
   const result = await input.engine.attemptRoutine(
@@ -243,6 +249,10 @@ export const attemptRoutineTurnWithConversationEngine = async (input: {
       routineStore: input.routineStore,
       routineRunner: input.routineRunner,
       routineActivator: input.routineActivator,
+      clarifier: input.clarifier,
+      clarificationStore: input.clarificationStore,
+      loopGuardCandidateIds: input.loopGuardCandidateIds,
+      suppressNewClarification: input.suppressNewClarification,
     }),
   );
   if (!result) {

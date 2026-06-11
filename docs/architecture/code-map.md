@@ -118,8 +118,8 @@ Related docs and specs:
 
 Owns product-independent conversation runtime contracts: agents, input events,
 directives, steering, skills, staged context, selection decisions, turn outcomes,
-trace events, renderer outputs, streaming deltas/finals, and the
-`ConversationEngine` port.
+trace events, renderer outputs, streaming deltas/finals, clarification contracts,
+and the `ConversationEngine` port.
 
 Should not own Radioso product behavior. It must not import backend modules,
 database repositories, HTTP types, retrieval internals, workspace/auth modules,
@@ -132,7 +132,7 @@ Public surfaces and contracts:
 
 Useful searches:
 
-- `rg "ConversationEngine|ProcessTurnInput|ProcessTurnStreamInput|TurnOutcome|SelectionDecision" packages/conversation-contract backend/src`
+- `rg "ConversationEngine|ProcessTurnInput|ProcessTurnStreamInput|TurnOutcome|SelectionDecision|Clarification" packages/conversation-contract backend/src`
 - `rg "@radioso/conversation-contract" .`
 
 Focused checks:
@@ -148,8 +148,8 @@ Related docs and specs:
 
 Owns the product-independent turn loop implementation over the conversation
 contracts: load history, match directives, select skills, dispatch skills, merge
-steering, compose or stream the response, append events, and return a unified
-trace.
+steering, resolve or ask clarification, compose or stream the response, append
+events, and return a unified trace.
 
 Should not own Radioso product behavior. It may depend on
 `@radioso/conversation-contract`, but it must not import backend modules,
@@ -159,10 +159,13 @@ frontend presenters, or other Radioso implementation packages.
 Public surfaces and contracts:
 
 - `packages/conversation-engine/src/index.ts`
+- `packages/conversation-engine/src/clarification.ts` (generic decision,
+  pending-resolution helper, and trace-stage builder; no routine or retrieval
+  payload interpretation)
 
 Useful searches:
 
-- `rg "DefaultConversationEngine|createConversationEngine|processTurn|processTurnStream" packages/conversation-engine backend/src`
+- `rg "DefaultConversationEngine|createConversationEngine|processTurn|processTurnStream|clarification" packages/conversation-engine backend/src`
 - `rg "@radioso/conversation-engine" .`
 
 Focused checks:
@@ -242,6 +245,8 @@ Primary internals:
 
 - `backend/src/modules/retrieval/services/retrievalPipelineService.ts`
 - `backend/src/modules/retrieval/services/retrievalPipelineStages.ts`
+- `backend/src/modules/retrieval/services/senseGroupingService.ts` (conversational
+  retrieval sense candidates and document-scope payload helpers)
 - `backend/src/modules/retrieval/services/agenticRetrievalPipelineService.ts`
 - `backend/src/modules/retrieval/services/agenticRetrievalRunner.ts`
 - `backend/src/modules/retrieval/services/agenticTools/`
@@ -252,7 +257,7 @@ Primary internals:
 
 Useful searches:
 
-- `rg "RetrievalPipeline|retrievalPipeline|RetrievalStage" backend/src backend/tests`
+- `rg "RetrievalPipeline|retrievalPipeline|RetrievalStage|documentScope|SenseGrouping" backend/src backend/tests`
 - `rg "AgenticRetrieval|agentic|pipelineMode|RetrievalDefaultsProvider|skillSettings" backend/src/modules/retrieval backend/src/app/composition backend/tests`
 - `rg "queryRewrite|rerank|metadataRule|lexical" backend/src/modules/retrieval`
 - `rg "from ['\\\"]\\.\\./retrieval|modules/retrieval" backend/src`
@@ -260,6 +265,7 @@ Useful searches:
 Focused checks:
 
 - `cd backend && pnpm test -- tests/unit/retrieval-pipeline-stages.test.ts tests/unit/retrieval-shape-resolver.test.ts tests/unit/hybrid-retrieval-search.test.ts`
+- `cd backend && pnpm test -- tests/unit/sense-grouping-service.test.ts tests/unit/retrieval-sense-clarification.test.ts`
 - `cd backend && pnpm test -- tests/unit/agentic-retrieval-runner.test.ts tests/unit/agentic-retrieval-pipeline-service.test.ts tests/unit/agentic-tools.test.ts tests/unit/agentic-activity-trace-builder.test.ts tests/unit/query-rewrite-port.test.ts tests/unit/retrieval-context-stage-override.test.ts`
 - `cd backend && pnpm run test:integration`
 
@@ -298,6 +304,8 @@ Primary internals:
 - `backend/src/modules/chat/services/chatSessionPreparer.ts`
 - `backend/src/modules/chat/services/turnRouter.ts`
 - `backend/src/modules/chat/services/chatTurnLifecycle.ts`
+- `backend/src/modules/chat/services/clarification/` (host adapter for pending
+  clarification resolution, deferred commit, and metrics)
 - `backend/src/modules/chat/services/directTurnSkill.ts`
 - `backend/src/modules/chat/services/groundedAnswerPromptComposer.ts`
 - `backend/prompts/`
@@ -305,6 +313,7 @@ Primary internals:
 Useful searches:
 
 - `rg "AssistantChat|chatService|chatTurn" backend/src backend/tests`
+- `rg "clarification|pending clarification|clarification_decisions_total" backend/src backend/tests`
 - `rg "citation|suggestion|skill intake|stream" backend/src/modules/chat frontend`
 - `rg "backend/prompts|prompt" backend/src/modules/chat backend/src/modules/retrieval`
 
@@ -381,6 +390,9 @@ Public surfaces and contracts:
 - `backend/src/modules/routines/public.ts` (definition types, compiler, validator)
 - `backend/src/app/http/routes/agentRoutes.ts` (`/api/v1/agents/:agentId/routines` CRUD/validate/publish)
 - `packages/conversation-contract/index.d.ts` (the `Routine` graph and guards the compiler targets)
+- `packages/conversation-defaults/src/routineRegistry.ts` (ranked one-call
+  activation over registered `{ routine, trigger: { description, priority } }`
+  metadata)
 
 Primary internals:
 
@@ -388,7 +400,7 @@ Primary internals:
 - `backend/src/db/repositories/routineDefinitionRepository.ts`, migrations `084`–`086`
 - `backend/src/app/composition/routineDefinitionSource.ts` (loads + compiles published routines per turn)
 - `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward)
-- `backend/prompts/chat/routine-next-step.md`, `routine-step-reply.md`, `routine-data-activation.md`
+- `backend/prompts/chat/routine-next-step.md`, `routine-step-reply.md`, `routine-ranked-activation.md`
 - `frontend/components/dashboard/settings/assistant-routines-section.tsx` (authoring UI)
 
 Focused checks:

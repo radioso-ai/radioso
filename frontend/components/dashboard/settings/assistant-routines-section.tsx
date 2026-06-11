@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, ArrowUp, CheckCircle2, FormInput, ListTree, Pencil, Plus, Route, Send, Trash2, Variable, Wrench } from 'lucide-react'
+import { ArrowDown, ArrowUp, CheckCircle2, FileText, FormInput, ListTree, Pencil, Plus, Route, Send, Trash2, Variable, Wrench } from 'lucide-react'
 
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
@@ -51,6 +51,7 @@ import {
   createOutlineVariable,
   diagnosticsForOutlineTarget,
   outlineToRoutineDraft,
+  routineDraftProposalToOutline,
   routineDraftToOutline,
   type RoutineOutlineActionOption,
   type RoutineOutlineState,
@@ -160,6 +161,9 @@ export function AssistantRoutinesSection({
   const [validation, setValidation] = useState<RoutineValidationResult | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [isDraftingFromProcedure, setIsDraftingFromProcedure] = useState(false)
+  const [draftAssistOpen, setDraftAssistOpen] = useState(false)
+  const [draftAssistProse, setDraftAssistProse] = useState('')
   const [error, setError] = useState<string | null>(null)
   const instructionRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
   const outlineInstructionRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
@@ -225,6 +229,8 @@ export function AssistantRoutinesSection({
     setViewMode('outline')
     setValidation(null)
     setError(null)
+    setDraftAssistOpen(false)
+    setDraftAssistProse('')
   }
 
   const startEdit = (routine: RoutineDefinition) => {
@@ -235,6 +241,8 @@ export function AssistantRoutinesSection({
     setViewMode('outline')
     setValidation(null)
     setError(null)
+    setDraftAssistOpen(false)
+    setDraftAssistProse('')
   }
 
   const activeDraft = (): RoutineDefinitionDraft | null => {
@@ -351,6 +359,28 @@ export function AssistantRoutinesSection({
       setError(getApiErrorMessage(deleteError, 'Failed to delete routine draft.'))
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const draftFromProcedure = async () => {
+    const prose = draftAssistProse.trim()
+    if (!outline || !prose || editingRoutineId) return
+    setIsDraftingFromProcedure(true)
+    setError(null)
+    try {
+      const response = await routinesApi.draftRoutineFromProcedure(agentId, { prose })
+      const nextOutline = routineDraftProposalToOutline(response.draft, { actionOptions: outlineActionOptions })
+      setDraftHeader(headerFromDraft(response.draft))
+      setOutline(nextOutline)
+      setForm(routineToForm(draftAsRoutine(response.draft)))
+      setValidation(response.validation)
+      setViewMode('outline')
+      setDraftAssistOpen(false)
+      setDraftAssistProse('')
+    } catch (assistError) {
+      setError(getApiErrorMessage(assistError, 'Failed to draft routine from procedure.'))
+    } finally {
+      setIsDraftingFromProcedure(false)
     }
   }
 
@@ -523,6 +553,60 @@ export function AssistantRoutinesSection({
                 </TabsTrigger>
               </TabsList>
             </Tabs>
+
+            {viewMode === 'outline' && outline && !editingRoutineId ? (
+              <div className="space-y-3 rounded-lg border border-border p-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-semibold text-foreground">Draft from procedure</h4>
+                    <p className="text-xs text-muted-foreground">Paste an SOP to propose an editable routine draft.</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setDraftAssistOpen((current) => !current)}
+                    disabled={isDraftingFromProcedure}
+                    aria-expanded={draftAssistOpen}
+                    aria-controls="routineDraftAssistPanel"
+                  >
+                    <FileText className="mr-2 h-4 w-4" />
+                    Draft from procedure
+                  </Button>
+                </div>
+                {draftAssistOpen ? (
+                  <div id="routineDraftAssistPanel" className="space-y-2">
+                    <Label htmlFor="routineDraftAssistProse">Procedure text</Label>
+                    <Textarea
+                      id="routineDraftAssistProse"
+                      aria-label="Procedure text for routine drafting assist"
+                      value={draftAssistProse}
+                      onChange={(event) => setDraftAssistProse(event.target.value)}
+                      rows={6}
+                      disabled={isDraftingFromProcedure}
+                    />
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => setDraftAssistOpen(false)}
+                        disabled={isDraftingFromProcedure}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() => void draftFromProcedure()}
+                        disabled={isDraftingFromProcedure || !draftAssistProse.trim()}
+                      >
+                        {isDraftingFromProcedure ? <Spinner className="mr-2 h-4 w-4" /> : <FileText className="mr-2 h-4 w-4" />}
+                        Load proposal
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             {viewMode === 'outline' && outline ? (
               <>

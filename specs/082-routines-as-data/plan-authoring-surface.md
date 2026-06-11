@@ -1,7 +1,7 @@
-# Implementation Plan: 082 Amendment Authoring Surface Slices 1-3
+# Implementation Plan: 082 Amendment Authoring Surface Slices 1-4
 
 **Branch**: `routine-text-composer` | **Spec**: `specs/082-routines-as-data/amendment-authoring-surface.md`
-**Scope**: §12 items 1-2 delivered; §12 item 3 adds the frontend outline editor and per-routine form/outline toggle only.
+**Scope**: §12 items 1-3 delivered; §12 item 4 adds initial drafting assist only.
 
 ## Summary
 
@@ -15,6 +15,8 @@ Slice 2 performs only the FR-018 schema cuts:
 Out of scope for slice 2: UI, prompt assets, new endpoints, AMQP changes, export/import, and the later outline editor/drafting assist.
 
 Slice 3 implements the structured outline editor as a client-side projection of `RoutineDefinitionDraft`. It reuses the existing routine create/update/validate/publish endpoints unchanged. The outline adapter lives in `frontend/lib/routine-outline.ts`, as a sibling of `routine-form.ts`, and owns all outline inference: step kind from action mentions / existing action fields, guard kind from branch row structure, and terminal kind from the handoff chip. The existing form remains available through a per-routine toggle, and both views project through the same draft so switching views does not lose data.
+
+Slice 4 implements the drafting assist for blank routine creation. The endpoint accepts `{ prose }` and returns `{ draft, validation }`, where `draft` is a `RoutineDefinitionDraftInput` proposal and `validation` is the existing routine validator result over that proposal. It never persists, saves, publishes, or sends a document AST over the wire; the outline editor projects the returned draft client-side for review before the operator saves. v1 is initial drafting only: the affordance is available only while composing a new routine, and edit-mode id-preserving proposals are explicitly out of scope for this slice.
 
 ## Technical Context
 
@@ -30,6 +32,10 @@ Slice 3 implements the structured outline editor as a client-side projection of 
 - Slice 3 frontend owner module: `frontend/lib/routine-outline.ts`.
 - Slice 3 UI owner: `frontend/components/dashboard/settings/assistant-routines-section.tsx`.
 - Slice 3 tests: `frontend/tests/unit/routine-outline.test.ts` for pure adapter round trips, and `frontend/tests/e2e/routines-settings.spec.ts` for visible authoring/toggle/validation behavior.
+- Slice 4 backend owner module: `backend/src/modules/routines/assist.ts` plus prompt `backend/prompts/routines/draft-document.md`.
+- Slice 4 endpoint: `POST /api/v1/agents/{agentId}/routines/draft-assist`, authenticated with the same manage permission as routine create/update.
+- Slice 4 contract source: `backend/src/app/http/openapi/schemas/agentSchemas.ts` and `backend/src/app/http/openapi/paths/agentsPaths.ts`; generated artifacts remain `backend/openapi.yaml`, `backend/openapi.json`, `typescript-sdk/openapi/radioso.{yaml,json}`, `typescript-sdk/src/generated/types.ts`, and `packages/radioso-mcp-server/src/generated/openapiTypes.ts`.
+- Slice 4 frontend owner: existing routines API adapter in `frontend/lib/api-routines.ts`, outline transform in `frontend/lib/routine-outline.ts`, and UI in `frontend/components/dashboard/settings/assistant-routines-section.tsx`.
 
 ## Constitution Check
 
@@ -52,6 +58,19 @@ Slice 3 implements the structured outline editor as a client-side projection of 
 - **Modularity**: projection and inference live in one frontend adapter module. The React component owns visible controls and calls the adapter rather than duplicating draft inference.
 - **Docs parity**: minimally update `docs/authoring-routines.md` after reading `docs/document-writer-prompt.md`.
 - **Observability**: SC-016 retirement-trigger instrumentation is skipped in this slice because the existing authoring API has no view-origin field and adding one would be a contract/backend analytics change. Record this in slice notes.
+
+### Slice 4 Constitution Check
+
+- **Spec-first**: this plan extends the approved amendment §5 and §12 item 4 only.
+- **Backend TDD**: add unit tests for the assist module before implementation: happy path, schema-mismatch retry, invalid-after-retry author-facing error, and validator rejection for an action not in the permitted catalog.
+- **Stack discipline**: use the existing provider adapter through the chat inference pipeline, retaining GPT-5.2 as the default configured chat model.
+- **Prompt ownership**: runtime prompt lives at `backend/prompts/routines/draft-document.md`, modeled on the Coach draft-directive prompt conventions.
+- **No keyword lists**: the LLM may interpret multilingual operator prose, but code only parses structured JSON and Zod-validated routine draft fields. No English product-vocabulary regex path is introduced.
+- **Modularity**: `backend/src/modules/routines/assist.ts` owns prompt loading, permitted-action catalog serialization, provider call, JSON/schema retry, catalog diagnostics, and validator invocation. HTTP route handlers remain thin. Composition wiring is limited to constructing the service from the existing chat inference pipeline and action handler registrations.
+- **API contracts**: add the code-first OpenAPI schemas/path for the assist endpoint and regenerate backend OpenAPI, SDK, and MCP generated types.
+- **Message queue**: expected no AMQP/document-worker impact because assist is synchronous request/response and does not create routine definitions, dispatch worker jobs, or enqueue routine actions. Verify by search and record in `slice-doc4-notes.md`.
+- **Docs parity**: slice 5 owns the full docs rewrite; slice 4 records behavior in specs/notes and generated contract artifacts. No operator docs are expanded here unless frontend copy materially changes documented workflow.
+- **Observability**: add standard LLM call trace/log/telemetry with workspace and agent correlation plus failure modes (`schema_mismatch`, `provider_error`, invalid-after-retry). Do not log SOP prose, prompt text, proposal JSON, model completions, document content, or credentials.
 
 ## Module Design
 
@@ -98,6 +117,33 @@ Slice 3 implements the structured outline editor as a client-side projection of 
   - an inline action mention from the configured action options sets `kind` to `action` or `tool`; if no known action is present, the step is `chat`.
 - Terminal inference:
   - the Handoff chip maps to `kind: "handoff"`; absence maps to `complete`.
+
+### Slice 4 Drafting Assist Design
+
+- Wire contract:
+  - Request: `{ prose: string }`.
+  - Response: `{ draft: RoutineDefinitionDraftInput, validation: RoutineValidationResult }`.
+  - No document AST crosses the API boundary. The frontend projects the draft into outline state with the slice-3 adapter.
+- Service port:
+  - `RoutineDraftAssistService.draft(workspaceId, agentId, { prose })`.
+  - Requires the agent exists in the workspace before calling the model.
+  - Builds a permitted-action catalog from composition action handler registrations. Registered fire-and-forget action handlers are cataloged as `kind: "action"`; no unregistered action type may be proposed.
+  - Calls the existing text-generation adapter with operation `{ surface: "agents", operation: "draft_routine", attemptKey }`.
+  - Parses JSON, validates against `routineDefinitionDraftInputSchema`, retries once on schema mismatch, rejects any proposed action/tool not in the provided catalog through validation diagnostics, and returns an author-facing 422 error if the schema retry also fails.
+  - Runs `validateRoutineDefinition` over a transient draft definition and returns the result without saving.
+- Prompt input:
+  - Agent context: id/name and durable assistant instructions.
+  - Permitted-action catalog: machine-readable list of action ids, labels/descriptions if present, and action/tool kind.
+  - SOP prose: untrusted operator data, interpreted by meaning in any language.
+- Prompt output:
+  - One JSON object containing the routine draft fields exactly as `RoutineDefinitionDraftInput`.
+  - Labels proposed by the model may drive slugged stable ids; first-save freezing remains the existing create/update path.
+- Frontend review-before-apply:
+  - New-routine outline view exposes "Draft from procedure".
+  - The operator pastes SOP prose into a dialog/textarea and submits.
+  - Busy state blocks duplicate submissions.
+  - The returned draft is loaded into outline editor state for review and shows validation diagnostics; nothing is saved until the existing save action is used.
+  - The affordance is hidden/disabled while editing an existing routine in v1.
 
 ### Slice 2 Runtime And Contract Design
 

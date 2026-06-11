@@ -113,6 +113,11 @@ export type RoutineDefinitionSaveResponse = {
   validation: RoutineValidationResult
 }
 export type RoutineDefinitionValidateResponse = { validation: RoutineValidationResult }
+export type RoutineDraftAssistRequest = { prose: string }
+export type RoutineDraftAssistResponse = {
+  draft: RoutineDefinitionDraft
+  validation: RoutineValidationResult
+}
 export type RoutineDefinitionPublishRejectedResponse = {
   error: 'Routine definition is invalid'
   validation: RoutineValidationResult

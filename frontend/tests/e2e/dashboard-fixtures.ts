@@ -26,8 +26,12 @@ type DirectiveMutationFixture = {
 };
 type RoutineFixture = ApiSchemas["RoutineDefinition"];
 type RoutineDraftFixture = ApiSchemas["RoutineDefinitionCreateRequest"];
+type RoutineDraftAssistFixture = {
+  draft: RoutineDraftFixture;
+  validation: ApiSchemas["RoutineValidationResult"];
+};
 type RoutineMutationFixture = {
-  method: "POST" | "PATCH" | "DELETE" | "VALIDATE" | "PUBLISH";
+  method: "POST" | "PATCH" | "DELETE" | "VALIDATE" | "PUBLISH" | "ASSIST";
   routineId?: string;
   body?: unknown;
 };
@@ -416,6 +420,7 @@ export const installDashboardApiMocks = async (
     builtIns?: BuiltInDirectiveFixture[];
     routineUpdates?: RoutineMutationFixture[];
     routines?: RoutineFixture[];
+    routineDraftAssist?: RoutineDraftAssistFixture;
     requestLog?: string[];
     providerEncryptionConfigured?: boolean;
     providerCredentialUpdates?: Array<{ method: "PUT" | "DELETE"; provider: string; body?: unknown }>;
@@ -798,6 +803,76 @@ export const installDashboardApiMocks = async (
         await route.fulfill({ status: 204, contentType: "application/json", body: "" });
         return;
       }
+    }
+
+    if (path === `/agents/${defaultAgentId}/routines/draft-assist` && request.method() === "POST") {
+      routineUpdates?.push({ method: "ASSIST", body: request.postDataJSON() });
+      await json(route, options.routineDraftAssist ?? {
+        draft: {
+          name: "assisted-contact",
+          activation: {
+            triggerDescription: "Visitor asks for a person to follow up.",
+            gateRef: null,
+            priority: 0,
+          },
+          slots: [{
+            stableSlotId: "email",
+            key: "email",
+            type: "email",
+            required: true,
+            description: "Visitor email",
+            ordinal: 0,
+          }],
+          steps: [
+            {
+              stableStepId: "collect_email",
+              kind: "chat",
+              instruction: "Ask for {{slot.email}}.",
+              toolRef: null,
+              actionType: null,
+              ordinal: 0,
+              metadata: { outlineLabel: "Collect email" },
+            },
+            {
+              stableStepId: "send_contact",
+              kind: "action",
+              instruction: "Send the contact request.",
+              toolRef: null,
+              actionType: "contact.send",
+              ordinal: 1,
+              metadata: { outlineLabel: "Send contact request" },
+            },
+          ],
+          transitions: [
+            {
+              fromStep: "collect_email",
+              toRef: "send_contact",
+              guardKind: "default",
+              guardText: null,
+              outcomeStatus: null,
+              counterLimit: null,
+              ordinal: 0,
+            },
+            {
+              fromStep: "send_contact",
+              toRef: "done",
+              guardKind: "default",
+              guardText: null,
+              outcomeStatus: null,
+              counterLimit: null,
+              ordinal: 1,
+            },
+          ],
+          terminals: [{
+            stableStepId: "done",
+            kind: "complete",
+            instruction: "Confirm the request is open.",
+            ordinal: 0,
+          }],
+        },
+        validation: { ok: true, diagnostics: [] },
+      });
+      return;
     }
 
     if (path === `/agents/${defaultAgentId}/routines`) {

@@ -1,4 +1,4 @@
-# Tasks: 082 Amendment Authoring Surface Slices 1-3
+# Tasks: 082 Amendment Authoring Surface Slices 1-4
 
 **Input**: `specs/082-routines-as-data/amendment-authoring-surface.md`
 **Plan**: `specs/082-routines-as-data/plan-authoring-surface.md`
@@ -89,3 +89,36 @@ Slice 2 tests T019-T021 must be authored before implementation T022-T025. Contra
 - [X] T046 Attempt `cd frontend && pnpm run build` and record the result honestly.
 - [X] T047 Record implementation decisions, skipped retirement-trigger instrumentation rationale, and validation evidence in `specs/082-routines-as-data/slice-doc3-notes.md`.
 - [X] T048 Leave changes uncommitted for EM verification; do not push or open a PR.
+
+## Phase 12: Slice 4 Planning And Backend Tests First
+
+- [X] T049 Verify branch `routine-text-composer`, read amendment §5/§12 item 4, all prior slice notes, Coach prompt precedent, and the existing routines route/OpenAPI/frontend surfaces.
+- [X] T050 Extend `specs/082-routines-as-data/plan-authoring-surface.md` and `specs/082-routines-as-data/tasks-authoring-surface.md` for slice 4 boundaries, contracts, observability, queue review, tests, and validation.
+- [X] T051 Add failing backend unit tests in `backend/tests/unit/routine-draft-assist.test.ts` for happy path, schema-mismatch retry, invalid-after-retry author-facing error, and action not in the permitted catalog rejected by validation.
+- [X] T052 Add or extend routine authoring contract/OpenAPI tests for `POST /api/v1/agents/{agentId}/routines/draft-assist` request/response shape and authentication.
+
+## Phase 13: Slice 4 Backend Assist Endpoint
+
+- [X] T053 Add prompt asset `backend/prompts/routines/draft-document.md`, following `backend/prompts/coach/draft-directive.md` conventions and instructing multilingual extraction, untrusted input handling, permitted-action catalog limits, and no invented scope.
+- [X] T054 Implement `backend/src/modules/routines/assist.ts` with prompt loading, permitted-action catalog handling, provider call, structured JSON parsing, one schema retry, validator invocation, catalog diagnostics, and redacted observability.
+- [X] T055 Export the assist service and schemas from `backend/src/modules/routines/public.ts`.
+- [X] T056 Wire `RoutineDraftAssistService` into dependency construction using the existing chat inference pipeline and composition action handler registrations; do not add persistence or queue dispatch.
+- [X] T057 Add `POST /:agentId/routines/draft-assist` to `backend/src/app/http/routes/agentRoutes.ts` with routine manage auth and a thin handler.
+- [X] T058 Register assist request/response schemas and path in the code-first OpenAPI registry, then regenerate backend OpenAPI, TypeScript SDK OpenAPI/types, and MCP generated types.
+
+## Phase 14: Slice 4 Frontend Review-Before-Apply
+
+- [X] T059 Extend frontend routine API types/adapter with `draftRoutineFromProcedure(agentId, { prose })` and unit coverage in `frontend/tests/unit/routines-api.test.ts`.
+- [X] T060 Add a pure proposal-to-outline transform test in `frontend/tests/unit/routine-outline.test.ts` proving an assist response draft loads into editable outline state without saving.
+- [X] T061 Add the "Draft from procedure" dialog/textarea affordance to the blank new-routine outline view in `frontend/components/dashboard/settings/assistant-routines-section.tsx`, with busy/error state and distinct accessible labels.
+- [X] T062 Extend `frontend/tests/e2e/dashboard-fixtures.ts` with a mocked assist response and `frontend/tests/e2e/routines-settings.spec.ts` with the assist journey; no live LLM in e2e.
+
+## Phase 15: Slice 4 Validation And Handoff
+
+- [X] T063 Run focused backend assist tests and relevant contract/OpenAPI checks.
+- [X] T064 Run `cd backend && pnpm run test:unit` and record sandbox-limited failures precisely if any.
+- [X] T065 Run `cd frontend && pnpm test`.
+- [X] T066 Run `cd frontend && pnpm run lint`.
+- [X] T067 Record implementation decisions, initial-drafting-only scope, message-queue impact review, observability review, and validation evidence in `specs/082-routines-as-data/slice-doc4-notes.md`.
+- [X] T068 Run senior engineer review loop and address blocking findings within slice 4 scope.
+- [X] T069 Leave changes uncommitted for EM verification; do not push or open a PR.

@@ -114,6 +114,17 @@ const actionMentionToToken = (value: string, options: RoutineOutlineActionOption
 const displayInstruction = (value: string, options: RoutineOutlineActionOption[]): string =>
   actionTokenToMention(variableTokenToMention(value), options)
 
+const displayStepInstruction = (
+  step: RoutineDraftLike['steps'][number],
+  options: RoutineOutlineActionOption[],
+): string => {
+  const displayed = displayInstruction(step.instruction, options)
+  const ref = step.kind === 'tool' ? step.toolRef : step.kind === 'action' ? step.actionType : null
+  const option = ref ? options.find((candidate) => candidate.ref === ref) : null
+  if (!option || displayed.includes(`@${option.label}`)) return displayed
+  return `${displayed} @${option.label}`.trim()
+}
+
 const storedInstruction = (
   value: string,
   variableKeys: Set<string>,
@@ -234,7 +245,7 @@ export const routineDraftToOutline = (
     steps: [...draft.steps].sort((left, right) => left.ordinal - right.ordinal).map((step) => ({
       stableStepId: step.stableStepId,
       label: stepLabel(step),
-      instruction: displayInstruction(step.instruction, actionOptions),
+      instruction: displayStepInstruction(step, actionOptions),
       branches: transitionsByStep.get(step.stableStepId) ?? [],
     })),
     ends: [...draft.terminals].sort((left, right) => left.ordinal - right.ordinal).map((terminal) => ({
@@ -245,6 +256,11 @@ export const routineDraftToOutline = (
     })),
   }
 }
+
+export const routineDraftProposalToOutline = (
+  draft: RoutineDefinitionDraft,
+  options: { actionOptions?: RoutineOutlineActionOption[] } = {},
+): RoutineOutlineState => routineDraftToOutline(draft, options)
 
 export const outlineToRoutineDraft = (
   outline: RoutineOutlineState,

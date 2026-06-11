@@ -4,6 +4,7 @@ import type { RoutineDefinitionDraft } from '@/lib/api'
 import {
   diagnosticsForOutlineTarget,
   outlineToRoutineDraft,
+  routineDraftProposalToOutline,
   routineDraftToOutline,
   type RoutineOutlineActionOption,
   type RoutineOutlineState,
@@ -206,6 +207,88 @@ describe('routine outline adapter', () => {
       toRef: 'human_help',
     })
     expect(routineDraftToOutline(draft, { actionOptions })).toEqual(llmOutline)
+  })
+
+  it('loads an assist proposal draft into reviewable outline state without saving', () => {
+    const proposalDraft: RoutineDefinitionDraft = {
+      name: 'contact-flow',
+      activation: {
+        triggerDescription: 'Visitor asks a person to follow up.',
+        priority: 0,
+      },
+      slots: [{
+        stableSlotId: 'email',
+        key: 'email',
+        type: 'email',
+        required: true,
+        description: 'Visitor email',
+        ordinal: 0,
+      }],
+      steps: [
+        {
+          stableStepId: 'collect_email',
+          kind: 'chat',
+          instruction: 'Ask for {{slot.email}}.',
+          toolRef: null,
+          ordinal: 0,
+          metadata: { outlineLabel: 'Collect email' },
+        },
+        {
+          stableStepId: 'send_contact',
+          kind: 'action',
+          instruction: 'Send the contact request with {{slot.email}}.',
+          toolRef: null,
+          actionType: 'contact.send',
+          ordinal: 1,
+          metadata: { outlineLabel: 'Send contact request' },
+        },
+      ],
+      transitions: [
+        {
+          fromStep: 'collect_email',
+          toRef: 'send_contact',
+          guardKind: 'default',
+          guardText: null,
+          outcomeStatus: null,
+          counterLimit: null,
+          ordinal: 0,
+        },
+        {
+          fromStep: 'send_contact',
+          toRef: 'done',
+          guardKind: 'default',
+          guardText: null,
+          outcomeStatus: null,
+          counterLimit: null,
+          ordinal: 1,
+        },
+      ],
+      terminals: [{
+        stableStepId: 'done',
+        kind: 'complete',
+        instruction: 'Confirm the request is open.',
+        ordinal: 0,
+      }],
+    }
+
+    const outlineState = routineDraftProposalToOutline(proposalDraft, { actionOptions })
+
+    expect(outlineState).toMatchObject({
+      name: 'contact-flow',
+      activation: { triggerDescription: 'Visitor asks a person to follow up.', priority: '0' },
+      variables: [expect.objectContaining({ key: 'email' })],
+      steps: [
+        expect.objectContaining({ label: 'Collect email', instruction: 'Ask for @email.' }),
+        expect.objectContaining({ label: 'Send contact request', instruction: 'Send the contact request with @email. @Contact Send' }),
+      ],
+    })
+    expect(outlineToRoutineDraft(outlineState, { actionOptions })).toMatchObject({
+      name: proposalDraft.name,
+      steps: [
+        expect.objectContaining({ stableStepId: 'collect_email', kind: 'chat' }),
+        expect.objectContaining({ stableStepId: 'send_contact', kind: 'action', actionType: 'contact.send' }),
+      ],
+    })
   })
 
   it('does not compile outcome guards from branches leaving chat steps', () => {

@@ -207,3 +207,46 @@ test("agent routines outline editor preserves data across form toggle and maps v
     },
   });
 });
+
+test("agent routines outline editor loads drafting assist proposal for review before save", async ({ page }) => {
+  const routineUpdates: Array<{ method: "POST" | "PATCH" | "DELETE" | "VALIDATE" | "PUBLISH" | "ASSIST"; routineId?: string; body?: unknown }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "New routine" }).click();
+
+  await page.getByRole("button", { name: "Draft from procedure" }).click();
+  await page.getByLabel("Procedure text for routine drafting assist").fill("Ask for an email, send a contact request, then confirm the request is open.");
+  await page.getByRole("button", { name: "Load proposal" }).click();
+
+  await expect(page.getByLabel("Name")).toHaveValue("assisted-contact");
+  await expect(page.getByLabel("Activation trigger")).toHaveValue("Visitor asks for a person to follow up.");
+  await expect(page.getByLabel("Variable 1 key")).toHaveValue("email");
+  await expect(page.getByLabel("Outline step 1 label")).toHaveValue("Collect email");
+  await expect(page.getByLabel("Outline step 1 instruction")).toHaveValue("Ask for @email.");
+  await expect(page.getByLabel("Outline step 2 label")).toHaveValue("Send contact request");
+  await expect(page.getByLabel("Outline step 2 instruction")).toHaveValue("Send the contact request. @Contact Send");
+  await expect(page.getByText("Validation passed")).toBeVisible();
+
+  expect(routineUpdates.map((update) => update.method)).toEqual(["ASSIST"]);
+
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByText("draft", { exact: true })).toBeVisible();
+
+  const createUpdate = routineUpdates.find((update) => update.method === "POST");
+  expect(createUpdate).toMatchObject({
+    body: {
+      name: "assisted-contact",
+      steps: [
+        expect.objectContaining({ stableStepId: "collect_email", kind: "chat" }),
+        expect.objectContaining({ stableStepId: "send_contact", kind: "action", actionType: "contact.send" }),
+      ],
+      transitions: [
+        expect.objectContaining({ fromStep: "collect_email", toRef: "send_contact", guardKind: "default" }),
+        expect.objectContaining({ fromStep: "send_contact", toRef: "done", guardKind: "default" }),
+      ],
+    },
+  });
+});

@@ -13,7 +13,10 @@ import {
   authoredDirectiveInputSchema,
   directiveAuthorDraftInputSchema,
 } from "../../../modules/agents/public.js";
-import { routineDefinitionDraftInputSchema } from "../../../modules/routines/public.js";
+import {
+  routineDefinitionDraftInputSchema,
+  routineDraftAssistRequestSchema,
+} from "../../../modules/routines/public.js";
 import { builtInAnswerDirectiveViews } from "../../../modules/directives/public.js";
 import {
   ASSISTANT_LOGO_MIME_TYPES,
@@ -115,7 +118,7 @@ export const agentBodySchema = z.object({
 
 export { llmProviderNames as agentLlmProviderNames, chatModelOverrideSchema as agentChatModelOverrideSchema };
 
-type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "authoredDirectiveService" | "directiveAuthorService" | "routineDefinitionService" | "agentSurfaceExtensions" | "documentStorage" | "logger">;
+type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "authoredDirectiveService" | "directiveAuthorService" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger">;
 
 export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router => {
   const router = Router();
@@ -273,6 +276,23 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
       next(error);
     }
   });
+
+  router.post(
+    "/:agentId/routines/draft-assist",
+    workspaceSession,
+    agentManage,
+    validateBody(routineDraftAssistRequestSchema),
+    async (req, res, next) => {
+      try {
+        const { workspaceId } = res.locals as { workspaceId: string };
+        const parsed = agentParamsSchema.parse(req.params);
+        const result = await dependencies.routineDraftAssistService.draft(workspaceId, parsed.agentId, req.body);
+        res.status(200).json(result);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   router.post(
     "/:agentId/routines",

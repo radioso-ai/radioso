@@ -30,6 +30,17 @@ export {
   type RoutineDefinitionServiceOptions,
 } from "./service.js";
 export {
+  RoutineDraftAssistService,
+  routineDraftAssistActionCatalogEntrySchema,
+  routineDraftAssistRequestSchema,
+  routineDraftAssistResponseSchema,
+  type RoutineDraftAssistActionCatalogEntry,
+  type RoutineDraftAssistRequest,
+  type RoutineDraftAssistResponse,
+  type RoutineDraftAssistServiceOptions,
+  type RoutineDraftAssistTextGenerationPort,
+} from "./assist.js";
+export {
   mapRoutineDiagnosticToDocumentRange,
   parseRoutineDocumentFixture,
   routineDocumentToDraft,

@@ -48,6 +48,8 @@ export interface OpenApiSchemaCatalog {
   DirectiveCoherenceVerdictSchema: z.ZodTypeAny;
   DirectiveListResponseSchema: z.ZodTypeAny;
   RoutineDefinitionCreateRequestSchema: z.ZodTypeAny;
+  RoutineDraftAssistRequestSchema: z.ZodTypeAny;
+  RoutineDraftAssistResponseSchema: z.ZodTypeAny;
   RoutineDefinitionGetResponseSchema: z.ZodTypeAny;
   RoutineDefinitionListResponseSchema: z.ZodTypeAny;
   RoutineDefinitionParamsSchema: RouteParameterSchema;

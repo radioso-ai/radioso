@@ -64,7 +64,7 @@ export class PostgresSenseEmbeddingReader implements SenseEmbeddingReader {
     const rows = await this.database.query<{ id: string; embedding_text: string | null }>(
       `SELECT id, COALESCE(embedding_unbounded::text, embedding::text) AS embedding_text
        FROM chunks
-       WHERE workspace_id = $1 AND id = ANY($2::text[])`,
+       WHERE workspace_id = $1 AND id = ANY($2::uuid[])`,
       [input.workspaceId, input.chunkIds],
     );
     return new Map(rows.flatMap((row) => {

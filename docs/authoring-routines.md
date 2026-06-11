@@ -4,17 +4,22 @@ A routine is a multi-step flow your agent runs across turns. It can collect
 values, take an action, branch on what happened, and finish or hand off to a
 person.
 
-You author a routine in the agent's **Routines** settings. The primary authoring
-view is **Outline**: an ordered set of variables, step cards, branch rows, and
-ends. The graph the engine runs is compiled from that draft. You do not draw or
-edit the graph directly.
+You manage routines in the agent's **Routines** settings. The settings section
+shows the routine list. Choose **New routine** or select an existing routine to
+open the editor screen.
+
+The primary authoring view is **Outline**: an ordered set of variables, step
+cards, branch rows, and ends. The graph the engine runs is compiled from that
+draft. You do not draw or edit the graph directly.
 
 For the runtime model behind routines, see
 [Conversational routines](./architecture/conversational-routines.md).
 
 ## Start a routine
 
-Open an agent, go to **Routines**, and choose **New routine**.
+Open an agent, go to **Routines**, and choose **New routine**. Radioso opens a
+separate editor screen for the draft. To edit an existing routine, select it
+from the same list.
 
 At the top of the editor, set:
 

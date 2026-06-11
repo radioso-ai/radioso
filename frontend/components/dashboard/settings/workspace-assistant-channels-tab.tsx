@@ -15,6 +15,7 @@ import { ConnectorSetupDialog } from '@/components/dashboard/documents/connector
 import { McpChannelCard } from '@/components/dashboard/settings/mcp-channel-card'
 import { SettingsRow, SettingsRowList } from '@/components/dashboard/settings/settings-row-list'
 import { type AgentSectionId } from '@/lib/dashboard-areas'
+import type { DashboardRouteState } from '@/lib/dashboard-routes'
 import {
   getAssistantLocaleLabel,
   NO_GREETING_LOCALE_LABEL,
@@ -227,6 +228,7 @@ export function WorkspaceAssistantChannelsTab({
   mode,
   agentId,
   agentSection,
+  routeState,
   channelsTabHref,
   onSaveStateChange,
 }: {
@@ -235,6 +237,7 @@ export function WorkspaceAssistantChannelsTab({
   agentId?: string
   /** When set, render only this section (the second column owns selection). */
   agentSection?: AgentSectionId
+  routeState?: DashboardRouteState
   channelsTabHref?: string
   onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
 }) {
@@ -1234,7 +1237,12 @@ export function WorkspaceAssistantChannelsTab({
 
           {mode === 'assistant' && agentId && showSection('routines') ? (
           <section id="assistant-routines" className="space-y-6 scroll-mt-24">
-            <AssistantRoutinesSection agentId={agentId} onSaveStateChange={onSaveStateChange} />
+            <AssistantRoutinesSection
+              accountId={accountId}
+              agentId={agentId}
+              routeState={routeState}
+              onSaveStateChange={onSaveStateChange}
+            />
           </section>
           ) : null}
 

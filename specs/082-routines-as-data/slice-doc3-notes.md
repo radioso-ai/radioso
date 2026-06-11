@@ -134,3 +134,45 @@ No commit, push, or PR was created per EM instruction.
 - Round 1: `getByLabel("Insert action")` strict-mode violation — every step card carried an identical aria-label (accessibility defect). Fixed with per-step distinct labels on insert and branch controls.
 - Round 2: a real outline-view save bug — the shared header fields displayed edited values, but outline save/validate built from stale `outline.name` / `outline.activation`. Fixed by lifting Name, Priority, and Activation trigger into shared draft header state passed into both form and outline draft-build paths (FR-016: the two views cannot desync). Also fixed FR-020 drift by rendering branch outcome status only for branches leaving action/tool outline steps; since the current action catalog does not expose enum choices in this UI, action/tool branches still use the existing free-text outcome field for now (noted as a follow-up when the catalog declares outcome enums). Added unit coverage for shared-header outline saves/toggle projection and for ignoring outcome status on chat-step branches.
 - Final EM-run evidence: `pnpm exec playwright test tests/e2e/routines-settings.spec.ts` → 2 passed (outline + form journeys).
+
+## Product-Owner UX Amendment: Dedicated Routine Editor Screen
+
+- Investigated the dashboard route shape before editing. The Next app uses the catch-all `frontend/app/w/[workspaceKey]/[[...segments]]/page.tsx`, with canonical URL construction and parsing centralized in `frontend/lib/dashboard-routes.ts`. Agent section navigation uses `/w/[workspaceKey]/agents/[agentId]` plus `tab`/`anchor`; existing true detail screens are explicitly added to the route parser, like knowledge documents and eval cases.
+- Added explicit routine editor routes under the agent detail path: `/w/[workspaceKey]/agents/[agentId]/routines/new` and `/w/[workspaceKey]/agents/[agentId]/routines/[routineId]`. The agent sub-nav maps those routes back to the Routines section.
+- Moved the routine authoring shell out of the settings list. `AssistantRoutinesSection` now renders either the list or the routed editor. The list keeps status/actions; New routine, routine row selection, and edit actions navigate to the editor screen. The editor keeps the existing Outline/Form toggle, shared draft-header ownership, diagnostics, draft assist, save, validate, publish, and draft delete behavior.
+- Navigation behavior: the editor has Back to routines; first create save replaces the URL with the persisted routine id; publish replaces the URL with the published version id; draft delete returns to the list. Draft assist remains available only on the blank create route.
+- Updated `docs/authoring-routines.md` after reading `docs/document-writer-prompt.md`.
+
+Validation note for this amendment:
+
+```bash
+cd frontend && pnpm exec tsc --noEmit
+```
+
+Result: failed on existing unrelated frontend type errors in files such as `agent-view.tsx`, `chat-view.tsx`, `quality-view.tsx`, markdown tests, embed tests, and workbench tests. No reported error referenced the routine route/editor changes.
+
+Requested validation:
+
+```bash
+cd frontend && pnpm test
+```
+
+Result: passed, 64 files / 365 tests.
+
+```bash
+cd frontend && pnpm run lint
+```
+
+Result: passed.
+
+```bash
+cd frontend && pnpm run build
+```
+
+Result: attempted, failed in the sandbox because `next/font` could not fetch `Fraunces` from `fonts.googleapis.com`:
+
+```text
+getaddrinfo ENOTFOUND fonts.googleapis.com
+Failed to fetch `Fraunces` from Google Fonts.
+Build failed because of webpack errors
+```

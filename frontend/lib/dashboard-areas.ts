@@ -65,7 +65,11 @@ const CHANNEL_ANCHORS: Record<string, AgentSectionId> = {
 export const agentSectionRoute = (section: AgentSectionId): AgentSectionRoute => AGENT_SECTION_ROUTES[section]
 
 /** Derive which agent section a route points at, applying each tab's default. */
-export function agentSectionFromRoute(routeState: Pick<DashboardRouteState, 'agentTab' | 'anchor'>): AgentSectionId {
+export function agentSectionFromRoute(routeState: Pick<DashboardRouteState, 'agentTab' | 'anchor' | 'agentRoutineId'>): AgentSectionId {
+  if (routeState.agentRoutineId) {
+    return 'routines'
+  }
+
   const tab = routeState.agentTab ?? 'chat'
   const anchor = routeState.anchor
 

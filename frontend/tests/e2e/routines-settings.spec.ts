@@ -19,6 +19,8 @@ test("agent routines settings create, validate, publish, and persist", async ({ 
   await expect(page.getByText("No routines yet.")).toBeVisible();
 
   await page.getByRole("button", { name: "New routine" }).click();
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/new$`));
+  await expect(page.getByRole("button", { name: "Back to routines" })).toBeVisible();
   await page.getByRole("tab", { name: "Form" }).click();
   await page.getByLabel("Name").fill("Collect pricing intake");
   await page.getByLabel("Priority").fill("20");
@@ -46,12 +48,13 @@ test("agent routines settings create, validate, publish, and persist", async ({ 
   await page.getByLabel("Terminal 1 instruction").fill("Confirm the request was captured.");
 
   await page.getByRole("button", { name: "Validate" }).click();
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/55555555-5555-4555-8555-000000000001$`));
   await expect(page.getByText("Validation passed")).toBeVisible();
   await expect.poll(() => routineUpdates.some((update) => update.method === "VALIDATE")).toBe(true);
 
   await page.getByRole("button", { name: "Publish" }).click();
-  await expect(page.getByText("published", { exact: true })).toBeVisible();
-  await expect(page.getByText("v2", { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/55555555-5555-4555-9555-000000000002$`));
+  await expect(page.getByText("published v2", { exact: true })).toBeVisible();
   await expect.poll(() => routineUpdates.some((update) => update.method === "PUBLISH")).toBe(true);
 
   const createUpdate = routineUpdates.find((update) => update.method === "POST");
@@ -95,6 +98,10 @@ test("agent routines settings create, validate, publish, and persist", async ({ 
       }],
     },
   });
+
+  await page.getByRole("button", { name: "Back to routines" }).click();
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=behavior&anchor=assistant-routines$`));
+  await expect(page.getByText("Collect pricing intake")).toBeVisible();
 });
 
 test("agent routines outline editor preserves data across form toggle and maps validation inline", async ({ page }) => {
@@ -105,6 +112,7 @@ test("agent routines outline editor preserves data across form toggle and maps v
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
   await page.getByRole("button", { name: "New routine" }).click();
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/new$`));
 
   await expect(page.getByRole("tab", { name: "Outline" })).toHaveAttribute("data-state", "active");
   await expect(page.getByLabel("Step 1 kind")).toHaveCount(0);
@@ -167,6 +175,7 @@ test("agent routines outline editor preserves data across form toggle and maps v
 
   await page.getByRole("button", { name: "Remove end human_help" }).click();
   await page.getByRole("button", { name: "Validate" }).click();
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/55555555-5555-4555-8555-000000000001$`));
   await expect(page.getByText('dangling step reference: transition "send_contact" points at "human_help".')).toBeVisible();
 
   await page.getByRole("button", { name: "Add end" }).click();
@@ -206,6 +215,10 @@ test("agent routines outline editor preserves data across form toggle and maps v
       ]),
     },
   });
+
+  await page.getByRole("button", { name: "Back to routines" }).click();
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=behavior&anchor=assistant-routines$`));
+  await expect(page.getByText("Order support")).toBeVisible();
 });
 
 test("agent routines outline editor loads drafting assist proposal for review before save", async ({ page }) => {
@@ -216,6 +229,7 @@ test("agent routines outline editor loads drafting assist proposal for review be
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
   await page.getByRole("button", { name: "New routine" }).click();
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/new$`));
 
   await page.getByRole("button", { name: "Draft from procedure" }).click();
   await page.getByLabel("Procedure text for routine drafting assist").fill("Ask for an email, send a contact request, then confirm the request is open.");
@@ -233,7 +247,8 @@ test("agent routines outline editor loads drafting assist proposal for review be
   expect(routineUpdates.map((update) => update.method)).toEqual(["ASSIST"]);
 
   await page.getByRole("button", { name: "Save draft" }).click();
-  await expect(page.getByText("draft", { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/55555555-5555-4555-8555-000000000001$`));
+  await expect(page.getByText("draft v1", { exact: true })).toBeVisible();
 
   const createUpdate = routineUpdates.find((update) => update.method === "POST");
   expect(createUpdate).toMatchObject({
@@ -249,4 +264,8 @@ test("agent routines outline editor loads drafting assist proposal for review be
       ],
     },
   });
+
+  await page.getByRole("button", { name: "Back to routines" }).click();
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=behavior&anchor=assistant-routines$`));
+  await expect(page.getByText("assisted-contact")).toBeVisible();
 });

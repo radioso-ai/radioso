@@ -43,7 +43,7 @@ export class ChatAnswerSupport {
       responseIdentity: session.retrieval.responseIdentity,
       customInstruction: responseSettings?.customInstruction,
       responseLanguagePolicy: responseSettings?.responseLanguagePolicy,
-      responseLanguage: session.retrieval.diagnostics.rewriteProposal?.responseLanguage,
+      responseLanguage: session.responseLanguage,
     });
   }
 

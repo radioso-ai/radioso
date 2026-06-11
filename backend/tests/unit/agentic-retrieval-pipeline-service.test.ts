@@ -308,6 +308,38 @@ describe("AgenticRetrievalPipelineService", () => {
     expect(result.citations.map((c) => c.chunkId)).toEqual(["c1", "c2"]);
   });
 
+  it("passes caller-supplied response language into agentic prompt assembly", async () => {
+    const detState: StubDeterministicState = { interpretCalls: 0, runWithoutRetrievalCalls: 0, lastRunWithoutRetrievalInput: null };
+    const calls: Array<Parameters<PromptBuilder["build"]>[0]> = [];
+    const promptBuilder = {
+      build(input: Parameters<PromptBuilder["build"]>[0]) {
+        calls.push(input);
+        return {
+          systemPrompt: "system",
+          prompt: "prompt",
+          citations: [],
+        };
+      },
+    } as unknown as PromptBuilder;
+    const service = new AgenticRetrievalPipelineService({
+      deterministic: stubDeterministic(detState),
+      runner: stubRunner({
+        selectedChunks: [stubChunk("c1")],
+        rationale: null,
+        trace: emptyTrace(),
+        terminatedReason: "completed",
+        stepsTaken: 1,
+      }),
+      promptBuilder,
+      systemPrompt: "sp",
+    });
+
+    const result = await service.run(buildRequest({ responseLanguage: "English" }));
+
+    expect(calls[0]?.settings.responseLanguage).toBe("English");
+    expect(result.responseSettings.responseLanguage).toBe("English");
+  });
+
   it("returns the agent's trace as the pipeline trace", async () => {
     const detState: StubDeterministicState = { interpretCalls: 0, runWithoutRetrievalCalls: 0, lastRunWithoutRetrievalInput: null };
     const trace = emptyTrace();

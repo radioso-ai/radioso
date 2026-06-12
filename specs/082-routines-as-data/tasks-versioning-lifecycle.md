@@ -21,9 +21,9 @@
 
 ## Phase 3 — Scoped-directive re-pointing (amendment §7.3, FR-030)
 
-- [ ] T011 Write failing tests: directives-repository port test (re-point `routine:<old>` / `step:<old>:<stepId>` tags to new id when step survives; orphans returned for removed steps, tags untouched) + service publish-flow test asserting orphans surface in the publish result (SC-020).
-- [ ] T012 Implement `repointRoutineScopeTags` in the directives-owning repository (`backend/src/db/repositories/agentRepository.ts` or its directives sibling — locate actual owner of `scope_tags`), transactional with publish per plan §Contract decisions.
-- [ ] T013 Wire the port through `RoutineDefinitionService.publish`; include `directiveScopeOrphans` in the publish response; run tests green; evidence in slice notes.
+- [X] T011 Write failing tests: directives-repository port test (re-point `routine:<old>` / `step:<old>:<stepId>` tags to new id when step survives; orphans returned for removed steps, tags untouched) + service publish-flow test asserting orphans surface in the publish result (SC-020).
+- [X] T012 Implement `repointRoutineScopeTags` in the directives-owning repository (`backend/src/db/repositories/agentRepository.ts` or its directives sibling — locate actual owner of `scope_tags`), transactional with publish per plan §Contract decisions.
+- [X] T013 Wire the port through `RoutineDefinitionService.publish`; include `directiveScopeOrphans` in the publish response; run tests green; evidence in slice notes.
 
 ## Phase 4 — HTTP contract + OpenAPI + SDK (amendment §7.4, FR-031/032 contract half)
 

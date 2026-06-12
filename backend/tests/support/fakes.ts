@@ -1091,6 +1091,50 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
     return deleted;
   }
 
+  async repointRoutineScopeTags(input: {
+    agentId: string;
+    fromDefinitionId: string;
+    toDefinitionId: string;
+    survivingStepIds: ReadonlySet<string>;
+  }): Promise<{ repointed: number; orphans: Array<{ directiveId: string; scopeTag: string; reason: "missing_step" }> }> {
+    const routineTag = `routine:${input.fromDefinitionId}`;
+    const stepTagPrefix = `step:${input.fromDefinitionId}:`;
+    let repointed = 0;
+    const orphans: Array<{ directiveId: string; scopeTag: string; reason: "missing_step" }> = [];
+    for (const directive of this.directives.values()) {
+      if (directive.agentId !== input.agentId) {
+        continue;
+      }
+      let changed = false;
+      const tags = directive.tags.map((tag) => {
+        if (tag === routineTag) {
+          changed = true;
+          repointed += 1;
+          return `routine:${input.toDefinitionId}`;
+        }
+        if (!tag.startsWith(stepTagPrefix)) {
+          return tag;
+        }
+        const stepId = tag.slice(stepTagPrefix.length);
+        if (!input.survivingStepIds.has(stepId)) {
+          orphans.push({ directiveId: directive.id, scopeTag: tag, reason: "missing_step" });
+          return tag;
+        }
+        changed = true;
+        repointed += 1;
+        return `step:${input.toDefinitionId}:${stepId}`;
+      });
+      if (changed) {
+        this.directives.set(directive.id, {
+          ...directive,
+          tags,
+          updatedAt: new Date(),
+        });
+      }
+    }
+    return { repointed, orphans };
+  }
+
   async update(agentId: string, workspaceId: string, input: AgentInput): Promise<AgentRecord> {
     const current = await this.findByIdAndWorkspaceId(agentId, workspaceId);
     if (!current) {

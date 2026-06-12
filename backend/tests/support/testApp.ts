@@ -742,6 +742,8 @@ export const createTestDependencies = (overrides: {
       existsByIdAndWorkspace: async (inputWorkspaceId, destinationId) =>
         webhookDestinations.existsByIdAndWorkspace(inputWorkspaceId, destinationId),
     },
+    auditService,
+    directiveScopeTags: agentRepository,
   });
   const chatInferencePipeline: AppDependencies["chatInferencePipeline"] = {
     metadata: { capability: "chat" as const, provider: "openai" as const, model: "test" },

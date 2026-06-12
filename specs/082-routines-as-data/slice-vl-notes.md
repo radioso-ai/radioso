@@ -36,3 +36,21 @@ Implementation notes:
 - ChatService now passes the active session routine id into the routine provider before the engine turn.
 - Composition builds activation candidates from published routines only, then adds pinned registrations to the runner list as resume-only routines. When only resume-only routines exist, the activator is a no-op so new activation cannot see non-published versions.
 - Code-reality deviation from the plan: current `routine_states.routine_id` stores the compiled runtime id (`routine:<agentId>:<name>:v<version>`), not the definition UUID described in the amendment. `loadPinned` therefore resolves pinned runtime ids by compiling all agent definitions across statuses and matching the compiled id, while still supporting direct `findByIdAnyStatus` lookup for UUID-style pins. The spec requirement is preserved: non-published pinned versions resume, but new activation still only uses `published` definitions.
+
+## Phase 3 — Scoped-Directive Re-Pointing
+
+Red evidence:
+
+- `cd backend && pnpm exec vitest run tests/unit/agent-repository.test.ts tests/unit/routine-definition-service.test.ts` initially failed because `AgentRepository.repointRoutineScopeTags` did not exist and publish results still returned an empty orphan list.
+
+Green evidence:
+
+- `cd backend && pnpm exec vitest run tests/unit/agent-repository.test.ts tests/unit/routine-definition-service.test.ts` → 2 files passed, 38 tests passed.
+- `cd backend && pnpm exec vitest run tests/integration/routine-lifecycle.integration.test.ts` → 1 file passed, 1 test passed.
+- `cd backend && pnpm exec tsc -p tsconfig.json --noEmit` → passed.
+
+Implementation notes:
+
+- `AgentRepository` owns `agent_directives.scope_tags` mutation through `repointRoutineScopeTags`. It rewrites exact `routine:<old>` tags and `step:<old>:<stepId>` tags only when the step id survives, leaves removed-step tags untouched, and returns those untouched tags as `missing_step` orphans.
+- `RoutineDefinitionRepository.publish` now accepts an `onPublished` lifecycle callback invoked inside the publish transaction after the previous published row is superseded and before commit.
+- `RoutineDefinitionService.publish` calls the directive scope port from that callback and returns `directiveScopeOrphans` in successful publish results.

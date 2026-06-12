@@ -67,7 +67,11 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
     return routine;
   }
 
-  async publish(inputAgentId: string, id: string): Promise<RoutineDefinition> {
+  async publish(
+    inputAgentId: string,
+    id: string,
+    options?: Parameters<RoutineDefinitionRepositoryPort["publish"]>[2],
+  ): Promise<RoutineDefinition> {
     if (this.publishError) {
       throw this.publishError;
     }
@@ -84,6 +88,16 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
       createdAt: now,
       updatedAt: now,
     };
+    const previousPublished = [...this.items.values()].find((definition) =>
+      definition.agentId === inputAgentId &&
+      definition.lineageId === draft.lineageId &&
+      definition.status === "published"
+    );
+    await options?.onPublished?.({
+      previousPublishedId: previousPublished?.id ?? null,
+      newDefinitionId: routine.id,
+      transaction: { kind: "fake-transaction" },
+    });
     this.items.set(routine.id, routine);
     return routine;
   }
@@ -290,6 +304,7 @@ const createService = (options: {
   actionCapabilities?: ActionCapabilityMap;
   capabilityPolicy?: CapabilityPolicy;
   knownWebhookDestinations?: Set<string>;
+  directiveScopeTags?: ConstructorParameters<typeof RoutineDefinitionService>[0]["directiveScopeTags"];
 } = {}) => {
   const repository = new FakeRoutineDefinitionRepository();
   const auditService = { record: vi.fn().mockResolvedValue(undefined) };
@@ -308,6 +323,7 @@ const createService = (options: {
         return inputWorkspaceId === workspaceId && options.knownWebhookDestinations?.has(destinationId) === true;
       },
     },
+    directiveScopeTags: options.directiveScopeTags,
     ...options,
   });
   return { auditService, repository, service };
@@ -679,6 +695,44 @@ describe("RoutineDefinitionService", () => {
       routine: {
         status: "published",
       },
+    });
+  });
+
+  it("surfaces directive scope orphans from publish-time scope tag re-pointing", async () => {
+    const directiveScopeTags = {
+      repointRoutineScopeTags: vi.fn(async () => ({
+        repointed: 1,
+        orphans: [{
+          directiveId: "directive-1",
+          scopeTag: "step:old-definition:removed",
+          reason: "missing_step" as const,
+        }],
+      })),
+    };
+    const { repository, service } = createService({ directiveScopeTags });
+    const draft = await service.createDraft(workspaceId, agentId, validDraft());
+    const firstPublish = await service.publish(workspaceId, agentId, draft.routine.id);
+    if ("rejected" in firstPublish) {
+      throw new Error("expected first publish success");
+    }
+    const revision = await service.revise(workspaceId, agentId, firstPublish.routine.id);
+    repository.items.set(firstPublish.routine.id, firstPublish.routine);
+
+    const result = await service.publish(workspaceId, agentId, revision.id);
+
+    expect(result).toMatchObject({
+      directiveScopeOrphans: [{
+        directiveId: "directive-1",
+        scopeTag: "step:old-definition:removed",
+        reason: "missing_step",
+      }],
+    });
+    expect(directiveScopeTags.repointRoutineScopeTags).toHaveBeenCalledWith({
+      agentId,
+      fromDefinitionId: firstPublish.routine.id,
+      toDefinitionId: expect.any(String),
+      survivingStepIds: new Set(["step_collect_topic"]),
+      transaction: { kind: "fake-transaction" },
     });
   });
 

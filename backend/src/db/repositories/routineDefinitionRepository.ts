@@ -7,6 +7,7 @@ import {
   routineDefinitionDraftInputSchema,
   type RoutineDefinition,
   type RoutineDefinitionDraftInput,
+  type RoutineDefinitionPublishOptions,
   type RoutineGuardKind,
   type RoutineSlotType,
   type RoutineStepKind,
@@ -281,7 +282,7 @@ export class RoutineDefinitionRepository {
     return loaded;
   }
 
-  async publish(agentId: string, draftId: string): Promise<RoutineDefinition> {
+  async publish(agentId: string, draftId: string, options: RoutineDefinitionPublishOptions = {}): Promise<RoutineDefinition> {
     const draft = await this.findById(agentId, draftId);
     if (!draft) {
       throw new Error(`routine_definition_not_found:${draftId}`);
@@ -320,15 +321,21 @@ export class RoutineDefinitionRepository {
           draft.lineageId,
         ],
       );
-      await client.query(
+      const superseded = await client.query<{ id: string }>(
         `UPDATE routine_definition
          SET status = 'superseded',
              updated_at = NOW()
          WHERE lineage_id = $1
            AND status = 'published'
-           AND id <> $2`,
+           AND id <> $2
+         RETURNING id::text`,
         [draft.lineageId, id],
       );
+      await options.onPublished?.({
+        previousPublishedId: superseded.rows[0]?.id ?? null,
+        newDefinitionId: id,
+        transaction: client,
+      });
       await this.replaceChildren(client, id, draft);
       await client.query(
         `DELETE FROM routine_definition

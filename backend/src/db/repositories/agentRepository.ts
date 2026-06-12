@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { Database } from "../../shared/infra/database.js";
+import type { RoutineDirectiveScopeOrphan } from "../../modules/routines/public.js";
 import { conflict, notFound } from "../../shared/domain/errors.js";
 import {
   mergeAgentSurfaceSettings,
@@ -79,6 +80,28 @@ interface LoadedDirectiveJson {
   metadata?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
+}
+
+interface DirectiveScopeTagRow {
+  id: string;
+  scope_tags: string[];
+}
+
+interface QueryRunner {
+  query(text: string, params?: unknown[]): Promise<unknown[] | { rows: unknown[] }>;
+}
+
+export interface RepointRoutineScopeTagsInput {
+  agentId: string;
+  fromDefinitionId: string;
+  toDefinitionId: string;
+  survivingStepIds: ReadonlySet<string>;
+  transaction?: unknown;
+}
+
+export interface RepointRoutineScopeTagsResult {
+  repointed: number;
+  orphans: RoutineDirectiveScopeOrphan[];
 }
 
 const agentDirectiveNameUniqueConstraint = "agent_directives_agent_id_name_key";
@@ -258,6 +281,21 @@ const mapDirectiveRow = (row: AgentDirectiveRow): AuthoredDirective => ({
   updatedAt: new Date(row.updated_at),
 });
 
+const queryRows = <T>(result: unknown[] | { rows: unknown[] }): T[] =>
+  (Array.isArray(result) ? result : result.rows) as T[];
+
+const queryPort = (database: Database, transaction: unknown): QueryRunner => {
+  if (
+    transaction &&
+    typeof transaction === "object" &&
+    "query" in transaction &&
+    typeof (transaction as { query?: unknown }).query === "function"
+  ) {
+    return transaction as QueryRunner;
+  }
+  return database;
+};
+
 const hasOwn = <K extends PropertyKey>(value: object, key: K): value is object & Record<K, unknown> =>
   Object.prototype.hasOwnProperty.call(value, key);
 
@@ -424,6 +462,7 @@ export interface AgentRepositoryPort {
   createDirective(agentId: string, workspaceId: string, input: AuthoredDirectiveInput): Promise<AuthoredDirective>;
   updateDirective(agentId: string, workspaceId: string, directiveId: string, input: Partial<AuthoredDirectiveInput>): Promise<AuthoredDirective>;
   deleteDirective(agentId: string, workspaceId: string, directiveId: string): Promise<boolean>;
+  repointRoutineScopeTags?(input: RepointRoutineScopeTagsInput): Promise<RepointRoutineScopeTagsResult>;
   setDefault(workspaceId: string, agentId: string): Promise<void>;
   deleteByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<boolean>;
   countByWorkspaceId(workspaceId: string): Promise<number>;
@@ -761,6 +800,68 @@ export class AgentRepository implements AgentRepositoryPort {
       [directiveId, agentId, workspaceId],
     );
     return affected > 0;
+  }
+
+  async repointRoutineScopeTags(input: RepointRoutineScopeTagsInput): Promise<RepointRoutineScopeTagsResult> {
+    const query = queryPort(this.database, input.transaction);
+    const routineTag = `routine:${input.fromDefinitionId}`;
+    const stepTagPrefix = `step:${input.fromDefinitionId}:`;
+    const rows = queryRows<DirectiveScopeTagRow>(await query.query(
+      `SELECT id::text, scope_tags
+       FROM agent_directives
+       WHERE agent_id = $1
+         AND (
+           $2 = ANY(scope_tags)
+           OR EXISTS (
+             SELECT 1
+             FROM unnest(scope_tags) AS scope_tag
+             WHERE scope_tag LIKE $3
+           )
+         )
+       ORDER BY created_at ASC, id ASC`,
+      [input.agentId, routineTag, `${stepTagPrefix}%`],
+    ));
+
+    let repointed = 0;
+    const orphans: RoutineDirectiveScopeOrphan[] = [];
+    for (const row of rows) {
+      let changed = false;
+      const nextTags = row.scope_tags.map((tag) => {
+        if (tag === routineTag) {
+          changed = true;
+          repointed += 1;
+          return `routine:${input.toDefinitionId}`;
+        }
+        if (!tag.startsWith(stepTagPrefix)) {
+          return tag;
+        }
+        const stepId = tag.slice(stepTagPrefix.length);
+        if (!input.survivingStepIds.has(stepId)) {
+          orphans.push({
+            directiveId: row.id,
+            scopeTag: tag,
+            reason: "missing_step",
+          });
+          return tag;
+        }
+        changed = true;
+        repointed += 1;
+        return `step:${input.toDefinitionId}:${stepId}`;
+      });
+      if (!changed) {
+        continue;
+      }
+      await query.query(
+        `UPDATE agent_directives
+         SET scope_tags = $1::text[],
+             updated_at = NOW()
+         WHERE id = $2
+           AND agent_id = $3`,
+        [nextTags, row.id, input.agentId],
+      );
+    }
+
+    return { repointed, orphans };
   }
 
   async setDefault(workspaceId: string, agentId: string): Promise<void> {

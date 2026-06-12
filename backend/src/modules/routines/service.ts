@@ -22,7 +22,7 @@ export interface RoutineDefinitionRepositoryPort {
   findById(agentId: string, id: string): Promise<RoutineDefinition | null>;
   createDraft(agentId: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition>;
   updateDraft(agentId: string, id: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition>;
-  publish(agentId: string, id: string): Promise<RoutineDefinition>;
+  publish(agentId: string, id: string, options?: RoutineDefinitionPublishOptions): Promise<RoutineDefinition>;
   createRevisionDraft(agentId: string, publishedId: string): Promise<RoutineDefinition | null>;
   archive(agentId: string, id: string): Promise<boolean>;
   restore(agentId: string, id: string): Promise<boolean>;
@@ -39,6 +39,16 @@ export interface RoutineDirectiveScopeOrphan {
   directiveId: string;
   scopeTag: string;
   reason: "missing_step";
+}
+
+export interface RoutineDefinitionPublishLifecycleInput {
+  previousPublishedId: string | null;
+  newDefinitionId: string;
+  transaction: unknown;
+}
+
+export interface RoutineDefinitionPublishOptions {
+  onPublished?: (input: RoutineDefinitionPublishLifecycleInput) => Promise<void>;
 }
 
 export interface RoutineDefinitionPublishRejection {
@@ -63,6 +73,15 @@ export interface RoutineDefinitionServiceOptions {
     existsByIdAndWorkspace(workspaceId: string, destinationId: string): Promise<boolean>;
   };
   auditService?: Pick<AuditPort, "record">;
+  directiveScopeTags?: {
+    repointRoutineScopeTags(input: {
+      agentId: string;
+      fromDefinitionId: string;
+      toDefinitionId: string;
+      survivingStepIds: ReadonlySet<string>;
+      transaction?: unknown;
+    }): Promise<{ repointed: number; orphans: RoutineDirectiveScopeOrphan[] }>;
+  };
 }
 
 const draftDefinitionFromInput = (agentId: string, input: RoutineDefinitionDraftInput): RoutineDefinition => ({
@@ -189,8 +208,24 @@ export class RoutineDefinitionService {
     }
     compileRoutineDefinition(routine);
     let published: RoutineDefinition;
+    let directiveScopeOrphans: RoutineDirectiveScopeOrphan[] = [];
+    const survivingStepIds = new Set(routine.steps.map((step) => step.stableStepId));
     try {
-      published = await this.options.repository.publish(agentId, id);
+      published = await this.options.repository.publish(agentId, id, {
+        onPublished: async ({ previousPublishedId, newDefinitionId, transaction }) => {
+          if (!previousPublishedId || !this.options.directiveScopeTags) {
+            return;
+          }
+          const repointResult = await this.options.directiveScopeTags.repointRoutineScopeTags({
+            agentId,
+            fromDefinitionId: previousPublishedId,
+            toDefinitionId: newDefinitionId,
+            survivingStepIds,
+            transaction,
+          });
+          directiveScopeOrphans = repointResult.orphans;
+        },
+      });
     } catch (error) {
       if (isRoutineCompletionExportDestinationConstraintError(error) && routine.completionExport?.enabled) {
         return {
@@ -210,7 +245,7 @@ export class RoutineDefinitionService {
     return {
       routine: published,
       validation: validateRoutineDefinition(published),
-      directiveScopeOrphans: [],
+      directiveScopeOrphans,
     };
   }
 

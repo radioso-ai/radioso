@@ -27,7 +27,10 @@ export {
 } from "./validator.js";
 export {
   RoutineDefinitionService,
+  type RoutineDirectiveScopeOrphan,
   type RoutineDefinitionRepositoryPort,
+  type RoutineDefinitionPublishLifecycleInput,
+  type RoutineDefinitionPublishOptions,
   type RoutineDefinitionPublishRejection,
   type RoutineDefinitionPublishResult,
   type RoutineDefinitionSaveResult,

@@ -71,8 +71,30 @@ test("agent channels menu exposes the WhatsApp connector", async ({ page }) => {
             type: "text",
             required: true,
           },
+          {
+            key: "access_token",
+            label: "Access Token",
+            type: "secret",
+            required: true,
+          },
+          {
+            key: "app_secret",
+            label: "App Secret",
+            type: "secret",
+            required: true,
+          },
+          {
+            key: "webhook_verify_token",
+            label: "Webhook Verify Token",
+            type: "generated_secret",
+            required: true,
+          },
         ],
-        config: {},
+        config: {
+          access_token: "****oken",
+          app_secret: "****cret",
+          webhook_verify_token: "verify-token-1234",
+        },
         webhookUrl: "https://radioso.test/api/connectors/whatsapp/workspace-1/webhook",
         syncState: {
           backfillCompletedAt: null,
@@ -95,6 +117,8 @@ test("agent channels menu exposes the WhatsApp connector", async ({ page }) => {
   const dialog = page.getByRole("dialog", { name: /WhatsApp/ });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByLabel("Copy webhook URL")).toBeVisible();
+  await expect(dialog.getByLabel("Copy webhook verify token")).toBeVisible();
+  await expect(dialog.getByText("verify-token-1234")).toBeVisible();
   await expect(dialog.getByText("Phone number ID")).toBeVisible();
 });
 

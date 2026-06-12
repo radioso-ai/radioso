@@ -1,3 +1,4 @@
+import { isDirectiveEligibleForTurn } from "@radioso/conversation-engine";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
@@ -120,8 +121,9 @@ describe("routine lifecycle integration", () => {
       .send({ message: "start lifecycle intake", stream: false })
       .expect(200);
     expect(firstV2.body.answer).toBe("reply:v2");
-    expect(activationPrompts.at(-1)).toContain(`:v${publishV2.routine.version}`);
-    expect(activationPrompts.at(-1)).not.toContain(`:v${publishV1.routine.version}`);
+    // The compiled routine id is the definition id (scope-tag identity).
+    expect(activationPrompts.at(-1)).toContain(publishV2.routine.id);
+    expect(activationPrompts.at(-1)).not.toContain(publishV1.routine.id);
 
     await dependencies.routineDefinitionService.archive(workspaceId, agent.id, publishV2.routine.id);
     const activationPromptCountAfterArchive = activationPrompts.length;
@@ -142,4 +144,60 @@ describe("routine lifecycle integration", () => {
     expect(afterArchive.body.answer).not.toBe("reply:v1");
     expect(activationPrompts).toHaveLength(activationPromptCountAfterArchive);
   });
+
+  it("pins definition ids so repointed directive scope tags match the active routine at runtime (SC-020)", async () => {
+    const routineGateway: ChatGateway = {
+      async answer(input) {
+        if (input.systemPrompt?.includes("wants to start any registered routine")) {
+          const routineId = input.systemPrompt.match(/id: (\S+)/)?.[1];
+          return JSON.stringify({
+            matches: routineId ? [{ routineId, confidence: 0.95, variables: {} }] : [],
+          });
+        }
+        return "routine reply";
+      },
+      async *streamAnswer() {
+        yield "normal answer";
+      },
+    };
+    const { app, dependencies, routineStateStore } = createTestApp({ chatGateway: routineGateway });
+    const { token, workspaceId } = await issueTestToken(app, "routine-scope-tags@example.com");
+    const agent = await dependencies.agentService.resolve(workspaceId);
+
+    const draft = await dependencies.routineDefinitionService.createDraft(workspaceId, agent.id, lifecycleRoutineDraft("v1"));
+    const published = await dependencies.routineDefinitionService.publish(workspaceId, agent.id, draft.routine.id);
+    if ("rejected" in published) {
+      throw new Error("expected publish success");
+    }
+
+    const turn = await request(app)
+      .post("/api/v1/assistant/chat")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ message: "start lifecycle intake", stream: false })
+      .expect(200);
+
+    // The whole identity chain: the runtime pin is the definition id…
+    const state = await routineStateStore.loadActive({ sessionId: turn.body.conversationId });
+    expect(state?.routineId).toBe(published.routine.id);
+
+    // …so a scope tag in the exact format the publish-time re-point writes
+    // (`step:<definitionId>:<stepId>`) is eligible for the active routine turn.
+    const scopedDirective = {
+      name: "scoped",
+      condition: { kind: "contextual" as const, description: "always" },
+      action: "Do the scoped thing.",
+      tags: [`step:${published.routine.id}:step_collect_topic`, `routine:${published.routine.id}`],
+    };
+    // Eligibility only reads the scope fields; the rest of TurnContext is irrelevant here.
+    const turnContext = {
+      activeRoutineId: state?.routineId,
+      activeStepId: "step_collect_topic",
+    } as unknown as Parameters<typeof isDirectiveEligibleForTurn>[1];
+    expect(isDirectiveEligibleForTurn(scopedDirective, turnContext)).toBe(true);
+    expect(isDirectiveEligibleForTurn(
+      { ...scopedDirective, tags: [`routine:${draft.routine.id}-other`] },
+      turnContext,
+    )).toBe(false);
+  });
+
 });

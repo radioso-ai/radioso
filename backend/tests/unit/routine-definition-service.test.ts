@@ -862,4 +862,20 @@ describe("RoutineDefinitionService", () => {
         message: expect.stringContaining(missingDestinationId),
       });
   });
+
+  it("maps a draft save that raced a publish to an author-facing conflict", async () => {
+    const { repository, service } = createService();
+    const draft = await service.createDraft(workspaceId, agentId, validDraft());
+    // Simulate publish committing between the service's status pre-check and the
+    // repository write: the repository's zero-row guard throws the marker error.
+    repository.updateDraft = async (_agentId: string, id: string) => {
+      throw new Error(`routine_definition_update_conflict:${id}`);
+    };
+
+    await expect(service.updateDraft(workspaceId, agentId, draft.routine.id, validDraft()))
+      .rejects.toMatchObject({
+        statusCode: 409,
+        message: expect.stringContaining("published concurrently"),
+      });
+  });
 });

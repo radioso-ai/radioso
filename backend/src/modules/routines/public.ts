@@ -18,7 +18,7 @@ export {
   type RoutineStepKind,
   type RoutineTerminalKind,
 } from "./domain.js";
-export { compileRoutineDefinition } from "./compiler.js";
+export { compileRoutineDefinition, legacyCompiledRoutineId } from "./compiler.js";
 export {
   routineValidationCodes,
   validateRoutineDefinition,

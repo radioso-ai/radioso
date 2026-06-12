@@ -1215,6 +1215,11 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
     return item && item.agentId === agentId ? item : null;
   }
 
+  async findPinnedById(agentId: string, id: string): Promise<RoutineDefinition | null> {
+    const item = await this.findById(agentId, id);
+    return item && item.status !== "draft" ? item : null;
+  }
+
   async createDraft(agentId: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition> {
     const draft = routineDefinitionDraftInputSchema.parse(input);
     const now = new Date();
@@ -1234,7 +1239,11 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
 
   async updateDraft(agentId: string, id: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition> {
     const existing = await this.findById(agentId, id);
-    if (!existing || existing.status !== "draft") {
+    if (existing && existing.status !== "draft") {
+      // Mirrors the SQL repository's zero-row guard for a save racing publish.
+      throw new Error(`routine_definition_update_conflict:${id}`);
+    }
+    if (!existing) {
       throw new Error(`Routine definition ${id} not found`);
     }
     const draft = routineDefinitionDraftInputSchema.parse(input);

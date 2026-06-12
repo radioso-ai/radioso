@@ -303,7 +303,7 @@ export const createTestDependencies = (overrides: {
   workbenchReplayRunner?: Pick<WorkbenchReplayRunner, "run">;
   chatInferencePipelineComplete?: AppDependencies["chatInferencePipeline"]["complete"];
   logger?: AppDependencies["logger"];
-} = {}): { dependencies: AppDependencies; repositories: TestRepositories } => {
+} = {}): { dependencies: AppDependencies; repositories: TestRepositories; routineStateStore: InMemoryRoutineStateStore } => {
   const env = {
     ...createTestEnv(),
     ...overrides.envOverrides,
@@ -882,6 +882,7 @@ export const createTestDependencies = (overrides: {
       };
     },
   };
+  const routineStateStore = new InMemoryRoutineStateStore();
   const chatService = new ChatService({
     conversationRepository,
     messageRepository,
@@ -899,7 +900,7 @@ export const createTestDependencies = (overrides: {
     agentService,
     turnRouter,
     conversationEngine: createConversationEngine(),
-    routineStore: new InMemoryRoutineStateStore(),
+    routineStore: routineStateStore,
     routineProvider,
   });
   const chatBootstrapService = new ChatBootstrapService(
@@ -1100,6 +1101,7 @@ export const createTestDependencies = (overrides: {
 
   return {
     dependencies,
+    routineStateStore,
     repositories: {
       auditEventRepository,
       accessGrantRepository,
@@ -1137,7 +1139,7 @@ export const createTestApp = (overrides: {
   chatInferencePipelineComplete?: AppDependencies["chatInferencePipeline"]["complete"];
   logger?: AppDependencies["logger"];
 } = {}) => {
-  const { dependencies, repositories } = createTestDependencies(overrides);
+  const { dependencies, repositories, routineStateStore } = createTestDependencies(overrides);
   const app = createApp(dependencies);
   appDependencyMap.set(app, dependencies);
   appRepositoryMap.set(app, repositories);
@@ -1145,6 +1147,7 @@ export const createTestApp = (overrides: {
     app,
     dependencies,
     repositories,
+    routineStateStore,
   };
 };
 

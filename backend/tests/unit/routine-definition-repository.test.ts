@@ -137,6 +137,7 @@ describe("RoutineDefinitionRepository", () => {
   it("updates a draft and replaces child rows in routine tables only", async () => {
     const db = mockDatabase();
     db.queryOptional.mockResolvedValue(loadedRow());
+    db.mockClient.query.mockResolvedValueOnce({ rows: [{ id: "def_1" }] });
 
     await new RoutineDefinitionRepository(db).updateDraft("agent_1", "def_1", draftInput());
 
@@ -150,6 +151,18 @@ describe("RoutineDefinitionRepository", () => {
     expect(sql).toContain("DELETE FROM routine_completion_export");
     expect(sql).not.toContain("agent_directives");
     expect(sql).not.toContain("routine_states");
+  });
+
+  it("aborts a draft update that matched no draft row before touching children", async () => {
+    const db = mockDatabase();
+    db.queryOptional.mockResolvedValue(loadedRow());
+    // Default mock returns zero rows: the draft row was already flipped to
+    // published by a racing publish.
+    await expect(new RoutineDefinitionRepository(db).updateDraft("agent_1", "def_1", draftInput()))
+      .rejects.toThrow("routine_definition_update_conflict:def_1");
+
+    const sql = db.mockClient.query.mock.calls.map((call) => call[0]).join("\n");
+    expect(sql).not.toContain("DELETE FROM routine_step");
   });
 
   it("publishes by superseding the prior published row and updating the draft in place", async () => {

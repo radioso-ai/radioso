@@ -1,6 +1,6 @@
 import type { RoutineRegistration } from "../../modules/chat/composition.js";
 import type { RoutineDefinitionRepository } from "../../db/repositories/routineDefinitionRepository.js";
-import { compileRoutineDefinition, type RoutineDefinition } from "../../modules/routines/public.js";
+import { compileRoutineDefinition, legacyCompiledRoutineId, type RoutineDefinition } from "../../modules/routines/public.js";
 
 export interface PublishedRoutineRegistrationSource {
   load(input: { agentId: string }): Promise<RoutineRegistration[]>;
@@ -11,6 +11,8 @@ export interface PublishedRoutineRegistrationSourceOptions {
   onDefinitionError?: (input: { agentId: string; definitionId: string; error: unknown }) => void;
   onPinnedDefinitionError?: (input: { agentId: string; routineId: string; definitionId?: string; error: unknown }) => void;
 }
+
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
 const registrationFromDefinition = (definition: RoutineDefinition): RoutineRegistration => {
   const routine = compileRoutineDefinition(definition);
@@ -47,7 +49,7 @@ const shouldReplacePinnedCandidate = (current: RoutineDefinition, candidate: Rou
 };
 
 export const createPublishedRoutineRegistrationSource = (
-  repository: Pick<RoutineDefinitionRepository, "listPublishedByAgent" | "listByAgent">,
+  repository: Pick<RoutineDefinitionRepository, "listPublishedByAgent" | "listByAgent" | "findPinnedById">,
   options: PublishedRoutineRegistrationSourceOptions = {},
 ): PublishedRoutineRegistrationSource => ({
   async load({ agentId }) {
@@ -68,41 +70,65 @@ export const createPublishedRoutineRegistrationSource = (
       return [];
     }
 
-    const allDefinitions = await repository.listByAgent(agentId);
-    const byCompiledId = new Map<string, RoutineDefinition>();
-    for (const definition of allDefinitions) {
-      if (definition.status === "draft") {
-        continue;
-      }
-      try {
-        const compiledId = compileRoutineDefinition(definition).id;
-        const current = byCompiledId.get(compiledId);
-        if (!current || shouldReplacePinnedCandidate(current, definition)) {
-          byCompiledId.set(compiledId, definition);
-        }
-      } catch (error) {
-        options.onPinnedDefinitionError?.({ agentId, routineId: "", definitionId: definition.id, error });
-      }
-    }
-
     const registrations: RoutineRegistration[] = [];
-    for (const routineId of uniqueRoutineIds) {
-      const definition = byCompiledId.get(routineId) ?? null;
-      if (!definition) {
-        options.onPinnedDefinitionError?.({
-          agentId,
-          routineId,
-          error: new Error(`pinned_routine_definition_not_found:${routineId}`),
-        });
-        continue;
+    // Legacy pre-unification pins (`routine:<agent>:<name>:v<n>`) need the full
+    // non-draft scan below; resolve them lazily and only once per turn.
+    let legacyById: Map<string, RoutineDefinition> | null = null;
+    const resolveLegacy = async (): Promise<Map<string, RoutineDefinition>> => {
+      if (legacyById) {
+        return legacyById;
       }
-      try {
-        const registration = registrationFromDefinition(definition);
-        if (registration.routine.id === routineId) {
-          registrations.push(registration);
+      legacyById = new Map<string, RoutineDefinition>();
+      const allDefinitions = await repository.listByAgent(agentId);
+      for (const definition of allDefinitions) {
+        if (definition.status === "draft") {
+          continue;
         }
+        const legacyId = legacyCompiledRoutineId(definition);
+        const current = legacyById.get(legacyId);
+        if (!current || shouldReplacePinnedCandidate(current, definition)) {
+          legacyById.set(legacyId, definition);
+        }
+      }
+      return legacyById;
+    };
+
+    for (const routineId of uniqueRoutineIds) {
+      try {
+        if (uuidPattern.test(routineId)) {
+          // Pins written after the identity unification: routine_states stores the
+          // definition id, which is also the compiled routine id.
+          const definition = await repository.findPinnedById(agentId, routineId);
+          if (!definition) {
+            options.onPinnedDefinitionError?.({
+              agentId,
+              routineId,
+              error: new Error(`pinned_routine_definition_not_found:${routineId}`),
+            });
+            continue;
+          }
+          registrations.push(registrationFromDefinition(definition));
+          continue;
+        }
+
+        // Legacy pin: compile the definition but expose it under the pinned id so
+        // the runner's `routine.id === state.routineId` resume lookup still works.
+        const definition = (await resolveLegacy()).get(routineId) ?? null;
+        if (!definition) {
+          options.onPinnedDefinitionError?.({
+            agentId,
+            routineId,
+            error: new Error(`pinned_routine_definition_not_found:${routineId}`),
+          });
+          continue;
+        }
+        const registration = registrationFromDefinition(definition);
+        registrations.push({
+          ...registration,
+          routine: { ...registration.routine, id: routineId },
+        });
       } catch (error) {
-        options.onPinnedDefinitionError?.({ agentId, routineId, definitionId: definition.id, error });
+        options.onPinnedDefinitionError?.({ agentId, routineId, error });
       }
     }
     return registrations;

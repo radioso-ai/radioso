@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { badRequest, notFound } from "../../shared/domain/errors.js";
+import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 import { DefaultAllowCapabilityPolicy, type CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../shared/domain/actionCapabilities.js";
 import type { AuditEventInput, AuditPort } from "../audit/contracts/index.js";
@@ -178,7 +178,15 @@ export class RoutineDefinitionService {
       throw badRequest("Only draft routine definitions can be updated");
     }
     const draft = this.validateInput(input);
-    const saved = await this.options.repository.updateDraft(agentId, id, draft);
+    let saved: RoutineDefinition;
+    try {
+      saved = await this.options.repository.updateDraft(agentId, id, draft);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("routine_definition_update_conflict:")) {
+        throw conflict("Routine was published concurrently — revise it to continue editing");
+      }
+      throw error;
+    }
     return {
       routine: saved,
       validation: validateRoutineDefinition(saved),

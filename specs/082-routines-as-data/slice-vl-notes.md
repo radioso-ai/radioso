@@ -173,3 +173,25 @@ Implementation notes:
 - `pnpm run ci:local -- origin/main` → **passed** ("Local CI checks passed", exit 0) on final HEAD `3967cd3ce` (2026-06-12).
 - Earlier full-gate run at `f5b9ca676` also passed after resolving two pre-existing shared-dev-DB issues unrelated to this diff: a leftover "Threshold Guard Workspace" test fixture tripping migration 080's re-run guard (deleted from the dev DB), and migration 085's transitional guard-kind CHECK not being re-runnable after 089's cut (fixed in `f5b9ca676`).
 - EM pass verdict: ship. Fast-follows filed in the PR body: dashboard surfacing of `directiveScopeOrphans`; persist definition UUID in `routine_states` for new pins to retire the compile-all `loadPinned` path.
+
+## PR review fixes (scope-tag identity + updateDraft race)
+
+Two HIGH findings from PR #684 review.
+
+**Finding 1 — scope-tag identity.** Verified worse than reported: directive scope tags were broken for DB-authored routines in BOTH formats — definition-UUID tags (what the re-point writes) never matched the compiled `routine:<agentId>:<name>:v<version>` activeRoutineId, and compiled-id tags break the engine's `step:<rid>:<sid>` parser outright (the compiled id's colons trip the extra-segment check). Fix: **the compiled routine id IS the definition id** (`compiler.ts`), unifying trace activeRoutineId = Coach tag id = re-point target = routine_states pin, with zero engine changes.
+
+- `routineDefinitionSource.loadPinned`: UUID pins resolve via new `findPinnedById` (status <> 'draft', direct lookup — retires the compile-all path for new pins); legacy `routine:<agent>:<name>:v<n>` pins keep a lazily-built fallback map and are re-exposed under the pinned id so the runner's `routine.id === state.routineId` resume holds. Fallback removable once legacy routine_states age out (TTL).
+- Migration `091_routine_scope_tag_definition_ids.sql`: best-effort rewrite of legacy compiled-id scope tags to definition ids (anchored both-ends parse; names containing colons covered by test; unresolvable tags untouched; re-runnable).
+- Static code-registered routines unaffected (hand-assigned ids never used the compiled formula).
+
+**Finding 2 — updateDraft race.** `updateDraft` ran `replaceChildren` unconditionally after a status-guarded UPDATE with no row-count check; a save racing the in-place publish could rewrite a published version's children. Fix: `RETURNING id` + zero-row abort (`routine_definition_update_conflict`) before any child mutation; service maps it to HTTP 409 ("published concurrently — revise to continue editing").
+
+Red/green evidence (red = each new test failed against the pre-fix code by construction; composition/domain tests asserted the OLD id format and were updated):
+
+- `routine-definition-composition.test.ts` → 6/6: compiled id = definition id; UUID pin direct path (no listByAgent scan); legacy pin fallback excl. drafts; legacy collision rank.
+- `routine-lifecycle.integration.test.ts` → 2/2 incl. new SC-020 runtime-identity test: pinned `routine_states.routine_id` equals the published definition id and a re-point-format tag (`step:<defId>:<stepId>`) is `isDirectiveEligibleForTurn`-eligible for that turn context.
+- `routine-definition-repository-postgres.integration.test.ts` → 6/6 (real Postgres): updateDraft race rejected with children unchanged; migration 091 rewrites legacy tags (incl. colon-containing routine name) and leaves unresolvable tags, re-runnable.
+- `routine-definition-repository.test.ts` → 10/10 incl. zero-row abort-before-children; `routine-definition-service.test.ts` → 24/24 incl. 409 mapping.
+- Full suites: `pnpm run test:unit` 1791 passed; integration/contract/build re-run in the same round (see PR).
+
+Note: the local Postgres container was found stopped during this round (real-DB suites silently skip without `INTEGRATION_DATABASE_URL` + a reachable DB — they report green via skip; restarted `radioso-postgres-1` and re-ran with the env var set).

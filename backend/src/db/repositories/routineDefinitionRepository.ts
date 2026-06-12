@@ -233,6 +233,17 @@ export class RoutineDefinitionRepository {
     return row ? mapRow(row) : null;
   }
 
+  // Resume-only lookup for routine_states pins: a pinned id can reference any
+  // lifecycle status except draft (drafts never run).
+  async findPinnedById(agentId: string, id: string): Promise<RoutineDefinition | null> {
+    const row = await this.database.queryOptional<RoutineDefinitionRow>(
+      `${definitionSelect}
+       WHERE d.agent_id = $1 AND d.id = $2 AND d.status <> 'draft'`,
+      [agentId, id],
+    );
+    return row ? mapRow(row) : null;
+  }
+
   async createDraft(agentId: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition> {
     const draft = routineDefinitionDraftInputSchema.parse(input);
     const id = randomUUID();
@@ -266,16 +277,23 @@ export class RoutineDefinitionRepository {
   async updateDraft(agentId: string, id: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition> {
     const draft = routineDefinitionDraftInputSchema.parse(input);
     await this.database.withTransaction(async (client) => {
-      await client.query(
+      const updated = await client.query<{ id: string }>(
         `UPDATE routine_definition
          SET name = $3,
              activation_trigger_description = $4,
              activation_gate_ref = $5,
              activation_priority = $6,
              updated_at = NOW()
-         WHERE agent_id = $1 AND id = $2 AND status = 'draft'`,
+         WHERE agent_id = $1 AND id = $2 AND status = 'draft'
+         RETURNING id::text`,
         [agentId, id, draft.name, draft.activation.triggerDescription, draft.activation.gateRef, draft.activation.priority],
       );
+      // A save racing publish (which flips the draft row to published in place)
+      // matches zero rows here; replacing children then would silently mutate
+      // the published version. Abort before touching children.
+      if (updated.rows.length === 0) {
+        throw new Error(`routine_definition_update_conflict:${id}`);
+      }
       await this.replaceChildren(client, id, draft);
     });
     const loaded = await this.findById(agentId, id);

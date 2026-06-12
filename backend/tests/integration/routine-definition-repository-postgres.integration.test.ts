@@ -476,4 +476,96 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
 
     await database.execute(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
   });
+
+  it("rejects a draft save that races publish without mutating the published children", async () => {
+    const repository = new RoutineDefinitionRepository(database);
+    const draft = await repository.createDraft(agentId, draftInput("postgres-update-race", "v1"));
+    const published = await repository.publish(agentId, draft.id);
+
+    // The service pre-check has already passed by the time publish commits;
+    // the repository row-count guard is the last line of defense.
+    await expect(repository.updateDraft(agentId, published.id, draftInput("postgres-update-race", "raced")))
+      .rejects.toThrow(`routine_definition_update_conflict:${published.id}`);
+
+    const steps = await database.query<{ instruction: string }>(
+      `SELECT instruction FROM routine_step WHERE definition_id = $1`,
+      [published.id],
+    );
+    expect(steps).toHaveLength(1);
+    expect(steps[0]!.instruction).toContain("v1");
+    expect(steps[0]!.instruction).not.toContain("raced");
+  });
+
+  it("rewrites legacy compiled-id scope tags to definition ids in migration 091", async () => {
+    const schema = `routine_tags_${randomUUID().replaceAll("-", "_")}`;
+    const migration091 = await readFile(path.join(testMigrationsPath, "091_routine_scope_tag_definition_ids.sql"), "utf8");
+    const agentIdForMigration = randomUUID();
+    const definitionId = randomUUID();
+    const directiveId = randomUUID();
+    const untouchedDirectiveId = randomUUID();
+
+    await database.withTransaction(async (client) => {
+      await client.query(`CREATE SCHEMA ${schema}`);
+      await client.query(`SET LOCAL search_path TO ${schema}`);
+      await client.query(`
+        CREATE TABLE routine_definition (
+          id UUID PRIMARY KEY,
+          agent_id UUID NOT NULL,
+          version INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          UNIQUE(agent_id, name, version)
+        )
+      `);
+      await client.query(`
+        CREATE TABLE agent_directives (
+          id UUID PRIMARY KEY,
+          agent_id UUID NOT NULL,
+          scope_tags TEXT[] NOT NULL DEFAULT '{}'::text[],
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await client.query(
+        `INSERT INTO routine_definition (id, agent_id, version, name)
+         VALUES ($1, $2, 1, 'intake: priority')`,
+        [definitionId, agentIdForMigration],
+      );
+      await client.query(
+        `INSERT INTO agent_directives (id, agent_id, scope_tags)
+         VALUES
+           ($1, $3::uuid, ARRAY[
+             'routine:routine:' || $3::text || ':intake: priority:v1',
+             'step:routine:' || $3::text || ':intake: priority:v1:ask_topic',
+             'tone:friendly'
+           ]),
+           ($2, $3::uuid, ARRAY['routine:routine:' || $3::text || ':missing-routine:v9'])`,
+        [directiveId, untouchedDirectiveId, agentIdForMigration],
+      );
+
+      await client.query(migration091);
+
+      const rewritten = await client.query<{ scope_tags: string[] }>(
+        `SELECT scope_tags FROM agent_directives WHERE id = $1`,
+        [directiveId],
+      );
+      expect(rewritten.rows[0]!.scope_tags).toEqual([
+        `routine:${definitionId}`,
+        `step:${definitionId}:ask_topic`,
+        "tone:friendly",
+      ]);
+
+      const untouched = await client.query<{ scope_tags: string[] }>(
+        `SELECT scope_tags FROM agent_directives WHERE id = $1`,
+        [untouchedDirectiveId],
+      );
+      expect(untouched.rows[0]!.scope_tags).toEqual([
+        `routine:routine:${agentIdForMigration}:missing-routine:v9`,
+      ]);
+
+      // Re-runnable: a second pass finds no legacy-format tags to rewrite.
+      await client.query(migration091);
+    });
+
+    await database.execute(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+  });
 });

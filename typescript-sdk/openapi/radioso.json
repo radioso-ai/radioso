@@ -5024,6 +5024,32 @@
                   "additionalProperties": false
                 },
                 "minItems": 1
+              },
+              "completionExport": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "triggerKinds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "complete",
+                        "handoff"
+                      ]
+                    },
+                    "default": []
+                  },
+                  "destinationRef": {
+                    "type": "string",
+                    "maxLength": 300,
+                    "default": ""
+                  }
+                },
+                "additionalProperties": false
               }
             },
             "required": [

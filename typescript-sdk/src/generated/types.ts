@@ -2797,6 +2797,14 @@ export interface components {
                     instruction?: string | null;
                     ordinal: number;
                 }[];
+                completionExport?: {
+                    /** @default false */
+                    enabled: boolean;
+                    /** @default [] */
+                    triggerKinds: ("complete" | "handoff")[];
+                    /** @default  */
+                    destinationRef: string;
+                };
             };
             validation: components["schemas"]["RoutineValidationResult"];
         };

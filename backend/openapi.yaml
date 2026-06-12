@@ -3304,7 +3304,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                   type:
                     type: string
-                    enum: *a13
+                    enum: *a14
                   required:
                     type: boolean
                   description:
@@ -3323,7 +3323,7 @@ components:
                   - required
                   - ordinal
                 additionalProperties: false
-              default: *a14
+              default: *a15
             steps:
               type: array
               items:
@@ -3336,7 +3336,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
                   kind:
                     type: string
-                    enum: *a15
+                    enum: *a16
                   instruction:
                     type: string
                     minLength: 1
@@ -3359,7 +3359,7 @@ components:
                   metadata:
                     type: object
                     additionalProperties: {}
-                    default: *a16
+                    default: *a17
                 required:
                   - stableStepId
                   - kind
@@ -3384,7 +3384,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
                   guardKind:
                     type: string
-                    enum: *a17
+                    enum: *a18
                   guardText:
                     type:
                       - string
@@ -3411,7 +3411,7 @@ components:
                   - guardKind
                   - ordinal
                 additionalProperties: false
-              default: *a18
+              default: *a19
             terminals:
               type: array
               items:
@@ -3424,7 +3424,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
                   kind:
                     type: string
-                    enum: *a19
+                    enum: *a13
                   instruction:
                     type:
                       - string
@@ -3440,6 +3440,23 @@ components:
                   - ordinal
                 additionalProperties: false
               minItems: 1
+            completionExport:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                  default: false
+                triggerKinds:
+                  type: array
+                  items:
+                    type: string
+                    enum: *a13
+                  default: *a20
+                destinationRef:
+                  type: string
+                  maxLength: 300
+                  default: ""
+              additionalProperties: false
           required:
             - name
             - activation

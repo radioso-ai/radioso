@@ -527,9 +527,17 @@ export function ConnectorSetupDialog({
   }, [detail])
 
   const isWordpress = detail?.id === 'wordpress'
+  const generatedSecretFields = useMemo(
+    () => detail?.schema.filter((field) => field.type === 'generated_secret') ?? [],
+    [detail],
+  )
+  const editableFields = useMemo(
+    () => detail?.schema.filter((field) => field.type !== 'generated_secret') ?? [],
+    [detail],
+  )
   const groups: FieldGroup | null = useMemo(
-    () => (isWordpress && detail ? groupWordpressFields(detail.schema) : null),
-    [detail, isWordpress],
+    () => (isWordpress && editableFields.length > 0 ? groupWordpressFields(editableFields) : null),
+    [editableFields, isWordpress],
   )
 
   return (
@@ -563,6 +571,9 @@ export function ConnectorSetupDialog({
                 value={detail.webhookUrl}
                 ariaLabel="Copy webhook URL"
               />
+              {generatedSecretFields.length > 0 ? (
+                <div className="space-y-4">{generatedSecretFields.map(renderField)}</div>
+              ) : null}
               {groups ? (
                 <>
                   <div className="space-y-4">{groups.primary.map(renderField)}</div>
@@ -615,7 +626,7 @@ export function ConnectorSetupDialog({
                   ) : null}
                 </>
               ) : (
-                <div className="space-y-4">{detail.schema.map(renderField)}</div>
+                <div className="space-y-4">{editableFields.map(renderField)}</div>
               )}
               {formError ? (
                 <p className="text-sm text-destructive" role="alert">

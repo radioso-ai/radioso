@@ -8,7 +8,7 @@ import {
   type ApplicationModule,
 } from "../composition/index.js";
 import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../modules/agents/public.js";
-import { RoutineDefinitionService } from "../../modules/routines/public.js";
+import { RoutineDefinitionService, RoutineDraftAssistService } from "../../modules/routines/public.js";
 import { createDirectiveCoherenceChecker, scopeTag } from "@radioso/conversation-defaults";
 import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloudCdnEmbedConfigCacheInvalidator.js";
 import { PlatformSettingsService } from "../../modules/settings/composition.js";
@@ -309,6 +309,19 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
         webhookDestinations.existsByIdAndWorkspace(inputWorkspaceId, destinationId),
     },
   });
+  const routineDraftAssistService = new RoutineDraftAssistService({
+    repository: repositories.agentRepository,
+    textGenerationClient: {
+      complete: async ({ signal: _signal, ...input }) =>
+        (await chatInferencePipeline.complete(input)).text,
+    },
+    actionCatalog: composition.actionHandlerRegistrations.map((registration) => ({
+      type: registration.type,
+      kind: "action",
+    })),
+    logger,
+    telemetryService: infrastructure.telemetryService,
+  });
   const directiveAuthorService = new DirectiveAuthorService({
     repository: repositories.agentRepository,
     textGenerationClient: {
@@ -408,6 +421,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentService,
     authoredDirectiveService,
     routineDefinitionService,
+    routineDraftAssistService,
     directiveAuthorService,
     agentSurfaceExtensions,
     skillCatalogService,

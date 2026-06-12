@@ -434,6 +434,7 @@ export function AgentView({
           mode={meta.mode}
           agentId={selectedAgentId}
           agentSection={section}
+          routeState={routeState}
           channelsTabHref={channelsTabHref}
           onSaveStateChange={setSaveState}
         />

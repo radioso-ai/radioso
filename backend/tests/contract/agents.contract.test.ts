@@ -47,8 +47,10 @@ const validRoutineDraft = (overrides: Partial<RoutineDefinitionDraftInput> = {})
   transitions: [{
     fromStep: "step_collect_topic",
     toRef: "terminal_complete",
-    guardKind: "always",
+    guardKind: "default",
     guardText: null,
+    outcomeStatus: null,
+    counterLimit: null,
     ordinal: 0,
   }],
   terminals: [{
@@ -82,8 +84,10 @@ const invalidRoutineDraft = (): RoutineDefinitionDraftInput =>
     transitions: [{
       fromStep: "step_collect_topic",
       toRef: "missing_step",
-      guardKind: "always",
+      guardKind: "default",
       guardText: null,
+      outcomeStatus: null,
+      counterLimit: null,
       ordinal: 0,
     }],
   });
@@ -917,6 +921,11 @@ describe("agents contract", () => {
     await request(app)
       .get("/api/v1/agents/11111111-1111-4111-8111-111111111111/routines")
       .expect(401);
+
+    await request(app)
+      .post("/api/v1/agents/11111111-1111-4111-8111-111111111111/routines/draft-assist")
+      .send({ prose: "Collect email and confirm." })
+      .expect(401);
   });
 
   it("creates, lists, gets, updates, validates, and publishes routine definitions", async () => {
@@ -1066,6 +1075,52 @@ describe("agents contract", () => {
         ]),
       },
     });
+  });
+
+  it("drafts a routine proposal from procedure prose without saving it", async () => {
+    const draft = validRoutineDraft({
+      name: "assist-intake",
+      activation: {
+        triggerDescription: "When the visitor asks for support intake",
+        gateRef: null,
+        priority: 0,
+      },
+    });
+    const { app } = createTestApp({
+      chatInferencePipelineComplete: async () => textResult(JSON.stringify({ draft })),
+    });
+    const { token } = await issueTestToken(app, "agents-routines-assist@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const agent = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({ name: "Routine assist" })
+      .expect(201);
+
+    const assist = await request(app)
+      .post(`/api/v1/agents/${agent.body.id}/routines/draft-assist`)
+      .set("Authorization", authorization)
+      .send({ prose: "When a visitor asks for support, collect the topic and complete the intake." })
+      .expect(200);
+
+    expect(assist.body).toMatchObject({
+      draft: {
+        name: "assist-intake",
+        steps: [expect.objectContaining({ stableStepId: "step_collect_topic" })],
+      },
+      validation: {
+        ok: true,
+        diagnostics: [],
+      },
+    });
+
+    const list = await request(app)
+      .get(`/api/v1/agents/${agent.body.id}/routines`)
+      .set("Authorization", authorization)
+      .expect(200);
+
+    expect(list.body.routines).toEqual([]);
   });
 
   it("rejects website embed copy packs above the locale cap", async () => {

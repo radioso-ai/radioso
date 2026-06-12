@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import {
+  compileRoutineDefinition,
   RoutineDefinitionService,
   routineDefinitionDraftInputSchema,
   type RoutineDefinition,
@@ -118,8 +119,10 @@ const validDraft = (): RoutineDefinitionDraftInput => ({
   transitions: [{
     fromStep: "step_collect_topic",
     toRef: "terminal_complete",
-    guardKind: "always",
+    guardKind: "default",
     guardText: null,
+    outcomeStatus: null,
+    counterLimit: null,
     ordinal: 0,
   }],
   terminals: [{
@@ -136,8 +139,10 @@ const invalidDraft = (): RoutineDefinitionDraftInput => ({
   transitions: [{
     fromStep: "step_collect_topic",
     toRef: "missing_step",
-    guardKind: "always",
+    guardKind: "default",
     guardText: null,
+    outcomeStatus: null,
+    counterLimit: null,
     ordinal: 0,
   }],
 });
@@ -159,14 +164,18 @@ const actionDraft = (actionType: string | null): RoutineDefinitionDraftInput => 
   transitions: [{
     fromStep: "step_collect_topic",
     toRef: "step_send",
-    guardKind: "always",
+    guardKind: "default",
     guardText: null,
+    outcomeStatus: null,
+    counterLimit: null,
     ordinal: 0,
   }, {
     fromStep: "step_send",
     toRef: "terminal_complete",
-    guardKind: "always",
+    guardKind: "default",
     guardText: null,
+    outcomeStatus: null,
+    counterLimit: null,
     ordinal: 1,
   }],
 });
@@ -187,14 +196,18 @@ const toolDraft = (): RoutineDefinitionDraftInput => ({
   transitions: [{
     fromStep: "step_collect_topic",
     toRef: "step_lookup",
-    guardKind: "always",
+    guardKind: "default",
     guardText: null,
+    outcomeStatus: null,
+    counterLimit: null,
     ordinal: 0,
   }, {
     fromStep: "step_lookup",
     toRef: "terminal_complete",
-    guardKind: "always",
+    guardKind: "default",
     guardText: null,
+    outcomeStatus: null,
+    counterLimit: null,
     ordinal: 1,
   }],
 });
@@ -322,8 +335,10 @@ describe("RoutineDefinitionService", () => {
       transitions: [{
         fromStep: "step_collect_topic",
         toRef: "step_send",
-        guardKind: "always",
+        guardKind: "default",
         guardText: null,
+        outcomeStatus: null,
+        counterLimit: null,
         ordinal: 0,
       }],
     });
@@ -437,6 +452,44 @@ describe("RoutineDefinitionService", () => {
         ok: true,
       },
     });
+  });
+
+  it("rejects the removed fork step kind at the authoring schema boundary", () => {
+    expect(() => routineDefinitionDraftInputSchema.parse({
+      ...validDraft(),
+      steps: [{
+        ...validDraft().steps[0],
+        kind: "fork",
+      }],
+    })).toThrow();
+  });
+
+  it("accepts default as the only unconditioned authored transition guard", () => {
+    const parsed = routineDefinitionDraftInputSchema.parse(validDraft());
+
+    expect(parsed.transitions[0]?.guardKind).toBe("default");
+  });
+
+  it("compiles default guards to the default runtime guard", () => {
+    const now = new Date();
+    const routine = compileRoutineDefinition({
+      id: "33333333-3333-4333-8333-333333333333",
+      agentId,
+      version: 1,
+      status: "published",
+      createdAt: now,
+      updatedAt: now,
+      ...validDraft(),
+    });
+
+    expect(routine.transitions).toEqual([
+      expect.objectContaining({
+        from: "step_collect_topic",
+        to: "terminal_complete",
+        condition: "default",
+        guard: { kind: "default" },
+      }),
+    ]);
   });
 
   it("rejects publish when enabled completion export has a malformed destination ref", async () => {

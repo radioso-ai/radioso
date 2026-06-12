@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { publicChatSessionSchema } from "../../routes/publicChatRouteSchemas.js";
 import { agentSurfacePositions } from "../../../../modules/agents/public.js";
-import { routineDefinitionDraftInputSchema, routineValidationCodes } from "../../../../modules/routines/public.js";
+import {
+  routineDefinitionDraftInputSchema,
+  routineDraftAssistRequestSchema,
+  routineValidationCodes,
+} from "../../../../modules/routines/public.js";
 import { skillDisplayMetadataSchema } from "../../../../modules/skills/public.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
@@ -361,6 +365,11 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     routineDefinitionDraftInputSchema,
   );
 
+  const RoutineDraftAssistRequestSchema = registry.register(
+    "RoutineDraftAssistRequest",
+    routineDraftAssistRequestSchema,
+  );
+
   const RoutineValidationResultSchema = registry.register(
     "RoutineValidationResult",
     z.object({
@@ -410,6 +419,14 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
   const RoutineDefinitionValidateResponseSchema = registry.register(
     "RoutineDefinitionValidateResponse",
     z.object({
+      validation: RoutineValidationResultSchema,
+    }),
+  );
+
+  const RoutineDraftAssistResponseSchema = registry.register(
+    "RoutineDraftAssistResponse",
+    z.object({
+      draft: routineDefinitionDraftInputSchema,
       validation: RoutineValidationResultSchema,
     }),
   );
@@ -495,6 +512,8 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     DirectiveCoherenceVerdictSchema,
     DirectiveListResponseSchema,
     RoutineDefinitionCreateRequestSchema,
+    RoutineDraftAssistRequestSchema,
+    RoutineDraftAssistResponseSchema,
     RoutineDefinitionGetResponseSchema,
     RoutineDefinitionListResponseSchema,
     RoutineDefinitionParamsSchema,

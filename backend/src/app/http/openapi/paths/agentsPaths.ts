@@ -229,6 +229,29 @@ export const registerAgentsPaths = (
 
   registry.registerPath({
     method: "post",
+    path: "/api/v1/agents/{agentId}/routines/draft-assist",
+    tags: ["Agents"],
+    summary: "Draft a routine definition from operator procedure prose",
+    operationId: "draftAgentRoutineFromProcedure",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.AgentParamsSchema,
+      body: {
+        required: true,
+        content: { "application/json": { schema: schemas.RoutineDraftAssistRequestSchema } },
+      },
+    },
+    responses: {
+      200: { description: "Routine draft proposal returned", content: { "application/json": { schema: schemas.RoutineDraftAssistResponseSchema } } },
+      400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      422: { description: "Routine draft could not be generated", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
     path: "/api/v1/agents/{agentId}/routines",
     tags: ["Agents"],
     summary: "Create a draft routine definition for an agent",

@@ -51,8 +51,8 @@ export type DirectiveDraftDirective = ApiSchemas['DirectiveDraftDirective']
 
 export type RoutineDefinitionStatus = 'draft' | 'published'
 export type RoutineSlotType = 'text' | 'number' | 'boolean' | 'email' | 'date'
-export type RoutineStepKind = 'chat' | 'tool' | 'fork' | 'action'
-export type RoutineGuardKind = 'llm' | 'always' | 'fallback' | 'slot_filled' | 'outcome' | 'counter'
+export type RoutineStepKind = 'chat' | 'tool' | 'action'
+export type RoutineGuardKind = 'llm' | 'default' | 'slot_filled' | 'outcome' | 'counter'
 export type RoutineTerminalKind = 'complete' | 'handoff'
 export type RoutineValidationCode =
   | 'unreachable_step'
@@ -118,6 +118,11 @@ export type RoutineDefinitionSaveResponse = {
   validation: RoutineValidationResult
 }
 export type RoutineDefinitionValidateResponse = { validation: RoutineValidationResult }
+export type RoutineDraftAssistRequest = { prose: string }
+export type RoutineDraftAssistResponse = {
+  draft: RoutineDefinitionDraft
+  validation: RoutineValidationResult
+}
 export type RoutineDefinitionPublishRejectedResponse = {
   error: 'Routine definition is invalid'
   validation: RoutineValidationResult

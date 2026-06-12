@@ -7,7 +7,7 @@ const routineId = (definition: RoutineDefinition): string =>
   `routine:${definition.agentId}:${definition.name}:v${definition.version}`;
 
 const conditionFor = (guardKind: string, guardText: string | null): string =>
-  guardKind === "llm" || guardKind === "always" ? guardText ?? guardKind : guardKind;
+  guardKind === "llm" ? guardText ?? guardKind : guardKind;
 
 const slotReferencePattern = /\{\{\s*slot\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu;
 
@@ -44,10 +44,8 @@ const guardFor = (transition: RoutineDefinition["transitions"][number]): Routine
       const limit = transition.counterLimit ?? parsePositiveInteger(transition.guardText);
       return limit ? { kind: "counter", limit } : undefined;
     }
-    case "always":
-      return { kind: "always" };
-    case "fallback":
-      return { kind: "fallback" };
+    case "default":
+      return { kind: "default" };
     default:
       return undefined;
   }

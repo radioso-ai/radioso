@@ -16,9 +16,10 @@ import {
 interface RoutineDefinitionRow extends QueryResultRow {
   id: string;
   agent_id: string;
+  lineage_id: string;
   name: string;
   version: number;
-  status: "draft" | "published";
+  status: "draft" | "published" | "superseded" | "archived";
   activation_trigger_description: string;
   activation_gate_ref: string | null;
   activation_priority: number;
@@ -62,6 +63,7 @@ const definitionSelect = `
   SELECT
     d.id::text,
     d.agent_id::text,
+    d.lineage_id::text,
     d.name,
     d.version,
     d.status,
@@ -138,6 +140,7 @@ const definitionSelect = `
 const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
   id: row.id,
   agentId: row.agent_id,
+  lineageId: row.lineage_id,
   name: row.name,
   version: row.version,
   status: row.status,
@@ -233,11 +236,19 @@ export class RoutineDefinitionRepository {
       await client.query<{ id: string }>(
         `INSERT INTO routine_definition (
            id, agent_id, version, name, status, activation_trigger_description,
-           activation_gate_ref, activation_priority
+           activation_gate_ref, activation_priority, lineage_id
          )
-         VALUES ($1, $2, 1, $3, 'draft', $4, $5, $6)
+         VALUES ($1, $2, 1, $3, 'draft', $4, $5, $6, $7)
          RETURNING id::text`,
-        [id, agentId, draft.name, draft.activation.triggerDescription, draft.activation.gateRef, draft.activation.priority],
+        [
+          id,
+          agentId,
+          draft.name,
+          draft.activation.triggerDescription,
+          draft.activation.gateRef,
+          draft.activation.priority,
+          randomUUID(),
+        ],
       );
       await this.replaceChildren(client, id, draft);
     });
@@ -279,13 +290,13 @@ export class RoutineDefinitionRepository {
     await this.database.withTransaction(async (client) => {
       await client.query(
         `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
-        [`routine_definition_publish:${agentId}:${draft.name}`],
+        [`routine_definition_publish:${draft.lineageId}`],
       );
       const versionResult = await client.query<{ version: number }>(
         `SELECT COALESCE(MAX(version), 0) + 1 AS version
          FROM routine_definition
-         WHERE agent_id = $1 AND name = $2`,
-        [agentId, draft.name],
+         WHERE lineage_id = $1`,
+        [draft.lineageId],
       );
       const versionRow = versionResult.rows[0];
       if (!versionRow) {
@@ -294,9 +305,9 @@ export class RoutineDefinitionRepository {
       await client.query<{ id: string }>(
         `INSERT INTO routine_definition (
            id, agent_id, version, name, status, activation_trigger_description,
-           activation_gate_ref, activation_priority
+           activation_gate_ref, activation_priority, lineage_id
          )
-         VALUES ($1, $2, $3, $4, 'published', $5, $6, $7)
+         VALUES ($1, $2, $3, $4, 'published', $5, $6, $7, $8)
          RETURNING id::text`,
         [
           id,
@@ -306,15 +317,122 @@ export class RoutineDefinitionRepository {
           draft.activation.triggerDescription,
           draft.activation.gateRef,
           draft.activation.priority,
+          draft.lineageId,
         ],
       );
+      await client.query(
+        `UPDATE routine_definition
+         SET status = 'superseded',
+             updated_at = NOW()
+         WHERE lineage_id = $1
+           AND status = 'published'
+           AND id <> $2`,
+        [draft.lineageId, id],
+      );
       await this.replaceChildren(client, id, draft);
+      await client.query(
+        `DELETE FROM routine_definition
+         WHERE agent_id = $1 AND id = $2 AND status = 'draft'`,
+        [agentId, draftId],
+      );
     });
     const loaded = await this.findById(agentId, id);
     if (!loaded) {
       throw new Error(`routine_definition_not_found:${id}`);
     }
     return loaded;
+  }
+
+  async createRevisionDraft(agentId: string, publishedId: string): Promise<RoutineDefinition | null> {
+    const published = await this.findById(agentId, publishedId);
+    if (!published || published.status !== "published") {
+      return null;
+    }
+    const existingDraft = await this.database.queryOptional<RoutineDefinitionRow>(
+      `${definitionSelect}
+       WHERE d.agent_id = $1 AND d.lineage_id = $2 AND d.status = 'draft'`,
+      [agentId, published.lineageId],
+    );
+    if (existingDraft) {
+      return mapRow(existingDraft);
+    }
+
+    const id = randomUUID();
+    await this.database.withTransaction(async (client) => {
+      await client.query(
+        `INSERT INTO routine_definition (
+           id, agent_id, version, name, status, activation_trigger_description,
+           activation_gate_ref, activation_priority, lineage_id
+         )
+         VALUES (
+           $1,
+           $2,
+           (
+             SELECT COALESCE(MAX(version), 0) + 1
+             FROM routine_definition
+             WHERE lineage_id = $7
+           ),
+           $3,
+           'draft',
+           $4,
+           $5,
+           $6,
+           $7
+         )`,
+        [
+          id,
+          agentId,
+          published.name,
+          published.activation.triggerDescription,
+          published.activation.gateRef,
+          published.activation.priority,
+          published.lineageId,
+        ],
+      );
+      await this.replaceChildren(client, id, published);
+    });
+    const loaded = await this.findById(agentId, id);
+    if (!loaded) {
+      throw new Error(`routine_definition_not_found:${id}`);
+    }
+    return loaded;
+  }
+
+  async archive(agentId: string, id: string): Promise<boolean> {
+    const row = await this.database.queryOptional<{ id: string }>(
+      `UPDATE routine_definition
+       SET status = 'archived',
+           updated_at = NOW()
+       WHERE agent_id = $1 AND id = $2 AND status = 'published'
+       RETURNING id::text`,
+      [agentId, id],
+    );
+    return Boolean(row);
+  }
+
+  async restore(agentId: string, id: string): Promise<boolean> {
+    const row = await this.database.queryOptional<{ id: string }>(
+      `UPDATE routine_definition target
+       SET status = 'published',
+           updated_at = NOW()
+       WHERE target.agent_id = $1
+         AND target.id = $2
+         AND target.status = 'archived'
+         AND NOT EXISTS (
+           SELECT 1
+           FROM routine_definition other
+           WHERE other.lineage_id = target.lineage_id
+             AND other.status = 'published'
+             AND other.id <> target.id
+         )
+       RETURNING target.id::text`,
+      [agentId, id],
+    );
+    return Boolean(row);
+  }
+
+  async findByIdAnyStatus(agentId: string, id: string): Promise<RoutineDefinition | null> {
+    return this.findById(agentId, id);
   }
 
   async deleteDraft(agentId: string, id: string): Promise<boolean> {

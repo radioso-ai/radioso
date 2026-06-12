@@ -20,6 +20,7 @@ import {
 const baseDefinition = (): RoutineDefinition => ({
   id: "def_1",
   agentId: "agent_1",
+  lineageId: "lineage_1",
   name: "handoff",
   version: 1,
   status: "published",

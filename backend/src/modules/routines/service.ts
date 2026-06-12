@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { badRequest, notFound } from "../../shared/domain/errors.js";
 import { DefaultAllowCapabilityPolicy, type CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../shared/domain/actionCapabilities.js";
+import type { AuditEventInput, AuditPort } from "../audit/contracts/index.js";
 import {
   routineDefinitionDraftInputSchema,
   type RoutineDefinition,
@@ -22,6 +23,9 @@ export interface RoutineDefinitionRepositoryPort {
   createDraft(agentId: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition>;
   updateDraft(agentId: string, id: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition>;
   publish(agentId: string, id: string): Promise<RoutineDefinition>;
+  createRevisionDraft(agentId: string, publishedId: string): Promise<RoutineDefinition | null>;
+  archive(agentId: string, id: string): Promise<boolean>;
+  restore(agentId: string, id: string): Promise<boolean>;
   deleteDraft(agentId: string, id: string): Promise<boolean>;
   listPublishedRoutineNamesReferencingDestination?(workspaceId: string, destinationId: string): Promise<string[]>;
 }
@@ -31,12 +35,22 @@ export interface RoutineDefinitionSaveResult {
   validation: RoutineValidationResult;
 }
 
+export interface RoutineDirectiveScopeOrphan {
+  directiveId: string;
+  scopeTag: string;
+  reason: "missing_step";
+}
+
 export interface RoutineDefinitionPublishRejection {
   rejected: true;
   validation: RoutineValidationResult;
 }
 
-export type RoutineDefinitionPublishResult = RoutineDefinitionSaveResult | RoutineDefinitionPublishRejection;
+export type RoutineDefinitionPublishSuccess = RoutineDefinitionSaveResult & {
+  directiveScopeOrphans: RoutineDirectiveScopeOrphan[];
+};
+
+export type RoutineDefinitionPublishResult = RoutineDefinitionPublishSuccess | RoutineDefinitionPublishRejection;
 
 export interface RoutineDefinitionServiceOptions {
   agentRepository: {
@@ -48,11 +62,13 @@ export interface RoutineDefinitionServiceOptions {
   webhookDestinations?: {
     existsByIdAndWorkspace(workspaceId: string, destinationId: string): Promise<boolean>;
   };
+  auditService?: Pick<AuditPort, "record">;
 }
 
 const draftDefinitionFromInput = (agentId: string, input: RoutineDefinitionDraftInput): RoutineDefinition => ({
   id: randomUUID(),
   agentId,
+  lineageId: randomUUID(),
   version: 1,
   status: "draft",
   ...input,
@@ -190,10 +206,56 @@ export class RoutineDefinitionService {
       }
       throw error;
     }
+    await this.recordLifecycleAudit("routine_definition.publish", workspaceId, agentId, published);
     return {
       routine: published,
       validation: validateRoutineDefinition(published),
+      directiveScopeOrphans: [],
     };
+  }
+
+  async revise(workspaceId: string, agentId: string, id: string): Promise<RoutineDefinition> {
+    await this.requireAgent(workspaceId, agentId);
+    const routine = await this.requireRoutine(agentId, id);
+    if (routine.status !== "published") {
+      throw badRequest("Only published routine definitions can be revised");
+    }
+    const revision = await this.options.repository.createRevisionDraft(agentId, id);
+    if (!revision) {
+      throw notFound("Published routine definition not found");
+    }
+    await this.recordLifecycleAudit("routine_definition.revise", workspaceId, agentId, revision);
+    return revision;
+  }
+
+  async archive(workspaceId: string, agentId: string, id: string): Promise<RoutineDefinition> {
+    await this.requireAgent(workspaceId, agentId);
+    const routine = await this.requireRoutine(agentId, id);
+    if (routine.status !== "published") {
+      throw badRequest("Only published routine definitions can be archived");
+    }
+    const archived = await this.options.repository.archive(agentId, id);
+    if (!archived) {
+      throw notFound("Published routine definition not found");
+    }
+    const updated = await this.requireRoutine(agentId, id);
+    await this.recordLifecycleAudit("routine_definition.archive", workspaceId, agentId, updated);
+    return updated;
+  }
+
+  async restore(workspaceId: string, agentId: string, id: string): Promise<RoutineDefinition> {
+    await this.requireAgent(workspaceId, agentId);
+    const routine = await this.requireRoutine(agentId, id);
+    if (routine.status !== "archived") {
+      throw badRequest("Only archived routine definitions can be restored");
+    }
+    const restored = await this.options.repository.restore(agentId, id);
+    if (!restored) {
+      throw badRequest("Archived routine definition cannot be restored while another version is published");
+    }
+    const updated = await this.requireRoutine(agentId, id);
+    await this.recordLifecycleAudit("routine_definition.restore", workspaceId, agentId, updated);
+    return updated;
   }
 
   async deleteDraft(workspaceId: string, agentId: string, id: string): Promise<void> {
@@ -225,6 +287,26 @@ export class RoutineDefinitionService {
       throw notFound("Routine definition not found");
     }
     return routine;
+  }
+
+  private async recordLifecycleAudit(
+    eventType: AuditEventInput["eventType"],
+    workspaceId: string,
+    agentId: string,
+    routine: RoutineDefinition,
+  ): Promise<void> {
+    await this.options.auditService?.record({
+      workspaceId,
+      eventType,
+      eventStatus: "success",
+      metadata: {
+        agentId,
+        routineId: routine.id,
+        lineageId: routine.lineageId,
+        version: routine.version,
+        status: routine.status,
+      },
+    });
   }
 
   private async validateActionAuthorization(

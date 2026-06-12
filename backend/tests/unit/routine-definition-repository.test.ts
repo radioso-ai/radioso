@@ -51,6 +51,7 @@ const draftInput = (): RoutineDefinitionDraftInput => ({
 const loadedRow = () => ({
   id: "def_1",
   agent_id: "agent_1",
+  lineage_id: "lineage_1",
   name: "handoff",
   version: 1,
   status: "published",
@@ -88,6 +89,7 @@ describe("RoutineDefinitionRepository", () => {
     expect(definitions[0]).toMatchObject<RoutineDefinition>({
       id: "def_1",
       agentId: "agent_1",
+      lineageId: "lineage_1",
       name: "handoff",
       version: 1,
       status: "published",
@@ -153,7 +155,7 @@ describe("RoutineDefinitionRepository", () => {
   it("publishes by snapshotting the draft as the next version", async () => {
     const db = mockDatabase();
     db.queryOptional
-      .mockResolvedValueOnce(loadedRow())
+      .mockResolvedValueOnce({ ...loadedRow(), status: "draft" })
       .mockResolvedValueOnce({ ...loadedRow(), id: "def_2", version: 2, status: "published" });
     db.mockClient.query
       .mockResolvedValueOnce({ rows: [] })
@@ -165,11 +167,76 @@ describe("RoutineDefinitionRepository", () => {
     expect(published.status).toBe("published");
     expect(db.withTransaction).toHaveBeenCalledOnce();
     expect(db.mockClient.query.mock.calls[0]![0]).toContain("pg_advisory_xact_lock");
+    expect(db.mockClient.query.mock.calls[0]![1]).toEqual(["routine_definition_publish:lineage_1"]);
     expect(db.mockClient.query.mock.calls[1]![0]).toContain("COALESCE(MAX(version), 0) + 1");
+    expect(db.mockClient.query.mock.calls[1]![0]).toContain("lineage_id = $1");
     expect(db.mockClient.query.mock.calls[2]![0]).toContain("INSERT INTO routine_definition");
+    expect(db.mockClient.query.mock.calls[3]![0]).toContain("UPDATE routine_definition");
+    expect(db.mockClient.query.mock.calls[3]![0]).toContain("status = 'superseded'");
+    expect(db.mockClient.query.mock.calls.at(-1)![0]).toContain("DELETE FROM routine_definition");
+    expect(db.mockClient.query.mock.calls.at(-1)![0]).toContain("status = 'draft'");
     const sql = db.mockClient.query.mock.calls.map((call) => call[0]).join("\n");
     expect(sql).toContain("INSERT INTO routine_slot");
     expect(db.queryOptional).toHaveBeenCalledTimes(2);
+  });
+
+  it("creates a revision draft in the same lineage by copying children and completion export", async () => {
+    const db = mockDatabase();
+    db.queryOptional
+      .mockResolvedValueOnce({ ...loadedRow(), id: "published_1", status: "published", lineage_id: "lineage_1" })
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ ...loadedRow(), id: "draft_2", status: "draft", version: 1, lineage_id: "lineage_1" });
+
+    const draft = await new RoutineDefinitionRepository(db).createRevisionDraft("agent_1", "published_1");
+
+    if (!draft) {
+      throw new Error("expected revision draft");
+    }
+    expect(draft.id).toBe("draft_2");
+    expect(draft.status).toBe("draft");
+    expect(draft.lineageId).toBe("lineage_1");
+    const sql = db.mockClient.query.mock.calls.map((call) => call[0]).join("\n");
+    expect(sql).toContain("lineage_id");
+    expect(sql).toContain("INSERT INTO routine_definition");
+    expect(sql).toContain("INSERT INTO routine_slot");
+    expect(sql).toContain("INSERT INTO routine_step");
+    expect(sql).toContain("INSERT INTO routine_transition");
+    expect(sql).toContain("INSERT INTO routine_terminal");
+    expect(sql).toContain("INSERT INTO routine_completion_export");
+  });
+
+  it("returns the existing lineage draft instead of creating a second revision draft", async () => {
+    const db = mockDatabase();
+    db.queryOptional
+      .mockResolvedValueOnce({ ...loadedRow(), id: "published_1", status: "published", lineage_id: "lineage_1" })
+      .mockResolvedValueOnce({ ...loadedRow(), id: "draft_1", status: "draft", lineage_id: "lineage_1" });
+
+    const draft = await new RoutineDefinitionRepository(db).createRevisionDraft("agent_1", "published_1");
+
+    if (!draft) {
+      throw new Error("expected existing revision draft");
+    }
+    expect(draft.id).toBe("draft_1");
+    expect(db.withTransaction).not.toHaveBeenCalled();
+  });
+
+  it("archives only published definitions and restores only when the lineage has no published version", async () => {
+    const db = mockDatabase();
+    db.queryOptional
+      .mockResolvedValueOnce({ ...loadedRow(), id: "published_1", status: "archived", lineage_id: "lineage_1" })
+      .mockResolvedValueOnce({ ...loadedRow(), id: "published_1", status: "published", lineage_id: "lineage_1" });
+
+    const repository = new RoutineDefinitionRepository(db);
+    await expect(repository.archive("agent_1", "published_1")).resolves.toBe(true);
+    await expect(repository.restore("agent_1", "published_1")).resolves.toBe(true);
+
+    const archiveSql = db.queryOptional.mock.calls[0]![0];
+    expect(archiveSql).toContain("status = 'archived'");
+    expect(archiveSql).toContain("status = 'published'");
+    const restoreSql = db.queryOptional.mock.calls[1]![0];
+    expect(restoreSql).toContain("status = 'published'");
+    expect(restoreSql).toContain("status = 'archived'");
+    expect(restoreSql).toContain("NOT EXISTS");
   });
 
   it("lists published routines referencing a webhook destination in a workspace", async () => {

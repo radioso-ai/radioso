@@ -318,10 +318,58 @@ export const registerAgentsPaths = (
     security: [{ [security.bearerAuthScheme.name]: [] }],
     request: { params: schemas.RoutineDefinitionParamsSchema },
     responses: {
-      200: { description: "Routine definition published", content: { "application/json": { schema: schemas.RoutineDefinitionSaveResponseSchema } } },
+      200: { description: "Routine definition published", content: { "application/json": { schema: schemas.RoutineDefinitionPublishResponseSchema } } },
       401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       404: { description: "Agent or routine definition not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       422: { description: "Routine definition is invalid", content: { "application/json": { schema: schemas.RoutineDefinitionPublishRejectedResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/{agentId}/routines/{routineId}/revise",
+    tags: ["Agents"],
+    summary: "Create or return a draft revision for a published routine definition",
+    operationId: "reviseAgentRoutine",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.RoutineDefinitionParamsSchema },
+    responses: {
+      200: { description: "Routine revision draft returned", content: { "application/json": { schema: schemas.RoutineDefinitionLifecycleResponseSchema } } },
+      400: { description: "Routine definition cannot be revised", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent or routine definition not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/{agentId}/routines/{routineId}/archive",
+    tags: ["Agents"],
+    summary: "Archive a published routine definition",
+    operationId: "archiveAgentRoutine",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.RoutineDefinitionParamsSchema },
+    responses: {
+      200: { description: "Routine definition archived", content: { "application/json": { schema: schemas.RoutineDefinitionLifecycleResponseSchema } } },
+      400: { description: "Routine definition cannot be archived", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent or routine definition not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/{agentId}/routines/{routineId}/restore",
+    tags: ["Agents"],
+    summary: "Restore an archived routine definition",
+    operationId: "restoreAgentRoutine",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.RoutineDefinitionParamsSchema },
+    responses: {
+      200: { description: "Routine definition restored", content: { "application/json": { schema: schemas.RoutineDefinitionLifecycleResponseSchema } } },
+      400: { description: "Routine definition cannot be restored", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent or routine definition not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
     },
   });
 

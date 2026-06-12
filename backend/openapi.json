@@ -4684,6 +4684,10 @@
             "type": "string",
             "format": "uuid"
           },
+          "lineageId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "version": {
             "type": "integer",
             "minimum": 1
@@ -4692,7 +4696,9 @@
             "type": "string",
             "enum": [
               "draft",
-              "published"
+              "published",
+              "superseded",
+              "archived"
             ]
           },
           "createdAt": {
@@ -4711,6 +4717,7 @@
           "terminals",
           "id",
           "agentId",
+          "lineageId",
           "version",
           "status",
           "createdAt",
@@ -4756,6 +4763,61 @@
         "required": [
           "routine",
           "validation"
+        ]
+      },
+      "RoutineDirectiveScopeOrphan": {
+        "type": "object",
+        "properties": {
+          "directiveId": {
+            "type": "string"
+          },
+          "scopeTag": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "missing_step"
+            ]
+          }
+        },
+        "required": [
+          "directiveId",
+          "scopeTag",
+          "reason"
+        ]
+      },
+      "RoutineDefinitionPublishResponse": {
+        "type": "object",
+        "properties": {
+          "routine": {
+            "$ref": "#/components/schemas/RoutineDefinition"
+          },
+          "validation": {
+            "$ref": "#/components/schemas/RoutineValidationResult"
+          },
+          "directiveScopeOrphans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoutineDirectiveScopeOrphan"
+            }
+          }
+        },
+        "required": [
+          "routine",
+          "validation",
+          "directiveScopeOrphans"
+        ]
+      },
+      "RoutineDefinitionLifecycleResponse": {
+        "type": "object",
+        "properties": {
+          "routine": {
+            "$ref": "#/components/schemas/RoutineDefinition"
+          }
+        },
+        "required": [
+          "routine"
         ]
       },
       "RoutineDefinitionValidateResponse": {
@@ -14055,7 +14117,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RoutineDefinitionSaveResponse"
+                  "$ref": "#/components/schemas/RoutineDefinitionPublishResponse"
                 }
               }
             }
@@ -14086,6 +14148,234 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RoutineDefinitionPublishRejectedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/routines/{routineId}/revise": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Create or return a draft revision for a published routine definition",
+        "operationId": "reviseAgentRoutine",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "routineId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Routine revision draft returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutineDefinitionLifecycleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Routine definition cannot be revised",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or routine definition not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/routines/{routineId}/archive": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Archive a published routine definition",
+        "operationId": "archiveAgentRoutine",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "routineId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Routine definition archived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutineDefinitionLifecycleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Routine definition cannot be archived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or routine definition not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/routines/{routineId}/restore": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Restore an archived routine definition",
+        "operationId": "restoreAgentRoutine",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "routineId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Routine definition restored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutineDefinitionLifecycleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Routine definition cannot be restored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or routine definition not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

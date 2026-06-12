@@ -53,7 +53,10 @@ export interface OpenApiSchemaCatalog {
   RoutineDefinitionGetResponseSchema: z.ZodTypeAny;
   RoutineDefinitionListResponseSchema: z.ZodTypeAny;
   RoutineDefinitionParamsSchema: RouteParameterSchema;
+  RoutineDefinitionLifecycleResponseSchema: z.ZodTypeAny;
+  RoutineDefinitionPublishResponseSchema: z.ZodTypeAny;
   RoutineDefinitionPublishRejectedResponseSchema: z.ZodTypeAny;
+  RoutineDirectiveScopeOrphanSchema: z.ZodTypeAny;
   RoutineDefinitionResponseSchema: z.ZodTypeAny;
   RoutineDefinitionSaveResponseSchema: z.ZodTypeAny;
   RoutineDefinitionUpdateRequestSchema: z.ZodTypeAny;

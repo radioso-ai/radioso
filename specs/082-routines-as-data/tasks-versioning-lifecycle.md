@@ -27,10 +27,10 @@
 
 ## Phase 4 — HTTP contract + OpenAPI + SDK (amendment §7.4, FR-031/032 contract half)
 
-- [ ] T014 Contract tests first: extend `backend/tests/contract` routine coverage for `POST /agents/:agentId/routines/:routineId/revise|archive|restore`, `lineageId` + 4-state `status` on read/list, publish response orphans field.
-- [ ] T015 Routes in `backend/src/app/http/routes/agentRoutes.ts` (thin handlers, `agentManage` permission, existing error mapping).
-- [ ] T016 Code-first OpenAPI registry (`backend/src/app/http/openapi/schemas/agentSchemas.ts`, `paths/agentsPaths.ts`); regenerate `backend/openapi.{yaml,json}`, `typescript-sdk/openapi/radioso.{yaml,json}`, `typescript-sdk/src/generated/types.ts`, `packages/radioso-mcp-server/src/generated/openapiTypes.ts` via repo scripts (no hand edits); SDK sync/build/test.
-- [ ] T017 Message-queue impact review: search worker payload builders / AMQP contracts for routine definition references; record evidence + conclusion (expected: none) in slice notes.
+- [X] T014 Contract tests first: extend `backend/tests/contract` routine coverage for `POST /agents/:agentId/routines/:routineId/revise|archive|restore`, `lineageId` + 4-state `status` on read/list, publish response orphans field.
+- [X] T015 Routes in `backend/src/app/http/routes/agentRoutes.ts` (thin handlers, `agentManage` permission, existing error mapping).
+- [X] T016 Code-first OpenAPI registry (`backend/src/app/http/openapi/schemas/agentSchemas.ts`, `paths/agentsPaths.ts`); regenerate `backend/openapi.{yaml,json}`, `typescript-sdk/openapi/radioso.{yaml,json}`, `typescript-sdk/src/generated/types.ts`, `packages/radioso-mcp-server/src/generated/openapiTypes.ts` via repo scripts (no hand edits); SDK sync/build/test.
+- [X] T017 Message-queue impact review: search worker payload builders / AMQP contracts for routine definition references; record evidence + conclusion (expected: none) in slice notes.
 
 ## Phase 5 — Dashboard (amendment §7.5, FR-031, SC-018)
 

@@ -2,6 +2,7 @@ export {
   ROUTINE_DEFINITION_LIMITS,
   routineDefinitionDraftInputSchema,
   routineDefinitionSchema,
+  routineDefinitionStatuses,
   routineCompletionExportSchema,
   routineGuardKinds,
   routineSlotTypes,

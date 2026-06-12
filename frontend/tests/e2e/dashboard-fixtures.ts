@@ -24,19 +24,19 @@ type DirectiveMutationFixture = {
   directiveId?: string;
   body?: unknown;
 };
-type RoutineFixture = ApiSchemas["RoutineDefinition"];
+export type RoutineFixture = ApiSchemas["RoutineDefinition"];
 type RoutineDraftFixture = ApiSchemas["RoutineDefinitionCreateRequest"];
 type RoutineDraftAssistFixture = {
   draft: RoutineDraftFixture;
   validation: ApiSchemas["RoutineValidationResult"];
 };
-type RoutineMutationFixture = {
-  method: "POST" | "PATCH" | "DELETE" | "VALIDATE" | "PUBLISH" | "ASSIST";
+export type RoutineMutationFixture = {
+  method: "POST" | "PATCH" | "DELETE" | "VALIDATE" | "PUBLISH" | "ASSIST" | "REVISE" | "ARCHIVE" | "RESTORE";
   routineId?: string;
   body?: unknown;
 };
 type WebhookDestinationFixture = ApiSchemas["WebhookDestination"];
-type WebhookDestinationMutationFixture = {
+export type WebhookDestinationMutationFixture = {
   method: "POST" | "PUT" | "DELETE" | "ROTATE_SECRET";
   destinationId?: string;
   body?: unknown;
@@ -231,9 +231,10 @@ const validateRoutineFixture = (routine: RoutineDraftFixture | RoutineFixture): 
   return { ok: diagnostics.length === 0, diagnostics };
 };
 
-const buildRoutine = (input: RoutineDraftFixture & Partial<Pick<RoutineFixture, "id" | "status" | "version">>): RoutineFixture => ({
+const buildRoutine = (input: RoutineDraftFixture & Partial<Pick<RoutineFixture, "id" | "lineageId" | "status" | "version">>): RoutineFixture => ({
   ...input,
   id: input.id ?? "55555555-5555-4555-8555-000000000001",
+  lineageId: input.lineageId ?? input.id ?? "55555555-5555-4555-7555-000000000001",
   agentId: defaultAgentId,
   status: input.status ?? "draft",
   version: input.version ?? 1,
@@ -906,9 +907,11 @@ export const installDashboardApiMocks = async (
       if (request.method() === "POST") {
         const body = request.postDataJSON() as RoutineDraftFixture;
         routineUpdates?.push({ method: "POST", body });
+        const routineId = `55555555-5555-4555-8555-${String(nextRoutineIndex).padStart(12, "0")}`;
         const routine = buildRoutine({
           ...body,
-          id: `55555555-5555-4555-8555-${String(nextRoutineIndex).padStart(12, "0")}`,
+          id: routineId,
+          lineageId: routineId,
         });
         nextRoutineIndex += 1;
         routines = [...routines, routine];
@@ -984,13 +987,78 @@ export const installDashboardApiMocks = async (
         }
         const published: RoutineFixture = {
           ...existing,
-          id: `55555555-5555-4555-9555-${String(nextRoutineIndex).padStart(12, "0")}`,
           status: "published",
-          version: existing.version + 1,
           updatedAt: nowIso,
         };
-        routines = routines.filter((routine) => routine.id !== routineId).concat(published);
-        await json(route, { routine: published, validation });
+        routines = routines
+          .map((routine) => routine.id === routineId
+            ? published
+            : routine.lineageId === existing.lineageId && routine.status === "published"
+            ? { ...routine, status: "superseded", updatedAt: nowIso }
+            : routine);
+        await json(route, { routine: published, validation, directiveScopeOrphans: [] });
+        return;
+      }
+
+      if (request.method() === "POST" && action === "revise") {
+        routineUpdates?.push({ method: "REVISE", routineId });
+        if (!existing || existing.status !== "published") {
+          await json(route, { error: { code: "not_found", message: "Published routine not found" } }, 404);
+          return;
+        }
+        const currentDraft = routines.find((routine) => routine.lineageId === existing.lineageId && routine.status === "draft");
+        if (currentDraft) {
+          await json(route, { routine: currentDraft });
+          return;
+        }
+        const draft: RoutineFixture = {
+          ...existing,
+          id: `55555555-5555-4555-8555-${String(nextRoutineIndex).padStart(12, "0")}`,
+          status: "draft",
+          version: Math.max(...routines.filter((routine) => routine.lineageId === existing.lineageId).map((routine) => routine.version), 0) + 1,
+          updatedAt: nowIso,
+        };
+        nextRoutineIndex += 1;
+        routines = [...routines, draft];
+        await json(route, { routine: draft });
+        return;
+      }
+
+      if (request.method() === "POST" && action === "archive") {
+        routineUpdates?.push({ method: "ARCHIVE", routineId });
+        if (!existing || existing.status !== "published") {
+          await json(route, { error: { code: "not_found", message: "Published routine not found" } }, 404);
+          return;
+        }
+        const archived: RoutineFixture = { ...existing, status: "archived", updatedAt: nowIso };
+        routines = routines.map((routine) => routine.id === routineId ? archived : routine);
+        await json(route, { routine: archived });
+        return;
+      }
+
+      if (request.method() === "POST" && action === "restore") {
+        routineUpdates?.push({ method: "RESTORE", routineId });
+        if (!existing || existing.status !== "archived") {
+          await json(route, { error: { code: "not_found", message: "Archived routine not found" } }, 404);
+          return;
+        }
+        const hasPublishedInLineage = routines.some((routine) =>
+          routine.lineageId === existing.lineageId &&
+          routine.id !== existing.id &&
+          routine.status === "published"
+        );
+        if (hasPublishedInLineage) {
+          await json(route, {
+            error: {
+              code: "bad_request",
+              message: "Archived routine definition cannot be restored while another version is published",
+            },
+          }, 400);
+          return;
+        }
+        const restored: RoutineFixture = { ...existing, status: "published", updatedAt: nowIso };
+        routines = routines.map((routine) => routine.id === routineId ? restored : routine);
+        await json(route, { routine: restored });
         return;
       }
     }

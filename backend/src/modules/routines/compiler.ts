@@ -3,7 +3,17 @@ import type { Routine, RoutineGuard, RoutineSkillOutcomeStatus, RoutineSlotSchem
 import type { RoutineDefinition } from "./domain.js";
 import { validateRoutineDefinition } from "./validator.js";
 
-const routineId = (definition: RoutineDefinition): string =>
+// The compiled routine id IS the definition id. Directive scope tags
+// (`routine:<id>` / `step:<id>:<stepId>`), the engine's activeRoutineId, the
+// publish-time scope-tag re-point, and new routine_states pins must all share
+// one identity; the old synthetic `routine:<agent>:<name>:v<n>` id broke that
+// (and its colons broke the engine's step-scope tag grammar).
+const routineId = (definition: RoutineDefinition): string => definition.id;
+
+// Pre-cutover routine_states pinned this synthetic id; kept ONLY so in-flight
+// sessions started before the identity unification can resume until their
+// state rows age out (routine_states TTL). Never used for new ids.
+export const legacyCompiledRoutineId = (definition: RoutineDefinition): string =>
   `routine:${definition.agentId}:${definition.name}:v${definition.version}`;
 
 const conditionFor = (guardKind: string, guardText: string | null): string =>

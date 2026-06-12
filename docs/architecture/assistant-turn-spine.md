@@ -149,6 +149,10 @@ compiler, and validator live in `backend/src/modules/routines/`; the runtime liv
 in `packages/conversation-engine/`. See
 [Conversational routines](./conversational-routines.md).
 
+Only `published` routine versions are activation candidates. If a session already
+has routine state, composition also loads that pinned version for resume, even
+when it has since become `superseded` or `archived`.
+
 ## Clarification appears on the spine
 
 The turn trace records clarification as a first-class `clarification` stage. The

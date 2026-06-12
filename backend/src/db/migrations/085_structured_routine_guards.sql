@@ -23,6 +23,9 @@ BEGIN
   END IF;
 END $$;
 
+-- 'default' is tolerated here so this file stays re-runnable after migration 089
+-- rewrites always/fallback rows to 'default' (the test harness re-runs all files;
+-- 089 re-establishes the strict final constraint either way).
 ALTER TABLE routine_transition
-  ADD CHECK (guard_kind IN ('llm', 'always', 'fallback', 'slot_filled', 'outcome', 'counter')),
+  ADD CHECK (guard_kind IN ('llm', 'always', 'fallback', 'default', 'slot_filled', 'outcome', 'counter')),
   ADD CHECK (counter_limit IS NULL OR counter_limit > 0);

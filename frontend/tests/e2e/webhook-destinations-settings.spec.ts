@@ -5,11 +5,13 @@ import {
   defaultAgentId,
   installDashboardApiMocks,
   seedDashboardStorage,
+  type RoutineMutationFixture,
+  type WebhookDestinationMutationFixture,
   workspaceKey,
 } from "./dashboard-fixtures";
 
 test("workspace operator manages webhook destinations and one-time secrets", async ({ page }) => {
-  const webhookDestinationUpdates: Array<{ method: string; destinationId?: string; body?: unknown }> = [];
+  const webhookDestinationUpdates: WebhookDestinationMutationFixture[] = [];
 
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
@@ -84,7 +86,7 @@ test("assistant skills expose and persist the webhook exports gate", async ({ pa
 });
 
 test("routine editor configures completion export with destination dropdown and payload preview", async ({ page }) => {
-  const routineUpdates: Array<{ method: string; routineId?: string; body?: unknown }> = [];
+  const routineUpdates: RoutineMutationFixture[] = [];
 
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {

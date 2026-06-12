@@ -13,6 +13,7 @@ import {
 
 const routine = {
   id: 'routine-1',
+  lineageId: 'lineage-1',
   agentId: 'agent-1',
   name: 'Collect intake',
   status: 'draft',

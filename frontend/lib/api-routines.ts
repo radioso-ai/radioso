@@ -102,6 +102,24 @@ export const routinesApi = {
     return requestRoutinePublish(agentId, routineId)
   },
 
+  async reviseRoutine(agentId: string, routineId: string): Promise<RoutineDefinitionGetResponse> {
+    return request<RoutineDefinitionGetResponse>(`/agents/${agentId}/routines/${routineId}/revise`, {
+      method: 'POST',
+    }, { withApiToken: true })
+  },
+
+  async archiveRoutine(agentId: string, routineId: string): Promise<RoutineDefinitionGetResponse> {
+    return request<RoutineDefinitionGetResponse>(`/agents/${agentId}/routines/${routineId}/archive`, {
+      method: 'POST',
+    }, { withApiToken: true })
+  },
+
+  async restoreRoutine(agentId: string, routineId: string): Promise<RoutineDefinitionGetResponse> {
+    return request<RoutineDefinitionGetResponse>(`/agents/${agentId}/routines/${routineId}/restore`, {
+      method: 'POST',
+    }, { withApiToken: true })
+  },
+
   async deleteRoutine(agentId: string, routineId: string): Promise<void> {
     await request<void>(`/agents/${agentId}/routines/${routineId}`, {
       method: 'DELETE',

@@ -308,6 +308,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       existsByIdAndWorkspace: async (inputWorkspaceId, destinationId) =>
         webhookDestinations.existsByIdAndWorkspace(inputWorkspaceId, destinationId),
     },
+    auditService: infrastructure.auditService,
+    directiveScopeTags: repositories.agentRepository,
   });
   const routineDraftAssistService = new RoutineDraftAssistService({
     repository: repositories.agentRepository,

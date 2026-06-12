@@ -5,8 +5,8 @@ values, take an action, branch on what happened, and finish or hand off to a
 person.
 
 You manage routines in the agent's **Routines** settings. The settings section
-shows the routine list. Choose **New routine** or select an existing routine to
-open the editor screen.
+shows one row per routine lineage, not one row per version. Choose **New
+routine** or select an existing routine to open the editor screen.
 
 The primary authoring view is **Outline**: an ordered set of variables, step
 cards, branch rows, and ends. The graph the engine runs is compiled from that
@@ -193,9 +193,42 @@ Diagnostics appear near the relevant variable, step card, branch row, end, or
 routine header when possible.
 
 Use **Save draft** to keep work in progress. Use **Publish** to create an
-immutable version that the chat runtime can run. Editing a published routine
-creates a new draft; publishing that draft creates a new version. Conversations
-already running keep the version they started on.
+immutable version that the chat runtime can run.
+
+## Lifecycle and versions
+
+A routine can have four statuses:
+
+- `draft` - editable work in progress.
+- `published` - the active version used for new conversations.
+- `superseded` - an older published version replaced by a newer one.
+- `archived` - a retired version that does not activate for new conversations.
+
+Published, superseded, and archived versions are read-only. Choose **Edit
+revision** on a published routine to create or open the lineage's draft revision.
+Publishing that draft makes the draft row the new immutable published version
+in place, keeping its id and assigned version. The previous published version is
+marked `superseded`.
+
+The routine list shows the lineage once. It shows the current state, the active
+version number, and a **draft revision** badge when a published routine has a
+pending draft. Older versions are available in the editor's version history.
+
+Use **Archive** to retire the active published version. Archived routines move to
+the collapsed archived section and do not start in new conversations. Use
+**Restore** to make an archived routine active again when no other version in the
+lineage is published.
+
+Conversations already running keep the version they started on. If a routine is
+superseded or archived while a visitor is mid-flow, that visitor continues on the
+pinned version; new conversations only consider the current `published` version.
+
+The authoring API exposes the same lifecycle:
+
+- `POST /api/v1/agents/{agentId}/routines/{routineId}/revise`
+- `POST /api/v1/agents/{agentId}/routines/{routineId}/publish`
+- `POST /api/v1/agents/{agentId}/routines/{routineId}/archive`
+- `POST /api/v1/agents/{agentId}/routines/{routineId}/restore`
 
 ## Form view
 

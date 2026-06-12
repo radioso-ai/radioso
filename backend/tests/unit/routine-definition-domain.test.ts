@@ -20,6 +20,7 @@ import {
 const baseDefinition = (): RoutineDefinition => ({
   id: "def_1",
   agentId: "agent_1",
+  lineageId: "lineage_1",
   name: "handoff",
   version: 1,
   status: "published",
@@ -52,7 +53,8 @@ describe("routine definition compiler and validator", () => {
     const routine = compileRoutineDefinition(baseDefinition());
 
     expect(routine).toMatchObject({
-      id: "routine:agent_1:handoff:v1",
+      // Compiled id = definition id (directive scope-tag identity).
+      id: "def_1",
       rootStepId: "ask_name",
       steps: [
         { id: "ask_name", kind: "chat", action: "Ask for {{slot.name}}.", metadata: { collectsSlots: ["name"] } },

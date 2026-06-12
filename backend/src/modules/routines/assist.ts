@@ -146,6 +146,7 @@ const draftDefinitionFromInput = (
 ): RoutineDefinition => ({
   id: randomUUID(),
   agentId,
+  lineageId: randomUUID(),
   version: 1,
   status: "draft",
   ...input,

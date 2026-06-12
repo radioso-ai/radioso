@@ -14,7 +14,7 @@ export const ROUTINE_DEFINITION_LIMITS = {
   destinationRef: 300,
 } as const;
 
-export const routineDefinitionStatuses = ["draft", "published"] as const;
+export const routineDefinitionStatuses = ["draft", "published", "superseded", "archived"] as const;
 export const routineSlotTypes = ["text", "number", "boolean", "email", "date"] as const;
 export const routineStepKinds = ["chat", "tool", "action"] as const;
 export const routineGuardKinds = ["llm", "default", "slot_filled", "outcome", "counter"] as const;
@@ -115,6 +115,7 @@ export const routineDefinitionDraftInputSchema = z.object({
 export const routineDefinitionSchema = routineDefinitionDraftInputSchema.extend({
   id: z.string().min(1),
   agentId: z.string().min(1),
+  lineageId: z.string().min(1),
   version: z.number().int().min(1),
   status: z.enum(routineDefinitionStatuses),
   createdAt: z.date(),

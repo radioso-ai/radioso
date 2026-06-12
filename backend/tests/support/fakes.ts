@@ -1091,6 +1091,50 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
     return deleted;
   }
 
+  async repointRoutineScopeTags(input: {
+    agentId: string;
+    fromDefinitionId: string;
+    toDefinitionId: string;
+    survivingStepIds: ReadonlySet<string>;
+  }): Promise<{ repointed: number; orphans: Array<{ directiveId: string; scopeTag: string; reason: "missing_step" }> }> {
+    const routineTag = `routine:${input.fromDefinitionId}`;
+    const stepTagPrefix = `step:${input.fromDefinitionId}:`;
+    let repointed = 0;
+    const orphans: Array<{ directiveId: string; scopeTag: string; reason: "missing_step" }> = [];
+    for (const directive of this.directives.values()) {
+      if (directive.agentId !== input.agentId) {
+        continue;
+      }
+      let changed = false;
+      const tags = directive.tags.map((tag) => {
+        if (tag === routineTag) {
+          changed = true;
+          repointed += 1;
+          return `routine:${input.toDefinitionId}`;
+        }
+        if (!tag.startsWith(stepTagPrefix)) {
+          return tag;
+        }
+        const stepId = tag.slice(stepTagPrefix.length);
+        if (!input.survivingStepIds.has(stepId)) {
+          orphans.push({ directiveId: directive.id, scopeTag: tag, reason: "missing_step" });
+          return tag;
+        }
+        changed = true;
+        repointed += 1;
+        return `step:${input.toDefinitionId}:${stepId}`;
+      });
+      if (changed) {
+        this.directives.set(directive.id, {
+          ...directive,
+          tags,
+          updatedAt: new Date(),
+        });
+      }
+    }
+    return { repointed, orphans };
+  }
+
   async update(agentId: string, workspaceId: string, input: AgentInput): Promise<AgentRecord> {
     const current = await this.findByIdAndWorkspaceId(agentId, workspaceId);
     if (!current) {
@@ -1171,12 +1215,18 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
     return item && item.agentId === agentId ? item : null;
   }
 
+  async findPinnedById(agentId: string, id: string): Promise<RoutineDefinition | null> {
+    const item = await this.findById(agentId, id);
+    return item && item.status !== "draft" ? item : null;
+  }
+
   async createDraft(agentId: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition> {
     const draft = routineDefinitionDraftInputSchema.parse(input);
     const now = new Date();
     const definition: RoutineDefinition = {
       id: randomUUID(),
       agentId,
+      lineageId: randomUUID(),
       version: 1,
       status: "draft",
       ...draft,
@@ -1189,7 +1239,11 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
 
   async updateDraft(agentId: string, id: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition> {
     const existing = await this.findById(agentId, id);
-    if (!existing || existing.status !== "draft") {
+    if (existing && existing.status !== "draft") {
+      // Mirrors the SQL repository's zero-row guard for a save racing publish.
+      throw new Error(`routine_definition_update_conflict:${id}`);
+    }
+    if (!existing) {
       throw new Error(`Routine definition ${id} not found`);
     }
     const draft = routineDefinitionDraftInputSchema.parse(input);
@@ -1204,26 +1258,95 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
 
   async publish(agentId: string, draftId: string): Promise<RoutineDefinition> {
     const draft = await this.findById(agentId, draftId);
-    if (!draft) {
+    if (!draft || draft.status !== "draft") {
       throw new Error(`Routine definition ${draftId} not found`);
     }
-    const version = Math.max(
-      0,
-      ...[...this.items.values()]
-        .filter((definition) => definition.agentId === agentId && definition.name === draft.name)
-        .map((definition) => definition.version),
-    ) + 1;
     const now = new Date();
+    for (const definition of this.items.values()) {
+      if (
+        definition.agentId === agentId &&
+        definition.lineageId === draft.lineageId &&
+        definition.status === "published"
+      ) {
+        this.items.set(definition.id, {
+          ...definition,
+          status: "superseded",
+          updatedAt: now,
+        });
+      }
+    }
     const published: RoutineDefinition = {
       ...draft,
-      id: randomUUID(),
-      version,
       status: "published",
+      updatedAt: now,
+    };
+    this.items.set(draftId, published);
+    return published;
+  }
+
+  async createRevisionDraft(agentId: string, publishedId: string): Promise<RoutineDefinition | null> {
+    const published = await this.findById(agentId, publishedId);
+    if (!published || published.status !== "published") {
+      return null;
+    }
+    const existingDraft = [...this.items.values()].find((definition) =>
+      definition.agentId === agentId &&
+      definition.lineageId === published.lineageId &&
+      definition.status === "draft"
+    );
+    if (existingDraft) {
+      return existingDraft;
+    }
+    const now = new Date();
+    const draft: RoutineDefinition = {
+      ...published,
+      id: randomUUID(),
+      version: Math.max(
+        0,
+        ...[...this.items.values()]
+          .filter((definition) => definition.agentId === agentId && definition.lineageId === published.lineageId)
+          .map((definition) => definition.version),
+      ) + 1,
+      status: "draft",
       createdAt: now,
       updatedAt: now,
     };
-    this.items.set(published.id, published);
-    return published;
+    this.items.set(draft.id, draft);
+    return draft;
+  }
+
+  async archive(agentId: string, id: string): Promise<boolean> {
+    const existing = await this.findById(agentId, id);
+    if (!existing || existing.status !== "published") {
+      return false;
+    }
+    this.items.set(id, {
+      ...existing,
+      status: "archived",
+      updatedAt: new Date(),
+    });
+    return true;
+  }
+
+  async restore(agentId: string, id: string): Promise<boolean> {
+    const existing = await this.findById(agentId, id);
+    if (!existing || existing.status !== "archived") {
+      return false;
+    }
+    const hasPublished = [...this.items.values()].some((definition) =>
+      definition.agentId === agentId &&
+      definition.lineageId === existing.lineageId &&
+      definition.status === "published"
+    );
+    if (hasPublished) {
+      return false;
+    }
+    this.items.set(id, {
+      ...existing,
+      status: "published",
+      updatedAt: new Date(),
+    });
+    return true;
   }
 
   async deleteDraft(agentId: string, id: string): Promise<boolean> {

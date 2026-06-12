@@ -27,6 +27,7 @@ export const CONTACT_INTENT_NAME = "explicit_contact_request";
 export const contactRoutineDefinition: RoutineDefinition = {
   id: "builtin_contact_request_v1",
   agentId: "builtin",
+  lineageId: "builtin_contact_request",
   name: CONTACT_ROUTINE_ID,
   version: 1,
   status: "published",

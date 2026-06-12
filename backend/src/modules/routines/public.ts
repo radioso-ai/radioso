@@ -2,6 +2,7 @@ export {
   ROUTINE_DEFINITION_LIMITS,
   routineDefinitionDraftInputSchema,
   routineDefinitionSchema,
+  routineDefinitionStatuses,
   routineCompletionExportSchema,
   routineGuardKinds,
   routineSlotTypes,
@@ -17,7 +18,7 @@ export {
   type RoutineStepKind,
   type RoutineTerminalKind,
 } from "./domain.js";
-export { compileRoutineDefinition } from "./compiler.js";
+export { compileRoutineDefinition, legacyCompiledRoutineId } from "./compiler.js";
 export {
   routineValidationCodes,
   validateRoutineDefinition,
@@ -27,7 +28,10 @@ export {
 } from "./validator.js";
 export {
   RoutineDefinitionService,
+  type RoutineDirectiveScopeOrphan,
   type RoutineDefinitionRepositoryPort,
+  type RoutineDefinitionPublishLifecycleInput,
+  type RoutineDefinitionPublishOptions,
   type RoutineDefinitionPublishRejection,
   type RoutineDefinitionPublishResult,
   type RoutineDefinitionSaveResult,

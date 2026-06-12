@@ -24,6 +24,11 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
         label: 'Workspace and access',
         summary: 'Organization label, workspace naming, API access, and destructive actions.',
       },
+      {
+        id: 'webhook-destinations',
+        label: 'Webhook destinations',
+        summary: 'Reusable signed endpoints that routines can export completion data to.',
+      },
     ],
   },
   providers: {

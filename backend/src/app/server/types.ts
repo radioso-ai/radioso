@@ -46,6 +46,7 @@ import type { Env } from "../config/env.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import type { WorkspaceProviderCredentialsService } from "../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
+import type { WebhookDestinationPublicAdapter } from "../../modules/webhooks/public.js";
 import type { WorkspaceLlmCapabilitySettingsService } from "../../modules/settings/composition.js";
 import type { ProductAnalyticsPort } from "../../shared/analytics/productAnalyticsService.js";
 import type { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
@@ -96,6 +97,7 @@ export interface AppDependencies {
   workspaceSessionService: WorkspaceSessionService;
   abuseControlService: AbuseControlService;
   workspaceProviderCredentialsService: WorkspaceProviderCredentialsService;
+  webhookDestinations: WebhookDestinationPublicAdapter;
   workspaceLlmCapabilitySettingsService: WorkspaceLlmCapabilitySettingsService;
   auditService: AuditService;
   mailService: EmailService;

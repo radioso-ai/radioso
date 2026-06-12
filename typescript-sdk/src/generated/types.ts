@@ -419,6 +419,60 @@ export interface paths {
         patch: operations["renameWorkspace"];
         trace?: never;
     };
+    "/api/v1/settings/webhook-destinations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List workspace webhook destinations */
+        get: operations["listWebhookDestinations"];
+        put?: never;
+        /** Create a workspace webhook destination */
+        post: operations["createWebhookDestination"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/webhook-destinations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a workspace webhook destination */
+        get: operations["getWebhookDestination"];
+        /** Update a workspace webhook destination */
+        put: operations["updateWebhookDestination"];
+        post?: never;
+        /** Delete a workspace webhook destination */
+        delete: operations["deleteWebhookDestination"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/webhook-destinations/{id}/rotate-secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rotate a workspace webhook destination secret */
+        post: operations["rotateWebhookDestinationSecret"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings": {
         parameters: {
             query?: never;
@@ -2136,6 +2190,37 @@ export interface components {
         SetWorkspaceProviderCredentialRequest: {
             apiKey: string;
         };
+        WebhookDestination: {
+            id: string;
+            name: string;
+            url: string;
+            /** @enum {string|null} */
+            lastDeliveryStatus: "success" | "retry" | "failed" | "skipped" | null;
+            /** Format: date-time */
+            lastDeliveryAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        WebhookDestinationListResponse: {
+            destinations: components["schemas"]["WebhookDestination"][];
+        };
+        WebhookDestinationResponse: {
+            destination: components["schemas"]["WebhookDestination"];
+        };
+        WebhookDestinationCreateResponse: {
+            destination: components["schemas"]["WebhookDestination"];
+            secret: string;
+        };
+        WebhookDestinationRequest: {
+            name: string;
+            url: string;
+        };
+        WebhookDestinationParams: {
+            /** Format: uuid */
+            id: string;
+        };
         WorkspaceLlmCapabilityPreference: {
             /** @enum {string} */
             provider: "openai" | "openai-compatible" | "gemini" | "claude";
@@ -2238,6 +2323,7 @@ export interface components {
             assistantLinkUtmEnabled: boolean;
             citationDisplayEnabled: boolean;
             contactRequestsEnabled: boolean;
+            webhookExportsEnabled: boolean;
             contactRequestDelivery: components["schemas"]["AgentContactRequestDelivery"];
             theme: {
                 brand: string;
@@ -2283,6 +2369,7 @@ export interface components {
             assistantLinkUtmEnabled?: boolean;
             citationDisplayEnabled?: boolean;
             contactRequestsEnabled?: boolean;
+            webhookExportsEnabled?: boolean;
             contactRequestDelivery?: components["schemas"]["AgentContactRequestDeliveryRequest"];
             theme?: {
                 brand?: string;
@@ -2502,6 +2589,14 @@ export interface components {
                 instruction?: string | null;
                 ordinal: number;
             }[];
+            completionExport?: {
+                /** @default false */
+                enabled: boolean;
+                /** @default [] */
+                triggerKinds: ("complete" | "handoff")[];
+                /** @default  */
+                destinationRef: string;
+            };
         };
         RoutineDefinitionUpdateRequest: {
             name: string;
@@ -2551,6 +2646,14 @@ export interface components {
                 instruction?: string | null;
                 ordinal: number;
             }[];
+            completionExport?: {
+                /** @default false */
+                enabled: boolean;
+                /** @default [] */
+                triggerKinds: ("complete" | "handoff")[];
+                /** @default  */
+                destinationRef: string;
+            };
         };
         RoutineDraftAssistRequest: {
             prose: string;
@@ -2559,7 +2662,7 @@ export interface components {
             ok: boolean;
             diagnostics: {
                 /** @enum {string} */
-                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "action_capability_denied" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "unsupported_tool_step";
+                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "unsupported_tool_step" | "completion_export_missing_destination";
                 location: string;
                 message: string;
             }[];
@@ -2612,6 +2715,14 @@ export interface components {
                 instruction?: string | null;
                 ordinal: number;
             }[];
+            completionExport?: {
+                /** @default false */
+                enabled: boolean;
+                /** @default [] */
+                triggerKinds: ("complete" | "handoff")[];
+                /** @default  */
+                destinationRef: string;
+            };
             /** Format: uuid */
             id: string;
             /** Format: uuid */
@@ -5135,6 +5246,275 @@ export interface operations {
                 };
             };
             /** @description Workspace not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listWebhookDestinations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Webhook destinations returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookDestinationListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createWebhookDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookDestinationRequest"];
+            };
+        };
+        responses: {
+            /** @description Webhook destination created with one-time plaintext secret */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookDestinationCreateResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Destination name already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getWebhookDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Webhook destination returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookDestinationResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Webhook destination not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateWebhookDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookDestinationRequest"];
+            };
+        };
+        responses: {
+            /** @description Webhook destination updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookDestinationResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Webhook destination not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Destination name already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteWebhookDestination: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Webhook destination deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Webhook destination not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Destination is referenced by published routines */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rotateWebhookDestinationSecret: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Webhook destination secret rotated with one-time plaintext secret */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookDestinationCreateResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Webhook destination not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -8868,6 +9248,7 @@ export interface operations {
                             name?: string;
                             customInstruction?: string;
                             contactRequestsEnabled?: boolean;
+                            webhookExportsEnabled?: boolean;
                             contactRequestDelivery?: unknown;
                             logo?: unknown;
                             theme?: {
@@ -8899,6 +9280,7 @@ export interface operations {
                         name?: string;
                         customInstruction?: string;
                         contactRequestsEnabled?: boolean;
+                        webhookExportsEnabled?: boolean;
                         contactRequestDelivery?: unknown;
                         logo?: unknown;
                         theme?: {

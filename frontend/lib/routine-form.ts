@@ -1,6 +1,7 @@
 import type {
   RoutineDefinition,
   RoutineDefinitionDraft,
+  RoutineCompletionExport,
   RoutineGuardKind,
   RoutineSlotType,
   RoutineStepKind,
@@ -50,6 +51,11 @@ export type RoutineFormState = {
   slots: RoutineSlotForm[]
   steps: RoutineStepForm[]
   terminals: RoutineTerminalForm[]
+  completionExport: {
+    enabled: boolean
+    triggerKinds: RoutineTerminalKind[]
+    destinationRef: string
+  }
 }
 
 export type RoutineDraftHeader = Pick<RoutineFormState, 'name' | 'activation'>
@@ -101,6 +107,11 @@ export const createEmptyRoutineForm = (): RoutineFormState => ({
     kind: 'complete',
     instruction: '',
   }],
+  completionExport: {
+    enabled: false,
+    triggerKinds: ['complete'],
+    destinationRef: '',
+  },
 })
 
 export const createSlotForm = (index: number): RoutineSlotForm => ({
@@ -178,6 +189,13 @@ export const routineToForm = (routine: RoutineDefinition): RoutineFormState => {
       kind: terminal.kind,
       instruction: terminal.instruction ?? '',
     })),
+    completionExport: {
+      enabled: routine.completionExport?.enabled ?? false,
+      triggerKinds: routine.completionExport?.triggerKinds?.length
+        ? [...routine.completionExport.triggerKinds]
+        : ['complete'],
+      destinationRef: routine.completionExport?.destinationRef ?? '',
+    },
   }
 }
 
@@ -187,6 +205,16 @@ export const formToRoutineDraft = (
 ): RoutineDefinitionDraft => {
   const header = options.header ?? form
   let transitionOrdinal = 0
+  const completionExport: RoutineCompletionExport | undefined = form.completionExport.enabled
+    ? {
+        enabled: true,
+        triggerKinds: form.completionExport.triggerKinds.length > 0
+          ? form.completionExport.triggerKinds
+          : ['complete'],
+        destinationRef: form.completionExport.destinationRef.trim(),
+      }
+    : undefined
+
   return {
     name: header.name.trim(),
     activation: {
@@ -232,8 +260,24 @@ export const formToRoutineDraft = (
       instruction: nullableText(terminal.instruction),
       ordinal: index,
     })),
+    ...(completionExport ? { completionExport } : {}),
   }
 }
+
+export const buildCompletionExportPayloadPreview = (form: RoutineFormState): Record<string, unknown> => ({
+  destinationRef: form.completionExport.destinationRef,
+  source: {
+    routineId: '<routine-id>',
+    stepId: '<terminal-step-id>',
+    terminalKind: form.completionExport.triggerKinds[0] ?? 'complete',
+    status: 'completed',
+  },
+  data: Object.fromEntries(
+    form.slots
+      .map((slot) => [slot.key.trim(), `<${slot.type}>`] as const)
+      .filter(([key]) => key.length > 0),
+  ),
+})
 
 export const diagnosticTargetFor = (diagnostic: RoutineValidationDiagnostic): DiagnosticTarget => {
   const [scope, rest = ''] = diagnostic.location.split(':', 2)

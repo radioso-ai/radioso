@@ -115,6 +115,109 @@ describe("DefaultRoutineRunner", () => {
     expect(result.nextState).toBeNull();
   });
 
+  it("emits a webhook.send action when a matching completion-export terminal is reached", async () => {
+    const exportRoutine: Routine = {
+      ...routine,
+      id: "routine:agent_1:lead_capture:v3",
+      slots: [
+        { id: "slot_email", key: "email", type: "email", required: true },
+        { id: "slot_message", key: "message", type: "text", required: true },
+      ],
+      completionExport: {
+        enabled: true,
+        destinationRef: "33333333-3333-4333-8333-333333333333",
+        triggerKinds: ["complete"],
+      },
+    };
+    const runner = new DefaultRoutineRunner(
+      [exportRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "done" })) },
+      { render: vi.fn(echoRenderer.render) },
+    );
+
+    const result = await runner.resume({
+      turn,
+      state: {
+        ...state(["ask_email", "ask_message"], { email: "a@b.c", message: "hi" }),
+        routineId: exportRoutine.id,
+      },
+    });
+
+    expect(result.actions).toEqual([{
+      type: "webhook.send",
+      payload: {
+        destinationRef: "33333333-3333-4333-8333-333333333333",
+        source: {
+          routineId: "routine:agent_1:lead_capture:v3",
+          stepId: "done",
+          terminalKind: "complete",
+          status: "completed",
+        },
+        data: { email: "a@b.c", message: "hi" },
+      },
+    }]);
+    expect(result.nextState).toBeNull();
+  });
+
+  it("filters completion-export data to declared routine slot keys", async () => {
+    const exportRoutine: Routine = {
+      ...routine,
+      id: "routine:agent_1:lead_capture:v4",
+      slots: [
+        { id: "slot_email", key: "email", type: "email", required: true },
+      ],
+      completionExport: {
+        enabled: true,
+        destinationRef: "33333333-3333-4333-8333-333333333333",
+        triggerKinds: ["complete"],
+      },
+    };
+    const runner = new DefaultRoutineRunner(
+      [exportRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "done" })) },
+      { render: vi.fn(echoRenderer.render) },
+    );
+
+    const result = await runner.resume({
+      turn,
+      state: {
+        ...state(["ask_email", "ask_message"], {
+          email: "a@b.c",
+          company: "Acme",
+          budget: "$10k",
+        }),
+        routineId: exportRoutine.id,
+      },
+    });
+
+    expect(result.actions?.[0]?.payload).toEqual(expect.objectContaining({
+      data: { email: "a@b.c" },
+    }));
+  });
+
+  it("does not emit completion export when the terminal kind is not configured", async () => {
+    const exportRoutine: Routine = {
+      ...routine,
+      completionExport: {
+        enabled: true,
+        destinationRef: "33333333-3333-4333-8333-333333333333",
+        triggerKinds: ["handoff"],
+      },
+    };
+    const runner = new DefaultRoutineRunner(
+      [exportRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "done" })) },
+      { render: vi.fn(echoRenderer.render) },
+    );
+
+    const result = await runner.resume({
+      turn,
+      state: state(["ask_email", "ask_message"], { email: "a@b.c", message: "hi" }),
+    });
+
+    expect(result.actions).toBeUndefined();
+  });
+
   it("stays on the current step (re-ask) without growing the path", async () => {
     const runner = new DefaultRoutineRunner(
       [routine],

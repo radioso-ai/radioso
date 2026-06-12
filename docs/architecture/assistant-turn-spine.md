@@ -58,6 +58,14 @@ assistant identity, and configured answer scope. Retrieval query rewrite runs on
 after a turn has been routed to retrieval; it no longer returns response intent or
 direct-answer framing.
 
+Response language is detected once per turn from the latest user message and
+recent history. Chat starts that detector as soon as the user message is
+persisted, then uses the result for routine replies, direct replies, and grounded
+chat replies. Retrieval pipelines only consume a language label when chat passes
+one on the request; standalone retrieval, MCP, and eval retrieval surfaces do not
+run response-language detection. Query rewrite does not own response-language
+selection.
+
 The engine's turn trace (its gather/directive/selection/clarification/dispatch/
 compose stages) is recorded on the `chat.answer` success audit event under
 `metadata.conversationEngine.trace`, alongside the retrieval-derived

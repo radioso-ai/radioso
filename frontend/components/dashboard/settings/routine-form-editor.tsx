@@ -1,7 +1,7 @@
 'use client'
 
-import { useRef } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { useMemo, useRef } from 'react'
+import { Plus, Trash2, Webhook } from 'lucide-react'
 
 import { RoutineDiagnosticList, RoutineVariableInsertButton } from '@/components/dashboard/settings/routine-editor-controls'
 import { Button } from '@/components/ui/button'
@@ -21,8 +21,10 @@ import type {
   RoutineSlotType,
   RoutineTerminalKind,
   RoutineValidationDiagnostic,
+  WebhookDestination,
 } from '@/lib/api'
 import {
+  buildCompletionExportPayloadPreview,
   createSlotForm,
   createStepForm,
   createTerminalForm,
@@ -33,7 +35,7 @@ import {
 
 const slotTypes: RoutineSlotType[] = ['text', 'number', 'boolean', 'email', 'date']
 const guardKinds: RoutineGuardKind[] = ['llm', 'slot_filled', 'outcome', 'counter', 'default']
-const stepKinds: Array<'chat' | 'action'> = ['chat', 'action']
+const stepKinds: Array<'chat' | 'tool' | 'action'> = ['chat', 'tool', 'action']
 const terminalKinds: RoutineTerminalKind[] = ['complete', 'handoff']
 
 const optionLabel = (value: string) => value.replace(/_/gu, ' ')
@@ -43,15 +45,25 @@ export function RoutineFormEditor({
   diagnostics,
   isPublished,
   slotKeys,
+  webhookDestinations,
+  isWebhookDestinationsLoading,
+  webhookDestinationsError,
   onChange,
 }: {
   form: RoutineFormState
   diagnostics: RoutineValidationDiagnostic[]
   isPublished: boolean
   slotKeys: string[]
+  webhookDestinations: WebhookDestination[]
+  isWebhookDestinationsLoading: boolean
+  webhookDestinationsError: string | null
   onChange: (updater: (current: RoutineFormState) => RoutineFormState) => void
 }) {
   const instructionRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
+  const completionExportPayloadPreview = useMemo(
+    () => buildCompletionExportPayloadPreview(form),
+    [form],
+  )
 
   const insertVariable = (stepId: string, token: string) => {
     const textarea = instructionRefs.current[stepId]
@@ -67,6 +79,21 @@ export function RoutineFormEditor({
         }
       }),
     }))
+  }
+
+  const toggleCompletionExportTrigger = (kind: RoutineTerminalKind, checked: boolean) => {
+    onChange((current) => {
+      const triggerKinds = checked
+        ? [...new Set([...current.completionExport.triggerKinds, kind])]
+        : current.completionExport.triggerKinds.filter((item) => item !== kind)
+      return {
+        ...current,
+        completionExport: {
+          ...current.completionExport,
+          triggerKinds,
+        },
+      }
+    })
   }
 
   return (
@@ -330,6 +357,96 @@ export function RoutineFormEditor({
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="space-y-3 rounded-lg border border-border p-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Webhook className="h-4 w-4 text-primary" />
+              <h4 className="text-sm font-semibold text-foreground">Completion export</h4>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Send collected slot data to a workspace webhook destination when this routine reaches a matching terminal.
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant={form.completionExport.enabled ? 'outline' : 'default'}
+            disabled={isPublished}
+            onClick={() => onChange((current) => ({
+              ...current,
+              completionExport: {
+                ...current.completionExport,
+                enabled: !current.completionExport.enabled,
+              },
+            }))}
+          >
+            {form.completionExport.enabled ? 'Disable completion export' : 'Enable completion export'}
+          </Button>
+        </div>
+
+        {form.completionExport.enabled ? (
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="space-y-3">
+              {webhookDestinationsError ? (
+                <p className="text-xs text-destructive">{webhookDestinationsError}</p>
+              ) : null}
+              <div className="space-y-1">
+                <Label htmlFor="completionExportDestination">Webhook destination</Label>
+                <Select
+                  value={form.completionExport.destinationRef}
+                  disabled={isPublished || isWebhookDestinationsLoading || webhookDestinations.length === 0}
+                  onValueChange={(value) => onChange((current) => ({
+                    ...current,
+                    completionExport: { ...current.completionExport, destinationRef: value },
+                  }))}
+                >
+                  <SelectTrigger id="completionExportDestination" aria-label="Webhook destination">
+                    <SelectValue placeholder={isWebhookDestinationsLoading ? 'Loading destinations...' : 'Select destination'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {webhookDestinations.map((destination) => (
+                      <SelectItem key={destination.id} value={destination.id}>{destination.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {webhookDestinations.length === 0 && !isWebhookDestinationsLoading ? (
+                  <p className="text-xs text-muted-foreground">
+                    Create a workspace webhook destination before publishing this export.
+                  </p>
+                ) : null}
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs font-medium uppercase text-muted-foreground">Terminal triggers</p>
+                <div className="flex flex-wrap gap-4">
+                  {terminalKinds.map((kind) => (
+                    <div key={kind} className="flex items-center gap-2">
+                      <Switch
+                        id={`completionExportTrigger-${kind}`}
+                        checked={form.completionExport.triggerKinds.includes(kind)}
+                        disabled={isPublished}
+                        onCheckedChange={(checked) => toggleCompletionExportTrigger(kind, checked)}
+                      />
+                      <Label htmlFor={`completionExportTrigger-${kind}`} className="text-sm">{kind}</Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <RoutineDiagnosticList diagnostics={diagnosticsForTarget(diagnostics, {
+                scope: 'routine',
+                id: 'completionExport.destinationRef',
+              })} />
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase text-muted-foreground">Payload preview</p>
+              <pre className="max-h-72 overflow-auto rounded-md border border-border bg-muted/40 p-3 text-xs leading-5 text-foreground">
+                {JSON.stringify(completionExportPayloadPreview, null, 2)}
+              </pre>
+            </div>
+          </div>
+        ) : null}
       </div>
     </>
   )

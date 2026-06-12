@@ -42,6 +42,8 @@ export interface PreparedSession {
   userMessage: MessageRecord;
   pageContext?: AssistantPageContext | null;
   priorRewriteContinuityState?: RewriteContinuityState;
+  /** Shared per-turn response language label detected from the user message and history. */
+  responseLanguage?: string;
   /** Behavioral steering matched for this turn; consumed by the answer composer and the trace. */
   directiveSteering?: DirectiveSteeringResult;
   /**
@@ -180,7 +182,14 @@ export class ChatSessionPreparer {
     session: PreparedSession,
     framing: TurnRouting["framing"] = defaultTurnFraming(),
   ): Promise<PreparedSession> {
-    const pipelineInput = this.buildPipelineInput(input, session.agent, session.history, session.conversation, session.userMessage);
+    const pipelineInput = this.buildPipelineInput(
+      input,
+      session.agent,
+      session.history,
+      session.conversation,
+      session.userMessage,
+      session.responseLanguage,
+    );
     const { retrieval, turnRoute } = isAgentRetrievalEnabled(session.agent)
       ? await this.prepareRetrievalEnabledTurn(pipelineInput)
       : this.prepareDirectOnlyTurn(pipelineInput, session.agent, framing);
@@ -207,7 +216,14 @@ export class ChatSessionPreparer {
     framing: TurnRouting["framing"] = defaultTurnFraming(),
   ): Promise<PreparedSession> {
     const pipelineInput = {
-      ...this.buildPipelineInput(input, session.agent, session.history, session.conversation, session.userMessage),
+      ...this.buildPipelineInput(
+        input,
+        session.agent,
+        session.history,
+        session.conversation,
+        session.userMessage,
+        session.responseLanguage,
+      ),
       retrievalSettingsOverride: { queryRewriteEnabled: false },
     };
     if (!isAgentRetrievalEnabled(session.agent)) {
@@ -248,6 +264,7 @@ export class ChatSessionPreparer {
     history: MessageRecord[],
     conversation?: ConversationRecord,
     userMessage?: MessageRecord,
+    responseLanguage?: string,
   ): RetrievalPipelineRequest {
     return {
       workspaceId: input.workspaceId,
@@ -258,6 +275,7 @@ export class ChatSessionPreparer {
         customInstruction: agent.customInstruction,
         citationDisplayEnabled: agent.citationDisplayEnabled,
       },
+      responseLanguage,
       responseBehaviorEnabled: true,
       agentSkillSettings: agent.skillSettings,
       metadataFilter: input.metadataFilter,
@@ -315,6 +333,7 @@ export class ChatSessionPreparer {
           suggestedQuestionsCount: DEFAULT_SUGGESTED_QUESTIONS_COUNT,
           customInstruction: agent.customInstruction,
           responseLanguagePolicy: "match_user_question" as const,
+          responseLanguage: input.responseLanguage,
         },
         diagnostics: {
           execution: {
@@ -388,6 +407,7 @@ export class ChatSessionPreparer {
         assistantLinkUtmEnabled: true,
         citationDisplayEnabled: true,
         contactRequestsEnabled: false,
+        webhookExportsEnabled: false,
         contactRequestDelivery: DEFAULT_CONTACT_REQUEST_DELIVERY,
         retrievalEnabled: true,
         sourceScope: { mode: "all" },
@@ -439,6 +459,7 @@ export class ChatSessionPreparer {
       assistantLinkUtmEnabled: true,
       citationDisplayEnabled: true,
       contactRequestsEnabled: false,
+      webhookExportsEnabled: false,
       contactRequestDelivery: DEFAULT_CONTACT_REQUEST_DELIVERY,
       retrievalEnabled: true,
       sourceScope: { mode: "all" },

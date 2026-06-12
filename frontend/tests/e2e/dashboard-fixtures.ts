@@ -35,6 +35,12 @@ type RoutineMutationFixture = {
   routineId?: string;
   body?: unknown;
 };
+type WebhookDestinationFixture = ApiSchemas["WebhookDestination"];
+type WebhookDestinationMutationFixture = {
+  method: "POST" | "PUT" | "DELETE" | "ROTATE_SECRET";
+  destinationId?: string;
+  body?: unknown;
+};
 
 export const basePlatformSettings = (): ApiSchemas["PlatformSettingsResponse"] => ({
   assistant: {
@@ -113,6 +119,16 @@ export const baseIngestionSettings = (): ApiSchemas["IngestionSettings"] => ({
 
 export type IngestionSettingsFixture = ReturnType<typeof baseIngestionSettings>;
 
+export const baseWebhookDestination = (): WebhookDestinationFixture => ({
+  id: "33333333-3333-4333-8333-333333333333",
+  name: "crm-leads",
+  url: "https://hooks.example.com/leads",
+  lastDeliveryStatus: null,
+  lastDeliveryAt: null,
+  createdAt: nowIso,
+  updatedAt: nowIso,
+});
+
 const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchemas["ConversationAgent"] => ({
   id: defaultAgentId,
   workspaceId,
@@ -123,6 +139,7 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   assistantLinkUtmEnabled: true,
   citationDisplayEnabled: true,
   contactRequestsEnabled: false,
+  webhookExportsEnabled: false,
   contactRequestDelivery: {
     recipientEmails: [],
     webhook: null,
@@ -421,6 +438,8 @@ export const installDashboardApiMocks = async (
     routineUpdates?: RoutineMutationFixture[];
     routines?: RoutineFixture[];
     routineDraftAssist?: RoutineDraftAssistFixture;
+    webhookDestinations?: WebhookDestinationFixture[];
+    webhookDestinationUpdates?: WebhookDestinationMutationFixture[];
     requestLog?: string[];
     providerEncryptionConfigured?: boolean;
     providerCredentialUpdates?: Array<{ method: "PUT" | "DELETE"; provider: string; body?: unknown }>;
@@ -466,6 +485,9 @@ export const installDashboardApiMocks = async (
   let routines = options.routines ?? [];
   let nextRoutineIndex = 1;
   const routineUpdates = options.routineUpdates;
+  let webhookDestinations = options.webhookDestinations ?? [];
+  let nextWebhookDestinationIndex = webhookDestinations.length + 1;
+  const webhookDestinationUpdates = options.webhookDestinationUpdates;
   const coherenceFor = (directive: AuthoredDirectiveFixture): ApiSchemas["DirectiveCoherenceVerdict"] => {
     const hasConflict =
       (directive.name.toLowerCase().includes("conflict") || directive.action.toLowerCase().includes("verbose")) &&
@@ -969,6 +991,80 @@ export const installDashboardApiMocks = async (
         };
         routines = routines.filter((routine) => routine.id !== routineId).concat(published);
         await json(route, { routine: published, validation });
+        return;
+      }
+    }
+
+    if (path === "/settings/webhook-destinations") {
+      if (request.method() === "GET") {
+        await json(route, { destinations: webhookDestinations });
+        return;
+      }
+
+      if (request.method() === "POST") {
+        const body = request.postDataJSON() as ApiSchemas["WebhookDestinationRequest"];
+        webhookDestinationUpdates?.push({ method: "POST", body });
+        if (webhookDestinations.some((destination) => destination.name.toLowerCase() === body.name.toLowerCase())) {
+          await json(route, { error: { code: "conflict", message: `Webhook destination named "${body.name}" already exists in this workspace` } }, 409);
+          return;
+        }
+        const destination: WebhookDestinationFixture = {
+          id: `33333333-3333-4333-8333-${String(nextWebhookDestinationIndex).padStart(12, "0")}`,
+          name: body.name,
+          url: body.url,
+          lastDeliveryStatus: null,
+          lastDeliveryAt: null,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        };
+        nextWebhookDestinationIndex += 1;
+        webhookDestinations = [...webhookDestinations, destination];
+        await json(route, { destination, secret: `whsec_${destination.id.slice(-6)}` }, 201);
+        return;
+      }
+    }
+
+    if (path.startsWith("/settings/webhook-destinations/")) {
+      const suffix = path.replace("/settings/webhook-destinations/", "");
+      const [destinationId, action] = suffix.split("/");
+      const existing = webhookDestinations.find((destination) => destination.id === destinationId);
+
+      if (request.method() === "GET" && !action) {
+        if (!existing) {
+          await json(route, { error: { code: "not_found", message: "Webhook destination not found" } }, 404);
+          return;
+        }
+        await json(route, { destination: existing });
+        return;
+      }
+
+      if (request.method() === "PUT" && !action) {
+        const body = request.postDataJSON() as ApiSchemas["WebhookDestinationRequest"];
+        webhookDestinationUpdates?.push({ method: "PUT", destinationId, body });
+        if (!existing) {
+          await json(route, { error: { code: "not_found", message: "Webhook destination not found" } }, 404);
+          return;
+        }
+        const destination = { ...existing, name: body.name, url: body.url, updatedAt: nowIso };
+        webhookDestinations = webhookDestinations.map((item) => item.id === destinationId ? destination : item);
+        await json(route, { destination });
+        return;
+      }
+
+      if (request.method() === "POST" && action === "rotate-secret") {
+        webhookDestinationUpdates?.push({ method: "ROTATE_SECRET", destinationId });
+        if (!existing) {
+          await json(route, { error: { code: "not_found", message: "Webhook destination not found" } }, 404);
+          return;
+        }
+        await json(route, { destination: { ...existing, updatedAt: nowIso }, secret: `whsec_rotated_${destinationId.slice(-6)}` });
+        return;
+      }
+
+      if (request.method() === "DELETE" && !action) {
+        webhookDestinationUpdates?.push({ method: "DELETE", destinationId });
+        webhookDestinations = webhookDestinations.filter((destination) => destination.id !== destinationId);
+        await route.fulfill({ status: 204, contentType: "application/json", body: "" });
         return;
       }
     }

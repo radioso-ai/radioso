@@ -130,6 +130,15 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
           ...(guard ? { guard } : {}),
         };
       }),
+    ...(definition.completionExport?.enabled
+      ? {
+          completionExport: {
+            enabled: true,
+            triggerKinds: [...definition.completionExport.triggerKinds],
+            destinationRef: definition.completionExport.destinationRef.trim(),
+          },
+        }
+      : {}),
     metadata: {
       definitionId: definition.id,
       agentId: definition.agentId,

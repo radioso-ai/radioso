@@ -37,6 +37,7 @@ const agent = (): ConversationAgent => ({
   assistantLinkUtmEnabled: false,
   citationDisplayEnabled: false,
   contactRequestsEnabled: true,
+  webhookExportsEnabled: true,
   contactRequestDelivery: {
     recipientEmails: ["ops@example.com"],
     webhook: { url: "https://hooks.example.com/contact" },

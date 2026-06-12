@@ -27,6 +27,7 @@ import { WebsiteCrawlJobRepository } from "../../db/repositories/websiteCrawlJob
 import { WorkspaceGrantRepository } from "../../db/repositories/workspaceGrantRepository.js";
 import { WorkspaceRepository } from "../../db/repositories/workspaceRepository.js";
 import { WorkspaceTokenRepository } from "../../db/repositories/workspaceTokenRepository.js";
+import { LlmResponseLanguageDetector } from "../../shared/services/responseLanguageDetector.js";
 import { PostgresAssistantTurnPersistence } from "../../modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { registeredCapabilityNames } from "../../shared/domain/capabilityPolicy.js";
 import { AccountAccessService, AccountInvitationService } from "../../modules/account/public.js";
@@ -121,6 +122,13 @@ import {
   type WorkspaceProviderCredentialsRepositoryPort,
 } from "../../db/repositories/workspaceProviderCredentialsRepository.js";
 import { WorkspaceProviderCredentialsService } from "../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
+import { WebhookDestinationRepository } from "../../db/repositories/webhookDestinationRepository.js";
+import {
+  DefaultWebhookDestinationAdapter,
+  WebhookDestinationService,
+  type WebhookDestinationPublicAdapter,
+  type WebhookDestinationRuntimePort,
+} from "../../modules/webhooks/public.js";
 import { WorkspaceLlmCapabilitySettingsService } from "../../modules/settings/composition.js";
 import type { WorkspaceLlmCapabilityPreferencesRepositoryPort } from "../../modules/settings/composition.js";
 import { WorkspaceLlmCapabilityResolver } from "../composition/workspaceLlmCapabilityResolver.js";
@@ -279,6 +287,7 @@ export const buildRepositories = (
   abuseControlRepository: new AbuseControlRepository(database),
   accountInvitationRepository: new AccountInvitationRepository(database),
   workspaceProviderCredentialsRepository: new WorkspaceProviderCredentialsRepository(database),
+  webhookDestinationRepository: new WebhookDestinationRepository(database),
 });
 
 export const buildAccessServices = (input: {
@@ -346,6 +355,25 @@ export const buildWorkspaceProviderCredentialsService = (input: {
   }
   return service;
 };
+
+export const buildWebhookDestinationAdapter = (input: {
+  auditService: AuditPort;
+  env: Pick<Env, "CONNECTOR_ENCRYPTION_KEY" | "NODE_ENV">;
+  logger: Pick<AppLogger, "warn">;
+  repositories: {
+    webhookDestinationRepository: WebhookDestinationRepository;
+    routineDefinitionRepository: Pick<RoutineDefinitionRepository, "listPublishedRoutineNamesReferencingDestination">;
+  };
+  assertPublicUrl: (url: string) => Promise<void>;
+}): WebhookDestinationPublicAdapter =>
+  new DefaultWebhookDestinationAdapter(new WebhookDestinationService({
+    repository: input.repositories.webhookDestinationRepository,
+    auditService: input.auditService,
+    encryption: { key: input.env.CONNECTOR_ENCRYPTION_KEY },
+    assertPublicUrl: input.assertPublicUrl,
+    allowHttpLoopback: false,
+    routineReferences: input.repositories.routineDefinitionRepository,
+  }));
 
 export const buildWorkspaceLlmCapabilitySettingsService = (input: {
   auditService: AuditPort;
@@ -692,6 +720,8 @@ export const buildChatServices = (input: {
   logger: AppLogger;
   messageRepository: MessageRepository;
   metricsRegistry?: MetricsRegistry | null;
+  telemetryService: TelemetryService;
+  webhookDestinations: WebhookDestinationRuntimePort;
   productAnalyticsService: ProductAnalyticsService;
   routineDefinitionRepository: RoutineDefinitionRepository;
   mailService: ReturnType<typeof buildInfrastructure>["mailService"];
@@ -848,6 +878,9 @@ export const buildChatServices = (input: {
               database: input.database,
               env: input.env,
               logger: input.logger,
+              auditService: input.auditService,
+              telemetryService: input.telemetryService,
+              webhookDestinations: input.webhookDestinations,
               mailService: input.mailService,
               assertPublicWebsiteUrl: input.assertPublicWebsiteUrl,
             })
@@ -875,7 +908,7 @@ export const buildChatServices = (input: {
     },
   });
   const routineProvider: ChatRoutineProvider = {
-    async forTurn({ modelGateway, agentId, workspaceId }) {
+    async forTurn({ modelGateway, agentId, workspaceId, responseLanguage }) {
       let publishedRegistrations: RoutineRegistration[];
       try {
         publishedRegistrations = await publishedRoutineSource.load({ agentId });
@@ -924,6 +957,7 @@ export const buildChatServices = (input: {
           }),
           new RoutineStepRenderer(modelGateway, {
             promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
+            responseLanguage,
           }),
         ),
       };
@@ -956,6 +990,9 @@ export const buildChatServices = (input: {
   const turnRouter = new LlmTurnRouter(
     new ModelTurnRouterGateway(input.llmRegistry.createRewriteInferencePipeline(input.usageEventRecorder)),
   );
+  const responseLanguageDetector = new LlmResponseLanguageDetector(
+    input.llmRegistry.createRewriteInferencePipeline(input.usageEventRecorder),
+  );
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
     messageRepository: input.messageRepository,
@@ -979,6 +1016,7 @@ export const buildChatServices = (input: {
     // terminal turn). Registerable so a host can swap it.
     selectionStrategy: input.composition.selectionStrategy,
     turnRouter,
+    responseLanguageDetector,
     // The reusable conversation engine is the chat turn spine in every
     // environment. ChatService keeps an engine-less path for tests, but
     // composition always wires it.

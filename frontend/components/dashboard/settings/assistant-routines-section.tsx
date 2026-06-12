@@ -21,9 +21,11 @@ import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-ro
 import {
   RoutinePublishRejectedError,
   routinesApi,
+  webhookDestinationsApi,
   type RoutineDefinition,
   type RoutineDefinitionDraft,
   type RoutineValidationResult,
+  type WebhookDestination,
 } from '@/lib/api'
 import {
   diagnosticTargetFor,
@@ -57,6 +59,12 @@ const draftError = (draft: RoutineDefinitionDraft): string | null => {
   }
   if (draft.steps.some((step) => step.kind === 'action' && !step.actionType?.trim())) {
     return 'Action steps need an action type.'
+  }
+  if (draft.completionExport?.enabled && !draft.completionExport.destinationRef.trim()) {
+    return 'Completion export needs a webhook destination.'
+  }
+  if (draft.completionExport?.enabled && draft.completionExport.triggerKinds.length === 0) {
+    return 'Completion export needs at least one terminal trigger.'
   }
   return null
 }
@@ -274,6 +282,9 @@ function RoutineEditorScreen({
   const [isDraftingFromProcedure, setIsDraftingFromProcedure] = useState(false)
   const [draftAssistOpen, setDraftAssistOpen] = useState(false)
   const [draftAssistProse, setDraftAssistProse] = useState('')
+  const [webhookDestinations, setWebhookDestinations] = useState<WebhookDestination[]>([])
+  const [isWebhookDestinationsLoading, setIsWebhookDestinationsLoading] = useState(true)
+  const [webhookDestinationsError, setWebhookDestinationsError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const currentRoutineIdRef = useRef<string | null>(null)
   const { beginSave, isCurrentSave, markError, markSaved } = useSettingsSaveStatus(onSaveStateChange)
@@ -313,6 +324,30 @@ function RoutineEditorScreen({
   useEffect(() => {
     currentRoutineIdRef.current = editingRoutine?.id ?? null
   }, [editingRoutine?.id])
+
+  useEffect(() => {
+    let active = true
+    queueMicrotask(() => {
+      if (!active) return
+      setIsWebhookDestinationsLoading(true)
+      setWebhookDestinationsError(null)
+      void webhookDestinationsApi.listDestinations()
+        .then((response) => {
+          if (!active) return
+          setWebhookDestinations(response.destinations)
+        })
+        .catch((loadError) => {
+          if (!active) return
+          setWebhookDestinationsError(getApiErrorMessage(loadError, 'Failed to load webhook destinations.'))
+        })
+        .finally(() => {
+          if (active) setIsWebhookDestinationsLoading(false)
+        })
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -631,6 +666,9 @@ function RoutineEditorScreen({
               diagnostics={validationDiagnostics}
               isPublished={isPublished}
               slotKeys={slotKeys}
+              webhookDestinations={webhookDestinations}
+              isWebhookDestinationsLoading={isWebhookDestinationsLoading}
+              webhookDestinationsError={webhookDestinationsError}
               onChange={updateForm}
             />
           ) : null}

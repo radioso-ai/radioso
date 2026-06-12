@@ -27,6 +27,7 @@ const fixedRetrievalResult = (request: RetrievalPipelineRequest): RetrievalPipel
       suggestedQuestionsCount: 4,
       customInstruction: request.responseBehavior?.customInstruction,
       responseLanguagePolicy: "match_user_question",
+      responseLanguage: request.responseLanguage,
     },
     diagnostics: {
       rewriteStatus: "skipped",
@@ -213,5 +214,64 @@ describe("ChatSessionPreparer suggested-question settings", () => {
     expect(session.agent).toBe(agent);
     expect(session.history).toBe(history);
     expect(capturedRequest?.history).toBe(history);
+  });
+
+  it("passes the chat-detected response language into retrieval preparation", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const agentRepository = new InMemoryAgentRepository();
+    const agent = await agentRepository.create("ws-1", {
+      name: "Support Bot",
+      customInstruction: "Answer from docs.",
+    });
+    let capturedRequest: RetrievalPipelineRequest | undefined;
+    const retrievalTurn: RetrievalTurnPort = {
+      async interpret(request: RetrievalPipelineRequest) {
+        capturedRequest = request;
+        return {
+          request,
+          traceStartedAtMs: Date.now(),
+          context: { result: {} as never, startedAt: Date.now(), durationMs: 0 },
+          interpretation: {
+            result: {},
+            startedAt: Date.now(),
+            durationMs: 0,
+          },
+        };
+      },
+      async dispatch(input) {
+        return fixedRetrievalResult(input.interpreted.request);
+      },
+    };
+    const preparer = new ChatSessionPreparer(
+      conversationRepository,
+      messageRepository,
+      retrievalTurn,
+      createAuditService(),
+      undefined,
+      {
+        async resolve() {
+          return agent;
+        },
+      },
+    );
+    const baseSession = await preparer.prepare({
+      workspaceId: "ws-1",
+      agentId: agent.id,
+      query: "Hello",
+    }, { skipRetrieval: true });
+
+    const session = await preparer.prepareRetrieval({
+      workspaceId: "ws-1",
+      agentId: agent.id,
+      conversationId: baseSession.conversation.id,
+      query: "How do refunds work?",
+    }, {
+      ...baseSession,
+      responseLanguage: "English",
+    });
+
+    expect(capturedRequest?.responseLanguage).toBe("English");
+    expect(session.retrieval.responseSettings.responseLanguage).toBe("English");
   });
 });

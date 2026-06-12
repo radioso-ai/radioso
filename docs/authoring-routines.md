@@ -142,6 +142,41 @@ With **Handoff** off, the end is a normal completion. With **Handoff** on, the
 routine ends by escalating to a person. Branch targets show handoff ends with the
 word `handoff` in the target list.
 
+### Completion export
+
+A routine can declare a completion export:
+
+```json
+{
+  "completionExport": {
+    "enabled": true,
+    "triggerKinds": ["complete"],
+    "destinationRef": "9ce5f2c1-8e47-47d3-b75d-8608e1a4be52"
+  }
+}
+```
+
+`destinationRef` is the stable id of a workspace webhook destination. It is not
+the destination name or URL. This means a destination can be renamed without
+breaking routines that reference it.
+
+When completion export is enabled, validation and publish check that the
+destination exists in the same workspace. If it does not, the routine gets a
+diagnostic on `completionExport.destinationRef`. Deleting a destination is also
+blocked while a published routine references it.
+
+When a routine reaches a terminal whose kind appears in `triggerKinds`, the
+runtime emits a `webhook.send` action for this field. The action worker resolves
+the destination, signs the JSON body with the destination secret, and posts it
+over the existing action outbox. Delivery uses the same public-host SSRF guard as
+outbound contact webhooks.
+
+Webhook export is gated per agent. If the agent does not have webhook exports
+enabled, the worker records a terminal skip instead of retrying. Missing or
+deleted destinations are also terminal skips; transient transport failures retry
+through the action outbox. The destination's `lastDeliveryStatus` and
+`lastDeliveryAt` fields reflect the latest success, retry, failure, or skip.
+
 ## Validate and publish
 
 Use **Validate** before publishing. Validation reports problems in author terms,
@@ -151,6 +186,7 @@ such as:
 - a step that cannot reach an end
 - a variable used in an instruction but not declared
 - an action the agent is not allowed to use
+- an enabled completion export that points at an unknown webhook destination
 - a missing step, branch, or end field
 
 Diagnostics appear near the relevant variable, step card, branch row, end, or
@@ -173,6 +209,7 @@ The form exposes lower-level fields directly:
 - step ids and step kind: `chat`, `tool`, or `action`
 - transition guard kind: `llm`, `default`, `slot_filled`, `outcome`, or `counter`
 - terminal kind: `complete` or `handoff`
+- completion export settings for webhook delivery
 
 Use **Outline** for normal authoring. Use **Form** only when you need to inspect
 or adjust the underlying draft fields while it remains available.

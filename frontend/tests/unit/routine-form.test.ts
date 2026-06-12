@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { RoutineDefinition } from '@/lib/api'
 import {
+  buildCompletionExportPayloadPreview,
   createEmptyRoutineForm,
   createTransitionForm,
   diagnosticTargetFor,
@@ -216,6 +217,54 @@ describe('routine form transforms', () => {
 
     expect(form.steps[0]?.metadata).toEqual({ outlineLabel: 'Ask for email' })
     expect(formToRoutineDraft(form).steps[0]?.metadata).toEqual({ outlineLabel: 'Ask for email' })
+  })
+
+  it('omits disabled completion export from new drafts', () => {
+    const form = createEmptyRoutineForm()
+
+    expect(form.completionExport).toEqual({
+      enabled: false,
+      triggerKinds: ['complete'],
+      destinationRef: '',
+    })
+    expect(formToRoutineDraft(form)).not.toHaveProperty('completionExport')
+  })
+
+  it('round-trips enabled completion export settings and builds a payload preview', () => {
+    const destinationRef = '33333333-3333-4333-8333-333333333333'
+    const form = routineToForm({
+      ...routine,
+      completionExport: {
+        enabled: true,
+        triggerKinds: ['complete', 'handoff'],
+        destinationRef,
+      },
+    })
+
+    expect(form.completionExport).toEqual({
+      enabled: true,
+      triggerKinds: ['complete', 'handoff'],
+      destinationRef,
+    })
+    expect(formToRoutineDraft(form)).toMatchObject({
+      completionExport: {
+        enabled: true,
+        triggerKinds: ['complete', 'handoff'],
+        destinationRef,
+      },
+    })
+    expect(buildCompletionExportPayloadPreview(form)).toEqual({
+      destinationRef,
+      source: {
+        routineId: '<routine-id>',
+        stepId: '<terminal-step-id>',
+        terminalKind: 'complete',
+        status: 'completed',
+      },
+      data: {
+        email: '<email>',
+      },
+    })
   })
 })
 

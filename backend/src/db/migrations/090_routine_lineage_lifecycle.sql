@@ -14,6 +14,16 @@ WHERE d.lineage_id IS NULL
   AND d.agent_id = g.agent_id
   AND d.name = g.name;
 
+-- Widen the status check constraint before backfilling 'superseded' rows below.
+-- The table was created (084) with CHECK (status IN ('draft', 'published')), so the
+-- backfill UPDATE must not run until the constraint accepts the new lifecycle states.
+ALTER TABLE routine_definition
+  DROP CONSTRAINT IF EXISTS routine_definition_status_check;
+
+ALTER TABLE routine_definition
+  ADD CONSTRAINT routine_definition_status_check
+  CHECK (status IN ('draft', 'published', 'superseded', 'archived'));
+
 WITH ranked_published AS (
   SELECT
     id,
@@ -50,13 +60,6 @@ WHERE d.id = r.id
 
 ALTER TABLE routine_definition
   ALTER COLUMN lineage_id SET NOT NULL;
-
-ALTER TABLE routine_definition
-  DROP CONSTRAINT IF EXISTS routine_definition_status_check;
-
-ALTER TABLE routine_definition
-  ADD CONSTRAINT routine_definition_status_check
-  CHECK (status IN ('draft', 'published', 'superseded', 'archived'));
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_routine_definition_one_draft_per_lineage
   ON routine_definition (lineage_id)

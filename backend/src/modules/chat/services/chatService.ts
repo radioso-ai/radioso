@@ -171,6 +171,7 @@ export interface ChatRoutineProvider {
     modelGateway: ConversationModelGateway;
     agentId: string;
     workspaceId?: string;
+    pinnedRoutineIds?: string[];
     responseLanguage?: string | Promise<string | undefined>;
   }): Promise<{
     activator: ConversationRoutineActivator;
@@ -357,10 +358,12 @@ export class ChatService {
       workspaceContext: this.answerSupport.buildChatWorkspaceContext(session),
       usageContext: this.answerSupport.buildChatUsageContext(session, accountId, "routine_turn"),
     });
+    const activeRoutine = await this.routineStore.loadActive({ sessionId: session.conversation.id });
     const routineTurnPorts = await this.routineProvider.forTurn({
       modelGateway,
       agentId: session.agent.id,
       workspaceId: session.conversation.workspaceId,
+      pinnedRoutineIds: activeRoutine?.status === "active" ? [activeRoutine.routineId] : [],
       responseLanguage,
     });
     if (!routineTurnPorts) {

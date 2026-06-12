@@ -17,3 +17,22 @@ Implementation notes:
 - Added migration `090_routine_lineage_lifecycle.sql` with lineage backfill, older-published retro-supersede, one-draft and one-published partial indexes, and `(agent_id, lineage_id)` index.
 - Repository publish now locks/version-increments by lineage, snapshots the published version, supersedes prior published rows, and deletes the draft in the same transaction. Revision draft creation preserves stable child ids and completion export by copying the published definition through the existing child replacement helper.
 - Service owns transition legality and emits audit events for publish, revise, archive, and restore with workspace/agent/routine/lineage/version/status correlation only.
+
+## Phase 2 — Pinned-Version Runtime Resolution
+
+Red evidence:
+
+- `cd backend && pnpm exec vitest run tests/integration/routine-lifecycle.integration.test.ts` initially failed with `expected 200 "OK", got 500 "Internal Server Error"` when a conversation pinned to the superseded version tried to continue after publishing the newer version.
+
+Green evidence:
+
+- `cd backend && pnpm exec vitest run tests/integration/routine-lifecycle.integration.test.ts` → 1 file passed, 1 test passed.
+- `cd backend && pnpm exec vitest run tests/unit/routine-definition-composition.test.ts tests/integration/routine-lifecycle.integration.test.ts` → 2 files passed, 3 tests passed.
+- `cd backend && pnpm exec tsc -p tsconfig.json --noEmit` → passed.
+- `git diff --name-only packages/conversation-engine packages/conversation-contract` → no output; engine packages unchanged.
+
+Implementation notes:
+
+- ChatService now passes the active session routine id into the routine provider before the engine turn.
+- Composition builds activation candidates from published routines only, then adds pinned registrations to the runner list as resume-only routines. When only resume-only routines exist, the activator is a no-op so new activation cannot see non-published versions.
+- Code-reality deviation from the plan: current `routine_states.routine_id` stores the compiled runtime id (`routine:<agentId>:<name>:v<version>`), not the definition UUID described in the amendment. `loadPinned` therefore resolves pinned runtime ids by compiling all agent definitions across statuses and matching the compiled id, while still supporting direct `findByIdAnyStatus` lookup for UUID-style pins. The spec requirement is preserved: non-published pinned versions resume, but new activation still only uses `published` definitions.

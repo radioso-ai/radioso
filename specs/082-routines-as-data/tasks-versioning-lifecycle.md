@@ -14,10 +14,10 @@
 
 ## Phase 2 — Pinned-version runtime resolution (amendment §7.2, FR-028)
 
-- [ ] T007 Write failing integration test `backend/tests/integration/routine-lifecycle.integration.test.ts`: conversation enters routine v1 → publish v2 → same session continues and completes on v1; a new session activates v2 only (SC-017); archived lineage never activates but pinned session completes (SC-019).
-- [ ] T008 `backend/src/app/composition/routineDefinitionSource.ts`: add pinned load (`findByIdAnyStatus`-backed) returning resume-only registrations; warn log when a pinned definition fails to load/compile.
-- [ ] T009 `backend/src/modules/chat/composition.ts` `RoutineRegistry` (+ `backend/src/app/server/dependencyBuilders.ts` provider): accept resume-only routines — included in the runner's routine list, excluded from activation candidates; `forTurn` receives the session/conversation id from ChatService. Engine packages unchanged (verify by diff).
-- [ ] T010 Run Phase 2 tests green; evidence in slice notes.
+- [X] T007 Write failing integration test `backend/tests/integration/routine-lifecycle.integration.test.ts`: conversation enters routine v1 → publish v2 → same session continues and completes on v1; a new session activates v2 only (SC-017); archived lineage never activates but pinned session completes (SC-019).
+- [X] T008 `backend/src/app/composition/routineDefinitionSource.ts`: add pinned load (`findByIdAnyStatus`-backed) returning resume-only registrations; warn log when a pinned definition fails to load/compile.
+- [X] T009 `backend/src/modules/chat/composition.ts` `RoutineRegistry` (+ `backend/src/app/server/dependencyBuilders.ts` provider): accept resume-only routines — included in the runner's routine list, excluded from activation candidates; `forTurn` receives the session/conversation id from ChatService. Engine packages unchanged (verify by diff).
+- [X] T010 Run Phase 2 tests green; evidence in slice notes.
 
 ## Phase 3 — Scoped-directive re-pointing (amendment §7.3, FR-030)
 

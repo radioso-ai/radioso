@@ -24,7 +24,9 @@ describe("DB-backed routine composition source", () => {
   it("loads published definitions, compiles them, and preserves trigger metadata for ranked activation", async () => {
     const repository = {
       listPublishedByAgent: vi.fn(async () => [definition]),
-    } as Pick<RoutineDefinitionRepository, "listPublishedByAgent">;
+      listByAgent: vi.fn(async () => [definition]),
+      findByIdAnyStatus: vi.fn(async () => null),
+    } as Pick<RoutineDefinitionRepository, "listPublishedByAgent" | "listByAgent" | "findByIdAnyStatus">;
     const source = createPublishedRoutineRegistrationSource(repository);
 
     const registrations = await source.load({ agentId: "agent_1" });
@@ -41,7 +43,9 @@ describe("DB-backed routine composition source", () => {
   it("returns no registrations when an agent has no published routine definitions", async () => {
     const repository = {
       listPublishedByAgent: vi.fn(async () => []),
-    } as Pick<RoutineDefinitionRepository, "listPublishedByAgent">;
+      listByAgent: vi.fn(async () => []),
+      findByIdAnyStatus: vi.fn(async () => null),
+    } as Pick<RoutineDefinitionRepository, "listPublishedByAgent" | "listByAgent" | "findByIdAnyStatus">;
 
     await expect(createPublishedRoutineRegistrationSource(repository).load({ agentId: "agent_1" })).resolves.toEqual([]);
   });

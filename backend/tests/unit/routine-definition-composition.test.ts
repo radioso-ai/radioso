@@ -25,8 +25,7 @@ describe("DB-backed routine composition source", () => {
     const repository = {
       listPublishedByAgent: vi.fn(async () => [definition]),
       listByAgent: vi.fn(async () => [definition]),
-      findByIdAnyStatus: vi.fn(async () => null),
-    } as Pick<RoutineDefinitionRepository, "listPublishedByAgent" | "listByAgent" | "findByIdAnyStatus">;
+    } as Pick<RoutineDefinitionRepository, "listPublishedByAgent" | "listByAgent">;
     const source = createPublishedRoutineRegistrationSource(repository);
 
     const registrations = await source.load({ agentId: "agent_1" });
@@ -44,9 +43,50 @@ describe("DB-backed routine composition source", () => {
     const repository = {
       listPublishedByAgent: vi.fn(async () => []),
       listByAgent: vi.fn(async () => []),
-      findByIdAnyStatus: vi.fn(async () => null),
-    } as Pick<RoutineDefinitionRepository, "listPublishedByAgent" | "listByAgent" | "findByIdAnyStatus">;
+    } as Pick<RoutineDefinitionRepository, "listPublishedByAgent" | "listByAgent">;
 
     await expect(createPublishedRoutineRegistrationSource(repository).load({ agentId: "agent_1" })).resolves.toEqual([]);
+  });
+
+  it("loads pinned registrations from non-draft compiled ids only", async () => {
+    const onPinnedDefinitionError = vi.fn();
+    const draft = { ...definition, id: "draft_1", status: "draft" as const, version: 2 };
+    const archived = { ...definition, id: "archived_1", status: "archived" as const, version: 1 };
+    const repository = {
+      listPublishedByAgent: vi.fn(async () => []),
+      listByAgent: vi.fn(async () => [draft, archived]),
+    } as Pick<RoutineDefinitionRepository, "listPublishedByAgent" | "listByAgent">;
+
+    const registrations = await createPublishedRoutineRegistrationSource(repository, {
+      onPinnedDefinitionError,
+    }).loadPinned({
+      agentId: "agent_1",
+      routineIds: ["routine:agent_1:handoff:v1", "routine:agent_1:handoff:v2"],
+    });
+
+    expect(registrations.map((registration) => registration.routine.id)).toEqual(["routine:agent_1:handoff:v1"]);
+    expect(onPinnedDefinitionError).toHaveBeenCalledWith(expect.objectContaining({
+      agentId: "agent_1",
+      routineId: "routine:agent_1:handoff:v2",
+    }));
+  });
+
+  it("resolves pinned compiled-id collisions by status rank and then highest version", async () => {
+    const archived = { ...definition, id: "archived_1", status: "archived" as const };
+    const superseded = { ...definition, id: "superseded_1", status: "superseded" as const };
+    const published = { ...definition, id: "published_1", status: "published" as const };
+    const repository = {
+      listPublishedByAgent: vi.fn(async () => []),
+      listByAgent: vi.fn(async () => [archived, superseded, published]),
+    } as Pick<RoutineDefinitionRepository, "listPublishedByAgent" | "listByAgent">;
+
+    const registrations = await createPublishedRoutineRegistrationSource(repository).loadPinned({
+      agentId: "agent_1",
+      routineIds: ["routine:agent_1:handoff:v1"],
+    });
+
+    expect(registrations).toHaveLength(1);
+    expect(registrations[0]!.routine.id).toBe("routine:agent_1:handoff:v1");
+    expect(registrations[0]!.trigger.priority).toBe(published.activation.priority);
   });
 });

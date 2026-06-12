@@ -1016,11 +1016,11 @@ describe("agents contract", () => {
 
     expect(publish.body).toMatchObject({
       routine: {
-        id: expect.any(String),
+        id: create.body.routine.id,
         agentId: agent.body.id,
         lineageId: create.body.routine.lineageId,
         name: "support-intake-updated",
-        version: 2,
+        version: 1,
         status: "published",
       },
       validation: {
@@ -1029,7 +1029,7 @@ describe("agents contract", () => {
       },
       directiveScopeOrphans: [],
     });
-    expect(publish.body.routine.id).not.toEqual(create.body.routine.id);
+    expect(publish.body.routine.id).toEqual(create.body.routine.id);
   });
 
   it("revises, archives, and restores routine definitions through lifecycle endpoints", async () => {

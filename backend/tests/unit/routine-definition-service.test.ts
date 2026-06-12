@@ -80,24 +80,28 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
       throw new Error("not_found");
     }
     const now = new Date();
-    const routine: RoutineDefinition = {
-      ...draft,
-      id: randomUUID(),
-      version: 2,
-      status: "published",
-      createdAt: now,
-      updatedAt: now,
-    };
     const previousPublished = [...this.items.values()].find((definition) =>
       definition.agentId === inputAgentId &&
       definition.lineageId === draft.lineageId &&
       definition.status === "published"
     );
+    const routine: RoutineDefinition = {
+      ...draft,
+      status: "published",
+      updatedAt: now,
+    };
     await options?.onPublished?.({
       previousPublishedId: previousPublished?.id ?? null,
       newDefinitionId: routine.id,
       transaction: { kind: "fake-transaction" },
     });
+    if (previousPublished) {
+      this.items.set(previousPublished.id, {
+        ...previousPublished,
+        status: "superseded",
+        updatedAt: now,
+      });
+    }
     this.items.set(routine.id, routine);
     return routine;
   }
@@ -119,6 +123,12 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
     const draft: RoutineDefinition = {
       ...published,
       id: randomUUID(),
+      version: Math.max(
+        0,
+        ...[...this.items.values()]
+          .filter((definition) => definition.agentId === inputAgentId && definition.lineageId === published.lineageId)
+          .map((definition) => definition.version),
+      ) + 1,
       status: "draft",
       createdAt: now,
       updatedAt: now,
@@ -366,8 +376,9 @@ describe("RoutineDefinitionService", () => {
 
     expect(result).toMatchObject({
       routine: {
+        id: draft.routine.id,
         status: "published",
-        version: 2,
+        version: 1,
       },
       validation: {
         ok: true,
@@ -759,6 +770,8 @@ describe("RoutineDefinitionService", () => {
         routineId: publish.routine.id,
         lineageId: publish.routine.lineageId,
         version: publish.routine.version,
+        supersededDefinitionId: null,
+        directiveScopeOrphans: 0,
       }),
     }));
     expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({

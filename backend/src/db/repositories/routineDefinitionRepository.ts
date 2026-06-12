@@ -60,6 +60,9 @@ const normalizeStepKind = (kind: string): RoutineStepKind =>
 const normalizeGuardKind = (kind: string): RoutineGuardKind =>
   kind === "always" || kind === "fallback" ? "default" : kind as RoutineGuardKind;
 
+const isUniqueViolation = (error: unknown): boolean =>
+  Boolean(error && typeof error === "object" && "code" in error && error.code === "23505");
+
 const definitionSelect = `
   SELECT
     d.id::text,
@@ -287,39 +290,10 @@ export class RoutineDefinitionRepository {
     if (!draft) {
       throw new Error(`routine_definition_not_found:${draftId}`);
     }
-    const id = randomUUID();
     await this.database.withTransaction(async (client) => {
       await client.query(
         `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
         [`routine_definition_publish:${draft.lineageId}`],
-      );
-      const versionResult = await client.query<{ version: number }>(
-        `SELECT COALESCE(MAX(version), 0) + 1 AS version
-         FROM routine_definition
-         WHERE lineage_id = $1`,
-        [draft.lineageId],
-      );
-      const versionRow = versionResult.rows[0];
-      if (!versionRow) {
-        throw new Error("routine_definition_version_not_found");
-      }
-      await client.query<{ id: string }>(
-        `INSERT INTO routine_definition (
-           id, agent_id, version, name, status, activation_trigger_description,
-           activation_gate_ref, activation_priority, lineage_id
-         )
-         VALUES ($1, $2, $3, $4, 'published', $5, $6, $7, $8)
-         RETURNING id::text`,
-        [
-          id,
-          agentId,
-          versionRow.version,
-          draft.name,
-          draft.activation.triggerDescription,
-          draft.activation.gateRef,
-          draft.activation.priority,
-          draft.lineageId,
-        ],
       );
       const superseded = await client.query<{ id: string }>(
         `UPDATE routine_definition
@@ -327,25 +301,31 @@ export class RoutineDefinitionRepository {
              updated_at = NOW()
          WHERE lineage_id = $1
            AND status = 'published'
-           AND id <> $2
          RETURNING id::text`,
-        [draft.lineageId, id],
+        [draft.lineageId],
       );
-      await options.onPublished?.({
-        previousPublishedId: superseded.rows[0]?.id ?? null,
-        newDefinitionId: id,
-        transaction: client,
-      });
-      await this.replaceChildren(client, id, draft);
-      await client.query(
-        `DELETE FROM routine_definition
-         WHERE agent_id = $1 AND id = $2 AND status = 'draft'`,
+      const published = await client.query<{ id: string }>(
+        `UPDATE routine_definition
+         SET status = 'published',
+             updated_at = NOW()
+         WHERE agent_id = $1
+           AND id = $2
+           AND status = 'draft'
+         RETURNING id::text`,
         [agentId, draftId],
       );
+      if (published.rows.length === 0) {
+        throw new Error(`routine_definition_publish_conflict:${draftId}`);
+      }
+      await options.onPublished?.({
+        previousPublishedId: superseded.rows[0]?.id ?? null,
+        newDefinitionId: draftId,
+        transaction: client,
+      });
     });
-    const loaded = await this.findById(agentId, id);
+    const loaded = await this.findById(agentId, draftId);
     if (!loaded) {
-      throw new Error(`routine_definition_not_found:${id}`);
+      throw new Error(`routine_definition_not_found:${draftId}`);
     }
     return loaded;
   }
@@ -365,39 +345,54 @@ export class RoutineDefinitionRepository {
     }
 
     const id = randomUUID();
-    await this.database.withTransaction(async (client) => {
-      await client.query(
-        `INSERT INTO routine_definition (
-           id, agent_id, version, name, status, activation_trigger_description,
-           activation_gate_ref, activation_priority, lineage_id
-         )
-         VALUES (
-           $1,
-           $2,
-           (
-             SELECT COALESCE(MAX(version), 0) + 1
-             FROM routine_definition
-             WHERE lineage_id = $7
-           ),
-           $3,
-           'draft',
-           $4,
-           $5,
-           $6,
-           $7
-         )`,
-        [
-          id,
-          agentId,
-          published.name,
-          published.activation.triggerDescription,
-          published.activation.gateRef,
-          published.activation.priority,
-          published.lineageId,
-        ],
+    try {
+      await this.database.withTransaction(async (client) => {
+        await client.query(
+          `INSERT INTO routine_definition (
+             id, agent_id, version, name, status, activation_trigger_description,
+             activation_gate_ref, activation_priority, lineage_id
+           )
+           VALUES (
+             $1,
+             $2,
+             (
+               SELECT COALESCE(MAX(version), 0) + 1
+               FROM routine_definition
+               WHERE lineage_id = $7
+             ),
+             $3,
+             'draft',
+             $4,
+             $5,
+             $6,
+             $7
+           )`,
+          [
+            id,
+            agentId,
+            published.name,
+            published.activation.triggerDescription,
+            published.activation.gateRef,
+            published.activation.priority,
+            published.lineageId,
+          ],
+        );
+        await this.replaceChildren(client, id, published);
+      });
+    } catch (error) {
+      if (!isUniqueViolation(error)) {
+        throw error;
+      }
+      const racedDraft = await this.database.queryOptional<RoutineDefinitionRow>(
+        `${definitionSelect}
+         WHERE d.agent_id = $1 AND d.lineage_id = $2 AND d.status = 'draft'`,
+        [agentId, published.lineageId],
       );
-      await this.replaceChildren(client, id, published);
-    });
+      if (racedDraft) {
+        return mapRow(racedDraft);
+      }
+      throw error;
+    }
     const loaded = await this.findById(agentId, id);
     if (!loaded) {
       throw new Error(`routine_definition_not_found:${id}`);

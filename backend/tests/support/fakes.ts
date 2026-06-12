@@ -1253,24 +1253,10 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
 
   async publish(agentId: string, draftId: string): Promise<RoutineDefinition> {
     const draft = await this.findById(agentId, draftId);
-    if (!draft) {
+    if (!draft || draft.status !== "draft") {
       throw new Error(`Routine definition ${draftId} not found`);
     }
-    const version = Math.max(
-      0,
-      ...[...this.items.values()]
-        .filter((definition) => definition.agentId === agentId && definition.lineageId === draft.lineageId)
-        .map((definition) => definition.version),
-    ) + 1;
     const now = new Date();
-    const published: RoutineDefinition = {
-      ...draft,
-      id: randomUUID(),
-      version,
-      status: "published",
-      createdAt: now,
-      updatedAt: now,
-    };
     for (const definition of this.items.values()) {
       if (
         definition.agentId === agentId &&
@@ -1284,8 +1270,12 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
         });
       }
     }
-    this.items.set(published.id, published);
-    this.items.delete(draftId);
+    const published: RoutineDefinition = {
+      ...draft,
+      status: "published",
+      updatedAt: now,
+    };
+    this.items.set(draftId, published);
     return published;
   }
 

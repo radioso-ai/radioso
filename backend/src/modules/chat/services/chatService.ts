@@ -13,6 +13,7 @@ import type {
   RecentClarificationReader,
   RenderableTurn,
   RoutineActionRequest,
+  RoutineState,
   TurnContext,
 } from "@radioso/conversation-contract";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
@@ -334,6 +335,7 @@ export class ChatService {
     session: PreparedSession,
     accountId: string | undefined,
     responseLanguage: Promise<string | undefined>,
+    activeRoutine: RoutineState | null,
     clarification?: {
       store?: DeferredClarificationStore;
       resolution?: PendingClarificationResolution;
@@ -358,7 +360,6 @@ export class ChatService {
       workspaceContext: this.answerSupport.buildChatWorkspaceContext(session),
       usageContext: this.answerSupport.buildChatUsageContext(session, accountId, "routine_turn"),
     });
-    const activeRoutine = await this.routineStore.loadActive({ sessionId: session.conversation.id });
     const routineTurnPorts = await this.routineProvider.forTurn({
       modelGateway,
       agentId: session.agent.id,
@@ -461,12 +462,11 @@ export class ChatService {
     return { store, resolution, clarifier };
   }
 
-  private async hasActiveRoutine(session: PreparedSession): Promise<boolean> {
+  private async loadActiveRoutine(session: PreparedSession): Promise<RoutineState | null> {
     if (!this.routineStore) {
-      return false;
+      return null;
     }
-    const active = await this.routineStore.loadActive({ sessionId: session.conversation.id });
-    return active?.status === "active";
+    return this.routineStore.loadActive({ sessionId: session.conversation.id });
   }
 
   private conversationTraceWithStage(
@@ -693,11 +693,18 @@ export class ChatService {
       session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
       const responseLanguagePromise = this.detectResponseLanguage(input, session);
       const clarification = await this.resolvePendingForTurn(session, input.accountId);
-      const activeRoutineAtTurnStart = await this.hasActiveRoutine(session);
+      const activeRoutine = await this.loadActiveRoutine(session);
+      const activeRoutineAtTurnStart = activeRoutine?.status === "active";
       // A routine is a multi-turn skill: attempt it before grounding. If it claims the
       // turn, there is no retrieval — the routine renders its own reply.
       const routineStartedAt = Date.now();
-      const routineTurn = await this.attemptRoutineTurn(session, input.accountId, responseLanguagePromise, clarification);
+      const routineTurn = await this.attemptRoutineTurn(
+        session,
+        input.accountId,
+        responseLanguagePromise,
+        activeRoutine,
+        clarification,
+      );
       if (routineTurn) {
         session = this.withResponseLanguage(session, await responseLanguagePromise);
         const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
@@ -841,7 +848,8 @@ export class ChatService {
       session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
       const responseLanguagePromise = this.detectResponseLanguage(input, session);
       const clarification = await this.resolvePendingForTurn(session, input.accountId);
-      const activeRoutineAtTurnStart = await this.hasActiveRoutine(session);
+      const activeRoutine = await this.loadActiveRoutine(session);
+      const activeRoutineAtTurnStart = activeRoutine?.status === "active";
 
       yield {
         type: "conversation",
@@ -851,7 +859,13 @@ export class ChatService {
       // A routine is a multi-turn skill: attempt it before grounding. If it claims the
       // turn, stream its rendered reply and finish — no retrieval.
       const routineStartedAt = Date.now();
-      const routineTurn = await this.attemptRoutineTurn(session, input.accountId, responseLanguagePromise, clarification);
+      const routineTurn = await this.attemptRoutineTurn(
+        session,
+        input.accountId,
+        responseLanguagePromise,
+        activeRoutine,
+        clarification,
+      );
       if (routineTurn) {
         session = this.withResponseLanguage(session, await responseLanguagePromise);
         // Durably enqueue the action + advance routine state + persist the reply BEFORE

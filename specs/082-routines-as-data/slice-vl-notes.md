@@ -88,3 +88,33 @@ Message-queue impact review:
 - Searched routine lifecycle and queue references across `backend/src`, `backend/tests`, and `packages` for `routine_definition`, `routineDefinition`, `routineId`, `definition_id`, `completion_export`, `routine_completion_export`, `AMQP`, `amqp`, `queue`, `payload`, and `dispatch`.
 - Completion export dispatch remains produced by the conversation engine as `webhook.send` with `payload.destinationRef` and `payload.source.{routineId,stepId,terminalKind}`; the host still persists that through `routine_action_requests` in `postgresAssistantTurnPersistence.ts`.
 - AMQP/document worker dispatch wiring in `defaultComposition.ts` and document queue repositories are not affected by routine lifecycle status or lineage. No worker payload shape, retry semantics, AMQP queue names, queue contract tests, or queue docs require changes for Phases 1-4.
+
+## Review Fixes
+
+Red evidence:
+
+- B1: review reproduced `23505` on live Postgres because `publish()` inserted a new `published` row before superseding the previous one under `idx_routine_definition_one_published_per_lineage`. The old unit test asserted that buggy insert-before-update order.
+- M1: migration 090 could assign duplicate same-name drafts to one lineage, then fail while creating `idx_routine_definition_one_draft_per_lineage`.
+- M2/m2: `publish()` had no in-transaction draft re-check, and `createRevisionDraft()` could surface a `23505` race instead of returning the raced-in draft.
+- M3: pinned loading compiled drafts and had a dead definition-UUID fallback even though `routine_states.routine_id` stores compiled runtime ids.
+- M4: lifecycle SQL/index behavior had no real-Postgres regression coverage.
+
+Green evidence:
+
+- `cd backend && pnpm exec vitest run tests/unit/routine-definition-repository.test.ts tests/unit/routine-definition-composition.test.ts tests/unit/routine-definition-service.test.ts tests/integration/routine-definition-repository-postgres.integration.test.ts` → 4 files passed, 36 tests passed.
+- `cd backend && pnpm exec vitest run tests/integration/routine-lifecycle.integration.test.ts` → 1 file passed, 1 test passed.
+- `cd backend && pnpm run build` → passed.
+- `cd backend && pnpm run test:unit` → 248 files passed, 1786 tests passed.
+- `cd backend && pnpm run test:contract` → 27 files passed, 225 tests passed.
+- `cd backend && pnpm test -- tests/unit/routine-definition-repository.test.ts tests/unit/routine-definition-composition.test.ts tests/unit/routine-definition-service.test.ts` was attempted, but this repo script performed broad Vitest discovery and failed before the target assertions because the shared `INTEGRATION_DATABASE_URL` contains pre-existing data that trips migration 071's `non-default similarity_threshold` guard. The new real-Postgres regression test avoids that unrelated dirty shared state by using an isolated schema on a real Postgres client.
+
+Implementation notes:
+
+- B1/M2/m1: `RoutineDefinitionRepository.publish()` now locks by lineage, supersedes the existing published row first, updates the draft row in place to `published`, aborts on zero returned rows as `routine_definition_publish_conflict`, and invokes `onPublished` inside the same transaction with the draft id as the new definition id. First publish is v1; revision drafts keep their assigned next version and are consumed without gaps.
+- M1/m3: migration 090 now repairs duplicate same-name drafts before building the one-draft partial index by keeping the newest draft in the grouped lineage and assigning fresh lineage ids to older duplicate drafts. It also adds `idx_routine_definition_lineage_version` on `(lineage_id, version)`.
+- m2: `createRevisionDraft()` catches `23505` from the one-draft or lineage-version indexes and re-fetches the existing lineage draft.
+- M3: pinned loading excludes drafts, resolves compiled-id collisions deterministically by status rank (`published` > `superseded` > `archived`) and then highest version, and removes the definition UUID lookup branch. Warn logging remains for load/compile failures.
+- M4: added `routine-definition-repository-postgres.integration.test.ts`, using an isolated schema on a real Postgres connection to cover repository lifecycle/index behavior and migration 090 dirty-data repair.
+- m4: publish audit metadata now includes `supersededDefinitionId` and a numeric `directiveScopeOrphans` count only, alongside ids/version/status.
+- m6: chat turn handling now loads active routine state once and threads it into routine turn setup instead of calling `routineStore.loadActive` twice per turn.
+- OpenAPI/SDK/MCP registry shape did not change. Existing generation/check scripts reported API contract artifacts current; no SDK or MCP generated files needed to be committed for this fix.

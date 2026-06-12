@@ -209,10 +209,12 @@ export class RoutineDefinitionService {
     compileRoutineDefinition(routine);
     let published: RoutineDefinition;
     let directiveScopeOrphans: RoutineDirectiveScopeOrphan[] = [];
+    let supersededDefinitionId: string | null = null;
     const survivingStepIds = new Set(routine.steps.map((step) => step.stableStepId));
     try {
       published = await this.options.repository.publish(agentId, id, {
         onPublished: async ({ previousPublishedId, newDefinitionId, transaction }) => {
+          supersededDefinitionId = previousPublishedId;
           if (!previousPublishedId || !this.options.directiveScopeTags) {
             return;
           }
@@ -241,7 +243,10 @@ export class RoutineDefinitionService {
       }
       throw error;
     }
-    await this.recordLifecycleAudit("routine_definition.publish", workspaceId, agentId, published);
+    await this.recordLifecycleAudit("routine_definition.publish", workspaceId, agentId, published, {
+      supersededDefinitionId,
+      directiveScopeOrphans: directiveScopeOrphans.length,
+    });
     return {
       routine: published,
       validation: validateRoutineDefinition(published),
@@ -329,6 +334,7 @@ export class RoutineDefinitionService {
     workspaceId: string,
     agentId: string,
     routine: RoutineDefinition,
+    extraMetadata: Record<string, string | number | null> = {},
   ): Promise<void> {
     await this.options.auditService?.record({
       workspaceId,
@@ -340,6 +346,7 @@ export class RoutineDefinitionService {
         lineageId: routine.lineageId,
         version: routine.version,
         status: routine.status,
+        ...extraMetadata,
       },
     });
   }

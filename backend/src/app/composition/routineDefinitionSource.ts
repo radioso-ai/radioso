@@ -24,8 +24,30 @@ const registrationFromDefinition = (definition: RoutineDefinition): RoutineRegis
   };
 };
 
+const pinnedStatusRank = (definition: RoutineDefinition): number => {
+  switch (definition.status) {
+    case "published":
+      return 3;
+    case "superseded":
+      return 2;
+    case "archived":
+      return 1;
+    case "draft":
+      return 0;
+  }
+};
+
+const shouldReplacePinnedCandidate = (current: RoutineDefinition, candidate: RoutineDefinition): boolean => {
+  const currentStatusRank = pinnedStatusRank(current);
+  const candidateStatusRank = pinnedStatusRank(candidate);
+  if (candidateStatusRank !== currentStatusRank) {
+    return candidateStatusRank > currentStatusRank;
+  }
+  return candidate.version > current.version;
+};
+
 export const createPublishedRoutineRegistrationSource = (
-  repository: Pick<RoutineDefinitionRepository, "listPublishedByAgent" | "listByAgent" | "findByIdAnyStatus">,
+  repository: Pick<RoutineDefinitionRepository, "listPublishedByAgent" | "listByAgent">,
   options: PublishedRoutineRegistrationSourceOptions = {},
 ): PublishedRoutineRegistrationSource => ({
   async load({ agentId }) {
@@ -49,8 +71,15 @@ export const createPublishedRoutineRegistrationSource = (
     const allDefinitions = await repository.listByAgent(agentId);
     const byCompiledId = new Map<string, RoutineDefinition>();
     for (const definition of allDefinitions) {
+      if (definition.status === "draft") {
+        continue;
+      }
       try {
-        byCompiledId.set(compileRoutineDefinition(definition).id, definition);
+        const compiledId = compileRoutineDefinition(definition).id;
+        const current = byCompiledId.get(compiledId);
+        if (!current || shouldReplacePinnedCandidate(current, definition)) {
+          byCompiledId.set(compiledId, definition);
+        }
       } catch (error) {
         options.onPinnedDefinitionError?.({ agentId, routineId: "", definitionId: definition.id, error });
       }
@@ -58,10 +87,7 @@ export const createPublishedRoutineRegistrationSource = (
 
     const registrations: RoutineRegistration[] = [];
     for (const routineId of uniqueRoutineIds) {
-      let definition = byCompiledId.get(routineId) ?? null;
-      if (!definition) {
-        definition = await repository.findByIdAnyStatus(agentId, routineId);
-      }
+      const definition = byCompiledId.get(routineId) ?? null;
       if (!definition) {
         options.onPinnedDefinitionError?.({
           agentId,
@@ -72,7 +98,7 @@ export const createPublishedRoutineRegistrationSource = (
       }
       try {
         const registration = registrationFromDefinition(definition);
-        if (registration.routine.id === routineId || definition.id === routineId) {
+        if (registration.routine.id === routineId) {
           registrations.push(registration);
         }
       } catch (error) {

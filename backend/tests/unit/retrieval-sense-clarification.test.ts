@@ -211,6 +211,8 @@ describe("retrieval sense clarification", () => {
     expect(response.answer).toBe("Which yoga sense do you mean?");
     expect(saved).toMatchObject({
       source: "retrieval_sense",
+      originalQuery: "tell me about yoga",
+      mode: "ask",
       candidates: [
         expect.objectContaining({ id: "doc-hatha", payload: { documentIds: ["doc-hatha"] } }),
         expect.objectContaining({ id: "doc-raja", payload: { documentIds: ["doc-raja"] } }),
@@ -252,11 +254,14 @@ describe("retrieval sense clarification", () => {
     });
 
     expect(capturedRequests.some((request) => request.documentScope?.includes("doc-hatha"))).toBe(true);
+    expect(capturedRequests.filter((request) => request.documentScope?.includes("doc-hatha")).map((request) => request.query))
+      .toEqual(["hatha", "hatha"]);
     expect(response.citations?.map((citation) => citation.documentId)).toEqual(["doc-hatha"]);
   });
 
-  it("forces grounded retrieval scoped to the resolved sense even when the router answers direct", async () => {
+  it("uses the stored original question for the resolving retrieval run even when the router answers direct", async () => {
     const capturedRequests: RetrievalPipelineRequest[] = [];
+    const originalQuery = "How do I upload a document via the REST API? Give me a curl example.";
     const service = makeService({
       capturedRequests,
       // The short sense answer routes direct; the resolved sense must still ground.
@@ -265,6 +270,8 @@ describe("retrieval sense clarification", () => {
         loadPending: vi.fn(async () => ({
           sessionId: "conv-1",
           source: "retrieval_sense",
+          originalQuery,
+          mode: "ask" as const,
           candidates: [
             { id: "doc-hatha", label: "Hatha yoga", confidence: 0.6, payload: { documentIds: ["doc-hatha"] } },
             { id: "doc-raja", label: "Raja yoga", confidence: 0.58, payload: { documentIds: ["doc-raja"] } },
@@ -283,8 +290,13 @@ describe("retrieval sense clarification", () => {
       stream: false,
     });
 
-    expect(capturedRequests.some((request) => request.documentScope?.includes("doc-hatha"))).toBe(true);
+    const scopedRequests = capturedRequests.filter((request) => request.documentScope?.includes("doc-hatha"));
+    expect(scopedRequests).toHaveLength(2);
+    expect(scopedRequests.map((request) => request.query)).toEqual([originalQuery, originalQuery]);
+    expect(scopedRequests.some((request) => request.query === "the first one")).toBe(false);
     expect(response.citations?.map((citation) => citation.documentId)).toEqual(["doc-hatha"]);
+    const clarificationStages = response.turnTrace?.spine.stages.filter((stage) => stage.kind === "clarification") ?? [];
+    expect(JSON.stringify(clarificationStages)).not.toContain(originalQuery);
   });
 
   it("suppresses asking while an active routine has yielded and records a suppressed decision", async () => {

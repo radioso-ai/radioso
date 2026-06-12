@@ -83,6 +83,7 @@ import {
   resolvePendingClarification,
   type PendingClarificationResolution,
 } from "./clarification/pendingClarificationResolver.js";
+import { retrievalInputForResolvedSense } from "./clarification/retrievalSenseResolutionInput.js";
 import {
   evaluateRetrievalSenseClarification,
   type RetrievalSenseDetectorPort,
@@ -514,6 +515,7 @@ export class ChatService {
       rankedCandidates: input.session.retrieval.contexts,
       conversationId: input.session.conversation.id,
       messageId: input.session.userMessage.id,
+      originalQuery: input.session.userMessage.content,
       conversationLanguage: input.session.agent.assistantDefaultLocale ?? undefined,
       usageContext: {
         workspaceId: input.session.conversation.workspaceId,
@@ -733,9 +735,7 @@ export class ChatService {
       const routing = await this.routeTurn(input, session);
       const resolvedRetrievalSense = clarification.resolution?.kind === "retrieval_sense";
       const groundTurn = resolvedRetrievalSense || routing.route === CHAT_TURN_ROUTE.RETRIEVAL;
-      const retrievalInput = clarification.resolution?.kind === "retrieval_sense"
-        ? { ...input, documentScope: clarification.resolution.documentScope }
-        : input;
+      const retrievalInput = retrievalInputForResolvedSense(input, clarification.resolution);
       session = this.withResponseLanguage(session, await responseLanguagePromise);
       session = groundTurn
         ? await this.chatSessionPreparer.prepareRetrieval(retrievalInput, session, routing.framing)
@@ -757,7 +757,7 @@ export class ChatService {
       }
       const renderedTurn = clarificationTurn?.kind === "ask"
         ? { presentation: clarificationTurn.presentation, engineTrace: clarificationTurn.engineTrace, actions: undefined }
-        : await this.renderTurn(session, input);
+        : await this.renderTurn(session, retrievalInput);
       const { presentation, actions } = renderedTurn;
       const engineTrace = clarificationTurn?.kind === "continue" && clarificationTurn.stage && renderedTurn.engineTrace
         ? this.conversationTraceWithStage(renderedTurn.engineTrace, clarificationTurn.stage)
@@ -904,9 +904,7 @@ export class ChatService {
       const routing = await this.routeTurn(input, session);
       const resolvedRetrievalSense = clarification.resolution?.kind === "retrieval_sense";
       const groundTurn = resolvedRetrievalSense || routing.route === CHAT_TURN_ROUTE.RETRIEVAL;
-      const retrievalInput = clarification.resolution?.kind === "retrieval_sense"
-        ? { ...input, documentScope: clarification.resolution.documentScope }
-        : input;
+      const retrievalInput = retrievalInputForResolvedSense(input, clarification.resolution);
       session = this.withResponseLanguage(session, await responseLanguagePromise);
       session = groundTurn
         ? await this.chatSessionPreparer.prepareRetrieval(retrievalInput, session, routing.framing)
@@ -953,7 +951,7 @@ export class ChatService {
       let suggestions: TurnStreamSuggestions | null = null;
       let engineTrace: ConversationTrace | undefined;
       let actions: RoutineActionRequest[] | undefined;
-      for await (const event of this.streamTurn(session, input)) {
+      for await (const event of this.streamTurn(session, retrievalInput)) {
         if (event.type === "chunk") {
           yield {
             type: "chunk",

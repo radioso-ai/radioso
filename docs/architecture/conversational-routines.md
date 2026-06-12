@@ -188,10 +188,10 @@ the authoring API under `/api/v1/agents/<agentId>/routines`. The flow is:
    version. A published routine is what the chat runtime loads and runs.
 
 Each published version is immutable. Editing a published routine creates a draft
-revision in the same lineage. Publishing that draft creates a new published
-version, marks the previous published version as `superseded`, and removes the
-draft. The dashboard groups these versions into one lineage row and shows older
-versions in history.
+revision in the same lineage. Publishing that draft updates the draft row in
+place to become the new published version, keeping its id and assigned version,
+and marks the previous published version as `superseded`. The dashboard groups
+these versions into one lineage row and shows older versions in history.
 
 Routine statuses are `draft`, `published`, `superseded`, and `archived`. Only
 `published` versions activate for new conversations. A session that already

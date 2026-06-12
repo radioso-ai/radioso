@@ -1042,6 +1042,20 @@ export const installDashboardApiMocks = async (
           await json(route, { error: { code: "not_found", message: "Archived routine not found" } }, 404);
           return;
         }
+        const hasPublishedInLineage = routines.some((routine) =>
+          routine.lineageId === existing.lineageId &&
+          routine.id !== existing.id &&
+          routine.status === "published"
+        );
+        if (hasPublishedInLineage) {
+          await json(route, {
+            error: {
+              code: "bad_request",
+              message: "Archived routine definition cannot be restored while another version is published",
+            },
+          }, 400);
+          return;
+        }
         const restored: RoutineFixture = { ...existing, status: "published", updatedAt: nowIso };
         routines = routines.map((routine) => routine.id === routineId ? restored : routine);
         await json(route, { routine: restored });

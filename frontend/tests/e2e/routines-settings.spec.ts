@@ -224,6 +224,7 @@ test("agent routines outline editor preserves data across form toggle and maps v
   await page.getByRole("button", { name: "Remove end human_help" }).click();
   await page.getByRole("button", { name: "Validate" }).click();
   await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/55555555-5555-4555-8555-000000000001$`));
+  await expect(page.getByRole("heading", { name: "Edit Order support" })).toBeVisible();
   await expect(page.getByText('dangling step reference: transition "send_contact" points at "human_help".')).toBeVisible();
 
   await page.getByRole("button", { name: "Add end" }).click();

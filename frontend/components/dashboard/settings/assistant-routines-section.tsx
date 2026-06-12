@@ -121,10 +121,11 @@ const routineStatusLabel = (status: RoutineDefinition['status']) => {
 
 const lineageStateLabel = (lineage: RoutineLineageGroup) => {
   if (lineage.state === 'draft-only') return 'draft only'
+  if (lineage.state === 'draft-with-archived') return 'draft + archived'
   return lineage.state
 }
 
-const formatRoutineDate = (value: string) => new Intl.DateTimeFormat('en', {
+const formatRoutineDate = (value: string) => new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
   timeStyle: 'short',
 }).format(new Date(value))

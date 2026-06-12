@@ -21,6 +21,7 @@ const missingDestinationId = "44444444-4444-4444-8444-444444444444";
 class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort {
   readonly items = new Map<string, RoutineDefinition>();
   publishError: unknown = undefined;
+  restoreError: unknown = undefined;
 
   async listPublishedByAgent(inputAgentId: string): Promise<RoutineDefinition[]> {
     return [...this.items.values()].filter((definition) =>
@@ -147,6 +148,9 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
   }
 
   async restore(inputAgentId: string, id: string): Promise<boolean> {
+    if (this.restoreError) {
+      throw this.restoreError;
+    }
     const existing = await this.findById(inputAgentId, id);
     if (!existing || existing.status !== "archived") {
       return false;
@@ -827,5 +831,35 @@ describe("RoutineDefinitionService", () => {
 
     await expect(service.restore(workspaceId, agentId, archived.id))
       .rejects.toThrow("Archived routine definition cannot be restored while another version is published");
+  });
+
+  it("turns a missing completion export destination during restore into a bad request", async () => {
+    const { repository, service } = createService();
+    const draft = await service.createDraft(workspaceId, agentId, {
+      ...validDraft(),
+      completionExport: {
+        enabled: true,
+        triggerKinds: ["complete"],
+        destinationRef: missingDestinationId,
+      },
+    });
+    const archived: RoutineDefinition = {
+      ...draft.routine,
+      status: "archived",
+    };
+    repository.items.set(archived.id, archived);
+    repository.restoreError = Object.assign(
+      new Error(`published routine completion export references unknown webhook destination ${missingDestinationId}`),
+      {
+        code: "23503",
+        constraint: "routine_completion_export_destination_ref_published_fk",
+      },
+    );
+
+    await expect(service.restore(workspaceId, agentId, archived.id))
+      .rejects.toMatchObject({
+        statusCode: 400,
+        message: expect.stringContaining(missingDestinationId),
+      });
   });
 });

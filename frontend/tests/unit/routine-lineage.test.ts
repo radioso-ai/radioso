@@ -67,6 +67,24 @@ describe('groupRoutineLineages', () => {
     })
   })
 
+  it('keeps a draft with archived history in the active list while preserving restore history', () => {
+    const grouped = groupRoutineLineages([
+      routine({ id: 'archived-1', lineageId: 'lineage-a', status: 'archived', version: 1 }),
+      routine({ id: 'draft-2', lineageId: 'lineage-a', status: 'draft', version: 2 }),
+    ])
+
+    expect(grouped.archived).toEqual([])
+    expect(grouped.active).toHaveLength(1)
+    expect(grouped.active[0]).toMatchObject({
+      lineageId: 'lineage-a',
+      state: 'draft-with-archived',
+      displayRoutine: expect.objectContaining({ id: 'draft-2' }),
+      activeRoutine: expect.objectContaining({ id: 'archived-1' }),
+      pendingDraft: null,
+    })
+    expect(grouped.active[0]!.versions.map((version) => version.id)).toEqual(['draft-2', 'archived-1'])
+  })
+
   it('sorts version history newest first with drafts before same-version history rows', () => {
     const versions = getRoutineLineageVersions([
       routine({ id: 'v1', lineageId: 'lineage-a', status: 'superseded', version: 1 }),

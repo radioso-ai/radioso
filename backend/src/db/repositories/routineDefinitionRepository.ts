@@ -317,6 +317,7 @@ export class RoutineDefinitionRepository {
       if (published.rows.length === 0) {
         throw new Error(`routine_definition_publish_conflict:${draftId}`);
       }
+      await this.touchCompletionExportDestinationRef(client, draftId);
       await options.onPublished?.({
         previousPublishedId: superseded.rows[0]?.id ?? null,
         newDefinitionId: draftId,
@@ -413,28 +414,30 @@ export class RoutineDefinitionRepository {
   }
 
   async restore(agentId: string, id: string): Promise<boolean> {
-    const row = await this.database.queryOptional<{ id: string }>(
-      `UPDATE routine_definition target
-       SET status = 'published',
-           updated_at = NOW()
-       WHERE target.agent_id = $1
-         AND target.id = $2
-         AND target.status = 'archived'
-         AND NOT EXISTS (
-           SELECT 1
-           FROM routine_definition other
-           WHERE other.lineage_id = target.lineage_id
-             AND other.status = 'published'
-             AND other.id <> target.id
-         )
-       RETURNING target.id::text`,
-      [agentId, id],
-    );
-    return Boolean(row);
-  }
-
-  async findByIdAnyStatus(agentId: string, id: string): Promise<RoutineDefinition | null> {
-    return this.findById(agentId, id);
+    return this.database.withTransaction(async (client) => {
+      const row = await client.query<{ id: string }>(
+        `UPDATE routine_definition target
+         SET status = 'published',
+             updated_at = NOW()
+         WHERE target.agent_id = $1
+           AND target.id = $2
+           AND target.status = 'archived'
+           AND NOT EXISTS (
+             SELECT 1
+             FROM routine_definition other
+             WHERE other.lineage_id = target.lineage_id
+               AND other.status = 'published'
+               AND other.id <> target.id
+           )
+         RETURNING target.id::text`,
+        [agentId, id],
+      );
+      if (row.rows.length === 0) {
+        return false;
+      }
+      await this.touchCompletionExportDestinationRef(client, id);
+      return true;
+    });
   }
 
   async deleteDraft(agentId: string, id: string): Promise<boolean> {
@@ -461,6 +464,16 @@ export class RoutineDefinitionRepository {
       [workspaceId, destinationId],
     );
     return rows.map((row) => row.name);
+  }
+
+  private async touchCompletionExportDestinationRef(client: Pick<PoolClient, "query">, definitionId: string): Promise<void> {
+    await client.query(
+      `UPDATE routine_completion_export
+       SET destination_ref = destination_ref
+       WHERE definition_id = $1
+         AND enabled = TRUE`,
+      [definitionId],
+    );
   }
 
   private async replaceChildren(client: Pick<PoolClient, "query">, definitionId: string, input: RoutineDefinitionDraftInput): Promise<void> {

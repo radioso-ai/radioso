@@ -9345,6 +9345,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RoutineDefinitionPublishResponse"
+        "400":
+          description: Routine definition cannot be published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Authentication required
           content:

@@ -1,6 +1,6 @@
 import type { RoutineDefinition, RoutineDefinitionStatus } from './api-types'
 
-export type RoutineLineageState = 'published' | 'draft-only' | 'archived' | 'superseded'
+export type RoutineLineageState = 'published' | 'draft-only' | 'draft-with-archived' | 'archived' | 'superseded'
 
 export type RoutineLineageGroup = {
   lineageId: string
@@ -38,7 +38,9 @@ const newestOfStatus = (versions: RoutineDefinition[], status: RoutineDefinition
 
 const stateFor = (versions: RoutineDefinition[]): RoutineLineageState => {
   if (versions.some((routine) => routine.status === 'published')) return 'published'
-  if (versions.some((routine) => routine.status === 'draft')) return 'draft-only'
+  if (versions.some((routine) => routine.status === 'draft')) {
+    return versions.some((routine) => routine.status === 'archived') ? 'draft-with-archived' : 'draft-only'
+  }
   if (versions.some((routine) => routine.status === 'archived')) return 'archived'
   return 'superseded'
 }

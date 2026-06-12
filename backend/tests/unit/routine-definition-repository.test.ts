@@ -239,9 +239,8 @@ describe("RoutineDefinitionRepository", () => {
 
   it("archives only published definitions and restores only when the lineage has no published version", async () => {
     const db = mockDatabase();
-    db.queryOptional
-      .mockResolvedValueOnce({ ...loadedRow(), id: "published_1", status: "archived", lineage_id: "lineage_1" })
-      .mockResolvedValueOnce({ ...loadedRow(), id: "published_1", status: "published", lineage_id: "lineage_1" });
+    db.queryOptional.mockResolvedValueOnce({ ...loadedRow(), id: "published_1", status: "archived", lineage_id: "lineage_1" });
+    db.mockClient.query.mockResolvedValueOnce({ rows: [{ id: "published_1" }] });
 
     const repository = new RoutineDefinitionRepository(db);
     await expect(repository.archive("agent_1", "published_1")).resolves.toBe(true);
@@ -250,10 +249,11 @@ describe("RoutineDefinitionRepository", () => {
     const archiveSql = db.queryOptional.mock.calls[0]![0];
     expect(archiveSql).toContain("status = 'archived'");
     expect(archiveSql).toContain("status = 'published'");
-    const restoreSql = db.queryOptional.mock.calls[1]![0];
+    const restoreSql = db.mockClient.query.mock.calls[0]![0];
     expect(restoreSql).toContain("status = 'published'");
     expect(restoreSql).toContain("status = 'archived'");
     expect(restoreSql).toContain("NOT EXISTS");
+    expect(db.mockClient.query.mock.calls[1]![0]).toContain("UPDATE routine_completion_export");
   });
 
   it("lists published routines referencing a webhook destination in a workspace", async () => {

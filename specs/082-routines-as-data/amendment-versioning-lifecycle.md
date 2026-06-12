@@ -14,7 +14,7 @@ Today a published routine is a dead end: the editor greys out every field for `s
 Two latent correctness bugs make this urgent beyond UX:
 
 1. **Double activation.** `publish()` already snapshots a new row (`routineDefinitionRepository.ts:273-318`) with `version = MAX(version)+1` keyed by `(agent_id, name)`, but nothing supersedes the prior published version. `listPublishedByAgent` returns *all* published rows and the composition registers all of them as activation candidates (`backend/src/app/composition/routineDefinitionSource.ts`). Republishing under the same name leaves two live versions competing for activation.
-2. **Stray drafts.** Publishing inserts the published snapshot but never consumes the draft row, so the list accumulates a draft + published pair per publish.
+2. **Stray drafts.** The original publish path inserted a published snapshot without consuming the draft row, so the list could accumulate a draft + published pair per publish. The shipped lifecycle refines this: publish now flips the draft row to `published` in place.
 
 In-flight pinning currently works only by accident: `routine_states.routine_id` pins the definition UUID (migration `071_routine_states.sql`; not a FK), and resume succeeds because old versions stay `published`. Once superseding exists, resume must work for non-published pinned versions explicitly.
 
@@ -38,7 +38,7 @@ edit published                   ▼      │
 ```
 
 - **Revise (edit published)**: creates a new draft row in the same lineage, pre-filled from the active published version — children copied with **stable step/slot ids preserved verbatim**, completion-export config carried over. If the lineage already has a draft, revise resolves to that existing draft (no second draft).
-- **Publish (revision)**: in one transaction — insert the published snapshot at `version = MAX(version in lineage)+1`, mark the previously published version of the lineage `superseded`, and **consume the draft row**. Existing publish-time validation (graph validity, action capabilities, webhook destination references) is unchanged.
+- **Publish (revision)**: in one transaction — mark the previously published version of the lineage `superseded`, then flip the draft row to `published` in place. The draft keeps its id and assigned version, so publishing consumes the draft without creating a second definition id. Existing publish-time validation (graph validity, action capabilities, webhook destination references) is unchanged.
 - **Archive**: operator action on the lineage's active published version → `archived`. The lineage stops activating for new conversations and is visually retired in the dashboard.
 - **Restore**: `archived → published`, allowed only when the lineage has no other currently-published version (publishing a new revision of an archived lineage is also a valid way to re-activate it; the archived row then stays archived as history).
 - **Draft delete**: unchanged (drafts only). `superseded` and `archived` rows are never hard-deleted — `routine_states.routine_id`, traces, and directive history reference definition ids by value, and FKs cascade; hard delete is an explicit anti-goal of this amendment.
@@ -70,7 +70,7 @@ edit published                   ▼      │
 
 - **FR-025**: Routine versions MUST share an explicit lineage identity persisted on `routine_definition`; version numbering and active-version resolution MUST key on lineage, not name. A lineage has at most one draft at a time.
 - **FR-026**: Operators MUST be able to revise a published routine: revise creates (or resolves to) the lineage's draft, pre-filled from the active published version with stable step/slot ids and completion-export config preserved.
-- **FR-027**: Publishing a revision MUST atomically: snapshot the draft as the new published version, mark the lineage's previously published version `superseded`, and consume the draft row. At most one `published` version per lineage may exist at any time.
+- **FR-027**: Publishing a revision MUST atomically: mark the lineage's previously published version `superseded`, flip the draft row to `published` in place as the new immutable version, and consume the draft without changing its id. At most one `published` version per lineage may exist at any time. This refines the original snapshot wording to match the shipped in-place publish model.
 - **FR-028**: Only `published` versions activate for new conversations. A conversation mid-routine MUST continue and complete on its pinned version even when that version is `superseded` or `archived`; the runtime routine source MUST resolve pinned non-published versions for in-flight sessions.
 - **FR-029**: Operators MUST be able to archive a lineage's active published version (stops activating, retired in UI) and restore it (archived → published) when the lineage has no other published version. `superseded`/`archived` versions MUST NOT be hard-deletable; draft deletion is unchanged.
 - **FR-030**: On publish of a new version, directive scope tags referencing the lineage's previously published version MUST be re-pointed to the new version where the referenced step survives; tags referencing steps that no longer exist MUST be surfaced as orphans in the publish result, never silently dropped or re-pointed.

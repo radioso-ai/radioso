@@ -1215,10 +1215,6 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
     return item && item.agentId === agentId ? item : null;
   }
 
-  async findByIdAnyStatus(agentId: string, id: string): Promise<RoutineDefinition | null> {
-    return this.findById(agentId, id);
-  }
-
   async createDraft(agentId: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition> {
     const draft = routineDefinitionDraftInputSchema.parse(input);
     const now = new Date();

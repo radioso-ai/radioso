@@ -206,8 +206,9 @@ A routine can have four statuses:
 
 Published, superseded, and archived versions are read-only. Choose **Edit
 revision** on a published routine to create or open the lineage's draft revision.
-Publishing that draft creates a new immutable version, marks the previous
-published version as `superseded`, and removes the draft row.
+Publishing that draft makes the draft row the new immutable published version
+in place, keeping its id and assigned version. The previous published version is
+marked `superseded`.
 
 The routine list shows the lineage once. It shows the current state, the active
 version number, and a **draft revision** badge when a published routine has a

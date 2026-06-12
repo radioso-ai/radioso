@@ -70,6 +70,15 @@ const createRoutineSchema = async (client: PoolClient, schema: string): Promise<
   await client.query(`CREATE SCHEMA ${schema}`);
   await client.query(`SET search_path TO ${schema}, public`);
   await client.query(`
+    CREATE TABLE workspaces (
+      id UUID PRIMARY KEY
+    );
+
+    CREATE TABLE agents (
+      id UUID PRIMARY KEY,
+      workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE routine_definition (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       agent_id UUID NOT NULL,
@@ -155,6 +164,13 @@ const createRoutineSchema = async (client: PoolClient, schema: string): Promise<
   `);
 };
 
+const installWorkspaceWebhookDestinationTriggers = async (client: PoolClient): Promise<void> => {
+  // Keep this copied-DDL fixture aligned with the production trigger in
+  // backend/src/db/migrations/089_workspace_webhook_destinations.sql.
+  const migration089 = await readFile(path.join(testMigrationsPath, "089_workspace_webhook_destinations.sql"), "utf8");
+  await client.query(migration089);
+};
+
 const draftInput = (name = "postgres-lifecycle", label = "v1"): RoutineDefinitionDraftInput => ({
   name,
   activation: {
@@ -200,6 +216,7 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
   let backingDatabase: Database;
   let client: PoolClient;
   let schema: string;
+  let workspaceId: string;
   let agentId: string;
 
   beforeAll(async () => {
@@ -207,8 +224,12 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
     client = await backingDatabase.pool.connect();
     schema = `routine_repo_${randomUUID().replaceAll("-", "_")}`;
     await createRoutineSchema(client, schema);
+    await installWorkspaceWebhookDestinationTriggers(client);
     database = createClientBackedDatabase(client);
+    workspaceId = randomUUID();
     agentId = randomUUID();
+    await database.execute(`INSERT INTO workspaces (id) VALUES ($1)`, [workspaceId]);
+    await database.execute(`INSERT INTO agents (id, workspace_id) VALUES ($1, $2)`, [agentId, workspaceId]);
   });
 
   afterAll(async () => {
@@ -285,6 +306,102 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
     expect(await repository.archive(agentId, publishedV2.id)).toBe(true);
     expect(await repository.restore(agentId, publishedV1.id)).toBe(false);
     expect(await repository.restore(agentId, publishedV2.id)).toBe(true);
+  });
+
+  it("rejects publish when an enabled completion export destination was deleted before publish", async () => {
+    const repository = new RoutineDefinitionRepository(database);
+    const destinationId = randomUUID();
+    await database.execute(
+      `INSERT INTO workspace_webhook_destinations (
+         id, workspace_id, name, url, secret_ciphertext, encryption_key_id
+       )
+       VALUES ($1, $2, 'Publish race', 'https://example.test/webhook', 'ciphertext', 'test-key')`,
+      [destinationId, workspaceId],
+    );
+    const draft = await repository.createDraft(agentId, {
+      ...draftInput("postgres-publish-export", "publish-export"),
+      completionExport: {
+        enabled: true,
+        triggerKinds: ["complete"],
+        destinationRef: destinationId,
+      },
+    });
+    await database.execute(`DELETE FROM workspace_webhook_destinations WHERE id = $1`, [destinationId]);
+
+    await expect(repository.publish(agentId, draft.id))
+      .rejects.toMatchObject({
+        code: "23503",
+        constraint: "routine_completion_export_destination_ref_published_fk",
+      });
+
+    const row = await database.queryOne<{ status: string }>(
+      `SELECT status FROM routine_definition WHERE id = $1`,
+      [draft.id],
+    );
+    expect(row.status).toBe("draft");
+    const danglingPublished = await database.queryOne<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM routine_definition d
+       JOIN routine_completion_export ce ON ce.definition_id = d.id
+       LEFT JOIN workspace_webhook_destinations destination
+         ON destination.workspace_id = $1
+        AND destination.id::text = lower(ce.destination_ref)
+       WHERE d.id = $2
+         AND d.status = 'published'
+         AND ce.enabled = TRUE
+         AND destination.id IS NULL`,
+      [workspaceId, draft.id],
+    );
+    expect(danglingPublished.count).toBe("0");
+  });
+
+  it("rejects restore when an enabled completion export destination was deleted while archived", async () => {
+    const repository = new RoutineDefinitionRepository(database);
+    const destinationId = randomUUID();
+    await database.execute(
+      `INSERT INTO workspace_webhook_destinations (
+         id, workspace_id, name, url, secret_ciphertext, encryption_key_id
+       )
+       VALUES ($1, $2, 'Restore race', 'https://example.test/restore', 'ciphertext', 'test-key')`,
+      [destinationId, workspaceId],
+    );
+    const draft = await repository.createDraft(agentId, {
+      ...draftInput("postgres-restore-export", "restore-export"),
+      completionExport: {
+        enabled: true,
+        triggerKinds: ["complete"],
+        destinationRef: destinationId,
+      },
+    });
+    const published = await repository.publish(agentId, draft.id);
+    expect(await repository.archive(agentId, published.id)).toBe(true);
+    await database.execute(`DELETE FROM workspace_webhook_destinations WHERE id = $1`, [destinationId]);
+
+    await expect(repository.restore(agentId, published.id))
+      .rejects.toMatchObject({
+        code: "23503",
+        constraint: "routine_completion_export_destination_ref_published_fk",
+      });
+
+    const row = await database.queryOne<{ status: string }>(
+      `SELECT status FROM routine_definition WHERE id = $1`,
+      [published.id],
+    );
+    expect(row.status).toBe("archived");
+    const danglingPublished = await database.queryOne<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM routine_definition d
+       JOIN routine_completion_export ce ON ce.definition_id = d.id
+       LEFT JOIN workspace_webhook_destinations destination
+         ON destination.workspace_id = $1
+        AND destination.id::text = lower(ce.destination_ref)
+       WHERE d.id = $2
+         AND d.status = 'published'
+         AND ce.enabled = TRUE
+         AND destination.id IS NULL`,
+      [workspaceId, published.id],
+    );
+    expect(danglingPublished.count).toBe("0");
   });
 
   it("repairs dirty pre-existing data before building migration 090 lifecycle indexes", async () => {

@@ -141,3 +141,29 @@ Implementation notes:
 - The e2e dashboard fixture now matches the backend contract: first publish keeps the draft id and v1, revision drafts receive the next gapless lineage version, and publish consumes that draft without minting another id or version.
 - The editor publish flow was reviewed against the same-row publish contract. It uses the API response id/version and replaces the saved draft row with the published response while superseding the previous published row in local state.
 - `docs/document-writer-prompt.md` was read before docs edits. Routine authoring and architecture docs now describe revise → publish → supersede, archive/restore, and in-flight pinned-version behavior instead of a two-state lifecycle.
+
+## Review Pass 2 Fixes
+
+Red evidence:
+
+- In-place publish and restore no longer inserted or updated `routine_completion_export`, so the production trigger `trg_routine_completion_export_destination` did not re-check enabled destination references after `routine_definition.status` changed to `published`.
+- The real-Postgres integration fixture used copied routine DDL without the migration 089 trigger/function, so the repository tests could not catch a deleted webhook destination between validation and publish/restore commit.
+- `cd frontend && pnpm run test:e2e -- routines-settings.spec.ts` initially failed with a timeout in the outline editor after validate navigation; the lineage revise/publish case passed on rerun, but the outline test needed an explicit wait for the persisted draft editor state.
+
+Green evidence:
+
+- `cd backend && pnpm exec vitest run tests/integration/routine-definition-repository-postgres.integration.test.ts tests/unit/routine-definition-repository.test.ts tests/unit/routine-definition-service.test.ts tests/unit/routine-definition-composition.test.ts` → 4 files passed, 39 tests passed.
+- `cd frontend && pnpm vitest run tests/unit/routine-lineage.test.ts` → 1 file passed, 4 tests passed.
+- `cd backend && pnpm run build` → passed.
+- `cd frontend && pnpm run lint` → passed.
+- `cd backend && pnpm run test:unit` → 248 files passed, 1787 tests passed.
+- `cd backend && pnpm run test:contract` → 27 files passed, 225 tests passed.
+- `cd frontend && pnpm run test:e2e -- routines-settings.spec.ts` → passed on rerun after stabilizing the persisted-editor wait, 5 tests passed.
+
+Implementation notes:
+
+- `RoutineDefinitionRepository.publish()` and `restore()` now touch enabled completion-export rows inside their lifecycle transactions, causing migration 089's destination trigger to take its `FOR KEY SHARE` lock and reject missing destination refs before commit.
+- Publish maps the trigger constraint back into the existing rejected-validation result with an `unknown_webhook_destination` diagnostic. Restore maps the same constraint to a 400 author-facing error that names the missing destination ref.
+- The real-Postgres repository test installs the production migration 089 trigger/function into its isolated schema and covers both deleted-before-publish and deleted-while-archived-before-restore cases, asserting no dangling published export remains.
+- Removed dead `findByIdAnyStatus` production/fake repository code.
+- Updated lifecycle docs/spec wording for in-place publish, added the missing OpenAPI 400 publish response, regenerated OpenAPI/SDK/MCP artifacts, switched the routines date formatter to user locale, kept draft-plus-archived lineages visible in the active list with version history, and made the e2e restore fixture reject a restore when another lineage version is published.

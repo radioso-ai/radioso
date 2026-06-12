@@ -7075,6 +7075,15 @@ export interface operations {
                     "application/json": components["schemas"]["RoutineDefinitionPublishResponse"];
                 };
             };
+            /** @description Routine definition cannot be published */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Authentication required */
             401: {
                 headers: {

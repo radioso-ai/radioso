@@ -123,6 +123,18 @@ const isRoutineCompletionExportDestinationConstraintError = (error: unknown): bo
     );
 };
 
+const missingWebhookDestinationRefFromConstraintError = (error: unknown): string | null => {
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+  const message = (error as { message?: unknown }).message;
+  if (typeof message !== "string") {
+    return null;
+  }
+  const match = /unknown webhook destination ([0-9a-f-]{36})/iu.exec(message);
+  return match?.[1] ?? null;
+};
+
 export class RoutineDefinitionService {
   private readonly capabilityPolicy: CapabilityPolicy;
 
@@ -289,7 +301,16 @@ export class RoutineDefinitionService {
     if (routine.status !== "archived") {
       throw badRequest("Only archived routine definitions can be restored");
     }
-    const restored = await this.options.repository.restore(agentId, id);
+    let restored: boolean;
+    try {
+      restored = await this.options.repository.restore(agentId, id);
+    } catch (error) {
+      if (isRoutineCompletionExportDestinationConstraintError(error)) {
+        const destinationRef = missingWebhookDestinationRefFromConstraintError(error) ?? routine.completionExport?.destinationRef ?? "configured destination";
+        throw badRequest(`Archived routine definition cannot be restored because completion export references missing webhook destination ${destinationRef}`);
+      }
+      throw error;
+    }
     if (!restored) {
       throw badRequest("Archived routine definition cannot be restored while another version is published");
     }

@@ -49,7 +49,7 @@ export type DirectiveDraftRequest = ApiSchemas['DirectiveDraftRequest']
 export type DirectiveDraftResponse = ApiSchemas['DirectiveDraftResponse']
 export type DirectiveDraftDirective = ApiSchemas['DirectiveDraftDirective']
 
-export type RoutineDefinitionStatus = 'draft' | 'published'
+export type RoutineDefinitionStatus = ApiSchemas['RoutineDefinition']['status']
 export type RoutineSlotType = 'text' | 'number' | 'boolean' | 'email' | 'date'
 export type RoutineStepKind = 'chat' | 'tool' | 'action'
 export type RoutineGuardKind = 'llm' | 'default' | 'slot_filled' | 'outcome' | 'counter'
@@ -105,6 +105,7 @@ export type RoutineDefinitionDraft = {
 }
 export type RoutineDefinition = RoutineDefinitionDraft & {
   id: string
+  lineageId: string
   agentId: string
   version: number
   status: RoutineDefinitionStatus
@@ -116,6 +117,7 @@ export type RoutineDefinitionGetResponse = { routine: RoutineDefinition }
 export type RoutineDefinitionSaveResponse = {
   routine: RoutineDefinition
   validation: RoutineValidationResult
+  directiveScopeOrphans?: ApiSchemas['RoutineDirectiveScopeOrphan'][]
 }
 export type RoutineDefinitionValidateResponse = { validation: RoutineValidationResult }
 export type RoutineDraftAssistRequest = { prose: string }

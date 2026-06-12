@@ -2,7 +2,22 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, CheckCircle2, FormInput, ListTree, Pencil, Plus, Route, Send, Trash2 } from 'lucide-react'
+import {
+  Archive,
+  ArrowLeft,
+  CheckCircle2,
+  ChevronDown,
+  Eye,
+  FormInput,
+  History,
+  ListTree,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Route,
+  Send,
+  Trash2,
+} from 'lucide-react'
 
 import { RoutineDraftAssistDialog } from '@/components/dashboard/settings/routine-draft-assist-dialog'
 import { RoutineDiagnosticList } from '@/components/dashboard/settings/routine-editor-controls'
@@ -10,7 +25,9 @@ import { RoutineFormEditor } from '@/components/dashboard/settings/routine-form-
 import { RoutineOutlineEditor } from '@/components/dashboard/settings/routine-outline-editor'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
@@ -27,6 +44,7 @@ import {
   type RoutineValidationResult,
   type WebhookDestination,
 } from '@/lib/api'
+import { getRoutineLineageVersions, groupRoutineLineages, type RoutineLineageGroup } from '@/lib/routine-lineage'
 import {
   diagnosticTargetFor,
   formToRoutineDraft,
@@ -72,6 +90,7 @@ const draftError = (draft: RoutineDefinitionDraft): string | null => {
 const draftAsRoutine = (draft: RoutineDefinitionDraft, routine?: RoutineDefinition | null): RoutineDefinition => ({
   ...draft,
   id: routine?.id ?? 'local-draft',
+  lineageId: routine?.lineageId ?? 'local-lineage',
   agentId: routine?.agentId ?? 'local-agent',
   version: routine?.version ?? 1,
   status: routine?.status ?? 'draft',
@@ -86,6 +105,29 @@ const headerFromDraft = (draft: RoutineDefinitionDraft | RoutineDefinition | Rou
     priority: String(draft.activation.priority),
   },
 })
+
+const routineStatusLabel = (status: RoutineDefinition['status']) => {
+  switch (status) {
+    case 'draft':
+      return 'draft'
+    case 'published':
+      return 'published'
+    case 'superseded':
+      return 'superseded'
+    case 'archived':
+      return 'archived'
+  }
+}
+
+const lineageStateLabel = (lineage: RoutineLineageGroup) => {
+  if (lineage.state === 'draft-only') return 'draft only'
+  return lineage.state
+}
+
+const formatRoutineDate = (value: string) => new Intl.DateTimeFormat('en', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+}).format(new Date(value))
 
 const replaceBrowserUrl = (href: string) => {
   if (typeof window === 'undefined') return
@@ -138,8 +180,8 @@ function RoutineListScreen({
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const sortedRoutines = useMemo(
-    () => [...routines].sort((left, right) => left.name.localeCompare(right.name) || left.version - right.version),
+  const groupedRoutines = useMemo(
+    () => groupRoutineLineages(routines),
     [routines],
   )
 
@@ -188,6 +230,85 @@ function RoutineListScreen({
     }
   }
 
+  const mergeRoutine = (routine: RoutineDefinition) => {
+    setRoutines((current) => {
+      const withoutCurrent = current.filter((item) => item.id !== routine.id)
+      return [...withoutCurrent, routine]
+    })
+  }
+
+  const reviseRoutine = async (routine: RoutineDefinition) => {
+    setError(null)
+    try {
+      const response = await routinesApi.reviseRoutine(agentId, routine.id)
+      mergeRoutine(response.routine)
+      router.push(buildRoutineHref(response.routine.id))
+    } catch (reviseError) {
+      setError(getApiErrorMessage(reviseError, 'Failed to create routine revision.'))
+    }
+  }
+
+  const restoreRoutine = async (routine: RoutineDefinition) => {
+    setError(null)
+    try {
+      const response = await routinesApi.restoreRoutine(agentId, routine.id)
+      mergeRoutine(response.routine)
+    } catch (restoreError) {
+      setError(getApiErrorMessage(restoreError, 'Failed to restore routine.'))
+    }
+  }
+
+  const renderLineageRow = (lineage: RoutineLineageGroup) => {
+    const routine = lineage.displayRoutine
+    const activeVersion = lineage.activeRoutine?.version ?? routine.version
+    return (
+      <div key={lineage.lineageId} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-4">
+        <button
+          type="button"
+          className="min-w-0 flex-1 text-left"
+          onClick={() => router.push(buildRoutineHref(routine.id))}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-medium text-foreground">{lineage.name}</p>
+            <Badge variant="outline">{lineageStateLabel(lineage)}</Badge>
+            <span className="text-xs text-muted-foreground">v{activeVersion}</span>
+            {lineage.pendingDraft ? (
+              <Badge variant="secondary">draft revision</Badge>
+            ) : null}
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">{lineage.triggerDescription}</p>
+        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          {routine.status === 'draft' ? (
+            <>
+              <Button type="button" variant="ghost" size="sm" onClick={() => router.push(buildRoutineHref(routine.id))} aria-label={`Edit draft ${routine.name}`}>
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => void deleteDraft(routine)} aria-label={`Delete draft ${routine.name}`}>
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </>
+          ) : null}
+          {routine.status === 'published' ? (
+            <Button type="button" variant="ghost" size="sm" onClick={() => void reviseRoutine(routine)} aria-label={`Edit ${routine.name}`}>
+              <Pencil className="h-4 w-4" />
+            </Button>
+          ) : null}
+          {routine.status === 'archived' ? (
+            <Button type="button" variant="ghost" size="sm" onClick={() => void restoreRoutine(routine)} aria-label={`Restore ${routine.name}`}>
+              <RotateCcw className="h-4 w-4" />
+            </Button>
+          ) : null}
+          {routine.status === 'superseded' ? (
+            <Button type="button" variant="ghost" size="sm" onClick={() => router.push(buildRoutineHref(routine.id))} aria-label={`View ${routine.name}`}>
+              <Eye className="h-4 w-4" />
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <SettingsCard
       id="assistant-routines-card"
@@ -208,46 +329,26 @@ function RoutineListScreen({
             <Spinner className="h-4 w-4" />
             Loading routines...
           </div>
-        ) : sortedRoutines.length === 0 ? (
+        ) : groupedRoutines.active.length === 0 && groupedRoutines.archived.length === 0 ? (
           <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
             No routines yet.
           </p>
         ) : (
           <div className="space-y-3">
-            {sortedRoutines.map((routine) => (
-              <div key={routine.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-4">
-                <button
-                  type="button"
-                  className="min-w-0 flex-1 text-left"
-                  onClick={() => router.push(buildRoutineHref(routine.id))}
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-medium text-foreground">{routine.name}</p>
-                    <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
-                      {routine.status}
-                    </span>
-                    <span className="text-xs text-muted-foreground">v{routine.version}</span>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">{routine.activation.triggerDescription}</p>
-                </button>
-                <div className="flex shrink-0 items-center gap-1">
-                  {routine.status === 'draft' ? (
-                    <>
-                      <Button type="button" variant="ghost" size="sm" onClick={() => router.push(buildRoutineHref(routine.id))} aria-label={`Edit draft ${routine.name}`}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button type="button" variant="ghost" size="sm" onClick={() => void deleteDraft(routine)} aria-label={`Delete draft ${routine.name}`}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </>
-                  ) : (
-                    <Button type="button" variant="ghost" size="sm" onClick={() => router.push(buildRoutineHref(routine.id))} aria-label={`View ${routine.name}`}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
+            {groupedRoutines.active.map(renderLineageRow)}
+            {groupedRoutines.archived.length > 0 ? (
+              <Collapsible>
+                <CollapsibleTrigger asChild>
+                  <Button type="button" variant="ghost" className="h-8 px-2 text-xs text-muted-foreground">
+                    <ChevronDown className="mr-1 h-4 w-4" />
+                    Archived routines ({groupedRoutines.archived.length})
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="space-y-3 pt-2">
+                  {groupedRoutines.archived.map(renderLineageRow)}
+                </CollapsibleContent>
+              </Collapsible>
+            ) : null}
           </div>
         )}
       </div>
@@ -272,6 +373,7 @@ function RoutineEditorScreen({
   const isNewRoutine = routineRouteId === 'new'
   const [editingRoutineId, setEditingRoutineId] = useState<string | null>(isNewRoutine ? null : routineRouteId)
   const [editingRoutine, setEditingRoutine] = useState<RoutineDefinition | null>(null)
+  const [allRoutines, setAllRoutines] = useState<RoutineDefinition[]>([])
   const [form, setForm] = useState<RoutineFormState | null>(null)
   const [outline, setOutline] = useState<RoutineOutlineState | null>(null)
   const [draftHeader, setDraftHeader] = useState<RoutineDraftHeader>(() => headerFromDraft(createEmptyRoutineOutline()))
@@ -290,8 +392,9 @@ function RoutineEditorScreen({
   const { beginSave, isCurrentSave, markError, markSaved } = useSettingsSaveStatus(onSaveStateChange)
 
   const listHref = buildDashboardHref(accountId, {
-    ...routeState,
     section: 'agents',
+    workspaceId: routeState.workspaceId,
+    workspacePublicRouteKey: routeState.workspacePublicRouteKey,
     agentId,
     agentRoutineId: undefined,
     agentTab: 'behavior',
@@ -308,6 +411,13 @@ function RoutineEditorScreen({
       anchor: undefined,
     })
 
+  const mergeLoadedRoutine = (routine: RoutineDefinition) => {
+    setAllRoutines((current) => {
+      const withoutCurrent = current.filter((item) => item.id !== routine.id)
+      return [...withoutCurrent, routine]
+    })
+  }
+
   const slotKeys = useMemo(
     () => viewMode === 'outline'
       ? outline?.variables.map((slot) => slot.key.trim()).filter(Boolean) ?? []
@@ -319,7 +429,11 @@ function RoutineEditorScreen({
     [validation],
   )
   const validationDiagnostics = validation?.diagnostics ?? []
-  const isPublished = editingRoutine?.status === 'published'
+  const isReadOnly = editingRoutine ? editingRoutine.status !== 'draft' : false
+  const versionHistory = useMemo(
+    () => getRoutineLineageVersions(allRoutines, editingRoutine?.lineageId),
+    [allRoutines, editingRoutine?.lineageId],
+  )
 
   useEffect(() => {
     currentRoutineIdRef.current = editingRoutine?.id ?? null
@@ -370,6 +484,7 @@ function RoutineEditorScreen({
         currentRoutineIdRef.current = null
         setEditingRoutineId(null)
         setEditingRoutine(null)
+        setAllRoutines([])
         setDraftHeader(nextHeader)
         setOutline(nextOutline)
         setForm(routineToForm(draftAsRoutine(outlineToRoutineDraft(nextOutline, { actionOptions: outlineActionOptions, header: nextHeader }))))
@@ -383,12 +498,16 @@ function RoutineEditorScreen({
       setForm(null)
       setOutline(null)
       setIsLoading(true)
-      void routinesApi.getRoutine(agentId, routineRouteId)
-        .then((response) => {
+      void Promise.all([
+        routinesApi.getRoutine(agentId, routineRouteId),
+        routinesApi.listRoutines(agentId).catch(() => ({ routines: [] })),
+      ])
+        .then(([response, listResponse]) => {
           if (!active) return
           currentRoutineIdRef.current = response.routine.id
           setEditingRoutine(response.routine)
           setEditingRoutineId(response.routine.id)
+          setAllRoutines(listResponse.routines)
           setDraftHeader(headerFromDraft(response.routine))
           setForm(routineToForm(response.routine))
           setOutline(routineDraftToOutline(response.routine, { actionOptions: outlineActionOptions }))
@@ -445,6 +564,7 @@ function RoutineEditorScreen({
       currentRoutineIdRef.current = response.routine.id
       setEditingRoutine(response.routine)
       setEditingRoutineId(response.routine.id)
+      mergeLoadedRoutine(response.routine)
       setDraftHeader(headerFromDraft(response.routine))
       setForm(routineToForm(response.routine))
       setOutline(routineDraftToOutline(response.routine, { actionOptions: outlineActionOptions }))
@@ -492,9 +612,15 @@ function RoutineEditorScreen({
       currentRoutineIdRef.current = response.routine.id
       setEditingRoutine(response.routine)
       setEditingRoutineId(response.routine.id)
+      setAllRoutines((current) => current
+        .filter((item) => item.id !== routine.id)
+        .map((item) => item.lineageId === response.routine.lineageId && item.status === 'published'
+          ? { ...item, status: 'superseded' as const, updatedAt: response.routine.updatedAt }
+          : item)
+        .concat(response.routine))
       setValidation(response.validation)
       markSaved()
-      replaceBrowserUrl(buildPersistedHref(response.routine.id))
+      router.replace(buildPersistedHref(response.routine.id))
     } catch (publishError) {
       if (!isCurrentSave(saveId)) return
       if (publishError instanceof RoutinePublishRejectedError) {
@@ -520,6 +646,74 @@ function RoutineEditorScreen({
       router.push(listHref)
     } catch (deleteError) {
       setError(getApiErrorMessage(deleteError, 'Failed to delete routine draft.'))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const revisePublished = async () => {
+    if (!editingRoutine || editingRoutine.status !== 'published') return
+    const saveId = beginSave()
+    setIsSaving(true)
+    setError(null)
+    try {
+      const response = await routinesApi.reviseRoutine(agentId, editingRoutine.id)
+      if (!isCurrentSave(saveId)) return
+      currentRoutineIdRef.current = response.routine.id
+      setEditingRoutine(response.routine)
+      setEditingRoutineId(response.routine.id)
+      mergeLoadedRoutine(response.routine)
+      setDraftHeader(headerFromDraft(response.routine))
+      setForm(routineToForm(response.routine))
+      setOutline(routineDraftToOutline(response.routine, { actionOptions: outlineActionOptions }))
+      setValidation(null)
+      markSaved()
+      router.replace(buildPersistedHref(response.routine.id))
+    } catch (reviseError) {
+      if (!isCurrentSave(saveId)) return
+      const message = getApiErrorMessage(reviseError, 'Failed to create routine revision.')
+      setError(message)
+      markError(message)
+    } finally {
+      if (isCurrentSave(saveId)) setIsSaving(false)
+    }
+  }
+
+  const archivePublished = async () => {
+    if (!editingRoutine || editingRoutine.status !== 'published') return
+    setIsSaving(true)
+    setError(null)
+    try {
+      const response = await routinesApi.archiveRoutine(agentId, editingRoutine.id)
+      currentRoutineIdRef.current = response.routine.id
+      setEditingRoutine(response.routine)
+      setEditingRoutineId(response.routine.id)
+      mergeLoadedRoutine(response.routine)
+      setDraftHeader(headerFromDraft(response.routine))
+      setForm(routineToForm(response.routine))
+      setOutline(routineDraftToOutline(response.routine, { actionOptions: outlineActionOptions }))
+    } catch (archiveError) {
+      setError(getApiErrorMessage(archiveError, 'Failed to archive routine.'))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const restoreArchived = async () => {
+    if (!editingRoutine || editingRoutine.status !== 'archived') return
+    setIsSaving(true)
+    setError(null)
+    try {
+      const response = await routinesApi.restoreRoutine(agentId, editingRoutine.id)
+      currentRoutineIdRef.current = response.routine.id
+      setEditingRoutine(response.routine)
+      setEditingRoutineId(response.routine.id)
+      mergeLoadedRoutine(response.routine)
+      setDraftHeader(headerFromDraft(response.routine))
+      setForm(routineToForm(response.routine))
+      setOutline(routineDraftToOutline(response.routine, { actionOptions: outlineActionOptions }))
+    } catch (restoreError) {
+      setError(getApiErrorMessage(restoreError, 'Failed to restore routine.'))
     } finally {
       setIsSaving(false)
     }
@@ -564,10 +758,13 @@ function RoutineEditorScreen({
             Back to routines
           </Button>
           <h3 className="text-sm font-semibold text-foreground">
-            {editingRoutine ? `Edit ${editingRoutine.name}` : 'Create routine'}
+            {editingRoutine ? `${isReadOnly ? 'View' : 'Edit'} ${editingRoutine.name}` : 'Create routine'}
           </h3>
           {editingRoutine ? (
-            <p className="text-xs text-muted-foreground">{editingRoutine.status} v{editingRoutine.version}</p>
+            <p className="text-xs text-muted-foreground">
+              {routineStatusLabel(editingRoutine.status)} v{editingRoutine.version}
+              {isReadOnly ? ' (read-only)' : ''}
+            </p>
           ) : null}
         </div>
         {validation?.ok ? (
@@ -593,7 +790,7 @@ function RoutineEditorScreen({
                 id="routineName"
                 value={draftHeader.name}
                 onChange={(event) => setDraftHeader((current) => ({ ...current, name: event.target.value }))}
-                disabled={isPublished}
+                disabled={isReadOnly}
               />
             </div>
             <div className="space-y-1">
@@ -606,7 +803,7 @@ function RoutineEditorScreen({
                   ...current,
                   activation: { ...current.activation, priority: event.target.value },
                 }))}
-                disabled={isPublished}
+                disabled={isReadOnly}
               />
             </div>
             <div className="space-y-1 sm:col-span-2">
@@ -619,7 +816,7 @@ function RoutineEditorScreen({
                   activation: { ...current.activation, triggerDescription: event.target.value },
                 }))}
                 rows={2}
-                disabled={isPublished}
+                disabled={isReadOnly}
               />
             </div>
           </div>
@@ -653,7 +850,7 @@ function RoutineEditorScreen({
             <RoutineOutlineEditor
               outline={outline}
               diagnostics={validationDiagnostics}
-              isPublished={isPublished}
+              isPublished={isReadOnly}
               slotKeys={slotKeys}
               actionOptions={outlineActionOptions}
               onChange={updateOutline}
@@ -664,13 +861,41 @@ function RoutineEditorScreen({
             <RoutineFormEditor
               form={form}
               diagnostics={validationDiagnostics}
-              isPublished={isPublished}
+              isPublished={isReadOnly}
               slotKeys={slotKeys}
               webhookDestinations={webhookDestinations}
               isWebhookDestinationsLoading={isWebhookDestinationsLoading}
               webhookDestinationsError={webhookDestinationsError}
               onChange={updateForm}
             />
+          ) : null}
+
+          {versionHistory.length > 0 ? (
+            <div className="rounded-lg border border-border p-4">
+              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
+                <History className="h-4 w-4 text-muted-foreground" />
+                Version history
+              </div>
+              <div className="space-y-2">
+                {versionHistory.map((version) => (
+                  <button
+                    key={version.id}
+                    type="button"
+                    className="flex w-full flex-wrap items-center justify-between gap-2 rounded-md px-2 py-2 text-left hover:bg-muted/60"
+                    onClick={() => router.push(buildPersistedHref(version.id))}
+                  >
+                    <span className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-foreground">v{version.version}</span>
+                      <Badge variant="outline">{routineStatusLabel(version.status)}</Badge>
+                      {version.id === editingRoutine?.id ? (
+                        <span className="text-xs text-muted-foreground">current view</span>
+                      ) : null}
+                    </span>
+                    <span className="text-xs text-muted-foreground">{formatRoutineDate(version.updatedAt)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           ) : null}
 
           <div className="flex flex-wrap justify-end gap-2">
@@ -680,17 +905,39 @@ function RoutineEditorScreen({
                 Delete draft
               </Button>
             ) : null}
-            <Button type="button" variant="outline" onClick={() => void saveDraft()} disabled={isSaving || isPublished}>
-              Save draft
-            </Button>
-            <Button type="button" variant="outline" onClick={() => void validateDraft()} disabled={isSaving || isPublished}>
-              <CheckCircle2 className="mr-2 h-4 w-4" />
-              Validate
-            </Button>
-            <Button type="button" onClick={() => void publishDraft()} disabled={isSaving || isPublished}>
-              <Send className="mr-2 h-4 w-4" />
-              Publish
-            </Button>
+            {editingRoutine?.status === 'published' ? (
+              <>
+                <Button type="button" variant="outline" onClick={() => void archivePublished()} disabled={isSaving}>
+                  <Archive className="mr-2 h-4 w-4" />
+                  Archive
+                </Button>
+                <Button type="button" onClick={() => void revisePublished()} disabled={isSaving}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Edit revision
+                </Button>
+              </>
+            ) : null}
+            {editingRoutine?.status === 'archived' ? (
+              <Button type="button" onClick={() => void restoreArchived()} disabled={isSaving}>
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Restore
+              </Button>
+            ) : null}
+            {!isReadOnly ? (
+              <>
+                <Button type="button" variant="outline" onClick={() => void saveDraft()} disabled={isSaving}>
+                  Save draft
+                </Button>
+                <Button type="button" variant="outline" onClick={() => void validateDraft()} disabled={isSaving}>
+                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                  Validate
+                </Button>
+                <Button type="button" onClick={() => void publishDraft()} disabled={isSaving}>
+                  <Send className="mr-2 h-4 w-4" />
+                  Publish
+                </Button>
+              </>
+            ) : null}
           </div>
         </>
       )}

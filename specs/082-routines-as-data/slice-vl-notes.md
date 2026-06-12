@@ -118,3 +118,26 @@ Implementation notes:
 - m4: publish audit metadata now includes `supersededDefinitionId` and a numeric `directiveScopeOrphans` count only, alongside ids/version/status.
 - m6: chat turn handling now loads active routine state once and threads it into routine turn setup instead of calling `routineStore.loadActive` twice per turn.
 - OpenAPI/SDK/MCP registry shape did not change. Existing generation/check scripts reported API contract artifacts current; no SDK or MCP generated files needed to be committed for this fix.
+
+## Phase 5-6 — Dashboard, Docs, and Final Validation
+
+Red evidence:
+
+- `cd frontend && pnpm exec tsc --noEmit` initially reported routines e2e fixture errors because local mutation arrays widened `method` to `string`, `baseRoutine` used readonly arrays, and the Playwright fixture still modeled the old publish contract by returning a new published id and bumping the version at publish time.
+- The same check also exposed a nearby `webhook-destinations-settings.spec.ts` fixture-array typing issue against the shared e2e dashboard fixture.
+- The routines Playwright assertions expected first publish to navigate to a new `...9555...000000000002` id and show `published v2`, and expected revise+publish from v1 to show `v3`. Backend contract review showed publish now updates the draft row in place and keeps the draft's assigned version.
+
+Green evidence:
+
+- `cd frontend && pnpm exec tsc --noEmit` → still fails on pre-existing frontend errors outside this slice, including `components/dashboard/agent-view.tsx`, `components/dashboard/chat-view.tsx`, `components/dashboard/quality-view.tsx`, markdown components, and unrelated unit tests. No reported error references `frontend/components/dashboard/settings/assistant-routines-section.tsx`, `frontend/lib/routine-lineage.ts`, `frontend/lib/api-routines.ts`, `frontend/lib/api-types.ts`, `frontend/tests/e2e/dashboard-fixtures.ts`, `frontend/tests/e2e/routines-settings.spec.ts`, `frontend/tests/e2e/webhook-destinations-settings.spec.ts`, or the targeted routine unit tests.
+- `cd frontend && pnpm run lint` → passed.
+- `cd frontend && pnpm vitest run tests/unit/routine-lineage.test.ts tests/unit/routines-api.test.ts tests/unit/routine-form.test.ts` → 3 files passed, 18 tests passed.
+- `cd frontend && pnpm run test:e2e -- routines-settings.spec.ts` → 5 tests passed.
+
+Implementation notes:
+
+- Dashboard routines now group rows by `lineageId`, show one active row per lineage, expose draft-revision state, archive/restore actions, and a version-history panel in the editor.
+- The frontend API adapter and types include `lineageId` plus `draft|published|superseded|archived` status handling and revise/archive/restore calls.
+- The e2e dashboard fixture now matches the backend contract: first publish keeps the draft id and v1, revision drafts receive the next gapless lineage version, and publish consumes that draft without minting another id or version.
+- The editor publish flow was reviewed against the same-row publish contract. It uses the API response id/version and replaces the saved draft row with the published response while superseding the previous published row in local state.
+- `docs/document-writer-prompt.md` was read before docs edits. Routine authoring and architecture docs now describe revise → publish → supersede, archive/restore, and in-flight pinned-version behavior instead of a two-state lifecycle.

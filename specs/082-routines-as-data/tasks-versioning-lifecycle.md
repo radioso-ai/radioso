@@ -34,15 +34,15 @@
 
 ## Phase 5 — Dashboard (amendment §7.5, FR-031, SC-018)
 
-- [ ] T018 Pure lineage grouping helper `frontend/lib/routine-lineage.ts` + unit tests `frontend/tests/unit/routine-lineage.test.ts` (group by lineageId; active-version selection; pending-draft badge state; archived partition) — no markup assertions.
-- [ ] T019 API adapter `frontend/lib/api-routines.ts` + `frontend/lib/api-types.ts`: revise/archive/restore calls, `lineageId`, 4-state status.
-- [ ] T020 `frontend/components/dashboard/settings/assistant-routines-section.tsx`: lineage-grouped list (one row per lineage, status + active version + draft badge), archived section with restore, version-history panel in details (read-only past versions), Edit-on-published → revise → open draft. Reuse existing Radix/shadcn patterns.
-- [ ] T021 Playwright `frontend/tests/e2e/routines-settings.spec.ts`: revise→publish supersede journey (list still one row, history shows v1 superseded + v2 published), archive→restore journey, draft-badge visibility.
+- [X] T018 Pure lineage grouping helper `frontend/lib/routine-lineage.ts` + unit tests `frontend/tests/unit/routine-lineage.test.ts` (group by lineageId; active-version selection; pending-draft badge state; archived partition) — no markup assertions.
+- [X] T019 API adapter `frontend/lib/api-routines.ts` + `frontend/lib/api-types.ts`: revise/archive/restore calls, `lineageId`, 4-state status.
+- [X] T020 `frontend/components/dashboard/settings/assistant-routines-section.tsx`: lineage-grouped list (one row per lineage, status + active version + draft badge), archived section with restore, version-history panel in details (read-only past versions), Edit-on-published → revise → open draft. Reuse existing Radix/shadcn patterns.
+- [X] T021 Playwright `frontend/tests/e2e/routines-settings.spec.ts`: revise→publish supersede journey (list still one row, history shows v1 superseded + v2 published), archive→restore journey, draft-badge visibility.
 
 ## Phase 6 — Docs + polish (amendment §7.6, FR-032 docs half)
 
-- [ ] T022 Read `docs/document-writer-prompt.md`; update `docs/authoring-routines.md` (lifecycle: revise → publish → supersede, archive/restore, in-flight pinning) and any docs enumerating routine statuses or routines API endpoints (incl. docs-portal if routines are documented there).
-- [ ] T023 Update `specs/082-routines-as-data/` parent artifacts only where they assert the two-state lifecycle as current behavior; final slice notes with validation evidence.
+- [X] T022 Read `docs/document-writer-prompt.md`; update `docs/authoring-routines.md` (lifecycle: revise → publish → supersede, archive/restore, in-flight pinning) and any docs enumerating routine statuses or routines API endpoints (incl. docs-portal if routines are documented there).
+- [X] T023 Update `specs/082-routines-as-data/` parent artifacts only where they assert the two-state lifecycle as current behavior; final slice notes with validation evidence.
 - [ ] T024 Full gate: `pnpm run ci:local -- origin/main`; record result.
 
 ## Dependencies

@@ -367,6 +367,39 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
     }
   });
 
+  router.post("/:agentId/routines/:routineId/revise", workspaceSession, agentManage, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const parsed = agentRoutineParamsSchema.parse(req.params);
+      const routine = await dependencies.routineDefinitionService.revise(workspaceId, parsed.agentId, parsed.routineId);
+      res.status(200).json({ routine });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/:agentId/routines/:routineId/archive", workspaceSession, agentManage, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const parsed = agentRoutineParamsSchema.parse(req.params);
+      const routine = await dependencies.routineDefinitionService.archive(workspaceId, parsed.agentId, parsed.routineId);
+      res.status(200).json({ routine });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/:agentId/routines/:routineId/restore", workspaceSession, agentManage, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const parsed = agentRoutineParamsSchema.parse(req.params);
+      const routine = await dependencies.routineDefinitionService.restore(workspaceId, parsed.agentId, parsed.routineId);
+      res.status(200).json({ routine });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.delete("/:agentId/routines/:routineId", workspaceSession, agentManage, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };

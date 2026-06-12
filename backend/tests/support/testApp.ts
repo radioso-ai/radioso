@@ -303,7 +303,7 @@ export const createTestDependencies = (overrides: {
   workbenchReplayRunner?: Pick<WorkbenchReplayRunner, "run">;
   chatInferencePipelineComplete?: AppDependencies["chatInferencePipeline"]["complete"];
   logger?: AppDependencies["logger"];
-} = {}): { dependencies: AppDependencies; repositories: TestRepositories } => {
+} = {}): { dependencies: AppDependencies; repositories: TestRepositories; routineStateStore: InMemoryRoutineStateStore } => {
   const env = {
     ...createTestEnv(),
     ...overrides.envOverrides,
@@ -742,6 +742,8 @@ export const createTestDependencies = (overrides: {
       existsByIdAndWorkspace: async (inputWorkspaceId, destinationId) =>
         webhookDestinations.existsByIdAndWorkspace(inputWorkspaceId, destinationId),
     },
+    auditService,
+    directiveScopeTags: agentRepository,
   });
   const chatInferencePipeline: AppDependencies["chatInferencePipeline"] = {
     metadata: { capability: "chat" as const, provider: "openai" as const, model: "test" },
@@ -809,10 +811,21 @@ export const createTestDependencies = (overrides: {
         "Published routine definition failed to compile; skipping",
       );
     },
+    onPinnedDefinitionError: ({ agentId, routineId, definitionId, error }) => {
+      logger.warn(
+        {
+          agentId,
+          routineId,
+          definitionId,
+          err: error instanceof Error ? error.message : String(error),
+        },
+        "Pinned routine definition failed to load or compile; skipping resume-only registration",
+      );
+    },
   });
   const staticRoutineRegistrations: RoutineRegistration[] = [];
   const routineProvider: ChatRoutineProvider = {
-    async forTurn({ modelGateway, agentId, responseLanguage }) {
+    async forTurn({ modelGateway, agentId, pinnedRoutineIds = [], responseLanguage }) {
       let publishedRegistrations: RoutineRegistration[];
       try {
         publishedRegistrations = await publishedRoutineSource.load({ agentId });
@@ -826,17 +839,38 @@ export const createTestDependencies = (overrides: {
         );
         publishedRegistrations = [];
       }
+      let pinnedRegistrations: RoutineRegistration[];
+      try {
+        pinnedRegistrations = await publishedRoutineSource.loadPinned({ agentId, routineIds: pinnedRoutineIds });
+      } catch (error) {
+        logger.warn(
+          {
+            agentId,
+            routineIds: pinnedRoutineIds,
+            err: error instanceof Error ? error.message : String(error),
+          },
+          "Pinned routine definitions failed to load; continuing without resume-only DB-backed routines",
+        );
+        pinnedRegistrations = [];
+      }
       const routineRegistry = new RoutineRegistry([
         ...staticRoutineRegistrations,
         ...publishedRegistrations,
       ]);
-      if (routineRegistry.isEmpty) {
+      const routinesById = new Map(routineRegistry.routines.map((routine) => [routine.id, routine]));
+      for (const registration of pinnedRegistrations) {
+        routinesById.set(registration.routine.id, registration.routine);
+      }
+      const routines = [...routinesById.values()];
+      if (routineRegistry.isEmpty && routines.length === 0) {
         return null;
       }
       return {
-        activator: routineRegistry.activator(modelGateway),
+        activator: routineRegistry.isEmpty
+          ? { activate: async () => null }
+          : routineRegistry.activator(modelGateway),
         runner: new DefaultRoutineRunner(
-          routineRegistry.routines,
+          routines,
           new RoutineNextStepSelector(modelGateway, {
             promptTemplate: loadPromptTemplate("chat/routine-next-step.md"),
           }),
@@ -848,6 +882,7 @@ export const createTestDependencies = (overrides: {
       };
     },
   };
+  const routineStateStore = new InMemoryRoutineStateStore();
   const chatService = new ChatService({
     conversationRepository,
     messageRepository,
@@ -865,7 +900,7 @@ export const createTestDependencies = (overrides: {
     agentService,
     turnRouter,
     conversationEngine: createConversationEngine(),
-    routineStore: new InMemoryRoutineStateStore(),
+    routineStore: routineStateStore,
     routineProvider,
   });
   const chatBootstrapService = new ChatBootstrapService(
@@ -1066,6 +1101,7 @@ export const createTestDependencies = (overrides: {
 
   return {
     dependencies,
+    routineStateStore,
     repositories: {
       auditEventRepository,
       accessGrantRepository,
@@ -1103,7 +1139,7 @@ export const createTestApp = (overrides: {
   chatInferencePipelineComplete?: AppDependencies["chatInferencePipeline"]["complete"];
   logger?: AppDependencies["logger"];
 } = {}) => {
-  const { dependencies, repositories } = createTestDependencies(overrides);
+  const { dependencies, repositories, routineStateStore } = createTestDependencies(overrides);
   const app = createApp(dependencies);
   appDependencyMap.set(app, dependencies);
   appRepositoryMap.set(app, repositories);
@@ -1111,6 +1147,7 @@ export const createTestApp = (overrides: {
     app,
     dependencies,
     repositories,
+    routineStateStore,
   };
 };
 

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   compileRoutineDefinition,
@@ -21,6 +21,7 @@ const missingDestinationId = "44444444-4444-4444-8444-444444444444";
 class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort {
   readonly items = new Map<string, RoutineDefinition>();
   publishError: unknown = undefined;
+  restoreError: unknown = undefined;
 
   async listPublishedByAgent(inputAgentId: string): Promise<RoutineDefinition[]> {
     return [...this.items.values()].filter((definition) =>
@@ -42,6 +43,7 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
     const routine: RoutineDefinition = {
       id: randomUUID(),
       agentId: inputAgentId,
+      lineageId: randomUUID(),
       version: 1,
       status: "draft",
       ...routineDefinitionDraftInputSchema.parse(input),
@@ -66,7 +68,11 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
     return routine;
   }
 
-  async publish(inputAgentId: string, id: string): Promise<RoutineDefinition> {
+  async publish(
+    inputAgentId: string,
+    id: string,
+    options?: Parameters<RoutineDefinitionRepositoryPort["publish"]>[2],
+  ): Promise<RoutineDefinition> {
     if (this.publishError) {
       throw this.publishError;
     }
@@ -75,16 +81,90 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
       throw new Error("not_found");
     }
     const now = new Date();
+    const previousPublished = [...this.items.values()].find((definition) =>
+      definition.agentId === inputAgentId &&
+      definition.lineageId === draft.lineageId &&
+      definition.status === "published"
+    );
     const routine: RoutineDefinition = {
       ...draft,
-      id: randomUUID(),
-      version: 2,
       status: "published",
+      updatedAt: now,
+    };
+    await options?.onPublished?.({
+      previousPublishedId: previousPublished?.id ?? null,
+      newDefinitionId: routine.id,
+      transaction: { kind: "fake-transaction" },
+    });
+    if (previousPublished) {
+      this.items.set(previousPublished.id, {
+        ...previousPublished,
+        status: "superseded",
+        updatedAt: now,
+      });
+    }
+    this.items.set(routine.id, routine);
+    return routine;
+  }
+
+  async createRevisionDraft(inputAgentId: string, publishedId: string): Promise<RoutineDefinition | null> {
+    const published = await this.findById(inputAgentId, publishedId);
+    if (!published || published.status !== "published") {
+      return null;
+    }
+    const existingDraft = [...this.items.values()].find((definition) =>
+      definition.agentId === inputAgentId &&
+      definition.lineageId === published.lineageId &&
+      definition.status === "draft"
+    );
+    if (existingDraft) {
+      return existingDraft;
+    }
+    const now = new Date();
+    const draft: RoutineDefinition = {
+      ...published,
+      id: randomUUID(),
+      version: Math.max(
+        0,
+        ...[...this.items.values()]
+          .filter((definition) => definition.agentId === inputAgentId && definition.lineageId === published.lineageId)
+          .map((definition) => definition.version),
+      ) + 1,
+      status: "draft",
       createdAt: now,
       updatedAt: now,
     };
-    this.items.set(routine.id, routine);
-    return routine;
+    this.items.set(draft.id, draft);
+    return draft;
+  }
+
+  async archive(inputAgentId: string, id: string): Promise<boolean> {
+    const existing = await this.findById(inputAgentId, id);
+    if (!existing || existing.status !== "published") {
+      return false;
+    }
+    this.items.set(id, { ...existing, status: "archived", updatedAt: new Date() });
+    return true;
+  }
+
+  async restore(inputAgentId: string, id: string): Promise<boolean> {
+    if (this.restoreError) {
+      throw this.restoreError;
+    }
+    const existing = await this.findById(inputAgentId, id);
+    if (!existing || existing.status !== "archived") {
+      return false;
+    }
+    const hasPublished = [...this.items.values()].some((definition) =>
+      definition.agentId === inputAgentId &&
+      definition.lineageId === existing.lineageId &&
+      definition.status === "published"
+    );
+    if (hasPublished) {
+      return false;
+    }
+    this.items.set(id, { ...existing, status: "published", updatedAt: new Date() });
+    return true;
   }
 
   async deleteDraft(inputAgentId: string, id: string): Promise<boolean> {
@@ -238,10 +318,13 @@ const createService = (options: {
   actionCapabilities?: ActionCapabilityMap;
   capabilityPolicy?: CapabilityPolicy;
   knownWebhookDestinations?: Set<string>;
+  directiveScopeTags?: ConstructorParameters<typeof RoutineDefinitionService>[0]["directiveScopeTags"];
 } = {}) => {
   const repository = new FakeRoutineDefinitionRepository();
+  const auditService = { record: vi.fn().mockResolvedValue(undefined) };
   const service = new RoutineDefinitionService({
     repository,
+    auditService,
     agentRepository: {
       async findByIdAndWorkspaceId(inputAgentId, inputWorkspaceId) {
         return inputAgentId === agentId && inputWorkspaceId === workspaceId
@@ -254,9 +337,10 @@ const createService = (options: {
         return inputWorkspaceId === workspaceId && options.knownWebhookDestinations?.has(destinationId) === true;
       },
     },
+    directiveScopeTags: options.directiveScopeTags,
     ...options,
   });
-  return { repository, service };
+  return { auditService, repository, service };
 };
 
 describe("RoutineDefinitionService", () => {
@@ -296,8 +380,9 @@ describe("RoutineDefinitionService", () => {
 
     expect(result).toMatchObject({
       routine: {
+        id: draft.routine.id,
         status: "published",
-        version: 2,
+        version: 1,
       },
       validation: {
         ok: true,
@@ -475,6 +560,7 @@ describe("RoutineDefinitionService", () => {
     const routine = compileRoutineDefinition({
       id: "33333333-3333-4333-8333-333333333333",
       agentId,
+      lineageId: "55555555-5555-4555-8555-555555555555",
       version: 1,
       status: "published",
       createdAt: now,
@@ -611,5 +697,185 @@ describe("RoutineDefinitionService", () => {
         ok: true,
       },
     });
+  });
+
+  it("includes an empty directive scope orphan list in successful publish results when no directives port is wired", async () => {
+    const { service } = createService();
+    const draft = await service.createDraft(workspaceId, agentId, validDraft());
+
+    const result = await service.publish(workspaceId, agentId, draft.routine.id);
+
+    expect(result).toMatchObject({
+      directiveScopeOrphans: [],
+      routine: {
+        status: "published",
+      },
+    });
+  });
+
+  it("surfaces directive scope orphans from publish-time scope tag re-pointing", async () => {
+    const directiveScopeTags = {
+      repointRoutineScopeTags: vi.fn(async () => ({
+        repointed: 1,
+        orphans: [{
+          directiveId: "directive-1",
+          scopeTag: "step:old-definition:removed",
+          reason: "missing_step" as const,
+        }],
+      })),
+    };
+    const { repository, service } = createService({ directiveScopeTags });
+    const draft = await service.createDraft(workspaceId, agentId, validDraft());
+    const firstPublish = await service.publish(workspaceId, agentId, draft.routine.id);
+    if ("rejected" in firstPublish) {
+      throw new Error("expected first publish success");
+    }
+    const revision = await service.revise(workspaceId, agentId, firstPublish.routine.id);
+    repository.items.set(firstPublish.routine.id, firstPublish.routine);
+
+    const result = await service.publish(workspaceId, agentId, revision.id);
+
+    expect(result).toMatchObject({
+      directiveScopeOrphans: [{
+        directiveId: "directive-1",
+        scopeTag: "step:old-definition:removed",
+        reason: "missing_step",
+      }],
+    });
+    expect(directiveScopeTags.repointRoutineScopeTags).toHaveBeenCalledWith({
+      agentId,
+      fromDefinitionId: firstPublish.routine.id,
+      toDefinitionId: expect.any(String),
+      survivingStepIds: new Set(["step_collect_topic"]),
+      transaction: { kind: "fake-transaction" },
+    });
+  });
+
+  it("emits audit events for publish, revise, archive, and restore", async () => {
+    const { auditService, repository, service } = createService();
+    const draft = await service.createDraft(workspaceId, agentId, validDraft());
+    const publish = await service.publish(workspaceId, agentId, draft.routine.id);
+    if ("rejected" in publish) {
+      throw new Error("expected publish success");
+    }
+
+    const revision = await service.revise(workspaceId, agentId, publish.routine.id);
+    await service.archive(workspaceId, agentId, publish.routine.id);
+    repository.items.set(publish.routine.id, { ...publish.routine, status: "archived" });
+    await service.restore(workspaceId, agentId, publish.routine.id);
+
+    expect(revision.status).toBe("draft");
+    expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "routine_definition.publish",
+      eventStatus: "success",
+      workspaceId,
+      metadata: expect.objectContaining({
+        agentId,
+        routineId: publish.routine.id,
+        lineageId: publish.routine.lineageId,
+        version: publish.routine.version,
+        supersededDefinitionId: null,
+        directiveScopeOrphans: 0,
+      }),
+    }));
+    expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "routine_definition.revise",
+      eventStatus: "success",
+    }));
+    expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "routine_definition.archive",
+      eventStatus: "success",
+    }));
+    expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "routine_definition.restore",
+      eventStatus: "success",
+    }));
+  });
+
+  it("returns an existing draft when revising a published lineage that already has one", async () => {
+    const { service } = createService();
+    const draft = await service.createDraft(workspaceId, agentId, validDraft());
+    const publish = await service.publish(workspaceId, agentId, draft.routine.id);
+    if ("rejected" in publish) {
+      throw new Error("expected publish success");
+    }
+
+    const firstRevision = await service.revise(workspaceId, agentId, publish.routine.id);
+    const secondRevision = await service.revise(workspaceId, agentId, publish.routine.id);
+
+    expect(secondRevision.id).toBe(firstRevision.id);
+    expect(secondRevision.lineageId).toBe(publish.routine.lineageId);
+  });
+
+  it("rejects illegal archive and restore lifecycle transitions", async () => {
+    const { repository, service } = createService();
+    const draft = await service.createDraft(workspaceId, agentId, validDraft());
+
+    await expect(service.archive(workspaceId, agentId, draft.routine.id))
+      .rejects.toThrow("Only published routine definitions can be archived");
+    await expect(service.restore(workspaceId, agentId, draft.routine.id))
+      .rejects.toThrow("Only archived routine definitions can be restored");
+
+    const archived: RoutineDefinition = {
+      ...draft.routine,
+      id: randomUUID(),
+      status: "archived",
+    };
+    const publishedSameLineage: RoutineDefinition = {
+      ...draft.routine,
+      id: randomUUID(),
+      status: "published",
+    };
+    repository.items.set(archived.id, archived);
+    repository.items.set(publishedSameLineage.id, publishedSameLineage);
+
+    await expect(service.restore(workspaceId, agentId, archived.id))
+      .rejects.toThrow("Archived routine definition cannot be restored while another version is published");
+  });
+
+  it("turns a missing completion export destination during restore into a bad request", async () => {
+    const { repository, service } = createService();
+    const draft = await service.createDraft(workspaceId, agentId, {
+      ...validDraft(),
+      completionExport: {
+        enabled: true,
+        triggerKinds: ["complete"],
+        destinationRef: missingDestinationId,
+      },
+    });
+    const archived: RoutineDefinition = {
+      ...draft.routine,
+      status: "archived",
+    };
+    repository.items.set(archived.id, archived);
+    repository.restoreError = Object.assign(
+      new Error(`published routine completion export references unknown webhook destination ${missingDestinationId}`),
+      {
+        code: "23503",
+        constraint: "routine_completion_export_destination_ref_published_fk",
+      },
+    );
+
+    await expect(service.restore(workspaceId, agentId, archived.id))
+      .rejects.toMatchObject({
+        statusCode: 400,
+        message: expect.stringContaining(missingDestinationId),
+      });
+  });
+
+  it("maps a draft save that raced a publish to an author-facing conflict", async () => {
+    const { repository, service } = createService();
+    const draft = await service.createDraft(workspaceId, agentId, validDraft());
+    // Simulate publish committing between the service's status pre-check and the
+    // repository write: the repository's zero-row guard throws the marker error.
+    repository.updateDraft = async (_agentId: string, id: string) => {
+      throw new Error(`routine_definition_update_conflict:${id}`);
+    };
+
+    await expect(service.updateDraft(workspaceId, agentId, draft.routine.id, validDraft()))
+      .rejects.toMatchObject({
+        statusCode: 409,
+        message: expect.stringContaining("published concurrently"),
+      });
   });
 });

@@ -89,7 +89,19 @@ describe('routinesApi', () => {
   })
 
   it('creates and updates routine drafts with request bodies', async () => {
-    const saveResponse = { routine: { id: 'routine-1', ...routineDraft }, validation: { ok: true, diagnostics: [] } }
+    const saveResponse = {
+      routine: {
+        id: 'routine-1',
+        lineageId: 'lineage-1',
+        agentId: 'agent-1',
+        version: 1,
+        status: 'draft' as const,
+        createdAt: '2026-06-12T00:00:00.000Z',
+        updatedAt: '2026-06-12T00:00:00.000Z',
+        ...routineDraft,
+      },
+      validation: { ok: true, diagnostics: [] },
+    }
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(saveResponse, 201))
     vi.stubGlobal('fetch', fetchMock)
 
@@ -146,6 +158,41 @@ describe('routinesApi', () => {
     await expect(routinesApi.publishRoutine('agent-1', 'routine-1')).rejects.toMatchObject({
       response: { validation },
     })
+  })
+
+  it('requests revise, archive, and restore lifecycle transitions', async () => {
+    const routine = {
+      id: 'routine-2',
+      lineageId: 'lineage-1',
+      agentId: 'agent-1',
+      version: 2,
+      status: 'draft' as const,
+      createdAt: '2026-06-12T00:00:00.000Z',
+      updatedAt: '2026-06-12T00:00:00.000Z',
+      ...routineDraft,
+    }
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ routine }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await routinesApi.reviseRoutine('agent-1', 'routine-1')
+    await routinesApi.archiveRoutine('agent-1', 'routine-1')
+    await routinesApi.restoreRoutine('agent-1', 'routine-1')
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      '/backend/api/v1/agents/agent-1/routines/routine-1/revise',
+      expect.objectContaining({ method: 'POST', credentials: 'omit' }),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/backend/api/v1/agents/agent-1/routines/routine-1/archive',
+      expect.objectContaining({ method: 'POST', credentials: 'omit' }),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      '/backend/api/v1/agents/agent-1/routines/routine-1/restore',
+      expect.objectContaining({ method: 'POST', credentials: 'omit' }),
+    )
   })
 
   it('deletes routine drafts and accepts 204 responses', async () => {

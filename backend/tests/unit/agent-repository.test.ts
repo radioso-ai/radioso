@@ -537,6 +537,51 @@ describe("AgentRepository", () => {
     expect(query.mock.calls.find(([text]) => text.includes("UPDATE agent_directives"))?.[0]).toContain("scope_tags");
   });
 
+  it("re-points routine scope tags and reports removed step tags as orphans", async () => {
+    const query = vi.fn(async (text: string, params?: unknown[]) => {
+      if (text.includes("SELECT id::text, scope_tags")) {
+        return {
+          rows: [{
+            id: "directive-1",
+            scope_tags: [
+              "routine:old-definition",
+              "step:old-definition:survives",
+              "step:old-definition:removed",
+              "global",
+            ],
+          }],
+        };
+      }
+      if (text.includes("UPDATE agent_directives")) {
+        return { rows: [] };
+      }
+      return { rows: [] };
+    });
+    const repository = new AgentRepository({ query } as never);
+
+    const result = await repository.repointRoutineScopeTags({
+      agentId: "agent-1",
+      fromDefinitionId: "old-definition",
+      toDefinitionId: "new-definition",
+      survivingStepIds: new Set(["survives"]),
+    });
+
+    expect(result).toEqual({
+      repointed: 2,
+      orphans: [{
+        directiveId: "directive-1",
+        scopeTag: "step:old-definition:removed",
+        reason: "missing_step",
+      }],
+    });
+    const updateCall = query.mock.calls.find(([text]) => text.includes("UPDATE agent_directives"));
+    expect(updateCall?.[1]).toEqual([
+      ["routine:new-definition", "step:new-definition:survives", "step:old-definition:removed", "global"],
+      "directive-1",
+      "agent-1",
+    ]);
+  });
+
   it("uses an updated_at compare-and-set guard on update and reports stale writes as conflicts", async () => {
     const currentUpdatedAt = new Date("2026-01-01T00:00:00.000Z");
     const query = vi.fn(async (text: string, _params?: unknown[]) => {

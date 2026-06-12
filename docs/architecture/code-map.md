@@ -388,7 +388,7 @@ and are gated by a per-action capability.
 Public surfaces and contracts:
 
 - `backend/src/modules/routines/public.ts` (definition types, compiler, validator)
-- `backend/src/app/http/routes/agentRoutes.ts` (`/api/v1/agents/:agentId/routines` CRUD/validate/publish)
+- `backend/src/app/http/routes/agentRoutes.ts` (`/api/v1/agents/:agentId/routines` CRUD/validate/publish/revise/archive/restore)
 - `packages/conversation-contract/index.d.ts` (the `Routine` graph and guards the compiler targets)
 - `packages/conversation-defaults/src/routineRegistry.ts` (ranked one-call
   activation over registered `{ routine, trigger: { description, priority } }`
@@ -397,8 +397,8 @@ Public surfaces and contracts:
 Primary internals:
 
 - `backend/src/modules/routines/compiler.ts`, `validator.ts`, `domain.ts`, `service.ts`
-- `backend/src/db/repositories/routineDefinitionRepository.ts`, migrations `084`–`086`
-- `backend/src/app/composition/routineDefinitionSource.ts` (loads + compiles published routines per turn)
+- `backend/src/db/repositories/routineDefinitionRepository.ts`, migrations `084`–`090`
+- `backend/src/app/composition/routineDefinitionSource.ts` (loads + compiles published routines for activation and pinned non-published routines for resume)
 - `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward)
 - `backend/prompts/chat/routine-next-step.md`, `routine-step-reply.md`, `routine-ranked-activation.md`
 - `frontend/components/dashboard/settings/assistant-routines-section.tsx` (authoring UI)

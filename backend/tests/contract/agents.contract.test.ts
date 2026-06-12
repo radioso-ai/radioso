@@ -949,6 +949,7 @@ describe("agents contract", () => {
       routine: {
         id: expect.any(String),
         agentId: agent.body.id,
+        lineageId: expect.any(String),
         name: "support-intake",
         version: 1,
         status: "draft",
@@ -967,6 +968,7 @@ describe("agents contract", () => {
     expect(list.body.routines).toHaveLength(1);
     expect(list.body.routines[0]).toMatchObject({
       id: create.body.routine.id,
+      lineageId: create.body.routine.lineageId,
       name: "support-intake",
       status: "draft",
     });
@@ -992,6 +994,7 @@ describe("agents contract", () => {
       routine: {
         id: create.body.routine.id,
         name: "support-intake-updated",
+        lineageId: create.body.routine.lineageId,
         status: "draft",
       },
       validation: {
@@ -1013,18 +1016,100 @@ describe("agents contract", () => {
 
     expect(publish.body).toMatchObject({
       routine: {
-        id: expect.any(String),
+        id: create.body.routine.id,
         agentId: agent.body.id,
+        lineageId: create.body.routine.lineageId,
         name: "support-intake-updated",
-        version: 2,
+        version: 1,
         status: "published",
       },
       validation: {
         ok: true,
         diagnostics: [],
       },
+      directiveScopeOrphans: [],
     });
-    expect(publish.body.routine.id).not.toEqual(create.body.routine.id);
+    expect(publish.body.routine.id).toEqual(create.body.routine.id);
+  });
+
+  it("revises, archives, and restores routine definitions through lifecycle endpoints", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-routines-lifecycle@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const agent = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({ name: "Routine lifecycle" })
+      .expect(201);
+
+    const create = await request(app)
+      .post(`/api/v1/agents/${agent.body.id}/routines`)
+      .set("Authorization", authorization)
+      .send(validRoutineDraft())
+      .expect(201);
+
+    const publishV1 = await request(app)
+      .post(`/api/v1/agents/${agent.body.id}/routines/${create.body.routine.id}/publish`)
+      .set("Authorization", authorization)
+      .expect(200);
+
+    const revise = await request(app)
+      .post(`/api/v1/agents/${agent.body.id}/routines/${publishV1.body.routine.id}/revise`)
+      .set("Authorization", authorization)
+      .expect(200);
+
+    expect(revise.body.routine).toMatchObject({
+      status: "draft",
+      lineageId: publishV1.body.routine.lineageId,
+      name: publishV1.body.routine.name,
+    });
+
+    await request(app)
+      .patch(`/api/v1/agents/${agent.body.id}/routines/${revise.body.routine.id}`)
+      .set("Authorization", authorization)
+      .send(validRoutineDraft({ name: "support-intake-renamed" }))
+      .expect(200);
+
+    const publishV2 = await request(app)
+      .post(`/api/v1/agents/${agent.body.id}/routines/${revise.body.routine.id}/publish`)
+      .set("Authorization", authorization)
+      .expect(200);
+
+    expect(publishV2.body).toMatchObject({
+      directiveScopeOrphans: [],
+      routine: {
+        status: "published",
+        lineageId: publishV1.body.routine.lineageId,
+        name: "support-intake-renamed",
+      },
+    });
+
+    const oldVersion = await request(app)
+      .get(`/api/v1/agents/${agent.body.id}/routines/${publishV1.body.routine.id}`)
+      .set("Authorization", authorization)
+      .expect(200);
+    expect(oldVersion.body.routine.status).toBe("superseded");
+
+    const archive = await request(app)
+      .post(`/api/v1/agents/${agent.body.id}/routines/${publishV2.body.routine.id}/archive`)
+      .set("Authorization", authorization)
+      .expect(200);
+    expect(archive.body.routine.status).toBe("archived");
+
+    const list = await request(app)
+      .get(`/api/v1/agents/${agent.body.id}/routines`)
+      .set("Authorization", authorization)
+      .expect(200);
+    expect(list.body.routines.map((routine: { status: string }) => routine.status)).toEqual(
+      expect.arrayContaining(["superseded", "archived"]),
+    );
+
+    const restore = await request(app)
+      .post(`/api/v1/agents/${agent.body.id}/routines/${publishV2.body.routine.id}/restore`)
+      .set("Authorization", authorization)
+      .expect(200);
+    expect(restore.body.routine.status).toBe("published");
   });
 
   it("surfaces routine validation diagnostics and rejects invalid publishes", async () => {

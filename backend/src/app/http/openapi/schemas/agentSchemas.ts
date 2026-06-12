@@ -4,6 +4,7 @@ import { agentSurfacePositions } from "../../../../modules/agents/public.js";
 import {
   routineDefinitionDraftInputSchema,
   routineDraftAssistRequestSchema,
+  routineDefinitionStatuses,
   routineValidationCodes,
 } from "../../../../modules/routines/public.js";
 import { skillDisplayMetadataSchema } from "../../../../modules/skills/public.js";
@@ -387,8 +388,9 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     routineDefinitionDraftInputSchema.extend({
       id: z.string().uuid(),
       agentId: z.string().uuid(),
+      lineageId: z.string().uuid(),
       version: z.number().int().min(1),
-      status: z.enum(["draft", "published"]),
+      status: z.enum(routineDefinitionStatuses),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
     }),
@@ -413,6 +415,31 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     z.object({
       routine: RoutineDefinitionResponseSchema,
       validation: RoutineValidationResultSchema,
+    }),
+  );
+
+  const RoutineDirectiveScopeOrphanSchema = registry.register(
+    "RoutineDirectiveScopeOrphan",
+    z.object({
+      directiveId: z.string(),
+      scopeTag: z.string(),
+      reason: z.literal("missing_step"),
+    }),
+  );
+
+  const RoutineDefinitionPublishResponseSchema = registry.register(
+    "RoutineDefinitionPublishResponse",
+    z.object({
+      routine: RoutineDefinitionResponseSchema,
+      validation: RoutineValidationResultSchema,
+      directiveScopeOrphans: z.array(RoutineDirectiveScopeOrphanSchema),
+    }),
+  );
+
+  const RoutineDefinitionLifecycleResponseSchema = registry.register(
+    "RoutineDefinitionLifecycleResponse",
+    z.object({
+      routine: RoutineDefinitionResponseSchema,
     }),
   );
 
@@ -517,7 +544,10 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     RoutineDefinitionGetResponseSchema,
     RoutineDefinitionListResponseSchema,
     RoutineDefinitionParamsSchema,
+    RoutineDefinitionLifecycleResponseSchema,
+    RoutineDefinitionPublishResponseSchema,
     RoutineDefinitionPublishRejectedResponseSchema,
+    RoutineDirectiveScopeOrphanSchema,
     RoutineDefinitionResponseSchema,
     RoutineDefinitionSaveResponseSchema,
     RoutineDefinitionUpdateRequestSchema,

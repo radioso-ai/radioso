@@ -150,7 +150,7 @@ As an operator, I want to export a routine definition and import it into another
 
 - **Routine Definition (versioned)** — per-agent, relational of record: activation/trigger, slot schema, steps, transitions, action references, terminals; monotonic version. New (supersedes the code const).
 - **Slot Schema** — declared typed variables (key, type, required, description). New (replaces 069 untyped variables).
-- **Authored Step / Transition (guard)** — a step block (kind: chat / tool / fork) with a prose instruction; transitions carry prose or structured guards. New (authoring-side; compiles to 069 step/transition).
+- **Authored Step / Transition (guard)** — a step block (kind: chat / tool / action) with a prose instruction; transitions carry prose or structured guards. New (authoring-side; compiles to 069 step/transition).
 - **Action Reference** — a condition-gated reference to a deterministic integration action, with outcome edges. New.
 - **Terminal** — complete / handoff / side-effect action. Handoff is new as a first-class kind.
 - **Compiler** — definition → 069 graph + slot schema, deterministic, with author-facing validation. New seam.

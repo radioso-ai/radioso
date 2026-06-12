@@ -47,6 +47,7 @@ export interface DashboardRouteState {
   workspacePublicRouteKey?: string
   agentId?: string
   agentTab?: AgentTab
+  agentRoutineId?: string
   knowledgeTab?: KnowledgeTab
   settingsTab?: SettingsTab
   accountTab?: AccountTab
@@ -77,6 +78,7 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'workspacePublicRouteKey',
   'agentId',
   'agentTab',
+  'agentRoutineId',
   'knowledgeTab',
   'settingsTab',
   'accountTab',
@@ -271,6 +273,9 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
   if (state.section === 'agents') {
     if (state.agentId) {
       normalized.agentId = state.agentId
+    }
+    if (state.agentId && state.agentRoutineId) {
+      normalized.agentRoutineId = state.agentRoutineId
     }
     if (state.agentTab && state.agentTab !== DEFAULT_AGENT_TAB) {
       normalized.agentTab = state.agentTab
@@ -495,6 +500,9 @@ export const buildLegacyDashboardHref = (
 
   if (normalized.section === 'agents') {
     pathname = normalized.agentId ? `${basePath}/agents/${normalized.agentId}` : `${basePath}/agents`
+    if (normalized.agentId && normalized.agentRoutineId) {
+      pathname = `${pathname}/routines/${normalized.agentRoutineId}`
+    }
   }
 
   if (normalized.section === 'knowledge') {
@@ -521,6 +529,9 @@ export const buildDashboardHref = (
 
   if (normalized.section === 'agents') {
     pathname = normalized.agentId ? `${basePath}/agents/${normalized.agentId}` : `${basePath}/agents`
+    if (normalized.agentId && normalized.agentRoutineId) {
+      pathname = `${pathname}/routines/${normalized.agentRoutineId}`
+    }
   }
 
   if (normalized.section === 'knowledge') {
@@ -585,7 +596,7 @@ export const parseDashboardRoute = (
     }
   }
 
-  const [sectionCandidate, secondSegment, thirdSegment, ...rest] = segments
+  const [sectionCandidate, secondSegment, thirdSegment, fourthSegment, ...rest] = segments
 
   if (sectionCandidate === 'chat') {
     return rest.length === 0 && !secondSegment
@@ -594,7 +605,7 @@ export const parseDashboardRoute = (
   }
 
   if (sectionCandidate === 'documents') {
-    if (rest.length > 0 || thirdSegment) {
+    if (rest.length > 0 || fourthSegment || thirdSegment) {
       return null
     }
     return normalizeState({
@@ -607,7 +618,7 @@ export const parseDashboardRoute = (
   }
 
   if (sectionCandidate === 'history') {
-    if (secondSegment || thirdSegment || rest.length > 0) {
+    if (secondSegment || thirdSegment || fourthSegment || rest.length > 0) {
       return null
     }
     return normalizeState({
@@ -628,16 +639,25 @@ export const parseDashboardRoute = (
   }
 
   if (sectionCandidate === 'agents') {
-    if (thirdSegment || rest.length > 0) {
+    if (rest.length > 0) {
       return null
     }
     if (secondSegment && !isValidAgentId(secondSegment)) {
       return null
     }
+    if (thirdSegment || fourthSegment) {
+      if (!secondSegment || thirdSegment !== 'routines' || !fourthSegment) {
+        return null
+      }
+      if (fourthSegment !== 'new' && !isValidAgentId(fourthSegment)) {
+        return null
+      }
+    }
     return normalizeState({
       section: 'agents',
       workspaceId,
       ...(secondSegment ? { agentId: secondSegment } : {}),
+      ...(fourthSegment ? { agentRoutineId: fourthSegment } : {}),
       agentTab: parseAgentTab(searchParams?.get('tab') ?? null),
       anchor: parseAnchor(searchParams?.get('anchor') ?? null),
       workbenchConversationId: searchParams?.get('replayConversationId') ?? undefined,
@@ -649,7 +669,7 @@ export const parseDashboardRoute = (
     if (secondSegment && secondSegment !== 'documents') {
       return null
     }
-    if (rest.length > 0) {
+    if (fourthSegment || rest.length > 0) {
       return null
     }
     return normalizeState({
@@ -664,7 +684,7 @@ export const parseDashboardRoute = (
   }
 
   if (sectionCandidate === 'activity') {
-    if (secondSegment || thirdSegment || rest.length > 0) {
+    if (secondSegment || thirdSegment || fourthSegment || rest.length > 0) {
       return null
     }
     return normalizeState({
@@ -679,7 +699,7 @@ export const parseDashboardRoute = (
   }
 
   if (sectionCandidate === 'settings') {
-    if (secondSegment || thirdSegment || rest.length > 0) {
+    if (secondSegment || thirdSegment || fourthSegment || rest.length > 0) {
       return null
     }
     return normalizeState({
@@ -689,7 +709,7 @@ export const parseDashboardRoute = (
   }
 
   if (sectionCandidate === 'usage') {
-    if (secondSegment || thirdSegment || rest.length > 0) {
+    if (secondSegment || thirdSegment || fourthSegment || rest.length > 0) {
       return null
     }
     return normalizeState({
@@ -700,7 +720,7 @@ export const parseDashboardRoute = (
   }
 
   if (sectionCandidate === 'account') {
-    if (secondSegment || thirdSegment || rest.length > 0) {
+    if (secondSegment || thirdSegment || fourthSegment || rest.length > 0) {
       return null
     }
     return normalizeState({
@@ -711,7 +731,7 @@ export const parseDashboardRoute = (
   }
 
   if (sectionCandidate === 'quality') {
-    if (secondSegment || thirdSegment || rest.length > 0) {
+    if (secondSegment || thirdSegment || fourthSegment || rest.length > 0) {
       return null
     }
     return normalizeState({
@@ -728,7 +748,7 @@ export const parseDashboardRoute = (
   }
 
   if (sectionCandidate === 'eval') {
-    if (thirdSegment || rest.length > 0) {
+    if (thirdSegment || fourthSegment || rest.length > 0) {
       return null
     }
     return normalizeState({

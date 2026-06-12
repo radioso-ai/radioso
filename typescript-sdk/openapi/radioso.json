@@ -3859,7 +3859,6 @@
                   "enum": [
                     "chat",
                     "tool",
-                    "fork",
                     "action"
                   ]
                 },
@@ -3925,8 +3924,7 @@
                   "type": "string",
                   "enum": [
                     "llm",
-                    "always",
-                    "fallback",
+                    "default",
                     "slot_filled",
                     "outcome",
                     "counter"
@@ -4149,7 +4147,6 @@
                   "enum": [
                     "chat",
                     "tool",
-                    "fork",
                     "action"
                   ]
                 },
@@ -4215,8 +4212,7 @@
                   "type": "string",
                   "enum": [
                     "llm",
-                    "always",
-                    "fallback",
+                    "default",
                     "slot_filled",
                     "outcome",
                     "counter"
@@ -4332,6 +4328,20 @@
           "activation",
           "steps",
           "terminals"
+        ],
+        "additionalProperties": false
+      },
+      "RoutineDraftAssistRequest": {
+        "type": "object",
+        "properties": {
+          "prose": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50000
+          }
+        },
+        "required": [
+          "prose"
         ],
         "additionalProperties": false
       },
@@ -4491,7 +4501,6 @@
                   "enum": [
                     "chat",
                     "tool",
-                    "fork",
                     "action"
                   ]
                 },
@@ -4557,8 +4566,7 @@
                   "type": "string",
                   "enum": [
                     "llm",
-                    "always",
-                    "fallback",
+                    "default",
                     "slot_filled",
                     "outcome",
                     "counter"
@@ -4758,6 +4766,306 @@
           }
         },
         "required": [
+          "validation"
+        ]
+      },
+      "RoutineDraftAssistResponse": {
+        "type": "object",
+        "properties": {
+          "draft": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "activation": {
+                "type": "object",
+                "properties": {
+                  "triggerDescription": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  },
+                  "gateRef": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 300
+                  },
+                  "priority": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "triggerDescription",
+                  "priority"
+                ],
+                "additionalProperties": false
+              },
+              "slots": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "stableSlotId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                    },
+                    "key": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "text",
+                        "number",
+                        "boolean",
+                        "email",
+                        "date"
+                      ]
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "description": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 1000
+                    },
+                    "ordinal": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "stableSlotId",
+                    "key",
+                    "type",
+                    "required",
+                    "ordinal"
+                  ],
+                  "additionalProperties": false
+                },
+                "default": []
+              },
+              "steps": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "stableStepId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "chat",
+                        "tool",
+                        "action"
+                      ]
+                    },
+                    "instruction": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4000
+                    },
+                    "toolRef": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 300
+                    },
+                    "actionType": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 300
+                    },
+                    "ordinal": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "metadata": {
+                      "type": "object",
+                      "additionalProperties": {},
+                      "default": {}
+                    }
+                  },
+                  "required": [
+                    "stableStepId",
+                    "kind",
+                    "instruction",
+                    "ordinal"
+                  ],
+                  "additionalProperties": false
+                },
+                "minItems": 1
+              },
+              "transitions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "fromStep": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                    },
+                    "toRef": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                    },
+                    "guardKind": {
+                      "type": "string",
+                      "enum": [
+                        "llm",
+                        "default",
+                        "slot_filled",
+                        "outcome",
+                        "counter"
+                      ]
+                    },
+                    "guardText": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 2000
+                    },
+                    "outcomeStatus": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "counterLimit": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "exclusiveMinimum": 0
+                    },
+                    "ordinal": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "fromStep",
+                    "toRef",
+                    "guardKind",
+                    "ordinal"
+                  ],
+                  "additionalProperties": false
+                },
+                "default": []
+              },
+              "terminals": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "stableStepId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "complete",
+                        "handoff"
+                      ]
+                    },
+                    "instruction": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 4000
+                    },
+                    "ordinal": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "stableStepId",
+                    "kind",
+                    "ordinal"
+                  ],
+                  "additionalProperties": false
+                },
+                "minItems": 1
+              },
+              "completionExport": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "triggerKinds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "complete",
+                        "handoff"
+                      ]
+                    },
+                    "default": []
+                  },
+                  "destinationRef": {
+                    "type": "string",
+                    "maxLength": 300,
+                    "default": ""
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "name",
+              "activation",
+              "steps",
+              "terminals"
+            ],
+            "additionalProperties": false
+          },
+          "validation": {
+            "$ref": "#/components/schemas/RoutineValidationResult"
+          }
+        },
+        "required": [
+          "draft",
           "validation"
         ]
       },
@@ -13545,6 +13853,93 @@
           },
           "404": {
             "description": "Agent or draft routine definition not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/routines/draft-assist": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Draft a routine definition from operator procedure prose",
+        "operationId": "draftAgentRoutineFromProcedure",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoutineDraftAssistRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Routine draft proposal returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutineDraftAssistResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Routine draft could not be generated",
             "content": {
               "application/json": {
                 "schema": {

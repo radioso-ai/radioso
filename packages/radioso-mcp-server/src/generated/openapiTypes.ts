@@ -826,6 +826,23 @@ export interface paths {
         patch: operations["updateAgentRoutine"];
         trace?: never;
     };
+    "/api/v1/agents/{agentId}/routines/draft-assist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Draft a routine definition from operator procedure prose */
+        post: operations["draftAgentRoutineFromProcedure"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agentId}/routines/{routineId}/validate": {
         parameters: {
             query?: never;
@@ -2544,7 +2561,7 @@ export interface components {
             steps: {
                 stableStepId: string;
                 /** @enum {string} */
-                kind: "chat" | "tool" | "fork" | "action";
+                kind: "chat" | "tool" | "action";
                 instruction: string;
                 toolRef?: string | null;
                 actionType?: string | null;
@@ -2559,7 +2576,7 @@ export interface components {
                 fromStep: string;
                 toRef: string;
                 /** @enum {string} */
-                guardKind: "llm" | "always" | "fallback" | "slot_filled" | "outcome" | "counter";
+                guardKind: "llm" | "default" | "slot_filled" | "outcome" | "counter";
                 guardText?: string | null;
                 outcomeStatus?: string | null;
                 counterLimit?: number | null;
@@ -2601,7 +2618,7 @@ export interface components {
             steps: {
                 stableStepId: string;
                 /** @enum {string} */
-                kind: "chat" | "tool" | "fork" | "action";
+                kind: "chat" | "tool" | "action";
                 instruction: string;
                 toolRef?: string | null;
                 actionType?: string | null;
@@ -2616,7 +2633,7 @@ export interface components {
                 fromStep: string;
                 toRef: string;
                 /** @enum {string} */
-                guardKind: "llm" | "always" | "fallback" | "slot_filled" | "outcome" | "counter";
+                guardKind: "llm" | "default" | "slot_filled" | "outcome" | "counter";
                 guardText?: string | null;
                 outcomeStatus?: string | null;
                 counterLimit?: number | null;
@@ -2637,6 +2654,9 @@ export interface components {
                 /** @default  */
                 destinationRef: string;
             };
+        };
+        RoutineDraftAssistRequest: {
+            prose: string;
         };
         RoutineValidationResult: {
             ok: boolean;
@@ -2667,7 +2687,7 @@ export interface components {
             steps: {
                 stableStepId: string;
                 /** @enum {string} */
-                kind: "chat" | "tool" | "fork" | "action";
+                kind: "chat" | "tool" | "action";
                 instruction: string;
                 toolRef?: string | null;
                 actionType?: string | null;
@@ -2682,7 +2702,7 @@ export interface components {
                 fromStep: string;
                 toRef: string;
                 /** @enum {string} */
-                guardKind: "llm" | "always" | "fallback" | "slot_filled" | "outcome" | "counter";
+                guardKind: "llm" | "default" | "slot_filled" | "outcome" | "counter";
                 guardText?: string | null;
                 outcomeStatus?: string | null;
                 counterLimit?: number | null;
@@ -2726,6 +2746,66 @@ export interface components {
             validation: components["schemas"]["RoutineValidationResult"];
         };
         RoutineDefinitionValidateResponse: {
+            validation: components["schemas"]["RoutineValidationResult"];
+        };
+        RoutineDraftAssistResponse: {
+            draft: {
+                name: string;
+                activation: {
+                    triggerDescription: string;
+                    gateRef?: string | null;
+                    priority: number;
+                };
+                /** @default [] */
+                slots: {
+                    stableSlotId: string;
+                    key: string;
+                    /** @enum {string} */
+                    type: "text" | "number" | "boolean" | "email" | "date";
+                    required: boolean;
+                    description?: string | null;
+                    ordinal: number;
+                }[];
+                steps: {
+                    stableStepId: string;
+                    /** @enum {string} */
+                    kind: "chat" | "tool" | "action";
+                    instruction: string;
+                    toolRef?: string | null;
+                    actionType?: string | null;
+                    ordinal: number;
+                    /** @default {} */
+                    metadata: {
+                        [key: string]: unknown;
+                    };
+                }[];
+                /** @default [] */
+                transitions: {
+                    fromStep: string;
+                    toRef: string;
+                    /** @enum {string} */
+                    guardKind: "llm" | "default" | "slot_filled" | "outcome" | "counter";
+                    guardText?: string | null;
+                    outcomeStatus?: string | null;
+                    counterLimit?: number | null;
+                    ordinal: number;
+                }[];
+                terminals: {
+                    stableStepId: string;
+                    /** @enum {string} */
+                    kind: "complete" | "handoff";
+                    instruction?: string | null;
+                    ordinal: number;
+                }[];
+                completionExport?: {
+                    /** @default false */
+                    enabled: boolean;
+                    /** @default [] */
+                    triggerKinds: ("complete" | "handoff")[];
+                    /** @default  */
+                    destinationRef: string;
+                };
+            };
             validation: components["schemas"]["RoutineValidationResult"];
         };
         RoutineDefinitionPublishRejectedResponse: {
@@ -6795,6 +6875,68 @@ export interface operations {
             };
             /** @description Agent or routine definition not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    draftAgentRoutineFromProcedure: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoutineDraftAssistRequest"];
+            };
+        };
+        responses: {
+            /** @description Routine draft proposal returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineDraftAssistResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Routine draft could not be generated */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

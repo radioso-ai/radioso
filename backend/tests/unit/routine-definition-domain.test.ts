@@ -87,7 +87,7 @@ describe("routine definition compiler and validator", () => {
       transitions: [
         { fromStep: "ask_email", toRef: "done", guardKind: "slot_filled", guardText: "{{slot.email}}", ordinal: 0 },
         { fromStep: "ask_email", toRef: "handoff", guardKind: "counter", guardText: "2", ordinal: 1 },
-        { fromStep: "ask_email", toRef: "handoff", guardKind: "fallback", guardText: null, ordinal: 2 },
+        { fromStep: "ask_email", toRef: "handoff", guardKind: "default", guardText: null, ordinal: 2 },
       ],
       terminals: [
         { stableStepId: "done", kind: "complete", instruction: "Confirm completion.", ordinal: 0 },
@@ -100,7 +100,7 @@ describe("routine definition compiler and validator", () => {
     expect(routine.transitions).toEqual([
       { from: "ask_email", to: "done", condition: "slot_filled", guard: { kind: "slot_filled", slots: ["email"] } },
       { from: "ask_email", to: "handoff", condition: "counter", guard: { kind: "counter", limit: 2 } },
-      { from: "ask_email", to: "handoff", condition: "fallback", guard: { kind: "fallback" } },
+      { from: "ask_email", to: "handoff", condition: "default", guard: { kind: "default" } },
     ]);
   });
 
@@ -136,8 +136,8 @@ describe("routine definition compiler and validator", () => {
       ],
       transitions: [
         ...def.transitions,
-        { fromStep: "ask_topic", toRef: "send", guardKind: "always" as const, guardText: null, ordinal: 1 },
-        { fromStep: "send", toRef: "done", guardKind: "always" as const, guardText: null, ordinal: 2 },
+        { fromStep: "ask_topic", toRef: "send", guardKind: "default" as const, guardText: null, ordinal: 1 },
+        { fromStep: "send", toRef: "done", guardKind: "default" as const, guardText: null, ordinal: 2 },
       ],
     })],
     ["missing action follow-up", (def: RoutineDefinition) => ({
@@ -211,7 +211,7 @@ describe("routine definition compiler and validator", () => {
       ],
       transitions: [
         { fromStep: "ask_email", toRef: "lookup", guardKind: "slot_filled", guardText: "{{slot.email}}", ordinal: 0 },
-        { fromStep: "lookup", toRef: "done", guardKind: "always", guardText: null, ordinal: 1 },
+        { fromStep: "lookup", toRef: "done", guardKind: "default", guardText: null, ordinal: 1 },
       ],
     };
 
@@ -236,7 +236,7 @@ describe("routine definition compiler and validator", () => {
       transitions: [
         { fromStep: "ask_name", toRef: "ask_topic", guardKind: "llm", guardText: "The user provided {{slot.name}}.", ordinal: 0 },
         { fromStep: "ask_topic", toRef: "send", guardKind: "llm", guardText: "The user provided {{slot.topic}}.", ordinal: 1 },
-        { fromStep: "send", toRef: "done", guardKind: "always", guardText: null, ordinal: 2 },
+        { fromStep: "send", toRef: "done", guardKind: "default", guardText: null, ordinal: 2 },
       ],
     };
 
@@ -250,8 +250,8 @@ describe("routine definition compiler and validator", () => {
     expect(routine.transitions).toContainEqual({
       from: "send",
       to: "done",
-      condition: "always",
-      guard: { kind: "always" },
+      condition: "default",
+      guard: { kind: "default" },
     });
   });
 

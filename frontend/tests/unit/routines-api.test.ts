@@ -46,7 +46,7 @@ const routineDraft = {
   transitions: [{
     fromStep: 'ask_email',
     toRef: 'complete',
-    guardKind: 'always' as const,
+    guardKind: 'default' as const,
     guardText: null,
     outcomeStatus: null,
     counterLimit: null,
@@ -106,6 +106,26 @@ describe('routinesApi', () => {
       '/backend/api/v1/agents/agent-1/routines/routine-1',
       expect.objectContaining({ method: 'PATCH', body: JSON.stringify(routineDraft) }),
     )
+  })
+
+  it('requests a routine draft assist proposal with workspace bearer auth', async () => {
+    const assistResponse = { draft: routineDraft, validation: { ok: true, diagnostics: [] } }
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(assistResponse))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(routinesApi.draftRoutineFromProcedure('agent-1', {
+      prose: 'Collect the visitor email and confirm.',
+    })).resolves.toEqual(assistResponse)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/backend/api/v1/agents/agent-1/routines/draft-assist',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ prose: 'Collect the visitor email and confirm.' }),
+        credentials: 'omit',
+      }),
+    )
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('Authorization')).toBe('Bearer radioso_cached_token')
   })
 
   it('validates, publishes, and preserves publish rejection diagnostics', async () => {

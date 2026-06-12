@@ -131,6 +131,33 @@ describe('dashboard route state', () => {
     })).toBe('directives')
   })
 
+  it('builds and parses agent routine editor routes', () => {
+    const agentId = '67acb0c8-caad-4a1b-9fef-70cbca3f7d12'
+    const routineId = '55555555-5555-4555-8555-000000000001'
+
+    expect(buildDashboardHref('account-1', {
+      section: 'agents',
+      workspacePublicRouteKey: 'support-abc123',
+      agentId,
+      agentRoutineId: 'new',
+    })).toBe(`/w/support-abc123/agents/${agentId}/routines/new`)
+
+    expect(buildDashboardHref('account-1', {
+      section: 'agents',
+      workspacePublicRouteKey: 'support-abc123',
+      agentId,
+      agentRoutineId: routineId,
+    })).toBe(`/w/support-abc123/agents/${agentId}/routines/${routineId}`)
+
+    expect(parseDashboardRoute(['agents', agentId, 'routines', routineId], new URLSearchParams())).toEqual({
+      section: 'agents',
+      agentId,
+      agentRoutineId: routineId,
+    })
+    expect(agentSectionFromRoute({ agentRoutineId: routineId })).toBe('routines')
+    expect(parseDashboardRoute(['agents', agentId, 'routines', 'abc'], new URLSearchParams())).toBeNull()
+  })
+
   it('parses only UUID agent path segments', () => {
     const agentId = '67acb0c8-caad-4a1b-9fef-70cbca3f7d12'
 

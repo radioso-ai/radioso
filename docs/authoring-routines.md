@@ -1,73 +1,146 @@
 # Authoring Routines
 
-A routine is a multi-step flow your agent runs across several turns: it collects
-what a task needs, takes an action, and confirms. You build a routine as data, in
-the agent's settings — no code or redeploy.
+A routine is a multi-step flow your agent runs across turns. It can collect
+values, take an action, branch on what happened, and finish or hand off to a
+person.
 
-For the concepts behind routines, see
-[Conversational routines](./architecture/conversational-routines.md). This page is
-about building one.
+You manage routines in the agent's **Routines** settings. The settings section
+shows the routine list. Choose **New routine** or select an existing routine to
+open the editor screen.
 
-## Where to author
+The primary authoring view is **Outline**: an ordered set of variables, step
+cards, branch rows, and ends. The graph the engine runs is compiled from that
+draft. You do not draw or edit the graph directly.
 
-Open an agent and go to **Routines** in the settings. The page lists the agent's
-routines and lets you create a new one. The same actions are available over the
-API under `/api/v1/agents/<agentId>/routines`.
+For the runtime model behind routines, see
+[Conversational routines](./architecture/conversational-routines.md).
 
-## Building a routine
+## Start a routine
 
-A routine has a name, an activation trigger, and four parts you fill in.
+Open an agent, go to **Routines**, and choose **New routine**. Radioso opens a
+separate editor screen for the draft. To edit an existing routine, select it
+from the same list.
 
-### Activation
+At the top of the editor, set:
 
-The **trigger** describes, in plain language, when the routine should start —
-for example, "the user wants a person to follow up with them." The model judges
-the trigger by meaning, so it works in any language. If two routines could start
-on the same message, the one with the higher **priority** wins.
+- **Name** - the routine name shown in settings.
+- **Priority** - the tie-breaker when more than one routine could start.
+- **Activation trigger** - a plain-language description of when the routine
+  should start.
 
-### Slots
+The trigger is judged by meaning, not by a keyword list. Write it the way an
+operator would describe the task.
 
-Slots are the values the routine collects, such as an email or an order number.
-For each slot, set a key, a type (text, number, boolean, email, or date), and
-whether it is required. Reference a slot inside a step or terminal with
-`{{slot.<key>}}`; at run time it is replaced with the value collected so far. Only
-reference a slot once it has been collected — for example in a confirmation. A
-reference to a slot the routine has not captured yet resolves to nothing, so do not
-use `{{slot.<key>}}` in the step that asks for it (just describe what to ask).
+## Draft from procedure
 
-### Steps
+When you are creating a new routine in **Outline**, you can use **Draft from
+procedure**.
 
-Steps are the units of the flow. Two kinds are available:
+1. Choose **Draft from procedure**.
+2. Paste the SOP or operating procedure into **Procedure text**.
+3. Choose **Load proposal**.
+4. Review the proposed variables, steps, branches, and ends in the outline.
+5. Edit anything that is wrong, then save or publish through the normal buttons.
 
-- A **chat** step asks the user for something or tells them something. Write the
-  instruction in plain language; the assistant turns it into a reply.
-- An **action** step fires a side effect — for example, submitting a contact
-  request. Pick the action type. You can only use an action your agent is
-  permitted to use; the page rejects one it is not.
+The drafting assist creates an editable proposal. It does not save the routine,
+publish it, or bypass validation. In this version it is only for initial drafting
+of a new routine. It is not shown while editing an existing routine.
 
-If a user supplies several values in one message, the routine can advance through
-several steps at once instead of asking for each in turn.
+## Variables
 
-### Transitions and guards
+Variables are the values the routine collects, such as `email`, `order_id`, or
+`summary`.
 
-A transition connects one step to the next. Its **guard** decides when the edge is
-taken:
+In **Variables**, choose **Add variable** and fill in:
 
-- `always` — go to the next step unconditionally.
-- `slot_filled` — go once the named slots are present.
-- `outcome` — branch on the result of the preceding action.
-- `counter` — go once a step has been tried a set number of times (for "try
-  twice, then hand off").
-- `fallback` — go only when no other guard matched.
-- `llm` — let the model decide, based on a condition you describe. This is the
-  only guard that depends on the model.
+- the variable key
+- the type: `text`, `number`, `boolean`, `email`, or `date`
+- the description
+- whether it is **Required**
 
-Prefer the non-`llm` guards where you can; they are predictable.
+Declare each variable once. In a step instruction, use **Insert variable** or type
+an `@` mention, such as `@email`. The saved draft stores this as a structured
+slot reference.
 
-### Terminals
+## Step cards
 
-A terminal ends the flow. Use `complete` when the task is done, or `handoff` to
-escalate to a person.
+A step card is one beat in the routine. Each step has:
+
+- **Step label** - the author-facing name for the step.
+- **Instruction** - what the assistant should do at that point.
+- **Branches** - optional rows that decide where the flow goes next.
+
+Write instructions as if you were instructing a human agent. Keep normal guidance
+inside the instruction. For example:
+
+```text
+Ask for @email. If it is about an order, also ask for @order_id.
+```
+
+That sentence is still one step. It does not create a branch because it does not
+point to a different step or end.
+
+Use **Insert variable** for variables and **Insert action** for actions. In the
+current dashboard, the action picker exposes the registered `Contact Send`
+action. When a step contains a known action mention, the stored step is inferred
+as an action step. Otherwise it is a chat step.
+
+The step label can change. The routine keeps a stable step id behind the scenes
+so traces and published versions can still resolve the step.
+
+## Branch rows
+
+A branch row sends the routine from the current step to another step or end.
+
+Each row has:
+
+- **Condition** - optional prose for when this row should match.
+- **Target** - the step or end to go to.
+- **Max N** - an optional counter limit for retries or loops.
+- **Outcome status** - shown only on steps that contain a known action.
+
+Row order is precedence: the first matching branch wins. Put the default branch
+last by leaving its condition, outcome status, and counter limit empty.
+
+The outline view infers the stored guard from the row:
+
+- A row with **Max N** becomes a `counter` branch.
+- A row with **Outcome status** becomes an `outcome` branch.
+- A row with **Condition** becomes an `llm` branch.
+- A row with none of those fields becomes a `default` branch.
+
+A `default` branch has two roles. If it is the only branch, it is the normal next
+path. If it sits after conditioned branches, it is the last path when the others
+do not match.
+
+For a retry loop, put the counter on the row that loops back. When the counter is
+exhausted, that row stops matching and the routine takes the default branch from
+the same step. In practice, "try twice, then hand off" is a counter branch back
+to the retry step plus a default branch to a handoff end.
+
+## Branch or guidance
+
+Use this rule when deciding whether to create a branch:
+
+- If you want the routine to go somewhere else, add a branch row and choose a
+  **Target**.
+- If you only want to guide the assistant inside the current step, keep it as a
+  sentence in **Instruction**.
+
+In other words: want a branch, give it a target. Want guidance, keep it in the
+step.
+
+## Ends and handoff
+
+An end finishes the routine. In **Ends**, choose **Add end** and fill in:
+
+- **End label**
+- **End message**
+- **Handoff**
+
+With **Handoff** off, the end is a normal completion. With **Handoff** on, the
+routine ends by escalating to a person. Branch targets show handoff ends with the
+word `handoff` in the target list.
 
 ### Completion export
 
@@ -106,32 +179,37 @@ through the action outbox. The destination's `lastDeliveryStatus` and
 
 ## Validate and publish
 
-- **Validate** checks the routine and reports problems in plain terms: a step that
-  cannot be reached, a missing terminal, a slot referenced but not declared, an
-  action the agent is not allowed to use, or an enabled completion export that
-  points at an unknown webhook destination. Fix these before publishing.
-- **Publish** stores the routine as an immutable version and makes it live. The
-  chat runtime loads and runs the published version.
+Use **Validate** before publishing. Validation reports problems in author terms,
+such as:
 
-Editing a published routine creates a new draft; publishing it creates a new
-version. Conversations already running keep the version they started on.
+- a branch target that no longer exists
+- a step that cannot reach an end
+- a variable used in an instruction but not declared
+- an action the agent is not allowed to use
+- an enabled completion export that points at an unknown webhook destination
+- a missing step, branch, or end field
 
-## A worked example: contact a human
+Diagnostics appear near the relevant variable, step card, branch row, end, or
+routine header when possible.
 
-1. Trigger: "the user asks to be contacted by a person."
-2. Slots: `email` (email, required), `message` (text, required).
-3. Steps: a chat step "Ask for their email address" → a chat step "Ask for the
-   message they want to send" → an action step that submits the contact request.
-4. Transitions: `slot_filled` on `email`, then `slot_filled` on `message`, then
-   `always` into the action.
-5. Terminal: `complete`, "Confirm the request was sent."
+Use **Save draft** to keep work in progress. Use **Publish** to create an
+immutable version that the chat runtime can run. Editing a published routine
+creates a new draft; publishing that draft creates a new version. Conversations
+already running keep the version they started on.
 
-This is the built-in contact flow, expressed as an authored routine.
+## Form view
 
-## Current limits
+**Form** remains available as a transitional alternate view while the outline
+surface is completed and verified. It edits the same routine draft as **Outline**.
+Switching views re-projects the same draft rather than creating a second copy.
 
-- **Tool steps** (a step that runs a skill mid-flow) are not available yet, so a
-  routine cannot, for example, call a lookup and branch on its result. This is a
-  planned next step.
-- A routine runs for the agent it is authored on. Export and import across agents
-  is not available yet.
+The form exposes lower-level fields directly:
+
+- slots instead of variables
+- step ids and step kind: `chat`, `tool`, or `action`
+- transition guard kind: `llm`, `default`, `slot_filled`, `outcome`, or `counter`
+- terminal kind: `complete` or `handoff`
+- completion export settings for webhook delivery
+
+Use **Outline** for normal authoring. Use **Form** only when you need to inspect
+or adjust the underlying draft fields while it remains available.

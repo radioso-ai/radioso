@@ -32,7 +32,7 @@ import { RetrievalTurnController } from "../../src/modules/chat/services/retriev
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
 import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../src/modules/agents/public.js";
-import { RoutineDefinitionService } from "../../src/modules/routines/public.js";
+import { RoutineDefinitionService, RoutineDraftAssistService } from "../../src/modules/routines/public.js";
 import {
   type FallbackReplyComposer,
 } from "../../src/modules/chat/services/fallbackReplyComposer.js";
@@ -758,6 +758,16 @@ export const createTestDependencies = (overrides: {
     telemetryService,
     buildStepScopeTag: scopeTag.step,
   });
+  const routineDraftAssistService = new RoutineDraftAssistService({
+    repository: agentRepository,
+    textGenerationClient: {
+      complete: async ({ signal: _signal, ...input }) =>
+        (await chatInferencePipeline.complete(input)).text,
+    },
+    actionCatalog: [{ type: "contact.send", kind: "action" }],
+    logger,
+    telemetryService,
+  });
   const agentSurfaceExtensions = new AgentSurfaceExtensionRegistry();
   // Mimic an EE deployment for OSS contract/unit tests so the runtime gate on
   // embed-only routes (settingsRoutes, agentRoutes, publicChatRoutes) doesn't
@@ -1019,6 +1029,7 @@ export const createTestDependencies = (overrides: {
     agentService,
     authoredDirectiveService,
     routineDefinitionService,
+    routineDraftAssistService,
     directiveAuthorService,
     agentSurfaceExtensions,
     skillCatalogService,

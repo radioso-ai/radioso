@@ -16,8 +16,8 @@ export const ROUTINE_DEFINITION_LIMITS = {
 
 export const routineDefinitionStatuses = ["draft", "published"] as const;
 export const routineSlotTypes = ["text", "number", "boolean", "email", "date"] as const;
-export const routineStepKinds = ["chat", "tool", "fork", "action"] as const;
-export const routineGuardKinds = ["llm", "always", "fallback", "slot_filled", "outcome", "counter"] as const;
+export const routineStepKinds = ["chat", "tool", "action"] as const;
+export const routineGuardKinds = ["llm", "default", "slot_filled", "outcome", "counter"] as const;
 export const routineTerminalKinds = ["complete", "handoff"] as const;
 export const routineCompletionExportTriggerKinds = routineTerminalKinds;
 

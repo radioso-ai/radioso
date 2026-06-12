@@ -13,6 +13,8 @@ import type {
   RoutineDefinitionPublishRejectedResponse,
   RoutineDefinitionSaveResponse,
   RoutineDefinitionValidateResponse,
+  RoutineDraftAssistRequest,
+  RoutineDraftAssistResponse,
 } from './api-types'
 
 export class RoutinePublishRejectedError extends Error {
@@ -64,6 +66,16 @@ export const routinesApi = {
 
   async createRoutine(agentId: string, data: RoutineDefinitionDraft): Promise<RoutineDefinitionSaveResponse> {
     return request<RoutineDefinitionSaveResponse>(`/agents/${agentId}/routines`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, { withApiToken: true })
+  },
+
+  async draftRoutineFromProcedure(
+    agentId: string,
+    data: RoutineDraftAssistRequest,
+  ): Promise<RoutineDraftAssistResponse> {
+    return request<RoutineDraftAssistResponse>(`/agents/${agentId}/routines/draft-assist`, {
       method: 'POST',
       body: JSON.stringify(data),
     }, { withApiToken: true })

@@ -98,6 +98,7 @@ test("routine editor configures completion export with destination dropdown and 
   await page.getByLabel("Name").fill("Collect pricing intake");
   await page.getByLabel("Priority").fill("20");
   await page.getByLabel("Activation trigger").fill("Visitor asks about pricing or wants a quote.");
+  await page.getByRole("tab", { name: "Form" }).click();
 
   await page.getByRole("button", { name: "Add slot" }).click();
   await page.getByLabel("Slot 1 key").fill("email");
@@ -118,7 +119,7 @@ test("routine editor configures completion export with destination dropdown and 
   await page.getByLabel("Transition 1 target").click();
   await page.getByRole("option", { name: "complete" }).click();
   await page.getByLabel("Transition 1 guard").click();
-  await page.getByRole("option", { name: "always" }).click();
+  await page.getByRole("option", { name: "default" }).click();
   await page.getByLabel("Terminal 1 id").fill("complete");
   await page.getByLabel("Terminal 1 instruction").fill("Confirm the request was captured.");
 

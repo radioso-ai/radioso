@@ -79,8 +79,8 @@ const isSatisfiedSlotCollectionStep = (
   return collectedSlots.length > 0 && collectedSlots.every((key) => hasVariable(variables, key));
 };
 
-const isFallbackTransition = (transition: RoutineTransition): boolean =>
-  transition.guard?.kind === "fallback";
+const isDefaultTransition = (transition: RoutineTransition): boolean =>
+  transition.guard?.kind === "default";
 
 const isLlmTransition = (transition: RoutineTransition): boolean =>
   !transition.guard || transition.guard.kind === "llm";
@@ -186,14 +186,12 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       skillResult?: RoutineSkillResult,
     ): boolean => {
       switch (transition.guard?.kind) {
-        case "always":
-          return true;
         case "slot_filled":
           return transition.guard.slots.length > 0 && transition.guard.slots.every((slot) => hasVariable(variables, slot));
         case "outcome":
           return skillResult?.status === transition.guard.status;
         case "counter":
-          return (attempts[fromStepId] ?? 0) >= transition.guard.limit;
+          return (attempts[fromStepId] ?? 0) < transition.guard.limit;
         default:
           return false;
       }
@@ -204,18 +202,24 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       variables: Record<string, unknown>;
       state: RoutineState;
       skillResult?: RoutineSkillResult;
-      fallbackOnDecline?: boolean;
+      defaultOnDecline?: boolean;
     }): Promise<RoutineNextStepDecision> => {
-      for (const transition of input.transitions) {
+      const defaultTransition = input.transitions.find(isDefaultTransition);
+      const conditionedTransitions = input.transitions.filter((transition) => !isDefaultTransition(transition));
+
+      if (defaultTransition && conditionedTransitions.length === 0) {
+        return { nextStepId: defaultTransition.to };
+      }
+
+      for (const transition of conditionedTransitions) {
         if (guardMatches(transition, input.step.id, input.variables, input.skillResult)) {
           return { nextStepId: transition.to };
         }
       }
 
-      const llmTransitions = input.transitions.filter(isLlmTransition);
-      const fallbackTransition = input.transitions.find(isFallbackTransition);
+      const llmTransitions = conditionedTransitions.filter(isLlmTransition);
       if (llmTransitions.length === 0) {
-        return { nextStepId: fallbackTransition?.to ?? input.step.id };
+        return { nextStepId: defaultTransition?.to ?? input.step.id };
       }
 
       const decision = await this.selector.select({
@@ -231,8 +235,8 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       }
       const allowed = new Set([input.step.id, ...llmTransitions.map((transition) => transition.to)]);
       const chosen = allowed.has(decision.nextStepId) ? decision.nextStepId : input.step.id;
-      if (input.fallbackOnDecline && chosen === input.step.id && fallbackTransition) {
-        return { ...decision, nextStepId: fallbackTransition.to };
+      if (input.defaultOnDecline && chosen === input.step.id && defaultTransition) {
+        return { ...decision, nextStepId: defaultTransition.to };
       }
       return { ...decision, nextStepId: chosen };
     };
@@ -350,7 +354,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
           variables,
           state: skillStateAtStep,
           skillResult,
-          fallbackOnDecline: true,
+          defaultOnDecline: true,
         });
         variables = { ...variables, ...(skillDecision.variables ?? {}) };
         const chosen = landingStepId(step.id, skillDecision);

@@ -52,6 +52,12 @@ const readMetadata = (record: Record<string, unknown>, key: string): Record<stri
 const asArray = (value: unknown): Record<string, unknown>[] =>
   Array.isArray(value) ? value.map(asRecord) : [];
 
+const normalizeStepKind = (kind: string): RoutineStepKind =>
+  kind === "fork" ? "chat" : kind as RoutineStepKind;
+
+const normalizeGuardKind = (kind: string): RoutineGuardKind =>
+  kind === "always" || kind === "fallback" ? "default" : kind as RoutineGuardKind;
+
 const definitionSelect = `
   SELECT
     d.id::text,
@@ -150,7 +156,7 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
   })),
   steps: asArray(row.steps).map((step) => ({
     stableStepId: readString(step, "stableStepId"),
-    kind: readString(step, "kind") as RoutineStepKind,
+    kind: normalizeStepKind(readString(step, "kind")),
     instruction: readString(step, "instruction"),
     toolRef: readNullableString(step, "toolRef"),
     actionType: readNullableString(step, "actionType"),
@@ -160,7 +166,7 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
   transitions: asArray(row.transitions).map((transition) => ({
     fromStep: readString(transition, "fromStep"),
     toRef: readString(transition, "toRef"),
-    guardKind: readString(transition, "guardKind") as RoutineGuardKind,
+    guardKind: normalizeGuardKind(readString(transition, "guardKind")),
     guardText: readNullableString(transition, "guardText"),
     outcomeStatus: readNullableString(transition, "outcomeStatus"),
     counterLimit: readNumber(transition, "counterLimit") || null,

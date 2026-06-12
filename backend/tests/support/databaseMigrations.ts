@@ -43,6 +43,32 @@ export const ensureLegacyRetrievalColumns = async (database: Database): Promise<
   `);
 };
 
+// Apply migrations in order, stopping before `stopBeforeFile` (exclusive). Lets a test pin
+// a database to an earlier schema version so it can exercise a single migration's behavior
+// against the data shape that existed when that migration shipped — the only way to catch
+// ordering bugs (e.g. a backfill UPDATE that runs before its constraint is widened).
+export const runTestMigrationsBefore = async (
+  database: Database,
+  stopBeforeFile: string,
+): Promise<void> => {
+  const migrationFiles = (await readdir(testMigrationsPath))
+    .filter((file) => file.endsWith(".sql"))
+    .sort();
+
+  for (const migrationFile of migrationFiles) {
+    if (migrationFile >= stopBeforeFile) {
+      break;
+    }
+    const migrationSql = await readFile(path.join(testMigrationsPath, migrationFile), "utf8");
+    await database.execute(migrationSql);
+  }
+};
+
+export const applyTestMigration = async (database: Database, file: string): Promise<void> => {
+  const migrationSql = await readFile(path.join(testMigrationsPath, file), "utf8");
+  await database.execute(migrationSql);
+};
+
 const runAllTestMigrationsOnce = async (database: Database): Promise<void> => {
   const client = await database.pool.connect();
   try {

@@ -167,3 +167,9 @@ Implementation notes:
 - The real-Postgres repository test installs the production migration 089 trigger/function into its isolated schema and covers both deleted-before-publish and deleted-while-archived-before-restore cases, asserting no dangling published export remains.
 - Removed dead `findByIdAnyStatus` production/fake repository code.
 - Updated lifecycle docs/spec wording for in-place publish, added the missing OpenAPI 400 publish response, regenerated OpenAPI/SDK/MCP artifacts, switched the routines date formatter to user locale, kept draft-plus-archived lineages visible in the active list with version history, and made the e2e restore fixture reject a restore when another lineage version is published.
+
+## Final gate (T024)
+
+- `pnpm run ci:local -- origin/main` → **passed** ("Local CI checks passed", exit 0) on final HEAD `3967cd3ce` (2026-06-12).
+- Earlier full-gate run at `f5b9ca676` also passed after resolving two pre-existing shared-dev-DB issues unrelated to this diff: a leftover "Threshold Guard Workspace" test fixture tripping migration 080's re-run guard (deleted from the dev DB), and migration 085's transitional guard-kind CHECK not being re-runnable after 089's cut (fixed in `f5b9ca676`).
+- EM pass verdict: ship. Fast-follows filed in the PR body: dashboard surfacing of `directiveScopeOrphans`; persist definition UUID in `routine_states` for new pins to retire the compile-all `loadPinned` path.

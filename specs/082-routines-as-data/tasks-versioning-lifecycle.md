@@ -43,7 +43,7 @@
 
 - [X] T022 Read `docs/document-writer-prompt.md`; update `docs/authoring-routines.md` (lifecycle: revise → publish → supersede, archive/restore, in-flight pinning) and any docs enumerating routine statuses or routines API endpoints (incl. docs-portal if routines are documented there).
 - [X] T023 Update `specs/082-routines-as-data/` parent artifacts only where they assert the two-state lifecycle as current behavior; final slice notes with validation evidence.
-- [ ] T024 Full gate: `pnpm run ci:local -- origin/main`; record result.
+- [X] T024 Full gate: `pnpm run ci:local -- origin/main`; record result.
 
 ## Dependencies
 

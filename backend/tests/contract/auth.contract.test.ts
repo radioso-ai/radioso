@@ -332,7 +332,7 @@ describe("auth contract", () => {
     expect(accepted.body.userId).not.toBe(owner.userId);
   });
 
-  it("rate limits repeated workspace token reveal requests", async () => {
+  it("does not share the brute-force auth limit for repeated workspace token reveal requests", async () => {
     const { app } = createTestApp({
       envOverrides: {
         AUTH_RATE_LIMIT_MAX_ATTEMPTS: 1,
@@ -343,16 +343,14 @@ describe("auth contract", () => {
     const cookie = registration.cookie;
     const tokenRoute = `/api/v1/account/workspaces/${registration.workspaceId}/token`;
 
-    const first = await request(app)
-      .get(tokenRoute)
-      .set("Cookie", cookie);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const response = await request(app)
+        .get(tokenRoute)
+        .set("Cookie", cookie);
 
-    const second = await request(app)
-      .get(tokenRoute)
-      .set("Cookie", cookie);
-
-    expect(first.status).toBe(200);
-    expect(second.status).toBe(429);
+      expect(response.status).toBe(200);
+      expect(response.body.token).toMatch(/^radioso_[a-f0-9]+$/);
+    }
   });
 
   it("rate limits repeated registration attempts", async () => {

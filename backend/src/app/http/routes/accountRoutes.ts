@@ -9,6 +9,8 @@ import { badRequest } from "../../../shared/domain/errors.js";
 
 type AccountRouteDependencies = SessionDependencies & Pick<AppDependencies, "abuseControlService" | "auditService">;
 
+const WORKSPACE_TOKEN_READ_RATE_LIMIT = 60;
+
 const requireWorkspaceIdParam = (params: unknown): string => {
   const parsedParams = workspaceParamsSchema.safeParse(params);
   if (!parsedParams.success) {
@@ -24,8 +26,8 @@ export const createAccountRoutes = (dependencies: AccountRouteDependencies): Rou
   const workspaceTokenReadRateLimit = createRateLimitMiddleware({
     service: dependencies.abuseControlService,
     auditService: dependencies.auditService,
-    scope: "auth.token.read",
-    limit: Math.min(dependencies.env.AUTH_RATE_LIMIT_MAX_ATTEMPTS, 5),
+    scope: "workspace.token.read",
+    limit: WORKSPACE_TOKEN_READ_RATE_LIMIT,
     windowMs: dependencies.env.AUTH_RATE_LIMIT_WINDOW_MS,
     resolveSubjectKey: (_req, res) => {
       const { accountId } = res.locals as { accountId?: string };

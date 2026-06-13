@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { Plus } from 'lucide-react'
 
+import { Button } from '@/components/ui/button'
 import { DocumentsView } from '@/components/dashboard/documents-view'
 import { DocumentSourcesView } from '@/components/dashboard/document-sources-view'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
@@ -26,10 +28,26 @@ export function KnowledgeView({
 }) {
   const router = useRouter()
   const activeTab = routeState.knowledgeTab ?? 'documents'
+  const websiteCrawlerEnabled = onboarding.websiteCrawlerEnabled
+  // The Sources tab's "Add source" action reuses the Documents tab's crawl
+  // dialog: it flips this flag and routes to Documents, which opens the dialog
+  // and clears the flag. Keeps a single crawl flow instead of duplicating it.
+  const [pendingCrawlOpen, setPendingCrawlOpen] = useState(false)
   const [ingestionSaveState, setIngestionSaveState] = useState<{
     state: 'idle' | 'saved' | 'saving' | 'error'
     message?: string | null
   }>({ state: 'idle' })
+
+  const handleAddSource = useCallback(() => {
+    setPendingCrawlOpen(true)
+    router.push(
+      buildDashboardHref(accountId, {
+        ...routeState,
+        section: 'knowledge',
+        knowledgeTab: 'documents',
+      }),
+    )
+  }, [accountId, routeState, router])
 
   const activeSaveState =
     activeTab === 'ingestion'
@@ -77,13 +95,27 @@ export function KnowledgeView({
         selectedDocumentId={selectedDocumentId}
         onSelectedDocumentChange={onSelectedDocumentChange}
         onboarding={onboarding}
+        autoOpenCrawl={pendingCrawlOpen}
+        onAutoOpenCrawlHandled={() => setPendingCrawlOpen(false)}
       />
     )
   }
 
   return (
-    <DashboardPage title="Sources" description="Review the sources agents can use for scoped knowledge.">
+    <DashboardPage
+      title="Sources"
+      description="Review the sources agents can use for scoped knowledge."
+      actions={
+        websiteCrawlerEnabled ? (
+          <Button type="button" size="sm" onClick={handleAddSource}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add source
+          </Button>
+        ) : undefined
+      }
+    >
       <DocumentSourcesView
+        onAddSource={websiteCrawlerEnabled ? handleAddSource : undefined}
         onViewDocumentsForSource={(sourceId) => {
           router.push(
             buildDashboardHref(accountId, {

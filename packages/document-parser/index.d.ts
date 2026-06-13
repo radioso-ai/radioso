@@ -1,4 +1,4 @@
-export type SupportedDocumentType = "pdf" | "txt" | "docx" | "xlsx";
+export type SupportedDocumentType = "pdf" | "txt" | "md" | "docx" | "xlsx";
 
 export interface DetectDocumentTypeInput {
   filename?: string | null;

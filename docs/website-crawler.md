@@ -48,7 +48,7 @@ Cookie-session requests select the workspace with `x-workspace-id`. Bearer-token
 
 Accepted pages are published as documents with stable external document IDs and a workspace-local website source. Repeated crawls of the same normalized URL reuse that source, so recrawl logic can find the related documents through `sourceId`. Chunking, embeddings, retrieval, and citations remain owned by the standard document worker.
 
-The bundled `radioso-crawler` provider seeds its crawl from the requested URL and from same-origin sitemaps listed in `robots.txt`. It still applies the request `limit`, same-origin scope checks, duplicate removal, and asset filtering before fetching pages. If URL allow patterns are configured and the requested seed URL does not match them, the crawler may fetch that seed page for link discovery, but marks it discovery-only so it is not published as a document.
+The bundled `radioso-crawler` provider seeds its crawl from the requested URL and from same-origin sitemaps listed in `robots.txt`. It still applies the request `limit`, same-origin scope checks, duplicate removal, and asset filtering before fetching pages. Before each outbound fetch hop, including redirects, Radioso rejects URLs that resolve to localhost or private network addresses. If URL allow patterns are configured and the requested seed URL does not match them, the crawler may fetch that seed page for link discovery, but marks it discovery-only so it is not published as a document.
 
 The bundled crawler uses structurally link-dense pages and low-quality pages for discovery, but does not publish them as documents by default. It also drops share, tracking, and social links from extracted content, keeps source links by default, and records a normalized content hash so duplicate extracted content can be skipped within a crawl run.
 
@@ -246,7 +246,7 @@ interface WebsiteCrawlerProvider {
 
 When `crawlStream` is implemented, the service calls it instead of `crawl`, ingesting each page as soon as the crawler discovers it rather than waiting for the entire crawl to finish. The batch `crawl` method is used as a fallback for providers that do not support streaming.
 
-Radioso validates returned page URLs, removes duplicate canonical URLs, skips empty content and oversized pages, redacts sensitive provider details, and rejects crawl targets that resolve to localhost or private network addresses.
+Radioso validates returned page URLs, removes duplicate canonical URLs, skips empty content and oversized pages, redacts sensitive provider details, and rejects crawl targets that resolve to localhost or private network addresses. The bundled provider applies that public-network policy before fetching each page, `robots.txt`, same-origin sitemap, and redirect target.
 
 ## Deployment topology
 

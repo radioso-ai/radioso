@@ -824,6 +824,20 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     [accountId, activeWorkspaceId, router, routeState],
   )
 
+  const buildRoutineHref = useCallback(
+    (agentId: string, routineId: string) =>
+      buildDashboardHref(accountId, {
+        ...routeState,
+        section: 'agents',
+        workspaceId: activeWorkspaceId ?? routeState.workspaceId,
+        agentId,
+        agentRoutineId: routineId,
+        agentTab: undefined,
+        anchor: undefined,
+      }),
+    [accountId, activeWorkspaceId, routeState],
+  )
+
   const applyFilters = useCallback(
     (next: FilterValues) => {
       const actionValues = actionFilterGroups.flatMap((group) => {
@@ -1234,6 +1248,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       }}
       anchorMessageId={openedConversation?.assistantMessageId ?? null}
       onAfterClose={() => setOpenedConversation(null)}
+      buildRoutineHref={buildRoutineHref}
     />
     </>
   )

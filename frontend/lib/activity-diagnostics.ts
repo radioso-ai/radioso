@@ -100,11 +100,61 @@ const routeReason = (route?: RouteDiagnostics): string | undefined => {
   }
 }
 
+type AnswerOutcome = NonNullable<ChatConversationTurnDebug['answerOutcome']>
+
+/** What drove the reply when it wasn't retrieval or a contact workflow. */
+interface RoutineOutcome {
+  name?: string
+  completed?: boolean
+}
+
+// A direct (non-retrieval) reply still has a specific shape — about the
+// assistant, a greeting, small talk, or a declined answer. Name it rather than
+// flattening everything to "conversational message".
+const describeDirectReply = (
+  route: RouteDiagnostics | undefined,
+  answerOutcome: AnswerOutcome | undefined,
+): { title: string; summary: string } => {
+  switch (route?.routeReason) {
+    case 'assistant_identity':
+      return {
+        title: 'Answered about the assistant',
+        summary: 'The user asked about the assistant itself, so it replied directly without searching documents.',
+      }
+    case 'conversation_start':
+      return {
+        title: 'Conversation starter',
+        summary: 'The assistant handled a greeting or opening message directly.',
+      }
+    case 'social_only':
+      return {
+        title: 'Conversational reply',
+        summary: 'The assistant recognized small talk or an acknowledgement and replied directly.',
+      }
+    default:
+      if (answerOutcome === 'no_context_refusal') {
+        return {
+          title: 'Declined — no grounding',
+          summary: 'The assistant did not have grounded information to answer and declined.',
+        }
+      }
+      return {
+        title: 'Direct reply',
+        summary: 'The assistant answered directly without searching workspace documents.',
+      }
+  }
+}
+
 export function presentActivityOutcome(input: {
   trace?: ActivityTrace
   route?: RouteDiagnostics
+  answerOutcome?: AnswerOutcome
+  /** Set when the turn was driven by a routine (from the conversation spine). */
+  routine?: RoutineOutcome
+  /** True when the turn asked the user a clarifying question. */
+  clarificationAsked?: boolean
 }): DiagnosticPresentation {
-  const { trace, route } = input
+  const { trace, route, answerOutcome, routine, clarificationAsked } = input
   const summary = trace?.summary
   const facts: DiagnosticFact[] = []
 
@@ -124,15 +174,41 @@ export function presentActivityOutcome(input: {
     }
   }
 
+  if (routine) {
+    const name = routine.name?.trim()
+    const subject = name ? `the “${name}” routine` : 'a routine'
+    pushFact(facts, 'Activity route', name ? `Routine · ${name}` : 'Routine')
+    pushFact(facts, 'State', routine.completed ? 'Completed' : 'Awaiting user reply')
+
+    return {
+      title: 'Routine reply',
+      summary: routine.completed
+        ? `The reply came from ${subject}, which reached its final step.`
+        : `The reply came from ${subject}, which is gathering details and asked the user for more.`,
+      facts,
+      tone: 'ok',
+    }
+  }
+
   if (hasRetrievalWorkflow(trace, route)) {
+    const refused = answerOutcome === 'no_context_refusal'
     const counts = summary?.candidateCounts
     pushFact(facts, 'Route', 'Used workspace documents')
     pushFact(facts, 'Reason', routeReason(route))
     pushFact(facts, 'Selected passages', counts?.final)
     pushFact(facts, 'Fallback', summary?.fallbackApplied === true ? 'Used fallback behavior' : summary?.fallbackApplied === false ? 'Not used' : undefined)
 
+    if (refused) {
+      return {
+        title: 'No answer in workspace documents',
+        summary: 'The assistant searched the workspace but didn’t find enough to answer, so it declined.',
+        facts,
+        tone: 'warning',
+      }
+    }
+
     return {
-      title: 'Used workspace documents',
+      title: 'Answered from workspace documents',
       summary: counts
         ? `The assistant searched the workspace and selected ${counts.final} passage${counts.final === 1 ? '' : 's'} for the answer.`
         : 'The assistant searched workspace documents before answering.',
@@ -141,12 +217,25 @@ export function presentActivityOutcome(input: {
     }
   }
 
-  pushFact(facts, 'Activity route', 'Direct assistant reply')
+  if (clarificationAsked) {
+    pushFact(facts, 'Activity route', 'Clarifying question')
+    pushFact(facts, 'Reason', routeReason(route))
+
+    return {
+      title: 'Asked a clarifying question',
+      summary: 'The assistant asked the user to clarify before answering.',
+      facts,
+      tone: 'neutral',
+    }
+  }
+
+  const direct = describeDirectReply(route, answerOutcome)
+  pushFact(facts, 'Activity route', direct.title)
   pushFact(facts, 'Reason', routeReason(route))
 
   return {
-    title: 'Direct assistant reply',
-    summary: 'The assistant recognized this as a conversational message and replied directly.',
+    title: direct.title,
+    summary: direct.summary,
     facts,
     tone: 'neutral',
   }

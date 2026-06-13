@@ -6,7 +6,7 @@ import { ConversationDrawer } from './conversation-drawer'
 import {
   HistoryList,
 } from '@/components/dashboard/history/history-list'
-import { type DashboardRouteState } from '@/lib/dashboard-routes'
+import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 import {
   HISTORY_PAGE_SIZE,
@@ -59,6 +59,19 @@ export function ChatHistoryView({
     pushHistoryRoute({ selectedItem: null })
   }, [pushHistoryRoute])
 
+  const buildRoutineHref = useCallback(
+    (agentId: string, routineId: string) =>
+      buildDashboardHref(accountId, {
+        ...routeState,
+        section: 'agents',
+        agentId,
+        agentRoutineId: routineId,
+        agentTab: undefined,
+        anchor: undefined,
+      }),
+    [accountId, routeState],
+  )
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <HistoryList
@@ -101,6 +114,7 @@ export function ChatHistoryView({
         onSelectedItemChange={setSelectedItem}
         anchorMessageId={routeState.historyMessageId}
         onAfterClose={handleDrawerClosed}
+        buildRoutineHref={buildRoutineHref}
       />
     </div>
   )

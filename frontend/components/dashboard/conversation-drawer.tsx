@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { Bug, Check, Copy, Search, Workflow, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -38,6 +38,9 @@ import {
   presentRunParameters,
 } from '@/lib/activity-diagnostics'
 import { useSkillCatalog } from '@/lib/skill-catalog'
+import { computeRoutineThreadMarkers } from '@/lib/routine-thread-grouping'
+import { useRoutineCatalog } from '@/lib/routine-catalog'
+import { clarificationDecisionFromSpine, routineTurnSignalFromSpine } from '@/lib/turn-trace'
 
 const toneStyles: Record<DiagnosticPresentation['tone'], string> = {
   neutral: 'border-border/70 bg-background/60',
@@ -159,6 +162,7 @@ function ChatDiagnosticsPanel({
   diagnosticsMessage,
   activeEnvelope,
   activityTrace,
+  routineNamesById,
   selectedStageId,
   onSelectLeafStage,
 }: {
@@ -166,6 +170,7 @@ function ChatDiagnosticsPanel({
   diagnosticsMessage: ChatConversationTurn | null
   activeEnvelope?: TurnTraceEnvelope
   activityTrace?: NonNullable<ChatConversationTurn['debug']>['activityTrace']
+  routineNamesById?: ReadonlyMap<string, string>
   selectedStageId?: string
   onSelectLeafStage: (stageId: string) => void
 }) {
@@ -180,9 +185,18 @@ function ChatDiagnosticsPanel({
   const diagnosticsDebug =
     diagnosticsMessage?.role === 'assistant' ? diagnosticsMessage.debug : undefined
   const resolvedActivityTrace = activityTrace ?? diagnosticsDebug?.activityTrace
+  // The outcome summary reads from the turn spine — which knows a routine drove
+  // the reply or that a clarification was asked — so it can be specific instead
+  // of flattening everything that isn't retrieval to a "direct reply".
+  const spine = diagnosticsDebug?.turnTrace?.spine
+  const routineSignal = routineTurnSignalFromSpine(spine)
+  const routineName = routineSignal ? routineNamesById?.get(routineSignal.routineId) : undefined
   const outcomePresentation = presentActivityOutcome({
     trace: resolvedActivityTrace,
     route: diagnosticsDebug?.route,
+    answerOutcome: diagnosticsDebug?.answerOutcome,
+    routine: routineSignal ? { name: routineName, completed: routineSignal.completed } : undefined,
+    clarificationAsked: clarificationDecisionFromSpine(spine) === 'asked',
   })
   const runParameters = presentRunParameters(resolvedActivityTrace)
 
@@ -283,6 +297,12 @@ export interface ConversationDrawerProps {
    * because the conversation was not found). Use this to sync URL state.
    */
   onAfterClose?: () => void
+  /**
+   * Builds a dashboard link to a routine version for the diagnostics routine
+   * band. Supplied by call sites that own the route state; omitted where routine
+   * deep-links don't apply.
+   */
+  buildRoutineHref?: (agentId: string, routineId: string) => string
 }
 
 export function ConversationDrawer({
@@ -290,6 +310,7 @@ export function ConversationDrawer({
   onSelectedItemChange,
   anchorMessageId,
   onAfterClose,
+  buildRoutineHref,
 }: ConversationDrawerProps) {
   const skillCatalog = useSkillCatalog(selectedItem?.id ?? null)
   const handleItemNotFound = useCallback(() => {
@@ -331,6 +352,50 @@ export function ConversationDrawer({
   } = useHistoryDocumentDialogState()
 
   const [flowOpen, setFlowOpen] = useState(false)
+
+  // Mark which turns a routine drove so the conversation thread can band the
+  // routine's span (start chip, paused/ended marker). The signal lives on each
+  // assistant turn's spine trace, which history always carries for diagnostics.
+  const routineMarkers = useMemo(
+    () =>
+      conversationDetail
+        ? computeRoutineThreadMarkers(
+            conversationDetail.messages.map((message) => ({
+              role: message.role,
+              routine:
+                message.role === 'assistant'
+                  ? routineTurnSignalFromSpine(message.debug?.turnTrace?.spine)
+                  : undefined,
+            })),
+          )
+        : undefined,
+    [conversationDetail],
+  )
+
+  // The trace carries only the routine id; join its readable name from the
+  // agent's routine catalog (fetched only when the conversation has a routine).
+  const conversationHasRoutines = routineMarkers?.some((marker) => marker.groupKey !== null) ?? false
+  const routineNamesById = useRoutineCatalog(
+    conversationHasRoutines ? conversationDetail?.agentId ?? null : null,
+  )
+  // Only authored routines we can resolve a name for get a deep link — built-in
+  // routines (and superseded versions no longer in the catalog) stay plain text.
+  const conversationAgentId = conversationDetail?.agentId ?? null
+  const namedRoutineMarkers = useMemo(
+    () =>
+      routineMarkers?.map((marker) => {
+        if (!marker.routineId) {
+          return marker
+        }
+        const routineName = routineNamesById.get(marker.routineId)
+        const routineHref =
+          routineName && conversationAgentId && buildRoutineHref
+            ? buildRoutineHref(conversationAgentId, marker.routineId)
+            : undefined
+        return { ...marker, routineName, routineHref }
+      }),
+    [routineMarkers, routineNamesById, conversationAgentId, buildRoutineHref],
+  )
 
   return (
     <>
@@ -464,6 +529,7 @@ export function ConversationDrawer({
                     evalCaptureEnabled={selectedItem?.kind === 'chat'}
                     analyticsSurface="history"
                     skillCatalog={skillCatalog}
+                    routineMarkers={namedRoutineMarkers}
                   />
                 </div>
 
@@ -474,6 +540,7 @@ export function ConversationDrawer({
                       diagnosticsMessage={selectedDiagnosticsAssistantMessage}
                       activeEnvelope={activeEnvelope}
                       activityTrace={activeTrace}
+                      routineNamesById={routineNamesById}
                       selectedStageId={selectedStageId}
                       onSelectLeafStage={setSelectedStageId}
                     />

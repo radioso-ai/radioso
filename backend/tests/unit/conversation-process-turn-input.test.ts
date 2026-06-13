@@ -116,6 +116,7 @@ const preparedSession = (): PreparedSession => ({
   userMessage: message({
     inputMetadata: { method: "intent_click", intent: { skillName: "order.status" } },
   }),
+  effectiveQuery: "Where is my order?",
   directiveSteering: {
     rules: [],
     matches: [{

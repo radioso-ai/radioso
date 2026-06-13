@@ -15,6 +15,12 @@ import type { AppDependencies } from "./types.js";
 export const createApp = (dependencies: AppDependencies) => {
   const app = express();
 
+  if (dependencies.env.TRUST_PROXY_HOPS > 0) {
+    app.set("trust proxy", dependencies.env.TRUST_PROXY_HOPS);
+  } else {
+    app.set("trust proxy", false);
+  }
+
   app.disable("x-powered-by");
   app.use(createHttpLogger(dependencies.logger));
   app.use(createHttpTracingMiddleware());

@@ -346,7 +346,7 @@ describe("resolvePendingClarification", () => {
     });
   });
 
-  it("clears declined and unrelated replies without exposing a chosen candidate", async () => {
+  it("clears declined and unrelated ask replies without exposing a chosen candidate and suppresses new clarification", async () => {
     const store = storeWith(pending());
 
     const resolved = await resolvePendingClarification({
@@ -363,6 +363,76 @@ describe("resolvePendingClarification", () => {
       resolvedPending: true,
       suppressNewClarification: true,
       outcome: "declined",
+    });
+  });
+
+  it("clears ignored offer replies without suppressing new clarification and preserves loop-guard ids via recent reads", async () => {
+    const current = pending({ mode: "offer" });
+    const store = storeWith(current);
+
+    const resolved = await resolvePendingClarification({
+      store,
+      clarifier: {
+        phraseQuestion: vi.fn(),
+        mapReply: vi.fn(async () => ({ kind: "unrelated" as const })),
+      },
+      turn: turn("what is pricing?"),
+    });
+
+    expect(store.clear).toHaveBeenCalledWith({ sessionId: "session_1", outcome: "declined" });
+    expect(resolved).toEqual({
+      resolvedPending: true,
+      outcome: "declined",
+      source: "test_surface",
+      offerOutcome: "ignored",
+      loopGuardCandidateIds: ["alpha", "beta"],
+    });
+
+    const recentReader: RecentClarificationReader = {
+      loadRecent: vi.fn(async () => ({ ...current, status: "declined" as const })),
+    };
+    const nextTurn = await resolvePendingClarification({
+      store: storeWith(null),
+      recentReader,
+      clarifier: {
+        phraseQuestion: vi.fn(),
+        mapReply: vi.fn(),
+      },
+      turn: turn("tell me about the same split"),
+    });
+
+    expect(nextTurn).toEqual({
+      resolvedPending: false,
+      loopGuardCandidateIds: ["alpha", "beta"],
+    });
+  });
+
+  it("maps offer-mode replies with offer context so substantive follow-ups can be ignored", async () => {
+    const current = pending({ mode: "offer" });
+    const store = storeWith(current);
+    const clarifier = {
+      phraseQuestion: vi.fn(),
+      mapReply: vi.fn(async () => ({ kind: "unrelated" as const })),
+    };
+
+    const resolved = await resolvePendingClarification({
+      store,
+      clarifier,
+      turn: turn("what does Raja yoga cost?"),
+    });
+
+    expect(clarifier.mapReply).toHaveBeenCalledWith({
+      candidates: current.candidates,
+      turn: expect.objectContaining({ sessionId: "session_1" }),
+      mode: "offer",
+    });
+    expect(store.clear).toHaveBeenCalledWith({ sessionId: "session_1", outcome: "declined" });
+    expect(resolved).toEqual({
+      resolvedPending: true,
+      outcome: "declined",
+      source: "test_surface",
+      offerOutcome: "ignored",
+      loopGuardCandidateIds: ["alpha", "beta"],
     });
   });
 

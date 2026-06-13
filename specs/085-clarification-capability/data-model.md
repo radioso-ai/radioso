@@ -37,6 +37,8 @@ priority desc (routine activation only), then id.
 |---|---|---|
 | `sessionId` | `string` | conversation/session scope; at most one row per session |
 | `source` | `string` | `"routine_activation"` \| `"retrieval_sense"` (open string for future detectors) |
+| `originalQuery` | `string?` | originating visitor message; present while pending for ask-mode resolution and nulled when status leaves `pending` |
+| `mode` | `"ask" \| "offer"?` | defaults to `"ask"`; `"offer"` reserved for the answer-first amendment slice |
 | `candidates` | `ClarificationCandidate[]` | as presented (with payloads) |
 | `askedEventId` | `string?` | the assistant question event |
 | `status` | `"pending" \| "resolved" \| "declined" \| "expired"` | non-pending rows persist until TTL for the loop guard |
@@ -68,6 +70,8 @@ recent non-pending row within TTL for loop-guard checks),
 |---|---|---|
 | `session_id` | UUID PK | one row per session |
 | `source` | TEXT | detector source id |
+| `original_query` | TEXT NULL | originating visitor message; nulled on resolved/declined/expired |
+| `mode` | TEXT | `ask` by default; `offer` reserved for later amendment slice |
 | `candidates` | JSONB | candidate array incl. payloads |
 | `asked_event_id` | TEXT NULL | |
 | `status` | TEXT | `pending/resolved/declined/expired` |
@@ -76,7 +80,9 @@ recent non-pending row within TTL for loop-guard checks),
 
 Partial index on `(session_id) WHERE status = 'pending'` (mirrors
 `071_routine_states.sql`). Candidate payloads contain document ids / routine ids
-only — no document content.
+only — no document content. Pending ask rows also retain the originating visitor
+message until the row is resolved, declined, or expired; non-pending rows keep
+only candidate ids/payloads for the loop guard.
 
 ## Retrieval module additions
 
@@ -90,9 +96,9 @@ only — no document content.
 
 ```
 (no row) --ask committed with turn--> pending
-pending --reply maps to candidate--> resolved (+ surface continuation, same turn commit)
-pending --declined / unrelated-----> declined (normal turn proceeds)
-pending --TTL lapse----------------> expired (lazily, on next load)
+pending --reply maps to candidate--> resolved (+ surface continuation, same turn commit; original_query nulled)
+pending --declined / unrelated-----> declined (normal turn proceeds; original_query nulled)
+pending --TTL lapse----------------> expired (lazily, on next load; original_query nulled)
 resolved/declined/expired --TTL---> (row eligible for cleanup; loop guard reads declined until then)
 ```
 

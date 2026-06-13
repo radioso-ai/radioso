@@ -131,6 +131,8 @@ describe("PostgresAssistantTurnPersistence", () => {
         pending: {
           sessionId: "conv_1",
           source: "test_surface",
+          originalQuery: "How do I upload a document via the REST API? Give me a curl example.",
+          mode: "ask",
           candidates: [{ id: "a", label: "Alpha", confidence: 0.8, payload: { opaque: "a" } }],
           askedEventId: "assistant_msg_1",
           status: "pending",
@@ -143,7 +145,10 @@ describe("PostgresAssistantTurnPersistence", () => {
     expect(clarificationCall).toBeDefined();
     expect(calls.findIndex(([sql]) => sql.includes("INSERT INTO clarification_states")))
       .toBeLessThan(calls.findIndex(([sql]) => sql.includes("INSERT INTO messages")));
-    expect(clarificationCall![1]?.[2]).toBe(JSON.stringify([
+    expect(clarificationCall![0]).toContain("original_query");
+    expect(clarificationCall![1]?.[2]).toBe("How do I upload a document via the REST API? Give me a curl example.");
+    expect(clarificationCall![1]?.[3]).toBe("ask");
+    expect(clarificationCall![1]?.[4]).toBe(JSON.stringify([
       { id: "a", label: "Alpha", confidence: 0.8, payload: { opaque: "a" } },
     ]));
   });

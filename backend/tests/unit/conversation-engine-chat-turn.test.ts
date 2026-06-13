@@ -126,13 +126,15 @@ const retrievalResult = (): RetrievalPipelineResult =>
 
 const session = (): PreparedSession => {
   const retrieval = retrievalResult();
+  const userMessage = message();
   return {
     agent: agent(),
     conversation: conversation(),
     history: [],
     retrieval,
     turnRoute: "direct",
-    userMessage: message(),
+    userMessage,
+    effectiveQuery: userMessage.content,
     directiveSteering: {
       rules: [],
       matches: [],

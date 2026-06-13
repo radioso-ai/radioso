@@ -36,7 +36,11 @@ the dashboard turn-flow debug view.
 - Frontend: turn-flow graph + stage-detail transforms covered by frontend unit tests (non-visual data transforms); operator journey covered by Playwright on the trace view; no markup/cosmetic assertions.
 - Stack: Node.js backend, React frontend, PostgreSQL + pgvector (embedding separation check uses stored vectors), GPT-5.2 via existing model gateways — unchanged.
 - Secrets: none added; no `.env`/`.env.example` change (policies are typed composition constants — research R9).
-- Customer data: pending-state rows store candidate labels/ids and document ids only — no chunk content; trace stage excludes payloads; counters are two-label low-cardinality (research R8).
+- Customer data: pending-state rows store candidate labels/ids, document ids, and
+  the originating visitor message while a clarification is pending. The message is
+  nulled when the row becomes resolved, declined, or expired; no chunk content is
+  stored. Trace stages exclude payloads and the stored original message; counters
+  are two-label low-cardinality (research R8).
 - Module boundaries: explicit below; chat orchestration stays orchestration-only; Clarifier knows no surface vocabulary; detectors own payload + continuation.
 - Responsibility-limited files identified: `chatService.ts` (orchestration-only), `queryRewriteService.ts` (untouched), `routineRegistry.ts` (registry + matcher seam only), `chatTurnLifecycle.ts` (gains one deferred-transition input, no domain logic).
 - Composition: new wiring (clarifier instances, policies, prompt templates, store, matcher) is assembled in `backend/src/app/server/dependencyBuilders.ts` / `backend/src/app/composition/` per constitution VI — domain rules stay in modules/packages.

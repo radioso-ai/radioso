@@ -8,10 +8,14 @@ import type {
 import { createConversationEngine } from "@radioso/conversation-engine";
 
 import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
+import type { ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
 import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { RetrievalAnswerSkillExecutor } from "../../src/modules/retrieval/services/retrievalAnswerSkillExecutor.js";
 import { noopSkillEmitPort } from "../../src/modules/skills/public.js";
+import type { RouteScopedDirectiveRuntime } from "../../src/modules/chat/services/routeScopedDirectiveSteering.js";
+import type { TurnRouterInput } from "../../src/modules/chat/services/turnRouter.js";
+import type { DirectiveSteerInput } from "../../src/modules/directives/public.js";
 import type {
   RetrievalPipelineRequest,
   RetrievalPipelineResult,
@@ -30,7 +34,10 @@ import { hathaRajaYogaCandidates } from "../fixtures/retrievalSenseCorpus.js";
 const answerEnvelope = (answer: string): string =>
   `${answer}\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({ grounding: "grounded", suggestions: [] })}`;
 
-const retrievalResult = (request: RetrievalPipelineRequest): RetrievalPipelineResult => {
+const retrievalResult = (
+  request: RetrievalPipelineRequest,
+  options: { suggestedQuestionsEnabled?: boolean } = {},
+): RetrievalPipelineResult => {
   const now = new Date().toISOString();
   const candidates = hathaRajaYogaCandidates().slice(0, 4);
   const scoped = request.documentScope?.length
@@ -52,8 +59,8 @@ const retrievalResult = (request: RetrievalPipelineRequest): RetrievalPipelineRe
     responseIdentity: null,
     responseSettings: {
       citationDisplayEnabled: true,
-      suggestedQuestionsEnabled: false,
-      suggestedQuestionsCount: 0,
+      suggestedQuestionsEnabled: options.suggestedQuestionsEnabled ?? false,
+      suggestedQuestionsCount: options.suggestedQuestionsEnabled ? 3 : 0,
     },
     diagnostics: {
       execution: { surface: "assistant", path: "assistant_retrieval", retrievalInvoked: true },
@@ -97,11 +104,14 @@ const retrievalResult = (request: RetrievalPipelineRequest): RetrievalPipelineRe
   };
 };
 
-const retrievalTurn = (capturedRequests: RetrievalPipelineRequest[] = []): RetrievalTurnController => {
+const retrievalTurn = (
+  capturedRequests: RetrievalPipelineRequest[] = [],
+  options: { suggestedQuestionsEnabled?: boolean } = {},
+): RetrievalTurnController => {
   const pipeline: RetrievalPipelineService = {
     async run(input) {
       capturedRequests.push(input);
-      return retrievalResult(input);
+      return retrievalResult(input, options);
     },
     async interpret(input) {
       capturedRequests.push(input);
@@ -121,24 +131,29 @@ const retrievalTurn = (capturedRequests: RetrievalPipelineRequest[] = []): Retri
     },
     async runInterpreted(input) {
       capturedRequests.push(input.request);
-      return retrievalResult(input.request);
+      return retrievalResult(input.request, options);
     },
     async runWithoutRetrieval(input) {
       capturedRequests.push(input.request);
-      return retrievalResult(input.request);
+      return retrievalResult(input.request, options);
     },
   };
   return new RetrievalTurnController(pipeline);
 };
 
-const chatGateway: ChatGateway = {
-  async answer() {
+const chatGateway = (captures?: {
+  answerInputs?: ChatGatewayInput[];
+  streamInputs?: ChatGatewayInput[];
+}): ChatGateway => ({
+  async answer(input) {
+    captures?.answerInputs?.push(input);
     return answerEnvelope("Grounded answer[[1]]");
   },
-  async *streamAnswer() {
+  async *streamAnswer(input) {
+    captures?.streamInputs?.push(input);
     yield answerEnvelope("Grounded answer[[1]]");
   },
-};
+});
 
 const makeService = (input: {
   capturedRequests?: RetrievalPipelineRequest[];
@@ -146,42 +161,91 @@ const makeService = (input: {
   routineStore?: ConversationRoutineStore;
   detector?: { detect: ReturnType<typeof vi.fn> };
   route?: "retrieval" | "direct";
-}) => new ChatService({
-  conversationRepository: new InMemoryConversationRepository(),
-  messageRepository: new InMemoryMessageRepository(),
-  retrievalTurn: retrievalTurn(input.capturedRequests),
-  chatGateway,
-  // Most scenarios exercise grounded turns, so route every turn to retrieval by
-  // default. A resolving retrieval-sense turn ("hatha") can route direct, so a
-  // test overrides this to assert the resolved sense still forces retrieval.
-  turnRouter: {
-    async classify() {
-      return { route: input.route ?? "retrieval", framing: { isIdentityQuestion: false } };
+  chatGateway?: ChatGateway;
+  directiveRuntime?: RouteScopedDirectiveRuntime;
+  messageRepository?: InMemoryMessageRepository;
+  routerInputs?: TurnRouterInput[];
+  suggestedQuestionsEnabled?: boolean;
+}) => {
+  const gateway = input.chatGateway ?? chatGateway();
+  return new ChatService({
+    conversationRepository: new InMemoryConversationRepository(),
+    messageRepository: input.messageRepository ?? new InMemoryMessageRepository(),
+    retrievalTurn: retrievalTurn(input.capturedRequests, {
+      suggestedQuestionsEnabled: input.suggestedQuestionsEnabled,
+    }),
+    chatGateway: gateway,
+    // Most scenarios exercise grounded turns, so route every turn to retrieval by
+    // default. A resolving retrieval-sense turn ("hatha") can route direct, so a
+    // test overrides this to assert the resolved sense still forces retrieval.
+    turnRouter: {
+      async classify(routerInput) {
+        input.routerInputs?.push(routerInput);
+        return { route: input.route ?? "retrieval", framing: { isIdentityQuestion: false } };
+      },
+    },
+    auditService: createAuditService(new InMemoryAuditEventRepository()),
+    turnRuntime: buildChatTurnRuntime({
+      chatGateway: gateway,
+      fallbackReplyComposer: new MissingFallbackReplyComposer(),
+      skillOutcomeCapabilities: { supportsGroundedAnswer: () => false },
+    }),
+    conversationEngine: createConversationEngine(),
+    clarificationStore: input.clarificationStore,
+    clarifier: {
+      phraseQuestion: vi.fn(async () => "Which yoga sense do you mean?"),
+      mapReply: vi.fn(async () => ({ kind: "chosen" as const, id: "doc-hatha" })),
+    },
+    retrievalSenseDetector: input.detector as never,
+    directiveSteering: input.directiveRuntime,
+    retrievalSenseClarificationPolicy: { floor: 0, margin: 0.15, maxOptions: 4 },
+    routineStore: input.routineStore,
+    routineProvider: input.routineStore
+      ? { async forTurn() {
+          return {
+            activator: { async activate() { return null; } },
+            runner: { async resume() { return { yielded: true, response: { answer: "" }, nextState: null }; } },
+          };
+        } }
+      : undefined,
+  });
+};
+
+const retrievalSensePending = (originalQuery: string): PendingClarification => ({
+  sessionId: "conv-1",
+  source: "retrieval_sense",
+  originalQuery,
+  mode: "ask",
+  candidates: [
+    { id: "doc-hatha", label: "Hatha yoga", confidence: 0.6, payload: { documentIds: ["doc-hatha"] } },
+    { id: "doc-raja", label: "Raja yoga", confidence: 0.58, payload: { documentIds: ["doc-raja"] } },
+  ],
+  status: "pending",
+  expiresAt: new Date("2099-01-01T00:00:00.000Z"),
+});
+
+const captureDirectiveRuntime = (inputs: DirectiveSteerInput[]): RouteScopedDirectiveRuntime => ({
+  matcher: {
+    async match() {
+      return [];
     },
   },
-  auditService: createAuditService(new InMemoryAuditEventRepository()),
-  turnRuntime: buildChatTurnRuntime({
-    chatGateway,
-    fallbackReplyComposer: new MissingFallbackReplyComposer(),
-    skillOutcomeCapabilities: { supportsGroundedAnswer: () => false },
-  }),
-  conversationEngine: createConversationEngine(),
-  clarificationStore: input.clarificationStore,
-  clarifier: {
-    phraseQuestion: vi.fn(async () => "Which yoga sense do you mean?"),
-    mapReply: vi.fn(async () => ({ kind: "chosen" as const, id: "doc-hatha" })),
+  directivesFor(input) {
+    inputs.push(input);
+    return [];
   },
-  retrievalSenseDetector: input.detector as never,
-  retrievalSenseClarificationPolicy: { floor: 0, margin: 0.15, maxOptions: 4 },
-  routineStore: input.routineStore,
-  routineProvider: input.routineStore
-    ? { async forTurn() {
-        return {
-          activator: { async activate() { return null; } },
-          runner: { async resume() { return { yielded: true, response: { answer: "" }, nextState: null }; } },
-        };
-      } }
-    : undefined,
+  async matchAndResolve(input) {
+    inputs.push(input);
+    return { rules: [], matches: [], omissions: [] };
+  },
+  async resolveMatches(input) {
+    inputs.push(input);
+    return { rules: [], matches: [], omissions: [] };
+  },
+  async steer(input) {
+    inputs.push(input);
+    return { rules: [], matches: [], omissions: [] };
+  },
 });
 
 describe("retrieval sense clarification", () => {
@@ -211,6 +275,8 @@ describe("retrieval sense clarification", () => {
     expect(response.answer).toBe("Which yoga sense do you mean?");
     expect(saved).toMatchObject({
       source: "retrieval_sense",
+      originalQuery: "tell me about yoga",
+      mode: "ask",
       candidates: [
         expect.objectContaining({ id: "doc-hatha", payload: { documentIds: ["doc-hatha"] } }),
         expect.objectContaining({ id: "doc-raja", payload: { documentIds: ["doc-raja"] } }),
@@ -252,11 +318,14 @@ describe("retrieval sense clarification", () => {
     });
 
     expect(capturedRequests.some((request) => request.documentScope?.includes("doc-hatha"))).toBe(true);
+    expect(capturedRequests.filter((request) => request.documentScope?.includes("doc-hatha")).map((request) => request.query))
+      .toEqual(["hatha", "hatha"]);
     expect(response.citations?.map((citation) => citation.documentId)).toEqual(["doc-hatha"]);
   });
 
-  it("forces grounded retrieval scoped to the resolved sense even when the router answers direct", async () => {
+  it("uses the stored original question for the resolving retrieval run even when the router answers direct", async () => {
     const capturedRequests: RetrievalPipelineRequest[] = [];
+    const originalQuery = "How do I upload a document via the REST API? Give me a curl example.";
     const service = makeService({
       capturedRequests,
       // The short sense answer routes direct; the resolved sense must still ground.
@@ -265,6 +334,8 @@ describe("retrieval sense clarification", () => {
         loadPending: vi.fn(async () => ({
           sessionId: "conv-1",
           source: "retrieval_sense",
+          originalQuery,
+          mode: "ask" as const,
           candidates: [
             { id: "doc-hatha", label: "Hatha yoga", confidence: 0.6, payload: { documentIds: ["doc-hatha"] } },
             { id: "doc-raja", label: "Raja yoga", confidence: 0.58, payload: { documentIds: ["doc-raja"] } },
@@ -283,8 +354,96 @@ describe("retrieval sense clarification", () => {
       stream: false,
     });
 
-    expect(capturedRequests.some((request) => request.documentScope?.includes("doc-hatha"))).toBe(true);
+    const scopedRequests = capturedRequests.filter((request) => request.documentScope?.includes("doc-hatha"));
+    expect(scopedRequests).toHaveLength(2);
+    expect(scopedRequests.map((request) => request.query)).toEqual([originalQuery, originalQuery]);
+    expect(scopedRequests.some((request) => request.query === "the first one")).toBe(false);
     expect(response.citations?.map((citation) => citation.documentId)).toEqual(["doc-hatha"]);
+    const clarificationStages = response.turnTrace?.spine.stages.filter((stage) => stage.kind === "clarification") ?? [];
+    expect(JSON.stringify(clarificationStages)).not.toContain(originalQuery);
+  });
+
+  it("composes the non-streaming resolved retrieval_sense answer from the original question", async () => {
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const answerInputs: ChatGatewayInput[] = [];
+    const routerInputs: TurnRouterInput[] = [];
+    const directiveInputs: DirectiveSteerInput[] = [];
+    const messageRepository = new InMemoryMessageRepository();
+    const originalQuery = "How do I upload a document via the REST API? Give me a curl example.";
+    const selectorReply = "the first one";
+    const service = makeService({
+      capturedRequests,
+      chatGateway: chatGateway({ answerInputs }),
+      directiveRuntime: captureDirectiveRuntime(directiveInputs),
+      messageRepository,
+      routerInputs,
+      suggestedQuestionsEnabled: true,
+      clarificationStore: {
+        loadPending: vi.fn(async () => retrievalSensePending(originalQuery)),
+        save: vi.fn(),
+        clear: vi.fn(),
+      },
+    });
+
+    await service.answer({
+      workspaceId: "workspace-1",
+      query: selectorReply,
+      stream: false,
+    });
+
+    expect(routerInputs.map((routerInput) => routerInput.query)).toEqual([originalQuery]);
+    expect(capturedRequests.filter((request) => request.documentScope?.includes("doc-hatha")).map((request) => request.query))
+      .toEqual([originalQuery, originalQuery]);
+    expect(answerInputs).toHaveLength(1);
+    expect(answerInputs[0]?.query).toBe(originalQuery);
+    expect(answerInputs[0]?.systemPrompt).toContain(originalQuery);
+    expect(answerInputs[0]?.systemPrompt).not.toContain(selectorReply);
+    expect(directiveInputs.length).toBeGreaterThan(0);
+    expect(directiveInputs.map((input) => input.turnContext?.query)).not.toContain(selectorReply);
+    expect(directiveInputs.map((input) => input.turnContext?.query)).toContain(originalQuery);
+    const persistedUserMessages = [...messageRepository.items.values()].flat().filter((message) => message.role === "user");
+    expect(persistedUserMessages.map((message) => message.content)).toEqual([selectorReply]);
+  });
+
+  it("composes the streaming resolved retrieval_sense answer from the original question", async () => {
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const streamInputs: ChatGatewayInput[] = [];
+    const routerInputs: TurnRouterInput[] = [];
+    const messageRepository = new InMemoryMessageRepository();
+    const originalQuery = "How do I upload a document via the REST API? Give me a curl example.";
+    const selectorReply = "the first one";
+    const service = makeService({
+      capturedRequests,
+      chatGateway: chatGateway({ streamInputs }),
+      messageRepository,
+      routerInputs,
+      suggestedQuestionsEnabled: true,
+      clarificationStore: {
+        loadPending: vi.fn(async () => retrievalSensePending(originalQuery)),
+        save: vi.fn(),
+        clear: vi.fn(),
+      },
+    });
+    const events = [];
+
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: selectorReply,
+      stream: true,
+    })) {
+      events.push(event);
+    }
+
+    expect(events.some((event) => event.type === "done")).toBe(true);
+    expect(routerInputs.map((routerInput) => routerInput.query)).toEqual([originalQuery]);
+    expect(capturedRequests.filter((request) => request.documentScope?.includes("doc-hatha")).map((request) => request.query))
+      .toEqual([originalQuery, originalQuery]);
+    expect(streamInputs).toHaveLength(1);
+    expect(streamInputs[0]?.query).toBe(originalQuery);
+    expect(streamInputs[0]?.systemPrompt).toContain(originalQuery);
+    expect(streamInputs[0]?.systemPrompt).not.toContain(selectorReply);
+    const persistedUserMessages = [...messageRepository.items.values()].flat().filter((message) => message.role === "user");
+    expect(persistedUserMessages.map((message) => message.content)).toEqual([selectorReply]);
   });
 
   it("suppresses asking while an active routine has yielded and records a suppressed decision", async () => {

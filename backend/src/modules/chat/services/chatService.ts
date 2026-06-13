@@ -9,6 +9,7 @@ import type {
   ConversationRoutineRunner,
   ConversationRoutineStore,
   ConversationTrace,
+  ClarificationCandidate,
   ClarificationPolicy,
   RecentClarificationReader,
   RenderableTurn,
@@ -291,6 +292,7 @@ export class ChatService {
     this.retrievalSenseClarificationPolicy = retrievalSenseClarificationPolicy ?? {
       floor: 0,
       margin: 0.15,
+      askMargin: 0,
       maxOptions: 4,
     };
     this.chatGateway = chatGateway;
@@ -433,7 +435,7 @@ export class ChatService {
       const outputs = stage.outputs ?? {};
       const surface = typeof outputs.surface === "string" ? outputs.surface : "unknown";
       const decision = typeof outputs.decision === "string" ? outputs.decision : "";
-      if (decision === "asked" || decision === "auto_picked" || decision === "suppressed") {
+      if (decision === "asked" || decision === "offered" || decision === "auto_picked" || decision === "suppressed") {
         this.recordClarificationDecision({ surface, decision });
       }
     }
@@ -458,10 +460,18 @@ export class ChatService {
       turn: this.buildClarificationTurn(session),
     });
     if (resolution.resolvedPending) {
-      const decision = resolution.kind === "routine_activation" || resolution.kind === "retrieval_sense"
-        ? "mapped"
-        : (resolution.outcome ?? "declined");
-      const surface = resolution.kind === "retrieval_sense" ? "retrieval_sense" : "routine_activation";
+      const offerOutcome = "offerOutcome" in resolution ? resolution.offerOutcome : undefined;
+      const resolutionSource = "source" in resolution ? resolution.source : undefined;
+      const decision = offerOutcome === "accepted_alternative"
+        ? "offer_accepted_alternative"
+        : offerOutcome === "ignored"
+          ? "offer_ignored"
+          : resolution.kind === "routine_activation" || resolution.kind === "retrieval_sense"
+            ? "mapped"
+            : (resolution.outcome ?? "declined");
+      const surface = resolution.kind === "retrieval_sense" || resolutionSource === "retrieval_sense"
+        ? "retrieval_sense"
+        : "routine_activation";
       this.recordClarificationDecision?.({ surface, decision });
     }
     return { store, resolution, clarifier };
@@ -505,6 +515,7 @@ export class ChatService {
     kind: "continue";
     stage?: ConversationTrace["stages"][number];
     documentScope?: string[];
+    offerAlternatives?: ClarificationCandidate[];
   } | null> {
     if (
       !input.clarification.store ||
@@ -532,6 +543,9 @@ export class ChatService {
       policy: this.retrievalSenseClarificationPolicy,
       suppressAsk: input.activeRoutineAtTurnStart,
       suppressNewClarification: input.clarification.resolution?.suppressNewClarification,
+      loopGuardCandidateIds: input.clarification.resolution?.kind === "normal"
+        ? input.clarification.resolution.loopGuardCandidateIds
+        : undefined,
       expiresAt: new Date(Date.now() + 30 * 60 * 1000),
     });
     if (!effect) {
@@ -544,10 +558,14 @@ export class ChatService {
       this.recordTraceClarificationDecisions(engineTrace);
     }
     if (effect.kind !== "ask") {
+      if (effect.kind === "offer") {
+        await input.clarification.store.save(effect.pending);
+      }
       return {
         kind: "continue",
         ...(effect.stage ? { stage: effect.stage } : {}),
         ...(effect.documentScope ? { documentScope: effect.documentScope } : {}),
+        ...(effect.kind === "offer" ? { offerAlternatives: effect.alternatives } : {}),
       };
     }
     const answer = await input.clarification.clarifier.phraseQuestion({
@@ -761,6 +779,12 @@ export class ChatService {
           documentScope: clarificationTurn.documentScope,
         }, session, routing.framing);
       }
+      if (clarificationTurn?.kind === "continue" && clarificationTurn.offerAlternatives) {
+        session = {
+          ...session,
+          retrievalSenseOfferAlternatives: clarificationTurn.offerAlternatives,
+        };
+      }
       const renderedTurn = clarificationTurn?.kind === "ask"
         ? { presentation: clarificationTurn.presentation, engineTrace: clarificationTurn.engineTrace, actions: undefined }
         : await this.renderTurn(session, retrievalInput);
@@ -931,6 +955,12 @@ export class ChatService {
           ...retrievalInput,
           documentScope: clarificationTurn.documentScope,
         }, session, routing.framing);
+      }
+      if (clarificationTurn?.kind === "continue" && clarificationTurn.offerAlternatives) {
+        session = {
+          ...session,
+          retrievalSenseOfferAlternatives: clarificationTurn.offerAlternatives,
+        };
       }
       if (clarificationTurn?.kind === "ask") {
         const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({

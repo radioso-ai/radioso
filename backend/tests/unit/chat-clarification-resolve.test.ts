@@ -186,6 +186,53 @@ describe("resolvePendingClarification", () => {
     expect(resolved.suppressNewClarification).toBe(true);
   });
 
+  it("lets ignored offer-mode clarification clear without suppressing a normal new turn", async () => {
+    const store = storeWith(pending({ mode: "offer" }));
+    const resolved = await resolvePendingClarification({
+      store,
+      clarifier: {
+        phraseQuestion: vi.fn(),
+        mapReply: vi.fn(async () => ({ kind: "unrelated" as const })),
+      },
+      turn: turn("how much does it cost?"),
+    });
+
+    expect(store.clear).toHaveBeenCalledWith({ sessionId: "conv_1", outcome: "declined" });
+    expect(resolved).toEqual({
+      kind: "normal",
+      resolvedPending: true,
+      suppressNewClarification: undefined,
+      loopGuardCandidateIds: ["demo", "support"],
+      source: "routine_activation",
+      offerOutcome: "ignored",
+      outcome: "declined",
+    });
+  });
+
+  it("surfaces recently ignored offer candidate ids for loop guard", async () => {
+    const store = storeWith(null);
+    const recentReader: RecentClarificationReader = {
+      loadRecent: vi.fn(async () => pending({ mode: "offer", status: "declined" })),
+    };
+
+    const resolved = await resolvePendingClarification({
+      store,
+      recentReader,
+      clarifier: {
+        phraseQuestion: vi.fn(),
+        mapReply: vi.fn(),
+      },
+      turn: turn("tell me about that again"),
+    });
+
+    expect(resolved).toEqual({
+      kind: "normal",
+      resolvedPending: false,
+      suppressNewClarification: undefined,
+      loopGuardCandidateIds: ["demo", "support"],
+    });
+  });
+
   it("maps a chosen retrieval-sense clarification to a one-turn document scope", async () => {
     const store = storeWith(retrievalSensePending());
 

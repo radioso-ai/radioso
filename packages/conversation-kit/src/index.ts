@@ -23,6 +23,7 @@ export type {
   ClarificationClearOutcome,
   ClarificationDecision,
   ClarificationPolicy,
+  ClarificationReplyMapInput,
   ClarificationReplyMapping,
   ConversationClarificationStore,
   ConversationClarifier,

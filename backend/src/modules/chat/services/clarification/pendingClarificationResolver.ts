@@ -24,12 +24,15 @@ export type PendingClarificationResolution =
       suppressNewClarification: true;
       documentScope: string[];
       originalQuery?: string;
+      offerOutcome?: "accepted_alternative";
     }
   | {
       kind: "normal";
       resolvedPending: boolean;
       suppressNewClarification?: boolean;
       loopGuardCandidateIds?: string[];
+      source?: string;
+      offerOutcome?: "ignored";
       outcome?: "declined" | "expired";
     };
 
@@ -59,6 +62,9 @@ export const resolvePendingClarification = async (input: {
         resolvedPending: true,
         suppressNewClarification: true,
         documentScope,
+        ...(resolution.offerOutcome === "accepted_alternative"
+          ? { offerOutcome: resolution.offerOutcome }
+          : {}),
         ...(resolution.chosen.originalQuery ? { originalQuery: resolution.chosen.originalQuery } : {}),
       };
     }
@@ -68,6 +74,8 @@ export const resolvePendingClarification = async (input: {
     resolvedPending: resolution.resolvedPending,
     suppressNewClarification: resolution.suppressNewClarification,
     loopGuardCandidateIds: resolution.loopGuardCandidateIds,
+    ...(resolution.offerOutcome === "ignored" && resolution.source ? { source: resolution.source } : {}),
+    ...(resolution.offerOutcome === "ignored" ? { offerOutcome: resolution.offerOutcome } : {}),
     ...(resolution.outcome === "declined" || resolution.outcome === "expired"
       ? { outcome: resolution.outcome }
       : {}),

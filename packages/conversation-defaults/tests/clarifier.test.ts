@@ -77,6 +77,26 @@ describe("DefaultClarifier", () => {
     expect(modelGateway.complete).not.toHaveBeenCalled();
   });
 
+  it("uses the stricter offer reply prompt for non-exact offer replies", async () => {
+    const modelGateway = gateway('{"kind":"unrelated"}');
+    const clarifier = new DefaultClarifier(modelGateway, {
+      questionPromptTemplate: "unused",
+      replyMapPromptTemplate: "ask prompt {{latestReply}}",
+      offerReplyMapPromptTemplate: "offer prompt {{latestReply}} {{options}}",
+    });
+
+    await expect(clarifier.mapReply({
+      candidates,
+      turn: turn("What does Soporte tecnico cost?"),
+      mode: "offer",
+    })).resolves.toEqual({ kind: "unrelated" });
+
+    expect(modelGateway.complete).toHaveBeenCalledWith(expect.objectContaining({
+      systemPrompt: expect.stringContaining("offer prompt What does Soporte tecnico cost?"),
+    }));
+    expect(vi.mocked(modelGateway.complete).mock.calls[0]?.[0].systemPrompt).not.toContain("ask prompt");
+  });
+
   it("maps declined and unrelated replies", async () => {
     const declinedGateway = gateway('{"kind":"declined"}');
     const unrelatedGateway = gateway('{"kind":"unrelated"}');

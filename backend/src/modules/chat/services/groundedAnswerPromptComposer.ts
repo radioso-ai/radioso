@@ -14,6 +14,8 @@ export interface GroundedAnswerSystemPromptInput {
   conversationIntentSnapshot: ConversationIntentSnapshot;
   /** Behavioral steering matched for this turn (authored Directives + skill guidance). */
   steering?: SteeringRule[];
+  /** Labels/descriptions for retrieval-sense alternatives to offer after the grounded answer. */
+  retrievalSenseOfferAlternatives?: Array<{ label: string; description?: string }>;
 }
 
 export interface GroundedAnswerSystemPromptResult {
@@ -22,6 +24,19 @@ export interface GroundedAnswerSystemPromptResult {
 }
 
 const joinBlocks = (head: string, block: string): string => (head ? `${head}\n\n${block}` : block);
+
+const formatOfferAlternatives = (
+  alternatives: Array<{ label: string; description?: string }> = [],
+): string =>
+  alternatives
+    .map((alternative, index) => {
+      const label = alternative.label.trim();
+      const description = alternative.description?.trim();
+      return description
+        ? `${index + 1}. ${label}: ${description}`
+        : `${index + 1}. ${label}`;
+    })
+    .join("\n");
 
 export const composeGroundedAnswerSystemPrompt = (
   input: GroundedAnswerSystemPromptInput,
@@ -33,7 +48,11 @@ export const composeGroundedAnswerSystemPrompt = (
 
   const base = input.baseSystemPrompt ?? "";
   const steeringBlock = renderSteeringBlock(input.steering ?? []);
-  const grounded = steeringBlock ? joinBlocks(base, steeringBlock) : base;
+  const withSteering = steeringBlock ? joinBlocks(base, steeringBlock) : base;
+  const alternatives = formatOfferAlternatives(input.retrievalSenseOfferAlternatives);
+  const grounded = alternatives
+    ? joinBlocks(withSteering, renderPromptTemplate("chat/retrieval-sense-offer.md", { alternatives }))
+    : withSteering;
 
   if (!envelopeExpected) {
     return { systemPrompt: grounded, envelopeExpected: false };

@@ -1,4 +1,4 @@
-import type { ConversationTrace, StagedContext } from "@radioso/conversation-contract";
+import type { ClarificationCandidate, ConversationTrace, StagedContext } from "@radioso/conversation-contract";
 
 import { notFound } from "../../../shared/domain/errors.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
@@ -49,6 +49,8 @@ export interface PreparedSession {
   responseLanguage?: string;
   /** Behavioral steering matched for this turn; consumed by the answer composer and the trace. */
   directiveSteering?: DirectiveSteeringResult;
+  /** Retrieval-sense alternatives to offer in the current grounded answer; labels only, never alternative chunks. */
+  retrievalSenseOfferAlternatives?: ClarificationCandidate[];
   /**
    * Neutral staged outcomes for this turn (A1, issue #482). Retrieval contributes
    * one entry; the turn-outcome builder reads these instead of `retrieval`, so the

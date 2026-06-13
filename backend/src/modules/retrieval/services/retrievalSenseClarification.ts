@@ -32,6 +32,14 @@ export type RetrievalSenseClarificationEffect =
       stage: ConversationTraceStage;
     }
   | {
+      kind: "offer";
+      candidates: ClarificationCandidate[];
+      alternatives: ClarificationCandidate[];
+      pending: Omit<PendingClarification, "askedEventId">;
+      stage: ConversationTraceStage;
+      documentScope?: string[];
+    }
+  | {
       kind: "proceed";
       candidates: ClarificationCandidate[];
       stage?: ConversationTraceStage;
@@ -50,6 +58,7 @@ export const evaluateRetrievalSenseClarification = async (input: {
   policy: ClarificationPolicy;
   suppressAsk: boolean;
   suppressNewClarification?: boolean;
+  loopGuardCandidateIds?: string[];
   expiresAt: Date;
 }): Promise<RetrievalSenseClarificationEffect | null> => {
   if (!input.detector || input.suppressNewClarification) {
@@ -68,6 +77,7 @@ export const evaluateRetrievalSenseClarification = async (input: {
 
   const decision = decideClarification(candidates, input.policy, {
     suppressAsk: input.suppressAsk,
+    loopGuardCandidateIds: input.loopGuardCandidateIds,
   });
   if (decision.kind === "none") {
     return { kind: "proceed", candidates };
@@ -78,6 +88,24 @@ export const evaluateRetrievalSenseClarification = async (input: {
     decision,
     consideredCandidates: candidates,
   });
+  if (decision.kind === "soft_pick") {
+    return {
+      kind: "offer",
+      candidates: [decision.candidate, ...decision.alternatives],
+      alternatives: decision.alternatives,
+      stage,
+      documentScope: documentScopeFromClarificationCandidate(decision.candidate),
+      pending: {
+        sessionId: input.conversationId,
+        source: "retrieval_sense",
+        originalQuery: input.originalQuery,
+        mode: "offer",
+        candidates: [decision.candidate, ...decision.alternatives],
+        status: "pending",
+        expiresAt: input.expiresAt,
+      },
+    };
+  }
   if (decision.kind !== "ask") {
     return {
       kind: "proceed",

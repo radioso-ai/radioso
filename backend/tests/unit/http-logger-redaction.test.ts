@@ -33,6 +33,8 @@ describe("HTTP logger redaction", () => {
     app.use(createHttpLogger(logger));
     app.get("/health", (_req, res) => {
       res.setHeader("set-cookie", "session=secret-response-cookie");
+      res.setHeader("x-radioso-anonymous-session", "anonymous-session-secret");
+      res.setHeader("x-radioso-public-session-id", "public-session-id-secret");
       res.status(200).json({ ok: true });
     });
 
@@ -54,6 +56,8 @@ describe("HTTP logger redaction", () => {
     expect(JSON.stringify(requestLog)).not.toContain("public-session-secret");
     expect(JSON.stringify(requestLog)).not.toContain("workspace-secret");
     expect(JSON.stringify(requestLog)).not.toContain("secret-response-cookie");
+    expect(JSON.stringify(requestLog)).not.toContain("anonymous-session-secret");
+    expect(JSON.stringify(requestLog)).not.toContain("public-session-id-secret");
     expect(JSON.stringify(requestLog)).toContain("[REDACTED]");
     expect(requestLog).toMatchObject({
       requestId: "req-redaction-test",

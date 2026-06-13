@@ -158,6 +158,11 @@ const httpLoggerRedactPaths = [
   ...httpRequestCredentialHeaderNames.map((headerName) => httpHeaderRedactPath("req", headerName)),
   httpHeaderRedactPath("req", "x-workspace-id"),
   ...httpResponseCredentialHeaderNames.map((headerName) => httpHeaderRedactPath("res", headerName)),
+  // Anonymous-session id response headers set in app/http/middleware/resolveAnonymousSession.ts.
+  // They carry the same raw session id as set-cookie but are not classified as sensitive by
+  // shouldRedactKey, so they must be redacted explicitly here (mirrors the set-cookie/session-id leak).
+  httpHeaderRedactPath("res", "x-radioso-anonymous-session"),
+  httpHeaderRedactPath("res", "x-radioso-public-session-id"),
 ];
 
 export const createHttpLogger = (logger: AppLogger): RequestHandler =>

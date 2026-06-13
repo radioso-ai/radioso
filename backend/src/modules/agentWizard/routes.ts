@@ -1,12 +1,13 @@
 import { Router } from "express";
 import { z } from "zod";
 
+import { requireWorkspacePermission } from "../../app/http/middleware/requirePermission.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../../app/http/middleware/requireWorkspaceSession.js";
 import type { AppDependencies } from "../../app/server/types.js";
 import { badRequest } from "../../shared/domain/errors.js";
 import { AgentWizardError, type AgentWizardProgressEvent, type AgentWizardService } from "./service.js";
 
-type RouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "abuseControlService">;
+type RouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "abuseControlService" | "accountAccessService">;
 
 const parseBody = <T>(schema: z.ZodType<T>, value: unknown): T => {
   const parsed = schema.safeParse(value);
@@ -122,8 +123,9 @@ export const createAgentWizardRoutes = (
 ): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
+  const agentManage = requireWorkspacePermission(dependencies, "workspace.agents.manage");
 
-  router.post("/analyze-website", workspaceSession, async (req, res, next) => {
+  router.post("/analyze-website", workspaceSession, agentManage, async (req, res, next) => {
     const controller = new AbortController();
     const abort = () => controller.abort();
     req.on("aborted", abort);
@@ -155,7 +157,7 @@ export const createAgentWizardRoutes = (
     }
   });
 
-  router.post("/analyze-website/stream", workspaceSession, async (req, res) => {
+  router.post("/analyze-website/stream", workspaceSession, agentManage, async (req, res) => {
     const controller = new AbortController();
     const abort = () => controller.abort();
     // Listen to both signals: req.aborted fires for clean fetch aborts,
@@ -207,7 +209,7 @@ export const createAgentWizardRoutes = (
     }
   });
 
-  router.post("/create", workspaceSession, async (req, res, next) => {
+  router.post("/create", workspaceSession, agentManage, async (req, res, next) => {
     const controller = new AbortController();
     const abort = () => controller.abort();
     req.on("aborted", abort);

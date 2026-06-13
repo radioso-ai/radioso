@@ -32,6 +32,7 @@ const createDependencies = (overrides: Partial<RouteDependencies> = {}): RouteDe
   },
   accountAccessService: {
     requireActiveMembership: vi.fn().mockResolvedValue(undefined),
+    requirePermission: vi.fn().mockResolvedValue(undefined),
   },
   workspaceSessionService: {
     resolve: vi.fn().mockResolvedValue({ accountId: "account-1", workspaceId: "workspace-1" }),
@@ -198,5 +199,46 @@ describe("agent wizard routes", () => {
         contactEmail: "support@example.com",
       }),
     }));
+  });
+
+  it("returns 403 when the workspace principal lacks agent management permission", async () => {
+    const service = createService();
+    const dependencies = createDependencies({
+      accountAccessService: {
+        requireActiveMembership: vi.fn().mockResolvedValue(undefined),
+        requirePermission: vi.fn().mockRejectedValue({
+          statusCode: 403,
+          code: "forbidden",
+          message: "You do not have permission to perform this action",
+        }),
+      },
+    } as unknown as Partial<RouteDependencies>);
+
+    const response = await request(createApp(service, dependencies))
+      .post("/api/v1/agent-wizard/create")
+      .set("Cookie", "radioso_session=valid-session")
+      .send({
+        websiteUrl: "https://example.com",
+        name: "Example Support",
+        customInstruction: "Help visitors understand Example.",
+        greetingInstruction: "Hi! I can help with Example.",
+      })
+      .expect(403);
+
+    expect(response.body).toEqual({
+      code: "forbidden",
+      message: "Internal server error",
+    });
+    expect(dependencies.accountAccessService.requirePermission).toHaveBeenCalledWith({
+      accountId: "account-1",
+      permission: "workspace.agents.manage",
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      principal: {
+        type: "session_user",
+        userId: "user-1",
+      },
+    });
+    expect(service.createAgentFromWizard).not.toHaveBeenCalled();
   });
 });

@@ -16,6 +16,7 @@ import { createTestDependencies } from "../support/testApp.js";
 const createEnv = (port: number): Env => ({
   NODE_ENV: "test",
   PORT: port,
+  TRUST_PROXY_HOPS: 0,
   OBSERVABILITY_ENABLED: true,
   OBSERVABILITY_SERVICE_NAME: "radioso-api",
   OBSERVABILITY_ENVIRONMENT: "test",

@@ -113,6 +113,7 @@ export const decideClarification = (
   policy: ClarificationPolicy,
   context: ClarificationDecisionContext = {},
 ): ClarificationDecision => {
+  const askMargin = policy.askMargin ?? policy.margin;
   const eligible = orderClarificationCandidates(
     candidates.filter((candidate) => candidate.confidence >= policy.floor),
     context.priorities,
@@ -151,6 +152,10 @@ export const decideClarification = (
     return { kind: "auto_pick", candidate: priorityHolders[0]!, reason: "priority" };
   }
 
+  if (runnerUp && top.confidence - runnerUp.confidence >= askMargin) {
+    return { kind: "soft_pick", candidate: top, alternatives: presented.filter((candidate) => candidate.id !== top.id) };
+  }
+
   return { kind: "ask", candidates: presented };
 };
 
@@ -165,6 +170,9 @@ const decisionName = (decision: ClarificationDecision): string => {
   if (decision.kind === "ask") {
     return "asked";
   }
+  if (decision.kind === "soft_pick") {
+    return "offered";
+  }
   if (decision.kind === "auto_pick") {
     return decision.reason === "suppressed" ? "suppressed" : "auto_picked";
   }
@@ -174,6 +182,9 @@ const decisionName = (decision: ClarificationDecision): string => {
 const decisionCandidates = (decision: ClarificationDecision): ClarificationCandidate[] => {
   if (decision.kind === "ask") {
     return decision.candidates;
+  }
+  if (decision.kind === "soft_pick") {
+    return [decision.candidate, ...decision.alternatives];
   }
   if (decision.kind === "auto_pick") {
     return [decision.candidate];
@@ -192,7 +203,7 @@ export const clarificationStage = (input: {
   const timestamp = nowIso();
   const reason = input.reason ?? (input.decision.kind === "auto_pick" ? input.decision.reason : undefined);
   const consideredCandidates = input.consideredCandidates ?? decisionCandidates(input.decision);
-  const chosenCandidateId = input.decision.kind === "auto_pick"
+  const chosenCandidateId = input.decision.kind === "auto_pick" || input.decision.kind === "soft_pick"
     ? input.decision.candidate.id
     : undefined;
   return {

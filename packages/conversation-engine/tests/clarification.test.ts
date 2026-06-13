@@ -87,6 +87,70 @@ describe("decideClarification", () => {
     expect(decision.kind === "ask" ? decision.candidates.map((item) => item.id) : []).toEqual(["a", "b"]);
   });
 
+  it("soft-picks the top candidate when the gap is inside the soft band", () => {
+    const decision = decideClarification([
+      candidate({ id: "a", confidence: 0.91 }),
+      candidate({ id: "b", confidence: 0.81 }),
+      candidate({ id: "c", confidence: 0.8 }),
+      candidate({ id: "d", confidence: 0.72 }),
+    ], { ...policy, margin: 0.15, askMargin: 0.08, maxOptions: 3 });
+
+    expect(decision.kind).toBe("soft_pick");
+    expect(decision.kind === "soft_pick" ? decision.candidate.id : undefined).toBe("a");
+    expect(decision.kind === "soft_pick" ? decision.alternatives.map((item) => item.id) : []).toEqual(["b", "c"]);
+  });
+
+  it("lets suppression, loop guard, priority, and clear margin outrank soft-pick", () => {
+    const softBandCandidates = [
+      candidate({ id: "a", confidence: 0.91 }),
+      candidate({ id: "b", confidence: 0.81 }),
+      candidate({ id: "c", confidence: 0.8 }),
+    ];
+    const softBandPolicy = { ...policy, margin: 0.15, askMargin: 0.08 };
+
+    expect(decideClarification(softBandCandidates, softBandPolicy, { suppressAsk: true })).toMatchObject({
+      kind: "auto_pick",
+      reason: "suppressed",
+      candidate: { id: "a" },
+    });
+    expect(decideClarification(softBandCandidates, softBandPolicy, { loopGuardCandidateIds: ["a", "b", "c"] })).toMatchObject({
+      kind: "auto_pick",
+      reason: "loop_guard",
+      candidate: { id: "a" },
+    });
+    expect(decideClarification(softBandCandidates, softBandPolicy, { priorities: { b: 5 } })).toMatchObject({
+      kind: "auto_pick",
+      reason: "priority",
+      candidate: { id: "b" },
+    });
+    expect(decideClarification([
+      candidate({ id: "a", confidence: 0.91 }),
+      candidate({ id: "b", confidence: 0.76 }),
+    ], softBandPolicy)).toMatchObject({
+      kind: "auto_pick",
+      reason: "clear_margin",
+      candidate: { id: "a" },
+    });
+  });
+
+  it("keeps the soft band empty when askMargin equals margin or is absent", () => {
+    const closeCandidates = [
+      candidate({ id: "a", confidence: 0.91 }),
+      candidate({ id: "b", confidence: 0.81 }),
+    ];
+    const equalMarginDecision = decideClarification(closeCandidates, { ...policy, margin: 0.15, askMargin: 0.15 });
+    const defaultAskMarginDecision = decideClarification(closeCandidates, { ...policy, margin: 0.15 });
+    const clearDecision = decideClarification([
+      candidate({ id: "a", confidence: 0.91 }),
+      candidate({ id: "b", confidence: 0.76 }),
+    ], { ...policy, margin: 0.15 });
+
+    expect(equalMarginDecision.kind).toBe("ask");
+    expect(defaultAskMarginDecision.kind).toBe("ask");
+    expect(clearDecision).toMatchObject({ kind: "auto_pick", reason: "clear_margin", candidate: { id: "a" } });
+    expect([equalMarginDecision, defaultAskMarginDecision, clearDecision].some((decision) => decision.kind === "soft_pick")).toBe(false);
+  });
+
   it("caps ask options at maxOptions after deterministic ordering", () => {
     const decision = decideClarification([
       candidate({ id: "a", confidence: 0.8 }),
@@ -219,6 +283,34 @@ describe("clarificationStage", () => {
       candidates: [
         { id: "support", label: "Support call", confidence: 0.83 },
         { id: "demo", label: "Demo call", confidence: 0.82 },
+      ],
+    });
+    expect(JSON.stringify(stage)).not.toContain("secret");
+  });
+
+  it("records soft-picks as offered with winner plus alternatives and no payloads", () => {
+    const stage = clarificationStage({
+      surface: "retrieval_sense",
+      decision: {
+        kind: "soft_pick",
+        candidate: candidate({ id: "a", label: "Alpha", confidence: 0.91, payload: { secret: "winner" } }),
+        alternatives: [
+          candidate({ id: "b", label: "Beta", confidence: 0.81, payload: { secret: "alternative" } }),
+          candidate({ id: "c", label: "Gamma", confidence: 0.8, payload: { secret: "alternative" } }),
+        ],
+      },
+      margin: 0.1,
+    });
+
+    expect(stage.outputs).toEqual({
+      surface: "retrieval_sense",
+      decision: "offered",
+      margin: 0.1,
+      chosenCandidateId: "a",
+      candidates: [
+        { id: "a", label: "Alpha", confidence: 0.91 },
+        { id: "b", label: "Beta", confidence: 0.81 },
+        { id: "c", label: "Gamma", confidence: 0.8 },
       ],
     });
     expect(JSON.stringify(stage)).not.toContain("secret");

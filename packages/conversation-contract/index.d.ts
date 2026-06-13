@@ -369,6 +369,12 @@ export interface ClarificationPolicy {
   floor: number;
   /** Top-vs-runner-up gap that counts as a clear winner. */
   margin: number;
+  /**
+   * Inner ask boundary for the two-band policy. Values are expected to be less
+   * than or equal to `margin`; when absent this defaults to `margin`, leaving an
+   * empty soft-pick band and preserving the single-margin behavior.
+   */
+  askMargin?: number;
   /** Maximum number of candidates presented in a clarifying question. */
   maxOptions: number;
 }
@@ -378,6 +384,7 @@ export type ClarificationAutoPickReason = "clear_margin" | "priority" | "suppres
 /** Pure clarification decision returned by engine-layer policy evaluation. */
 export type ClarificationDecision =
   | { kind: "auto_pick"; candidate: ClarificationCandidate; reason: ClarificationAutoPickReason }
+  | { kind: "soft_pick"; candidate: ClarificationCandidate; alternatives: ClarificationCandidate[] }
   | { kind: "ask"; candidates: ClarificationCandidate[] }
   | { kind: "none" };
 

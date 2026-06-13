@@ -18,12 +18,14 @@
 |---|---|---|
 | `floor` | `number` | min confidence to remain a candidate |
 | `margin` | `number` | top-vs-runner-up gap that counts as a clear winner |
+| `askMargin` | `number?` | inner ask boundary; defaults to `margin`, yielding an empty soft-pick band |
 | `maxOptions` | `number` | cap on presented options (default 4) |
 
 ### ClarificationDecision (pure output of decide)
 
 ```
 { kind: "auto_pick", candidate, reason: "clear_margin" | "priority" | "suppressed" | "loop_guard" }
+| { kind: "soft_pick", candidate, alternatives: ClarificationCandidate[] } // winner plus offered runner-ups
 | { kind: "ask", candidates: ClarificationCandidate[] }   // ≤ maxOptions, deterministic order
 | { kind: "none" }                                        // nothing cleared the floor
 ```
@@ -108,6 +110,7 @@ the assistant-turn transaction (deferred capture), never mid-turn.
 
 ## Trace stage (spine, kind `clarification`)
 
-Outputs (metadata-safe): `surface`, `decision`, `reason?`, `margin?`,
+Outputs (metadata-safe): `surface`, `decision` (`asked`, `auto_picked`,
+`suppressed`, `offered`, or `none`), `reason?`, `margin?`,
 `candidates: [{id, label, confidence}]` (no payloads, no document content),
 `mappingOutcome?`. Envelope version unchanged (additive).

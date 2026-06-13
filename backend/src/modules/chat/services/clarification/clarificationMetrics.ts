@@ -2,9 +2,12 @@ import type { MetricsRegistry } from "../../../../shared/observability/metrics/m
 
 export type ClarificationMetricDecision =
   | "asked"
+  | "offered"
   | "auto_picked"
   | "suppressed"
   | "mapped"
+  | "offer_accepted_alternative"
+  | "offer_ignored"
   | "declined"
   | "expired";
 

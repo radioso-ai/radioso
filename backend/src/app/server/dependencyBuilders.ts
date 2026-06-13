@@ -733,9 +733,16 @@ export const buildChatServices = (input: {
   errorReporter: ErrorReporter;
 }) => {
   const chatGateway = input.llmRegistry.createChatGateway(input.usageEventRecorder);
-  // Slice 3 keeps the soft-pick band empty for routine activation; slice 4 opens
-  // the retrieval-sense band only.
   const routineActivationPolicy = { floor: 0.4, margin: 0.15, askMargin: 0.15, maxOptions: 4 };
+  // Retrieval-sense clarification is answer-first: once a candidate set survives
+  // floor/suppression/clear-margin/loop-guard/priority checks, a no-clear-winner case
+  // soft-picks the strongest sense and offers alternatives instead of blocking. The
+  // small askMargin reserves a *blocking* question only for genuine ties — senses whose
+  // confidences are within this gap are statistically indistinguishable, so leading
+  // with an arbitrary pick (even with an offer) would be worse than asking. Bands:
+  // gap >= margin (0.15) -> silent auto-pick; askMargin <= gap < margin -> answer + offer;
+  // gap < askMargin -> ask.
+  const retrievalSenseAnswerFirstAskMargin = 0.03;
   const retrievalSensePolicy: RetrievalSensePolicy = {
     minGroupShare: 0.3,
     // Euclidean centroid distance over involved chunk embeddings. The value is
@@ -1077,6 +1084,7 @@ export const buildChatServices = (input: {
       {
         questionPromptTemplate: loadPromptTemplate("chat/clarification-question.md"),
         replyMapPromptTemplate: loadPromptTemplate("chat/clarification-reply-map.md"),
+        offerReplyMapPromptTemplate: loadPromptTemplate("chat/clarification-offer-reply-map.md"),
       },
     ),
     clarificationStore,
@@ -1084,8 +1092,7 @@ export const buildChatServices = (input: {
     retrievalSenseClarificationPolicy: {
       floor: 0,
       margin: 0.15,
-      // Slice 3 intentionally keeps the soft-pick band empty; slice 4 opens it.
-      askMargin: 0.15,
+      askMargin: retrievalSenseAnswerFirstAskMargin,
       maxOptions: retrievalSensePolicy.maxOptions,
     },
     ...(input.metricsRegistry

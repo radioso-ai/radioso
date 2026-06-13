@@ -35,13 +35,17 @@ Migrations run on backend start; verify `clarification_states` exists:
 1. Ingest two document sets with one shared term and two distinct senses (the
    fixture set under `backend/tests/fixtures/` — hatha-yoga vs raja-yoga docs).
 2. Ask: *"tell me about yoga"*.
-   - Expect: clarifying question naming the two senses (labels derived from the
-     documents).
-3. Pick a sense.
-   - Expect: answer cites only the chosen sense's documents.
-4. Ask an unambiguous question: *"what is hatha yoga?"*.
+   - Expect: immediate grounded answer scoped to the strongest sense, plus a
+     brief inline offer of the alternative sense(s). Trace shows `offered`.
+3. Pick the offered alternative on the next turn.
+   - Expect: answer cites only the chosen alternative sense's documents and
+     answers the original question, not just the selector reply.
+4. Ignore the offer with an unrelated next turn.
+   - Expect: normal handling of the new message, no decline message, and no
+     repeated offer of the same sense set.
+5. Ask an unambiguous question: *"what is hatha yoga?"*.
    - Expect: immediate answer, no question.
-5. Activate a routine, then mid-routine ask the ambiguous question.
+6. Activate a routine, then mid-routine ask the ambiguous question.
    - Expect: no clarifying question (suppressed-ask); best-effort answer; trace
      records the suppression.
 
@@ -75,4 +79,5 @@ pnpm run ci:local -- origin/main
 
 `curl localhost:8080/metrics | grep clarification_decisions_total` — labels
 `surface` (routine_activation | retrieval_sense) × `decision`
-(asked | auto_picked | suppressed | mapped | declined | expired).
+(asked | offered | auto_picked | suppressed | mapped |
+offer_accepted_alternative | offer_ignored | declined | expired).

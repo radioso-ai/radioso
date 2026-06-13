@@ -735,9 +735,14 @@ export const buildChatServices = (input: {
   const chatGateway = input.llmRegistry.createChatGateway(input.usageEventRecorder);
   const routineActivationPolicy = { floor: 0.4, margin: 0.15, askMargin: 0.15, maxOptions: 4 };
   // Retrieval-sense clarification is answer-first: once a candidate set survives
-  // floor/suppression/clear-margin/loop-guard/priority checks, every no-clear-winner
-  // case soft-picks the strongest sense and offers alternatives instead of blocking.
-  const retrievalSenseAnswerFirstAskMargin = 0;
+  // floor/suppression/clear-margin/loop-guard/priority checks, a no-clear-winner case
+  // soft-picks the strongest sense and offers alternatives instead of blocking. The
+  // small askMargin reserves a *blocking* question only for genuine ties — senses whose
+  // confidences are within this gap are statistically indistinguishable, so leading
+  // with an arbitrary pick (even with an offer) would be worse than asking. Bands:
+  // gap >= margin (0.15) -> silent auto-pick; askMargin <= gap < margin -> answer + offer;
+  // gap < askMargin -> ask.
+  const retrievalSenseAnswerFirstAskMargin = 0.03;
   const retrievalSensePolicy: RetrievalSensePolicy = {
     minGroupShare: 0.3,
     // Euclidean centroid distance over involved chunk embeddings. The value is

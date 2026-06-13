@@ -200,7 +200,7 @@ const makeService = (input: {
     },
     retrievalSenseDetector: input.detector as never,
     directiveSteering: input.directiveRuntime,
-    retrievalSenseClarificationPolicy: { floor: 0, margin: 0.15, askMargin: 0, maxOptions: 4 },
+    retrievalSenseClarificationPolicy: { floor: 0, margin: 0.15, askMargin: 0.03, maxOptions: 4 },
     routineStore: input.routineStore,
     routineProvider: input.routineStore
       ? { async forTurn() {
@@ -220,7 +220,7 @@ const retrievalSensePending = (originalQuery: string): PendingClarification => (
   mode: "ask",
   candidates: [
     { id: "doc-hatha", label: "Hatha yoga", confidence: 0.6, payload: { documentIds: ["doc-hatha"] } },
-    { id: "doc-raja", label: "Raja yoga", confidence: 0.58, payload: { documentIds: ["doc-raja"] } },
+    { id: "doc-raja", label: "Raja yoga", confidence: 0.55, payload: { documentIds: ["doc-raja"] } },
   ],
   status: "pending",
   expiresAt: new Date("2099-01-01T00:00:00.000Z"),
@@ -258,7 +258,7 @@ describe("retrieval sense clarification", () => {
     const detector = {
       detect: vi.fn(async () => [
         { id: "doc-hatha", label: "Hatha yoga", confidence: 0.6, payload: { documentIds: ["doc-hatha"] } },
-        { id: "doc-raja", label: "Raja yoga", confidence: 0.58, payload: { documentIds: ["doc-raja"] } },
+        { id: "doc-raja", label: "Raja yoga", confidence: 0.55, payload: { documentIds: ["doc-raja"] } },
       ]),
     };
     const service = makeService({
@@ -317,7 +317,7 @@ describe("retrieval sense clarification", () => {
           source: "retrieval_sense",
           candidates: [
             { id: "doc-hatha", label: "Hatha yoga", confidence: 0.6, payload: { documentIds: ["doc-hatha"] } },
-            { id: "doc-raja", label: "Raja yoga", confidence: 0.58, payload: { documentIds: ["doc-raja"] } },
+            { id: "doc-raja", label: "Raja yoga", confidence: 0.55, payload: { documentIds: ["doc-raja"] } },
           ],
           status: "pending" as const,
           expiresAt: new Date("2099-01-01T00:00:00.000Z"),
@@ -354,7 +354,7 @@ describe("retrieval sense clarification", () => {
           mode: "ask" as const,
           candidates: [
             { id: "doc-hatha", label: "Hatha yoga", confidence: 0.6, payload: { documentIds: ["doc-hatha"] } },
-            { id: "doc-raja", label: "Raja yoga", confidence: 0.58, payload: { documentIds: ["doc-raja"] } },
+            { id: "doc-raja", label: "Raja yoga", confidence: 0.55, payload: { documentIds: ["doc-raja"] } },
           ],
           status: "pending" as const,
           expiresAt: new Date("2099-01-01T00:00:00.000Z"),
@@ -458,7 +458,7 @@ describe("retrieval sense clarification", () => {
     const detector = {
       detect: vi.fn(async () => [
         { id: "doc-hatha", label: "Hatha yoga", confidence: 0.6, payload: { documentIds: ["doc-hatha"] } },
-        { id: "doc-raja", label: "Raja yoga", confidence: 0.58, payload: { documentIds: ["doc-raja"] } },
+        { id: "doc-raja", label: "Raja yoga", confidence: 0.55, payload: { documentIds: ["doc-raja"] } },
       ]),
     };
     const service = makeService({
@@ -542,7 +542,7 @@ describe("retrieval sense clarification", () => {
     const detector = {
       detect: vi.fn(async () => [
         { id: "doc-hatha", label: "Hatha yoga", confidence: 0.6, payload: { documentIds: ["doc-hatha"] } },
-        { id: "doc-raja", label: "Raja yoga", confidence: 0.58, payload: { documentIds: ["doc-raja"] } },
+        { id: "doc-raja", label: "Raja yoga", confidence: 0.55, payload: { documentIds: ["doc-raja"] } },
       ]),
     };
     const service = makeService({

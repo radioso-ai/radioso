@@ -27,6 +27,7 @@ export type {
   ConversationClarificationStore,
   ConversationClarifier,
   PendingClarification,
+  PendingClarificationMode,
   PendingClarificationStatus,
   RecentClarificationReader,
 } from "@radioso/conversation-contract";

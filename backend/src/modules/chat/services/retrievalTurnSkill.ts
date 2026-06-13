@@ -73,7 +73,7 @@ export class RetrievalAnswerComposer {
   composeGroundedSystemPrompt(session: PreparedSession): string {
     const conversationIntentSnapshot = buildConversationIntentSnapshot({
       history: session.history,
-      latestQuery: session.userMessage.content,
+      latestQuery: session.effectiveQuery ?? session.userMessage.content,
       priorRewriteContinuityState: session.priorRewriteContinuityState,
       rewriteProposal: session.retrieval.diagnostics.rewriteProposal,
     });

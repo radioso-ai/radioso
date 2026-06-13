@@ -2,10 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import { decideClarification } from "@radioso/conversation-engine";
 
 import {
+  ModelSenseLabelGateway,
   SenseGroupingService,
   type SenseLabelGateway,
   type SenseLabelGroup,
 } from "../../src/modules/retrieval/services/senseGroupingService.js";
+import { evaluateRetrievalSenseClarification } from "../../src/modules/retrieval/services/retrievalSenseClarification.js";
 import type { RetrievedCandidate } from "../../src/modules/retrieval/public.js";
 import {
   dominantHathaYogaCandidates,
@@ -19,6 +21,7 @@ const policy = {
 };
 
 type LabelInput = {
+  question: string;
   groups: SenseLabelGroup[];
   conversationLanguage?: string;
   usageContext?: Parameters<SenseLabelGateway["label"]>[0]["usageContext"];
@@ -104,6 +107,7 @@ describe("SenseGroupingService", () => {
 
     const candidates = await service.detect({
       workspaceId: "workspace-1",
+      question: "Tell me about yoga practice.",
       rankedCandidates: hathaRajaYogaCandidates().slice(0, 4),
       conversationLanguage: "en",
       usageContext: {
@@ -119,6 +123,7 @@ describe("SenseGroupingService", () => {
       chunkIds: ["hatha-1", "hatha-2", "raja-1", "raja-2"],
     });
     expect(labelGateway.label).toHaveBeenCalledWith(expect.objectContaining({
+      question: "Tell me about yoga practice.",
       conversationLanguage: "en",
       groups: [
         expect.objectContaining({
@@ -156,11 +161,42 @@ describe("SenseGroupingService", () => {
     ]);
   });
 
+  it("renders the visitor question into the model sense-label prompt", async () => {
+    const completions: Array<{ prompt: string }> = [];
+    const gateway = new ModelSenseLabelGateway({
+      async complete(input: { prompt: string }) {
+        completions.push({ prompt: input.prompt });
+        return {
+          text: JSON.stringify([
+            { id: "doc-refund", label: "Whether refunds are available", description: "Refund eligibility and timing" },
+          ]),
+        };
+      },
+    } as never, "Question:\n{{question}}\n\nLanguage:\n{{conversationLanguage}}\n\nGroups:\n{{groups}}");
+
+    await gateway.label({
+      question: "Can I get my money back?",
+      conversationLanguage: "en",
+      groups: [{
+        id: "doc-refund",
+        documentIds: ["doc-refund"],
+        documents: [{ documentId: "doc-refund", title: "Refund Policy" }],
+        share: 0.5,
+        separation: 0.6,
+      }],
+    });
+
+    expect(completions[0]?.prompt).toContain("Can I get my money back?");
+    expect(completions[0]?.prompt).toContain("Refund Policy");
+  });
+
   it("auto-picks the query-relevant document for the issue-686 refund policy repro", async () => {
     const labelGateway = {
       label: vi.fn<(input: LabelInput) => LabelOutput>(async (input) => input.groups.map((group) => ({
         id: group.id,
-        label: group.documents[0]?.title ?? group.id,
+        label: group.id === "doc-left"
+          ? "Whether refunds are available"
+          : "Whether shipping details apply",
       }))),
     };
     const service = new SenseGroupingService({
@@ -171,6 +207,7 @@ describe("SenseGroupingService", () => {
 
     const candidates = await service.detect({
       workspaceId: "workspace-1",
+      question: "What is your refund policy?",
       rankedCandidates: sameShapeCandidates({
         leftTitle: "Refund Policy",
         leftSimilarities: [0.86, 0.84],
@@ -181,10 +218,14 @@ describe("SenseGroupingService", () => {
     });
 
     expect(candidates).toHaveLength(2);
-    const refund = candidates.find((item) => item.label === "Refund Policy");
-    const shipping = candidates.find((item) => item.label === "Shipping FAQ");
+    const refund = candidates.find((item) => item.id === "doc-left");
+    const shipping = candidates.find((item) => item.id === "doc-right");
     expect(refund).toBeDefined();
     expect(shipping).toBeDefined();
+    expect(candidates.map((item) => item.label)).toEqual([
+      "Whether refunds are available",
+      "Whether shipping details apply",
+    ]);
     expect(refund!.confidence - shipping!.confidence).toBeGreaterThanOrEqual(0.15);
     expect(decideClarification(candidates, { floor: 0, margin: 0.15, maxOptions: 4 })).toMatchObject({
       kind: "auto_pick",
@@ -197,7 +238,9 @@ describe("SenseGroupingService", () => {
     const labelGateway = {
       label: vi.fn<(input: LabelInput) => LabelOutput>(async (input) => input.groups.map((group) => ({
         id: group.id,
-        label: group.documents[0]?.title ?? group.id,
+        label: group.id === "doc-left"
+          ? "Whether the visitor means posture practice"
+          : "Whether the visitor means meditation practice",
       }))),
     };
     const service = new SenseGroupingService({
@@ -208,6 +251,7 @@ describe("SenseGroupingService", () => {
 
     const candidates = await service.detect({
       workspaceId: "workspace-1",
+      question: "Tell me about yoga.",
       rankedCandidates: sameShapeCandidates({
         leftTitle: "Hatha Yoga Foundations",
         leftSimilarities: [0.82, 0.8],
@@ -236,12 +280,113 @@ describe("SenseGroupingService", () => {
 
     await expect(service.detect({
       workspaceId: "workspace-1",
+      question: "Tell me about yoga.",
       rankedCandidates: dominantHathaYogaCandidates(),
       conversationLanguage: "en",
     })).resolves.toEqual([]);
 
     expect(embeddingReader.readChunkEmbeddings).not.toHaveBeenCalled();
     expect(labelGateway.label).not.toHaveBeenCalled();
+  });
+
+  it("marks missing LLM labels without falling back to document titles", async () => {
+    const labelGateway = {
+      label: vi.fn<(input: LabelInput) => LabelOutput>(async () => [
+        { id: "doc-left", label: "Whether refunds are available" },
+      ]),
+    };
+    const service = new SenseGroupingService({
+      policy,
+      embeddingReader: { readChunkEmbeddings: vi.fn(async () => separatedEmbeddings()) },
+      labelGateway,
+    });
+
+    const candidates = await service.detect({
+      workspaceId: "workspace-1",
+      question: "Can I get my money back?",
+      rankedCandidates: sameShapeCandidates({
+        leftTitle: "Refund Policy",
+        leftSimilarities: [0.82, 0.8],
+        rightTitle: "Shipping FAQ",
+        rightSimilarities: [0.8, 0.78],
+      }),
+      conversationLanguage: "en",
+    });
+
+    expect(candidates).toEqual([
+      expect.objectContaining({
+        id: "doc-left",
+        label: "Whether refunds are available",
+        labelStatus: "generated",
+      }),
+      expect.objectContaining({
+        id: "doc-right",
+        label: "doc-right",
+        labelStatus: "missing",
+      }),
+    ]);
+    expect(candidates.map((candidate) => candidate.label)).not.toContain("Shipping FAQ");
+  });
+
+  it("treats rejected LLM labels as missing so retrieval sense clarification can auto-pick", async () => {
+    const labelGateway = {
+      label: vi.fn<(input: LabelInput) => LabelOutput>(async () => {
+        throw new Error("rate limited");
+      }),
+    };
+    const service = new SenseGroupingService({
+      policy,
+      embeddingReader: { readChunkEmbeddings: vi.fn(async () => separatedEmbeddings()) },
+      labelGateway,
+    });
+
+    const candidates = await service.detect({
+      workspaceId: "workspace-1",
+      question: "Can I get my money back?",
+      rankedCandidates: sameShapeCandidates({
+        leftTitle: "Refund Policy",
+        leftSimilarities: [0.82, 0.8],
+        rightTitle: "Shipping FAQ",
+        rightSimilarities: [0.8, 0.78],
+      }),
+      conversationLanguage: "en",
+    });
+
+    expect(candidates).toEqual([
+      expect.objectContaining({
+        id: "doc-left",
+        label: "doc-left",
+        labelStatus: "missing",
+      }),
+      expect.objectContaining({
+        id: "doc-right",
+        label: "doc-right",
+        labelStatus: "missing",
+      }),
+    ]);
+
+    await expect(evaluateRetrievalSenseClarification({
+      detector: { detect: vi.fn(async () => candidates) },
+      workspaceId: "workspace-1",
+      rankedCandidates: [],
+      conversationId: "conversation-1",
+      messageId: "message-1",
+      originalQuery: "Can I get my money back?",
+      conversationLanguage: "en",
+      policy: { floor: 0, margin: 0.15, askMargin: 0.03, maxOptions: 4 },
+      suppressAsk: false,
+      expiresAt: new Date("2099-01-01T00:00:00.000Z"),
+    })).resolves.toMatchObject({
+      kind: "proceed",
+      documentScope: ["doc-left"],
+      stage: expect.objectContaining({
+        outputs: expect.objectContaining({
+          decision: "auto_picked",
+          reason: "label_fallback",
+          chosenCandidateId: "doc-left",
+        }),
+      }),
+    });
   });
 
   it("returns no candidates when structurally qualified groups are not semantically separated", async () => {
@@ -260,6 +405,7 @@ describe("SenseGroupingService", () => {
 
     await expect(service.detect({
       workspaceId: "workspace-1",
+      question: "Tell me about yoga.",
       rankedCandidates: hathaRajaYogaCandidates().slice(0, 4),
       conversationLanguage: "en",
     })).resolves.toEqual([]);
@@ -269,7 +415,7 @@ describe("SenseGroupingService", () => {
     const labelGateway = {
       label: vi.fn<(input: LabelInput) => LabelOutput>(async (input) => input.groups.map((group) => ({
         id: group.id,
-        label: group.documents[0]?.title ?? group.id,
+        label: `Meaning represented by ${group.id}`,
       }))),
     };
     const service = new SenseGroupingService({
@@ -288,6 +434,7 @@ describe("SenseGroupingService", () => {
 
     const candidates = await service.detect({
       workspaceId: "workspace-1",
+      question: "Tell me about yoga.",
       rankedCandidates: hathaRajaYogaCandidates(),
       conversationLanguage: "es",
     });

@@ -1,5 +1,6 @@
 import type {
   ClarificationCandidate,
+  ClarificationDecision,
   ClarificationPolicy,
   ConversationTraceStage,
   PendingClarification,
@@ -9,6 +10,7 @@ import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsag
 import type { RetrievalPipelineResult } from "./retrievalPipelineService.js";
 import {
   documentScopeFromClarificationCandidate,
+  type RetrievalSenseClarificationCandidate,
 } from "./senseGroupingService.js";
 import {
   clarificationStage,
@@ -18,10 +20,11 @@ import {
 export interface RetrievalSenseDetectorPort {
   detect(input: {
     workspaceId: string;
+    question: string;
     rankedCandidates: RetrievalPipelineResult["contexts"];
     conversationLanguage?: string;
     usageContext?: ModelCallUsageContext;
-  }): Promise<ClarificationCandidate[]>;
+  }): Promise<RetrievalSenseClarificationCandidate[]>;
 }
 
 export type RetrievalSenseClarificationEffect =
@@ -67,6 +70,7 @@ export const evaluateRetrievalSenseClarification = async (input: {
 
   const candidates = await input.detector.detect({
     workspaceId: input.workspaceId,
+    question: input.originalQuery,
     rankedCandidates: input.rankedCandidates,
     conversationLanguage: input.conversationLanguage,
     usageContext: input.usageContext,
@@ -81,6 +85,26 @@ export const evaluateRetrievalSenseClarification = async (input: {
   });
   if (decision.kind === "none") {
     return { kind: "proceed", candidates };
+  }
+
+  const labelFallbackCandidate = labelFallbackAutoPickCandidate(decision);
+  if (labelFallbackCandidate) {
+    const labelFallbackDecision: ClarificationDecision = {
+      kind: "auto_pick",
+      candidate: labelFallbackCandidate,
+      reason: "clear_margin",
+    };
+    return {
+      kind: "proceed",
+      candidates,
+      stage: clarificationStage({
+        surface: "retrieval_sense",
+        decision: labelFallbackDecision,
+        consideredCandidates: candidates,
+        reason: "label_fallback",
+      }),
+      documentScope: documentScopeFromClarificationCandidate(labelFallbackCandidate),
+    };
   }
 
   const stage = clarificationStage({
@@ -130,3 +154,18 @@ export const evaluateRetrievalSenseClarification = async (input: {
     },
   };
 };
+
+const labelFallbackAutoPickCandidate = (
+  decision: ClarificationDecision,
+): ClarificationCandidate | null => {
+  if (decision.kind === "ask") {
+    return decision.candidates.some(hasMissingLabel) ? decision.candidates[0] ?? null : null;
+  }
+  if (decision.kind === "soft_pick") {
+    return [decision.candidate, ...decision.alternatives].some(hasMissingLabel) ? decision.candidate : null;
+  }
+  return null;
+};
+
+const hasMissingLabel = (candidate: ClarificationCandidate): boolean =>
+  (candidate as { labelStatus?: unknown }).labelStatus === "missing";

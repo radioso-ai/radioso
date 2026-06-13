@@ -78,13 +78,14 @@ The response includes `publicChatToken`, `publicSessionId`, `publicSessionToken`
 {
   "message": "What can this workspace answer?",
   "stream": false,
-  "conversationId": "optional-conversation-id"
+  "conversationId": "optional-conversation-id",
+  "bootstrapGreetingId": "optional-bootstrap-greeting-id"
 }
 ```
 
 The public chat request also supports `startConversation: true` for bootstrap greeting requests, `userExpectedLocale`, and `inputMetadata`.
 
-Bootstrap greetings are not saved as conversations by themselves. A `startConversation: true` response can omit `conversationId`; use the `conversationId` returned by the first normal message when you need history or follow-up continuity.
+Bootstrap greetings are not saved as conversations by themselves. A `startConversation: true` response can omit `conversationId` and include `bootstrapGreetingId`. If the visitor replies, send that `bootstrapGreetingId` with the first normal message and no `conversationId`; Radioso will save the displayed greeting before the user's message. Use the `conversationId` returned by that first normal message for history and follow-up continuity.
 
 If the assistant cannot produce a public response body, the route returns a
 JSON error instead of an empty `204` response:

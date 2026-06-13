@@ -36,6 +36,7 @@ const sourceContextSchema = z.object({
 export const assistantChatSchema = z.object({
   agentId: z.string().uuid().optional(),
   conversationId: z.string().uuid().optional(),
+  bootstrapGreetingId: z.string().uuid().optional(),
   message: chatMessageSchema.optional(),
   startConversation: z.boolean().optional().default(false),
   stream: z.boolean().default(false),
@@ -60,6 +61,20 @@ export const assistantChatSchema = z.object({
       code: z.ZodIssueCode.custom,
       message: "startConversation may only be used for brand-new conversations",
       path: ["conversationId"],
+    });
+  }
+  if (value.startConversation && value.bootstrapGreetingId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "bootstrapGreetingId may only be used with a persisted user turn",
+      path: ["bootstrapGreetingId"],
+    });
+  }
+  if (value.conversationId && value.bootstrapGreetingId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "bootstrapGreetingId may only be used for the first persisted user turn",
+      path: ["bootstrapGreetingId"],
     });
   }
 });

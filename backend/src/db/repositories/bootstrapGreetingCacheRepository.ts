@@ -38,6 +38,7 @@ const mapRecord = (row: BootstrapGreetingCacheRow): BootstrapGreetingCacheRecord
 
 export interface BootstrapGreetingCacheRepositoryPort {
   findByWorkspaceAgentAndFingerprint(workspaceId: string, agentId: string, fingerprint: string): Promise<BootstrapGreetingCacheRecord | null>;
+  findById(workspaceId: string, id: string): Promise<BootstrapGreetingCacheRecord | null>;
   save(input: {
     workspaceId: string;
     agentId: string;
@@ -60,6 +61,17 @@ export class BootstrapGreetingCacheRepository implements BootstrapGreetingCacheR
        FROM bootstrap_greeting_cache
        WHERE workspace_id = $1 AND agent_id = $2 AND fingerprint = $3`,
       [workspaceId, agentId, fingerprint],
+    );
+
+    return row ? mapRecord(row) : null;
+  }
+
+  async findById(workspaceId: string, id: string): Promise<BootstrapGreetingCacheRecord | null> {
+    const row = await this.database.queryOptional<BootstrapGreetingCacheRow>(
+      `SELECT id, workspace_id, agent_id, fingerprint, locale_used, greeting_text, created_at, updated_at
+       FROM bootstrap_greeting_cache
+       WHERE workspace_id = $1 AND id = $2`,
+      [workspaceId, id],
     );
 
     return row ? mapRecord(row) : null;

@@ -98,6 +98,25 @@ describe('chat API ephemeral bootstrap handling', () => {
     expect(requestBody).not.toHaveProperty('conversationId')
   })
 
+  it('sends the bootstrap greeting receipt without a conversation id on the first public user turn', async () => {
+    const { publicChatApi } = await import('@/lib/api')
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(turnPayload))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await publicChatApi.streamMessage('public-token', {
+      message: 'Hi',
+      stream: true,
+      bootstrapGreetingId: '22222222-2222-4222-8222-222222222222',
+    })
+
+    const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
+    expect(requestBody).toMatchObject({
+      message: 'Hi',
+      bootstrapGreetingId: '22222222-2222-4222-8222-222222222222',
+    })
+    expect(requestBody).not.toHaveProperty('conversationId')
+  })
+
   it('retries public session creation once without a stale resume token', async () => {
     const { publicChatApi } = await import('@/lib/api')
     const sessionPayload = {

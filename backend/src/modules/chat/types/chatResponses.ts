@@ -52,4 +52,5 @@ export interface ChatResponse {
 export type ChatBootstrapResponse = Omit<ChatResponse, "conversationId" | "assistantMessageId"> & {
   conversationId?: string;
   assistantMessageId?: string;
+  bootstrapGreetingId?: string;
 };

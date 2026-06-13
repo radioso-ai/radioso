@@ -1,5 +1,6 @@
 import { badRequest } from "../../../shared/domain/errors.js";
 import { normalizeLocaleTag } from "../../../shared/domain/locale.js";
+import { PUBLIC_ASSISTANT_FALLBACK_NAME } from "../../../shared/domain/responseIdentity.js";
 
 export { normalizeLocaleTag };
 
@@ -66,7 +67,9 @@ export const resolveAssistantDisplayName = (input: {
     return assistantName;
   }
 
-  return input.workspaceName.trim();
+  // Public surfaces must never expose the internal workspace name (e.g. the
+  // seeded "Default") to visitors. Fall back to a neutral label instead.
+  return PUBLIC_ASSISTANT_FALLBACK_NAME;
 };
 
 export const buildPublicAssistantIdentityLines = (

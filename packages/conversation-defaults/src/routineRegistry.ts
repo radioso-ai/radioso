@@ -207,6 +207,19 @@ export class RoutineRegistry {
         if (decision.kind === "ask") {
           return { kind: "clarify", candidates: decision.candidates };
         }
+        if (decision.kind === "soft_pick") {
+          // Slice 4 implements offer behavior; band is empty in slice 3 so this
+          // is unreachable at runtime.
+          const activation = (await conversationRoutineActivatorFromCandidate(decision.candidate)?.activate({ turn }))
+            ?? { kind: "activate" as const, routineId: decision.candidate.id, variables: undefined };
+          return {
+            ...activation,
+            decisionMetadata: {
+              consideredCandidates: candidates,
+              decision,
+            },
+          };
+        }
         const activation = (await conversationRoutineActivatorFromCandidate(decision.candidate)?.activate({ turn }))
           ?? { kind: "activate" as const, routineId: decision.candidate.id, variables: undefined };
         return {

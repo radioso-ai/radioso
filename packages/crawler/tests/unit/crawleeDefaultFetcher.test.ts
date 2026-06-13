@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:http";
 import { AddressInfo } from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { crawlSite } from "../../src/index.js";
 
 const listen = async (
@@ -61,6 +61,72 @@ describe("default Crawlee fetcher", () => {
         frontierUrl: url
       })
     );
+  });
+
+  it("validates navigation URLs before fetching pages and robots.txt", async () => {
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end("<html><head><title>Minimal</title></head><body><main><p>Reachable content.</p></main></body></html>");
+    });
+    servers.push(server);
+
+    const validateNavigationUrl = vi.fn();
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 1,
+      validateNavigationUrl
+    });
+
+    expect(pages[0]).toEqual(expect.objectContaining({ status: "success" }));
+    expect(validateNavigationUrl).toHaveBeenCalledWith(`${baseUrl}/robots.txt`);
+    expect(validateNavigationUrl).toHaveBeenCalledWith(`${baseUrl}/`);
+  });
+
+  it("aborts a same-scope redirect when the navigation validator rejects the target", async () => {
+    const hits: string[] = [];
+    const { server, baseUrl } = await listen((req, res) => {
+      hits.push(req.url ?? "");
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      if (req.url === "/start") {
+        res.writeHead(302, { location: `${baseUrl}/start/private` }).end();
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end("<html><head><title>Private</title></head><body><main><p>Private content.</p></main></body></html>");
+    });
+    servers.push(server);
+
+    const url = `${baseUrl}/start`;
+    const validateNavigationUrl = vi.fn((candidateUrl: string) => {
+      if (candidateUrl === `${baseUrl}/start/private`) {
+        throw new Error("Blocked private target");
+      }
+    });
+
+    const pages = await crawlSite({
+      baseUrl: url,
+      pageLimit: 1,
+      validateNavigationUrl
+    });
+
+    expect(hits).toContain("/start");
+    expect(hits).not.toContain("/start/private");
+    expect(validateNavigationUrl).toHaveBeenCalledWith(url);
+    expect(validateNavigationUrl).toHaveBeenCalledWith(`${baseUrl}/start/private`);
+    expect(pages[0]).toEqual(expect.objectContaining({
+      status: "failed",
+      frontierUrl: url,
+      error: "Blocked private target"
+    }));
   });
 
   it("still crawls when PATH omits standard system binary directories", async () => {

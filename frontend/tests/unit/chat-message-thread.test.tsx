@@ -549,4 +549,66 @@ describe('ChatMessageThread', () => {
     expect(html).not.toContain('data-skill-receipt')
   })
 
+  it('bands routine-driven turns with a start chip and an end marker when markers are supplied', () => {
+    const messages = [
+      { id: 'user-1', role: 'user' as const, content: 'Contact a human', createdAt: '2026-04-02T10:00:00.000Z' },
+      { id: 'assistant-1', role: 'assistant' as const, content: 'What is your email?', createdAt: '2026-04-02T10:00:01.000Z' },
+      { id: 'user-2', role: 'user' as const, content: 'a@b.com', createdAt: '2026-04-02T10:00:02.000Z' },
+      { id: 'assistant-2', role: 'assistant' as const, content: 'Thanks, sent.', createdAt: '2026-04-02T10:00:03.000Z' },
+    ]
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={messages}
+        onOpenDocument={async () => 'opened'}
+        routineMarkers={[
+          { groupKey: null, isGroupStart: false, isGroupEnd: false },
+          { groupKey: 'routine-0', isGroupStart: true, isGroupEnd: false, routineId: 'a1b2c3d4-0000-4000-8000-000000000000', routineName: 'Contact a human', routineHref: '/w/acme/agents/agent-1/routines/a1b2c3d4-0000-4000-8000-000000000000' },
+          { groupKey: 'routine-0', isGroupStart: false, isGroupEnd: false, routineId: 'a1b2c3d4-0000-4000-8000-000000000000', routineName: 'Contact a human' },
+          { groupKey: 'routine-0', isGroupStart: false, isGroupEnd: true, routineId: 'a1b2c3d4-0000-4000-8000-000000000000', routineName: 'Contact a human', endState: 'ended' },
+        ]}
+      />,
+    )
+
+    expect(html).toContain('data-routine-band="routine-0"')
+    expect(html).toContain('Routine started')
+    // Shows the friendly name as a link to the routine version, with the id in the tooltip.
+    expect(html).toContain('Contact a human')
+    expect(html).toContain('href="/w/acme/agents/agent-1/routines/a1b2c3d4-0000-4000-8000-000000000000"')
+    expect(html).toContain('Routine ID: a1b2c3d4-0000-4000-8000-000000000000')
+    expect(html).toContain('Routine ended')
+    expect(html).not.toContain('Routine paused')
+  })
+
+  it('falls back to a humanized routine id when no name is resolved', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          { id: 'assistant-1', role: 'assistant', content: 'How can I help?', createdAt: '2026-04-02T10:00:00.000Z' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+        routineMarkers={[
+          { groupKey: 'routine-0', isGroupStart: true, isGroupEnd: true, routineId: 'contact.request', endState: 'paused' },
+        ]}
+      />,
+    )
+
+    expect(html).toContain('Contact request')
+    expect(html).toContain('Routine ID: contact.request')
+    expect(html).toContain('Routine paused')
+  })
+
+  it('does not render routine chrome when no markers are supplied', () => {
+    const html = renderToStaticMarkup(
+      <ChatMessageThread
+        messages={[
+          { id: 'assistant-1', role: 'assistant', content: 'What is your email?', createdAt: '2026-04-02T10:00:00.000Z' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).not.toContain('data-routine-band')
+    expect(html).not.toContain('Routine started')
+  })
+
 })

@@ -185,11 +185,12 @@ competing to interpret the visitor's next message.
 
 The retrieval-sense detector runs only on conversational retrieval turns, after
 retrieval has produced candidates and before the grounded answer is composed.
-The default retrieval-sense policy is answer-first: `askMargin = 0`, so any
+The default retrieval-sense policy is answer-first: `askMargin = 0.03`, so a
 no-clear-winner set that survives floor, loop guard, and priority checks becomes
-an offer instead of a blocking question. Routine activation keeps
-`askMargin = clearMargin`, preserving the blocking ask behavior for routine
-ambiguity.
+an offer instead of a blocking question — except when the top two senses are
+within the `0.03` tie band, where they are statistically indistinguishable and a
+blocking ask is still used. Routine activation keeps `askMargin = clearMargin`,
+preserving the blocking ask behavior for routine ambiguity.
 Standalone retrieval answer, document search, SDK retrieval, and MCP retrieval
 surfaces do not ask clarifying questions.
 

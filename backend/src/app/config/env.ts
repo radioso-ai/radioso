@@ -33,6 +33,7 @@ const otelTraceSampler = emptyStringToUndefined(z.enum([
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(8080),
+  TRUST_PROXY_HOPS: z.coerce.number().int().nonnegative().default(0),
   OBSERVABILITY_ENABLED: booleanish(true),
   OBSERVABILITY_SERVICE_NAME: z.string().min(1).default("radioso-api"),
   OBSERVABILITY_ENVIRONMENT: emptyStringToUndefined(z.string().min(1)),

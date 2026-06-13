@@ -342,6 +342,12 @@ Website crawls run in a separate process from document chunking and embeddings. 
 
 Set `WEBSITE_CRAWLER_ENABLED=false` to disable the crawler entirely. The API hides the crawl routes (404), the dashboard hides the "Crawl Website" button, and the crawler worker entrypoints exit on startup so the container can be removed.
 
+### Reverse proxy client IPs
+
+Radioso keeps Express `trust proxy` disabled by default. Set `TRUST_PROXY_HOPS` only when the backend runs behind trusted reverse proxies and rate limits must use the real client IP from `X-Forwarded-For`.
+
+`TRUST_PROXY_HOPS=0` is the secure default for self-hosted deployments without a proxy. For GCP Cloud Run behind the frontend API proxy, the value is typically `1` or `2` depending on the exact topology. Set the exact number of trusted hops for your deployment.
+
 ### Public chat rate limits
 
 Public chat and website embed rate limits are configured by operators, not workspace users. The optional `PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS`, `PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS`, and `PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS` environment variables tune those limits; backend defaults apply when they are unset.

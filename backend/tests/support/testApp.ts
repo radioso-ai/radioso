@@ -161,6 +161,7 @@ import {
 export const createTestEnv = (): Env => ({
   NODE_ENV: "test",
   PORT: 8080,
+  TRUST_PROXY_HOPS: 0,
   OBSERVABILITY_ENABLED: true,
   OBSERVABILITY_SERVICE_NAME: "radioso-api",
   OBSERVABILITY_ENVIRONMENT: "test",

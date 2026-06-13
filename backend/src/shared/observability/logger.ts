@@ -4,6 +4,7 @@ import { pinoHttp } from "pino-http";
 import type { ProductAnalyticsEvent } from "../analytics/productAnalyticsTypes.js";
 import type { ErrorEvent } from "../errors/errorTypes.js";
 import type { CorrelationFields } from "./telemetry/correlation.js";
+import { redactedValue, shouldRedactKey } from "./telemetry/redactionPolicy.js";
 
 export const createLogger = (level = process.env.NODE_ENV === "production" ? "info" : "debug") =>
   pino({ level });
@@ -147,9 +148,30 @@ export const extractRetrievalLogFields = (metadata?: Record<string, unknown>): R
   };
 };
 
+const httpCredentialHeaderNames = ["cookie", "authorization", "x-radioso-public-session", "set-cookie"].filter(shouldRedactKey);
+const httpRequestCredentialHeaderNames = httpCredentialHeaderNames.filter((headerName) => headerName !== "set-cookie");
+const httpResponseCredentialHeaderNames = httpCredentialHeaderNames.filter((headerName) => headerName === "set-cookie");
+const httpHeaderRedactPath = (target: "req" | "res", headerName: string): string =>
+  `${target}.headers["${headerName}"]`;
+
+const httpLoggerRedactPaths = [
+  ...httpRequestCredentialHeaderNames.map((headerName) => httpHeaderRedactPath("req", headerName)),
+  httpHeaderRedactPath("req", "x-workspace-id"),
+  ...httpResponseCredentialHeaderNames.map((headerName) => httpHeaderRedactPath("res", headerName)),
+  // Anonymous-session id response headers set in app/http/middleware/resolveAnonymousSession.ts.
+  // They carry the same raw session id as set-cookie but are not classified as sensitive by
+  // shouldRedactKey, so they must be redacted explicitly here (mirrors the set-cookie/session-id leak).
+  httpHeaderRedactPath("res", "x-radioso-anonymous-session"),
+  httpHeaderRedactPath("res", "x-radioso-public-session-id"),
+];
+
 export const createHttpLogger = (logger: AppLogger): RequestHandler =>
   pinoHttp({
     logger,
+    redact: {
+      paths: httpLoggerRedactPaths,
+      censor: redactedValue(),
+    },
     customProps: (req: { id?: string | number }) => ({
       requestId: req.id,
     }),

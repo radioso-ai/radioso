@@ -3,6 +3,8 @@
 import { Fragment, type CSSProperties, type ReactNode, useId, useState } from 'react'
 import { ChevronDown, ExternalLink, FileText } from 'lucide-react'
 
+import { isSafeHref } from '../markdown/markdown-content'
+
 const URL_REGEX = /https?:\/\/[^\s<>)"']+/g
 
 export function linkifyText(text: string): ReactNode[] {
@@ -15,17 +17,19 @@ export function linkifyText(text: string): ReactNode[] {
     if (index > lastIndex) {
       parts.push(text.slice(lastIndex, index))
     }
-    parts.push(
-      <a
-        key={index}
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-[var(--message-link-fg,var(--color-primary))] underline underline-offset-4 hover:text-[var(--message-link-hover-fg,var(--color-primary))]"
-      >
-        {url}
-      </a>,
-    )
+    parts.push(isSafeHref(url)
+      ? (
+          <a
+            key={index}
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[var(--message-link-fg,var(--color-primary))] underline underline-offset-4 hover:text-[var(--message-link-hover-fg,var(--color-primary))]"
+          >
+            {url}
+          </a>
+        )
+      : <span key={index}>{url}</span>)
     lastIndex = index + url.length
   }
 
@@ -175,6 +179,7 @@ const SourceChip = ({
 }) => {
   const label = getCitationLabel(citation, index)
   const sourceUrl = citation.sourceUrl?.trim()
+  const safeSourceUrl = sourceUrl && isSafeHref(sourceUrl) ? sourceUrl : null
 
   return (
     <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-card px-2 py-0.5 text-xs leading-5">
@@ -206,9 +211,9 @@ const SourceChip = ({
           <span className="truncate">{label}</span>
         </span>
       )}
-      {sourceUrl ? (
+      {safeSourceUrl ? (
         <a
-          href={sourceUrl}
+          href={safeSourceUrl}
           target="_blank"
           rel="noopener noreferrer"
           onClick={(event) => {
@@ -218,15 +223,19 @@ const SourceChip = ({
               citationIndex: index,
               documentId: citation.documentId,
               chunkId: citation.chunkId,
-              destinationUrl: sourceUrl,
+              destinationUrl: safeSourceUrl,
             })
           }}
           className="inline-flex shrink-0 items-center text-primary hover:text-primary/80"
           aria-label={`Open ${label} in a new tab`}
-          title={sourceUrl}
+          title={safeSourceUrl}
         >
           <ExternalLink className="h-3 w-3" aria-hidden="true" />
         </a>
+      ) : sourceUrl ? (
+        <span className="inline-flex min-w-0 truncate text-muted-foreground" title={sourceUrl}>
+          {sourceUrl}
+        </span>
       ) : null}
     </span>
   )

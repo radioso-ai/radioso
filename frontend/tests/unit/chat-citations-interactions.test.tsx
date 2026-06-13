@@ -89,4 +89,53 @@ describe('AssistantMessageContent link analytics', () => {
       destinationUrl: 'https://example.com/guide?token=secret#intro',
     }))
   })
+
+  it('renders unsafe citation source URLs as non-clickable text', async () => {
+    await act(async () => {
+      root.render(
+        <AssistantMessageContent
+          content="Sources are available."
+          citations={[
+            {
+              documentId: 'document-safe',
+              chunkId: 'chunk-safe',
+              title: 'Safe Source',
+              sourceUrl: 'https://docs.example.com/safe',
+            },
+            {
+              documentId: 'document-unsafe',
+              chunkId: 'chunk-unsafe',
+              title: 'Unsafe Source',
+              sourceUrl: 'javascript:alert(1)',
+            },
+            {
+              documentId: 'document-data',
+              chunkId: 'chunk-data',
+              title: 'Data Source',
+              sourceUrl: 'data:text/html,<script>alert(1)</script>',
+            },
+          ]}
+          answerSegments={[
+            {
+              text: 'Sources are available.',
+              citationIndices: [0, 1, 2],
+            },
+          ]}
+          onOpenDocument={vi.fn().mockResolvedValue('opened')}
+        />,
+      )
+    })
+
+    const sourcesToggle = Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent?.includes('Sources'))
+    await act(async () => {
+      sourcesToggle?.click()
+    })
+
+    expect(container.querySelector<HTMLAnchorElement>('a[href="https://docs.example.com/safe"]')).not.toBeNull()
+    expect(container.querySelector<HTMLAnchorElement>('a[href^="javascript:"]')).toBeNull()
+    expect(container.querySelector<HTMLAnchorElement>('a[href^="data:"]')).toBeNull()
+    expect(container.textContent).toContain('javascript:alert(1)')
+    expect(container.textContent).toContain('data:text/html,<script>alert(1)</script>')
+  })
 })

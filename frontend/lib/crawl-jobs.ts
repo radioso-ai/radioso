@@ -92,6 +92,35 @@ export interface CrawlJobMergeResult {
   deletedJobIdsToForget: string[]
 }
 
+// The single source of truth for *why* a crawl produced no usable pages: the
+// reasons the crawler itself recorded per page (e.g. "Skipped low-quality
+// extracted content"). Returns the most frequently recorded reason so the UI
+// can surface it instead of guessing a cause that contradicts the crawl log.
+export function summarizeCrawlFailureReason(
+  failures: ReadonlyArray<{ reason: string }> | null | undefined,
+): string | null {
+  if (!failures || failures.length === 0) {
+    return null
+  }
+  const counts = new Map<string, number>()
+  for (const failure of failures) {
+    const reason = failure.reason?.trim()
+    if (!reason) {
+      continue
+    }
+    counts.set(reason, (counts.get(reason) ?? 0) + 1)
+  }
+  let topReason: string | null = null
+  let topCount = 0
+  for (const [reason, count] of counts) {
+    if (count > topCount) {
+      topReason = reason
+      topCount = count
+    }
+  }
+  return topReason
+}
+
 export function getCrawlPageIssueSummaries(
   job: Pick<WebsiteCrawlJobSummary, 'failedPageCount' | 'skippedPageCount'> | null | undefined,
 ): Array<{ kind: 'failed' | 'skipped'; label: string }> {

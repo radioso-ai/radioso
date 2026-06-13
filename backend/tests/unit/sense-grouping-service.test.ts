@@ -7,6 +7,7 @@ import {
   type SenseLabelGateway,
   type SenseLabelGroup,
 } from "../../src/modules/retrieval/services/senseGroupingService.js";
+import { evaluateRetrievalSenseClarification } from "../../src/modules/retrieval/services/retrievalSenseClarification.js";
 import type { RetrievedCandidate } from "../../src/modules/retrieval/public.js";
 import {
   dominantHathaYogaCandidates,
@@ -325,6 +326,67 @@ describe("SenseGroupingService", () => {
       }),
     ]);
     expect(candidates.map((candidate) => candidate.label)).not.toContain("Shipping FAQ");
+  });
+
+  it("treats rejected LLM labels as missing so retrieval sense clarification can auto-pick", async () => {
+    const labelGateway = {
+      label: vi.fn<(input: LabelInput) => LabelOutput>(async () => {
+        throw new Error("rate limited");
+      }),
+    };
+    const service = new SenseGroupingService({
+      policy,
+      embeddingReader: { readChunkEmbeddings: vi.fn(async () => separatedEmbeddings()) },
+      labelGateway,
+    });
+
+    const candidates = await service.detect({
+      workspaceId: "workspace-1",
+      question: "Can I get my money back?",
+      rankedCandidates: sameShapeCandidates({
+        leftTitle: "Refund Policy",
+        leftSimilarities: [0.82, 0.8],
+        rightTitle: "Shipping FAQ",
+        rightSimilarities: [0.8, 0.78],
+      }),
+      conversationLanguage: "en",
+    });
+
+    expect(candidates).toEqual([
+      expect.objectContaining({
+        id: "doc-left",
+        label: "doc-left",
+        labelStatus: "missing",
+      }),
+      expect.objectContaining({
+        id: "doc-right",
+        label: "doc-right",
+        labelStatus: "missing",
+      }),
+    ]);
+
+    await expect(evaluateRetrievalSenseClarification({
+      detector: { detect: vi.fn(async () => candidates) },
+      workspaceId: "workspace-1",
+      rankedCandidates: [],
+      conversationId: "conversation-1",
+      messageId: "message-1",
+      originalQuery: "Can I get my money back?",
+      conversationLanguage: "en",
+      policy: { floor: 0, margin: 0.15, askMargin: 0.03, maxOptions: 4 },
+      suppressAsk: false,
+      expiresAt: new Date("2099-01-01T00:00:00.000Z"),
+    })).resolves.toMatchObject({
+      kind: "proceed",
+      documentScope: ["doc-left"],
+      stage: expect.objectContaining({
+        outputs: expect.objectContaining({
+          decision: "auto_picked",
+          reason: "label_fallback",
+          chosenCandidateId: "doc-left",
+        }),
+      }),
+    });
   });
 
   it("returns no candidates when structurally qualified groups are not semantically separated", async () => {

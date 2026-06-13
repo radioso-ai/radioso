@@ -164,12 +164,13 @@ export class SenseGroupingService {
       separation: group.separation,
     }));
     const bestAverageSimilarity = Math.max(...separated.map((group) => group.averageSimilarity));
-    const labels = new Map((await this.options.labelGateway.label({
+    const labelResults = await this.options.labelGateway.label({
       question: input.question,
       groups: labelGroups,
       conversationLanguage: input.conversationLanguage,
       usageContext: input.usageContext,
-    })).map((label) => [label.id, label]));
+    }).catch(() => []);
+    const labels = new Map(labelResults.map((label) => [label.id, label]));
 
     return separated.map((group) => {
       const label = labels.get(group.documentId);

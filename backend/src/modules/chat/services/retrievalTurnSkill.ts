@@ -85,6 +85,7 @@ export class RetrievalAnswerComposer {
       hasRetrievedContexts: session.retrieval.contexts.length > 0,
       conversationIntentSnapshot,
       steering: session.directiveSteering?.rules ?? [],
+      retrievalSenseOfferAlternatives: session.retrievalSenseOfferAlternatives,
     }).systemPrompt;
   }
 

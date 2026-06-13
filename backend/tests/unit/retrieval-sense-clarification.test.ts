@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type {
   ConversationClarificationStore,
+  ConversationClarifier,
   ConversationRoutineStore,
   PendingClarification,
 } from "@radioso/conversation-contract";
@@ -160,6 +161,7 @@ const makeService = (input: {
   clarificationStore?: ConversationClarificationStore;
   routineStore?: ConversationRoutineStore;
   detector?: { detect: ReturnType<typeof vi.fn> };
+  mapReply?: ConversationClarifier["mapReply"];
   route?: "retrieval" | "direct";
   chatGateway?: ChatGateway;
   directiveRuntime?: RouteScopedDirectiveRuntime;
@@ -194,11 +196,11 @@ const makeService = (input: {
     clarificationStore: input.clarificationStore,
     clarifier: {
       phraseQuestion: vi.fn(async () => "Which yoga sense do you mean?"),
-      mapReply: vi.fn(async () => ({ kind: "chosen" as const, id: "doc-hatha" })),
+      mapReply: input.mapReply ?? vi.fn(async () => ({ kind: "chosen" as const, id: "doc-hatha" })),
     },
     retrievalSenseDetector: input.detector as never,
     directiveSteering: input.directiveRuntime,
-    retrievalSenseClarificationPolicy: { floor: 0, margin: 0.15, maxOptions: 4 },
+    retrievalSenseClarificationPolicy: { floor: 0, margin: 0.15, askMargin: 0, maxOptions: 4 },
     routineStore: input.routineStore,
     routineProvider: input.routineStore
       ? { async forTurn() {
@@ -249,8 +251,10 @@ const captureDirectiveRuntime = (inputs: DirectiveSteerInput[]): RouteScopedDire
 });
 
 describe("retrieval sense clarification", () => {
-  it("asks instead of composing a grounded answer and stores pending retrieval_sense candidates", async () => {
+  it("answers with the strongest sense, offers alternatives in the answer prompt, and stores offer-mode pending candidates", async () => {
     let saved: PendingClarification | null = null;
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const answerInputs: ChatGatewayInput[] = [];
     const detector = {
       detect: vi.fn(async () => [
         { id: "doc-hatha", label: "Hatha yoga", confidence: 0.6, payload: { documentIds: ["doc-hatha"] } },
@@ -258,6 +262,8 @@ describe("retrieval sense clarification", () => {
       ]),
     };
     const service = makeService({
+      capturedRequests,
+      chatGateway: chatGateway({ answerInputs }),
       detector,
       clarificationStore: {
         loadPending: vi.fn(async () => null),
@@ -272,11 +278,17 @@ describe("retrieval sense clarification", () => {
       stream: false,
     });
 
-    expect(response.answer).toBe("Which yoga sense do you mean?");
+    expect(response.answer).toBe("Grounded answer");
+    expect(answerInputs).toHaveLength(1);
+    expect(answerInputs[0]?.systemPrompt).toContain("Raja yoga");
+    expect(answerInputs[0]?.systemPrompt).toMatch(/offer/i);
+    expect(capturedRequests.filter((request) => request.documentScope?.includes("doc-hatha")).map((request) => request.query))
+      .toEqual(["tell me about yoga", "tell me about yoga"]);
+    expect(response.citations?.map((citation) => citation.documentId)).toEqual(["doc-hatha"]);
     expect(saved).toMatchObject({
       source: "retrieval_sense",
       originalQuery: "tell me about yoga",
-      mode: "ask",
+      mode: "offer",
       candidates: [
         expect.objectContaining({ id: "doc-hatha", payload: { documentIds: ["doc-hatha"] } }),
         expect.objectContaining({ id: "doc-raja", payload: { documentIds: ["doc-raja"] } }),
@@ -286,7 +298,11 @@ describe("retrieval sense clarification", () => {
     expect(response.turnTrace?.spine.stages).toEqual(expect.arrayContaining([
       expect.objectContaining({
         kind: "clarification",
-        outputs: expect.objectContaining({ surface: "retrieval_sense", decision: "asked" }),
+        outputs: expect.objectContaining({
+          surface: "retrieval_sense",
+          decision: "offered",
+          chosenCandidateId: "doc-hatha",
+        }),
       }),
     ]));
   });
@@ -403,6 +419,82 @@ describe("retrieval sense clarification", () => {
     expect(directiveInputs.map((input) => input.turnContext?.query)).toContain(originalQuery);
     const persistedUserMessages = [...messageRepository.items.values()].flat().filter((message) => message.role === "user");
     expect(persistedUserMessages.map((message) => message.content)).toEqual([selectorReply]);
+  });
+
+  it("accepts an offered alternative by answering the original question scoped to the alternative documents", async () => {
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const answerInputs: ChatGatewayInput[] = [];
+    const originalQuery = "tell me about yoga";
+    const service = makeService({
+      capturedRequests,
+      chatGateway: chatGateway({ answerInputs }),
+      mapReply: vi.fn(async () => ({ kind: "chosen" as const, id: "doc-raja" })),
+      clarificationStore: {
+        loadPending: vi.fn(async () => ({
+          ...retrievalSensePending(originalQuery),
+          mode: "offer" as const,
+        })),
+        save: vi.fn(),
+        clear: vi.fn(),
+      },
+    });
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "raja",
+      stream: false,
+    });
+
+    expect(capturedRequests.filter((request) => request.documentScope?.includes("doc-raja")).map((request) => request.query))
+      .toEqual([originalQuery, originalQuery]);
+    expect(answerInputs).toHaveLength(1);
+    expect(answerInputs[0]?.query).toBe(originalQuery);
+    expect(response.citations?.map((citation) => citation.documentId)).toEqual(["doc-raja"]);
+  });
+
+  it("ignores an offer as a normal turn and loop-guards the same candidate set from being offered again", async () => {
+    let saved: PendingClarification | null = null;
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const detector = {
+      detect: vi.fn(async () => [
+        { id: "doc-hatha", label: "Hatha yoga", confidence: 0.6, payload: { documentIds: ["doc-hatha"] } },
+        { id: "doc-raja", label: "Raja yoga", confidence: 0.58, payload: { documentIds: ["doc-raja"] } },
+      ]),
+    };
+    const service = makeService({
+      capturedRequests,
+      detector,
+      mapReply: vi.fn(async () => ({ kind: "unrelated" as const })),
+      clarificationStore: {
+        loadPending: vi.fn(async () => ({
+          ...retrievalSensePending("tell me about yoga"),
+          mode: "offer" as const,
+        })),
+        save: vi.fn(async (pending) => { saved = pending; }),
+        clear: vi.fn(),
+      },
+    });
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "what does pricing include?",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("Grounded answer");
+    expect(saved).toBeNull();
+    expect(capturedRequests.filter((request) => request.documentScope?.includes("doc-hatha")).map((request) => request.query))
+      .toEqual(["what does pricing include?", "what does pricing include?"]);
+    expect(response.turnTrace?.spine.stages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: "clarification",
+        outputs: expect.objectContaining({
+          surface: "retrieval_sense",
+          decision: "auto_picked",
+          reason: "loop_guard",
+        }),
+      }),
+    ]));
   });
 
   it("composes the streaming resolved retrieval_sense answer from the original question", async () => {

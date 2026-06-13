@@ -22,6 +22,8 @@ export interface PendingClarificationResolution {
   resolvedPending: boolean;
   suppressNewClarification?: boolean;
   loopGuardCandidateIds?: string[];
+  source?: string;
+  offerOutcome?: "accepted_alternative" | "ignored";
   outcome?: "resolved" | "declined" | "expired";
   chosen?: { source: string; candidate: ClarificationCandidate; originalQuery?: string };
 }
@@ -81,21 +83,42 @@ export const resolvePendingClarification = async (input: {
 
   if (isExpired(pending)) {
     await input.store.clear({ sessionId: pending.sessionId, outcome: "expired" });
-    return { resolvedPending: true, suppressNewClarification: true, outcome: "expired" };
+    return {
+      resolvedPending: true,
+      suppressNewClarification: true,
+      outcome: "expired",
+    };
   }
 
   const mapping = await input.clarifier.mapReply({ candidates: pending.candidates, turn: input.turn });
   if (mapping.kind !== "chosen") {
     await input.store.clear({ sessionId: pending.sessionId, outcome: "declined" });
-    return { resolvedPending: true, suppressNewClarification: true, outcome: "declined" };
+    const mode = pending.mode ?? "ask";
+    if (mode === "offer") {
+      return {
+        resolvedPending: true,
+        source: pending.source,
+        outcome: "declined",
+        offerOutcome: "ignored",
+        loopGuardCandidateIds: candidateIds(pending),
+      };
+    }
+    return {
+      resolvedPending: true,
+      suppressNewClarification: true,
+      outcome: "declined",
+    };
   }
 
   await input.store.clear({ sessionId: pending.sessionId, outcome: "resolved" });
   const candidate = pending.candidates.find((item) => item.id === mapping.id);
+  const candidateIndex = pending.candidates.findIndex((item) => item.id === mapping.id);
+  const mode = pending.mode ?? "ask";
   return {
     resolvedPending: true,
     suppressNewClarification: true,
     outcome: "resolved",
+    ...(mode === "offer" && candidateIndex > 0 ? { offerOutcome: "accepted_alternative" as const } : {}),
     ...(candidate
       ? {
           chosen: {

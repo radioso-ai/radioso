@@ -732,14 +732,14 @@ export class ChatService {
       // clarification forces this turn through grounded retrieval scoped to the chosen
       // sense — the short answer ("Hatha", "the first one") would otherwise route
       // direct and silently drop the document scope.
-      const routing = await this.routeTurn(input, session);
       const resolvedRetrievalSense = clarification.resolution?.kind === "retrieval_sense";
-      const groundTurn = resolvedRetrievalSense || routing.route === CHAT_TURN_ROUTE.RETRIEVAL;
       const retrievalInput = retrievalInputForResolvedSense(input, clarification.resolution);
+      const routing = await this.routeTurn(retrievalInput, session);
+      const groundTurn = resolvedRetrievalSense || routing.route === CHAT_TURN_ROUTE.RETRIEVAL;
       session = this.withResponseLanguage(session, await responseLanguagePromise);
       session = groundTurn
         ? await this.chatSessionPreparer.prepareRetrieval(retrievalInput, session, routing.framing)
-        : await this.chatSessionPreparer.prepareDirect(input, session, routing.framing);
+        : await this.chatSessionPreparer.prepareDirect(retrievalInput, session, routing.framing);
       const answerStartedAt = Date.now();
       const clarificationTurn = groundTurn
         ? await this.maybeClarifyRetrievalSense({
@@ -751,7 +751,7 @@ export class ChatService {
         : null;
       if (clarificationTurn?.kind === "continue" && clarificationTurn.documentScope) {
         session = await this.chatSessionPreparer.prepareRetrieval({
-          ...input,
+          ...retrievalInput,
           documentScope: clarificationTurn.documentScope,
         }, session, routing.framing);
       }
@@ -901,14 +901,14 @@ export class ChatService {
       // clarification forces this turn through grounded retrieval scoped to the chosen
       // sense — the short answer ("Hatha", "the first one") would otherwise route
       // direct and silently drop the document scope.
-      const routing = await this.routeTurn(input, session);
       const resolvedRetrievalSense = clarification.resolution?.kind === "retrieval_sense";
-      const groundTurn = resolvedRetrievalSense || routing.route === CHAT_TURN_ROUTE.RETRIEVAL;
       const retrievalInput = retrievalInputForResolvedSense(input, clarification.resolution);
+      const routing = await this.routeTurn(retrievalInput, session);
+      const groundTurn = resolvedRetrievalSense || routing.route === CHAT_TURN_ROUTE.RETRIEVAL;
       session = this.withResponseLanguage(session, await responseLanguagePromise);
       session = groundTurn
         ? await this.chatSessionPreparer.prepareRetrieval(retrievalInput, session, routing.framing)
-        : await this.chatSessionPreparer.prepareDirect(input, session, routing.framing);
+        : await this.chatSessionPreparer.prepareDirect(retrievalInput, session, routing.framing);
       const answerStartedAt = Date.now();
       const clarificationTurn = groundTurn
         ? await this.maybeClarifyRetrievalSense({
@@ -920,7 +920,7 @@ export class ChatService {
         : null;
       if (clarificationTurn?.kind === "continue" && clarificationTurn.documentScope) {
         session = await this.chatSessionPreparer.prepareRetrieval({
-          ...input,
+          ...retrievalInput,
           documentScope: clarificationTurn.documentScope,
         }, session, routing.framing);
       }

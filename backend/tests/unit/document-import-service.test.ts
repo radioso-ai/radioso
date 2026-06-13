@@ -61,6 +61,39 @@ describe("document import service", () => {
     expect(document?.title).toBe("Customer Handbook");
   });
 
+  it("accepts markdown uploads and title-cases a lower-cased filename", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const storage = new InMemoryDocumentStorage();
+    const dispatcher = {
+      dispatch: vi.fn().mockResolvedValue(undefined),
+      dispatchMany: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = new DocumentImportService(
+      documentRepository,
+      createAuditService(),
+      storage,
+      undefined,
+      jobRepository,
+      dispatcher,
+    );
+
+    const response = await service.importDocument({
+      workspaceId: "workspace-1",
+      filename: "shipping-faq.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from("# Shipping FAQ\n\nText", "utf8"),
+    });
+
+    const document = await documentRepository.findByIdAndWorkspaceId(response.documentId, "workspace-1");
+    expect(document).toMatchObject({
+      title: "Shipping Faq",
+      sourceKind: "uploaded_file",
+      sourceFilename: "shipping-faq.md",
+    });
+  });
+
   it("rejects unsupported file types before storing them", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const storage = new InMemoryDocumentStorage();

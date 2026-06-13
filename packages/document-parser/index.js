@@ -1,14 +1,17 @@
 import { parseDocx } from "./parsers/docx.js";
+import { parseMarkdown } from "./parsers/markdown.js";
 import { parsePdf } from "./parsers/pdf.js";
 import { parseTxt } from "./parsers/txt.js";
 import { parseXlsx } from "./parsers/xlsx.js";
 import { DocumentParserError } from "./errors.js";
 
-export const SUPPORTED_DOCUMENT_TYPES = ["pdf", "txt", "docx", "xlsx"];
+export const SUPPORTED_DOCUMENT_TYPES = ["pdf", "txt", "md", "docx", "xlsx"];
 
 const MIME_TYPE_MAP = new Map([
   ["application/pdf", "pdf"],
   ["text/plain", "txt"],
+  ["text/markdown", "md"],
+  ["text/x-markdown", "md"],
   ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx"],
   ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"],
 ]);
@@ -16,6 +19,8 @@ const MIME_TYPE_MAP = new Map([
 const EXTENSION_TYPE_MAP = new Map([
   [".pdf", "pdf"],
   [".txt", "txt"],
+  [".md", "md"],
+  [".markdown", "md"],
   [".docx", "docx"],
   [".xlsx", "xlsx"],
 ]);
@@ -23,6 +28,7 @@ const EXTENSION_TYPE_MAP = new Map([
 const PARSERS = {
   pdf: parsePdf,
   txt: parseTxt,
+  md: parseMarkdown,
   docx: parseDocx,
   xlsx: parseXlsx,
 };

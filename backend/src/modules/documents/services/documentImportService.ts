@@ -32,12 +32,23 @@ export interface DocumentImportInput {
   usageReservation?: UsageLimitReservation;
 }
 
+// Capitalize the first character of each whitespace-delimited word so a derived
+// title like "shipping faq" reads as "Shipping Faq" instead of looking broken.
+// Uses locale-aware casing and is a no-op for scripts without case distinctions.
+const toTitleCase = (value: string): string =>
+  value
+    .split(" ")
+    .map((word) => (word ? word.charAt(0).toLocaleUpperCase() + word.slice(1) : word))
+    .join(" ");
+
 const deriveTitleFromFilename = (filename: string): string =>
-  filename
-    .replace(/\.[^.]+$/, "")
-    .replace(/[-_]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  toTitleCase(
+    filename
+      .replace(/\.[^.]+$/, "")
+      .replace(/[-_]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
 
 export class DocumentImportService {
   constructor(

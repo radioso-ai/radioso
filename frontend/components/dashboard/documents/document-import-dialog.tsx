@@ -37,7 +37,7 @@ export function DocumentImportDialog({
         <DialogHeader>
           <DialogTitle>Import Document</DialogTitle>
           <DialogDescription>
-            Upload a PDF, TXT, DOCX, or XLSX file to add it to your knowledge base.
+            Upload a PDF, Markdown, TXT, DOCX, or XLSX file to add it to your knowledge base.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={onSubmit} className="mt-4 space-y-4">

@@ -8,6 +8,7 @@ import {
   mergeCrawlJobs,
   parseCrawlForm,
   runSourceCrawlAction,
+  summarizeCrawlFailureReason,
 } from '@/lib/crawl-jobs'
 
 const baseJob = (overrides: Partial<WebsiteCrawlJobSummary>): WebsiteCrawlJobSummary => ({
@@ -25,6 +26,32 @@ const baseJob = (overrides: Partial<WebsiteCrawlJobSummary>): WebsiteCrawlJobSum
   updatedAt: '2026-05-11T10:00:00.000Z',
   completedAt: null,
   ...overrides,
+})
+
+describe('summarizeCrawlFailureReason', () => {
+  it('returns null when there are no recorded failures', () => {
+    expect(summarizeCrawlFailureReason([])).toBeNull()
+    expect(summarizeCrawlFailureReason(null)).toBeNull()
+  })
+
+  it('returns the most frequently recorded crawl reason', () => {
+    expect(
+      summarizeCrawlFailureReason([
+        { sourceUrl: 'https://example.com/a', reason: 'Skipped low-quality extracted content' },
+        { sourceUrl: 'https://example.com/b', reason: 'Skipped low-quality extracted content' },
+        { sourceUrl: 'https://example.com/c', reason: 'Page did not contain crawlable content' },
+      ]),
+    ).toBe('Skipped low-quality extracted content')
+  })
+
+  it('ignores blank reasons', () => {
+    expect(
+      summarizeCrawlFailureReason([
+        { sourceUrl: 'https://example.com/a', reason: '   ' },
+        { sourceUrl: 'https://example.com/b', reason: 'Page URL was invalid' },
+      ]),
+    ).toBe('Page URL was invalid')
+  })
 })
 
 describe('parseCrawlForm', () => {

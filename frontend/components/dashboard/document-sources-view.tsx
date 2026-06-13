@@ -8,6 +8,7 @@ import {
   FileText,
   Pause,
   Play,
+  Plus,
   RefreshCw,
   ScrollText,
   Settings2,
@@ -76,6 +77,12 @@ const formatDate = (value: string | null) => {
   return Number.isNaN(date.getTime()) ? 'Never' : date.toLocaleDateString()
 }
 
+// Only source kinds that pull from an external system have a sync concept.
+// Push-only kinds (manual uploads, API ingestion) have no "last sync", so
+// rendering "Never" for them reads like an error.
+const SYNCING_SOURCE_KINDS = new Set<DocumentSourceListItem['kind']>(['website', 'connector'])
+const sourceHasSyncConcept = (kind: DocumentSourceListItem['kind']) => SYNCING_SOURCE_KINDS.has(kind)
+
 const connectorIdFromExternalId = (externalId: string | null): string | null => {
   if (!externalId) return null
   // Connector source external ids use "<connectorId>:<resourceId>" so resource
@@ -87,6 +94,9 @@ const connectorIdFromExternalId = (externalId: string | null): string | null => 
 
 interface DocumentSourcesViewProps {
   onViewDocumentsForSource: (sourceId: string) => void
+  // Optional add-source entry point (opens the website-crawl flow). Omitted when
+  // crawling is unavailable for the workspace.
+  onAddSource?: () => void
 }
 
 const splitPatterns = (value: string): string[] =>
@@ -316,7 +326,7 @@ function SourceExpandedPanel({
   )
 }
 
-export function DocumentSourcesView({ onViewDocumentsForSource }: DocumentSourcesViewProps) {
+export function DocumentSourcesView({ onViewDocumentsForSource, onAddSource }: DocumentSourcesViewProps) {
   const { activeWorkspaceId, isLoading: isWorkspaceLoading } = useWorkspace()
   const [sources, setSources] = useState<DocumentSourceListItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -576,6 +586,12 @@ export function DocumentSourcesView({ onViewDocumentsForSource }: DocumentSource
             Sources appear after website crawls or uploaded files create persisted source records.
           </p>
         </div>
+        {onAddSource ? (
+          <Button type="button" size="sm" onClick={onAddSource}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add source
+          </Button>
+        ) : null}
       </div>
     )
   }
@@ -637,7 +653,9 @@ export function DocumentSourcesView({ onViewDocumentsForSource }: DocumentSource
                       <p className="text-right text-sm text-muted-foreground">{source.documentCount}</p>
                     </div>
                     <div className="w-36 px-4 py-3">
-                      <p className="text-sm text-muted-foreground">{formatDate(source.lastSyncedAt)}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {sourceHasSyncConcept(source.kind) ? formatDate(source.lastSyncedAt) : '—'}
+                      </p>
                     </div>
                     <div className="w-28 px-2 py-3">
                       <div

@@ -50,7 +50,7 @@ import { getSafeDocumentsPage } from '@/lib/documents-pagination'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 
 const PAGE_SIZE = 100
-const SUPPORTED_IMPORT_EXTENSIONS = '.pdf,.txt,.docx,.xlsx'
+const SUPPORTED_IMPORT_EXTENSIONS = '.pdf,.txt,.md,.markdown,.docx,.xlsx'
 const CRAWL_MAX_LIMIT = 1000
 const CRAWL_JOBS_SINCE_MINUTES = 30
 
@@ -68,6 +68,10 @@ interface DocumentsViewProps {
   onSelectedDocumentChange?: (documentId: string | null) => void
   onboarding: WorkspaceOnboardingState
   navigation?: ReactNode
+  // When set, open the website-crawl dialog on mount (used by the Sources tab's
+  // "Add source" action, which routes here so the canonical crawl flow is reused).
+  autoOpenCrawl?: boolean
+  onAutoOpenCrawlHandled?: () => void
 }
 
 const parseMetadata = (raw: string): Record<string, string | number | boolean | null> | null => {
@@ -89,6 +93,8 @@ export function DocumentsView({
   onSelectedDocumentChange,
   onboarding,
   navigation,
+  autoOpenCrawl = false,
+  onAutoOpenCrawlHandled,
 }: DocumentsViewProps) {
   const router = useRouter()
   const justClosedDocumentIdRef = useRef<string | null>(null)
@@ -460,6 +466,23 @@ export function DocumentsView({
     resetCrawlDialog()
     setIsCrawlDialogOpen(true)
   }
+
+  const handleRetryCrawl = useCallback((job: WebsiteCrawlJobSummary) => {
+    resetCrawlDialog()
+    setCrawlUrl(job.requestedUrl)
+    setIsCrawlDialogOpen(true)
+  }, [resetCrawlDialog])
+
+  useEffect(() => {
+    if (!autoOpenCrawl) {
+      return
+    }
+    if (websiteCrawlerEnabled) {
+      resetCrawlDialog()
+      setIsCrawlDialogOpen(true)
+    }
+    onAutoOpenCrawlHandled?.()
+  }, [autoOpenCrawl, websiteCrawlerEnabled, resetCrawlDialog, onAutoOpenCrawlHandled])
 
   const openDocumentPage = useCallback(async (documentId: string) => {
     justClosedDocumentIdRef.current = null
@@ -1080,6 +1103,7 @@ export function DocumentsView({
                   <DocumentCrawlJobsBanner
                     jobs={visibleCrawlJobs}
                     onDismiss={(job) => { void dismissCrawlJob(job) }}
+                    onRetry={handleRetryCrawl}
                     dismissingJobIds={dismissingCrawlJobIds}
                   />
                 ) : null}

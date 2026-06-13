@@ -57,6 +57,8 @@ export type FetchedPage = {
   normalizedContentHash?: string | null;
 };
 
+export type ValidateNavigationUrl = (url: string) => Promise<void> | void;
+
 export type CrawledPageResult = FetchedPage & {
   frontierUrl: string;
   status: "success" | "failed" | "unchanged";
@@ -71,6 +73,7 @@ export type FetchPage = (
     scopeBaseUrl?: string | null;
     userAgent?: string;
     preserveContentLinks?: boolean;
+    validateNavigationUrl?: ValidateNavigationUrl;
     signal?: AbortSignal;
   }
 ) => Promise<FetchedPage>;
@@ -204,6 +207,7 @@ const fetchText = async (
   options?: {
     signal?: AbortSignal;
     userAgent?: string;
+    validateNavigationUrl?: ValidateNavigationUrl;
   }
 ): Promise<{
   ok: boolean;
@@ -213,10 +217,28 @@ const fetchText = async (
 }> => {
   const timeoutSignal = AbortSignal.timeout(15_000);
   const fetchSignal = options?.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
-  const response = await fetch(url, {
-    signal: fetchSignal,
-    ...(options?.userAgent ? { headers: { "User-Agent": options.userAgent } } : {})
-  });
+  let currentUrl = new URL(url).toString();
+  let response: Response | null = null;
+  for (let redirectCount = 0; redirectCount <= 10; redirectCount += 1) {
+    await options?.validateNavigationUrl?.(currentUrl);
+    response = await fetch(currentUrl, {
+      redirect: "manual",
+      signal: fetchSignal,
+      ...(options?.userAgent ? { headers: { "User-Agent": options.userAgent } } : {})
+    });
+    if (response.status < 300 || response.status >= 400) {
+      break;
+    }
+    const location = response.headers.get("location");
+    if (!location) {
+      break;
+    }
+    currentUrl = new URL(location, currentUrl).toString();
+    await options?.validateNavigationUrl?.(currentUrl);
+  }
+  if (!response) {
+    throw new Error("Text fetch produced no response");
+  }
   const bytes = Buffer.from(await response.arrayBuffer());
   const isGzip = bytes[0] === 0x1f && bytes[1] === 0x8b;
   return {
@@ -628,7 +650,8 @@ const assertPlainFetchAllowedByRobots = async (
   parsedRobotsUrl.pathname = "/robots.txt";
   const robots = await fetchText(parsedRobotsUrl.toString(), {
     signal: options?.signal,
-    userAgent: options?.userAgent
+    userAgent: options?.userAgent,
+    validateNavigationUrl: options?.validateNavigationUrl
   });
   if (robots.status === 404 || !robots.ok) {
     return;
@@ -651,6 +674,7 @@ const fetchPageWithPlainFetch = async (
 
   for (let redirectCount = 0; redirectCount <= 10; redirectCount += 1) {
     assertInScope(currentUrl);
+    await options?.validateNavigationUrl?.(currentUrl);
     await assertPlainFetchAllowedByRobots(currentUrl, options);
     response = await fetch(currentUrl, {
       redirect: "manual",
@@ -671,6 +695,7 @@ const fetchPageWithPlainFetch = async (
       break;
     }
     currentUrl = new URL(location, currentUrl).toString();
+    await options?.validateNavigationUrl?.(currentUrl);
   }
 
   if (!response) {
@@ -678,6 +703,7 @@ const fetchPageWithPlainFetch = async (
   }
 
   assertInScope(currentUrl);
+  await options?.validateNavigationUrl?.(currentUrl);
   if (BLOCKED_HTTP_STATUS_CODES.has(response.status)) {
     throw buildBlockedResponseError(response.status, response.headers.get("retry-after"));
   }
@@ -716,10 +742,12 @@ const fetchPageWithCrawlee: FetchPage = async (url, options) => {
       maxConcurrency: 1,
       maxRequestRetries: 0,
       useSessionPool: false,
-      respectRobotsTxtFile: options?.userAgent ? { userAgent: options.userAgent } : true,
+      respectRobotsTxtFile: false,
       preNavigationHooks: [
         async ({ request }, gotOptions) => {
           assertInScope(request.url);
+          await options?.validateNavigationUrl?.(request.url);
+          await assertPlainFetchAllowedByRobots(request.url, options);
           request.headers = {
             ...request.headers,
             ...(options?.userAgent ? { "User-Agent": options.userAgent } : {}),
@@ -728,10 +756,11 @@ const fetchPageWithCrawlee: FetchPage = async (url, options) => {
           };
           gotOptions.hooks ??= {};
           gotOptions.hooks.beforeRedirect ??= [];
-          gotOptions.hooks.beforeRedirect.push((redirectOptions) => {
+          gotOptions.hooks.beforeRedirect.push(async (redirectOptions) => {
             const redirectUrl = redirectOptions.url?.toString();
             if (redirectUrl) {
               assertInScope(redirectUrl);
+              await options?.validateNavigationUrl?.(redirectUrl);
             }
           });
         }
@@ -739,6 +768,7 @@ const fetchPageWithCrawlee: FetchPage = async (url, options) => {
       requestHandler: async ({ request, response, $ }) => {
         const loadedUrl = request.loadedUrl ?? request.url;
         assertInScope(loadedUrl);
+        await options?.validateNavigationUrl?.(loadedUrl);
         const statusCode = response?.statusCode ?? null;
         if (statusCode && BLOCKED_HTTP_STATUS_CODES.has(statusCode)) {
           throw buildBlockedResponseError(statusCode, readHeader(response?.headers, "retry-after"));
@@ -784,6 +814,7 @@ type CrawlSiteParams = {
   seedPendingUrls?: string[];
   includeBaseUrl?: boolean;
   fetchPage?: FetchPage;
+  validateNavigationUrl?: ValidateNavigationUrl;
   getPageMetadata?: (
     url: string
   ) => Promise<{ etag?: string | null; lastModified?: string | null } | null>;
@@ -818,6 +849,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
     seedPendingUrls,
     includeBaseUrl,
     fetchPage = fetchPageWithCrawlee,
+    validateNavigationUrl,
     getPageMetadata,
     onDiscoveredUrl,
     onCandidateUrl,
@@ -977,7 +1009,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
       const robotsUrl = toOriginScopeUrl(baseUrl);
       const parsedRobotsUrl = new URL(robotsUrl);
       parsedRobotsUrl.pathname = "/robots.txt";
-      const robots = await fetchText(parsedRobotsUrl.toString(), { signal, userAgent });
+      const robots = await fetchText(parsedRobotsUrl.toString(), { signal, userAgent, validateNavigationUrl });
       if (robots.status === 404 || !robots.ok) {
         return [];
       }
@@ -989,7 +1021,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
           continue;
         }
         try {
-          const sitemap = await fetchText(sitemapUrl, { signal, userAgent });
+          const sitemap = await fetchText(sitemapUrl, { signal, userAgent, validateNavigationUrl });
           if (!sitemap.ok) {
             continue;
           }
@@ -1018,6 +1050,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
             scopeBaseUrl: baseUrl,
             userAgent,
             preserveContentLinks,
+            validateNavigationUrl,
             signal
           });
           signal?.throwIfAborted();

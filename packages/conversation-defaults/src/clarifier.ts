@@ -4,6 +4,7 @@ import type {
   ConversationClarifier,
   ConversationMessage,
   ConversationModelGateway,
+  ClarificationReplyMapInput,
   TurnContext,
 } from "@radioso/conversation-contract";
 
@@ -31,6 +32,35 @@ Return "declined" only when the user explicitly rejects every option (for exampl
 neither, none, or cancel). Return "unrelated" only when the reply changes the
 subject to something none of the options cover. When the reply plausibly points
 to one option, prefer "chosen" over "declined" or "unrelated".
+
+Options:
+{{options}}
+
+Latest reply:
+{{latestReply}}
+
+Return only JSON:
+{"kind":"chosen","id":"<option id>"} or {"kind":"declined"} or {"kind":"unrelated"}`;
+
+export const DEFAULT_CLARIFICATION_OFFER_REPLY_MAP_PROMPT = `Map the user's latest reply after an answer offered alternative interpretations.
+
+The options below are numbered in the same order they were offered to the user,
+so positional references resolve against that numbering. Judge by meaning in the
+conversation language.
+
+Return "chosen" only when the reply is selection-only: it picks one offered
+option without adding a new substantive question, request, task, or information
+need. Selection-only replies can name an option, paraphrase its label or
+description, use a positional or ordinal reference, or accept a single offered
+option.
+
+Return "unrelated" when the reply asks a new substantive question or makes a new
+request, even if it names, paraphrases, or refers to one of the offered options.
+The new turn should be handled normally instead of replaying the old question.
+
+Return "declined" only when the user explicitly rejects every option.
+
+Use only the option labels and descriptions below.
 
 Options:
 {{options}}
@@ -140,16 +170,19 @@ const parseReplyMapping = (
 export class DefaultClarifier implements ConversationClarifier {
   private readonly questionPromptTemplate: string;
   private readonly replyMapPromptTemplate: string;
+  private readonly offerReplyMapPromptTemplate: string;
 
   constructor(
     private readonly modelGateway: ConversationModelGateway,
     options: {
       questionPromptTemplate?: string;
       replyMapPromptTemplate?: string;
+      offerReplyMapPromptTemplate?: string;
     } = {},
   ) {
     this.questionPromptTemplate = options.questionPromptTemplate ?? DEFAULT_CLARIFICATION_QUESTION_PROMPT;
     this.replyMapPromptTemplate = options.replyMapPromptTemplate ?? DEFAULT_CLARIFICATION_REPLY_MAP_PROMPT;
+    this.offerReplyMapPromptTemplate = options.offerReplyMapPromptTemplate ?? DEFAULT_CLARIFICATION_OFFER_REPLY_MAP_PROMPT;
   }
 
   async phraseQuestion(input: { candidates: ClarificationCandidate[]; turn: TurnContext }): Promise<string> {
@@ -165,13 +198,19 @@ export class DefaultClarifier implements ConversationClarifier {
     return text.trim();
   }
 
-  async mapReply(input: { candidates: ClarificationCandidate[]; turn: TurnContext }): Promise<ClarificationReplyMapping> {
+  async mapReply(input: ClarificationReplyMapInput): Promise<ClarificationReplyMapping> {
     const exactChoice = mapExactReplyChoice(input.turn.inputEvent.content, input.candidates);
     if (exactChoice) {
       return exactChoice;
     }
 
-    const systemPrompt = renderPromptTemplate("chat/clarification-reply-map.md", this.replyMapPromptTemplate, {
+    const promptName = input.mode === "offer"
+      ? "chat/clarification-offer-reply-map.md"
+      : "chat/clarification-reply-map.md";
+    const promptTemplate = input.mode === "offer"
+      ? this.offerReplyMapPromptTemplate
+      : this.replyMapPromptTemplate;
+    const systemPrompt = renderPromptTemplate(promptName, promptTemplate, {
       options: optionsBlock(input.candidates),
       conversationLanguage: input.turn.inputEvent.locale ?? "the conversation language",
       latestReply: input.turn.inputEvent.content,

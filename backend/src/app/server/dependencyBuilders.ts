@@ -1084,6 +1084,7 @@ export const buildChatServices = (input: {
       {
         questionPromptTemplate: loadPromptTemplate("chat/clarification-question.md"),
         replyMapPromptTemplate: loadPromptTemplate("chat/clarification-reply-map.md"),
+        offerReplyMapPromptTemplate: loadPromptTemplate("chat/clarification-offer-reply-map.md"),
       },
     ),
     clarificationStore,

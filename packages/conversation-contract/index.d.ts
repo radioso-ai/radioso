@@ -435,10 +435,21 @@ export type ClarificationReplyMapping =
   | { kind: "declined" }
   | { kind: "unrelated" };
 
+export interface ClarificationReplyMapInput {
+  candidates: ClarificationCandidate[];
+  turn: TurnContext;
+  /**
+   * Pending clarification mode. Omitted callers keep the historical blocking
+   * clarification behavior; `offer` asks clarifiers to accept only selection-only
+   * replies and treat substantive follow-up requests as unrelated.
+   */
+  mode?: PendingClarificationMode;
+}
+
 /** LLM-backed clarifier port for phrasing questions and mapping free-text replies. */
 export interface ConversationClarifier {
   phraseQuestion(input: { candidates: ClarificationCandidate[]; turn: TurnContext }): Promise<string>;
-  mapReply(input: { candidates: ClarificationCandidate[]; turn: TurnContext }): Promise<ClarificationReplyMapping>;
+  mapReply(input: ClarificationReplyMapInput): Promise<ClarificationReplyMapping>;
 }
 
 export interface ConversationSkillDispatcher {

@@ -452,6 +452,38 @@ describe("retrieval sense clarification", () => {
     expect(response.citations?.map((citation) => citation.documentId)).toEqual(["doc-raja"]);
   });
 
+  it("answers a substantive follow-up that names an offered alternative as a normal new turn", async () => {
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const answerInputs: ChatGatewayInput[] = [];
+    const originalQuery = "tell me about yoga";
+    const followUp = "what does Raja yoga cost?";
+    const service = makeService({
+      capturedRequests,
+      chatGateway: chatGateway({ answerInputs }),
+      mapReply: vi.fn(async () => ({ kind: "unrelated" as const })),
+      clarificationStore: {
+        loadPending: vi.fn(async () => ({
+          ...retrievalSensePending(originalQuery),
+          mode: "offer" as const,
+        })),
+        save: vi.fn(),
+        clear: vi.fn(),
+      },
+    });
+
+    await service.answer({
+      workspaceId: "workspace-1",
+      query: followUp,
+      stream: false,
+    });
+
+    expect(capturedRequests.map((request) => request.query)).toEqual([followUp, followUp]);
+    expect(capturedRequests.some((request) => request.documentScope?.includes("doc-raja"))).toBe(false);
+    expect(answerInputs).toHaveLength(1);
+    expect(answerInputs[0]?.query).toBe(followUp);
+    expect(answerInputs[0]?.systemPrompt).not.toContain(originalQuery);
+  });
+
   it("ignores an offer as a normal turn and loop-guards the same candidate set from being offered again", async () => {
     let saved: PendingClarification | null = null;
     const capturedRequests: RetrievalPipelineRequest[] = [];

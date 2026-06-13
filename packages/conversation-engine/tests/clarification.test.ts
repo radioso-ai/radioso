@@ -407,6 +407,35 @@ describe("resolvePendingClarification", () => {
     });
   });
 
+  it("maps offer-mode replies with offer context so substantive follow-ups can be ignored", async () => {
+    const current = pending({ mode: "offer" });
+    const store = storeWith(current);
+    const clarifier = {
+      phraseQuestion: vi.fn(),
+      mapReply: vi.fn(async () => ({ kind: "unrelated" as const })),
+    };
+
+    const resolved = await resolvePendingClarification({
+      store,
+      clarifier,
+      turn: turn("what does Raja yoga cost?"),
+    });
+
+    expect(clarifier.mapReply).toHaveBeenCalledWith({
+      candidates: current.candidates,
+      turn: expect.objectContaining({ sessionId: "session_1" }),
+      mode: "offer",
+    });
+    expect(store.clear).toHaveBeenCalledWith({ sessionId: "session_1", outcome: "declined" });
+    expect(resolved).toEqual({
+      resolvedPending: true,
+      outcome: "declined",
+      source: "test_surface",
+      offerOutcome: "ignored",
+      loopGuardCandidateIds: ["alpha", "beta"],
+    });
+  });
+
   it("expires stale pending clarification without calling the mapper", async () => {
     const store = storeWith(pending({ expiresAt: new Date("2020-01-01T00:00:00.000Z") }));
     const clarifier = {

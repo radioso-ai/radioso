@@ -90,10 +90,14 @@ export const resolvePendingClarification = async (input: {
     };
   }
 
-  const mapping = await input.clarifier.mapReply({ candidates: pending.candidates, turn: input.turn });
+  const mode = pending.mode ?? "ask";
+  const mapping = await input.clarifier.mapReply({
+    candidates: pending.candidates,
+    turn: input.turn,
+    ...(mode === "offer" ? { mode } : {}),
+  });
   if (mapping.kind !== "chosen") {
     await input.store.clear({ sessionId: pending.sessionId, outcome: "declined" });
-    const mode = pending.mode ?? "ask";
     if (mode === "offer") {
       return {
         resolvedPending: true,
@@ -113,7 +117,6 @@ export const resolvePendingClarification = async (input: {
   await input.store.clear({ sessionId: pending.sessionId, outcome: "resolved" });
   const candidate = pending.candidates.find((item) => item.id === mapping.id);
   const candidateIndex = pending.candidates.findIndex((item) => item.id === mapping.id);
-  const mode = pending.mode ?? "ask";
   return {
     resolvedPending: true,
     suppressNewClarification: true,

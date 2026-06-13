@@ -26,8 +26,9 @@ The assistant can clarify on conversational chat surfaces in two cases:
 Routine overlap still uses a clarifying question when there is no clear priority
 winner. Retrieval-sense clarification is answer-first: when there is no clear
 winner, Radioso answers using the strongest sense and briefly offers the other
-intent-phrased option inline. It does not block the visitor with a menu unless
-the policy is changed away from the default answer-first band.
+intent-phrased option inline. It rarely blocks with a menu — only when two senses
+are statistically indistinguishable (their confidences fall within a small ask
+margin), where leading with an arbitrary pick would be worse than asking.
 
 Clarification text is an ordinary assistant message. It is generated from
 candidate labels and descriptions, not from raw document content or hard-coded

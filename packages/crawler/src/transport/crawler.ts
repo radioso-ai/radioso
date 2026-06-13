@@ -79,6 +79,8 @@ export type FetchPage = (
 ) => Promise<FetchedPage>;
 
 const BLOCKED_HTTP_STATUS_CODES = new Set([401, 403, 429]);
+const MAX_FETCH_RESPONSE_BYTES = 25 * 1024 * 1024;
+const MAX_DECOMPRESSED_BYTES = 50 * 1024 * 1024;
 
 const readNumericProperty = (input: Record<string, unknown>, name: string): number | undefined => {
   const value = input[name];
@@ -160,6 +162,66 @@ const readHeader = (headers: unknown, name: string): string | null => {
   return typeof value === "string" ? value : null;
 };
 
+const parseContentLength = (headers: Headers): number | null => {
+  const value = headers.get("content-length");
+  if (!value) {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+};
+
+const assertContentLengthWithinLimit = (headers: Headers): void => {
+  const contentLength = parseContentLength(headers);
+  if (contentLength !== null && contentLength > MAX_FETCH_RESPONSE_BYTES) {
+    throw new Error(`Fetch response content-length ${contentLength} exceeds the ${MAX_FETCH_RESPONSE_BYTES} byte response limit.`);
+  }
+};
+
+const readResponseBytes = async (response: Response): Promise<Buffer> => {
+  assertContentLengthWithinLimit(response.headers);
+  if (!response.body) {
+    return Buffer.alloc(0);
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_FETCH_RESPONSE_BYTES) {
+        throw new Error(`Fetch response body exceeds the ${MAX_FETCH_RESPONSE_BYTES} byte response limit.`);
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return Buffer.concat(chunks, totalBytes);
+};
+
+const decodeResponseBytes = (bytes: Buffer): Buffer => {
+  const isGzip = bytes[0] === 0x1f && bytes[1] === 0x8b;
+  if (!isGzip) {
+    return bytes;
+  }
+  try {
+    return gunzipSync(bytes, { maxOutputLength: MAX_DECOMPRESSED_BYTES });
+  } catch (error) {
+    if (error instanceof RangeError) {
+      throw new Error(`Gzip response exceeds the ${MAX_DECOMPRESSED_BYTES} byte decompressed response limit.`);
+    }
+    throw error;
+  }
+};
+
 const unique = <T>(values: T[]): T[] => [...new Set(values)];
 
 const toOriginScopeUrl = (rawUrl: string): string => {
@@ -239,13 +301,12 @@ const fetchText = async (
   if (!response) {
     throw new Error("Text fetch produced no response");
   }
-  const bytes = Buffer.from(await response.arrayBuffer());
-  const isGzip = bytes[0] === 0x1f && bytes[1] === 0x8b;
+  const bytes = await readResponseBytes(response);
   return {
     ok: response.ok,
     status: response.status,
     contentType: response.headers.get("content-type"),
-    body: (isGzip ? gunzipSync(bytes) : bytes).toString("utf8")
+    body: decodeResponseBytes(bytes).toString("utf8")
   };
 };
 
@@ -708,7 +769,7 @@ const fetchPageWithPlainFetch = async (
     throw buildBlockedResponseError(response.status, response.headers.get("retry-after"));
   }
 
-  const body = response.status === 304 ? "" : await response.text();
+  const body = response.status === 304 ? "" : (await readResponseBytes(response)).toString("utf8");
   if (!response.ok && response.status !== 304) {
     throw buildHttpResponseError(response.status, response.statusText, body);
   }

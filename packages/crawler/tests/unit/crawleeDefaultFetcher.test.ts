@@ -1,7 +1,11 @@
 import { createServer, type Server } from "node:http";
 import { AddressInfo } from "node:net";
+import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { crawlSite } from "../../src/index.js";
+
+const CRAWLER_MAX_FETCH_RESPONSE_BYTES = 25 * 1024 * 1024;
+const CRAWLER_MAX_DECOMPRESSED_BYTES = 50 * 1024 * 1024;
 
 const listen = async (
   handler: Parameters<typeof createServer>[0]
@@ -243,6 +247,80 @@ describe("default Crawlee fetcher", () => {
       text: `Fallback content.\n\n[Next](${baseUrl}/next)`,
       httpAttempted: true,
       transportUsed: "http"
+    }));
+  });
+
+  it("fails plain fetch pages when content-length exceeds the crawler response cap", async () => {
+    let pageAttempts = 0;
+    const html = Buffer.from("<html><head><title>Too large</title></head><body><main><p>Too large.</p></main></body></html>");
+    const oversizedBody = Buffer.concat([
+      html,
+      Buffer.alloc(CRAWLER_MAX_FETCH_RESPONSE_BYTES + 1 - html.length, " ")
+    ]);
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      pageAttempts += 1;
+      if (pageAttempts === 1) {
+        req.socket.destroy();
+        return;
+      }
+      res
+        .writeHead(200, {
+          "content-length": String(oversizedBody.length),
+          "content-type": "text/html; charset=utf-8"
+        })
+        .end(oversizedBody);
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 1
+    });
+
+    expect(pageAttempts).toBe(2);
+    expect(pages[0]).toEqual(expect.objectContaining({
+      status: "failed",
+      text: "",
+      links: [],
+      error: expect.stringContaining("exceeds the 26214400 byte response limit")
+    }));
+  });
+
+  it("fails when gzip-compressed robots.txt exceeds the decompressed text cap", async () => {
+    let pageAttempts = 0;
+    const compressedRobots = gzipSync(Buffer.alloc(CRAWLER_MAX_DECOMPRESSED_BYTES + 1, "a"));
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res
+          .writeHead(200, { "content-type": "text/plain; charset=utf-8" })
+          .end(compressedRobots);
+        return;
+      }
+      pageAttempts += 1;
+      if (pageAttempts === 1) {
+        req.socket.destroy();
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end("<html><head><title>Bomb</title></head><body><main><p>Bomb page.</p></main></body></html>");
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 1
+    });
+
+    expect(pages[0]).toEqual(expect.objectContaining({
+      status: "failed",
+      text: "",
+      links: [],
+      error: expect.stringContaining("exceeds the 52428800 byte decompressed response limit")
     }));
   });
 

@@ -155,20 +155,21 @@ export class SenseGroupingService {
       share: group.share,
       separation: group.separation,
     }));
+    const bestAverageSimilarity = Math.max(...separated.map((group) => group.averageSimilarity));
     const labels = new Map((await this.options.labelGateway.label({
       groups: labelGroups,
       conversationLanguage: input.conversationLanguage,
       usageContext: input.usageContext,
     })).map((label) => [label.id, label]));
 
-    return labelGroups.map((group) => {
-      const label = labels.get(group.id);
+    return separated.map((group) => {
+      const label = labels.get(group.documentId);
       return {
-        id: group.id,
-        label: label?.label?.trim() || group.documents[0]?.title || group.id,
+        id: group.documentId,
+        label: label?.label?.trim() || group.title || group.documentId,
         ...(label?.description ? { description: label.description } : {}),
-        confidence: confidenceFor(group.share, group.separation),
-        payload: { documentIds: group.documentIds },
+        confidence: confidenceFor(group.share, group.separation, group.averageSimilarity, bestAverageSimilarity),
+        payload: { documentIds: [group.documentId] },
       };
     });
   }
@@ -272,8 +273,18 @@ const minimumSeparation = (
   return distances.length > 0 ? Math.min(...distances) : 0;
 };
 
-const confidenceFor = (share: number, separation: number): number =>
-  Math.min(1, Number(((share + Math.min(1, separation)) / 2).toFixed(6)));
+const confidenceFor = (
+  share: number,
+  separation: number,
+  averageSimilarity: number,
+  bestAverageSimilarity: number,
+): number => {
+  const structuralConfidence = (share + Math.min(1, separation)) / 2;
+  const relevanceConfidence = bestAverageSimilarity > 0
+    ? Math.max(0, Math.min(1, averageSimilarity / bestAverageSimilarity))
+    : 1;
+  return Math.min(1, Number(((structuralConfidence + relevanceConfidence) / 2).toFixed(6)));
+};
 
 const extractJsonArray = (raw: string): string | null => {
   const start = raw.indexOf("[");

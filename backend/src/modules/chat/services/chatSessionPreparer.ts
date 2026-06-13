@@ -41,6 +41,8 @@ export interface PreparedSession {
   turnRoute: ChatTurnRoute;
   turnFraming?: TurnRouting["framing"];
   userMessage: MessageRecord;
+  /** What the user is effectively asking this turn; differs from the persisted user message for resolved selectors. */
+  effectiveQuery: string;
   pageContext?: AssistantPageContext | null;
   priorRewriteContinuityState?: RewriteContinuityState;
   /** Shared per-turn response language label detected from the user message and history. */
@@ -150,6 +152,7 @@ export class ChatSessionPreparer {
           turnRoute: CHAT_TURN_ROUTE.DIRECT,
           turnFraming: defaultTurnFraming(),
           userMessage,
+          effectiveQuery: input.query,
           pageContext: input.pageContext ?? null,
           priorRewriteContinuityState: rewriteContinuityState,
           // Only present to satisfy the PreparedSession shape; prepareRetrieval
@@ -165,6 +168,7 @@ export class ChatSessionPreparer {
       turnRoute,
       turnFraming: defaultTurnFraming(),
       userMessage,
+      effectiveQuery: input.query,
       pageContext: input.pageContext ?? null,
       priorRewriteContinuityState: rewriteContinuityState,
       ...this.stagedSpineFor(retrieval),
@@ -236,6 +240,7 @@ export class ChatSessionPreparer {
       retrieval,
       turnRoute,
       turnFraming: framing,
+      effectiveQuery: input.query,
       ...this.stagedSpineFor(retrieval),
     };
   }
@@ -270,6 +275,7 @@ export class ChatSessionPreparer {
         retrieval,
         turnRoute,
         turnFraming: framing,
+        effectiveQuery: input.query,
         ...this.stagedSpineFor(retrieval),
       };
     }
@@ -291,6 +297,7 @@ export class ChatSessionPreparer {
       retrieval,
       turnRoute: CHAT_TURN_ROUTE.DIRECT,
       turnFraming: framing,
+      effectiveQuery: input.query,
       ...this.stagedSpineFor(retrieval),
     };
   }

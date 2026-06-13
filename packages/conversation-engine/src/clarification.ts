@@ -23,7 +23,7 @@ export interface PendingClarificationResolution {
   suppressNewClarification?: boolean;
   loopGuardCandidateIds?: string[];
   outcome?: "resolved" | "declined" | "expired";
-  chosen?: { source: string; candidate: ClarificationCandidate };
+  chosen?: { source: string; candidate: ClarificationCandidate; originalQuery?: string };
 }
 
 const candidatePriority = (
@@ -96,7 +96,15 @@ export const resolvePendingClarification = async (input: {
     resolvedPending: true,
     suppressNewClarification: true,
     outcome: "resolved",
-    ...(candidate ? { chosen: { source: pending.source, candidate } } : {}),
+    ...(candidate
+      ? {
+          chosen: {
+            source: pending.source,
+            candidate,
+            ...(pending.originalQuery ? { originalQuery: pending.originalQuery } : {}),
+          },
+        }
+      : {}),
   };
 };
 

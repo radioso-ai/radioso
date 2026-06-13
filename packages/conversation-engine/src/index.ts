@@ -519,6 +519,8 @@ export class DefaultConversationEngine implements ConversationEngine {
         await input.clarificationStore.save({
           sessionId: input.sessionId,
           source: "routine_activation",
+          originalQuery: input.inputEvent.content,
+          mode: "ask",
           candidates: activation.candidates,
           askedEventId: responseEvent.id,
           status: "pending",

@@ -119,13 +119,15 @@ had been activated directly, including activation variables captured from the
 original ambiguous turn.
 
 If the user chooses a retrieval-sense candidate, the stored payload becomes a
-`documentScope` for the resolving turn. Retrieval then answers using only the
-chosen document group.
+`documentScope` for the resolving turn. Retrieval uses the original question
+from the turn that asked for clarification, scoped to the chosen document group.
+The short reply that chose an option is only used for mapping the choice.
 
 "None of these" and unrelated replies clear the pending clarification and the
 latest message proceeds as a normal turn. A turn that resolves a pending
 clarification does not create a new one in the same turn, and the same question
-is not asked twice in a row.
+is not asked twice in a row. The stored original question is nulled whenever the
+pending row becomes resolved, declined, or expired.
 
 ## Routines run before selection
 

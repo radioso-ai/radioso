@@ -15,5 +15,6 @@ describe("clarification metrics", () => {
     );
     expect(registry.renderPrometheus()).not.toContain("candidate");
     expect(registry.renderPrometheus()).not.toContain("payload");
+    expect(registry.renderPrometheus()).not.toContain("How do I upload a document via the REST API?");
   });
 });

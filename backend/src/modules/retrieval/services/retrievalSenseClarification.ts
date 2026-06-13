@@ -44,6 +44,7 @@ export const evaluateRetrievalSenseClarification = async (input: {
   rankedCandidates: RetrievalPipelineResult["contexts"];
   conversationId: string;
   messageId: string;
+  originalQuery: string;
   conversationLanguage?: string;
   usageContext?: ModelCallUsageContext;
   policy: ClarificationPolicy;
@@ -93,6 +94,8 @@ export const evaluateRetrievalSenseClarification = async (input: {
     pending: {
       sessionId: input.conversationId,
       source: "retrieval_sense",
+      originalQuery: input.originalQuery,
+      mode: "ask",
       candidates: decision.candidates,
       status: "pending",
       expiresAt: input.expiresAt,

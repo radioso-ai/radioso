@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
+import { decideClarification } from "@radioso/conversation-engine";
 
 import {
   SenseGroupingService,
   type SenseLabelGateway,
   type SenseLabelGroup,
 } from "../../src/modules/retrieval/services/senseGroupingService.js";
+import type { RetrievedCandidate } from "../../src/modules/retrieval/public.js";
 import {
   dominantHathaYogaCandidates,
   hathaRajaYogaCandidates,
@@ -23,6 +25,64 @@ type LabelInput = {
 };
 
 type LabelOutput = ReturnType<SenseLabelGateway["label"]>;
+
+const candidate = (input: {
+  chunkId: string;
+  documentId: string;
+  title: string;
+  similarity: number;
+}): RetrievedCandidate => ({
+  chunkId: input.chunkId,
+  documentId: input.documentId,
+  title: input.title,
+  content: `Fixture content for ${input.title}`,
+  similarity: input.similarity,
+  retrievalSources: ["semantic_rewritten"],
+  retrievalText: `${input.title} fixture retrieval text`,
+  semanticScore: input.similarity,
+  lexicalScore: 0,
+  attributeMatchScore: 0,
+  metadata: {},
+});
+
+const sameShapeCandidates = (input: {
+  leftTitle: string;
+  leftSimilarities: [number, number];
+  rightTitle: string;
+  rightSimilarities: [number, number];
+}): RetrievedCandidate[] => [
+  candidate({
+    chunkId: "left-1",
+    documentId: "doc-left",
+    title: input.leftTitle,
+    similarity: input.leftSimilarities[0],
+  }),
+  candidate({
+    chunkId: "right-1",
+    documentId: "doc-right",
+    title: input.rightTitle,
+    similarity: input.rightSimilarities[0],
+  }),
+  candidate({
+    chunkId: "left-2",
+    documentId: "doc-left",
+    title: input.leftTitle,
+    similarity: input.leftSimilarities[1],
+  }),
+  candidate({
+    chunkId: "right-2",
+    documentId: "doc-right",
+    title: input.rightTitle,
+    similarity: input.rightSimilarities[1],
+  }),
+];
+
+const separatedEmbeddings = () => new Map([
+  ["left-1", [1, 0]],
+  ["left-2", [1, 0.1]],
+  ["right-1", [0, 1]],
+  ["right-2", [0.1, 1]],
+]);
 
 describe("SenseGroupingService", () => {
   it("returns labeled clarification candidates for structurally qualified separated document groups", async () => {
@@ -94,6 +154,79 @@ describe("SenseGroupingService", () => {
         payload: { documentIds: ["doc-raja"] },
       }),
     ]);
+  });
+
+  it("auto-picks the query-relevant document for the issue-686 refund policy repro", async () => {
+    const labelGateway = {
+      label: vi.fn<(input: LabelInput) => LabelOutput>(async (input) => input.groups.map((group) => ({
+        id: group.id,
+        label: group.documents[0]?.title ?? group.id,
+      }))),
+    };
+    const service = new SenseGroupingService({
+      policy,
+      embeddingReader: { readChunkEmbeddings: vi.fn(async () => separatedEmbeddings()) },
+      labelGateway,
+    });
+
+    const candidates = await service.detect({
+      workspaceId: "workspace-1",
+      rankedCandidates: sameShapeCandidates({
+        leftTitle: "Refund Policy",
+        leftSimilarities: [0.86, 0.84],
+        rightTitle: "Shipping FAQ",
+        rightSimilarities: [0.56, 0.54],
+      }),
+      conversationLanguage: "en",
+    });
+
+    expect(candidates).toHaveLength(2);
+    const refund = candidates.find((item) => item.label === "Refund Policy");
+    const shipping = candidates.find((item) => item.label === "Shipping FAQ");
+    expect(refund).toBeDefined();
+    expect(shipping).toBeDefined();
+    expect(refund!.confidence - shipping!.confidence).toBeGreaterThanOrEqual(0.15);
+    expect(decideClarification(candidates, { floor: 0, margin: 0.15, maxOptions: 4 })).toMatchObject({
+      kind: "auto_pick",
+      candidate: expect.objectContaining({ id: "doc-left" }),
+      reason: "clear_margin",
+    });
+  });
+
+  it("keeps comparable-relevance separated groups inside the ask margin", async () => {
+    const labelGateway = {
+      label: vi.fn<(input: LabelInput) => LabelOutput>(async (input) => input.groups.map((group) => ({
+        id: group.id,
+        label: group.documents[0]?.title ?? group.id,
+      }))),
+    };
+    const service = new SenseGroupingService({
+      policy,
+      embeddingReader: { readChunkEmbeddings: vi.fn(async () => separatedEmbeddings()) },
+      labelGateway,
+    });
+
+    const candidates = await service.detect({
+      workspaceId: "workspace-1",
+      rankedCandidates: sameShapeCandidates({
+        leftTitle: "Hatha Yoga Foundations",
+        leftSimilarities: [0.82, 0.8],
+        rightTitle: "Raja Yoga Meditation",
+        rightSimilarities: [0.8, 0.78],
+      }),
+      conversationLanguage: "en",
+    });
+
+    expect(candidates).toHaveLength(2);
+    const [top, runnerUp] = [...candidates].sort((left, right) => right.confidence - left.confidence);
+    expect(top!.confidence - runnerUp!.confidence).toBeLessThan(0.15);
+    expect(decideClarification(candidates, { floor: 0, margin: 0.15, maxOptions: 4 })).toMatchObject({
+      kind: "ask",
+      candidates: expect.arrayContaining([
+        expect.objectContaining({ id: "doc-left" }),
+        expect.objectContaining({ id: "doc-right" }),
+      ]),
+    });
   });
 
   it("does not invoke embeddings or labels when fewer than two groups meet the share precondition", async () => {

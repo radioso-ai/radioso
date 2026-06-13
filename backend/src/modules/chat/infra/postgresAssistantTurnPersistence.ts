@@ -117,10 +117,12 @@ const saveClarificationState = async (
   pending: Extract<CapturedClarificationTransition, { kind: "save" }>["pending"],
 ): Promise<void> => {
   await client.query(
-    `INSERT INTO clarification_states (session_id, source, candidates, asked_event_id, status, expires_at, updated_at)
-     VALUES ($1, $2, $3::jsonb, $4, $5, $6, now())
+    `INSERT INTO clarification_states (session_id, source, original_query, mode, candidates, asked_event_id, status, expires_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, now())
      ON CONFLICT (session_id) DO UPDATE SET
        source = EXCLUDED.source,
+       original_query = EXCLUDED.original_query,
+       mode = EXCLUDED.mode,
        candidates = EXCLUDED.candidates,
        asked_event_id = EXCLUDED.asked_event_id,
        status = EXCLUDED.status,
@@ -129,6 +131,8 @@ const saveClarificationState = async (
     [
       pending.sessionId,
       pending.source,
+      pending.originalQuery ?? null,
+      pending.mode ?? "ask",
       JSON.stringify(pending.candidates),
       pending.askedEventId ?? null,
       pending.status,
@@ -150,7 +154,7 @@ const applyClarificationTransition = async (
   }
   await client.query(
     `UPDATE clarification_states
-        SET status = $2, updated_at = now()
+        SET status = $2, original_query = NULL, updated_at = now()
       WHERE session_id = $1`,
     [transition.sessionId, transition.outcome ?? "resolved"],
   );

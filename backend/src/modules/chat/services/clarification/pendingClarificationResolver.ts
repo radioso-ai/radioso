@@ -23,6 +23,7 @@ export type PendingClarificationResolution =
       resolvedPending: true;
       suppressNewClarification: true;
       documentScope: string[];
+      originalQuery?: string;
     }
   | {
       kind: "normal";
@@ -58,6 +59,7 @@ export const resolvePendingClarification = async (input: {
         resolvedPending: true,
         suppressNewClarification: true,
         documentScope,
+        ...(resolution.chosen.originalQuery ? { originalQuery: resolution.chosen.originalQuery } : {}),
       };
     }
   }

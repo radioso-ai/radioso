@@ -49,6 +49,8 @@ const pending = (overrides: Partial<PendingClarification> = {}): PendingClarific
 
 const retrievalSensePending = (): PendingClarification => pending({
   source: "retrieval_sense",
+  originalQuery: "How do I upload a document via the REST API? Give me a curl example.",
+  mode: "ask",
   candidates: [
     {
       id: "doc-hatha",
@@ -202,6 +204,7 @@ describe("resolvePendingClarification", () => {
       resolvedPending: true,
       suppressNewClarification: true,
       documentScope: ["doc-hatha", "doc-hatha-es"],
+      originalQuery: "How do I upload a document via the REST API? Give me a curl example.",
     });
   });
 });

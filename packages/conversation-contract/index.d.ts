@@ -389,11 +389,16 @@ export interface RoutineActivationDecisionMetadata {
 }
 
 export type PendingClarificationStatus = "pending" | "resolved" | "declined" | "expired";
+export type PendingClarificationMode = "ask" | "offer";
 
 /** Conversation-scoped pending clarification row, including the presented opaque candidates. */
 export interface PendingClarification {
   sessionId: string;
   source: string;
+  /** Originating user message; nulled by stores once the row leaves pending status. */
+  originalQuery?: string;
+  /** `offer` is reserved for answer-first offer mode; this slice only produces `ask`. */
+  mode?: PendingClarificationMode;
   candidates: ClarificationCandidate[];
   askedEventId?: string;
   status: PendingClarificationStatus;

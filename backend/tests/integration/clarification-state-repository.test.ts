@@ -8,6 +8,8 @@ import type { Database } from "../../src/shared/infra/database.js";
 const pending = (overrides: Partial<PendingClarification> = {}): PendingClarification => ({
   sessionId: "11111111-1111-1111-1111-111111111111",
   source: "test_surface",
+  originalQuery: "How do I upload a document via the REST API? Give me a curl example.",
+  mode: "ask",
   candidates: [
     { id: "a", label: "Alpha", confidence: 0.8, payload: { opaque: "a" } },
     { id: "b", label: "Beta", confidence: 0.78, payload: { opaque: "b" } },
@@ -21,6 +23,8 @@ const pending = (overrides: Partial<PendingClarification> = {}): PendingClarific
 const row = (state: PendingClarification) => ({
   session_id: state.sessionId,
   source: state.source,
+  original_query: state.originalQuery ?? null,
+  mode: state.mode ?? "ask",
   candidates: state.candidates,
   asked_event_id: state.askedEventId ?? null,
   status: state.status,
@@ -53,7 +57,9 @@ describe("ClarificationStateRepository", () => {
     const [saveSql, saveParams] = db.execute.mock.calls[0]!;
     expect(saveSql).toContain("ON CONFLICT (session_id) DO UPDATE");
     expect(saveParams![0]).toBe(pending().sessionId);
-    expect(saveParams![2]).toBe(JSON.stringify(pending().candidates));
+    expect(saveParams![2]).toBe("How do I upload a document via the REST API? Give me a curl example.");
+    expect(saveParams![3]).toBe("ask");
+    expect(saveParams![4]).toBe(JSON.stringify(pending().candidates));
     const [loadSql] = db.queryOptional.mock.calls[0]!;
     expect(loadSql).toContain("status = 'pending'");
   });
@@ -80,20 +86,24 @@ describe("ClarificationStateRepository", () => {
 
     const [expireSql, expireParams] = db.execute.mock.calls[0]!;
     expect(expireSql).toContain("status = 'expired'");
+    expect(expireSql).toContain("original_query = NULL");
     expect(expireParams).toEqual([expired.sessionId]);
   });
 
-  it("clears pending state as a non-pending loop-guard row until TTL", async () => {
+  it.each(["resolved", "declined", "expired"] as const)("clears %s pending state as a non-pending loop-guard row and nulls the original query", async (outcome) => {
     const db = mockDatabase();
-    db.queryOptional.mockResolvedValue(row(pending({ status: "declined" })));
+    db.queryOptional.mockResolvedValue(row(pending({ status: outcome, originalQuery: undefined })));
     const repository = new ClarificationStateRepository(db);
 
-    await repository.clear({ sessionId: pending().sessionId, outcome: "declined" });
+    await repository.clear({ sessionId: pending().sessionId, outcome });
     const loaded = await repository.loadRecent({ sessionId: pending().sessionId });
 
     const [clearSql, clearParams] = db.execute.mock.calls[0]!;
     expect(clearSql).toContain("status = $2");
-    expect(clearParams).toEqual([pending().sessionId, "declined"]);
-    expect(loaded?.status).toBe("declined");
+    expect(clearSql).toContain("original_query = NULL");
+    expect(clearParams).toEqual([pending().sessionId, outcome]);
+    expect(loaded?.status).toBe(outcome);
+    expect(loaded?.originalQuery).toBeUndefined();
+    expect(loaded?.candidates.map((candidate) => candidate.id)).toEqual(["a", "b"]);
   });
 });

@@ -38,6 +38,8 @@ const turn = (content = "choose alpha"): TurnContext => ({
 const pending = (overrides: Partial<PendingClarification> = {}): PendingClarification => ({
   sessionId: "session_1",
   source: "test_surface",
+  originalQuery: "How do I upload a document via the REST API? Give me a curl example.",
+  mode: "ask",
   candidates: [
     candidate({ id: "alpha", label: "Alpha", confidence: 0.82, payload: { opaque: "alpha" } }),
     candidate({ id: "beta", label: "Beta", confidence: 0.79, payload: { opaque: "beta" } }),
@@ -244,7 +246,11 @@ describe("resolvePendingClarification", () => {
       resolvedPending: true,
       suppressNewClarification: true,
       outcome: "resolved",
-      chosen: { source: "test_surface", candidate: current.candidates[0] },
+      chosen: {
+        source: "test_surface",
+        candidate: current.candidates[0],
+        originalQuery: "How do I upload a document via the REST API? Give me a curl example.",
+      },
     });
   });
 
@@ -305,5 +311,19 @@ describe("resolvePendingClarification", () => {
       resolvedPending: false,
       loopGuardCandidateIds: ["alpha", "beta"],
     });
+  });
+
+  it("does not expose the stored original query in clarification trace outputs", () => {
+    const originalQuery = "How do I upload a document via the REST API? Give me a curl example.";
+    const stage = clarificationStage({
+      surface: "retrieval_sense",
+      decision: {
+        kind: "ask",
+        candidates: pending({ originalQuery }).candidates,
+      },
+      mappingOutcome: "mapped:alpha",
+    });
+
+    expect(JSON.stringify(stage.outputs)).not.toContain(originalQuery);
   });
 });

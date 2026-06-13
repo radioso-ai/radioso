@@ -14,6 +14,8 @@ export const DEFAULT_CLARIFICATION_STATE_TTL_MS = 30 * 60 * 1000;
 interface ClarificationStateRow {
   session_id: string;
   source: string;
+  original_query: string | null;
+  mode: string | null;
   candidates: unknown;
   asked_event_id: string | null;
   status: string;
@@ -42,6 +44,8 @@ const mapStatus = (status: string): PendingClarificationStatus =>
 const mapRow = (row: ClarificationStateRow): PendingClarification => ({
   sessionId: row.session_id,
   source: row.source,
+  ...(row.original_query ? { originalQuery: row.original_query } : {}),
+  mode: row.mode === "offer" ? "offer" : "ask",
   candidates: mapCandidates(row.candidates),
   ...(row.asked_event_id ? { askedEventId: row.asked_event_id } : {}),
   status: mapStatus(row.status),
@@ -56,7 +60,7 @@ export class ClarificationStateRepository implements ConversationClarificationSt
 
   async loadPending(input: { sessionId: string }): Promise<PendingClarification | null> {
     const row = await this.database.queryOptional<ClarificationStateRow>(
-      `SELECT session_id, source, candidates, asked_event_id, status, expires_at
+      `SELECT session_id, source, original_query, mode, candidates, asked_event_id, status, expires_at
          FROM clarification_states
         WHERE session_id = $1
           AND status = 'pending'
@@ -70,7 +74,7 @@ export class ClarificationStateRepository implements ConversationClarificationSt
     if (row.expires_at.getTime() <= Date.now()) {
       await this.database.execute(
         `UPDATE clarification_states
-            SET status = 'expired', updated_at = now()
+            SET status = 'expired', original_query = NULL, updated_at = now()
           WHERE session_id = $1`,
         [input.sessionId],
       );
@@ -81,7 +85,7 @@ export class ClarificationStateRepository implements ConversationClarificationSt
 
   async loadRecent(input: { sessionId: string }): Promise<PendingClarification | null> {
     const row = await this.database.queryOptional<ClarificationStateRow>(
-      `SELECT session_id, source, candidates, asked_event_id, status, expires_at
+      `SELECT session_id, source, original_query, mode, candidates, asked_event_id, status, expires_at
          FROM clarification_states
         WHERE session_id = $1
           AND status IN ('resolved', 'declined', 'expired')
@@ -100,10 +104,12 @@ export class ClarificationStateRepository implements ConversationClarificationSt
       ? new Date(pending.expiresAt).toISOString()
       : new Date(Date.now() + this.ttlMs).toISOString();
     await this.database.execute(
-      `INSERT INTO clarification_states (session_id, source, candidates, asked_event_id, status, expires_at, updated_at)
-       VALUES ($1, $2, $3::jsonb, $4, $5, $6, now())
+      `INSERT INTO clarification_states (session_id, source, original_query, mode, candidates, asked_event_id, status, expires_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, now())
        ON CONFLICT (session_id) DO UPDATE SET
          source = EXCLUDED.source,
+         original_query = EXCLUDED.original_query,
+         mode = EXCLUDED.mode,
          candidates = EXCLUDED.candidates,
          asked_event_id = EXCLUDED.asked_event_id,
          status = EXCLUDED.status,
@@ -112,6 +118,8 @@ export class ClarificationStateRepository implements ConversationClarificationSt
       [
         pending.sessionId,
         pending.source,
+        pending.originalQuery ?? null,
+        pending.mode ?? "ask",
         JSON.stringify(pending.candidates),
         pending.askedEventId ?? null,
         pending.status,
@@ -123,7 +131,7 @@ export class ClarificationStateRepository implements ConversationClarificationSt
   async clear(input: { sessionId: string; outcome?: ClarificationClearOutcome }): Promise<void> {
     await this.database.execute(
       `UPDATE clarification_states
-          SET status = $2, updated_at = now()
+          SET status = $2, original_query = NULL, updated_at = now()
         WHERE session_id = $1`,
       [input.sessionId, input.outcome ?? "resolved"],
     );

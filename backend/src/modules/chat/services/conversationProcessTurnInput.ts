@@ -69,6 +69,11 @@ const directivesForSession = (session: PreparedSession): Directive[] =>
 const authoredDirectivesForSession = (session: PreparedSession): Directive[] =>
   (session.agent.authoredDirectives ?? []).map(authoredDirectiveToSteeringDirective);
 
+const effectiveInputEventForSession = (session: PreparedSession) => ({
+  ...toConversationInputEvent(session.userMessage),
+  content: session.effectiveQuery ?? session.userMessage.content,
+});
+
 const directiveSteerInputForSession = (
   session: PreparedSession,
   accountId?: string,
@@ -78,7 +83,7 @@ const directiveSteerInputForSession = (
   accountId,
   additionalDirectives: authoredDirectivesForSession(session),
   turnContext: {
-    query: turn?.inputEvent.content ?? session.userMessage.content,
+    query: turn?.inputEvent.content ?? session.effectiveQuery ?? session.userMessage.content,
     route: session.turnRoute,
   },
   usageContext: {
@@ -122,7 +127,7 @@ export const createChatProcessTurnInput = (options: ChatProcessTurnInputOptions)
   return {
     agent: toConversationAgentConfig(options.session.agent),
     sessionId: options.session.conversation.id,
-    inputEvent: toConversationInputEvent(options.session.userMessage),
+    inputEvent: effectiveInputEventForSession(options.session),
     skills: options.skills ?? [],
     directives: directiveWiring.directives,
     stores: {
@@ -181,7 +186,7 @@ export const createAttemptRoutineInput = (options: AttemptRoutineInputOptions): 
   return {
     agent: toConversationAgentConfig(options.session.agent),
     sessionId: options.session.conversation.id,
-    inputEvent: toConversationInputEvent(options.session.userMessage),
+    inputEvent: effectiveInputEventForSession(options.session),
     stores: {
       async loadHistory() {
         return toConversationMessages(options.session.history);

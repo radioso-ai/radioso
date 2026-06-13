@@ -1383,6 +1383,10 @@ export class InMemoryBootstrapGreetingCacheRepository implements BootstrapGreeti
     return this.items.get(`${workspaceId}:${agentId}:${fingerprint}`) ?? null;
   }
 
+  async findById(workspaceId: string, id: string): Promise<BootstrapGreetingCacheRecord | null> {
+    return [...this.items.values()].find((item) => item.workspaceId === workspaceId && item.id === id) ?? null;
+  }
+
   async save(input: {
     workspaceId: string;
     agentId: string;
@@ -3273,6 +3277,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
 
 export class InMemoryMessageRepository implements MessageRepositoryPort {
   readonly items = new Map<string, MessageRecord[]>();
+  private nextCreatedAtMs = Date.now();
 
   async listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]> {
     return [...(this.items.get(conversationId) ?? [])].filter((message) => message.workspaceId === workspaceId);
@@ -3362,7 +3367,7 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
       skillName: input.skillName,
       skillOutcome: input.skillOutcome,
       skillStatus: input.skillStatus,
-      createdAt: new Date(),
+      createdAt: new Date(this.nextCreatedAtMs++),
     };
     const items = this.items.get(input.conversationId) ?? [];
     items.push(record);

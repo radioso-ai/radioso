@@ -8454,6 +8454,10 @@
             "type": "string",
             "format": "uuid"
           },
+          "bootstrapGreetingId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "agentId": {
             "type": "string",
             "format": "uuid"
@@ -8489,7 +8493,7 @@
         "required": [
           "answer"
         ],
-        "description": "Ephemeral bootstrap greeting response. Conversation id is omitted until the first persisted user turn."
+        "description": "Ephemeral bootstrap greeting response. Conversation id is omitted until the first persisted user turn. The optional bootstrap greeting id can be sent with the first user message to save the displayed greeting in conversation history."
       },
       "AssistantChatResponse": {
         "anyOf": [
@@ -8509,6 +8513,10 @@
             "format": "uuid"
           },
           "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "bootstrapGreetingId": {
             "type": "string",
             "format": "uuid"
           },
@@ -8611,6 +8619,10 @@
             "default": false
           },
           "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "bootstrapGreetingId": {
             "type": "string",
             "format": "uuid"
           },

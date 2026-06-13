@@ -127,7 +127,7 @@ export class MessageRepository implements MessageRepositoryPort {
        FROM messages
        WHERE workspace_id = $1
          AND conversation_id = $2
-       ORDER BY created_at ASC`,
+       ORDER BY created_at ASC, id ASC`,
       [workspaceId, conversationId],
     );
 
@@ -285,8 +285,8 @@ export class MessageRepository implements MessageRepositoryPort {
     skillStatus?: string;
   }): Promise<MessageRecord> {
     const [row] = await this.database.query<MessageRow>(
-      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)
+      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, clock_timestamp())
        RETURNING id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status, created_at`,
       [
         input.id ?? randomUUID(),

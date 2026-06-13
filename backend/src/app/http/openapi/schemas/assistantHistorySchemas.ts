@@ -199,10 +199,11 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     "ChatBootstrapResponse",
     z.object({
       conversationId: z.string().uuid().optional(),
+      bootstrapGreetingId: z.string().uuid().optional(),
       ...chatResponseCoreShape,
       debug: AssistantChatDebugSchema.optional(),
     }).openapi({
-      description: "Ephemeral bootstrap greeting response. Conversation id is omitted until the first persisted user turn.",
+      description: "Ephemeral bootstrap greeting response. Conversation id is omitted until the first persisted user turn. The optional bootstrap greeting id can be sent with the first user message to save the displayed greeting in conversation history.",
     }),
   );
 

@@ -54,6 +54,7 @@ describe("chat bootstrap service", () => {
 
     expect(result).toMatchObject({
       answer: expect.any(String),
+      bootstrapGreetingId: expect.any(String),
       citations: [],
     });
     expect(result).not.toHaveProperty("conversationId");
@@ -131,6 +132,51 @@ describe("chat bootstrap service", () => {
         cacheHit: true,
       }),
     }));
+  });
+
+  it("generates and caches bootstrap greetings for website embeds", async () => {
+    const workspaceRepository = new InMemoryWorkspaceRepository();
+    const workspace = await workspaceRepository.create("account-1", "Workspace");
+    await workspaceRepository.updateAssistantBootstrapSettings(workspace.id, {
+      assistantName: "Marta",
+      greetingInstruction: "Warm and concise",
+      assistantDefaultLocale: "en",
+      proactiveGreetingEnabled: true,
+    });
+
+    const bootstrapGreetingCacheRepository = new InMemoryBootstrapGreetingCacheRepository();
+    const chatGateway = {
+      answer: vi.fn(async () => "Hello from the model."),
+      streamAnswer: vi.fn(),
+    };
+    const service = new ChatBootstrapService(
+      workspaceRepository,
+      bootstrapGreetingCacheRepository,
+      chatGateway as never,
+      createAuditService(),
+      undefined,
+      createProductAnalyticsService(),
+      createAgentService(workspaceRepository),
+    );
+
+    const firstEmbedGreeting = await service.startConversation({
+      workspaceId: workspace.id,
+      sourceChannel: "website_embed",
+      userExpectedLocale: "en",
+    });
+    expect(firstEmbedGreeting?.bootstrapGreetingId).toEqual(expect.any(String));
+
+    const cachedEmbedGreeting = await service.startConversation({
+      workspaceId: workspace.id,
+      sourceChannel: "website_embed",
+      userExpectedLocale: "en",
+    });
+
+    expect(cachedEmbedGreeting).toMatchObject({
+      answer: "Hello from the model.",
+      bootstrapGreetingId: firstEmbedGreeting?.bootstrapGreetingId,
+    });
+    expect(chatGateway.answer).toHaveBeenCalledTimes(1);
   });
 
   it("returns null when bootstrap is inactive", async () => {

@@ -896,6 +896,7 @@ export const createTestDependencies = (overrides: {
     }),
     productAnalyticsService,
     workspaceRepository,
+    bootstrapGreetingCacheRepository,
     usageLimitPolicy,
     agentService,
     turnRouter,

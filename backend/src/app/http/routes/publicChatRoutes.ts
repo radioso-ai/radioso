@@ -574,6 +574,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           stream: req.body.stream,
           userExpectedLocale: req.body.userExpectedLocale,
           conversationId: req.body.conversationId,
+          bootstrapGreetingId: req.body.bootstrapGreetingId,
           inputMetadata: req.body.inputMetadata,
           pageContext: req.body.pageContext,
           sourceChannel,

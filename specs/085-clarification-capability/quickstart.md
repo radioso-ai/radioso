@@ -53,9 +53,10 @@ Migrations run on backend start; verify `clarification_states` exists:
 
 1. Open Dashboard → conversation history → the conversations from above →
    debug/turn-flow view.
-2. Expect a **Clarification** node on asked, auto-picked, and suppressed turns;
-   detail panel shows candidates (labels + confidence), decision, reason, and
-   the reply-mapping outcome on resolving turns. No document content anywhere.
+2. Expect a **Clarification** node on asked, offered, auto-picked, and suppressed
+   turns; detail panel shows candidates (labels + confidence), chosen winner,
+   alternatives for offers, decision, reason, and offer/reply-mapping outcomes
+   when available. No document content anywhere.
 
 ## Automated validation
 

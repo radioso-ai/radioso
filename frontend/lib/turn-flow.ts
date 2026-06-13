@@ -92,8 +92,20 @@ const messageSummary = (stage: ConversationTraceStage): string | undefined => {
 }
 
 const clarificationSummary = (stage: ConversationTraceStage): string | undefined => {
+  const outputs = stage.outputs ?? {}
+  const decision = asString(outputs.decision)
+  const reason = asString(outputs.reason)
+  if (!decision) return undefined
+  const summary = decision.replaceAll('_', ' ')
+  if (decision === 'auto_picked' && reason === 'label_fallback') {
+    return `${summary}: label fallback`
+  }
+  return summary
+}
+
+const clarificationStatus = (stage: ConversationTraceStage): FlowStatus => {
   const decision = asString((stage.outputs ?? {}).decision)
-  return decision?.replaceAll('_', ' ')
+  return decision === 'offered' ? 'applied' : stage.status
 }
 
 const deriveOutcome = (
@@ -204,7 +216,7 @@ export const envelopeToFlowGraph = (envelope: TurnTraceEnvelope): TurnFlowGraph 
       nodeKind: 'stage',
       label: spineStageLabel(clarification),
       sublabel: clarificationSummary(clarification),
-      status: clarification.status,
+      status: clarificationStatus(clarification),
       detail: { kind: 'spine', spineStageId: clarification.id },
     })
     edges.push({ id: `e:${tailId}->${clarificationId}`, source: tailId, target: clarificationId, kind: 'sequence' })

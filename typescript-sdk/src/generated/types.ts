@@ -3756,10 +3756,12 @@ export interface components {
             suggestions?: components["schemas"]["ChatSuggestion"][];
             debug?: components["schemas"]["AssistantChatDebug"];
         };
-        /** @description Ephemeral bootstrap greeting response. Conversation id is omitted until the first persisted user turn. */
+        /** @description Ephemeral bootstrap greeting response. Conversation id is omitted until the first persisted user turn. The optional bootstrap greeting id can be sent with the first user message to save the displayed greeting in conversation history. */
         ChatBootstrapResponse: {
             /** Format: uuid */
             conversationId?: string;
+            /** Format: uuid */
+            bootstrapGreetingId?: string;
             /** Format: uuid */
             agentId?: string;
             agentName?: string;
@@ -3776,6 +3778,8 @@ export interface components {
             agentId?: string;
             /** Format: uuid */
             conversationId?: string;
+            /** Format: uuid */
+            bootstrapGreetingId?: string;
             message?: string;
             /** @default false */
             startConversation: boolean;
@@ -3810,6 +3814,8 @@ export interface components {
             stream: boolean;
             /** Format: uuid */
             conversationId?: string;
+            /** Format: uuid */
+            bootstrapGreetingId?: string;
             startConversation?: boolean;
             userExpectedLocale?: string;
             pageContext?: {

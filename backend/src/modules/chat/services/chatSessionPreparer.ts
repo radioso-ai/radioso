@@ -6,6 +6,7 @@ import { toConversationTrace, toPreparedStagedContext } from "./conversationCont
 import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort, UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
+import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type {
@@ -63,6 +64,7 @@ export interface PrepareChatSessionInput {
   workspaceId: string;
   agentId?: string | null;
   conversationId?: string;
+  bootstrapGreetingId?: string;
   query: string;
   inputMetadata?: UserMessageInputMetadata;
   metadataFilter?: Record<string, unknown>;
@@ -87,6 +89,7 @@ export class ChatSessionPreparer {
     private readonly auditService: AuditService,
     private readonly workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">,
     private readonly agentService?: Pick<AgentService, "resolve">,
+    private readonly bootstrapGreetingCacheRepository?: BootstrapGreetingCacheRepositoryPort,
   ) {}
 
   async prepare(input: PrepareChatSessionInput, options: PrepareChatSessionOptions = {}): Promise<PreparedSession> {
@@ -117,6 +120,12 @@ export class ChatSessionPreparer {
         input.anonymousSessionId ?? null,
         input.sourceOrigin ?? null,
       );
+    const promotedBootstrapGreeting = conversation
+      ? null
+      : await this.promoteBootstrapGreeting(input, agent, persistedConversation);
+    const turnHistory = promotedBootstrapGreeting
+      ? [...history, promotedBootstrapGreeting]
+      : history;
 
     const userMessage = await this.messageRepository.create({
       conversationId: persistedConversation.id,
@@ -128,7 +137,7 @@ export class ChatSessionPreparer {
     // The direct-only (non-grounded) base turn. Used as-is when retrieval is
     // skipped, otherwise as the throwaway base `prepareRetrieval` recomputes from.
     const directOnlyTurn = this.prepareDirectOnlyTurn(
-      this.buildPipelineInput(input, agent, history, persistedConversation, userMessage),
+      this.buildPipelineInput(input, agent, turnHistory, persistedConversation, userMessage),
       agent,
     );
     const { retrieval, turnRoute } = options.skipRetrieval
@@ -136,7 +145,7 @@ export class ChatSessionPreparer {
       : await this.prepareRetrieval(input, {
           agent,
           conversation: persistedConversation,
-          history,
+          history: turnHistory,
           retrieval: directOnlyTurn.retrieval,
           turnRoute: CHAT_TURN_ROUTE.DIRECT,
           turnFraming: defaultTurnFraming(),
@@ -151,7 +160,7 @@ export class ChatSessionPreparer {
     return {
       agent,
       conversation: persistedConversation,
-      history,
+      history: turnHistory,
       retrieval,
       turnRoute,
       turnFraming: defaultTurnFraming(),
@@ -160,6 +169,34 @@ export class ChatSessionPreparer {
       priorRewriteContinuityState: rewriteContinuityState,
       ...this.stagedSpineFor(retrieval),
     };
+  }
+
+  private async promoteBootstrapGreeting(
+    input: PrepareChatSessionInput,
+    agent: AgentRecord,
+    conversation: ConversationRecord,
+  ): Promise<MessageRecord | null> {
+    if (!input.bootstrapGreetingId || !this.bootstrapGreetingCacheRepository) {
+      return null;
+    }
+    const greeting = await this.bootstrapGreetingCacheRepository.findById(
+      input.workspaceId,
+      input.bootstrapGreetingId,
+    );
+    if (!greeting || greeting.agentId !== agent.id || !greeting.greetingText.trim()) {
+      return null;
+    }
+    return this.messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: input.workspaceId,
+      role: "assistant",
+      content: greeting.greetingText,
+      metadata: {
+        bootstrapGreeting: true,
+        bootstrapGreetingId: greeting.id,
+        source: "ephemeral_bootstrap",
+      },
+    });
   }
 
   /**

@@ -5791,6 +5791,9 @@ components:
         conversationId:
           type: string
           format: uuid
+        bootstrapGreetingId:
+          type: string
+          format: uuid
         agentId:
           type: string
           format: uuid
@@ -5814,7 +5817,7 @@ components:
           $ref: "#/components/schemas/AssistantChatDebug"
       required:
         - answer
-      description: Ephemeral bootstrap greeting response. Conversation id is omitted until the first persisted user turn.
+      description: Ephemeral bootstrap greeting response. Conversation id is omitted until the first persisted user turn. The optional bootstrap greeting id can be sent with the first user message to save the displayed greeting in conversation history.
     AssistantChatResponse:
       anyOf:
         - $ref: "#/components/schemas/ChatResponse"
@@ -5826,6 +5829,9 @@ components:
           type: string
           format: uuid
         conversationId:
+          type: string
+          format: uuid
+        bootstrapGreetingId:
           type: string
           format: uuid
         message:
@@ -5900,6 +5906,9 @@ components:
           type: boolean
           default: false
         conversationId:
+          type: string
+          format: uuid
+        bootstrapGreetingId:
           type: string
           format: uuid
         startConversation:

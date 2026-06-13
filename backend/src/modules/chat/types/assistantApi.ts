@@ -39,6 +39,7 @@ export interface AssistantChatRequest {
   accountId?: string;
   conversationId?: string;
   message?: string;
+  bootstrapGreetingId?: string;
   startConversation?: boolean;
   stream: boolean;
   userExpectedLocale?: string | null;

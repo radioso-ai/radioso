@@ -324,6 +324,7 @@ export function AnonymousChatProvider({
   const [branding, setBranding] = useState<AgentBrandingSettings | null>(null)
   const [intakeActions, setIntakeActions] = useState<PublicChatIntakeAction[]>([])
   const [conversationId, setConversationId] = useState<string | undefined>()
+  const [bootstrapGreetingId, setBootstrapGreetingId] = useState<string | undefined>()
   const [isLoading, setIsLoading] = useState(false)
   const [isHydrating, setIsHydrating] = useState(true)
   const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false)
@@ -399,6 +400,7 @@ export function AnonymousChatProvider({
     setBranding(null)
     setIntakeActions([])
     setConversationId(undefined)
+    setBootstrapGreetingId(undefined)
     setHasOlderMessages(false)
     setNextMessageCursor(null)
     setRateLimitError(null)
@@ -435,6 +437,8 @@ export function AnonymousChatProvider({
           if (bootstrap?.answer) {
             if (bootstrap.conversationId) {
               setConversationId(bootstrap.conversationId)
+            } else {
+              setBootstrapGreetingId(bootstrap.bootstrapGreetingId)
             }
             setMessages([
               {
@@ -498,6 +502,7 @@ export function AnonymousChatProvider({
     (assistantMessageId: string, completion: ChatStreamCompletion) => {
       if (completion.conversationId) {
         setConversationId(completion.conversationId)
+        setBootstrapGreetingId(undefined)
       }
       setIsLoading(false)
       setMessages((prev) =>
@@ -621,6 +626,7 @@ export function AnonymousChatProvider({
               message: query,
               stream: true,
               conversationId,
+              bootstrapGreetingId: conversationId ? undefined : bootstrapGreetingId,
               inputMetadata,
               userExpectedLocale: resolveAnonymousChatBootstrapLocale({
                 localeOverride,
@@ -631,6 +637,7 @@ export function AnonymousChatProvider({
             {
               onConversation: ({ conversationId: newId }) => {
                 setConversationId(newId)
+                setBootstrapGreetingId(undefined)
               },
               onChunk: ({ text }) => {
                 setMessages((prev) =>
@@ -820,7 +827,7 @@ export function AnonymousChatProvider({
         setIsLoading(false)
       }
     },
-    [applyCompletion, conversationId, isHydrating, isLoading, isUnavailable, localeOverride, messages, onAnalyticsEvent, pageContext, recoverAssistantMessage, withPublicSessionRetry],
+    [applyCompletion, bootstrapGreetingId, conversationId, isHydrating, isLoading, isUnavailable, localeOverride, messages, onAnalyticsEvent, pageContext, recoverAssistantMessage, withPublicSessionRetry],
   )
 
   const loadOlderMessages = useCallback(async () => {

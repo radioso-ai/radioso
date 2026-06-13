@@ -51,6 +51,7 @@ describe("chat bootstrap integration", () => {
 
     expect(bootstrap.status).toBe(200);
     expect(bootstrap.body).not.toHaveProperty("conversationId");
+    expect(bootstrap.body.bootstrapGreetingId).toEqual(expect.any(String));
     expect(repositories.conversationRepository.items.size).toBe(0);
 
     const analyticsEvent = [...repositories.auditEventRepository.items]
@@ -81,6 +82,7 @@ describe("chat bootstrap integration", () => {
       .send({
         message: "Come ti chiami?",
         stream: false,
+        bootstrapGreetingId: bootstrap.body.bootstrapGreetingId,
       });
 
     expect(followUp.status).toBe(200);
@@ -91,9 +93,9 @@ describe("chat bootstrap integration", () => {
       .set(headers);
 
     expect(history.status).toBe(200);
-    expect(history.body.messageCount).toBe(2);
+    expect(history.body.messageCount).toBe(3);
     expect(history.body.userMessageCount).toBe(1);
-    expect(history.body.assistantMessageCount).toBe(1);
+    expect(history.body.assistantMessageCount).toBe(2);
     expect(history.body.messages).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -103,9 +105,17 @@ describe("chat bootstrap integration", () => {
       ]),
     );
     const assistantMessages = history.body.messages.filter((message: { role: string }) => message.role === "assistant");
-    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages).toHaveLength(2);
     expect(assistantMessages.every((message: { content: string }) => typeof message.content === "string" && message.content.length > 0)).toBe(
       true,
     );
+    expect(history.body.messages[0]).toMatchObject({
+      role: "assistant",
+      content: "Ciao! Sono Marta e posso aiutarti con i tuoi documenti.",
+    });
+    expect(history.body.messages[1]).toMatchObject({
+      role: "user",
+      content: "Come ti chiami?",
+    });
   });
 });

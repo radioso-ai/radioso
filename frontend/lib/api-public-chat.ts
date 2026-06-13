@@ -88,7 +88,7 @@ export const publicChatApi = {
 
   async sendMessage(
     token: string,
-    data: { message: string; stream: boolean; conversationId?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string; pageContext?: WebsiteEmbedPageContext | null },
+    data: { message: string; stream: boolean; conversationId?: string; bootstrapGreetingId?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string; pageContext?: WebsiteEmbedPageContext | null },
   ): Promise<ChatResponse> {
     const response = await fetch(`${API_BASE}/public/chat/${token}`, {
       method: 'POST',
@@ -111,7 +111,7 @@ export const publicChatApi = {
 
   async streamMessage(
     token: string,
-    data: { message: string; stream: boolean; conversationId?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string; pageContext?: WebsiteEmbedPageContext | null },
+    data: { message: string; stream: boolean; conversationId?: string; bootstrapGreetingId?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string; pageContext?: WebsiteEmbedPageContext | null },
     handlers: ChatStreamHandlers = {},
   ): Promise<ChatResponse> {
     const response = await fetch(`${PUBLIC_CHAT_STREAMING_API_PATH}/${encodeURIComponent(token)}`, {

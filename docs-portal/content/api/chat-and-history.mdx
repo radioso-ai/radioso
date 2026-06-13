@@ -52,6 +52,8 @@ The chat request schema also supports:
 
 Bootstrap responses are ephemeral. When `startConversation: true` returns a greeting, the response can omit `conversationId`. Save and reuse a `conversationId` only after the first normal user message returns one.
 
+If the bootstrap response includes `bootstrapGreetingId`, send it with the first normal user message and no `conversationId`. Radioso saves the displayed greeting only when that first user message creates the conversation.
+
 ## Streaming and non-streaming modes
 
 `stream` is required.

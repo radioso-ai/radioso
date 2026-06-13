@@ -45,6 +45,7 @@ export interface ChatMessage {
 interface ChatSession {
   agentId?: string
   conversationId?: string
+  bootstrapGreetingId?: string
   messages: ChatMessage[]
   isLoading: boolean
   isInitialized: boolean
@@ -188,6 +189,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       updateSession(accountId, agentId, (session) => ({
         ...session,
         conversationId: completion.conversationId ?? session.conversationId,
+        bootstrapGreetingId: completion.conversationId ? undefined : session.bootstrapGreetingId,
         isLoading: false,
         messages: session.messages.map((message) =>
           message.id === assistantMessageId
@@ -262,6 +264,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             agentId,
             stream: true,
             conversationId: currentSession.conversationId,
+            bootstrapGreetingId: currentSession.conversationId ? undefined : currentSession.bootstrapGreetingId,
             inputMetadata,
             userExpectedLocale: resolveBrowserLocale(),
           },
@@ -270,6 +273,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               updateSession(accountId, agentId, (session) => ({
                 ...session,
                 conversationId,
+                bootstrapGreetingId: undefined,
               }))
             },
             onChunk: ({ text }) => {
@@ -426,6 +430,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             : {
                 ...session,
                 ...(bootstrap.conversationId ? { conversationId: bootstrap.conversationId } : {}),
+                ...(!bootstrap.conversationId && bootstrap.bootstrapGreetingId
+                  ? { bootstrapGreetingId: bootstrap.bootstrapGreetingId }
+                  : {}),
                 messages: [
                   {
                     id: createClientId('chat-assistant'),
@@ -498,6 +505,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
         updateSession(accountId, agentId, () => ({
           ...(bootstrap.conversationId ? { conversationId: bootstrap.conversationId } : {}),
+          ...(!bootstrap.conversationId && bootstrap.bootstrapGreetingId
+            ? { bootstrapGreetingId: bootstrap.bootstrapGreetingId }
+            : {}),
           messages: [
             {
               id: createClientId('chat-assistant'),

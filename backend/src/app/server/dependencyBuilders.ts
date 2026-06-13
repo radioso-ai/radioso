@@ -1037,6 +1037,7 @@ export const buildChatServices = (input: {
     turnRuntime: chatTurnRuntime,
     productAnalyticsService: input.productAnalyticsService,
     workspaceRepository: input.workspaceRepository,
+    bootstrapGreetingCacheRepository: input.bootstrapGreetingCacheRepository,
     usageLimitPolicy: input.usageLimitPolicy,
     agentService: input.agentService,
     // 067: behavioral steering. The standing set is supplied by application

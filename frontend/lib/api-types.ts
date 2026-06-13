@@ -11,6 +11,7 @@ type RelaxedAssistantChatResponse<T> = T extends unknown
   ? Omit<T, 'conversationId' | 'assistantMessageId' | 'route' | 'suggestions'> & {
       conversationId?: string
       assistantMessageId?: string
+      bootstrapGreetingId?: string
       route?: ApiSchemas['AssistantRoute']
       suggestions?: ChatSuggestion[]
       activitySummary?: ActivitySummary
@@ -232,6 +233,7 @@ export interface ChatRequest {
   query?: string
   stream: boolean
   conversationId?: string
+  bootstrapGreetingId?: string
   bootstrapGreeting?: boolean
   userExpectedLocale?: string
   inputMetadata?: ChatUserInputMetadata
@@ -253,6 +255,7 @@ export type PublicChatSessionResponse = ApiSchemas['PublicChatSessionResponse'] 
 export const toAssistantChatPayload = (data: ChatRequest) => ({
   agentId: data.agentId,
   conversationId: data.conversationId,
+  bootstrapGreetingId: data.bootstrapGreetingId,
   message: data.query,
   startConversation: data.bootstrapGreeting,
   stream: data.stream,

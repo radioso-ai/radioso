@@ -143,15 +143,14 @@ export class ChatBootstrapService {
         return null;
       }
 
-      if (!cachedGreeting) {
-        await this.bootstrapGreetingCacheRepository.save({
+      const greetingRecord = cachedGreeting
+        ?? await this.bootstrapGreetingCacheRepository.save({
           workspaceId: input.workspaceId,
           agentId: agent.id,
           fingerprint,
           localeUsed,
           greetingText: normalizedAnswer,
         });
-      }
 
       await this.auditService.record({
         accountId: input.accountId,
@@ -194,6 +193,7 @@ export class ChatBootstrapService {
       return {
         ...emptyChatResponse(normalizedAnswer),
         ...(agent ? { agentId: agent.id, agentName: agent.name } : {}),
+        bootstrapGreetingId: greetingRecord.id,
       };
     } catch (error) {
       await usageReservation?.release();

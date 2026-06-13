@@ -170,8 +170,8 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
 
       const messageId = input.assistantMessage.id ?? randomUUID();
       const messageResult = await client.query<MessageRow>(
-        `INSERT INTO messages (id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status)
-         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)
+        `INSERT INTO messages (id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, clock_timestamp())
          RETURNING id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status, created_at`,
         [
           messageId,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildClientConfig, resolveMcpChannelSetup } from '@/components/dashboard/settings/mcp-channel-card'
+import { buildClientConfig, resolveMcpChannelSetup, shouldProbeMcpHealth } from '@/components/dashboard/settings/mcp-channel-card'
 
 describe('MCP channel card setup mode', () => {
   it('uses same-host setup when the MCP URL resolves to the dashboard origin', () => {
@@ -40,6 +40,16 @@ describe('MCP channel card setup mode', () => {
     expect(setup.label).toBe('Remote setup')
     expect(setup.steps.some((step) => step.includes('Exchange your workspace API token'))).toBe(true)
     expect(buildClientConfig(setup.mcpUrl, setup.authorizationPlaceholder)).toContain('Bearer <MCP access token>')
+    expect(shouldProbeMcpHealth(setup)).toBe(false)
+  })
+
+  it('uses the backend health endpoint for same-host MCP setup', () => {
+    const setup = resolveMcpChannelSetup({
+      dashboardOrigin: 'https://radioso.example.com',
+      mcpUrl: '/backend/mcp',
+    })
+
+    expect(shouldProbeMcpHealth(setup)).toBe(true)
   })
 
   it('marks MCP unavailable when no MCP URL is configured', () => {
@@ -51,6 +61,7 @@ describe('MCP channel card setup mode', () => {
     expect(setup.mode).toBe('disabled')
     expect(setup.label).toBe('MCP not enabled')
     expect(setup.error).toBe('MCP is not enabled on this deployment.')
+    expect(setup.remediation).toContain('RADIOSO_MCP_ENABLED')
   })
 
   it('returns a clear error for invalid MCP URLs', () => {
@@ -61,5 +72,6 @@ describe('MCP channel card setup mode', () => {
 
     expect(setup.mode).toBe('disabled')
     expect(setup.error).toBe('The configured MCP URL is invalid.')
+    expect(setup.remediation).toContain('NEXT_PUBLIC_MCP_URL')
   })
 })

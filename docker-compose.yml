@@ -34,6 +34,7 @@ services:
       PORT: 8080
       NODE_ENV: production
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/radioso
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
       PUBLIC_CHAT_BASE_URL: ${PUBLIC_CHAT_BASE_URL:-http://localhost:3000/chat}
       SESSION_TTL_HOURS: 168
     volumes:
@@ -69,6 +70,7 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/radioso
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
       PUBLIC_CHAT_BASE_URL: ${PUBLIC_CHAT_BASE_URL:-http://localhost:3000/chat}
       SESSION_TTL_HOURS: 168
     volumes:
@@ -90,6 +92,7 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/radioso
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
       PUBLIC_CHAT_BASE_URL: ${PUBLIC_CHAT_BASE_URL:-http://localhost:3000/chat}
       SESSION_TTL_HOURS: 168
     volumes:

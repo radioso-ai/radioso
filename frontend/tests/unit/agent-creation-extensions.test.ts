@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   getAgentCreationActionsConfigPath,
+  loadAgentCreationActionDefinitions,
   parseAgentCreationActionDefinitions,
   resolveAgentCreationActions,
 } from '@/lib/agent-creation-extensions'
@@ -105,6 +106,55 @@ describe('agent creation extensions', () => {
       expect(getAgentCreationActionsConfigPath()).toBe('/radioso/agent-creation-actions.json')
     } finally {
       vi.unstubAllEnvs()
+    }
+  })
+
+  it('caches a missing generated action config after the first browser probe', async () => {
+    const browserGlobal = globalThis as typeof globalThis & {
+      document?: { querySelector: () => null }
+      window?: { location: { href: string } }
+    }
+    const originalDocument = browserGlobal.document
+    const originalWindow = browserGlobal.window
+    Object.defineProperty(browserGlobal, 'document', {
+      configurable: true,
+      value: { querySelector: () => null },
+    })
+    Object.defineProperty(browserGlobal, 'window', {
+      configurable: true,
+      value: { location: { href: 'http://localhost:3000/account/test' } },
+    })
+    const fetchMock = vi.fn(async () => new Response(null, { status: 404 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      await expect(loadAgentCreationActionDefinitions()).resolves.toEqual([
+        {
+          id: 'website',
+          label: 'Create from website',
+          icon: 'globe',
+          kind: 'wizard-dialog',
+        },
+      ])
+      await expect(loadAgentCreationActionDefinitions()).resolves.toEqual([
+        {
+          id: 'website',
+          label: 'Create from website',
+          icon: 'globe',
+          kind: 'wizard-dialog',
+        },
+      ])
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.unstubAllGlobals()
+      Object.defineProperty(browserGlobal, 'document', {
+        configurable: true,
+        value: originalDocument,
+      })
+      Object.defineProperty(browserGlobal, 'window', {
+        configurable: true,
+        value: originalWindow,
+      })
     }
   })
 })

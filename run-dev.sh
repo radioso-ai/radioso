@@ -11,6 +11,7 @@ if [[ "${CONDUCTOR_PORT:-}" =~ ^[0-9]+$ ]]; then
 fi
 
 if [[ -n "${RADIOSO_FRONTEND_PORT:-}" ]]; then
+  export APP_BASE_URL="${APP_BASE_URL:-http://localhost:${RADIOSO_FRONTEND_PORT}}"
   export PUBLIC_CHAT_BASE_URL="${PUBLIC_CHAT_BASE_URL:-http://localhost:${RADIOSO_FRONTEND_PORT}/chat}"
 fi
 

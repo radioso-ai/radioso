@@ -27,11 +27,16 @@ export interface SenseLabelGroup {
 
 export interface SenseLabelGateway {
   label(input: {
+    question: string;
     groups: SenseLabelGroup[];
     conversationLanguage?: string;
     usageContext?: ModelCallUsageContext;
   }): Promise<Array<{ id: string; label: string; description?: string }>>;
 }
+
+export type RetrievalSenseClarificationCandidate = ClarificationCandidate & {
+  labelStatus: "generated" | "missing";
+};
 
 export interface SenseEmbeddingReader {
   readChunkEmbeddings(input: {
@@ -81,6 +86,7 @@ export class ModelSenseLabelGateway implements SenseLabelGateway {
   ) {}
 
   async label(input: {
+    question: string;
     groups: SenseLabelGroup[];
     conversationLanguage?: string;
     usageContext?: ModelCallUsageContext;
@@ -93,6 +99,7 @@ export class ModelSenseLabelGateway implements SenseLabelGateway {
         attemptKey: "retrieval_sense_labels",
       },
       prompt: renderInjectedPrompt(this.promptTemplate, {
+        question: input.question,
         conversationLanguage: input.conversationLanguage ?? "the conversation language",
         groups: JSON.stringify(input.groups.map((group) => ({
           id: group.id,
@@ -116,10 +123,11 @@ export class SenseGroupingService {
 
   async detect(input: {
     workspaceId: string;
+    question: string;
     rankedCandidates: RetrievedCandidate[];
     conversationLanguage?: string;
     usageContext?: ModelCallUsageContext;
-  }): Promise<ClarificationCandidate[]> {
+  }): Promise<RetrievalSenseClarificationCandidate[]> {
     const groups = this.qualifyingDocumentGroups(input.rankedCandidates);
     if (groups.length < 2) {
       return [];
@@ -156,17 +164,21 @@ export class SenseGroupingService {
       separation: group.separation,
     }));
     const bestAverageSimilarity = Math.max(...separated.map((group) => group.averageSimilarity));
-    const labels = new Map((await this.options.labelGateway.label({
+    const labelResults = await this.options.labelGateway.label({
+      question: input.question,
       groups: labelGroups,
       conversationLanguage: input.conversationLanguage,
       usageContext: input.usageContext,
-    })).map((label) => [label.id, label]));
+    }).catch(() => []);
+    const labels = new Map(labelResults.map((label) => [label.id, label]));
 
     return separated.map((group) => {
       const label = labels.get(group.documentId);
+      const generatedLabel = label?.label?.trim();
       return {
         id: group.documentId,
-        label: label?.label?.trim() || group.title || group.documentId,
+        label: generatedLabel || group.documentId,
+        labelStatus: generatedLabel ? "generated" : "missing",
         ...(label?.description ? { description: label.description } : {}),
         confidence: confidenceFor(group.share, group.separation, group.averageSimilarity, bestAverageSimilarity),
         payload: { documentIds: [group.documentId] },

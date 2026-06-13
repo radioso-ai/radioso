@@ -279,6 +279,9 @@ describe("retrieval sense clarification", () => {
     });
 
     expect(response.answer).toBe("Grounded answer");
+    expect(detector.detect).toHaveBeenCalledWith(expect.objectContaining({
+      question: "tell me about yoga",
+    }));
     expect(answerInputs).toHaveLength(1);
     expect(answerInputs[0]?.systemPrompt).toContain("Raja yoga");
     expect(answerInputs[0]?.systemPrompt).toMatch(/offer/i);
@@ -301,6 +304,66 @@ describe("retrieval sense clarification", () => {
         outputs: expect.objectContaining({
           surface: "retrieval_sense",
           decision: "offered",
+          chosenCandidateId: "doc-hatha",
+        }),
+      }),
+    ]));
+  });
+
+  it("silently auto-picks the top retrieval sense when a would-offer candidate is missing an LLM label", async () => {
+    let saved: PendingClarification | null = null;
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const answerInputs: ChatGatewayInput[] = [];
+    const detector = {
+      detect: vi.fn(async () => [
+        {
+          id: "doc-hatha",
+          label: "Whether the visitor means posture practice",
+          labelStatus: "generated",
+          confidence: 0.6,
+          payload: { documentIds: ["doc-hatha"] },
+        },
+        {
+          id: "doc-raja",
+          label: "doc-raja",
+          labelStatus: "missing",
+          confidence: 0.58,
+          payload: { documentIds: ["doc-raja"] },
+        },
+      ]),
+    };
+    const service = makeService({
+      capturedRequests,
+      chatGateway: chatGateway({ answerInputs }),
+      detector,
+      clarificationStore: {
+        loadPending: vi.fn(async () => null),
+        save: vi.fn(async (pending) => { saved = pending; }),
+        clear: vi.fn(),
+      },
+    });
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "tell me about yoga",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("Grounded answer");
+    expect(saved).toBeNull();
+    expect(answerInputs).toHaveLength(1);
+    expect(answerInputs[0]?.systemPrompt).not.toContain("doc-raja");
+    expect(answerInputs[0]?.systemPrompt).not.toContain("Raja Yoga Meditation");
+    expect(capturedRequests.filter((request) => request.documentScope?.includes("doc-hatha")).map((request) => request.query))
+      .toEqual(["tell me about yoga", "tell me about yoga"]);
+    expect(response.citations?.map((citation) => citation.documentId)).toEqual(["doc-hatha"]);
+    expect(response.turnTrace?.spine.stages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: "clarification",
+        outputs: expect.objectContaining({
+          surface: "retrieval_sense",
+          decision: "auto_picked",
+          reason: "label_fallback",
           chosenCandidateId: "doc-hatha",
         }),
       }),

@@ -25,8 +25,10 @@ two cases:
   groups for the same query, such as two different senses of a term.
 
 The question is an ordinary assistant message. It is generated from candidate
-labels and descriptions, not from raw document content or hard-coded wording.
-Up to four options are shown.
+labels and descriptions, not from raw document content or hard-coded wording. For
+retrieval-sense clarification, option labels describe what the visitor might be
+asking about for each document group. They are not bare document titles. Up to
+four options are shown.
 
 When a visitor chooses a retrieval-sense option, Radioso answers the original
 question that caused the clarification and limits retrieval to the chosen
@@ -56,6 +58,7 @@ Radioso silently picks when:
 - routine candidates are close, but one has a unique highest authored priority
 - a routine is already active, including a yielded off-topic turn
 - the loop guard would otherwise ask the same clarification again
+- retrieval-sense labeling fails for an option that would otherwise be shown
 
 For routine activation, priority is explicit operator arbitration. If comparable
 routines also tie on priority, the assistant asks instead of guessing.
@@ -79,7 +82,7 @@ The detail panel shows:
   `retrieval_sense`
 - `decision` — `asked`, `auto_picked`, or `suppressed`
 - `reason` — why a candidate was selected silently, such as `clear_margin`,
-  `priority`, `suppressed`, or `loop_guard`
+  `priority`, `suppressed`, `loop_guard`, or `label_fallback`
 - `candidates` — candidate ids, labels, and confidence values
 - `mappingOutcome` — how a later reply resolved, declined, or abandoned the
   pending clarification

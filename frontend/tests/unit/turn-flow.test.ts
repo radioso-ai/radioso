@@ -148,6 +148,53 @@ describe('envelopeToFlowGraph', () => {
     expect(edge(graph, 'engine', 'skill')).toBeUndefined()
   })
 
+  it('summarizes offered clarification as an applied pass-through node', () => {
+    const base = envelope()
+    base.spine.stages.splice(4, 0, {
+      id: 'clarification',
+      kind: 'clarification',
+      status: 'skipped',
+      outputs: {
+        surface: 'retrieval_sense',
+        decision: 'offered',
+        chosenCandidateId: 'hatha',
+        candidates: [
+          { id: 'hatha', label: 'Hatha yoga', confidence: 0.6 },
+          { id: 'raja', label: 'Raja yoga', confidence: 0.58 },
+        ],
+      },
+    })
+
+    const graph = envelopeToFlowGraph(base)
+
+    expect(graph.nodes.find((n) => n.id === 'spine:clarification')).toMatchObject({
+      sublabel: 'offered',
+      status: 'applied',
+    })
+  })
+
+  it('distinguishes label-fallback auto-picks in the clarification summary', () => {
+    const base = envelope()
+    base.spine.stages.splice(4, 0, {
+      id: 'clarification',
+      kind: 'clarification',
+      status: 'applied',
+      outputs: {
+        surface: 'retrieval_sense',
+        decision: 'auto_picked',
+        reason: 'label_fallback',
+        chosenCandidateId: 'hatha',
+        candidates: [{ id: 'hatha', label: 'Hatha yoga', confidence: 0.6 }],
+      },
+    })
+
+    const graph = envelopeToFlowGraph(base)
+
+    expect(graph.nodes.find((n) => n.id === 'spine:clarification')?.sublabel).toBe(
+      'auto picked: label fallback',
+    )
+  })
+
   it('places clarification before the outcome on claimed routine turns', () => {
     const claimed: TurnTraceEnvelope = {
       version: 1,

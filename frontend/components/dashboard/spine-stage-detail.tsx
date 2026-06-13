@@ -340,6 +340,10 @@ export interface ClarificationStageDetailView {
   margin?: number
   candidates: ClarificationCandidateDetail[]
   chosenCandidateId?: string
+  chosenCandidateLabel?: string
+  alternatives: ClarificationCandidateDetail[]
+  offerOutcome?: string
+  labelFallback?: boolean
   mappingOutcome?: string
 }
 
@@ -351,10 +355,15 @@ const stringifyDetailValue = (value: unknown): string | undefined => {
   return undefined
 }
 
+const nestedString = (value: unknown, key: string): string | undefined =>
+  isRecord(value) ? asString(value[key]) : undefined
+
 export const buildClarificationStageDetail = (
   stage: ConversationTraceStage,
 ): ClarificationStageDetailView => {
   const outputs = (stage.outputs ?? {}) as Record<string, unknown>
+  const decision = asString(outputs.decision)
+  const reason = asString(outputs.reason)
   const candidates = asArray(outputs.candidates)
     .filter(isRecord)
     .map((candidate, index): ClarificationCandidateDetail => ({
@@ -362,15 +371,37 @@ export const buildClarificationStageDetail = (
       label: asString(candidate.label) ?? asString(candidate.id) ?? `Candidate ${index + 1}`,
       confidence: asNumber(candidate.confidence),
     }))
+  const chosenCandidateId = asString(outputs.chosenCandidateId)
+  const chosenCandidate = chosenCandidateId
+    ? candidates.find((candidate) => candidate.id === chosenCandidateId)
+    : undefined
+  const alternatives = decision === 'offered' && chosenCandidateId
+    ? candidates.filter((candidate) => candidate.id !== chosenCandidateId)
+    : []
+  const mappingOutcome = stringifyDetailValue(outputs.mappingOutcome)
+  const offerOutcome =
+    asString(outputs.offerOutcome) ??
+    nestedString(outputs.mappingOutcome, 'offerOutcome') ??
+    nestedString(outputs.resolution, 'offerOutcome') ??
+    asString(outputs.resolutionOutcome)
+  const labelFallback =
+    reason === 'label_fallback' ||
+    outputs.labelFallback === true ||
+    asString(outputs.fallbackReason) === 'label_fallback' ||
+    asString(outputs.labelFallbackReason) === 'label_fallback'
 
   return {
     surface: asString(outputs.surface),
-    decision: asString(outputs.decision),
-    reason: asString(outputs.reason),
+    decision,
+    reason,
     margin: asNumber(outputs.margin),
     candidates,
-    chosenCandidateId: asString(outputs.chosenCandidateId),
-    mappingOutcome: stringifyDetailValue(outputs.mappingOutcome),
+    chosenCandidateId,
+    chosenCandidateLabel: chosenCandidate?.label,
+    alternatives,
+    offerOutcome,
+    labelFallback,
+    mappingOutcome,
   }
 }
 
@@ -395,16 +426,30 @@ function ClarificationStageDetail({ stage }: { stage: ConversationTraceStage }) 
             <span className="text-sm text-muted-foreground">No decision recorded.</span>
           )}
         </div>
-        {(detail.reason || typeof detail.margin === 'number' || detail.mappingOutcome) ? (
+        {(detail.reason || typeof detail.margin === 'number' || detail.offerOutcome || detail.labelFallback || detail.mappingOutcome) ? (
           <KeyValueGrid
             record={{
               ...(detail.reason ? { reason: detail.reason } : {}),
               ...(typeof detail.margin === 'number' ? { margin: detail.margin } : {}),
+              ...(detail.labelFallback ? { labelFallback: true } : {}),
+              ...(detail.offerOutcome ? { offerOutcome: detail.offerOutcome } : {}),
               ...(detail.mappingOutcome ? { mappingOutcome: detail.mappingOutcome } : {}),
             }}
           />
         ) : null}
       </Section>
+      {(detail.chosenCandidateId || detail.alternatives.length > 0) ? (
+        <Section label="Offer">
+          <KeyValueGrid
+            record={{
+              ...(detail.chosenCandidateId ? { winner: detail.chosenCandidateLabel ?? detail.chosenCandidateId } : {}),
+              ...(detail.alternatives.length > 0
+                ? { alternatives: detail.alternatives.map((candidate) => candidate.label).join(', ') }
+                : {}),
+            }}
+          />
+        </Section>
+      ) : null}
       <Section label={`Candidates (${detail.candidates.length})`}>
         {detail.candidates.length === 0 ? (
           <p className="text-sm text-muted-foreground">No candidates recorded for this decision.</p>

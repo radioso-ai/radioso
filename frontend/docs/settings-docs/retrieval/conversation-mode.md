@@ -14,7 +14,7 @@ It does not relax grounding. When the assistant uses retrieval, answers are stil
 
 Use this when you want the assistant to answer the current question and stop.
 
-Factual mode keeps responses direct and avoids proactively suggesting adjacent topics unless clarification is required for honesty.
+Factual mode keeps responses direct and avoids proactively suggesting adjacent topics. If retrieval finds two close senses with no clear winner, the default clarification policy still answers the strongest sense first and may offer the alternative inline.
 
 ### Guided
 

@@ -36,6 +36,7 @@ export interface McpChannelSetup {
   label: string
   mcpUrl: string
   mode: McpChannelSetupMode
+  remediation?: string
   steps: string[]
 }
 
@@ -54,6 +55,7 @@ export const resolveMcpChannelSetup = ({
       label: 'MCP not enabled',
       mcpUrl: '',
       mode: 'disabled',
+      remediation: 'Enable backend MCP with RADIOSO_MCP_ENABLED=true or set NEXT_PUBLIC_MCP_URL to a reachable MCP server URL, then restart Radioso.',
       steps: [],
     }
   }
@@ -68,6 +70,7 @@ export const resolveMcpChannelSetup = ({
       label: 'MCP not enabled',
       mcpUrl: trimmedUrl,
       mode: 'disabled',
+      remediation: 'Set NEXT_PUBLIC_MCP_URL to an absolute MCP server URL or a root-relative same-host MCP path.',
       steps: [],
     }
   }
@@ -101,6 +104,8 @@ export const resolveMcpChannelSetup = ({
   }
 }
 
+export const shouldProbeMcpHealth = (setup: McpChannelSetup): boolean => setup.mode === 'same-host'
+
 export function McpChannelCard({ workspaceId }: { workspaceId: string | null | undefined }) {
   const { apiToken, apiTokenError, isApiTokenLoading } = useInlineWorkspaceToken(workspaceId)
   const dashboardOrigin = useSyncExternalStore(subscribeBrowserOrigin, getBrowserOrigin, getServerOrigin)
@@ -113,21 +118,22 @@ export function McpChannelCard({ workspaceId }: { workspaceId: string | null | u
       dashboardOrigin: window.location.origin,
       mcpUrl: MCP_URL,
     })
-    const healthUrl = configuredSetup.mode === 'remote' ? new URL('/healthz', configuredSetup.mcpUrl).toString() : '/backend/health'
+    if (!shouldProbeMcpHealth(configuredSetup)) {
+      return () => controller.abort()
+    }
 
-    void fetch(healthUrl, {
+    void fetch('/backend/health', {
       cache: 'no-store',
       signal: controller.signal,
     })
-      .then(async (response) => (response.ok ? response.json() : null))
-      .then((body: unknown) => {
-        if (configuredSetup.mode === 'remote') {
-          if (!body) {
-            setRuntimeMcpError('The configured MCP server is unavailable.')
-          }
-          return
+      .then(async (response) => {
+        if (!response.ok) {
+          setRuntimeMcpError('The Radioso backend health endpoint is unavailable.')
+          return null
         }
-
+        return response.json()
+      })
+      .then((body: unknown) => {
         const mcp = body && typeof body === 'object' && 'mcp' in body ? body.mcp : null
         if (!mcp || typeof mcp !== 'object') {
           return
@@ -143,9 +149,7 @@ export function McpChannelCard({ workspaceId }: { workspaceId: string | null | u
         if (error instanceof Error && error.name === 'AbortError') {
           return
         }
-        if (configuredSetup.mode === 'remote') {
-          setRuntimeMcpError('The configured MCP server is unavailable.')
-        }
+        setRuntimeMcpError('The Radioso backend health endpoint is unavailable.')
       })
 
     return () => controller.abort()
@@ -158,6 +162,7 @@ export function McpChannelCard({ workspaceId }: { workspaceId: string | null | u
         error: runtimeMcpError,
         label: 'MCP unavailable',
         mode: 'disabled' as const,
+        remediation: 'Check that backend health is reachable and that RADIOSO_MCP_ENABLED, RADIOSO_MCP_STANDALONE, and RADIOSO_MCP_MOUNT_PATH match the deployment.',
         steps: [],
       }
     : setup
@@ -180,9 +185,10 @@ export function McpChannelCard({ workspaceId }: { workspaceId: string | null | u
         </div>
 
         {resolvedSetup.error ? (
-          <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-            {resolvedSetup.error}
-          </p>
+          <div className="space-y-1 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+            <p>{resolvedSetup.error}</p>
+            {resolvedSetup.remediation ? <p>{resolvedSetup.remediation}</p> : null}
+          </div>
         ) : null}
 
         <div className="grid gap-4 md:grid-cols-2">

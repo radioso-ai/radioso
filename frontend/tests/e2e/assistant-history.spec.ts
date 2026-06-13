@@ -242,7 +242,7 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
   await expect(page.getByText("Turn flow", { exact: true })).toHaveCount(0);
 });
 
-test("turn flow shows clarification decisions and candidates", async ({ page }) => {
+test("turn flow shows offered clarification decisions and candidates", async ({ page }) => {
   const conversationId = "conversation-clarification";
   const assistantMessageId = "assistant-message-clarification";
   const historyList = {
@@ -285,15 +285,14 @@ test("turn flow shows clarification decisions and candidates", async ({ page }) 
           status: "applied",
           outputs: {
             surface: "retrieval_sense",
-            decision: "asked",
-            reason: "too_close",
+            decision: "offered",
             margin: 0.03,
             candidates: [
               { id: "hatha", label: "Hatha yoga", confidence: 0.73 },
               { id: "raja", label: "Raja yoga", confidence: 0.7 },
             ],
             chosenCandidateId: "hatha",
-            mappingOutcome: "chosen:hatha",
+            offerOutcome: "ignored",
           },
         },
         {
@@ -331,16 +330,16 @@ test("turn flow shows clarification decisions and candidates", async ({ page }) 
       {
         id: assistantMessageId,
         role: "assistant",
-        content: "Do you mean Hatha yoga or Raja yoga?",
+        content: "Hatha yoga emphasizes physical postures. If you meant Raja yoga, I can answer that instead.",
         createdAt: nowIso,
         citations: [],
-        answerSegments: [{ text: "Do you mean Hatha yoga or Raja yoga?" }],
+        answerSegments: [{ text: "Hatha yoga emphasizes physical postures. If you meant Raja yoga, I can answer that instead." }],
         debug: {
           eventStatus: "success",
           recordedAt: nowIso,
           stream: false,
           citationCount: 0,
-          answerOutcome: "clarification_asked",
+          answerOutcome: "completed",
           // A retrieval-sense ask happens post-retrieval, so a real turn carries
           // the retrieval activity trace (the Debug/Flow entry points key off it).
           activitySummary: {
@@ -425,14 +424,13 @@ test("turn flow shows clarification decisions and candidates", async ({ page }) 
 
   const stageDetail = page.getByTestId("turn-flow-stage-detail");
   await expect(stageDetail.getByText("retrieval_sense")).toBeVisible();
-  await expect(stageDetail.getByText("asked", { exact: true })).toBeVisible();
-  await expect(stageDetail.getByText("too_close")).toBeVisible();
+  await expect(stageDetail.getByText("offered", { exact: true })).toBeVisible();
   await expect(stageDetail.getByText("0.03")).toBeVisible();
   await expect(stageDetail.getByText("Hatha yoga")).toBeVisible();
   await expect(stageDetail.getByText("0.73")).toBeVisible();
   await expect(stageDetail.getByText("Raja yoga")).toBeVisible();
   await expect(stageDetail.getByText("0.7", { exact: true })).toBeVisible();
-  await expect(stageDetail.getByText("chosen:hatha")).toBeVisible();
+  await expect(stageDetail.getByText("ignored")).toBeVisible();
 });
 
 test("activity filtered pages request one offset-backed page", async ({ page }) => {

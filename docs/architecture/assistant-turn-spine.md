@@ -123,11 +123,14 @@ If the user chooses a retrieval-sense candidate, the stored payload becomes a
 from the turn that asked for clarification, scoped to the chosen document group.
 The short reply that chose an option is only used for mapping the choice.
 
-"None of these" and unrelated replies clear the pending clarification and the
-latest message proceeds as a normal turn. A turn that resolves a pending
-clarification does not create a new one in the same turn, and the same question
-is not asked twice in a row. The stored original question is nulled whenever the
-pending row becomes resolved, declined, or expired.
+Retrieval-sense offers are lenient. If the visitor chooses an offered
+alternative, retrieval answers the original question scoped to that alternative.
+If the visitor ignores the offer, the pending offer is cleared silently and the
+latest message proceeds as a normal turn. Blocking `ask` clarifications keep the
+stricter rule: a turn that resolves one does not create a new clarification in
+the same turn. The same candidate set is not asked or offered twice in a row. The
+stored original question is nulled whenever the pending row becomes resolved,
+declined, or expired.
 
 ## Routines run before selection
 
@@ -158,16 +161,21 @@ when it has since become `superseded` or `archived`.
 ## Clarification appears on the spine
 
 The turn trace records clarification as a first-class `clarification` stage. The
-stage can appear in two shapes:
+stage can appear in three shapes:
 
 - **Claimed ask turn** — routine activation or retrieval sense detection decides
   the candidates are too close to choose silently. The assistant asks one
   clarifying question, the pending clarification is saved with the turn, and no
   candidate executes on that turn.
+- **Answer-with-offer turn** — retrieval sense detection soft-picks the strongest
+  candidate, saves the remaining close candidates as an offer, answers from the
+  winner's document scope, and records `decision: "offered"`.
 - **Pass-through turn** — the system silently picks a candidate because there is
   a clear winner, a unique authored priority winner, loop-guard suppression, or
-  active-routine suppression. The trace records the candidate set and reason,
-  then the turn continues to routine activation or retrieval dispatch.
+  active-routine suppression. Labeling failure also auto-picks the top
+  retrieval-sense candidate and records `reason: "label_fallback"`. The trace
+  records the candidate set and reason, then the turn continues to routine
+  activation or retrieval dispatch.
 
 Clarification asks are suppressed while routine state is active, including turns
 where the routine yields as off-topic to normal answering. Detectors may still
@@ -177,6 +185,11 @@ competing to interpret the visitor's next message.
 
 The retrieval-sense detector runs only on conversational retrieval turns, after
 retrieval has produced candidates and before the grounded answer is composed.
+The default retrieval-sense policy is answer-first: `askMargin = 0`, so any
+no-clear-winner set that survives floor, loop guard, and priority checks becomes
+an offer instead of a blocking question. Routine activation keeps
+`askMargin = clearMargin`, preserving the blocking ask behavior for routine
+ambiguity.
 Standalone retrieval answer, document search, SDK retrieval, and MCP retrieval
 surfaces do not ask clarifying questions.
 

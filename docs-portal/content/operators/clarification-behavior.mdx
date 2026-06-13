@@ -1,34 +1,38 @@
 ---
 title: Clarification behavior
-description: How to understand assistant clarifying questions and the debug trace that records them.
+description: How to understand answer-with-offer clarification and the debug trace that records it.
 ---
 
 import { Callout } from 'nextra/components'
 
 # Clarification behavior
 
-Clarification is the assistant asking the visitor to choose between comparable
-matches. It is used when the system has enough evidence to find candidates, but
-not enough evidence to choose one confidently.
+Clarification is the assistant handling comparable matches. It is used when the
+system has enough evidence to find candidates, but not enough evidence to choose
+one confidently.
 
 It is different from slot filling. Slot filling asks for a missing value inside a
 routine. Clarification chooses among options that already matched.
 
-## When the assistant asks
+## When the assistant asks or offers
 
-The assistant can ask a clarifying question on conversational chat surfaces in
-two cases:
+The assistant can clarify on conversational chat surfaces in two cases:
 
 - **Routine overlap** — two or more eligible routines have triggers that match the
   visitor's message closely, and they do not have a clear priority winner.
 - **Ambiguous corpus term** — conversational retrieval finds distinct document
   groups for the same query, such as two different senses of a term.
 
-The question is an ordinary assistant message. It is generated from candidate
-labels and descriptions, not from raw document content or hard-coded wording. For
-retrieval-sense clarification, option labels describe what the visitor might be
-asking about for each document group. They are not bare document titles. Up to
-four options are shown.
+Routine overlap still uses a clarifying question when there is no clear priority
+winner. Retrieval-sense clarification is answer-first: when there is no clear
+winner, Radioso answers using the strongest sense and briefly offers the other
+intent-phrased option inline. It does not block the visitor with a menu unless
+the policy is changed away from the default answer-first band.
+
+Clarification text is an ordinary assistant message. It is generated from
+candidate labels and descriptions, not from raw document content or hard-coded
+wording. Options are phrased as possible visitor intents, not as document titles.
+Up to four options are considered.
 
 When a visitor chooses a retrieval-sense option, Radioso answers the original
 question that caused the clarification and limits retrieval to the chosen
@@ -38,14 +42,16 @@ Standalone retrieval answer calls, document search, SDK retrieval calls, and MCP
 retrieval tools do not ask clarifying questions. They do not have a conversation
 turn to resume.
 
-## What "none of these" does
+## What ignoring an offer does
 
-When a visitor answers that none of the options is right, Radioso clears the
-pending clarification and handles the visitor's latest message as a normal turn.
+When a visitor ignores an inline retrieval-sense offer, nothing is charged to the
+conversation flow. Radioso clears the pending offer and handles the visitor's
+latest message as a normal turn. There is no decline message.
 
-The same question is not asked again immediately. If the answer cannot be mapped
-to one option, the pending clarification is also cleared and the assistant
-continues best-effort.
+The same option set is not offered or asked again immediately. If a blocking
+clarifying question is answered with "none of these" or with an unrelated
+message, the pending clarification is also cleared and the assistant continues
+best-effort.
 
 ## Why the assistant sometimes picks silently
 
@@ -58,7 +64,8 @@ Radioso silently picks when:
 - routine candidates are close, but one has a unique highest authored priority
 - a routine is already active, including a yielded off-topic turn
 - the loop guard would otherwise ask the same clarification again
-- retrieval-sense labeling fails for an option that would otherwise be shown
+- retrieval-sense labels cannot be safely phrased as visitor intents; the trace
+  records `label_fallback`
 
 For routine activation, priority is explicit operator arbitration. If comparable
 routines also tie on priority, the assistant asks instead of guessing.
@@ -72,18 +79,21 @@ Open the conversation debug view and look for the **Clarification** node in the
 turn flow.
 
 The node appears between the engine and the next capability path. On a turn where
-the assistant asks, it leads directly to the outcome because no routine or
-retrieval candidate executes yet. On a silent pick, the turn continues through the
-routine or retrieval path.
+the assistant asks a blocking question, it leads directly to the outcome because
+no routine or retrieval candidate executes yet. On a silent pick or retrieval
+offer, the turn continues through the routine or retrieval path.
 
 The detail panel shows:
 
 - `surface` — where the ambiguity came from, such as `routine_activation` or
   `retrieval_sense`
-- `decision` — `asked`, `auto_picked`, or `suppressed`
+- `decision` — `asked`, `offered`, `auto_picked`, or `suppressed`
 - `reason` — why a candidate was selected silently, such as `clear_margin`,
   `priority`, `suppressed`, `loop_guard`, or `label_fallback`
-- `candidates` — candidate ids, labels, and confidence values
+- `candidates` — candidate ids, labels, and confidence values; the chosen winner
+  and offered alternatives are labels only
+- `offerOutcome` — whether an inline offer was accepted as an alternative or
+  ignored, when that outcome is available on the trace
 - `mappingOutcome` — how a later reply resolved, declined, or abandoned the
   pending clarification
 

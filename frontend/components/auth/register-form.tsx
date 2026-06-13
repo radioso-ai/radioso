@@ -133,18 +133,6 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="organizationName">Organization Name</Label>
-        <Input
-          id="organizationName"
-          type="text"
-          placeholder="Acme"
-          value={organizationName}
-          onChange={(e) => setOrganizationName(e.target.value)}
-          maxLength={80}
-          disabled={isLoading}
-        />
-      </div>
-      <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
         <Input
           id="email"
@@ -180,6 +168,18 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
           disabled={isLoading}
         />
       </div>
+      <div className="space-y-2">
+        <Label htmlFor="organizationName">Organization name (optional)</Label>
+        <Input
+          id="organizationName"
+          type="text"
+          placeholder="Defaults to your email domain"
+          value={organizationName}
+          onChange={(e) => setOrganizationName(e.target.value)}
+          maxLength={80}
+          disabled={isLoading}
+        />
+      </div>
       {error && (
         <p className="text-sm text-destructive">{error}</p>
       )}
@@ -188,7 +188,7 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
       )}
       <Button type="submit" className="w-full" disabled={isLoading}>
         {isLoading ? <Spinner className="mr-2" /> : null}
-        Create Organization
+        Create account
       </Button>
       <p className="text-center text-sm text-muted-foreground">
         Already have an account?{' '}

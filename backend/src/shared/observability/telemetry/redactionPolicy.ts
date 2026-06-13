@@ -16,12 +16,13 @@ const blockedKeys = new Set([
   "sessionToken",
   "sourceContent",
   "token",
+  "x-radioso-public-session",
 ]);
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-const shouldRedactKey = (key: string): boolean => {
+export const shouldRedactKey = (key: string): boolean => {
   const normalized = key.replaceAll(/[^a-zA-Z0-9]/g, "").toLowerCase();
   return (
     blockedKeys.has(key) ||

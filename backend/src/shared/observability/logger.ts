@@ -4,6 +4,7 @@ import { pinoHttp } from "pino-http";
 import type { ProductAnalyticsEvent } from "../analytics/productAnalyticsTypes.js";
 import type { ErrorEvent } from "../errors/errorTypes.js";
 import type { CorrelationFields } from "./telemetry/correlation.js";
+import { redactedValue, shouldRedactKey } from "./telemetry/redactionPolicy.js";
 
 export const createLogger = (level = process.env.NODE_ENV === "production" ? "info" : "debug") =>
   pino({ level });
@@ -147,9 +148,25 @@ export const extractRetrievalLogFields = (metadata?: Record<string, unknown>): R
   };
 };
 
+const httpCredentialHeaderNames = ["cookie", "authorization", "x-radioso-public-session", "set-cookie"].filter(shouldRedactKey);
+const httpRequestCredentialHeaderNames = httpCredentialHeaderNames.filter((headerName) => headerName !== "set-cookie");
+const httpResponseCredentialHeaderNames = httpCredentialHeaderNames.filter((headerName) => headerName === "set-cookie");
+const httpHeaderRedactPath = (target: "req" | "res", headerName: string): string =>
+  `${target}.headers["${headerName}"]`;
+
+const httpLoggerRedactPaths = [
+  ...httpRequestCredentialHeaderNames.map((headerName) => httpHeaderRedactPath("req", headerName)),
+  httpHeaderRedactPath("req", "x-workspace-id"),
+  ...httpResponseCredentialHeaderNames.map((headerName) => httpHeaderRedactPath("res", headerName)),
+];
+
 export const createHttpLogger = (logger: AppLogger): RequestHandler =>
   pinoHttp({
     logger,
+    redact: {
+      paths: httpLoggerRedactPaths,
+      censor: redactedValue(),
+    },
     customProps: (req: { id?: string | number }) => ({
       requestId: req.id,
     }),

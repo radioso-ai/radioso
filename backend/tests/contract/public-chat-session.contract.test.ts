@@ -436,7 +436,49 @@ describe("public chat session contract", () => {
 
     expect(logo.status).toBe(200);
     expect(logo.headers["content-type"]).toContain("image/png");
+    expect(logo.headers["content-disposition"]).toBe('inline; filename="logo"');
     expect(Buffer.from(logo.body).toString("utf8")).toBe("fake-logo");
+  });
+
+  it("falls back to octet-stream when stored assistant logo metadata has an unsafe content type", async () => {
+    const { app, dependencies } = createTestApp();
+    const session = await issueTestSession(app, "public-chat-logo-unsafe-mime@example.com");
+
+    await request(app)
+      .post("/api/v1/settings/general/assistant-logo")
+      .set(adminSessionHeaders(session))
+      .attach("logo", Buffer.from("fake-logo"), {
+        filename: "assistant.png",
+        contentType: "image/png",
+      })
+      .expect(200);
+
+    await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        anonymousChatEnabled: true,
+      })
+      .expect(200);
+
+    const agent = await dependencies.agentService.resolve(session.workspaceId);
+    if (!agent.logo) {
+      throw new Error("Expected uploaded logo");
+    }
+    await dependencies.agentRepository.update(agent.id, session.workspaceId, {
+      logo: {
+        ...agent.logo,
+        mimeType: "text/html",
+      },
+    } as never);
+
+    const response = await request(app)
+      .get(`/api/v1/public/chat/${agent.surfaceSettings.anonymousChat.token}/assistant-logo`);
+
+    expect(response.status).toBe(200);
+    expect(response.headers["content-type"]).toContain("application/octet-stream");
+    expect(response.headers["content-disposition"]).toBe('inline; filename="logo"');
+    expect(Buffer.from(response.body).toString("utf8")).toBe("fake-logo");
   });
 
   it("allows approved website embed origins to load the assistant logo with CORS", async () => {

@@ -25,6 +25,7 @@ import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
+import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { AgentService } from "../../agents/public.js";
 import type { ChatGateway, ChatGatewayInput } from "../contracts/chatGateway.js";
 import type { ChatStreamEvent } from "../contracts/streamEvents.js";
@@ -194,6 +195,7 @@ export interface ChatServiceOptions {
   turnRuntime: ChatTurnRuntime;
   productAnalyticsService?: ProductAnalyticsPort;
   workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">;
+  bootstrapGreetingCacheRepository?: BootstrapGreetingCacheRepositoryPort;
   usageLimitPolicy?: UsageLimitPolicy;
   agentService?: Pick<AgentService, "resolve">;
   directiveSteering?: RouteScopedDirectiveRuntime;
@@ -255,6 +257,7 @@ export class ChatService {
       turnRuntime,
       productAnalyticsService = new NoopProductAnalyticsService(),
       workspaceRepository,
+      bootstrapGreetingCacheRepository,
       usageLimitPolicy = new NoopUsageLimitPolicy(),
       agentService,
       directiveSteering = noopRouteScopedDirectiveRuntime,
@@ -316,6 +319,7 @@ export class ChatService {
       auditService,
       workspaceRepository,
       agentService,
+      bootstrapGreetingCacheRepository,
     );
     // One selection seam shared by the engine turn and the host streaming path, so
     // streamed and non-streamed turns resolve the terminal skill identically.
@@ -648,6 +652,7 @@ export class ChatService {
     agentId?: string | null;
     accountId?: string;
     conversationId?: string;
+    bootstrapGreetingId?: string;
     query: string;
     stream: boolean;
     userExpectedLocale?: string | null;
@@ -670,6 +675,7 @@ export class ChatService {
     agentId?: string | null;
     accountId?: string;
     conversationId?: string;
+    bootstrapGreetingId?: string;
     query: string;
     stream: boolean;
     userExpectedLocale?: string | null;
@@ -791,6 +797,7 @@ export class ChatService {
     agentId?: string | null;
     accountId?: string;
     conversationId?: string;
+    bootstrapGreetingId?: string;
     query: string;
     stream: boolean;
     userExpectedLocale?: string | null;
@@ -813,6 +820,7 @@ export class ChatService {
     agentId?: string | null;
     accountId?: string;
     conversationId?: string;
+    bootstrapGreetingId?: string;
     query: string;
     stream: boolean;
     userExpectedLocale?: string | null;

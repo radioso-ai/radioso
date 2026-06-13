@@ -1,5 +1,6 @@
 import { badRequest } from "../../shared/domain/errors.js";
 import { normalizeLocaleTag } from "../../shared/domain/locale.js";
+import { PUBLIC_ASSISTANT_FALLBACK_NAME } from "../../shared/domain/responseIdentity.js";
 import {
   defaultWebsiteEmbedTheme,
   type WebsiteEmbedThemeSettings,
@@ -774,5 +775,7 @@ export const resolveAgentDisplayName = (input: { agentName?: string | null; work
   if (agentName) {
     return agentName;
   }
-  return input.workspaceName?.trim() || "Assistant";
+  // Never fall back to the internal workspace name on public surfaces; use a
+  // neutral label so seeded defaults like "Default" do not leak to visitors.
+  return PUBLIC_ASSISTANT_FALLBACK_NAME;
 };

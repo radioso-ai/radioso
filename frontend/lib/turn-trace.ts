@@ -91,3 +91,59 @@ export const getPrimaryLeafTrace = (
   envelope: TurnTraceEnvelope | undefined,
 ): ActivityTrace | undefined =>
   envelope ? getPrimaryLeaf(envelope.spine)?.trace : undefined
+
+/**
+ * A turn driven by a routine carries a `routine_activate` (first turn) or
+ * `routine_resume` (a later turn of the same routine) spine stage. The stage
+ * outputs say which routine ran and whether it finished on this turn. We surface
+ * just enough to mark the routine's span in the conversation thread — the rich
+ * routine detail still lives in the spine stage view.
+ */
+export interface RoutineTurnSignal {
+  routineId: string
+  /** `false` for the activating turn, `true` for a resumed/continued turn. */
+  resumed: boolean
+  /** The routine reached a terminal step on this turn (state was cleared). */
+  completed: boolean
+}
+
+/**
+ * The clarification decision recorded on the turn, if any. The engine names the
+ * decision: `asked` (it asked the user to choose), `offered`, `auto_picked`,
+ * `suppressed`, or `none`. Used to call out "asked a clarifying question" as a
+ * distinct turn outcome rather than a generic direct reply.
+ */
+export const clarificationDecisionFromSpine = (
+  spine: ConversationTrace | undefined,
+): string | undefined => {
+  const stage = spine?.stages.find((candidate) => candidate.kind === 'clarification')
+  if (!stage) {
+    return undefined
+  }
+  const outputs = (stage.outputs ?? {}) as Record<string, unknown>
+  return typeof outputs.decision === 'string' ? outputs.decision : undefined
+}
+
+export const routineTurnSignalFromSpine = (
+  spine: ConversationTrace | undefined,
+): RoutineTurnSignal | undefined => {
+  if (!spine) {
+    return undefined
+  }
+  const stage = spine.stages.find(
+    (candidate) => candidate.kind === 'routine_activate' || candidate.kind === 'routine_resume',
+  )
+  if (!stage) {
+    return undefined
+  }
+  const outputs = (stage.outputs ?? {}) as Record<string, unknown>
+  const routineId = typeof outputs.routineId === 'string' ? outputs.routineId : undefined
+  if (!routineId) {
+    return undefined
+  }
+  return {
+    routineId,
+    resumed: stage.kind === 'routine_resume',
+    completed: outputs.completed === true,
+  }
+}

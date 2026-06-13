@@ -426,9 +426,13 @@ test("turn flow shows offered clarification decisions and candidates", async ({ 
   await expect(stageDetail.getByText("retrieval_sense")).toBeVisible();
   await expect(stageDetail.getByText("offered", { exact: true })).toBeVisible();
   await expect(stageDetail.getByText("0.03")).toBeVisible();
-  await expect(stageDetail.getByText("Hatha yoga")).toBeVisible();
+  // The winner and alternative labels render both in the "Offer" summary (a
+  // definition list) and the "Candidates" list, so scope label assertions to the
+  // candidates list to avoid a strict-mode match against the Offer summary.
+  const candidateList = stageDetail.getByRole("list");
+  await expect(candidateList.getByText("Hatha yoga")).toBeVisible();
   await expect(stageDetail.getByText("0.73")).toBeVisible();
-  await expect(stageDetail.getByText("Raja yoga")).toBeVisible();
+  await expect(candidateList.getByText("Raja yoga")).toBeVisible();
   await expect(stageDetail.getByText("0.7", { exact: true })).toBeVisible();
   await expect(stageDetail.getByText("ignored")).toBeVisible();
 });

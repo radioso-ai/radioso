@@ -4,15 +4,18 @@ import { RadiosoCrawlerProvider } from "../../../src/modules/websiteCrawler/radi
 
 const mocks = vi.hoisted(() => ({
   crawlSite: vi.fn(),
+  crawlSiteStream: vi.fn(),
 }));
 
 vi.mock("@radioso/crawler", () => ({
   crawlSite: mocks.crawlSite,
+  crawlSiteStream: mocks.crawlSiteStream,
 }));
 
 describe("RadiosoCrawlerProvider", () => {
   beforeEach(() => {
     mocks.crawlSite.mockReset();
+    mocks.crawlSiteStream.mockReset();
     delete process.env.WEBSITE_CRAWLER_USER_AGENT;
   });
 
@@ -97,6 +100,33 @@ describe("RadiosoCrawlerProvider", () => {
     expect(mocks.crawlSite).toHaveBeenCalledWith(expect.objectContaining({
       userAgent: "ExampleDocsCrawler/1.0 (+https://example.com/crawler)",
     }));
+  });
+
+  it("passes the public URL validator to batch and streaming crawler calls", async () => {
+    mocks.crawlSite.mockResolvedValue([]);
+    mocks.crawlSiteStream.mockResolvedValue({ pages: 0 });
+
+    const provider = new RadiosoCrawlerProvider();
+    await provider.crawl({
+      url: "https://example.com",
+      limit: 5,
+    });
+    await provider.crawlStream({
+      url: "https://example.com",
+      limit: 5,
+    }, async () => {});
+
+    const batchParams = mocks.crawlSite.mock.calls[0]?.[0] as {
+      validateNavigationUrl?: (url: string) => Promise<void> | void;
+    };
+    const streamParams = mocks.crawlSiteStream.mock.calls[0]?.[0] as {
+      validateNavigationUrl?: (url: string) => Promise<void> | void;
+    };
+
+    expect(batchParams.validateNavigationUrl).toEqual(expect.any(Function));
+    expect(streamParams.validateNavigationUrl).toEqual(expect.any(Function));
+    await expect(batchParams.validateNavigationUrl?.("http://127.0.0.1/")).rejects.toThrow("publicly routable host");
+    await expect(streamParams.validateNavigationUrl?.("http://127.0.0.1/")).rejects.toThrow("publicly routable host");
   });
 
   it("does not seed already-processed checkpoint URLs back into the crawler", async () => {

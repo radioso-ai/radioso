@@ -1,12 +1,10 @@
-import type { FetchPage, FetchedPage } from "./crawler.js";
+import type { FetchPage, FetchedPage, ValidateNavigationUrl } from "./crawler.js";
 import { extractStructuredTextWithFallback } from "./htmlProcessing.js";
 
 export type FetchedPageWithScreenshot = FetchedPage & {
   screenshot: Uint8Array | null;
   faviconUrl: string | null;
 };
-
-type ValidateNavigationUrl = (url: string) => Promise<void> | void;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let playwrightModule: any = null;

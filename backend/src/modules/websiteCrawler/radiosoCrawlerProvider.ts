@@ -2,6 +2,7 @@ import type { CrawledPageResult } from "@radioso/crawler";
 
 import { resolveWebsiteCrawlerConfig } from "./config.js";
 import type { WebsiteCrawlPage, WebsiteCrawlRequest, WebsiteCrawlResult, WebsiteCrawlerProvider } from "./provider.js";
+import { assertPublicWebsiteUrl } from "./urlPolicy.js";
 
 const PROVIDER_NAME = "radioso-crawler";
 const DEFAULT_PAGE_CONCURRENCY = 1;
@@ -21,6 +22,7 @@ export class RadiosoCrawlerProvider implements WebsiteCrawlerProvider {
       includeUrlPatterns: request.policy?.includeUrlPatterns,
       excludeUrlPatterns: request.policy?.excludeUrlPatterns,
       preserveContentLinks: request.policy?.preserveContentLinks,
+      validateNavigationUrl: (url) => assertPublicWebsiteUrl(url),
       seedDiscoveredUrls: request.checkpoint?.discoveredUrls,
       seedPendingUrls,
       includeBaseUrl: (request.checkpoint?.discoveredUrls.length ?? 0) === 0,
@@ -49,6 +51,7 @@ export class RadiosoCrawlerProvider implements WebsiteCrawlerProvider {
       includeUrlPatterns: request.policy?.includeUrlPatterns,
       excludeUrlPatterns: request.policy?.excludeUrlPatterns,
       preserveContentLinks: request.policy?.preserveContentLinks,
+      validateNavigationUrl: (url) => assertPublicWebsiteUrl(url),
       seedDiscoveredUrls: request.checkpoint?.discoveredUrls,
       seedPendingUrls,
       includeBaseUrl: (request.checkpoint?.discoveredUrls.length ?? 0) === 0,
@@ -102,7 +105,10 @@ export const createRadiosoCrawlerUtilityProvider = () => ({
     signal?: AbortSignal;
   }) {
     const { crawlSite } = await import("@radioso/crawler");
-    return crawlSite(params);
+    return crawlSite({
+      ...params,
+      validateNavigationUrl: (url) => assertPublicWebsiteUrl(url),
+    });
   },
   async isBrowserTransportAvailable() {
     const { isPlaywrightAvailable } = await import("@radioso/crawler");

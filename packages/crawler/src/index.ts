@@ -70,7 +70,8 @@ export {
   type CrawledPageResult,
   type CrawlSiteParams,
   type FetchPage,
-  type FetchedPage
+  type FetchedPage,
+  type ValidateNavigationUrl
 } from "./transport/crawler.js";
 export {
   fetchPageWithPlaywright,

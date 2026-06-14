@@ -1,8 +1,9 @@
 # Radioso Enterprise Edition
 
 This directory contains Radioso Enterprise Edition code. It is commercial
-source-available software governed by [LICENSE](./LICENSE), not by the
-open-source license that may apply to the rest of this repository.
+source-available software governed by [LICENSE](./LICENSE), not by the Apache
+License, Version 2.0, that applies to the rest of this repository (see the
+[LICENSE](../LICENSE) and [NOTICE](../NOTICE) files at the repository root).
 
 Enterprise Edition packages live under `ee/packages` so they can keep package
 boundaries without requiring a second repository.

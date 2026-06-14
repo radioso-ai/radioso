@@ -21,6 +21,7 @@ export async function POST(request: Request) {
   const body = JSON.stringify({
     agentId: parsedBody.agentId,
     conversationId: parsedBody.conversationId,
+    bootstrapGreetingId: parsedBody.bootstrapGreetingId,
     message: parsedBody.message ?? parsedBody.query,
     startConversation: parsedBody.startConversation ?? parsedBody.bootstrapGreeting,
     stream: parsedBody.stream ?? true,

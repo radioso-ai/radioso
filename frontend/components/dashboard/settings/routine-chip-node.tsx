@@ -1,7 +1,7 @@
 'use client'
 
-import type { ComponentType, JSX, ReactNode } from 'react'
-import { BadgeCheck, CornerUpRight, Zap, type LucideIcon } from 'lucide-react'
+import type { ComponentType, JSX } from 'react'
+import { BadgeCheck, ChevronDown, CornerUpRight, Flag, Zap, type LucideIcon } from 'lucide-react'
 import {
   $getNodeByKey,
   DecoratorNode,
@@ -29,9 +29,12 @@ import { useRoutineVariables } from '@/components/dashboard/settings/routine-var
 
 // A chip is an atomic inline reference the author picks instead of typing raw syntax.
 // Each kind renders with its own colour + glyph; the kind/type/comparison live as
-// metadata on the node, never as visible syntax. A `condition` chip is a structured
-// comparison ("decided in code"); the others are references/targets.
-export type RoutineChipKind = 'variable' | 'action' | 'handoff' | 'step' | 'condition'
+// metadata on the node, never as visible syntax. A `skill` chip names a skill defined
+// elsewhere (compiles to a tool step the runner dispatches through the skill port); a
+// `condition` chip is a structured comparison ("decided in code"); the others are
+// references/targets. An `end` chip is a branch target that completes the routine (the
+// counterpart to a `handoff` chip, which escalates).
+export type RoutineChipKind = 'variable' | 'skill' | 'handoff' | 'step' | 'condition' | 'end'
 
 export type RoutineFieldGuardValue = string | number | boolean
 
@@ -50,13 +53,14 @@ export type SerializedChipNode = Spread<
 
 const KIND_META: Record<RoutineChipKind, { className: string; icon: LucideIcon | null }> = {
   variable: { className: 'border-amber-300 bg-amber-100 text-amber-900', icon: null },
-  action: { className: 'border-emerald-300 bg-emerald-100 text-emerald-900', icon: Zap },
+  skill: { className: 'border-emerald-300 bg-emerald-100 text-emerald-900', icon: Zap },
   handoff: { className: 'border-rose-300 bg-rose-100 text-rose-900', icon: CornerUpRight },
   step: { className: 'border-sky-300 bg-sky-100 text-sky-900', icon: CornerUpRight },
   condition: { className: 'border-indigo-300 bg-indigo-100 text-indigo-900', icon: BadgeCheck },
+  end: { className: 'border-slate-300 bg-slate-100 text-slate-700', icon: Flag },
 }
 
-function ChipBadge({ kind, label }: { kind: RoutineChipKind; label: string }): JSX.Element {
+function ChipBadge({ kind, label, type }: { kind: RoutineChipKind; label: string; type: RoutineSlotType | null }): JSX.Element {
   const meta = KIND_META[kind]
   const Icon: ComponentType<{ className?: string }> | null = meta.icon
   return (
@@ -65,13 +69,18 @@ function ChipBadge({ kind, label }: { kind: RoutineChipKind; label: string }): J
     >
       {Icon ? <Icon className="h-3 w-3" /> : null}
       {label}
+      {/* The type is part of the variable's identity, so show it on the chip face —
+          it also drives which exact checks the author can build on the variable. */}
+      {type ? <span className="font-normal opacity-60">· {type}</span> : null}
+      {kind === 'variable' ? <ChevronDown className="h-3 w-3 opacity-50" /> : null}
     </span>
   )
 }
 
-function ChipMenu({ nodeKey, kind, refId, children }: { nodeKey: NodeKey; kind: RoutineChipKind; refId: string; children: ReactNode }): JSX.Element {
+function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: RoutineChipKind; refId: string; label: string }): JSX.Element {
   const [editor] = useLexicalComposerContext()
   const { getType, setType } = useRoutineVariables()
+  const type = kind === 'variable' ? getType(refId) : null
 
   const removeSelf = () => {
     editor.update(() => {
@@ -83,7 +92,7 @@ function ChipMenu({ nodeKey, kind, refId, children }: { nodeKey: NodeKey; kind: 
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button type="button" contentEditable={false} data-routine-chip={kind} className="mx-0.5 cursor-pointer align-baseline outline-none">
-          {children}
+          <ChipBadge kind={kind} label={label} type={type} />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-44">
@@ -215,22 +224,17 @@ export class ChipNode extends DecoratorNode<JSX.Element> {
     return this.__unit
   }
 
-  // What a serialized line contributes. A variable becomes the {{slot.x}} wire form;
-  // an action contributes its readable label (it's part of the instruction); handoff,
-  // step and condition chips are structural, so they contribute no readable text — the
-  // line's prose / the condition chip's metadata carry the branch's meaning.
+  // What a serialized line contributes. A variable becomes the {{slot.x}} wire form; all
+  // other chips are structural and contribute no readable text — the line's prose carries
+  // the instruction, while the chip's metadata (a skill's name, a branch target, a
+  // condition's comparison) is captured separately by the compiler.
   getTextContent(): string {
     if (this.__chipKind === 'variable') return `{{slot.${this.__refId}}}`
-    if (this.__chipKind === 'action') return this.__label
     return ''
   }
 
   decorate(): JSX.Element {
-    return (
-      <ChipMenu nodeKey={this.getKey()} kind={this.__chipKind} refId={this.__refId}>
-        <ChipBadge kind={this.__chipKind} label={this.__label} />
-      </ChipMenu>
-    )
+    return <ChipMenu nodeKey={this.getKey()} kind={this.__chipKind} refId={this.__refId} label={this.__label} />
   }
 }
 

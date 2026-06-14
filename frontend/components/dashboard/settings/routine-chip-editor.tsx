@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
-import { AtSign, BadgeCheck, Bold, Italic } from 'lucide-react'
+import { AtSign, BadgeCheck, Bold, Flag, Italic } from 'lucide-react'
 
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
 import { ContentEditable } from '@lexical/react/LexicalContentEditable'
@@ -16,6 +16,7 @@ import {
   MenuOption,
 } from '@lexical/react/LexicalTypeaheadMenuPlugin'
 import {
+  $createParagraphNode,
   $createTextNode,
   $getRoot,
   $getSelection,
@@ -48,8 +49,10 @@ import {
   fieldGuardOpsForType,
   formatConditionLabel,
   ROUTINE_FIELD_GUARD_UNITS,
+  ROUTINE_SLOT_TYPES,
   slugifyVariableKey,
   type ChipDocVariable,
+  type ProseParagraph,
   type RoutineDocBlock,
   type RoutineFieldGuardValue,
 } from '@/lib/routine-prose'
@@ -87,11 +90,13 @@ function ConditionBuilderDialog({
   onOpenChange,
   variables,
   onConfirm,
+  onSetVariableType,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   variables: ChipDocVariable[]
   onConfirm: (condition: ConditionDraft) => void
+  onSetVariableType: (refId: string, type: RoutineSlotType) => void
 }) {
   const [refId, setRefId] = useState('')
   const [op, setOp] = useState<RoutineFieldGuardOp>('equals')
@@ -153,6 +158,26 @@ function ConditionBuilderDialog({
           </div>
           {selected ? (
             <div className="space-y-1.5">
+              <Label htmlFor="conditionType">Type</Label>
+              <select
+                id="conditionType"
+                value={selected.type}
+                onChange={(event) => {
+                  const nextType = event.target.value as RoutineSlotType
+                  onSetVariableType(selected.id, nextType)
+                  setOp(fieldGuardOpsForType(nextType)[0]!)
+                }}
+                className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+              >
+                {ROUTINE_SLOT_TYPES.map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">The type decides which exact checks are available.</p>
+            </div>
+          ) : null}
+          {selected ? (
+            <div className="space-y-1.5">
               <Label htmlFor="conditionOp">Check</Label>
               <select
                 id="conditionOp"
@@ -203,7 +228,7 @@ function ConditionBuilderDialog({
   )
 }
 
-function EditorToolbar({ variables }: { variables: ChipDocVariable[] }) {
+function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVariable[]; onSetVariableType: (refId: string, type: RoutineSlotType) => void }) {
   const [editor] = useLexicalComposerContext()
   const [conditionOpen, setConditionOpen] = useState(false)
   const [formats, setFormats] = useState({ bold: false, italic: false })
@@ -245,6 +270,22 @@ function EditorToolbar({ variables }: { variables: ChipDocVariable[] }) {
     })
   }
 
+  // Insert an end chip — a branch target that completes the routine (the counterpart to a
+  // handoff). The line's prose / condition chip is the guard that decides the branch.
+  const insertEnd = () => {
+    editor.focus(() => {
+      editor.update(() => {
+        const selection = $getSelection()
+        if (!$isRangeSelection(selection)) return
+        const chip = $createChipNode('end', 'done', 'end')
+        selection.insertNodes([chip])
+        const trailing = $createTextNode(' ')
+        chip.insertAfter(trailing)
+        trailing.select()
+      })
+    })
+  }
+
   return (
     <div className="flex items-center gap-0.5 border-b border-input px-1.5 py-1">
       <Button type="button" variant={formats.bold ? 'secondary' : 'ghost'} size="sm" className="h-7 w-7 p-0" aria-label="Bold" aria-pressed={formats.bold} onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold')}>
@@ -262,16 +303,22 @@ function EditorToolbar({ variables }: { variables: ChipDocVariable[] }) {
         <BadgeCheck className="h-4 w-4" />
         Condition
       </Button>
-      <ConditionBuilderDialog open={conditionOpen} onOpenChange={setConditionOpen} variables={variables} onConfirm={insertCondition} />
+      <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={insertEnd}>
+        <Flag className="h-4 w-4" />
+        End
+      </Button>
+      <ConditionBuilderDialog open={conditionOpen} onOpenChange={setConditionOpen} variables={variables} onConfirm={insertCondition} onSetVariableType={onSetVariableType} />
     </div>
   )
 }
 
 function ChipTypeaheadPlugin({
   variables,
+  reservedRefKinds,
   onCreateVariable,
 }: {
   variables: RoutineEditorVariable[]
+  reservedRefKinds: Record<string, RoutineChipKind>
   onCreateVariable: (variable: RoutineEditorVariable) => void
 }) {
   const [editor] = useLexicalComposerContext()
@@ -303,32 +350,42 @@ function ChipTypeaheadPlugin({
         name: variable.name,
       }))
     if (raw) {
-      if (!variables.some((variable) => variable.name.toLowerCase() === lowered)) {
+      // A name identifies one thing: once it's used by a chip, don't offer to
+      // create a different kind with the same name (so a variable and an action
+      // can't both be "test"). The existing chip of that kind stays reusable.
+      const refId = slugifyVariableKey(raw)
+      const reservedKind = reservedRefKinds[refId]
+      const canCreate = (kind: RoutineChipKind) => !reservedKind || reservedKind === kind
+      if (!variables.some((variable) => variable.name.toLowerCase() === lowered) && canCreate('variable')) {
         result.push(new ChipMenuOption(`new-variable-${lowered}`, {
           display: `Create variable “${raw}”`,
           kind: 'variable',
           isNew: true,
-          refId: slugifyVariableKey(raw),
+          refId,
           name: raw,
         }))
       }
-      result.push(new ChipMenuOption(`new-action-${lowered}`, {
-        display: `Action: ${raw}`,
-        kind: 'action',
-        isNew: true,
-        refId: slugifyVariableKey(raw),
-        name: raw,
-      }))
-      result.push(new ChipMenuOption(`new-handoff-${lowered}`, {
-        display: `Handoff: ${raw}`,
-        kind: 'handoff',
-        isNew: true,
-        refId: slugifyVariableKey(raw),
-        name: raw,
-      }))
+      if (canCreate('skill')) {
+        result.push(new ChipMenuOption(`new-skill-${lowered}`, {
+          display: `Skill: ${raw}`,
+          kind: 'skill',
+          isNew: true,
+          refId,
+          name: raw,
+        }))
+      }
+      if (canCreate('handoff')) {
+        result.push(new ChipMenuOption(`new-handoff-${lowered}`, {
+          display: `Handoff: ${raw}`,
+          kind: 'handoff',
+          isNew: true,
+          refId,
+          name: raw,
+        }))
+      }
     }
     return result.slice(0, 8)
-  }, [variables, query])
+  }, [variables, reservedRefKinds, query])
 
   const onSelectOption = useCallback(
     (option: ChipMenuOption, nodeToReplace: TextNode | null, closeMenu: () => void) => {
@@ -388,38 +445,66 @@ function ChipTypeaheadPlugin({
   )
 }
 
+// The editor is the single source of document serialization: read the live tree into
+// the flat {text, chips} blocks the host compiles. Used by the change handler and the
+// on-mount emit (so a loaded document seeds the host's draft without a second encoder).
+function $serializeBlocks(): RoutineDocBlock[] {
+  return $getRoot().getChildren().map((block) => ({
+    text: block.getTextContent(),
+    chips: $isElementNode(block)
+      ? block.getChildren().filter($isChipNode).map((chip) => ({
+          kind: chip.getChipKind() as string,
+          refId: chip.getRefId(),
+          op: chip.getChipOp(),
+          value: chip.getChipValue(),
+          values: chip.getChipValues(),
+          unit: chip.getChipUnit(),
+        }))
+      : [],
+  }))
+}
+
+// Build the editor's initial document from loaded prose paragraphs (a variable becomes a
+// chip, condition/handoff chips carry their metadata, everything else is literal text).
+function $initializeFromParagraphs(paragraphs: ProseParagraph[]): void {
+  const root = $getRoot()
+  if (root.getChildrenSize() > 0) return
+  for (const paragraph of paragraphs) {
+    const node = $createParagraphNode()
+    for (const segment of paragraph) {
+      if (segment.kind === 'text') {
+        node.append($createTextNode(segment.text))
+      } else if (segment.chipKind === 'condition' && segment.op) {
+        node.append($createConditionChipNode(segment.refId, segment.op, segment.label, segment.value ?? null, segment.values ?? null, segment.unit ?? null))
+      } else {
+        node.append($createChipNode(segment.chipKind, segment.refId, segment.label))
+      }
+    }
+    root.append(node)
+  }
+}
+
 function OnDocChangePlugin({ onDocChange }: { onDocChange: (blocks: RoutineDocBlock[]) => void }) {
-  return (
-    <OnChangePlugin
-      onChange={(editorState: EditorState) => {
-        editorState.read(() => {
-          const blocks = $getRoot().getChildren().map((block) => ({
-            text: block.getTextContent(),
-            chips: $isElementNode(block)
-              ? block.getChildren().filter($isChipNode).map((chip) => ({
-                  kind: chip.getChipKind() as string,
-                  refId: chip.getRefId(),
-                  op: chip.getChipOp(),
-                  value: chip.getChipValue(),
-                  values: chip.getChipValues(),
-                  unit: chip.getChipUnit(),
-                }))
-              : [],
-          }))
-          onDocChange(blocks)
-        })
-      }}
-    />
-  )
+  const [editor] = useLexicalComposerContext()
+  // Emit the initial (possibly loaded) document once so the host seeds its draft from
+  // exactly what the editor parsed — Lexical's change handler ignores the initial state.
+  useEffect(() => {
+    editor.getEditorState().read(() => onDocChange($serializeBlocks()))
+  }, [editor, onDocChange])
+  return <OnChangePlugin onChange={(editorState: EditorState) => editorState.read(() => onDocChange($serializeBlocks()))} />
 }
 
 export function RoutineChipEditor({
   variables,
+  reservedRefKinds,
+  initialContent,
   onCreateVariable,
   onDocChange,
   onSetVariableType,
 }: {
   variables: ChipDocVariable[]
+  reservedRefKinds: Record<string, RoutineChipKind>
+  initialContent?: ProseParagraph[]
   onCreateVariable: (variable: RoutineEditorVariable) => void
   onDocChange: (blocks: RoutineDocBlock[]) => void
   onSetVariableType: (refId: string, type: RoutineSlotType) => void
@@ -441,11 +526,14 @@ export function RoutineChipEditor({
           throw error
         },
         theme: {},
+        editorState: initialContent && initialContent.length > 0
+          ? () => $initializeFromParagraphs(initialContent)
+          : undefined,
       }}
     >
       <RoutineVariablesProvider value={variablesContext}>
         <div className="rounded-md border border-input bg-transparent focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
-          <EditorToolbar variables={variables} />
+          <EditorToolbar variables={variables} onSetVariableType={onSetVariableType} />
           <div className="relative">
             <RichTextPlugin
               contentEditable={
@@ -464,7 +552,7 @@ export function RoutineChipEditor({
           </div>
           <HistoryPlugin />
           <OnDocChangePlugin onDocChange={onDocChange} />
-          <ChipTypeaheadPlugin variables={variables} onCreateVariable={onCreateVariable} />
+          <ChipTypeaheadPlugin variables={variables} reservedRefKinds={reservedRefKinds} onCreateVariable={onCreateVariable} />
         </div>
       </RoutineVariablesProvider>
     </LexicalComposer>

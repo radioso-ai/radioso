@@ -1,6 +1,42 @@
 import { describe, expect, it } from 'vitest'
 
-import { branchDecisionLabel, draftFromChipDoc, formatConditionLabel, slugifyVariableKey } from '@/lib/routine-prose'
+import {
+  branchDecisionLabel,
+  draftFromChipDoc,
+  formatConditionLabel,
+  routineToChipDoc,
+  slugifyVariableKey,
+  type ChipDocVariable,
+  type ProseParagraph,
+  type RoutineDocBlock,
+} from '@/lib/routine-prose'
+
+// Mirror how the chip editor serializes its document back out (ChipNode.getTextContent +
+// OnDocChangePlugin), so a round-trip test can prove the inverse serializer is faithful.
+function paragraphsToBlocks(paragraphs: ProseParagraph[]): RoutineDocBlock[] {
+  return paragraphs.map((paragraph) => ({
+    text: paragraph
+      .map((segment) => {
+        if (segment.kind === 'text') return segment.text
+        if (segment.chipKind === 'variable') return `{{slot.${segment.refId}}}`
+        return ''
+      })
+      .join(''),
+    chips: paragraph.flatMap((segment) =>
+      segment.kind === 'chip'
+        ? [{ kind: segment.chipKind, refId: segment.refId, op: segment.op ?? null, value: segment.value ?? null, values: segment.values ?? null, unit: segment.unit ?? null }]
+        : [],
+    ),
+  }))
+}
+
+function roundTrip(name: string, trigger: string, blocks: RoutineDocBlock[], variables: ChipDocVariable[]) {
+  const draft = draftFromChipDoc({ name, trigger, blocks, variables })
+  const doc = routineToChipDoc(draft)
+  expect(doc).not.toBeNull()
+  const redraft = draftFromChipDoc({ name, trigger, blocks: paragraphsToBlocks(doc!.paragraphs), variables: doc!.variables })
+  return { draft, redraft }
+}
 
 describe('routine prose helpers', () => {
   it('labels how each branch is decided in plain language', () => {
@@ -120,5 +156,138 @@ describe('routine prose helpers', () => {
     const draft = draftFromChipDoc({ name: '  ', trigger: '', blocks: [{ text: 'Do a thing.', chips: [] }], variables: [] })
     expect(draft.name).toBe('Untitled routine')
     expect(draft.activation.triggerDescription).toBe('When this routine applies.')
+  })
+})
+
+describe('routineToChipDoc (inverse serializer)', () => {
+  it('round-trips a linear routine with an inline variable chip', () => {
+    const { draft, redraft } = roundTrip(
+      'Refund',
+      'wants a refund',
+      [
+        { text: 'Ask for {{slot.order_id}} and the reason.', chips: [{ kind: 'variable', refId: 'order_id' }] },
+        { text: 'Confirm and finish.', chips: [] },
+      ],
+      [{ id: 'order_id', name: 'order id', type: 'text' }],
+    )
+    expect(redraft.steps).toEqual(draft.steps)
+    expect(redraft.transitions).toEqual(draft.transitions)
+    expect(redraft.slots).toEqual(draft.slots)
+    expect(redraft.terminals).toEqual(draft.terminals)
+  })
+
+  it('round-trips a forking routine with an AI-decided (llm) handoff branch', () => {
+    const { draft, redraft } = roundTrip(
+      'Refund with handoff',
+      'wants a refund',
+      [
+        { text: 'Ask for the order id.', chips: [] },
+        { text: 'If they refuse to verify,', chips: [{ kind: 'handoff', refId: 'human' }] },
+        { text: 'Confirm and finish.', chips: [] },
+      ],
+      [],
+    )
+    expect(redraft.steps).toEqual(draft.steps)
+    expect(redraft.transitions).toEqual(draft.transitions)
+    expect(redraft.terminals).toEqual(draft.terminals)
+  })
+
+  it('round-trips a decided-in-code (field) branch with a relative-date check', () => {
+    const { draft, redraft } = roundTrip(
+      'Refund window',
+      'wants a refund',
+      [
+        { text: 'Look up the order date.', chips: [] },
+        {
+          text: '',
+          chips: [
+            { kind: 'condition', refId: 'order_date', op: 'older_than', value: 6, values: null, unit: 'months' },
+            { kind: 'handoff', refId: 'human' },
+          ],
+        },
+        { text: 'Issue the refund.', chips: [] },
+      ],
+      [{ id: 'order_date', name: 'order date', type: 'date' }],
+    )
+    expect(redraft.transitions).toEqual(draft.transitions)
+    expect(redraft.slots).toEqual(draft.slots)
+    expect(redraft.terminals).toEqual(draft.terminals)
+  })
+
+  it('compiles a skill chip to a tool step and round-trips it', () => {
+    const draft = draftFromChipDoc({
+      name: 'Booking',
+      trigger: 'wants to book',
+      blocks: [
+        { text: 'Check availability ', chips: [{ kind: 'skill', refId: 'calcom_availability' }] },
+        { text: 'Confirm the time.', chips: [] },
+      ],
+      variables: [],
+    })
+    // A skill chip names a skill defined elsewhere; it compiles to a tool step.
+    expect(draft.steps[0]).toMatchObject({ kind: 'tool', toolRef: 'calcom_availability', instruction: 'Check availability' })
+
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    const redraft = draftFromChipDoc({ name: 'Booking', trigger: 'wants to book', blocks: paragraphsToBlocks(doc!.paragraphs), variables: doc!.variables })
+    expect(redraft.steps).toEqual(draft.steps)
+    expect(redraft.transitions).toEqual(draft.transitions)
+  })
+
+  it('compiles an end chip to a branch that completes the routine, and round-trips it', () => {
+    const draft = draftFromChipDoc({
+      name: 'Refund',
+      trigger: 'wants a refund',
+      blocks: [
+        { text: 'Look up the order status.', chips: [] },
+        {
+          text: '',
+          chips: [
+            { kind: 'condition', refId: 'status', op: 'equals', value: 'refunded', values: null },
+            { kind: 'end', refId: 'done' },
+          ],
+        },
+        { text: 'Otherwise issue the refund.', chips: [] },
+      ],
+      variables: [{ id: 'status', name: 'status', type: 'text' }],
+    })
+    // The end branch is a field-guarded transition to the complete terminal.
+    const endBranch = draft.transitions.find((transition) => transition.toRef === 'done' && transition.guardKind === 'field')
+    expect(endBranch).toMatchObject({ fieldRef: 'status', fieldOp: 'equals', fieldValue: 'refunded' })
+    expect(draft.terminals.map((terminal) => terminal.kind)).toEqual(['complete'])
+
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    const redraft = draftFromChipDoc({ name: 'Refund', trigger: 'wants a refund', blocks: paragraphsToBlocks(doc!.paragraphs), variables: doc!.variables })
+    expect(redraft.transitions).toEqual(draft.transitions)
+    expect(redraft.terminals).toEqual(draft.terminals)
+  })
+
+  it('rebuilds variables from the routine slots, typed', () => {
+    const draft = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: [{ text: 'Check {{slot.order_date}}.', chips: [{ kind: 'variable', refId: 'order_date' }] }],
+      variables: [{ id: 'order_date', name: 'order date', type: 'date' }],
+    })
+    const doc = routineToChipDoc(draft)
+    expect(doc?.variables).toEqual([{ id: 'order_date', name: 'order date', type: 'date' }])
+  })
+
+  it('returns null for routines the prose editor cannot represent (form fallback)', () => {
+    const base = draftFromChipDoc({ name: 'x', trigger: 'y', blocks: [{ text: 'Do a thing.', chips: [] }], variables: [] })
+
+    // An action (outbox) step has no prose chip.
+    expect(routineToChipDoc({ ...base, steps: [{ ...base.steps[0]!, kind: 'action', actionType: 'contact.send' }] })).toBeNull()
+    // A tool step must name the skill it dispatches.
+    expect(routineToChipDoc({ ...base, steps: [{ ...base.steps[0]!, kind: 'tool', toolRef: null }] })).toBeNull()
+    // A counter guard has no prose chip.
+    expect(routineToChipDoc({ ...base, transitions: [{ ...base.transitions[0]!, guardKind: 'counter', counterLimit: 2 }] })).toBeNull()
+    // An activation gate would be silently dropped on a prose round-trip.
+    expect(routineToChipDoc({ ...base, activation: { ...base.activation, gateRef: 'gate_1' } })).toBeNull()
+    // Completion export would be silently dropped on a prose round-trip.
+    expect(routineToChipDoc({ ...base, completionExport: { enabled: true, triggerKinds: ['complete'], destinationRef: 'dest_1' } })).toBeNull()
+    // More than one complete terminal isn't a prose shape.
+    expect(routineToChipDoc({ ...base, terminals: [...base.terminals, { stableStepId: 'done2', kind: 'complete', instruction: 'x', ordinal: 1 }] })).toBeNull()
   })
 })

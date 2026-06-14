@@ -1,4 +1,4 @@
-import type { RoutineDefinitionDraft, RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineSlotType } from './api-types'
+import type { RoutineDefinitionDraft, RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineSlotType, RoutineTransition } from './api-types'
 
 export const ROUTINE_SLOT_TYPES: RoutineSlotType[] = ['text', 'number', 'boolean', 'email', 'date']
 export const ROUTINE_FIELD_GUARD_UNITS: RoutineFieldGuardUnit[] = ['days', 'weeks', 'months', 'years']
@@ -143,16 +143,20 @@ export function draftFromChipDoc(input: {
   let ordinal = 0
 
   for (const block of blocks) {
-    if (block.chips.some((chip) => chip.kind === 'handoff')) {
-      // A conditional handoff branch from the step we're currently in. A condition chip
-      // makes it decided-in-code (field guard); otherwise the prose is an AI-decided guard.
+    const handoffChip = block.chips.find((chip) => chip.kind === 'handoff')
+    const endChip = block.chips.find((chip) => chip.kind === 'end')
+    if (handoffChip || endChip) {
+      // A conditional branch from the step we're currently in: to a handoff terminal
+      // (escalate) or the complete terminal (end). A condition chip makes it decided-in-code
+      // (field guard); otherwise the prose is an AI-decided guard.
       if (lastStepId) {
-        needHandoffTerminal = true
+        const target = handoffChip ? HANDOFF_TERMINAL_ID : DONE_TERMINAL_ID
+        if (handoffChip) needHandoffTerminal = true
         const condition = block.chips.find((chip) => chip.kind === 'condition')
         if (condition?.op) {
           transitions.push({
             fromStep: lastStepId,
-            toRef: HANDOFF_TERMINAL_ID,
+            toRef: target,
             guardKind: 'field',
             guardText: null,
             outcomeStatus: null,
@@ -167,7 +171,7 @@ export function draftFromChipDoc(input: {
         } else {
           transitions.push({
             fromStep: lastStepId,
-            toRef: HANDOFF_TERMINAL_ID,
+            toRef: target,
             guardKind: 'llm',
             guardText: block.text.trim(),
             outcomeStatus: null,
@@ -178,17 +182,20 @@ export function draftFromChipDoc(input: {
       }
       continue
     }
+    // A skill chip turns the step into a tool step the runner dispatches through the
+    // skill port (the skill itself is defined elsewhere; here it's referenced by name).
+    const skillChip = block.chips.find((chip) => chip.kind === 'skill')
     const instruction = block.text.trim()
-    if (!instruction) {
+    if (!instruction && !skillChip) {
       // A non-branch block with no prose (e.g. an orphan condition chip) isn't a step.
       continue
     }
     const id = `step_${steps.length + 1}`
     steps.push({
       stableStepId: id,
-      kind: 'chat',
+      kind: skillChip ? 'tool' : 'chat',
       instruction,
-      toolRef: null,
+      toolRef: skillChip ? skillChip.refId : null,
       actionType: null,
       ordinal: steps.length,
       metadata: {},
@@ -238,4 +245,138 @@ export function draftFromChipDoc(input: {
     transitions,
     terminals,
   }
+}
+
+// One inline piece of a loaded prose paragraph: literal text or a chip. This is the
+// richer shape draftFromChipDoc's flat {text, chips} can't carry — it preserves where
+// each chip sits inline — so the editor can rebuild the Lexical document on load.
+export type ProseChipKind = 'variable' | 'skill' | 'handoff' | 'step' | 'condition' | 'end'
+export type ProseSegment =
+  | { kind: 'text'; text: string }
+  | {
+      kind: 'chip'
+      chipKind: ProseChipKind
+      refId: string
+      label: string
+      op?: RoutineFieldGuardOp
+      value?: RoutineFieldGuardValue | null
+      values?: RoutineFieldGuardValue[] | null
+      unit?: RoutineFieldGuardUnit | null
+    }
+export type ProseParagraph = ProseSegment[]
+export type ProseDoc = { variables: ChipDocVariable[]; paragraphs: ProseParagraph[] }
+
+const HANDOFF_CHIP_LABEL = 'handoff'
+
+function parseInstructionSegments(instruction: string, nameByRef: Map<string, string>): ProseParagraph {
+  const segments: ProseSegment[] = []
+  let lastIndex = 0
+  for (const match of instruction.matchAll(SLOT_REFERENCE)) {
+    const index = match.index ?? 0
+    if (index > lastIndex) segments.push({ kind: 'text', text: instruction.slice(lastIndex, index) })
+    const refId = match[1]!
+    segments.push({ kind: 'chip', chipKind: 'variable', refId, label: `@${nameByRef.get(refId) ?? refId}` })
+    lastIndex = index + match[0].length
+  }
+  if (lastIndex < instruction.length) segments.push({ kind: 'text', text: instruction.slice(lastIndex) })
+  return segments.length > 0 ? segments : [{ kind: 'text', text: instruction }]
+}
+
+function branchSegments(edge: RoutineTransition, nameByRef: Map<string, string>, target: 'handoff' | 'end'): ProseParagraph {
+  const segments: ProseSegment[] = []
+  if (edge.guardKind === 'field' && edge.fieldRef && edge.fieldOp) {
+    const name = nameByRef.get(edge.fieldRef) ?? edge.fieldRef
+    segments.push({
+      kind: 'chip',
+      chipKind: 'condition',
+      refId: edge.fieldRef,
+      label: formatConditionLabel(name, edge.fieldOp, edge.fieldValue ?? null, edge.fieldValues ?? null, edge.fieldUnit ?? null),
+      op: edge.fieldOp,
+      value: edge.fieldValue ?? null,
+      values: edge.fieldValues ?? null,
+      unit: edge.fieldUnit ?? null,
+    })
+  } else if (edge.guardKind === 'llm' && edge.guardText) {
+    segments.push({ kind: 'text', text: edge.guardText })
+  }
+  segments.push(
+    target === 'end'
+      ? { kind: 'chip', chipKind: 'end', refId: DONE_TERMINAL_ID, label: 'end' }
+      : { kind: 'chip', chipKind: 'handoff', refId: HANDOFF_TERMINAL_ID, label: HANDOFF_CHIP_LABEL },
+  )
+  return segments
+}
+
+// Inverse of draftFromChipDoc: rebuild the chip document (variables + paragraphs with
+// inline chips) from a routine, so an existing routine can be edited in the prose editor.
+// Chat steps and skill-bound tool steps are representable; it returns null for shapes the
+// prose editor can't show — action (outbox) steps, counter/outcome/slot guards, multi-way
+// forks, a non-handoff branch target, an activation gate, or completion export — so the
+// caller falls back to the form editor rather than silently dropping that configuration.
+export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | null {
+  if (routine.activation.gateRef) return null
+  if (routine.completionExport?.enabled) return null
+
+  const steps = [...routine.steps].sort((left, right) => left.ordinal - right.ordinal)
+  if (steps.some((step) => step.kind !== 'chat' && step.kind !== 'tool')) return null
+  if (steps.some((step) => step.kind === 'tool' && !step.toolRef)) return null
+
+  const completeTerminals = routine.terminals.filter((terminal) => terminal.kind === 'complete')
+  const handoffTerminals = routine.terminals.filter((terminal) => terminal.kind === 'handoff')
+  if (completeTerminals.length !== 1) return null
+  if (handoffTerminals.length > 1) return null
+  if (routine.terminals.length !== completeTerminals.length + handoffTerminals.length) return null
+
+  const completeId = completeTerminals[0]!.stableStepId
+  const handoffId = handoffTerminals[0]?.stableStepId ?? null
+  const stepIds = new Set(steps.map((step) => step.stableStepId))
+  if (routine.transitions.some((transition) => !stepIds.has(transition.fromStep))) return null
+
+  const variables: ChipDocVariable[] = [...routine.slots]
+    .sort((left, right) => left.ordinal - right.ordinal)
+    .map((slot) => ({ id: slot.key, name: (slot.description ?? '').trim() || slot.key, type: slot.type }))
+  const nameByRef = new Map(variables.map((variable) => [variable.id, variable.name]))
+
+  const outgoing = new Map<string, RoutineTransition[]>()
+  for (const transition of routine.transitions) {
+    const list = outgoing.get(transition.fromStep) ?? []
+    list.push(transition)
+    outgoing.set(transition.fromStep, list)
+  }
+
+  const paragraphs: ProseParagraph[] = []
+  for (let index = 0; index < steps.length; index++) {
+    const step = steps[index]!
+    const segments = parseInstructionSegments(step.instruction ?? '', nameByRef)
+    if (step.kind === 'tool' && step.toolRef) {
+      segments.push({ kind: 'chip', chipKind: 'skill', refId: step.toolRef, label: `@${step.toolRef}` })
+    }
+    paragraphs.push(segments)
+
+    // A prose step continues via exactly one default edge (to the next step, or to the
+    // single complete terminal for the last step). Any llm/field edges are handoff
+    // branches, rendered as the paragraphs that follow this step. Anything else means
+    // the routine isn't prose-shaped.
+    const chainTarget = steps[index + 1]?.stableStepId ?? completeId
+    let sawChain = false
+    for (const edge of [...(outgoing.get(step.stableStepId) ?? [])].sort((left, right) => left.ordinal - right.ordinal)) {
+      if (edge.guardKind === 'default') {
+        if (sawChain || edge.toRef !== chainTarget) return null
+        sawChain = true
+      } else if (edge.guardKind === 'llm' || edge.guardKind === 'field') {
+        if (handoffId && edge.toRef === handoffId) {
+          paragraphs.push(branchSegments(edge, nameByRef, 'handoff'))
+        } else if (edge.toRef === completeId) {
+          paragraphs.push(branchSegments(edge, nameByRef, 'end'))
+        } else {
+          return null
+        }
+      } else {
+        return null
+      }
+    }
+    if (!sawChain) return null
+  }
+
+  return { variables, paragraphs }
 }

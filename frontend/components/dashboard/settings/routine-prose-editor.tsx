@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { ArrowLeft, Route } from 'lucide-react'
 
 import { RoutineChipEditor, type RoutineEditorVariable } from '@/components/dashboard/settings/routine-chip-editor'
+import type { RoutineChipKind } from '@/components/dashboard/settings/routine-chip-node'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -41,6 +42,20 @@ export function RoutineProseEditor({
   const setVariableType = (id: string, type: RoutineSlotType) => {
     setVariables((current) => current.map((variable) => (variable.id === id ? { ...variable, type } : variable)))
   }
+
+  // Names already taken by a chip in the document, so the @ menu won't let a
+  // second kind claim the same name.
+  const reservedRefKinds = useMemo(() => {
+    const reserved: Record<string, RoutineChipKind> = {}
+    for (const block of blocks) {
+      for (const chip of block.chips) {
+        if (chip.kind === 'variable' || chip.kind === 'skill' || chip.kind === 'handoff') {
+          reserved[chip.refId] = chip.kind
+        }
+      }
+    }
+    return reserved
+  }, [blocks])
 
   const hasContent = blocks.some((block) => block.text.trim().length > 0)
 
@@ -95,6 +110,7 @@ export function RoutineProseEditor({
           <Label>Routine</Label>
           <RoutineChipEditor
             variables={variables}
+            reservedRefKinds={reservedRefKinds}
             onCreateVariable={addVariable}
             onDocChange={setBlocks}
             onSetVariableType={setVariableType}

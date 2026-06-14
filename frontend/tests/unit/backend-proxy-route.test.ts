@@ -389,6 +389,7 @@ describe('backend proxy route', () => {
       },
       body: JSON.stringify({
         conversationId: '5a657822-fc30-4693-8c7c-a4e7e9368afd',
+        bootstrapGreetingId: '6f1a68f5-a62b-4dc9-8204-a1f4b8304e6a',
         message: 'hi',
         stream: true,
         userExpectedLocale: 'en-GB',
@@ -403,8 +404,8 @@ describe('backend proxy route', () => {
     expect(upstreamInit.headers.Authorization).toBe('Bearer radioso_workspace_token')
     expect(JSON.parse(upstreamInit.body as string)).toEqual({
       conversationId: '5a657822-fc30-4693-8c7c-a4e7e9368afd',
+      bootstrapGreetingId: '6f1a68f5-a62b-4dc9-8204-a1f4b8304e6a',
       message: 'hi',
-      startConversation: undefined,
       stream: true,
       userExpectedLocale: 'en-GB',
       inputMetadata: { method: 'typed' },
@@ -484,6 +485,7 @@ describe('backend proxy route', () => {
       },
       body: JSON.stringify({
         query: 'Hello',
+        bootstrapGreetingId: '6f1a68f5-a62b-4dc9-8204-a1f4b8304e6a',
         bootstrapGreeting: false,
         stream: true,
       }),
@@ -505,12 +507,10 @@ describe('backend proxy route', () => {
     const upstreamInit = fetchMock.mock.calls[0][1] as RequestInit & { headers: Record<string, string> }
     expect(upstreamInit.headers['X-Radioso-Anonymous-Session']).toBe('anon-existing')
     expect(JSON.parse(upstreamInit.body as string)).toEqual({
-      conversationId: undefined,
+      bootstrapGreetingId: '6f1a68f5-a62b-4dc9-8204-a1f4b8304e6a',
       message: 'Hello',
       startConversation: false,
       stream: true,
-      userExpectedLocale: undefined,
-      inputMetadata: undefined,
     })
 
     expect(response.status).toBe(200)

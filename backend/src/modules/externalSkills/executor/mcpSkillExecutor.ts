@@ -7,6 +7,10 @@ import type {
 } from "@radioso/conversation-defaults";
 
 import { mergeToolInput, type SkillBinding } from "../skillDefinitions/resolver.js";
+import { setTraceAttributes, traceOperation } from "../../../shared/observability/tracing/operations.js";
+
+/** Skill-executor descriptor adapter shared by all external (MCP) skills. */
+export const EXTERNAL_SKILLS_ADAPTER = "external-skills";
 
 /** Persisted MCP connection (the bits the executor needs to reach the server). */
 export interface McpConnectionRecord {
@@ -65,6 +69,17 @@ export class McpSkillExecutor implements SkillExecutorPort {
   constructor(private readonly deps: McpSkillExecutorDeps) {}
 
   async dispatch(invocation: SkillInvocation): Promise<SkillDispatchResult> {
+    return traceOperation({
+      name: "external_skill.dispatch",
+      attributes: { "external_skill.name": invocation.skill.name },
+      run: () => this.dispatchInner(invocation),
+      resultAttributes: (result) => ({
+        "external_skill.outcome_status": result.disposition === "settled" ? result.outcome.status : "deferred",
+      }),
+    });
+  }
+
+  private async dispatchInner(invocation: SkillInvocation): Promise<SkillDispatchResult> {
     const skillName = invocation.skill.name;
     const agentId = typeof invocation.context?.agentId === "string" ? invocation.context.agentId : undefined;
     if (!agentId) {
@@ -80,6 +95,13 @@ export class McpSkillExecutor implements SkillExecutorPort {
     if (!connection) {
       return settledFailure("connection_unavailable", "External skill connection is unavailable");
     }
+
+    // Observability: identity only (ids) — never params, secrets, or results.
+    setTraceAttributes({
+      "external_skill.agent_id": agentId,
+      "external_skill.connection_id": connection.id,
+      "external_skill.tool_name": record.toolName,
+    });
 
     const input = mergeToolInput(record, invocation.collected);
     const service = this.deps.toolServices.create(connection);

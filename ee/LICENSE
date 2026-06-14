@@ -3,8 +3,9 @@ Radioso Enterprise Edition Commercial License
 Copyright (c) Radioso AI.
 
 The files under this ee/ directory are commercial Enterprise Edition
-software. They are not licensed under the open-source license that may apply
-to other parts of this repository.
+software. They are not licensed under the Apache License, Version 2.0, that
+applies to the rest of this repository (see the LICENSE and NOTICE files at the
+repository root).
 
 You may not use, copy, modify, distribute, sublicense, make available, or
 provide the Enterprise Edition software as a service except under a written

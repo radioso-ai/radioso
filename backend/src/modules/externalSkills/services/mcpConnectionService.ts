@@ -2,7 +2,7 @@ import { conflict, notFound } from "../../../shared/domain/errors.js";
 import { encryptField, decryptField } from "../../../shared/infra/crypto/fieldEncryption.js";
 import type {
   McpConnectionRecord,
-  McpConnectionRepository,
+  McpConnectionRepositoryPort,
 } from "../../../db/repositories/mcpConnectionRepository.js";
 import type { McpConnectionInput } from "../domain.js";
 import type { ToolServiceFactory } from "../executor/mcpSkillExecutor.js";
@@ -44,7 +44,7 @@ export class EncryptionNotConfiguredError extends Error {
 }
 
 export interface McpConnectionServiceOptions {
-  repository: McpConnectionRepository;
+  repository: McpConnectionRepositoryPort;
   toolServiceFactory: ToolServiceFactory;
   encryptionKey?: string;
   encryptionKeyId?: string;

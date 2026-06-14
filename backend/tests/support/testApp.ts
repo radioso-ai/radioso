@@ -79,6 +79,13 @@ import { ConnectorRegistry } from "../../src/modules/connectors/services/connect
 import { createConnectorChatPort } from "../../src/modules/connectors/services/connectorChatPort.js";
 import { AbuseControlService } from "../../src/modules/security/services/abuseControlService.js";
 import { WorkspaceProviderCredentialsService } from "../../src/modules/security/credentials/services/workspaceProviderCredentialsService.js";
+import { McpConnectionService } from "../../src/modules/externalSkills/services/mcpConnectionService.js";
+import { ExternalSkillDefinitionService } from "../../src/modules/externalSkills/services/externalSkillDefinitionService.js";
+import {
+  InMemoryMcpConnectionRepository,
+  InMemoryExternalSkillDefinitionRepository,
+  createMockToolServiceFactory,
+} from "./inMemoryExternalSkills.js";
 import {
   DefaultWebhookDestinationAdapter,
   WebhookDestinationService,
@@ -693,6 +700,15 @@ export const createTestDependencies = (overrides: {
     auditService,
     { key: env.CONNECTOR_ENCRYPTION_KEY },
   );
+  const mcpConnectionService = new McpConnectionService({
+    repository: new InMemoryMcpConnectionRepository(),
+    toolServiceFactory: createMockToolServiceFactory(),
+    encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
+  });
+  const externalSkillDefinitionService = new ExternalSkillDefinitionService(
+    new InMemoryExternalSkillDefinitionRepository(),
+    mcpConnectionService,
+  );
   const workspaceLlmCapabilitySettingsService = new WorkspaceLlmCapabilitySettingsService(
     retrievalSettingsRepository,
     auditService,
@@ -965,6 +981,8 @@ export const createTestDependencies = (overrides: {
     workspaceSessionService,
     abuseControlService,
     workspaceProviderCredentialsService,
+    mcpConnectionService,
+    externalSkillDefinitionService,
     webhookDestinations,
     workspaceLlmCapabilitySettingsService,
     authService: new AuthService({

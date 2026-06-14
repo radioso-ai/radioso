@@ -1,7 +1,7 @@
 import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
 import type {
   ExternalSkillDefinitionRecord,
-  ExternalSkillDefinitionRepository,
+  ExternalSkillDefinitionRepositoryPort,
 } from "../../../db/repositories/externalSkillDefinitionRepository.js";
 import { validateParamCoverage, type SkillDefinitionInput } from "../domain.js";
 import type { McpConnectionService } from "./mcpConnectionService.js";
@@ -39,7 +39,7 @@ const toView = (record: ExternalSkillDefinitionRecord): ExternalSkillDefinitionV
  */
 export class ExternalSkillDefinitionService {
   constructor(
-    private readonly repository: ExternalSkillDefinitionRepository,
+    private readonly repository: ExternalSkillDefinitionRepositoryPort,
     private readonly connections: McpConnectionService,
   ) {}
 

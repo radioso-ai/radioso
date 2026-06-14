@@ -1,4 +1,9 @@
 import { getEnv, type Env } from "../config/env.js";
+import { McpConnectionService } from "../../modules/externalSkills/services/mcpConnectionService.js";
+import { ExternalSkillDefinitionService } from "../../modules/externalSkills/services/externalSkillDefinitionService.js";
+import { McpConnectionRepository } from "../../db/repositories/mcpConnectionRepository.js";
+import { ExternalSkillDefinitionRepository } from "../../db/repositories/externalSkillDefinitionRepository.js";
+import { createMcpToolServiceFactory } from "../../modules/externalSkills/composition.js";
 import {
   createDefaultApplicationComposition,
   createDefaultAgentSkillSettingsRegistry,
@@ -107,6 +112,15 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     repositories,
   });
+  const mcpConnectionService = new McpConnectionService({
+    repository: new McpConnectionRepository(infrastructure.database),
+    toolServiceFactory: createMcpToolServiceFactory(),
+    encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
+  });
+  const externalSkillDefinitionService = new ExternalSkillDefinitionService(
+    new ExternalSkillDefinitionRepository(infrastructure.database),
+    mcpConnectionService,
+  );
   const webhookDestinations = buildWebhookDestinationAdapter({
     auditService: infrastructure.auditService,
     env,
@@ -383,6 +397,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceSessionService: workspace.workspaceSessionService,
     abuseControlService: chat.abuseControlService,
     workspaceProviderCredentialsService,
+    mcpConnectionService,
+    externalSkillDefinitionService,
     webhookDestinations,
     workspaceLlmCapabilitySettingsService,
     auditService: infrastructure.auditService,

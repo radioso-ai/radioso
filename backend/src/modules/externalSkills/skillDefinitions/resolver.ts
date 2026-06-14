@@ -18,6 +18,10 @@ export interface SkillBinding {
   exposedParams: Record<string, ExposedParamSpec>;
 }
 
+/** Keys that could pollute Object.prototype; never forwarded as tool inputs. */
+const DANGEROUS_PARAM_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+const isSafeParamKey = (key: string): boolean => !DANGEROUS_PARAM_KEYS.has(key);
+
 /**
  * Merge bound params (author-fixed) with conversation-filled exposed params.
  * Each exposed param is read from `collected[slotBinding ?? paramName]`; values
@@ -29,8 +33,16 @@ export const mergeToolInput = (
   binding: SkillBinding,
   collected: Record<string, unknown>,
 ): Record<string, unknown> => {
-  const input: Record<string, unknown> = { ...binding.boundParams };
+  const input: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(binding.boundParams)) {
+    if (isSafeParamKey(key)) {
+      input[key] = value;
+    }
+  }
   for (const [paramName, spec] of Object.entries(binding.exposedParams)) {
+    if (!isSafeParamKey(paramName)) {
+      continue;
+    }
     const source = spec.slotBinding ?? paramName;
     const value = collected[source];
     if (value !== undefined) {

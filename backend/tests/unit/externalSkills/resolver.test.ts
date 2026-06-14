@@ -35,4 +35,11 @@ describe("mergeToolInput", () => {
     expect(input).toEqual({ message: "hi" });
     expect(input).not.toHaveProperty("secretLeak");
   });
+
+  it("never forwards prototype-polluting keys", () => {
+    const boundParams = JSON.parse('{"__proto__":{"polluted":true},"channel":"#x"}') as Record<string, unknown>;
+    const input = mergeToolInput({ toolName: "post_message", boundParams, exposedParams: {} }, {});
+    expect(Object.keys(input)).toEqual(["channel"]);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
 });

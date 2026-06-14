@@ -86,4 +86,38 @@ describe("McpSkillExecutor", () => {
     const result = await dispatch(executor, "handoff_slack", {}, "");
     expect(result).toMatchObject({ disposition: "settled", outcome: { status: "failed", error: { code: "agent_context_missing" } } });
   });
+
+  it("fails safely when the skill's connection is unavailable", async () => {
+    const executor = await buildExecutor(record({ connectionId: "missing" }), [
+      { name: "post_message", respond: () => ({ content: [] }) },
+    ]);
+    const result = await dispatch(executor, "handoff_slack", {});
+    expect(result).toMatchObject({ disposition: "settled", outcome: { status: "failed", error: { code: "connection_unavailable" } } });
+  });
+
+  it("fails safely when the ToolService cannot be created (auth/secret resolution failure)", async () => {
+    const executor = new McpSkillExecutor({
+      skills: { findEnabledByName: async () => record() },
+      connections: { findById: async () => connection },
+      toolServices: {
+        create: () => {
+          throw new Error("missing credentials");
+        },
+      },
+    });
+    const result = await dispatch(executor, "handoff_slack", { message: "hi" });
+    expect(result).toMatchObject({ disposition: "settled", outcome: { status: "failed", error: { code: "tool_service_unavailable" } } });
+  });
+
+  it("fills an exposed param from its slotBinding through the executor", async () => {
+    const executor = await buildExecutor(record({ exposedParams: { message: { slotBinding: "userText" } } }), [
+      { name: "post_message", respond: (args) => ({ content: [{ type: "text", text: "ok" }], structuredContent: { echoed: args } }) },
+    ]);
+    const result = await dispatch(executor, "handoff_slack", { userText: "from slot" });
+    expect(result.disposition).toBe("settled");
+    if (result.disposition === "settled") {
+      expect(result.outcome.status).toBe("completed");
+      expect(result.outcome.outputs).toMatchObject({ echoed: { channel: "#support", message: "from slot" } });
+    }
+  });
 });

@@ -104,7 +104,17 @@ export class McpSkillExecutor implements SkillExecutorPort {
     });
 
     const input = mergeToolInput(record, invocation.collected);
-    const service = this.deps.toolServices.create(connection);
+
+    let service: ToolService;
+    try {
+      // Building the ToolService resolves the connection's credentials/auth; a
+      // failure here (missing secret, invalid auth state) must degrade to a
+      // settled failure, not a rejected dispatch.
+      service = this.deps.toolServices.create(connection);
+    } catch {
+      return settledFailure("tool_service_unavailable", "External skill connection could not be initialized");
+    }
+
     try {
       const toolExecutor = createToolSkillExecutor(service);
       return (await toolExecutor.dispatch({

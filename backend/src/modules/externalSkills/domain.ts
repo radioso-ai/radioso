@@ -114,6 +114,17 @@ export const skillDefinitionInputSchema = z
         message: `bound and exposed params must be disjoint (overlap: ${overlap.join(", ")})`,
       });
     }
+
+    const dangerous = [...boundKeys, ...exposedKeys].filter(
+      (key) => key === "__proto__" || key === "constructor" || key === "prototype",
+    );
+    if (dangerous.length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["boundParams"],
+        message: `param keys are not allowed: ${dangerous.join(", ")}`,
+      });
+    }
   });
 
 export type SkillDefinitionInput = z.infer<typeof skillDefinitionInputSchema>;

@@ -93,6 +93,10 @@ describe("skillDefinitionInputSchema", () => {
   it("rejects unknown fields (strict)", () => {
     expect(() => skillDefinitionInputSchema.parse({ ...base, surprise: 1 })).toThrow();
   });
+
+  it("rejects bound params with prototype-polluting keys", () => {
+    expect(() => skillDefinitionInputSchema.parse({ ...base, boundParams: { constructor: "x" } })).toThrow();
+  });
 });
 
 describe("validateParamCoverage", () => {

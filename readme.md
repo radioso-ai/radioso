@@ -388,3 +388,15 @@ docs/            Product and SDK guides
 ```
 
 Run `./run-dev.sh` to get a full local stack. Detailed setup and follow-on guides are indexed in [docs/README.md](./docs/README.md).
+
+---
+
+## License
+
+Radioso is dual-licensed:
+
+- The open-source edition is licensed under the [Apache License, Version 2.0](./LICENSE).
+- The files under [`ee/`](./ee) are Radioso Enterprise Edition, commercial source-available software governed by [`ee/LICENSE`](./ee/LICENSE), and are **not** covered by Apache 2.0.
+  We are happy for everyone to be able to run Radioso for their business and personal purposes. In ee/ we store features and setups required for us to run Radioso on the cloud, and using them requires a commercial license. Contact us for inquiries!
+
+See [NOTICE](./NOTICE) for the attribution and the Enterprise Edition.

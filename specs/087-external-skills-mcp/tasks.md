@@ -26,7 +26,7 @@ description: "Task list for External Skills via MCP"
 
 - [x] T004 [US1] Write failing tests for connection + skill-definition Zod schemas/validation in `backend/tests/unit/externalSkills/domain.test.ts` (URL/SSRF validation, bound/exposed disjoint + required-coverage, skillName uniqueness rules).
 - [x] T005 [US1] Implement `backend/src/modules/externalSkills/domain.ts` (Zod schemas + types for MCP Connection and Skill Definition per data-model.md) to pass T004.
-- [ ] T006 [US1] DB migration in `backend/src/db/migrations/NNN_external_skills.sql`: `mcp_connections` (encrypted credential columns + `encryption_key_id` + status) and skill-definition storage (per-agent), with FKs and uniqueness constraints. Add a forward-only migration test.
+- [x] T006 [US1] DB migration in `backend/src/db/migrations/NNN_external_skills.sql`: `mcp_connections` (encrypted credential columns + `encryption_key_id` + status) and skill-definition storage (per-agent), with FKs and uniqueness constraints. Add a forward-only migration test.
 - [x] T007 [P] [US1] Write failing tests for the SDK-backed `ToolService` against the mock server (`listTools`, `callTool`, `isError`→failed, success→completed, timeout/transport error→failed) in `backend/tests/integration/externalSkills/toolService.test.ts`.
 - [x] T008 [US1] Implement `backend/src/modules/externalSkills/toolService/sdkMcpToolService.ts` over `@modelcontextprotocol/sdk` client (Streamable HTTP; pluggable credential provider; bounded timeout) implementing the `ToolService` interface used by `ToolSkillBridge`. Pass T007. Do NOT use `packages/conversation-tools/src/mcpAdapter.ts` as the runtime client.
 - [x] T009a [US1] **(from code review)** Made `@radioso/conversation-tools` a real backend build dependency: the standalone build break was a missing workspace link (`pnpm install` linked `@radioso/conversation-contract`); the `skillBridge.ts:136` error was a cascade, NOT a bug — bridge stays **unchanged**. Added `build:conversation-tools` to backend `build`/`predev:*`/`test*` chains.
@@ -42,7 +42,7 @@ description: "Task list for External Skills via MCP"
 
 ### Tests for US1 (write first, ensure FAIL)
 
-- [ ] T010 [P] [US1] Repository tests: connection repo + skill-definition repo CRUD + encrypted credential round-trip in `backend/tests/integration/externalSkills/repositories.test.ts`.
+- [x] T010 [P] [US1] Repository tests: connection repo + skill-definition repo CRUD + encrypted credential round-trip in `backend/tests/integration/externalSkills/repositories.test.ts`.
 - [x] T011 [P] [US1] Resolver tests: name→binding resolution + param merge (bound + exposed), invalid/missing tool, required-param coverage, in `backend/tests/unit/externalSkills/resolver.test.ts`.
 - [x] T012 [P] [US1] Executor tests: MCP skill executor implements `SkillExecutorPort`, returns settled `SkillOutcome` mapped to `RoutineSkillResult` (`completed`/`failed`), safe-degrade on timeout/error, in `backend/tests/unit/externalSkills/executor.test.ts`.
 - [ ] T013 [P] [US1] Contract tests for connection + discovery + skill-definition routes (from contracts/endpoints.md) in `backend/tests/contract/externalSkills.contract.test.ts`.
@@ -50,8 +50,8 @@ description: "Task list for External Skills via MCP"
 
 ### Implementation for US1
 
-- [ ] T015 [P] [US1] Connection repository + service in `backend/src/modules/externalSkills/connections/` (encrypt via `backend/src/shared/infra/crypto/fieldEncryption.ts`; status lifecycle).
-- [ ] T016 [P] [US1] Skill-definition repository + service in `backend/src/modules/externalSkills/skillDefinitions/`.
+- [x] T015 [P] [US1] Connection repository + service in `backend/src/modules/externalSkills/connections/` (encrypt via `backend/src/shared/infra/crypto/fieldEncryption.ts`; status lifecycle).
+- [x] T016 [P] [US1] Skill-definition repository + service in `backend/src/modules/externalSkills/skillDefinitions/`.
 - [x] T017 [US1] Name→binding **resolver** in `backend/src/modules/externalSkills/skillDefinitions/resolver.ts` (param merge; discovery validation) — depends on T015/T016.
 - [x] T018 [US1] Generic MCP **skill executor** in `backend/src/modules/externalSkills/executor/mcpSkillExecutor.ts` implementing `SkillExecutorPort` (mirror `backend/src/modules/retrieval/services/retrievalAnswerSkillExecutor.ts`); resolve→build `ToolService` for the connection→`createToolSkillExecutor` bridge→map outcome.
 - [~] T019 [US1] (PARTIAL — registration module `builtIn/externalSkillsModule.ts` + test done; live default-composition wiring + per-connection ToolService-with-auth factory + skillName→execution catalog mapping pending DB slice) Wire defaults in `backend/src/app/composition/` — register the MCP skill executor with the skill executor registry; build the per-connection `ToolService` factory; inject repositories/resolver. Keep product rules out of composition.

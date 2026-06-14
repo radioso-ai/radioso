@@ -17,6 +17,8 @@ export interface McpConnectionRecord {
   id: string;
   serverUrl: string;
   authMethod: "access_token" | "oauth";
+  /** Decrypted access token (resolved by the connection lookup; never logged). */
+  accessToken?: string;
 }
 
 /** Persisted skill definition: a named binding of one tool on one connection. */

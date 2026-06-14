@@ -88,6 +88,12 @@ as an action step. Otherwise it is a chat step.
 The step label can change. The routine keeps a stable step id behind the scenes
 so traces and published versions can still resolve the step.
 
+A **tool** step calls an external skill. Select the skill from the dropdown, which
+lists the agent's defined external skills by name. The routine fills the skill's
+exposed inputs at run time and branches on the result. See
+[External Skills via MCP](./external-skills.md) for how to connect a server and
+define skills.
+
 ## Branch rows
 
 A branch row sends the routine from the current step to another step or end.

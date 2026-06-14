@@ -27,6 +27,13 @@ export interface CreateMcpConnectionInput {
   status?: McpConnectionStatus;
 }
 
+export interface UpdateMcpConnectionInput {
+  displayName?: string;
+  credentialCiphertext?: string;
+  encryptionKeyId?: string;
+  status?: McpConnectionStatus;
+}
+
 interface McpConnectionRow {
   id: string;
   agent_id: string;
@@ -63,6 +70,7 @@ export interface McpConnectionRepositoryPort {
   findById(agentId: string, id: string): Promise<McpConnectionRecord | null>;
   listByAgent(agentId: string): Promise<McpConnectionRecord[]>;
   updateStatus(agentId: string, id: string, status: McpConnectionStatus): Promise<McpConnectionRecord | null>;
+  update(agentId: string, id: string, input: UpdateMcpConnectionInput): Promise<McpConnectionRecord | null>;
   remove(agentId: string, id: string): Promise<boolean>;
 }
 
@@ -115,6 +123,25 @@ export class McpConnectionRepository implements McpConnectionRepositoryPort {
        WHERE agent_id = $1 AND id = $2
        RETURNING ${COLUMNS}`,
       [agentId, id, status],
+    );
+    return row ? mapRecord(row) : null;
+  }
+
+  async update(
+    agentId: string,
+    id: string,
+    input: UpdateMcpConnectionInput,
+  ): Promise<McpConnectionRecord | null> {
+    const [row] = await this.database.query<McpConnectionRow>(
+      `UPDATE mcp_connections SET
+         display_name = COALESCE($3, display_name),
+         credential_ciphertext = COALESCE($4, credential_ciphertext),
+         encryption_key_id = COALESCE($5, encryption_key_id),
+         status = COALESCE($6, status),
+         updated_at = NOW()
+       WHERE agent_id = $1 AND id = $2
+       RETURNING ${COLUMNS}`,
+      [agentId, id, input.displayName ?? null, input.credentialCiphertext ?? null, input.encryptionKeyId ?? null, input.status ?? null],
     );
     return row ? mapRecord(row) : null;
   }

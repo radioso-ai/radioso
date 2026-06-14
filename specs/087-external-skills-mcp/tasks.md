@@ -61,7 +61,7 @@ description: "Task list for External Skills via MCP"
 - [ ] T023 [P] [US1] Frontend: MCP Connections screen (list/create/edit/delete, token field, status) using shared dark theme; Playwright coverage for CRUD.
 - [ ] T024 [P] [US1] Frontend: Skill builder (select connection → discover tools → schema-driven bind/expose form → name → save); Playwright for the build flow; unit tests only for schema→form derivation + param-merge preview + API adapter.
 - [ ] T025 [US1] Frontend: routine-authoring picker lists defined skills by name and exposes success/failure branches; Playwright for referencing a skill in a routine.
-- [ ] T026 [US1] Docs: update routine/skills docs + add operator-facing MCP-connections settings doc (read `docs/document-writer-prompt.md` first). Update `.env.example` if new operator config is required.
+- [x] T026 [US1] Docs: update routine/skills docs + add operator-facing MCP-connections settings doc (read `docs/document-writer-prompt.md` first). Update `.env.example` if new operator config is required.
 
 **Checkpoint**: US1 fully functional and demoable against the mock server, end-to-end, no provider code.
 

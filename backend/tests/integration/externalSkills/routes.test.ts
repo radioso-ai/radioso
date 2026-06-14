@@ -110,4 +110,40 @@ describe("external skills routes", () => {
     await request(app).delete(`/api/v1/agents/${agentId}/external-skills/${skill.body.id}`).set(headers).expect(204);
     await request(app).delete(`/api/v1/agents/${agentId}/mcp-connections/${connectionId}`).set(headers).expect(204);
   });
+
+  it("gets and updates a connection (rename) and a skill (disable)", async () => {
+    const { app, headers, agentId } = await setup();
+    const conn = await request(app)
+      .post(`/api/v1/agents/${agentId}/mcp-connections`)
+      .set(headers)
+      .send({ displayName: "Slack", serverUrl: "https://mcp.example.com", authMethod: "access_token", accessToken: "xoxb-create-secret" });
+    const connectionId = conn.body.id as string;
+
+    const got = await request(app).get(`/api/v1/agents/${agentId}/mcp-connections/${connectionId}`).set(headers).expect(200);
+    expect(got.body.displayName).toBe("Slack");
+
+    const renamed = await request(app)
+      .patch(`/api/v1/agents/${agentId}/mcp-connections/${connectionId}`)
+      .set(headers)
+      .send({ displayName: "Slack Prod" })
+      .expect(200);
+    expect(renamed.body.displayName).toBe("Slack Prod");
+    expect(JSON.stringify(renamed.body)).not.toContain("xoxb-create-secret");
+
+    const skill = await request(app)
+      .post(`/api/v1/agents/${agentId}/external-skills`)
+      .set(headers)
+      .send({ skillName: "upd_skill", connectionId, toolName: "post_message", boundParams: { channel: "#x" }, exposedParams: { message: {} } });
+    const skillId = skill.body.id as string;
+
+    const gotSkill = await request(app).get(`/api/v1/agents/${agentId}/external-skills/${skillId}`).set(headers).expect(200);
+    expect(gotSkill.body.skillName).toBe("upd_skill");
+
+    const disabled = await request(app)
+      .patch(`/api/v1/agents/${agentId}/external-skills/${skillId}`)
+      .set(headers)
+      .send({ enabled: false })
+      .expect(200);
+    expect(disabled.body.enabled).toBe(false);
+  });
 });

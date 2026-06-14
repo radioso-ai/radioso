@@ -4,7 +4,7 @@ import type {
   McpConnectionRecord,
   McpConnectionRepositoryPort,
 } from "../../../db/repositories/mcpConnectionRepository.js";
-import type { McpConnectionInput } from "../domain.js";
+import type { McpConnectionInput, McpConnectionUpdateInput } from "../domain.js";
 import type { ToolServiceFactory } from "../executor/mcpSkillExecutor.js";
 
 /** Non-secret view of a connection (the only shape returned to clients). */
@@ -114,6 +114,37 @@ export class McpConnectionService {
       throw notFound("MCP connection not found");
     }
     return toSummary(record);
+  }
+
+  /** Rename a connection and/or rotate its access token (re-encrypted). */
+  async update(agentId: string, id: string, input: McpConnectionUpdateInput): Promise<McpConnectionSummary> {
+    const existing = await this.options.repository.findById(agentId, id);
+    if (!existing) {
+      throw notFound("MCP connection not found");
+    }
+
+    let credentialCiphertext: string | undefined;
+    let encryptionKeyId: string | undefined;
+    let status: McpConnectionRecord["status"] | undefined;
+    if (input.accessToken !== undefined) {
+      if (!this.options.encryptionKey) {
+        throw new EncryptionNotConfiguredError();
+      }
+      credentialCiphertext = encryptField(input.accessToken, this.options.encryptionKey);
+      encryptionKeyId = this.options.encryptionKeyId ?? undefined;
+      status = "authorized";
+    }
+
+    const updated = await this.options.repository.update(agentId, id, {
+      displayName: input.displayName,
+      credentialCiphertext,
+      encryptionKeyId,
+      status,
+    });
+    if (!updated) {
+      throw notFound("MCP connection not found");
+    }
+    return toSummary(updated);
   }
 
   async remove(agentId: string, id: string): Promise<void> {

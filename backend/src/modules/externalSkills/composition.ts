@@ -16,13 +16,16 @@ import type {
  * spine stays auth-agnostic — only this factory knows how a credential becomes
  * a request.
  */
-export const createMcpToolServiceFactory = (): ToolServiceFactory => ({
+export const createMcpToolServiceFactory = (
+  assertPublicUrl?: (url: string) => void | Promise<void>,
+): ToolServiceFactory => ({
   create: (connection: McpConnectionRecord): SdkMcpToolService =>
     new SdkMcpToolService({
       serverUrl: connection.serverUrl,
       credentialProvider: connection.accessToken
         ? { getRequestHeaders: async () => ({ Authorization: `Bearer ${connection.accessToken}` }) }
         : undefined,
+      assertPublicUrl,
     }),
 });
 
@@ -61,8 +64,12 @@ export class LiveMcpConnectionLookup implements ConnectionLookup {
  * (findEnabledByName); the connection lookup decrypts credentials; the factory
  * builds the MCP client.
  */
-export const buildExternalSkillsDeps = (database: Database, encryptionKey: string): McpSkillExecutorDeps => ({
+export const buildExternalSkillsDeps = (
+  database: Database,
+  encryptionKey: string,
+  assertPublicUrl?: (url: string) => void | Promise<void>,
+): McpSkillExecutorDeps => ({
   skills: new ExternalSkillDefinitionRepository(database),
   connections: new LiveMcpConnectionLookup(new McpConnectionRepository(database), encryptionKey),
-  toolServices: createMcpToolServiceFactory(),
+  toolServices: createMcpToolServiceFactory(assertPublicUrl),
 });

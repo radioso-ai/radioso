@@ -120,4 +120,22 @@ describe("McpSkillExecutor", () => {
       expect(result.outcome.outputs).toMatchObject({ echoed: { channel: "#support", message: "from slot" } });
     }
   });
+
+  it("fails safely when the runtime SSRF guard rejects the connection URL", async () => {
+    const executor = new McpSkillExecutor({
+      skills: { findEnabledByName: async () => record() },
+      connections: { findById: async () => connection },
+      toolServices: {
+        create: (conn) =>
+          new SdkMcpToolService({
+            serverUrl: conn.serverUrl,
+            assertPublicUrl: () => {
+              throw new Error("non-public host");
+            },
+          }),
+      },
+    });
+    const result = await dispatch(executor, "handoff_slack", { message: "hi" });
+    expect(result).toMatchObject({ disposition: "settled", outcome: { status: "failed" } });
+  });
 });

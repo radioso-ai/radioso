@@ -30,6 +30,13 @@ export interface CreateExternalSkillDefinitionInput {
   enabled?: boolean;
 }
 
+export interface UpdateExternalSkillDefinitionInput {
+  boundParams?: Record<string, unknown>;
+  exposedParams?: Record<string, ExposedParamSpec>;
+  declaredOutcomes?: string[] | null;
+  enabled?: boolean;
+}
+
 interface ExternalSkillDefinitionRow {
   id: string;
   agent_id: string;
@@ -69,6 +76,7 @@ export interface ExternalSkillDefinitionRepositoryPort {
   findEnabledByName(agentId: string, skillName: string): Promise<ExternalSkillDefinitionRecord | null>;
   listByAgent(agentId: string): Promise<ExternalSkillDefinitionRecord[]>;
   listByConnection(agentId: string, connectionId: string): Promise<ExternalSkillDefinitionRecord[]>;
+  update(agentId: string, id: string, input: UpdateExternalSkillDefinitionInput): Promise<ExternalSkillDefinitionRecord | null>;
   remove(agentId: string, id: string): Promise<boolean>;
 }
 
@@ -135,6 +143,32 @@ export class ExternalSkillDefinitionRepository implements ExternalSkillDefinitio
       [agentId, connectionId],
     );
     return rows.map(mapRecord);
+  }
+
+  async update(
+    agentId: string,
+    id: string,
+    input: UpdateExternalSkillDefinitionInput,
+  ): Promise<ExternalSkillDefinitionRecord | null> {
+    const [row] = await this.database.query<ExternalSkillDefinitionRow>(
+      `UPDATE external_skill_definitions SET
+         bound_params = COALESCE($3::jsonb, bound_params),
+         exposed_params = COALESCE($4::jsonb, exposed_params),
+         declared_outcomes = COALESCE($5, declared_outcomes),
+         enabled = COALESCE($6, enabled),
+         updated_at = NOW()
+       WHERE agent_id = $1 AND id = $2
+       RETURNING ${COLUMNS}`,
+      [
+        agentId,
+        id,
+        input.boundParams ? JSON.stringify(input.boundParams) : null,
+        input.exposedParams ? JSON.stringify(input.exposedParams) : null,
+        input.declaredOutcomes ?? null,
+        input.enabled ?? null,
+      ],
+    );
+    return row ? mapRecord(row) : null;
   }
 
   async remove(agentId: string, id: string): Promise<boolean> {

@@ -129,6 +129,55 @@ export const skillDefinitionInputSchema = z
 
 export type SkillDefinitionInput = z.infer<typeof skillDefinitionInputSchema>;
 
+const dangerousParamKey = (key: string): boolean =>
+  key === "__proto__" || key === "constructor" || key === "prototype";
+
+/** PATCH body for a connection: rename and/or rotate the access token. */
+export const mcpConnectionUpdateSchema = z
+  .object({
+    displayName: trimmedText(EXTERNAL_SKILLS_LIMITS.displayName).optional(),
+    accessToken: trimmedText(4096).optional(),
+  })
+  .strict();
+
+export type McpConnectionUpdateInput = z.infer<typeof mcpConnectionUpdateSchema>;
+
+/** PATCH body for a skill definition: toggle enabled and/or update its bindings. */
+export const skillDefinitionUpdateSchema = z
+  .object({
+    boundParams: boundParamsSchema.optional(),
+    exposedParams: exposedParamsSchema.optional(),
+    declaredOutcomes: z
+      .array(trimmedText(EXTERNAL_SKILLS_LIMITS.outcomeName).regex(outcomeNamePattern))
+      .optional(),
+    enabled: z.boolean().optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const boundKeys = value.boundParams ? Object.keys(value.boundParams) : [];
+    const exposedKeys = value.exposedParams ? Object.keys(value.exposedParams) : [];
+    if (value.boundParams && value.exposedParams) {
+      const overlap = boundKeys.filter((key) => exposedKeys.includes(key));
+      if (overlap.length > 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["exposedParams"],
+          message: `bound and exposed params must be disjoint (overlap: ${overlap.join(", ")})`,
+        });
+      }
+    }
+    const dangerous = [...boundKeys, ...exposedKeys].filter(dangerousParamKey);
+    if (dangerous.length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["boundParams"],
+        message: `param keys are not allowed: ${dangerous.join(", ")}`,
+      });
+    }
+  });
+
+export type SkillDefinitionUpdateInput = z.infer<typeof skillDefinitionUpdateSchema>;
+
 /** Minimal JSON-Schema shape we read for coverage validation. */
 interface ToolInputSchemaShape {
   properties?: Record<string, unknown>;

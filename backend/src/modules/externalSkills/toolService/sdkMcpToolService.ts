@@ -31,6 +31,12 @@ export interface SdkMcpToolServiceOptions {
   timeoutMs?: number;
   /** Test seam: supply a transport directly (e.g. in-memory) instead of HTTP. */
   transportFactory?: () => Transport | Promise<Transport>;
+  /**
+   * SSRF guard, re-evaluated immediately before each connect against the live
+   * `serverUrl` — defends the runtime path against DB-mutated records and DNS
+   * rebinding (the create-time check alone is not sufficient).
+   */
+  assertPublicUrl?: (url: string) => void | Promise<void>;
   clientInfo?: { name: string; version: string };
 }
 
@@ -118,6 +124,8 @@ export class SdkMcpToolService implements ToolService {
     if (!this.options.serverUrl) {
       throw new Error("SdkMcpToolService requires a serverUrl or a transportFactory");
     }
+    // SSRF guard re-checked immediately before the outbound connection.
+    await this.options.assertPublicUrl?.(this.options.serverUrl);
     const url = new URL(this.options.serverUrl);
     if (this.options.authProvider) {
       return new StreamableHTTPClientTransport(url, { authProvider: this.options.authProvider });

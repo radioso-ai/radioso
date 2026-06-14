@@ -4,11 +4,13 @@ import type {
   CreateMcpConnectionInput,
   McpConnectionRecord,
   McpConnectionRepositoryPort,
+  UpdateMcpConnectionInput,
 } from "../../src/db/repositories/mcpConnectionRepository.js";
 import type {
   CreateExternalSkillDefinitionInput,
   ExternalSkillDefinitionRecord,
   ExternalSkillDefinitionRepositoryPort,
+  UpdateExternalSkillDefinitionInput,
 } from "../../src/db/repositories/externalSkillDefinitionRepository.js";
 import type { ToolServiceFactory } from "../../src/modules/externalSkills/executor/mcpSkillExecutor.js";
 import { SdkMcpToolService } from "../../src/modules/externalSkills/toolService/sdkMcpToolService.js";
@@ -57,6 +59,19 @@ export class InMemoryMcpConnectionRepository implements McpConnectionRepositoryP
       return null;
     }
     record.status = status;
+    record.updatedAt = new Date();
+    return { ...record };
+  }
+
+  async update(agentId: string, id: string, input: UpdateMcpConnectionInput): Promise<McpConnectionRecord | null> {
+    const record = this.rows.get(id);
+    if (!record || record.agentId !== agentId) {
+      return null;
+    }
+    if (input.displayName !== undefined) record.displayName = input.displayName;
+    if (input.credentialCiphertext !== undefined) record.credentialCiphertext = input.credentialCiphertext;
+    if (input.encryptionKeyId !== undefined) record.encryptionKeyId = input.encryptionKeyId;
+    if (input.status !== undefined) record.status = input.status;
     record.updatedAt = new Date();
     return { ...record };
   }
@@ -127,6 +142,23 @@ export class InMemoryExternalSkillDefinitionRepository implements ExternalSkillD
     return [...this.rows.values()]
       .filter((row) => row.agentId === agentId && row.connectionId === connectionId)
       .map((row) => ({ ...row }));
+  }
+
+  async update(
+    agentId: string,
+    id: string,
+    input: UpdateExternalSkillDefinitionInput,
+  ): Promise<ExternalSkillDefinitionRecord | null> {
+    const record = this.rows.get(id);
+    if (!record || record.agentId !== agentId) {
+      return null;
+    }
+    if (input.boundParams !== undefined) record.boundParams = input.boundParams;
+    if (input.exposedParams !== undefined) record.exposedParams = input.exposedParams;
+    if (input.declaredOutcomes !== undefined) record.declaredOutcomes = input.declaredOutcomes;
+    if (input.enabled !== undefined) record.enabled = input.enabled;
+    record.updatedAt = new Date();
+    return { ...record };
   }
 
   async remove(agentId: string, id: string): Promise<boolean> {

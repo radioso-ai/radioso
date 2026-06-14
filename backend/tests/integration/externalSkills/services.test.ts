@@ -182,4 +182,27 @@ describeIfDatabase("external skills services (postgres)", () => {
     await expect(skills.create(agentId, { ...base, skillName: "dup" })).rejects.toMatchObject({ statusCode: 409 });
     await expect(connections.remove(agentId, connection.id)).rejects.toMatchObject({ statusCode: 409 });
   });
+
+  it("updates a connection (rename + rotate token) and a skill (disable + re-bind)", async () => {
+    const connection = await newConnection();
+    const renamed = await connections.update(agentId, connection.id, { displayName: "Renamed", accessToken: "rotated-token" });
+    expect(renamed.displayName).toBe("Renamed");
+    expect(renamed.hasCredential).toBe(true);
+
+    const skill = await skills.create(agentId, {
+      skillName: "updatable",
+      connectionId: connection.id,
+      toolName: "post_message",
+      boundParams: { channel: "#x" },
+      exposedParams: { message: {} },
+      enabled: true,
+    });
+    const disabled = await skills.update(agentId, skill.id, { enabled: false });
+    expect(disabled.enabled).toBe(false);
+
+    // Re-binding is re-validated against discovery: an unknown param is rejected.
+    await expect(
+      skills.update(agentId, skill.id, { boundParams: { ghost: "x" }, exposedParams: { message: {} } }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
 });

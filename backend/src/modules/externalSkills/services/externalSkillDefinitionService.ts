@@ -3,7 +3,7 @@ import type {
   ExternalSkillDefinitionRecord,
   ExternalSkillDefinitionRepositoryPort,
 } from "../../../db/repositories/externalSkillDefinitionRepository.js";
-import { validateParamCoverage, type SkillDefinitionInput } from "../domain.js";
+import { validateParamCoverage, type SkillDefinitionInput, type SkillDefinitionUpdateInput } from "../domain.js";
 import type { McpConnectionService } from "./mcpConnectionService.js";
 
 export interface ExternalSkillDefinitionView {
@@ -95,6 +95,34 @@ export class ExternalSkillDefinitionService {
       throw notFound("Skill definition not found");
     }
     return toView(record);
+  }
+
+  /** Toggle enabled and/or update bindings; re-validates bindings against discovery. */
+  async update(agentId: string, id: string, input: SkillDefinitionUpdateInput): Promise<ExternalSkillDefinitionView> {
+    const existing = await this.repository.findById(agentId, id);
+    if (!existing) {
+      throw notFound("Skill definition not found");
+    }
+
+    if (input.boundParams !== undefined || input.exposedParams !== undefined) {
+      const boundParams = input.boundParams ?? existing.boundParams;
+      const exposedParams = input.exposedParams ?? existing.exposedParams;
+      const tools = await this.connections.discoverTools(agentId, existing.connectionId);
+      const tool = tools.find((candidate) => candidate.name === existing.toolName);
+      if (!tool) {
+        throw badRequest(`Tool "${existing.toolName}" was not found on the connection`);
+      }
+      const coverage = validateParamCoverage(tool.inputSchema, Object.keys(boundParams), Object.keys(exposedParams));
+      if (!coverage.ok) {
+        throw badRequest("Skill params do not match the tool's input schema", coverage);
+      }
+    }
+
+    const updated = await this.repository.update(agentId, id, input);
+    if (!updated) {
+      throw notFound("Skill definition not found");
+    }
+    return toView(updated);
   }
 
   async remove(agentId: string, id: string): Promise<void> {

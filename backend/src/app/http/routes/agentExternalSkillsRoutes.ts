@@ -6,7 +6,12 @@ import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.j
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest } from "../../../shared/domain/errors.js";
-import { mcpConnectionInputSchema, skillDefinitionInputSchema } from "../../../modules/externalSkills/domain.js";
+import {
+  mcpConnectionInputSchema,
+  mcpConnectionUpdateSchema,
+  skillDefinitionInputSchema,
+  skillDefinitionUpdateSchema,
+} from "../../../modules/externalSkills/domain.js";
 
 const uuidSchema = z.string().uuid();
 const parseId = (value: unknown, field: string): string => {
@@ -74,6 +79,32 @@ export const createAgentExternalSkillsRoutes = (dependencies: AppDependencies): 
     }
   });
 
+  router.get("/:agentId/mcp-connections/:connectionId", workspaceSession, agentRead, async (req, res, next) => {
+    try {
+      const agentId = await resolveAgentId(req, res);
+      res.status(200).json(await dependencies.mcpConnectionService.get(agentId, parseId(req.params.connectionId, "connectionId")));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.patch(
+    "/:agentId/mcp-connections/:connectionId",
+    workspaceSession,
+    agentManage,
+    validateBody(mcpConnectionUpdateSchema),
+    async (req, res, next) => {
+      try {
+        const agentId = await resolveAgentId(req, res);
+        res.status(200).json(
+          await dependencies.mcpConnectionService.update(agentId, parseId(req.params.connectionId, "connectionId"), req.body),
+        );
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   router.delete("/:agentId/mcp-connections/:connectionId", workspaceSession, agentManage, async (req, res, next) => {
     try {
       const agentId = await resolveAgentId(req, res);
@@ -104,6 +135,32 @@ export const createAgentExternalSkillsRoutes = (dependencies: AppDependencies): 
       try {
         const agentId = await resolveAgentId(req, res);
         res.status(201).json(await dependencies.externalSkillDefinitionService.create(agentId, req.body));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get("/:agentId/external-skills/:skillId", workspaceSession, agentRead, async (req, res, next) => {
+    try {
+      const agentId = await resolveAgentId(req, res);
+      res.status(200).json(await dependencies.externalSkillDefinitionService.get(agentId, parseId(req.params.skillId, "skillId")));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.patch(
+    "/:agentId/external-skills/:skillId",
+    workspaceSession,
+    agentManage,
+    validateBody(skillDefinitionUpdateSchema),
+    async (req, res, next) => {
+      try {
+        const agentId = await resolveAgentId(req, res);
+        res.status(200).json(
+          await dependencies.externalSkillDefinitionService.update(agentId, parseId(req.params.skillId, "skillId"), req.body),
+        );
       } catch (error) {
         next(error);
       }

@@ -141,4 +141,18 @@ describe("SdkMcpToolService", () => {
     expect(result.status).toBe("failed");
     await service.close();
   });
+
+  it("refuses to connect when the SSRF guard rejects the server URL (runtime path)", async () => {
+    // The guard throws before any transport is built, so no outbound call happens.
+    const service = new SdkMcpToolService({
+      serverUrl: "https://169.254.169.254",
+      assertPublicUrl: (url) => {
+        throw new Error(`blocked non-public host: ${url}`);
+      },
+    });
+
+    const result = await service.callTool({ toolName: "anything", input: {} });
+    expect(result.status).toBe("failed");
+    expect(result.error?.code).toBe("mcp_call_failed");
+  });
 });

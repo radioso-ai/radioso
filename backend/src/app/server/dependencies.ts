@@ -114,7 +114,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   });
   const mcpConnectionService = new McpConnectionService({
     repository: new McpConnectionRepository(infrastructure.database),
-    toolServiceFactory: createMcpToolServiceFactory(),
+    toolServiceFactory: createMcpToolServiceFactory(assertPublicWebsiteUrl),
     encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
     assertPublicUrl: assertPublicWebsiteUrl,
   });

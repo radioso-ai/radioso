@@ -1056,14 +1056,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Get an MCP connection */
+        get: operations["getMcpConnection"];
         put?: never;
         post?: never;
         /** Delete an MCP connection */
         delete: operations["deleteMcpConnection"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update an MCP connection (rename / rotate token) */
+        patch: operations["updateMcpConnection"];
         trace?: never;
     };
     "/api/v1/agents/{agentId}/external-skills": {
@@ -1091,14 +1093,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Get an external skill definition */
+        get: operations["getExternalSkill"];
         put?: never;
         post?: never;
         /** Delete an external skill definition */
         delete: operations["deleteExternalSkill"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update an external skill definition (enable / update bindings) */
+        patch: operations["updateExternalSkill"];
         trace?: never;
     };
     "/api/v1/retrieval/answer": {
@@ -7780,6 +7784,56 @@ export interface operations {
             };
         };
     };
+    getMcpConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Connection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        displayName: string;
+                        serverUrl: string;
+                        authMethod: string;
+                        status: string;
+                        hasCredential: boolean;
+                        createdAt: string;
+                        updatedAt: string;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     deleteMcpConnection: {
         parameters: {
             query?: never;
@@ -7819,6 +7873,73 @@ export interface operations {
             };
             /** @description Connection is still referenced by a skill */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateMcpConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    displayName?: string;
+                    /** @description Write-only — rotates the stored access token. */
+                    accessToken?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Connection updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        displayName: string;
+                        serverUrl: string;
+                        authMethod: string;
+                        status: string;
+                        hasCredential: boolean;
+                        createdAt: string;
+                        updatedAt: string;
+                    };
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Connection not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7987,6 +8108,65 @@ export interface operations {
             };
         };
     };
+    getExternalSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Skill definition */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        connectionId: string;
+                        skillName: string;
+                        toolName: string;
+                        boundParams: {
+                            [key: string]: unknown;
+                        };
+                        exposedParams: {
+                            [key: string]: unknown;
+                        };
+                        declaredOutcomes: string[] | null;
+                        outcomeMap: {
+                            [key: string]: string;
+                        } | null;
+                        enabled: boolean;
+                        createdAt: string;
+                        updatedAt: string;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     deleteExternalSkill: {
         parameters: {
             query?: never;
@@ -8016,6 +8196,90 @@ export interface operations {
                 };
             };
             /** @description Skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateExternalSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    boundParams?: {
+                        [key: string]: unknown;
+                    };
+                    exposedParams?: {
+                        [key: string]: {
+                            slotBinding?: string;
+                            description?: string;
+                        };
+                    };
+                    declaredOutcomes?: string[];
+                    enabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Skill updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        connectionId: string;
+                        skillName: string;
+                        toolName: string;
+                        boundParams: {
+                            [key: string]: unknown;
+                        };
+                        exposedParams: {
+                            [key: string]: unknown;
+                        };
+                        declaredOutcomes: string[] | null;
+                        outcomeMap: {
+                            [key: string]: string;
+                        } | null;
+                        enabled: boolean;
+                        createdAt: string;
+                        updatedAt: string;
+                    };
+                };
+            };
+            /** @description Validation failed (param mismatch) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Skill or connection not found */
             404: {
                 headers: {
                     [name: string]: unknown;

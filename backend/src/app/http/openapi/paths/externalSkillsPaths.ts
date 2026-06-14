@@ -57,6 +57,18 @@ const SkillViewSchema = z.object({
   enabled: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),
+})
+
+const ConnectionUpdateSchema = z.object({
+  displayName: z.string().optional(),
+  accessToken: z.string().optional().describe("Write-only — rotates the stored access token."),
+})
+
+const SkillUpdateSchema = z.object({
+  boundParams: z.record(z.unknown()).optional(),
+  exposedParams: z.record(z.object({ slotBinding: z.string().optional(), description: z.string().optional() })).optional(),
+  declaredOutcomes: z.array(z.string()).optional(),
+  enabled: z.boolean().optional(),
 });
 
 const TAGS = ["External Skills"];
@@ -176,6 +188,68 @@ export const registerExternalSkillsPaths = (
       204: { description: "Skill deleted" },
       401: errorResponse("Authentication required"),
       404: errorResponse("Skill not found"),
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/agents/{agentId}/mcp-connections/{connectionId}",
+    tags: TAGS,
+    summary: "Get an MCP connection",
+    operationId: "getMcpConnection",
+    security: sec,
+    request: { params: ConnectionParams },
+    responses: {
+      200: { description: "Connection", content: json(ConnectionSummarySchema) },
+      401: errorResponse("Authentication required"),
+      404: errorResponse("Connection not found"),
+    },
+  });
+
+  registry.registerPath({
+    method: "patch",
+    path: "/api/v1/agents/{agentId}/mcp-connections/{connectionId}",
+    tags: TAGS,
+    summary: "Update an MCP connection (rename / rotate token)",
+    operationId: "updateMcpConnection",
+    security: sec,
+    request: { params: ConnectionParams, body: { required: true, content: json(ConnectionUpdateSchema) } },
+    responses: {
+      200: { description: "Connection updated", content: json(ConnectionSummarySchema) },
+      400: errorResponse("Request validation failed"),
+      401: errorResponse("Authentication required"),
+      404: errorResponse("Connection not found"),
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/agents/{agentId}/external-skills/{skillId}",
+    tags: TAGS,
+    summary: "Get an external skill definition",
+    operationId: "getExternalSkill",
+    security: sec,
+    request: { params: SkillParams },
+    responses: {
+      200: { description: "Skill definition", content: json(SkillViewSchema) },
+      401: errorResponse("Authentication required"),
+      404: errorResponse("Skill not found"),
+    },
+  });
+
+  registry.registerPath({
+    method: "patch",
+    path: "/api/v1/agents/{agentId}/external-skills/{skillId}",
+    tags: TAGS,
+    summary: "Update an external skill definition (enable / update bindings)",
+    operationId: "updateExternalSkill",
+    security: sec,
+    request: { params: SkillParams, body: { required: true, content: json(SkillUpdateSchema) } },
+    responses: {
+      200: { description: "Skill updated", content: json(SkillViewSchema) },
+      400: errorResponse("Validation failed (param mismatch)"),
+      401: errorResponse("Authentication required"),
+      404: errorResponse("Skill or connection not found"),
     },
   });
 };

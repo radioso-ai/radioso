@@ -43,8 +43,8 @@ description: "Task list for External Skills via MCP"
 ### Tests for US1 (write first, ensure FAIL)
 
 - [ ] T010 [P] [US1] Repository tests: connection repo + skill-definition repo CRUD + encrypted credential round-trip in `backend/tests/integration/externalSkills/repositories.test.ts`.
-- [ ] T011 [P] [US1] Resolver tests: name→binding resolution + param merge (bound + exposed), invalid/missing tool, required-param coverage, in `backend/tests/unit/externalSkills/resolver.test.ts`.
-- [ ] T012 [P] [US1] Executor tests: MCP skill executor implements `SkillExecutorPort`, returns settled `SkillOutcome` mapped to `RoutineSkillResult` (`completed`/`failed`), safe-degrade on timeout/error, in `backend/tests/unit/externalSkills/executor.test.ts`.
+- [x] T011 [P] [US1] Resolver tests: name→binding resolution + param merge (bound + exposed), invalid/missing tool, required-param coverage, in `backend/tests/unit/externalSkills/resolver.test.ts`.
+- [x] T012 [P] [US1] Executor tests: MCP skill executor implements `SkillExecutorPort`, returns settled `SkillOutcome` mapped to `RoutineSkillResult` (`completed`/`failed`), safe-degrade on timeout/error, in `backend/tests/unit/externalSkills/executor.test.ts`.
 - [ ] T013 [P] [US1] Contract tests for connection + discovery + skill-definition routes (from contracts/endpoints.md) in `backend/tests/contract/externalSkills.contract.test.ts`.
 - [ ] T014 [US1] Routine integration test: a routine step referencing a defined skill drives find/call + success branch and failure branch; assert engine/routine-runner remain MCP-free, in `backend/tests/integration/externalSkills/routineInvocation.test.ts`.
 
@@ -52,8 +52,8 @@ description: "Task list for External Skills via MCP"
 
 - [ ] T015 [P] [US1] Connection repository + service in `backend/src/modules/externalSkills/connections/` (encrypt via `backend/src/shared/infra/crypto/fieldEncryption.ts`; status lifecycle).
 - [ ] T016 [P] [US1] Skill-definition repository + service in `backend/src/modules/externalSkills/skillDefinitions/`.
-- [ ] T017 [US1] Name→binding **resolver** in `backend/src/modules/externalSkills/skillDefinitions/resolver.ts` (param merge; discovery validation) — depends on T015/T016.
-- [ ] T018 [US1] Generic MCP **skill executor** in `backend/src/modules/externalSkills/executor/mcpSkillExecutor.ts` implementing `SkillExecutorPort` (mirror `backend/src/modules/retrieval/services/retrievalAnswerSkillExecutor.ts`); resolve→build `ToolService` for the connection→`createToolSkillExecutor` bridge→map outcome.
+- [x] T017 [US1] Name→binding **resolver** in `backend/src/modules/externalSkills/skillDefinitions/resolver.ts` (param merge; discovery validation) — depends on T015/T016.
+- [x] T018 [US1] Generic MCP **skill executor** in `backend/src/modules/externalSkills/executor/mcpSkillExecutor.ts` implementing `SkillExecutorPort` (mirror `backend/src/modules/retrieval/services/retrievalAnswerSkillExecutor.ts`); resolve→build `ToolService` for the connection→`createToolSkillExecutor` bridge→map outcome.
 - [ ] T019 [US1] Wire defaults in `backend/src/app/composition/` — register the MCP skill executor with the skill executor registry; build the per-connection `ToolService` factory; inject repositories/resolver. Keep product rules out of composition.
 - [ ] T020 [US1] Confirm `SkillOutcome.status` → `RoutineSkillResult.status` projection carries verbatim status (the seam the routine runner branches on); add a focused test if a projection point needs adjustment. Engine/contract packages remain unmodified.
 - [ ] T021 [US1] Routes for connection CRUD + `discover` + skill-definition CRUD in `backend/src/modules/externalSkills/` handlers; define in the code-first OpenAPI registry `backend/src/app/http/openapi/document.ts` (Zod schemas; secrets write-only/masked); authz mirrors agent-management gating. Regenerate `backend/openapi.yaml`/`.json` via the generate script.

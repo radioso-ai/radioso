@@ -16,13 +16,15 @@ const fakeDeps: McpSkillExecutorDeps = {
 
 describe("createExternalSkillsApplicationModule", () => {
   it("registers the MCP skill executor under the external-skills internal adapter", () => {
-    const registrations: Array<{ kind: string; adapter?: string; executor: { dispatch: unknown } }> = [];
+    type Registration = { kind: string; adapter?: string; executor: { dispatch: unknown } };
+    const registrations: Registration[] = [];
     const module = createExternalSkillsApplicationModule(fakeDeps);
 
     expect(module.id).toBe("radioso-external-skills");
+    expect(typeof module.register).toBe("function");
 
-    module.register({
-      registerSkillExecutor: (registration) => registrations.push(registration),
+    module.register?.({
+      registerSkillExecutor: (registration: Registration) => registrations.push(registration),
     } as never);
 
     expect(registrations).toHaveLength(1);

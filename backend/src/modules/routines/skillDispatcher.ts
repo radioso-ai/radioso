@@ -54,16 +54,22 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
   ): Promise<RoutineSkillResult> {
     const { skillName, state, turn } = input;
 
+    // A routine runs on a resumable state machine, and the runner resolves this
+    // BEFORE the turn is persisted — so throwing here would 500 the turn AND leave
+    // the routine pinned at this step, re-throwing on every subsequent turn (a
+    // permanently wedged conversation). An unresolvable / deferred skill is an
+    // author/config error, not a programming bug, so it must degrade to a `failed`
+    // result the runner advances off (its outgoing edges / a fallback branch).
     const skill = this.resolver.resolve(skillName);
     if (!skill) {
-      throw new Error(`routine_skill_unknown:${skillName}`);
+      return unavailable(skillName, "unknown_skill");
     }
     if (!skill.execution) {
-      throw new Error(`routine_skill_no_execution:${skillName}`);
+      return unavailable(skillName, "no_execution");
     }
     const executor = this.executorRegistry.resolve(skill.execution);
     if (!executor) {
-      throw new Error(`routine_skill_no_executor:${skillName}`);
+      return unavailable(skillName, "no_executor");
     }
 
     const result = await executor.dispatch({
@@ -76,8 +82,9 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
     });
 
     if (result.disposition !== "settled") {
-      // No v1 executor defers; a routine step must branch on an available result.
-      throw new Error(`routine_skill_deferred:${skillName}`);
+      // No v1 executor defers; the async-weave (reconcile a deferred result in a
+      // later turn) isn't wired for routines, so degrade rather than wedge.
+      return unavailable(skillName, "deferred");
     }
 
     return {
@@ -86,4 +93,10 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
       answer: result.outcome.answer,
     };
   }
+}
+
+// A recoverable failure: the runner branches on `status` and can read `outputs`
+// (skill name + reason) for an outcome guard or operator triage.
+function unavailable(skillName: string, reason: string): RoutineSkillResult {
+  return { status: "failed", outputs: { skill: skillName, reason } };
 }

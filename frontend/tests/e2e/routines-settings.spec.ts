@@ -38,7 +38,7 @@ const baseRoutine: Omit<RoutineFixture, "id" | "status" | "version"> = {
   }],
   transitions: [{
     fromStep: "ask_email",
-    toRef: "complete",
+    toRef: "done",
     guardKind: "default",
     guardText: null,
     outcomeStatus: null,
@@ -46,9 +46,9 @@ const baseRoutine: Omit<RoutineFixture, "id" | "status" | "version"> = {
     ordinal: 0,
   }],
   terminals: [{
-    stableStepId: "complete",
+    stableStepId: "done",
     kind: "complete",
-    instruction: "Confirm the request was captured.",
+    instruction: "All set.",
     ordinal: 0,
   }],
   createdAt: nowIso,
@@ -175,6 +175,30 @@ test("an existing routine opens in prose (outline retired) and toggles to form",
   // Toggling to the Form tab preserves the step instruction.
   await page.getByRole("tab", { name: "Form" }).click();
   await expect(page.getByLabel("Step 1 instruction")).toHaveValue("Ask for {{slot.email}} so the team can follow up.");
+});
+
+test("a routine with custom completion copy opens in Form, not Prose", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineUpdates: [],
+    routines: [{
+      ...baseRoutine,
+      id: "55555555-5555-4555-9555-000000000302",
+      status: "draft",
+      version: 1,
+      // A custom completion message the prose editor can't show — must edit in Form so it
+      // isn't silently overwritten on load+save.
+      terminals: [{ stableStepId: "done", kind: "complete", instruction: "Thanks, we will be in touch.", ordinal: 0 }],
+    }],
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Edit draft Collect pricing intake" }).click();
+
+  // It opens in Form, and the Prose tab explains why and points back to Form.
+  await expect(page.getByRole("tab", { name: "Form" })).toHaveAttribute("data-state", "active");
+  await page.getByRole("tab", { name: "Prose" }).click();
+  await expect(page.getByText(/advanced steps the prose editor can.t show/i)).toBeVisible();
 });
 
 test("agent routines revise and publish a new version without duplicating the lineage row", async ({ page }) => {

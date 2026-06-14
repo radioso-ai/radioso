@@ -99,6 +99,12 @@ export type RoutineDocBlock = { text: string; chips: RoutineDocChip[] }
 
 const DONE_TERMINAL_ID = 'done'
 const HANDOFF_TERMINAL_ID = 'handoff'
+// The terminal copy the prose editor regenerates. The prose surface has no field for
+// terminal messages, so draftFromChipDoc emits these defaults and routineToChipDoc
+// refuses (falls back to Form) any routine whose terminals differ — otherwise an
+// author's custom completion/handoff message would be silently overwritten on load+save.
+const DEFAULT_COMPLETE_INSTRUCTION = 'All set.'
+const DEFAULT_HANDOFF_INSTRUCTION = 'Bringing in a teammate.'
 
 // Serialize the chip document into a routine draft. Non-branch blocks become chat steps,
 // chained in order and ending on a complete terminal. A block with a handoff chip is a
@@ -194,7 +200,9 @@ export function draftFromChipDoc(input: {
     steps.push({
       stableStepId: id,
       kind: skillChip ? 'tool' : 'chat',
-      instruction,
+      // Every step needs a non-empty instruction (backend requirement). A skill chip
+      // alone on a line carries no prose, so fall back to the skill name.
+      instruction: !instruction && skillChip ? skillChip.refId : instruction,
       toolRef: skillChip ? skillChip.refId : null,
       actionType: null,
       ordinal: steps.length,
@@ -227,10 +235,10 @@ export function draftFromChipDoc(input: {
   }
 
   const terminals: RoutineDefinitionDraft['terminals'] = [
-    { stableStepId: DONE_TERMINAL_ID, kind: 'complete', instruction: 'All set.', ordinal: 0 },
+    { stableStepId: DONE_TERMINAL_ID, kind: 'complete', instruction: DEFAULT_COMPLETE_INSTRUCTION, ordinal: 0 },
   ]
   if (needHandoffTerminal) {
-    terminals.push({ stableStepId: HANDOFF_TERMINAL_ID, kind: 'handoff', instruction: 'Bringing in a teammate.', ordinal: 1 })
+    terminals.push({ stableStepId: HANDOFF_TERMINAL_ID, kind: 'handoff', instruction: DEFAULT_HANDOFF_INSTRUCTION, ordinal: 1 })
   }
 
   return {
@@ -327,8 +335,20 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
   if (handoffTerminals.length > 1) return null
   if (routine.terminals.length !== completeTerminals.length + handoffTerminals.length) return null
 
-  const completeId = completeTerminals[0]!.stableStepId
-  const handoffId = handoffTerminals[0]?.stableStepId ?? null
+  // The prose editor regenerates terminals from constants and can't show their copy or
+  // ids — so any routine with a custom completion/handoff message or a non-default
+  // terminal id must edit in Form, or that copy/id would be lost on a load+save.
+  const complete = completeTerminals[0]!
+  if (complete.stableStepId !== DONE_TERMINAL_ID || (complete.instruction ?? '') !== DEFAULT_COMPLETE_INSTRUCTION) return null
+  const handoff = handoffTerminals[0]
+  if (handoff && (handoff.stableStepId !== HANDOFF_TERMINAL_ID || (handoff.instruction ?? '') !== DEFAULT_HANDOFF_INSTRUCTION)) return null
+
+  // The prose editor treats every collected variable as required (it regenerates
+  // required:true). A non-required slot would be silently flipped on save, so fall back.
+  if (routine.slots.some((slot) => slot.required === false)) return null
+
+  const completeId = complete.stableStepId
+  const handoffId = handoff?.stableStepId ?? null
   const stepIds = new Set(steps.map((step) => step.stableStepId))
   if (routine.transitions.some((transition) => !stepIds.has(transition.fromStep))) return null
 

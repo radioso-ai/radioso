@@ -111,18 +111,19 @@ describe("RoutineSkillExecutorDispatcher", () => {
     expect(captured?.collected).toEqual({ email: "a@b.com", duration: 30 });
   });
 
-  it("throws when the referenced skill is not resolvable", async () => {
+  it("degrades to failed (not a throw) when the referenced skill is not resolvable", async () => {
     const dispatcher = new RoutineSkillExecutorDispatcher(
       new StaticRoutineSkillResolver([]),
       registryWith(settledExecutor({ status: "completed" } as unknown as SkillOutcome)),
     );
 
-    await expect(
-      dispatcher.dispatch({ skillName: "missing", state: routineState({}), turn }),
-    ).rejects.toThrow(/routine_skill_unknown:missing/);
+    // Degrades rather than throwing: throwing here would 500 the turn pre-persistence
+    // and permanently wedge the resumable routine. The runner advances off `failed`.
+    const result = await dispatcher.dispatch({ skillName: "missing", state: routineState({}), turn });
+    expect(result).toEqual({ status: "failed", outputs: { skill: "missing", reason: "unknown_skill" } });
   });
 
-  it("throws when the resolved skill has no execution descriptor", async () => {
+  it("degrades to failed when the resolved skill has no execution descriptor", async () => {
     const resolver: RoutineSkillResolver = {
       resolve: () => ({ name: "book_meeting" }) as unknown as SkillDefinition,
     };
@@ -131,12 +132,11 @@ describe("RoutineSkillExecutorDispatcher", () => {
       registryWith(settledExecutor({ status: "completed" } as unknown as SkillOutcome)),
     );
 
-    await expect(
-      dispatcher.dispatch({ skillName: "book_meeting", state: routineState({}), turn }),
-    ).rejects.toThrow(/routine_skill_no_execution:book_meeting/);
+    const result = await dispatcher.dispatch({ skillName: "book_meeting", state: routineState({}), turn });
+    expect(result).toEqual({ status: "failed", outputs: { skill: "book_meeting", reason: "no_execution" } });
   });
 
-  it("throws when no executor is registered for the skill's execution", async () => {
+  it("degrades to failed when no executor is registered for the skill's execution", async () => {
     const dispatcher = new RoutineSkillExecutorDispatcher(
       new StaticRoutineSkillResolver([
         skillNamed("book_meeting", { kind: "internal", adapter: "unregistered" }),
@@ -144,12 +144,11 @@ describe("RoutineSkillExecutorDispatcher", () => {
       new SkillExecutorRegistry(),
     );
 
-    await expect(
-      dispatcher.dispatch({ skillName: "book_meeting", state: routineState({}), turn }),
-    ).rejects.toThrow(/routine_skill_no_executor:book_meeting/);
+    const result = await dispatcher.dispatch({ skillName: "book_meeting", state: routineState({}), turn });
+    expect(result).toEqual({ status: "failed", outputs: { skill: "book_meeting", reason: "no_executor" } });
   });
 
-  it("throws when the executor defers — a routine step must branch on a settled result", async () => {
+  it("degrades to failed when the executor defers — a routine step must branch on a settled result", async () => {
     const deferringExecutor: SkillExecutorPort = {
       async dispatch() {
         return { disposition: "deferred", ticket: { ticketId: "t_1" } };
@@ -160,8 +159,7 @@ describe("RoutineSkillExecutorDispatcher", () => {
       registryWith(deferringExecutor),
     );
 
-    await expect(
-      dispatcher.dispatch({ skillName: "book_meeting", state: routineState({}), turn }),
-    ).rejects.toThrow(/routine_skill_deferred:book_meeting/);
+    const result = await dispatcher.dispatch({ skillName: "book_meeting", state: routineState({}), turn });
+    expect(result).toEqual({ status: "failed", outputs: { skill: "book_meeting", reason: "deferred" } });
   });
 });

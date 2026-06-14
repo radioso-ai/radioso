@@ -289,5 +289,36 @@ describe('routineToChipDoc (inverse serializer)', () => {
     expect(routineToChipDoc({ ...base, completionExport: { enabled: true, triggerKinds: ['complete'], destinationRef: 'dest_1' } })).toBeNull()
     // More than one complete terminal isn't a prose shape.
     expect(routineToChipDoc({ ...base, terminals: [...base.terminals, { stableStepId: 'done2', kind: 'complete', instruction: 'x', ordinal: 1 }] })).toBeNull()
+    // A custom completion message can't be shown in prose — would be silently overwritten.
+    expect(routineToChipDoc({ ...base, terminals: [{ ...base.terminals[0]!, instruction: 'Thanks, all done!' }] })).toBeNull()
+    // A non-default terminal id would be renamed on a prose round-trip.
+    expect(routineToChipDoc({ ...base, terminals: [{ ...base.terminals[0]!, stableStepId: 'complete_1' }] })).toBeNull()
+  })
+
+  it('falls back to Form for a non-required slot (prose would flip it to required)', () => {
+    const draft = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: [{ text: 'Ask for {{slot.email}}.', chips: [{ kind: 'variable', refId: 'email' }] }],
+      variables: [{ id: 'email', name: 'email', type: 'email' }],
+    })
+    expect(routineToChipDoc(draft)).not.toBeNull()
+    expect(routineToChipDoc({ ...draft, slots: draft.slots.map((slot) => ({ ...slot, required: false })) })).toBeNull()
+  })
+
+  it('synthesizes a non-empty instruction for a bare skill chip (no prose)', () => {
+    const draft = draftFromChipDoc({
+      name: 'Booking',
+      trigger: 'book',
+      blocks: [
+        { text: 'Greet the customer.', chips: [] },
+        { text: '', chips: [{ kind: 'skill', refId: 'book_meeting' }] },
+      ],
+      variables: [],
+    })
+    const toolStep = draft.steps.find((step) => step.kind === 'tool')
+    expect(toolStep).toMatchObject({ kind: 'tool', toolRef: 'book_meeting', instruction: 'book_meeting' })
+    // Every step has a non-empty instruction, so the backend (min(1)) accepts the draft.
+    expect(draft.steps.every((step) => step.instruction.trim().length > 0)).toBe(true)
   })
 })

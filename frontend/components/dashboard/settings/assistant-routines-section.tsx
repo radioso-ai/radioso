@@ -834,7 +834,9 @@ function RoutineEditorScreen({
 
           <Tabs value={viewMode} onValueChange={(value) => synchronizeView(value as 'prose' | 'form')}>
             <TabsList aria-label="Routine editor view">
-              <TabsTrigger value="prose">
+              {/* The chip editor has no read-only mode; a published/archived routine
+                  is viewed in the (disabled) Form tab rather than an editable prose surface. */}
+              <TabsTrigger value="prose" disabled={isReadOnly}>
                 <Sparkles className="h-4 w-4" />
                 Prose
               </TabsTrigger>

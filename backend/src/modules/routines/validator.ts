@@ -17,7 +17,6 @@ export const routineValidationCodes = [
   "structured_guard_missing_parameter",
   "field_guard_unknown_reference",
   "field_guard_incompatible_type",
-  "unsupported_tool_step",
   "completion_export_missing_destination",
 ] as const;
 
@@ -89,13 +88,9 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
   }
 
   for (const step of steps) {
-    if (step.kind === "tool") {
-      diagnostics.push({
-        code: "unsupported_tool_step",
-        location: `step:${step.stableStepId}`,
-        message: `tool steps are not yet supported: step "${step.stableStepId}" cannot be published until routine tool dispatch is available.`,
-      });
-    }
+    // A tool step compiles to a skill step dispatched through the shared
+    // skill-executor port (see RoutineSkillExecutorDispatcher); it must name the
+    // authored skill it invokes — an unbound tool step is the dangling case.
     if (step.kind === "tool" && !step.toolRef) {
       diagnostics.push({
         code: "dangling_action_reference",

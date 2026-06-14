@@ -76,7 +76,6 @@ export type RoutineValidationCode =
   | 'structured_guard_missing_parameter'
   | 'field_guard_unknown_reference'
   | 'field_guard_incompatible_type'
-  | 'unsupported_tool_step'
   | 'completion_export_missing_destination'
 
 export type RoutineValidationDiagnostic = {

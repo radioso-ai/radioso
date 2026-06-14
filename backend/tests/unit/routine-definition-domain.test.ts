@@ -203,7 +203,7 @@ describe("routine definition compiler and validator", () => {
     }));
   });
 
-  it("rejects tool steps until routine skill dispatch is supported", () => {
+  it("compiles a tool step to a skill step dispatched through the skill port", () => {
     const definition: RoutineDefinition = {
       ...baseDefinition(),
       steps: [
@@ -219,15 +219,38 @@ describe("routine definition compiler and validator", () => {
       ],
     };
 
+    // Routine tool dispatch now exists (RoutineSkillExecutorDispatcher), so a
+    // tool step is publishable; it compiles to a skill step the runner dispatches
+    // through the shared skill-executor port, naming the authored skill.
+    expect(validateRoutineDefinition(definition)).toEqual({ ok: true, diagnostics: [] });
+    expect(compileRoutineDefinition(definition).steps).toContainEqual(
+      expect.objectContaining({ id: "lookup", kind: "skill", skillName: "order_lookup" }),
+    );
+  });
+
+  it("rejects a tool step that names no skill", () => {
+    const definition: RoutineDefinition = {
+      ...baseDefinition(),
+      steps: [
+        { stableStepId: "ask_email", kind: "chat", instruction: "Ask for {{slot.email}}.", toolRef: null, ordinal: 0, metadata: {} },
+        { stableStepId: "lookup", kind: "tool", instruction: "Look up order.", toolRef: null, ordinal: 1, metadata: {} },
+      ],
+      slots: [
+        { stableSlotId: "slot_email", key: "email", type: "email", required: true, description: null, ordinal: 0 },
+      ],
+      transitions: [
+        { fromStep: "ask_email", toRef: "lookup", guardKind: "slot_filled", guardText: "{{slot.email}}", ordinal: 0 },
+        { fromStep: "lookup", toRef: "done", guardKind: "default", guardText: null, ordinal: 1 },
+      ],
+    };
+
     const result = validateRoutineDefinition(definition);
 
     expect(result.ok).toBe(false);
     expect(result.diagnostics).toContainEqual(expect.objectContaining({
-      code: "unsupported_tool_step",
+      code: "dangling_action_reference",
       location: "step:lookup",
-      message: expect.stringContaining("tool steps are not yet supported"),
     }));
-    expect(() => compileRoutineDefinition(definition)).toThrow("tool steps are not yet supported");
   });
 
   it("compiles an action step with its authored follow-up transition", () => {

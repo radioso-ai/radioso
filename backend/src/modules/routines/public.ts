@@ -24,6 +24,11 @@ export {
 } from "./domain.js";
 export { compileRoutineDefinition, legacyCompiledRoutineId } from "./compiler.js";
 export {
+  RoutineSkillExecutorDispatcher,
+  StaticRoutineSkillResolver,
+  type RoutineSkillResolver,
+} from "./skillDispatcher.js";
+export {
   routineValidationCodes,
   validateRoutineDefinition,
   type RoutineValidationCode,

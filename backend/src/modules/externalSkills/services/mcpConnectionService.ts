@@ -1,4 +1,4 @@
-import { conflict, notFound } from "../../../shared/domain/errors.js";
+import { AppError, conflict, notFound } from "../../../shared/domain/errors.js";
 import { encryptField, decryptField } from "../../../shared/infra/crypto/fieldEncryption.js";
 import type {
   McpConnectionRecord,
@@ -36,10 +36,13 @@ const toSummary = (record: McpConnectionRecord): McpConnectionSummary => ({
   updatedAt: record.updatedAt.toISOString(),
 });
 
-export class EncryptionNotConfiguredError extends Error {
+export class EncryptionNotConfiguredError extends AppError {
   constructor() {
-    super("CONNECTOR_ENCRYPTION_KEY must be set before storing MCP connection credentials");
-    this.name = "EncryptionNotConfiguredError";
+    super(
+      503,
+      "encryption_not_configured",
+      "CONNECTOR_ENCRYPTION_KEY must be set before storing MCP connection credentials",
+    );
   }
 }
 
@@ -48,6 +51,12 @@ export interface McpConnectionServiceOptions {
   toolServiceFactory: ToolServiceFactory;
   encryptionKey?: string;
   encryptionKeyId?: string;
+  /**
+   * Public-URL / SSRF guard, enforced on create AND before every outbound
+   * connection. Rejects loopback/private/link-local hosts and resolves DNS, so a
+   * user cannot point a connection at internal infrastructure.
+   */
+  assertPublicUrl?: (url: string) => void | Promise<void>;
 }
 
 /**
@@ -64,6 +73,9 @@ export class McpConnectionService {
   }
 
   async create(agentId: string, input: McpConnectionInput): Promise<McpConnectionSummary> {
+    // SSRF guard: reject loopback/private/internal targets before persisting.
+    await this.options.assertPublicUrl?.(input.serverUrl);
+
     let credentialCiphertext: string | null = null;
     let encryptionKeyId: string | null = null;
     let status: McpConnectionRecord["status"] = "unconfigured";
@@ -125,6 +137,9 @@ export class McpConnectionService {
     if (!record) {
       throw notFound("MCP connection not found");
     }
+    // Re-check immediately before the outbound fetch (defense against a record
+    // whose host has since become non-public).
+    await this.options.assertPublicUrl?.(record.serverUrl);
     const accessToken =
       record.authMethod === "access_token" && record.credentialCiphertext && this.options.encryptionKey
         ? decryptField(record.credentialCiphertext, this.options.encryptionKey)

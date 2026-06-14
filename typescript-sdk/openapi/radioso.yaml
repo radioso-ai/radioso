@@ -9816,6 +9816,7 @@ paths:
                 serverUrl:
                   type: string
                   format: uri
+                  description: HTTPS MCP server URL. Must not embed credentials (userinfo).
                 authMethod:
                   type: string
                   enum:
@@ -9823,6 +9824,7 @@ paths:
                     - oauth
                 accessToken:
                   type: string
+                  description: Required when authMethod is access_token. Write-only — never returned in responses.
               required:
                 - displayName
                 - serverUrl
@@ -10017,6 +10019,12 @@ paths:
                             - "null"
                           items:
                             type: string
+                        outcomeMap:
+                          type:
+                            - object
+                            - "null"
+                          additionalProperties:
+                            type: string
                         enabled:
                           type: boolean
                         createdAt:
@@ -10031,6 +10039,7 @@ paths:
                         - boundParams
                         - exposedParams
                         - declaredOutcomes
+                        - outcomeMap
                         - enabled
                         - createdAt
                         - updatedAt
@@ -10084,6 +10093,8 @@ paths:
                     properties:
                       slotBinding:
                         type: string
+                      description:
+                        type: string
                 declaredOutcomes:
                   type: array
                   items:
@@ -10126,6 +10137,12 @@ paths:
                       - "null"
                     items:
                       type: string
+                  outcomeMap:
+                    type:
+                      - object
+                      - "null"
+                    additionalProperties:
+                      type: string
                   enabled:
                     type: boolean
                   createdAt:
@@ -10140,6 +10157,7 @@ paths:
                   - boundParams
                   - exposedParams
                   - declaredOutcomes
+                  - outcomeMap
                   - enabled
                   - createdAt
                   - updatedAt

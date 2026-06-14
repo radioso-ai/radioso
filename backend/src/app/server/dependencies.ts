@@ -116,6 +116,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repository: new McpConnectionRepository(infrastructure.database),
     toolServiceFactory: createMcpToolServiceFactory(),
     encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
+    assertPublicUrl: assertPublicWebsiteUrl,
   });
   const externalSkillDefinitionService = new ExternalSkillDefinitionService(
     new ExternalSkillDefinitionRepository(infrastructure.database),

@@ -14,6 +14,7 @@ export interface ExternalSkillDefinitionView {
   boundParams: Record<string, unknown>;
   exposedParams: Record<string, { slotBinding?: string }>;
   declaredOutcomes: string[] | null;
+  outcomeMap: Record<string, string> | null;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -27,6 +28,7 @@ const toView = (record: ExternalSkillDefinitionRecord): ExternalSkillDefinitionV
   boundParams: record.boundParams,
   exposedParams: record.exposedParams,
   declaredOutcomes: record.declaredOutcomes,
+  outcomeMap: record.outcomeMap,
   enabled: record.enabled,
   createdAt: record.createdAt.toISOString(),
   updatedAt: record.updatedAt.toISOString(),

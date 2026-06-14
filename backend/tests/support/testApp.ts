@@ -700,13 +700,21 @@ export const createTestDependencies = (overrides: {
     auditService,
     { key: env.CONNECTOR_ENCRYPTION_KEY },
   );
+  const mcpConnectionRepository = new InMemoryMcpConnectionRepository();
+  const externalSkillDefinitionRepository = new InMemoryExternalSkillDefinitionRepository();
+  // Model the ON DELETE RESTRICT FK so the route DELETE 409 is exercised.
+  mcpConnectionRepository.setReferenceChecker((connectionId) =>
+    externalSkillDefinitionRepository.hasConnectionReference(connectionId),
+  );
   const mcpConnectionService = new McpConnectionService({
-    repository: new InMemoryMcpConnectionRepository(),
+    repository: mcpConnectionRepository,
     toolServiceFactory: createMockToolServiceFactory(),
     encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
+    // No-op in tests (avoids real DNS); SSRF enforcement is unit-tested directly.
+    assertPublicUrl: () => undefined,
   });
   const externalSkillDefinitionService = new ExternalSkillDefinitionService(
-    new InMemoryExternalSkillDefinitionRepository(),
+    externalSkillDefinitionRepository,
     mcpConnectionService,
   );
   const workspaceLlmCapabilitySettingsService = new WorkspaceLlmCapabilitySettingsService(

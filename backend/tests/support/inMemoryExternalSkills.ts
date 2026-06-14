@@ -16,6 +16,12 @@ import { connectMockMcpServer, type MockTool } from "./mockMcpServer.js";
 
 export class InMemoryMcpConnectionRepository implements McpConnectionRepositoryPort {
   private readonly rows = new Map<string, McpConnectionRecord>();
+  private referenceChecker?: (connectionId: string) => boolean;
+
+  /** Model the real ON DELETE RESTRICT: throw 23503 if a skill references it. */
+  setReferenceChecker(checker: (connectionId: string) => boolean): void {
+    this.referenceChecker = checker;
+  }
 
   async create(input: CreateMcpConnectionInput): Promise<McpConnectionRecord> {
     const now = new Date();
@@ -60,6 +66,9 @@ export class InMemoryMcpConnectionRepository implements McpConnectionRepositoryP
     if (!record || record.agentId !== agentId) {
       return false;
     }
+    if (this.referenceChecker?.(id)) {
+      throw Object.assign(new Error("connection is still referenced"), { code: "23503" });
+    }
     this.rows.delete(id);
     return true;
   }
@@ -67,6 +76,10 @@ export class InMemoryMcpConnectionRepository implements McpConnectionRepositoryP
 
 export class InMemoryExternalSkillDefinitionRepository implements ExternalSkillDefinitionRepositoryPort {
   private readonly rows = new Map<string, ExternalSkillDefinitionRecord>();
+
+  hasConnectionReference(connectionId: string): boolean {
+    return [...this.rows.values()].some((row) => row.connectionId === connectionId);
+  }
 
   async create(input: CreateExternalSkillDefinitionInput): Promise<ExternalSkillDefinitionRecord> {
     const duplicate = [...this.rows.values()].some(

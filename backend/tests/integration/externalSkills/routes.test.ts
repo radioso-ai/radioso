@@ -87,4 +87,27 @@ describe("external skills routes", () => {
       .send({ skillName: "bad", connectionId: connection.body.id, toolName: "nope", boundParams: {}, exposedParams: {} })
       .expect(400);
   });
+
+  it("returns 400 for a malformed connection id", async () => {
+    const { app, headers, agentId } = await setup();
+    await request(app).delete(`/api/v1/agents/${agentId}/mcp-connections/not-a-uuid`).set(headers).expect(400);
+  });
+
+  it("blocks deleting a referenced connection (409), then allows it once the skill is removed", async () => {
+    const { app, headers, agentId } = await setup();
+    const conn = await request(app)
+      .post(`/api/v1/agents/${agentId}/mcp-connections`)
+      .set(headers)
+      .send({ displayName: "Slack", serverUrl: "https://mcp.example.com", authMethod: "access_token", accessToken: "tok" });
+    const connectionId = conn.body.id as string;
+    const skill = await request(app)
+      .post(`/api/v1/agents/${agentId}/external-skills`)
+      .set(headers)
+      .send({ skillName: "ref", connectionId, toolName: "post_message", boundParams: { channel: "#x" }, exposedParams: { message: {} } });
+    expect(skill.status).toBe(201);
+
+    await request(app).delete(`/api/v1/agents/${agentId}/mcp-connections/${connectionId}`).set(headers).expect(409);
+    await request(app).delete(`/api/v1/agents/${agentId}/external-skills/${skill.body.id}`).set(headers).expect(204);
+    await request(app).delete(`/api/v1/agents/${agentId}/mcp-connections/${connectionId}`).set(headers).expect(204);
+  });
 });

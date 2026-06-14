@@ -7673,10 +7673,14 @@ export interface operations {
             content: {
                 "application/json": {
                     displayName: string;
-                    /** Format: uri */
+                    /**
+                     * Format: uri
+                     * @description HTTPS MCP server URL. Must not embed credentials (userinfo).
+                     */
                     serverUrl: string;
                     /** @enum {string} */
                     authMethod: "access_token" | "oauth";
+                    /** @description Required when authMethod is access_token. Write-only — never returned in responses. */
                     accessToken?: string;
                 };
             };
@@ -7854,6 +7858,9 @@ export interface operations {
                                 [key: string]: unknown;
                             };
                             declaredOutcomes: string[] | null;
+                            outcomeMap: {
+                                [key: string]: string;
+                            } | null;
                             enabled: boolean;
                             createdAt: string;
                             updatedAt: string;
@@ -7903,6 +7910,7 @@ export interface operations {
                     exposedParams?: {
                         [key: string]: {
                             slotBinding?: string;
+                            description?: string;
                         };
                     };
                     declaredOutcomes?: string[];
@@ -7932,6 +7940,9 @@ export interface operations {
                             [key: string]: unknown;
                         };
                         declaredOutcomes: string[] | null;
+                        outcomeMap: {
+                            [key: string]: string;
+                        } | null;
                         enabled: boolean;
                         createdAt: string;
                         updatedAt: string;

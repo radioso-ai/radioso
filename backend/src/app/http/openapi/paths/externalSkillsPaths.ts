@@ -9,9 +9,12 @@ const SkillParams = AgentParams.extend({ skillId: z.string().uuid() });
 
 const ConnectionCreateSchema = z.object({
   displayName: z.string(),
-  serverUrl: z.string().url(),
+  serverUrl: z.string().url().describe("HTTPS MCP server URL. Must not embed credentials (userinfo)."),
   authMethod: z.enum(["access_token", "oauth"]),
-  accessToken: z.string().optional(),
+  accessToken: z
+    .string()
+    .optional()
+    .describe("Required when authMethod is access_token. Write-only — never returned in responses."),
 });
 
 const ConnectionSummarySchema = z.object({
@@ -34,7 +37,9 @@ const SkillCreateSchema = z.object({
   connectionId: z.string().uuid(),
   toolName: z.string(),
   boundParams: z.record(z.unknown()).optional(),
-  exposedParams: z.record(z.object({ slotBinding: z.string().optional() })).optional(),
+  exposedParams: z
+    .record(z.object({ slotBinding: z.string().optional(), description: z.string().optional() }))
+    .optional(),
   declaredOutcomes: z.array(z.string()).optional(),
   outcomeMap: z.record(z.string()).optional(),
   enabled: z.boolean().optional(),
@@ -48,6 +53,7 @@ const SkillViewSchema = z.object({
   boundParams: z.record(z.unknown()),
   exposedParams: z.record(z.unknown()),
   declaredOutcomes: z.array(z.string()).nullable(),
+  outcomeMap: z.record(z.string()).nullable(),
   enabled: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),

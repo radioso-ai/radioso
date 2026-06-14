@@ -14898,7 +14898,8 @@
                   },
                   "serverUrl": {
                     "type": "string",
-                    "format": "uri"
+                    "format": "uri",
+                    "description": "HTTPS MCP server URL. Must not embed credentials (userinfo)."
                   },
                   "authMethod": {
                     "type": "string",
@@ -14908,7 +14909,8 @@
                     ]
                   },
                   "accessToken": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "Required when authMethod is access_token. Write-only — never returned in responses."
                   }
                 },
                 "required": [
@@ -15223,6 +15225,15 @@
                               "type": "string"
                             }
                           },
+                          "outcomeMap": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          },
                           "enabled": {
                             "type": "boolean"
                           },
@@ -15241,6 +15252,7 @@
                           "boundParams",
                           "exposedParams",
                           "declaredOutcomes",
+                          "outcomeMap",
                           "enabled",
                           "createdAt",
                           "updatedAt"
@@ -15327,6 +15339,9 @@
                       "properties": {
                         "slotBinding": {
                           "type": "string"
+                        },
+                        "description": {
+                          "type": "string"
                         }
                       }
                     }
@@ -15393,6 +15408,15 @@
                         "type": "string"
                       }
                     },
+                    "outcomeMap": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
                     "enabled": {
                       "type": "boolean"
                     },
@@ -15411,6 +15435,7 @@
                     "boundParams",
                     "exposedParams",
                     "declaredOutcomes",
+                    "outcomeMap",
                     "enabled",
                     "createdAt",
                     "updatedAt"

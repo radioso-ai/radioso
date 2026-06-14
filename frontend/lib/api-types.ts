@@ -53,7 +53,11 @@ export type DirectiveDraftDirective = ApiSchemas['DirectiveDraftDirective']
 export type RoutineDefinitionStatus = ApiSchemas['RoutineDefinition']['status']
 export type RoutineSlotType = 'text' | 'number' | 'boolean' | 'email' | 'date'
 export type RoutineStepKind = 'chat' | 'tool' | 'action'
-export type RoutineGuardKind = 'llm' | 'default' | 'slot_filled' | 'outcome' | 'counter'
+export type RoutineGuardKind = 'llm' | 'default' | 'slot_filled' | 'outcome' | 'counter' | 'field'
+export type RoutineFieldGuardOp =
+  | 'is_true' | 'is_false' | 'equals' | 'not_equals' | 'in' | 'is_present' | 'is_absent'
+  | 'gt' | 'gte' | 'lt' | 'lte' | 'older_than' | 'within'
+export type RoutineFieldGuardUnit = 'days' | 'weeks' | 'months' | 'years'
 export type RoutineTerminalKind = 'complete' | 'handoff'
 export type RoutineValidationCode =
   | 'unreachable_step'
@@ -70,6 +74,8 @@ export type RoutineValidationCode =
   | 'attempt_limit_without_fallback'
   | 'outcome_guard_on_non_tool_step'
   | 'structured_guard_missing_parameter'
+  | 'field_guard_unknown_reference'
+  | 'field_guard_incompatible_type'
   | 'unsupported_tool_step'
   | 'completion_export_missing_destination'
 

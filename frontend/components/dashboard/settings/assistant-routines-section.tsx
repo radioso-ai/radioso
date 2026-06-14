@@ -16,6 +16,7 @@ import {
   RotateCcw,
   Route,
   Send,
+  Sparkles,
   Trash2,
 } from 'lucide-react'
 
@@ -23,6 +24,7 @@ import { RoutineDraftAssistDialog } from '@/components/dashboard/settings/routin
 import { RoutineDiagnosticList } from '@/components/dashboard/settings/routine-editor-controls'
 import { RoutineFormEditor } from '@/components/dashboard/settings/routine-form-editor'
 import { RoutineOutlineEditor } from '@/components/dashboard/settings/routine-outline-editor'
+import { RoutineProseEditor } from '@/components/dashboard/settings/routine-prose-editor'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
 import { Badge } from '@/components/ui/badge'
@@ -180,6 +182,7 @@ function RoutineListScreen({
   const [routines, setRoutines] = useState<RoutineDefinition[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [proseOpen, setProseOpen] = useState(false)
 
   const groupedRoutines = useMemo(
     () => groupRoutineLineages(routines),
@@ -310,6 +313,19 @@ function RoutineListScreen({
     )
   }
 
+  if (proseOpen) {
+    return (
+      <RoutineProseEditor
+        agentId={agentId}
+        onClose={() => setProseOpen(false)}
+        onCreated={(routine) => {
+          setProseOpen(false)
+          router.push(buildRoutineHref(routine.id))
+        }}
+      />
+    )
+  }
+
   return (
     <SettingsCard
       id="assistant-routines-card"
@@ -317,10 +333,16 @@ function RoutineListScreen({
       title="Routines"
       description="Structured multi-step routines this agent can validate and publish."
       headerEnd={(
-        <Button type="button" size="sm" onClick={() => router.push(buildRoutineHref('new'))}>
-          <Plus className="mr-2 h-4 w-4" />
-          New routine
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={() => setProseOpen(true)}>
+            <Sparkles className="mr-2 h-4 w-4" />
+            Write in prose
+          </Button>
+          <Button type="button" size="sm" onClick={() => router.push(buildRoutineHref('new'))}>
+            <Plus className="mr-2 h-4 w-4" />
+            New routine
+          </Button>
+        </div>
       )}
     >
       <div className="space-y-6">

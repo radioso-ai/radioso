@@ -13,8 +13,10 @@ import type {
 
 import {
   compileRoutineDefinition,
+  routineGuardProvenance,
   validateRoutineDefinition,
   type RoutineDefinition,
+  type RoutineGuardKind,
 } from "../../src/modules/routines/public.js";
 
 const baseDefinition = (): RoutineDefinition => ({
@@ -315,5 +317,139 @@ describe("routine definition compiler and validator", () => {
     expect((await engine.processTurn(input("Alex"))).response.answer).toBe("ask_topic");
     expect((await engine.processTurn(input("Pricing"))).response.answer).toBe("done");
     expect(rows.get("conv_1")).toBeUndefined();
+  });
+});
+
+describe("routine field guards (deterministic branch-on-value) and provenance", () => {
+  // A routine that branches on a value rather than the model — the deterministic
+  // procedures spec FR-4. The eligibility gate decides in code; only the residual is llm.
+  const fieldDefinition = (): RoutineDefinition => ({
+    ...baseDefinition(),
+    slots: [{ stableSlotId: "is_final_sale", key: "is_final_sale", type: "boolean", required: true, description: "Final sale flag", ordinal: 0 }],
+    steps: [
+      { stableStepId: "check", kind: "chat", instruction: "Check the order status.", toolRef: null, ordinal: 0, metadata: {} },
+    ],
+    transitions: [
+      { fromStep: "check", toRef: "explain", guardKind: "field", guardText: null, fieldRef: "is_final_sale", fieldOp: "is_true", ordinal: 0 },
+      { fromStep: "check", toRef: "refund", guardKind: "default", guardText: null, ordinal: 1 },
+    ],
+    terminals: [
+      { stableStepId: "explain", kind: "complete", instruction: "Explain the policy.", ordinal: 0 },
+      { stableStepId: "refund", kind: "complete", instruction: "Issue the refund.", ordinal: 1 },
+    ],
+  });
+
+  it("compiles a field guard into the routine contract", () => {
+    const routine = compileRoutineDefinition(fieldDefinition());
+    expect(routine.transitions).toEqual([
+      { from: "check", to: "explain", condition: "field", guard: { kind: "field", ref: "is_final_sale", op: "is_true" } },
+      { from: "check", to: "refund", condition: "default", guard: { kind: "default" } },
+    ]);
+    expect(validateRoutineDefinition(fieldDefinition())).toEqual({ ok: true, diagnostics: [] });
+  });
+
+  it("compiles equals/in field guards with their values", () => {
+    const definition: RoutineDefinition = {
+      ...fieldDefinition(),
+      slots: [{ stableSlotId: "status", key: "status", type: "text", required: true, description: "Order status", ordinal: 0 }],
+      transitions: [
+        { fromStep: "check", toRef: "explain", guardKind: "field", guardText: null, fieldRef: "status", fieldOp: "in", fieldValues: ["closed", "void"], ordinal: 0 },
+        { fromStep: "check", toRef: "refund", guardKind: "default", guardText: null, ordinal: 1 },
+      ],
+    };
+    const routine = compileRoutineDefinition(definition);
+    expect(routine.transitions[0]).toEqual({
+      from: "check",
+      to: "explain",
+      condition: "field",
+      guard: { kind: "field", ref: "status", op: "in", values: ["closed", "void"] },
+    });
+  });
+
+  it("rejects a field guard with no reference or operator", () => {
+    const definition: RoutineDefinition = {
+      ...fieldDefinition(),
+      slots: [],
+      transitions: [
+        { fromStep: "check", toRef: "explain", guardKind: "field", guardText: null, ordinal: 0 },
+        { fromStep: "check", toRef: "refund", guardKind: "default", guardText: null, ordinal: 1 },
+      ],
+    };
+    const result = validateRoutineDefinition(definition);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: "structured_guard_missing_parameter",
+      location: "transition:check->explain",
+    }));
+  });
+
+  it("rejects an equals field guard with no value", () => {
+    const definition: RoutineDefinition = {
+      ...fieldDefinition(),
+      slots: [{ stableSlotId: "status", key: "status", type: "text", required: true, description: "Order status", ordinal: 0 }],
+      transitions: [
+        { fromStep: "check", toRef: "explain", guardKind: "field", guardText: null, fieldRef: "status", fieldOp: "equals", ordinal: 0 },
+        { fromStep: "check", toRef: "refund", guardKind: "default", guardText: null, ordinal: 1 },
+      ],
+    };
+    const result = validateRoutineDefinition(definition);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: "structured_guard_missing_parameter",
+    }));
+  });
+
+  it("rejects a field guard that references an undeclared variable (honest provenance)", () => {
+    const definition: RoutineDefinition = {
+      ...fieldDefinition(),
+      slots: [],
+      transitions: [
+        { fromStep: "check", toRef: "explain", guardKind: "field", guardText: null, fieldRef: "ghost", fieldOp: "is_true", ordinal: 0 },
+        { fromStep: "check", toRef: "refund", guardKind: "default", guardText: null, ordinal: 1 },
+      ],
+    };
+    const result = validateRoutineDefinition(definition);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: "field_guard_unknown_reference",
+      location: "transition:check->explain",
+    }));
+  });
+
+  it("rejects an older_than guard on a non-date variable", () => {
+    const definition: RoutineDefinition = {
+      ...fieldDefinition(),
+      slots: [{ stableSlotId: "status", key: "status", type: "text", required: true, description: "Order status", ordinal: 0 }],
+      transitions: [
+        { fromStep: "check", toRef: "explain", guardKind: "field", guardText: null, fieldRef: "status", fieldOp: "older_than", fieldValue: 6, fieldUnit: "months", ordinal: 0 },
+        { fromStep: "check", toRef: "refund", guardKind: "default", guardText: null, ordinal: 1 },
+      ],
+    };
+    const result = validateRoutineDefinition(definition);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: "field_guard_incompatible_type",
+      location: "transition:check->explain",
+    }));
+  });
+
+  it("accepts an older_than guard on a date variable", () => {
+    const definition: RoutineDefinition = {
+      ...fieldDefinition(),
+      slots: [{ stableSlotId: "order_date", key: "order_date", type: "date", required: true, description: "Order date", ordinal: 0 }],
+      transitions: [
+        { fromStep: "check", toRef: "explain", guardKind: "field", guardText: null, fieldRef: "order_date", fieldOp: "older_than", fieldValue: 6, fieldUnit: "months", ordinal: 0 },
+        { fromStep: "check", toRef: "refund", guardKind: "default", guardText: null, ordinal: 1 },
+      ],
+    };
+    expect(validateRoutineDefinition(definition)).toEqual({ ok: true, diagnostics: [] });
+  });
+
+  it("classifies guard provenance: only llm guards are model judgments", () => {
+    expect(routineGuardProvenance("llm")).toBe("judgment");
+    const exactKinds: RoutineGuardKind[] = ["default", "slot_filled", "outcome", "counter", "field"];
+    for (const kind of exactKinds) {
+      expect(routineGuardProvenance(kind)).toBe("exact");
+    }
   });
 });

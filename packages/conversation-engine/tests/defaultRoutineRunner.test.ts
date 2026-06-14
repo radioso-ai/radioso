@@ -763,3 +763,144 @@ describe("DefaultRoutineRunner action (fire-and-forget) steps", () => {
     await expect(runner.resume({ turn, state: atMessage() })).rejects.toThrow("routine_action_step_missing_type");
   });
 });
+
+describe("DefaultRoutineRunner field guards (deterministic branch-on-value)", () => {
+  // A tool step returns a typed field; the routine branches on it in code, never via
+  // the model. Mirrors the eligibility gate in the deterministic-procedures spec.
+  const eligibility = (extra: Partial<Routine> = {}): Routine => ({
+    id: "refund",
+    rootStepId: "ask",
+    steps: [
+      { id: "ask", kind: "chat", action: "Ask for the order." },
+      { id: "lookup", kind: "skill", skillName: "check_order" },
+      { id: "explain", kind: "terminal", action: "Explain the policy." },
+      { id: "refund", kind: "terminal", action: "Issue the refund." },
+    ],
+    transitions: [
+      { from: "ask", to: "lookup", condition: "ready" },
+      { from: "lookup", to: "explain", condition: "final sale", guard: { kind: "field", ref: "is_final_sale", op: "is_true" } },
+      { from: "lookup", to: "refund", condition: "default", guard: { kind: "default" } },
+    ],
+    ...extra,
+  });
+  const atAsk = (): RoutineState => ({
+    sessionId: "session_1", routineId: "refund", path: ["ask"], variables: {}, status: "active",
+  });
+
+  it("branches on a tool-output field guard deterministically, never consulting the selector", async () => {
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({ nextStepId: "lookup" }));
+    const dispatch = vi.fn(async () => ({ status: "completed" as const, outputs: { is_final_sale: true } }));
+    const runner = new DefaultRoutineRunner([eligibility()], { select }, { render: vi.fn(echoRenderer.render) }, { dispatch });
+
+    const result = await runner.resume({ turn, state: atAsk() });
+
+    // Selector ran once to land on the skill step; the eligibility branch was decided in code.
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(result.response.answer).toContain("explain");
+    expect(result.nextState).toBeNull();
+  });
+
+  it("takes the default edge when the field guard is false — still no selector for the branch", async () => {
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({ nextStepId: "lookup" }));
+    const dispatch = vi.fn(async () => ({ status: "completed" as const, outputs: { is_final_sale: false } }));
+    const runner = new DefaultRoutineRunner([eligibility()], { select }, { render: vi.fn(echoRenderer.render) }, { dispatch });
+
+    const result = await runner.resume({ turn, state: atAsk() });
+
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(result.response.answer).toContain("refund");
+  });
+
+  it("branches on a captured slot via `in` membership without a tool step", async () => {
+    const tierRoutine: Routine = {
+      id: "tier",
+      rootStepId: "check",
+      steps: [
+        { id: "check", kind: "chat", action: "Check tier." },
+        { id: "priority", kind: "terminal", action: "Priority queue." },
+        { id: "standard", kind: "terminal", action: "Standard queue." },
+      ],
+      transitions: [
+        { from: "check", to: "priority", condition: "premium tier", guard: { kind: "field", ref: "tier", op: "in", values: ["gold", "platinum"] } },
+        { from: "check", to: "standard", condition: "default", guard: { kind: "default" } },
+      ],
+    };
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({ nextStepId: "check" }));
+    const runner = new DefaultRoutineRunner([tierRoutine], { select }, { render: vi.fn(echoRenderer.render) });
+
+    const result = await runner.resume({
+      turn,
+      state: { sessionId: "session_1", routineId: "tier", path: ["check"], variables: { tier: "platinum" }, status: "active" },
+    });
+
+    expect(select).not.toHaveBeenCalled();
+    expect(result.response.answer).toContain("priority");
+    expect(result.nextState).toBeNull();
+  });
+
+  // A relative-date comparison ("older than 6 months") decided in code against an
+  // injected clock — the date math the model gets wrong, done deterministically.
+  const dateEligibility = (): Routine => ({
+    id: "refund",
+    rootStepId: "check",
+    steps: [
+      { id: "check", kind: "chat", action: "Check the order." },
+      { id: "explain", kind: "terminal", action: "Explain the policy." },
+      { id: "refund", kind: "terminal", action: "Issue the refund." },
+    ],
+    transitions: [
+      { from: "check", to: "explain", condition: "older than 6 months", guard: { kind: "field", ref: "order_date", op: "older_than", value: 6, unit: "months" } },
+      { from: "check", to: "refund", condition: "default", guard: { kind: "default" } },
+    ],
+  });
+  const fixedNow = () => new Date("2026-06-14T00:00:00.000Z");
+  const atCheck = (variables: Record<string, unknown>): RoutineState => ({
+    sessionId: "session_1", routineId: "refund", path: ["check"], variables, status: "active",
+  });
+
+  it("takes the older_than branch for a date more than 6 months before now", async () => {
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({ nextStepId: "check" }));
+    const runner = new DefaultRoutineRunner([dateEligibility()], { select }, { render: vi.fn(echoRenderer.render) }, undefined, fixedNow);
+
+    const result = await runner.resume({ turn, state: atCheck({ order_date: "2025-10-01" }) });
+
+    expect(select).not.toHaveBeenCalled();
+    expect(result.response.answer).toContain("explain");
+  });
+
+  it("falls through for a recent date (not older than 6 months)", async () => {
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({ nextStepId: "check" }));
+    const runner = new DefaultRoutineRunner([dateEligibility()], { select }, { render: vi.fn(echoRenderer.render) }, undefined, fixedNow);
+
+    const result = await runner.resume({ turn, state: atCheck({ order_date: "2026-05-01" }) });
+
+    expect(select).not.toHaveBeenCalled();
+    expect(result.response.answer).toContain("refund");
+  });
+
+  it("branches on a numeric greater-than comparison", async () => {
+    const numericRoutine: Routine = {
+      id: "budget",
+      rootStepId: "check",
+      steps: [
+        { id: "check", kind: "chat", action: "Check budget." },
+        { id: "high", kind: "terminal", action: "High tier." },
+        { id: "low", kind: "terminal", action: "Low tier." },
+      ],
+      transitions: [
+        { from: "check", to: "high", condition: "over 5000", guard: { kind: "field", ref: "budget", op: "gt", value: 5000 } },
+        { from: "check", to: "low", condition: "default", guard: { kind: "default" } },
+      ],
+    };
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({ nextStepId: "check" }));
+    const runner = new DefaultRoutineRunner([numericRoutine], { select }, { render: vi.fn(echoRenderer.render) });
+
+    const result = await runner.resume({
+      turn,
+      state: { sessionId: "session_1", routineId: "budget", path: ["check"], variables: { budget: 7500 }, status: "active" },
+    });
+
+    expect(select).not.toHaveBeenCalled();
+    expect(result.response.answer).toContain("high");
+  });
+});

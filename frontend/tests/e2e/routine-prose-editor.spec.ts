@@ -1,0 +1,211 @@
+import { expect, test } from "@playwright/test";
+
+import {
+  defaultAgentId,
+  installDashboardApiMocks,
+  seedDashboardStorage,
+  type RoutineMutationFixture,
+  workspaceKey,
+} from "./dashboard-fixtures";
+
+test("author a routine with variable and action chips, set a type, and save", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await expect(page.getByRole("heading", { name: "Routines", level: 1 })).toBeVisible();
+
+  await page.getByRole("button", { name: "Write in prose" }).click();
+  await expect(page.getByText("Write a routine in plain language")).toBeVisible();
+
+  await page.getByLabel("Name", { exact: true }).fill("Process a refund request");
+  await page.getByLabel("Trigger", { exact: true }).fill("When a customer wants a refund or to dispute a charge");
+
+  // The toolbar above the editor offers formatting + chip insertion.
+  await expect(page.getByRole("button", { name: "Bold" })).toBeVisible();
+
+  // Author inline; insert a variable chip via @ — no syntax typed.
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+  await editor.pressSequentially("Ask for the order id and the reason. Collect ");
+  // Underscore in the name must keep the menu open (regression: it cancelled the popover).
+  await editor.pressSequentially("@order_id");
+  await expect(page.getByRole("option", { name: /Create variable/ })).toBeVisible();
+  await page.keyboard.press("Enter");
+
+  const variableChip = page.locator('[data-routine-chip="variable"]');
+  await expect(variableChip).toBeVisible();
+  await expect(variableChip).toHaveText("@order_id");
+  await expect(editor).not.toContainText("{{");
+
+  // The same @ menu is kind-aware: pick an action instead of a variable.
+  await editor.pressSequentially("then @refund");
+  await expect(page.getByRole("option", { name: "Action: refund" })).toBeVisible();
+  await page.getByRole("option", { name: "Action: refund" }).click();
+  await expect(page.locator('[data-routine-chip="action"]')).toBeVisible();
+
+  // Set the variable's type from its own inline menu (no separate list).
+  await variableChip.click();
+  await expect(page.getByRole("menuitemradio", { name: "date" })).toBeVisible();
+  await page.getByRole("menuitemradio", { name: "date" }).click();
+
+  await page.screenshot({ path: "demo-screenshots/routine-chip-editor-demo.png", fullPage: true });
+
+  await page.getByRole("button", { name: "Save routine" }).click();
+
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  const created = routineUpdates.find((update) => update.method === "POST");
+  expect(created?.body?.name).toBe("Process a refund request");
+  const orderSlot = (created?.body?.slots ?? []).find((slot: { key: string; type: string }) => slot.key === "order_id");
+  expect(orderSlot?.type).toBe("date");
+});
+
+test("the Bold toolbar button reflects its active state", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates: [] });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Write in prose" }).click();
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+  await editor.pressSequentially("Step 1");
+  await page.keyboard.press("ControlOrMeta+a");
+
+  const bold = page.getByRole("button", { name: "Bold" });
+  await expect(bold).toHaveAttribute("aria-pressed", "false");
+  await bold.click();
+  await expect(bold).toHaveAttribute("aria-pressed", "true");
+});
+
+test("a handoff chip on its own line compiles a forking routine", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Refund with handoff");
+  await page.getByLabel("Trigger", { exact: true }).fill("When a customer wants a refund");
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+  await editor.pressSequentially("Ask for the order id.");
+  await page.keyboard.press("Enter");
+  // A line carrying a handoff chip is a branch; the prose before it is the condition.
+  await editor.pressSequentially("If they refuse to verify, ");
+  await editor.pressSequentially("@human");
+  await expect(page.getByRole("option", { name: "Handoff: human" })).toBeVisible();
+  await page.getByRole("option", { name: "Handoff: human" }).click();
+  await expect(page.locator('[data-routine-chip="handoff"]')).toBeVisible();
+  await page.keyboard.press("Enter");
+  await editor.pressSequentially("Confirm and finish.");
+
+  await page.getByRole("button", { name: "Save routine" }).click();
+
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  const created = routineUpdates.find((update) => update.method === "POST");
+  const terminals = created?.body?.terminals ?? [];
+  expect(terminals.some((terminal: { kind: string }) => terminal.kind === "handoff")).toBe(true);
+  const transitions = created?.body?.transitions ?? [];
+  expect(transitions.some((transition: { guardKind: string; toRef: string }) => transition.guardKind === "llm" && transition.toRef === "handoff")).toBe(true);
+});
+
+test("a condition chip compiles a decided-in-code (field) branch", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Refund eligibility");
+  await page.getByLabel("Trigger", { exact: true }).fill("When a customer wants a refund");
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+  await editor.pressSequentially("Look up the ");
+  await editor.pressSequentially("@status");
+  await expect(page.getByRole("option", { name: /Create variable/ })).toBeVisible();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter"); // new line for the branch
+
+  // Add a handoff target on the branch line.
+  await page.keyboard.type("@human");
+  await expect(page.getByRole("option", { name: "Handoff: human" })).toBeVisible();
+  await page.getByRole("option", { name: "Handoff: human" }).click();
+  await expect(page.locator('[data-routine-chip="handoff"]')).toBeVisible();
+
+  // Build a decided-in-code condition via the toolbar dialog.
+  await page.getByRole("button", { name: "Condition" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Variable").selectOption({ label: "status" });
+  await dialog.getByLabel("Check").selectOption("in");
+  await dialog.getByLabel("Values (comma-separated)").fill("final_sale, void");
+  await dialog.getByRole("button", { name: "Add check" }).click();
+  await expect(page.locator('[data-routine-chip="condition"]')).toBeVisible();
+  await expect(page.getByRole("dialog")).toBeHidden();
+
+  await page.screenshot({ path: "demo-screenshots/routine-decided-in-code-demo.png", fullPage: true });
+
+  await page.getByRole("button", { name: "Save routine" }).click();
+
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  const created = routineUpdates.find((update) => update.method === "POST");
+  const transitions = created?.body?.transitions ?? [];
+  const fieldBranch = transitions.find((transition: { guardKind: string; toRef: string }) => transition.toRef === "handoff");
+  // The branch is decided in code (a field guard), not by the AI (llm).
+  expect(fieldBranch).toMatchObject({ guardKind: "field", fieldRef: "status", fieldOp: "in", fieldValues: ["final_sale", "void"] });
+});
+
+test("an 'older than 6 months' check compiles a relative-date field guard", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Refund window");
+  await page.getByLabel("Trigger", { exact: true }).fill("When a customer wants a refund");
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+  await editor.pressSequentially("Look up the ");
+  await editor.pressSequentially("@orderdate");
+  await expect(page.getByRole("option", { name: /Create variable/ })).toBeVisible();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter"); // new branch line
+
+  // Add a handoff target on the branch line.
+  await page.keyboard.type("@human");
+  await expect(page.getByRole("option", { name: "Handoff: human" })).toBeVisible();
+  await page.getByRole("option", { name: "Handoff: human" }).click();
+
+  // Make the variable a date so relative-date comparisons are offered.
+  await page.locator('[data-routine-chip="variable"]').click();
+  await page.getByRole("menuitemradio", { name: "date" }).click();
+
+  // Build "order date is older than 6 months".
+  await page.getByRole("button", { name: "Condition" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Variable").selectOption({ label: "orderdate" });
+  await dialog.getByLabel("Check").selectOption("older_than");
+  await dialog.getByLabel("Amount").fill("6");
+  await dialog.getByLabel("Unit").selectOption("months");
+  await dialog.getByRole("button", { name: "Add check" }).click();
+  await expect(page.locator('[data-routine-chip="condition"]')).toBeVisible();
+  await expect(page.getByRole("dialog")).toBeHidden();
+
+  await page.screenshot({ path: "demo-screenshots/routine-older-than-demo.png", fullPage: true });
+
+  await page.getByRole("button", { name: "Save routine" }).click();
+
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  const created = routineUpdates.find((update) => update.method === "POST");
+  const branch = (created?.body?.transitions ?? []).find((transition: { toRef: string }) => transition.toRef === "handoff");
+  expect(branch).toMatchObject({ guardKind: "field", fieldRef: "orderdate", fieldOp: "older_than", fieldValue: 6, fieldUnit: "months" });
+});

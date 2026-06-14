@@ -1,3 +1,17 @@
+Radioso is dual-licensed.
+
+  * The open-source edition — everything in this repository EXCEPT the ee/
+    directory — is licensed under the Apache License, Version 2.0, the full
+    text of which follows below.
+
+  * The Radioso Enterprise Edition — the files under the ee/ directory — is
+    commercial source-available software and is NOT covered by the Apache
+    License, Version 2.0. It is governed solely by ee/LICENSE.
+
+See the NOTICE file for attribution and this Enterprise Edition carve-out.
+
+--------------------------------------------------------------------------------
+
                                  Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/

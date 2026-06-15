@@ -15,7 +15,8 @@ export const routineValidationCodes = [
   "attempt_limit_without_fallback",
   "outcome_guard_on_non_tool_step",
   "structured_guard_missing_parameter",
-  "unsupported_tool_step",
+  "field_guard_unknown_reference",
+  "field_guard_incompatible_type",
   "completion_export_missing_destination",
 ] as const;
 
@@ -43,6 +44,15 @@ const metadataAttemptLimit = (metadata: Record<string, unknown>): number | null 
   typeof metadata.attemptLimit === "number" && Number.isInteger(metadata.attemptLimit) && metadata.attemptLimit > 0
     ? metadata.attemptLimit
     : null;
+
+// A field guard's operator must fit the variable's type: relative-date ops need a date,
+// numeric comparisons need a number, boolean checks need a boolean. The rest apply to any.
+const isFieldOpCompatible = (op: string, slotType: string): boolean => {
+  if (op === "older_than" || op === "within") return slotType === "date";
+  if (op === "gt" || op === "gte" || op === "lt" || op === "lte") return slotType === "number";
+  if (op === "is_true" || op === "is_false") return slotType === "boolean";
+  return true;
+};
 
 const parsePositiveInteger = (value: string | null): number | null => {
   if (!value) {
@@ -78,13 +88,9 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
   }
 
   for (const step of steps) {
-    if (step.kind === "tool") {
-      diagnostics.push({
-        code: "unsupported_tool_step",
-        location: `step:${step.stableStepId}`,
-        message: `tool steps are not yet supported: step "${step.stableStepId}" cannot be published until routine tool dispatch is available.`,
-      });
-    }
+    // A tool step compiles to a skill step dispatched through the shared
+    // skill-executor port (see RoutineSkillExecutorDispatcher); it must name the
+    // authored skill it invokes — an unbound tool step is the dangling case.
     if (step.kind === "tool" && !step.toolRef) {
       diagnostics.push({
         code: "dangling_action_reference",
@@ -140,6 +146,37 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
         message: `structured guard missing parameter: counter guard from "${transition.fromStep}" must declare a positive limit.`,
       });
     }
+    if (transition.guardKind === "field") {
+      const location = `transition:${transition.fromStep}->${transition.toRef}`;
+      const op = transition.fieldOp;
+      const opNeedsValue = op === "equals" || op === "not_equals" || op === "gt" || op === "gte" || op === "lt" || op === "lte" || op === "older_than" || op === "within";
+      const opNeedsUnit = op === "older_than" || op === "within";
+      if (!transition.fieldRef || !op) {
+        diagnostics.push({
+          code: "structured_guard_missing_parameter",
+          location,
+          message: `structured guard missing parameter: field guard from "${transition.fromStep}" must declare a field reference and operator.`,
+        });
+      } else if (opNeedsValue && (transition.fieldValue === null || transition.fieldValue === undefined)) {
+        diagnostics.push({
+          code: "structured_guard_missing_parameter",
+          location,
+          message: `structured guard missing parameter: field guard "${op}" from "${transition.fromStep}" must declare a value.`,
+        });
+      } else if (op === "in" && (!transition.fieldValues || transition.fieldValues.length === 0)) {
+        diagnostics.push({
+          code: "structured_guard_missing_parameter",
+          location,
+          message: `structured guard missing parameter: field guard "in" from "${transition.fromStep}" must declare a non-empty values list.`,
+        });
+      } else if (opNeedsUnit && !transition.fieldUnit) {
+        diagnostics.push({
+          code: "structured_guard_missing_parameter",
+          location,
+          message: `structured guard missing parameter: field guard "${op}" from "${transition.fromStep}" must declare a duration unit.`,
+        });
+      }
+    }
   }
 
   const slotKeys = new Set(definition.slots.map((slot) => slot.key));
@@ -149,9 +186,32 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
       referencedSlotKeys.add(key);
     }
   }
+  const slotByKey = new Map(definition.slots.map((slot) => [slot.key, slot]));
   for (const transition of definition.transitions) {
     for (const key of collectSlotReferences(transition.guardText)) {
       referencedSlotKeys.add(key);
+    }
+    if (transition.guardKind === "field" && transition.fieldRef) {
+      const slot = slotByKey.get(transition.fieldRef);
+      if (!slot) {
+        // Honest provenance: a "decided in code" branch must reference a real variable,
+        // not a name nothing provides (else it silently never fires at runtime).
+        diagnostics.push({
+          code: "field_guard_unknown_reference",
+          location: `transition:${transition.fromStep}->${transition.toRef}`,
+          message: `field guard references "${transition.fieldRef}", which is not a declared variable.`,
+        });
+      } else {
+        // A field guard's reference is a slot reference too (it branches on the value).
+        referencedSlotKeys.add(transition.fieldRef);
+        if (transition.fieldOp && !isFieldOpCompatible(transition.fieldOp, slot.type)) {
+          diagnostics.push({
+            code: "field_guard_incompatible_type",
+            location: `transition:${transition.fromStep}->${transition.toRef}`,
+            message: `field guard "${transition.fieldOp}" cannot apply to the ${slot.type} variable "${transition.fieldRef}".`,
+          });
+        }
+      }
     }
   }
 

@@ -54,6 +54,19 @@ const guardFor = (transition: RoutineDefinition["transitions"][number]): Routine
       const limit = transition.counterLimit ?? parsePositiveInteger(transition.guardText);
       return limit ? { kind: "counter", limit } : undefined;
     }
+    case "field": {
+      if (!transition.fieldRef || !transition.fieldOp) {
+        return undefined;
+      }
+      return {
+        kind: "field",
+        ref: transition.fieldRef,
+        op: transition.fieldOp,
+        ...(transition.fieldValue !== null && transition.fieldValue !== undefined ? { value: transition.fieldValue } : {}),
+        ...(transition.fieldValues ? { values: transition.fieldValues } : {}),
+        ...(transition.fieldUnit ? { unit: transition.fieldUnit } : {}),
+      };
+    }
     case "default":
       return { kind: "default" };
     default:

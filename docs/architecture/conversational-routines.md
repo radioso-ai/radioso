@@ -64,8 +64,8 @@ multilingual; the model judges by meaning, in any language.
 
 Routine document fixtures use a compact text notation for golden tests,
 debugging, and diffs. This notation is **not an authoring surface**. Operators
-author routines in the dashboard outline or, while it remains available, the
-transitional form view.
+author routines in the dashboard prose editor, or the form view for shapes the
+prose editor does not cover.
 
 The fixture serializer is canonical, so reflowing text on serialize is expected.
 The format uses grammar tokens, not localized product copy.
@@ -214,10 +214,24 @@ runtime graph, the validator, and the repository — lives in
 `backend/src/modules/routines/`. The engine runs the compiled graph; it never
 reads the authoring data.
 
+## Tool steps and skills
+
+A `tool` step dispatches a skill through the shared skill-executor port
+(`RoutineSkillExecutorDispatcher`), the same port the chat turn uses. A routine
+references a skill by name; the skill itself is defined for the agent elsewhere.
+At dispatch the runner resolves the name through a per-agent skill resolver,
+runs the skill, and projects its outcome onto the step result, so a later branch
+can be decided on what the skill returned.
+
+When the named skill cannot be resolved, the dispatcher returns a `failed`
+result rather than throwing. The routine then advances off the step on its
+outgoing edges, so an unresolved skill never crashes or wedges the conversation.
+The default resolver is empty, so until an agent's authored skills are wired, a
+tool step resolves to `failed`.
+
 ## Not built yet
 
-`tool` steps — a routine step that dispatches a skill — are part of the model but
-not available in this version, because no skill dispatcher is wired for routines
-yet. The authoring surface rejects them until that lands. Export and import of
-routines across agents, and versioning of an agent's whole configuration, are also
-deliberate next steps rather than gaps.
+Export and import of routines across agents, and versioning of an agent's whole
+configuration, are deliberate next steps rather than gaps. Authoring a jump from
+one step to another in prose is also pending: prose steps are positional, so the
+prose editor offers handoff and end branch targets but not step-to-step jumps.

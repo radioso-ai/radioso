@@ -549,10 +549,42 @@ export interface RoutineTransition {
   guard?: RoutineGuard;
 }
 
+/**
+ * Operators a deterministic field guard evaluates against a resolved value.
+ * `gt`/`gte`/`lt`/`lte` are numeric; `older_than`/`within` compare a date against
+ * `now ± (value × unit)`.
+ */
+export type RoutineFieldGuardOp =
+  | "is_true"
+  | "is_false"
+  | "equals"
+  | "not_equals"
+  | "in"
+  | "is_present"
+  | "is_absent"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "older_than"
+  | "within";
+
+export type RoutineFieldGuardValue = string | number | boolean;
+
+/** Duration unit for relative date comparisons (`older_than` / `within`). */
+export type RoutineFieldGuardUnit = "days" | "weeks" | "months" | "years";
+
 export type RoutineGuard =
   | { kind: "slot_filled"; slots: string[] }
   | { kind: "outcome"; status: RoutineSkillOutcomeStatus }
   | { kind: "counter"; limit: number }
+  /**
+   * Deterministic branch on a resolved value — a typed field from the last skill
+   * result's `outputs`, or a captured slot — evaluated in code before the model is
+   * ever consulted. `ref` resolves against skill outputs first, then slot variables.
+   * `unit` applies to the relative-date operators (`older_than` / `within`).
+   */
+  | { kind: "field"; ref: string; op: RoutineFieldGuardOp; value?: RoutineFieldGuardValue; values?: RoutineFieldGuardValue[]; unit?: RoutineFieldGuardUnit }
   | { kind: "default" }
   | { kind: "llm" };
 

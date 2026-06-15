@@ -16,3 +16,6 @@ node_modules/
 .next/
 next-env.d.ts
 .DS_Store
+# demo + e2e artifacts
+demo-screenshots/
+test-results/

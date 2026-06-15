@@ -5,6 +5,8 @@ export {
   routineDefinitionStatuses,
   routineCompletionExportSchema,
   routineGuardKinds,
+  routineFieldGuardOps,
+  routineGuardProvenance,
   routineSlotTypes,
   routineStepKinds,
   routineTerminalKinds,
@@ -13,12 +15,19 @@ export {
   type RoutineCompletionExportTriggerKind,
   type RoutineDefinition,
   type RoutineDefinitionDraftInput,
+  type RoutineFieldGuardOp,
   type RoutineGuardKind,
+  type RoutineGuardProvenance,
   type RoutineSlotType,
   type RoutineStepKind,
   type RoutineTerminalKind,
 } from "./domain.js";
 export { compileRoutineDefinition, legacyCompiledRoutineId } from "./compiler.js";
+export {
+  RoutineSkillExecutorDispatcher,
+  StaticRoutineSkillResolver,
+  type RoutineSkillResolver,
+} from "./skillDispatcher.js";
 export {
   routineValidationCodes,
   validateRoutineDefinition,

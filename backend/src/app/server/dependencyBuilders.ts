@@ -141,6 +141,10 @@ import {
 } from "../../modules/settings/composition.js";
 import type { EmbeddingModelId } from "../../modules/settings/contracts/ingestion.js";
 import { SkillCatalogService, retrievalAnswerSkillDefinition } from "../../modules/skills/public.js";
+import {
+  RoutineSkillExecutorDispatcher,
+  StaticRoutineSkillResolver,
+} from "../../modules/routines/public.js";
 import { RETRIEVAL_ANSWER_ADAPTER, RetrievalAnswerSkillExecutor } from "../../modules/retrieval/public.js";
 import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
@@ -1000,6 +1004,16 @@ export const buildChatServices = (input: {
             promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
             responseLanguage,
           }),
+          // A routine tool step dispatches through the same skill-executor port
+          // the chat turn uses, so any skill behind the registry — including
+          // external MCP skills — is usable in a routine with no runner change.
+          // The resolver is the per-agent authored-skill allow-list; until
+          // authored skills exist it is empty and a tool step fails closed as
+          // `routine_skill_unknown` rather than invoking an unauthored skill.
+          new RoutineSkillExecutorDispatcher(
+            new StaticRoutineSkillResolver([]),
+            input.composition.skillExecutorRegistry,
+          ),
         ),
       };
     },

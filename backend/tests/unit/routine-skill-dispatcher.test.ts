@@ -1,10 +1,14 @@
-import { describe, expect, it } from "vitest";
+import fs from "node:fs/promises";
+import path from "node:path";
+import type { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace-base";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   RoutineSkillExecutorDispatcher,
   StaticRoutineSkillResolver,
   type RoutineSkillResolver,
 } from "../../src/modules/routines/skillDispatcher.js";
+import { externalSkillRoutineDefinition } from "../../src/modules/externalSkills/routineSkillResolver.js";
 import {
   SkillExecutorRegistry,
   type SkillDefinition,
@@ -12,6 +16,9 @@ import {
   type SkillInvocation,
   type SkillOutcome,
 } from "../../src/modules/skills/public.js";
+import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
+import { capabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
+import { initializeTracing, shutdownTracing } from "../../src/shared/observability/tracing/index.js";
 import type { RoutineState, TurnContext } from "@radioso/conversation-contract";
 
 const TEST_EXECUTION = { kind: "internal" as const, adapter: "test-adapter" };
@@ -19,10 +26,17 @@ const TEST_EXECUTION = { kind: "internal" as const, adapter: "test-adapter" };
 const skillNamed = (
   name: string,
   execution: SkillDefinition["execution"] = TEST_EXECUTION,
-): SkillDefinition => ({ name, execution }) as unknown as SkillDefinition;
+  requiredCapabilities: string[] = [],
+): SkillDefinition => ({ name, execution, requiredCapabilities }) as unknown as SkillDefinition;
 
 const routineState = (variables: Record<string, unknown>): RoutineState =>
-  ({ variables }) as unknown as RoutineState;
+  ({
+    sessionId: "session-1",
+    routineId: "routine-1",
+    path: ["collect", "invoke_skill"],
+    variables,
+    status: "active",
+  }) as unknown as RoutineState;
 
 const turn = { agent: { id: "agent-1" } } as unknown as TurnContext;
 
@@ -41,6 +55,36 @@ const registryWith = (executor: SkillExecutorPort): SkillExecutorRegistry => {
   registry.register({ ...TEST_EXECUTION, executor });
   return registry;
 };
+
+class RecordingExporter implements SpanExporter {
+  readonly spans: ReadableSpan[] = [];
+
+  export(spans: ReadableSpan[], callback: Parameters<SpanExporter["export"]>[1]): void {
+    this.spans.push(...spans);
+    callback({ code: 0 });
+  }
+
+  shutdown(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
+const enableTracing = (): RecordingExporter => {
+  const exporter = new RecordingExporter();
+  initializeTracing({
+    enabled: true,
+    environment: "test",
+    otlpEndpoint: "http://localhost:4318/v1/traces",
+    runtimeRole: "api",
+    serviceName: "radioso-api",
+    spanExporter: exporter,
+  });
+  return exporter;
+};
+
+afterEach(async () => {
+  await shutdownTracing();
+});
 
 describe("RoutineSkillExecutorDispatcher", () => {
   it("resolves a skill by name, dispatches through the registry, and projects the outcome", async () => {
@@ -182,4 +226,186 @@ describe("RoutineSkillExecutorDispatcher", () => {
     const result = await dispatcher.dispatch({ skillName: "book_meeting", state: routineState({}), turn });
     expect(result).toEqual({ status: "failed", outputs: { skill: "book_meeting", reason: "deferred" } });
   });
+
+  it("requires external skill invoke capability for routine external skills", () => {
+    expect(externalSkillRoutineDefinition("crm_lookup").requiredCapabilities).toEqual([
+      capabilityNames.externalSkills.invoke,
+    ]);
+  });
+
+  it("degrades and does not invoke the executor when the capability gate denies a required capability", async () => {
+    const dispatch = vi.fn();
+    const gate = vi.fn(async () => ({ allowed: false, reason: "plan_disabled" }));
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([skillNamed("crm_lookup", TEST_EXECUTION, [capabilityNames.externalSkills.invoke])]),
+      registryWith({ dispatch }),
+      { capabilityGate: gate },
+    );
+
+    await expect(dispatcher.dispatch({ skillName: "crm_lookup", state: routineState({}), turn })).resolves.toEqual({
+      status: "failed",
+      outputs: { skill: "crm_lookup", reason: "capability_denied" },
+    });
+    expect(gate).toHaveBeenCalledWith(capabilityNames.externalSkills.invoke);
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it("invokes the executor when the capability gate allows a required capability", async () => {
+    const dispatch = vi.fn(async () => ({
+      disposition: "settled" as const,
+      outcome: { status: "completed", outputs: { ok: true } } as unknown as SkillOutcome,
+    }));
+    const gate = vi.fn(async () => ({ allowed: true }));
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([skillNamed("crm_lookup", TEST_EXECUTION, [capabilityNames.externalSkills.invoke])]),
+      registryWith({ dispatch }),
+      { capabilityGate: gate },
+    );
+
+    const result = await dispatcher.dispatch({ skillName: "crm_lookup", state: routineState({}), turn });
+
+    expect(result).toEqual({ status: "completed", outputs: { ok: true }, answer: undefined });
+    expect(gate).toHaveBeenCalledOnce();
+    expect(dispatch).toHaveBeenCalledOnce();
+  });
+
+  it("does not call the capability gate for a skill with no required capabilities", async () => {
+    const dispatch = vi.fn(async () => ({
+      disposition: "settled" as const,
+      outcome: { status: "completed" } as unknown as SkillOutcome,
+    }));
+    const gate = vi.fn(async () => ({ allowed: false }));
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([skillNamed("book_meeting")]),
+      registryWith({ dispatch }),
+      { capabilityGate: gate },
+    );
+
+    await expect(dispatcher.dispatch({ skillName: "book_meeting", state: routineState({}), turn })).resolves.toMatchObject({
+      status: "completed",
+    });
+    expect(gate).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledOnce();
+  });
+
+  it("degrades instead of throwing when the capability gate rejects", async () => {
+    const dispatch = vi.fn();
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([skillNamed("crm_lookup", TEST_EXECUTION, ["unknown.capability"])]),
+      registryWith({ dispatch }),
+      {
+        capabilityGate: async () => {
+          throw new Error("unknown capability");
+        },
+      },
+    );
+
+    await expect(dispatcher.dispatch({ skillName: "crm_lookup", state: routineState({}), turn })).resolves.toEqual({
+      status: "failed",
+      outputs: { skill: "crm_lookup", reason: "capability_denied" },
+    });
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it("records a privacy-safe span and metric for a successful dispatch", async () => {
+    const exporter = enableTracing();
+    const metricsRegistry = new MetricsRegistry();
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([skillNamed("book_meeting")]),
+      registryWith(settledExecutor({
+        status: "completed",
+        outputs: { privateOutput: "do-not-trace" },
+        answer: "do-not-trace",
+      } as unknown as SkillOutcome)),
+      { metricsRegistry },
+    );
+
+    await dispatcher.dispatch({
+      skillName: "book_meeting",
+      state: routineState({ secret: "private slot" }),
+      turn,
+    });
+
+    const span = exporter.spans.find((candidate) => candidate.name === "routine.skill.dispatch");
+    expect(span?.attributes).toMatchObject({
+      "routine.id": "routine-1",
+      "routine.step_id": "invoke_skill",
+      "skill.name": "book_meeting",
+      "outcome.status": "completed",
+    });
+    const serializedAttributes = JSON.stringify(span?.attributes);
+    expect(serializedAttributes).not.toContain("private slot");
+    expect(serializedAttributes).not.toContain("privateOutput");
+    expect(serializedAttributes).not.toContain("do-not-trace");
+    expect(serializedAttributes).not.toContain("variables");
+    expect(serializedAttributes).not.toContain("outputs");
+    expect(serializedAttributes).not.toContain("answer");
+
+    const metrics = metricsRegistry.renderPrometheus();
+    expect(metrics).toContain("radioso_routine_skill_dispatch_total");
+    expect(metrics).toContain('status="completed"');
+    expect(metrics).not.toContain("routine-1");
+    expect(metrics).not.toContain("book_meeting");
+  });
+
+  it("records a privacy-safe span and metric for an unavailable dispatch", async () => {
+    const exporter = enableTracing();
+    const metricsRegistry = new MetricsRegistry();
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([]),
+      registryWith(settledExecutor({ status: "completed" } as unknown as SkillOutcome)),
+      { metricsRegistry },
+    );
+
+    await dispatcher.dispatch({ skillName: "missing", state: routineState({ token: "private token" }), turn });
+
+    const span = exporter.spans.find((candidate) => candidate.name === "routine.skill.dispatch");
+    expect(span?.attributes).toMatchObject({
+      "routine.id": "routine-1",
+      "routine.step_id": "invoke_skill",
+      "skill.name": "missing",
+      "outcome.status": "failed",
+      "outcome.reason": "unknown_skill",
+    });
+    const serializedAttributes = JSON.stringify(span?.attributes);
+    expect(serializedAttributes).not.toContain("private token");
+    expect(serializedAttributes).not.toContain("variables");
+    expect(serializedAttributes).not.toContain("outputs");
+    expect(serializedAttributes).not.toContain("answer");
+
+    const metrics = metricsRegistry.renderPrometheus();
+    expect(metrics).toContain('status="failed"');
+    expect(metrics).not.toContain("routine-1");
+    expect(metrics).not.toContain("missing");
+  });
+
+  it("keeps routine dispatcher wiring out of conversation engine and contract packages", async () => {
+    const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
+    const packageRoots = [
+      path.join(repositoryRoot, "packages/conversation-engine"),
+      path.join(repositoryRoot, "packages/conversation-contract"),
+    ];
+
+    const files = await Promise.all(packageRoots.map((packageRoot) => listTypeScriptFiles(packageRoot)));
+    const contents = await Promise.all(files.flat().map(async (filePath) => fs.readFile(filePath, "utf8")));
+
+    expect(contents.join("\n")).not.toContain("RoutineSkillExecutorDispatcher");
+    expect(contents.join("\n")).not.toContain("externalSkillRoutineDefinition");
+    expect(contents.join("\n")).not.toContain("backend/src/modules/routines");
+  });
 });
+
+const listTypeScriptFiles = async (directory: string): Promise<string[]> => {
+  const entries = await fs.readdir(directory, { withFileTypes: true });
+  const nested = await Promise.all(entries.map(async (entry) => {
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      return listTypeScriptFiles(entryPath);
+    }
+    if (entry.isFile() && /\.(ts|tsx|d\.ts)$/u.test(entry.name)) {
+      return [entryPath];
+    }
+    return [];
+  }));
+  return nested.flat();
+};

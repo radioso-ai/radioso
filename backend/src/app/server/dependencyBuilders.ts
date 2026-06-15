@@ -1023,6 +1023,14 @@ export const buildChatServices = (input: {
           new RoutineSkillExecutorDispatcher(
             new ExternalSkillRoutineSkillResolver(),
             input.composition.skillExecutorRegistry,
+            {
+              capabilityGate: (capability) =>
+                input.composition.capabilityPolicy.can({
+                  capability,
+                  workspaceId,
+                }),
+              metricsRegistry: input.metricsRegistry ?? null,
+            },
           ),
         ),
       };

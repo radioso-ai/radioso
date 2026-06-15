@@ -5,8 +5,20 @@ import type {
 import {
   noopSkillEmitPort,
   type SkillDefinition,
+  type SkillDispatchResult,
   type SkillExecutorRegistry,
 } from "../skills/public.js";
+import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
+import { traceOperation } from "../../shared/observability/tracing/operations.js";
+
+export type RoutineCapabilityGate = (capability: string) => Promise<{ allowed: boolean; reason?: string }>;
+
+export interface RoutineSkillExecutorDispatcherOptions {
+  capabilityGate?: RoutineCapabilityGate;
+  metricsRegistry?: MetricsRegistry | null;
+}
+
+const allowAllRoutineCapabilityGate: RoutineCapabilityGate = async () => ({ allowed: true });
 
 /**
  * Resolves an authored routine skill reference (its `@name`) to the runtime skill
@@ -44,16 +56,39 @@ export class StaticRoutineSkillResolver implements RoutineSkillResolver {
  * in routines with no change to this bridge.
  */
 export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillDispatcher {
+  private readonly capabilityGate: RoutineCapabilityGate;
+  private readonly metricsRegistry: MetricsRegistry | null;
+
   constructor(
     private readonly resolver: RoutineSkillResolver,
     private readonly executorRegistry: SkillExecutorRegistry,
-  ) {}
+    options: RoutineSkillExecutorDispatcherOptions = {},
+  ) {
+    this.capabilityGate = options.capabilityGate ?? allowAllRoutineCapabilityGate;
+    this.metricsRegistry = options.metricsRegistry ?? null;
+  }
 
   async dispatch(
     input: Parameters<ConversationRoutineSkillDispatcher["dispatch"]>[0],
   ): Promise<RoutineSkillResult> {
     const { skillName, state, turn } = input;
 
+    return traceOperation({
+      name: "routine.skill.dispatch",
+      attributes: routineDispatchTraceAttributes(skillName, state),
+      run: async () => {
+        const result = await this.dispatchInner({ skillName, state, turn });
+        this.recordDispatchMetric(result);
+        return result;
+      },
+      resultAttributes: routineDispatchResultAttributes,
+    });
+  }
+
+  private async dispatchInner(
+    input: Parameters<ConversationRoutineSkillDispatcher["dispatch"]>[0],
+  ): Promise<RoutineSkillResult> {
+    const { skillName, state, turn } = input;
     // A routine runs on a resumable state machine, and the runner resolves this
     // BEFORE the turn is persisted — so throwing here would 500 the turn AND leave
     // the routine pinned at this step, re-throwing on every subsequent turn (a
@@ -71,15 +106,24 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
     if (!executor) {
       return unavailable(skillName, "no_executor");
     }
+    const deniedCapability = await this.firstDeniedCapability(skill);
+    if (deniedCapability) {
+      return unavailable(skillName, "capability_denied");
+    }
 
-    const result = await executor.dispatch({
-      skill,
-      // The routine's captured slots are the exposed params the executor fills
-      // from; any bound params (e.g. an MCP channel) are merged inside it.
-      collected: state.variables ?? {},
-      context: { turn, agentId: turn.agent.id },
-      emit: noopSkillEmitPort,
-    });
+    let result: SkillDispatchResult;
+    try {
+      result = await executor.dispatch({
+        skill,
+        // The routine's captured slots are the exposed params the executor fills
+        // from; any bound params (e.g. an MCP channel) are merged inside it.
+        collected: state.variables ?? {},
+        context: { turn, agentId: turn.agent.id },
+        emit: noopSkillEmitPort,
+      });
+    } catch {
+      return unavailable(skillName, "executor_error");
+    }
 
     if (result.disposition !== "settled") {
       // No v1 executor defers; the async-weave (reconcile a deferred result in a
@@ -93,6 +137,29 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
       answer: result.outcome.answer,
     };
   }
+
+  private async firstDeniedCapability(skill: SkillDefinition): Promise<string | null> {
+    for (const capability of skill.requiredCapabilities ?? []) {
+      try {
+        const decision = await this.capabilityGate(capability);
+        if (!decision.allowed) {
+          return "capability_denied";
+        }
+      } catch {
+        return "capability_denied";
+      }
+    }
+    return null;
+  }
+
+  private recordDispatchMetric(result: RoutineSkillResult): void {
+    this.metricsRegistry?.incrementCounter("routine_skill_dispatch_total", {
+      help: "Routine skill dispatch outcomes by status.",
+      labels: {
+        status: result.status,
+      },
+    });
+  }
 }
 
 // A recoverable failure: the runner branches on `status` and can read `outputs`
@@ -100,3 +167,23 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
 function unavailable(skillName: string, reason: string): RoutineSkillResult {
   return { status: "failed", outputs: { skill: skillName, reason } };
 }
+
+const routineDispatchTraceAttributes = (
+  skillName: string,
+  state: Parameters<ConversationRoutineSkillDispatcher["dispatch"]>[0]["state"],
+): Record<string, string> => {
+  const stepId = state.path.at(-1);
+  return {
+    "routine.id": state.routineId,
+    ...(stepId ? { "routine.step_id": stepId } : {}),
+    "skill.name": skillName,
+  };
+};
+
+const routineDispatchResultAttributes = (result: RoutineSkillResult): Record<string, string> => {
+  const reason = typeof result.outputs?.reason === "string" ? result.outputs.reason : undefined;
+  return {
+    "outcome.status": result.status,
+    "outcome.reason": reason ?? result.status,
+  };
+};

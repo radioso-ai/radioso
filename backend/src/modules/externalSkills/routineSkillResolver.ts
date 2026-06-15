@@ -1,5 +1,6 @@
 import type { RoutineSkillResolver } from "../routines/public.js";
 import type { SkillDefinition } from "../skills/public.js";
+import { capabilityNames } from "../../shared/domain/capabilityPolicy.js";
 import { EXTERNAL_SKILLS_ADAPTER } from "./executor/mcpSkillExecutor.js";
 
 export const externalSkillRoutineDefinition = (name: string): SkillDefinition => ({
@@ -9,7 +10,7 @@ export const externalSkillRoutineDefinition = (name: string): SkillDefinition =>
   owner: "mcp",
   executionClass: "interactive",
   supportedCallers: [],
-  requiredCapabilities: [],
+  requiredCapabilities: [capabilityNames.externalSkills.invoke],
   contractReferences: [],
   execution: { kind: "internal", adapter: EXTERNAL_SKILLS_ADAPTER, enqueue: false },
   diagnostics: {

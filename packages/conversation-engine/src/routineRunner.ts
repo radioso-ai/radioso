@@ -379,11 +379,14 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       attempts[step.id] = (attempts[step.id] ?? 0) + 1;
     }
 
-    let fastForwardHops = 0;
+    // Skip slot-collection steps whose slots are already filled, so an intake never
+    // re-asks for a value the routine already holds. A bounded loop (a `counter`
+    // back-edge into a satisfied step) would otherwise fast-forward forever — track the
+    // steps visited this traversal and, on a revisit, stop and render the current step
+    // instead of throwing. This keeps the runner on the degrade-don't-throw path: a
+    // loop that can't fast-forward to progress settles on a chat step the user can act on.
+    const fastForwarded = new Set<string>([step.id]);
     while (isSatisfiedSlotCollectionStep(routine, step, variables)) {
-      if (++fastForwardHops > routine.steps.length) {
-        throw new Error(`routine_fast_forward_exceeded:${routine.id}:${step.id}`);
-      }
       const stepEdges = outgoing(step.id);
       if (stepEdges.length === 0) {
         break;
@@ -410,7 +413,13 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         }
       }
 
+      // Would re-enter a step already visited this traversal (a loop). Render the step
+      // we're on rather than chasing the cycle.
+      if (fastForwarded.has(nextStepId)) {
+        break;
+      }
       step = stepById(nextStepId);
+      fastForwarded.add(step.id);
       enterStep(step, path);
     }
 

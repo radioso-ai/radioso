@@ -426,6 +426,44 @@ describe("DefaultRoutineRunner", () => {
     // The guard fires after a bounded number of dispatches, not unboundedly.
     expect(dispatch.mock.calls.length).toBeLessThanOrEqual(cyclic.steps.length + 1);
   });
+
+  it("renders instead of throwing when a counter back-edge re-enters a satisfied slot step (loop)", async () => {
+    // Two chat steps both reference {{slot.idea}} (so both are slot-collection steps),
+    // with a counter back-edge forming a bounded loop. Once `idea` is filled, naive
+    // fast-forward would skip step_ask → step_ack → step_ask … forever and throw
+    // routine_fast_forward_exceeded (issue #733). The cycle must degrade to a render.
+    const loopRoutine: Routine = {
+      id: "ideas",
+      rootStepId: "step_ask",
+      slots: [{ id: "slot_idea", key: "idea", type: "text", required: true }],
+      steps: [
+        { id: "step_ask", kind: "chat", action: "Ask for one product idea {{slot.idea}}.", metadata: { collectsSlots: ["idea"] } },
+        { id: "step_ack", kind: "chat", action: "Thank them for {{slot.idea}} and ask for another.", metadata: { collectsSlots: ["idea"] } },
+        { id: "end", kind: "terminal", action: "Wrap up." },
+      ],
+      transitions: [
+        { from: "step_ask", to: "step_ack", condition: "an idea was provided" },
+        { from: "step_ack", to: "step_ask", condition: "more ideas welcome", guard: { kind: "counter", limit: 3 } },
+        { from: "step_ack", to: "end", condition: "default", guard: { kind: "default" } },
+      ],
+    };
+    const render = vi.fn(async ({ step }: { step: { id: string } }) => ({ answer: `[${step.id}]`, metadata: {} }));
+    const runner = new DefaultRoutineRunner(
+      [loopRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "step_ack", variables: { idea: "solar" } })) },
+      { render },
+    );
+
+    const result = await runner.resume({
+      turn,
+      state: { sessionId: "session_1", routineId: "ideas", path: ["step_ask"], variables: {}, status: "active" },
+    });
+
+    // The turn settles on a chat step rather than throwing, and the routine continues.
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(["step_ask", "step_ack"]).toContain(render.mock.calls[0]![0]!.step.id);
+    expect(result.nextState).not.toBeNull();
+  });
 });
 
 describe("DefaultRoutineRunner skill (tool) steps", () => {

@@ -60,6 +60,21 @@ export const registerOauthConnectionPaths = (
 
   registry.registerPath({
     method: "get",
+    path: "/api/v1/workspaces/{workspaceId}/oauth-connections",
+    tags: TAGS,
+    summary: "List non-secret workspace OAuth connection statuses",
+    operationId: "listWorkspaceOauthConnections",
+    security: sec,
+    request: { params: WorkspaceParams },
+    responses: {
+      200: { description: "OAuth connections", content: json(z.object({ connections: z.array(OAuthConnectionSummarySchema) })) },
+      401: errorResponse("Authentication required"),
+      403: errorResponse("Workspace settings permission required"),
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
     path: "/api/v1/workspaces/{workspaceId}/oauth-connections/{connectionId}",
     tags: TAGS,
     summary: "Get a non-secret workspace OAuth connection status",

@@ -57,12 +57,14 @@ export type { ExternalSkillDefinition, McpConnection } from './api-external-skil
 export { customerEmailApi } from './api-customer-email'
 export type {
   CreateWorkspaceOauthConnectionInput,
+  CreateCustomerEmailConnectionInput,
   CustomerEmailConnection,
   CustomerEmailConnectionStatus,
   CustomerEmailOauthProviderId,
   WorkspaceOauthAuthorization,
   WorkspaceOauthConnection,
   WorkspaceOauthConnectionStatus,
+  UpdateCustomerEmailConnectionInput,
 } from './api-customer-email'
 export { workbenchApi } from './api-workbench'
 export { publicChatApi } from './api-public-chat'

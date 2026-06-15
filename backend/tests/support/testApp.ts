@@ -82,13 +82,19 @@ import { WorkspaceProviderCredentialsService } from "../../src/modules/security/
 import { McpConnectionService } from "../../src/modules/externalSkills/services/mcpConnectionService.js";
 import { ExternalSkillDefinitionService } from "../../src/modules/externalSkills/services/externalSkillDefinitionService.js";
 import { OauthConnectionService, StaticOauthProviderRegistry } from "../../src/modules/integrationOauth/public.js";
-import { CustomerEmailOAuthService } from "../../src/modules/customerEmail/public.js";
+import {
+  CustomerEmailConnectionService,
+  CustomerEmailOAuthService,
+  MockCustomerEmailProviderAdapter,
+  StaticCustomerEmailProviderRegistry,
+} from "../../src/modules/customerEmail/public.js";
 import {
   InMemoryMcpConnectionRepository,
   InMemoryExternalSkillDefinitionRepository,
   createMockToolServiceFactory,
 } from "./inMemoryExternalSkills.js";
 import { InMemoryOauthConnectionRepository } from "./inMemoryOauthConnections.js";
+import { InMemoryCustomerEmailConnectionRepository } from "./inMemoryCustomerEmailConnections.js";
 import {
   DefaultWebhookDestinationAdapter,
   WebhookDestinationService,
@@ -746,11 +752,21 @@ export const createTestDependencies = (overrides: {
     fetchImpl: async () => ({
       ok: true,
       status: 200,
-      json: async () => ({ access_token: "test-access-token", refresh_token: "test-refresh", expires_in: 3600, scope: "mail.send" }),
+      json: async () => ({ access_token: "test-access-token", refresh_token: "test-refresh", expires_in: 3600 }),
     }),
     logger,
   });
   const customerEmailOAuthService = new CustomerEmailOAuthService(oauthConnectionService);
+  const customerEmailConnectionRepository = new InMemoryCustomerEmailConnectionRepository();
+  const customerEmailConnectionService = new CustomerEmailConnectionService({
+    repository: customerEmailConnectionRepository,
+    oauthConnections: oauthConnectionService,
+    providers: new StaticCustomerEmailProviderRegistry([
+      new MockCustomerEmailProviderAdapter("google_mail"),
+      new MockCustomerEmailProviderAdapter("microsoft_graph_mail"),
+      new MockCustomerEmailProviderAdapter("test_mail"),
+    ]),
+  });
   const mcpConnectionRepository = new InMemoryMcpConnectionRepository();
   const externalSkillDefinitionRepository = new InMemoryExternalSkillDefinitionRepository();
   // Model the ON DELETE RESTRICT FK so the route DELETE 409 is exercised.
@@ -1049,6 +1065,7 @@ export const createTestDependencies = (overrides: {
     workspaceProviderCredentialsService,
     oauthConnectionService,
     customerEmailOAuthService,
+    customerEmailConnectionService,
     mcpConnectionService,
     externalSkillDefinitionService,
     webhookDestinations,

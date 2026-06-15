@@ -2,22 +2,21 @@ import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
-import { oauthConnectionCreateSchema } from "../../../modules/integrationOauth/public.js";
+import {
+  customerEmailConnectionCreateSchema,
+  customerEmailConnectionUpdateSchema,
+} from "../../../modules/customerEmail/public.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
 import { validateBody } from "../middleware/validate.js";
 
-type OauthConnectionRouteDependencies = Pick<
+type CustomerEmailConnectionRouteDependencies = Pick<
   AppDependencies,
-  "env" | "authService" | "accountAccessService" | "workspaceSessionService" | "oauthConnectionService"
+  "env" | "authService" | "accountAccessService" | "workspaceSessionService" | "customerEmailConnectionService"
 >;
 
 const uuidSchema = z.string().uuid();
-const callbackQuerySchema = z.object({
-  code: z.string().trim().min(1),
-  state: z.string().trim().min(1),
-});
 
 const parseUuid = (raw: unknown, field: string): string => {
   const parsed = uuidSchema.safeParse(raw);
@@ -27,15 +26,9 @@ const parseUuid = (raw: unknown, field: string): string => {
   return parsed.data;
 };
 
-const parseCallbackQuery = (query: unknown): { code: string; state: string } => {
-  const parsed = callbackQuerySchema.safeParse(query);
-  if (!parsed.success) {
-    throw badRequest("Invalid OAuth callback query", parsed.error.flatten());
-  }
-  return parsed.data;
-};
-
-export const createOauthConnectionRoutes = (dependencies: OauthConnectionRouteDependencies): Router => {
+export const createCustomerEmailConnectionRoutes = (
+  dependencies: CustomerEmailConnectionRouteDependencies,
+): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
   const settingsRead = requireWorkspacePermission(dependencies, "workspace.settings.read", (req) =>
@@ -45,29 +38,14 @@ export const createOauthConnectionRoutes = (dependencies: OauthConnectionRouteDe
     parseUuid(req.params.workspaceId, "workspaceId"),
   );
 
-  router.post(
-    "/workspaces/:workspaceId/oauth-connections",
-    workspaceSession,
-    settingsManage,
-    validateBody(oauthConnectionCreateSchema),
-    async (req, res, next) => {
-      try {
-        const workspaceId = parseUuid(req.params.workspaceId, "workspaceId");
-        res.status(201).json(await dependencies.oauthConnectionService.create(workspaceId, req.body));
-      } catch (error) {
-        next(error);
-      }
-    },
-  );
-
   router.get(
-    "/workspaces/:workspaceId/oauth-connections",
+    "/workspaces/:workspaceId/email-connections",
     workspaceSession,
     settingsRead,
     async (req, res, next) => {
       try {
         const workspaceId = parseUuid(req.params.workspaceId, "workspaceId");
-        const connections = await dependencies.oauthConnectionService.list(workspaceId);
+        const connections = await dependencies.customerEmailConnectionService.list(workspaceId);
         res.status(200).json({ connections });
       } catch (error) {
         next(error);
@@ -75,15 +53,32 @@ export const createOauthConnectionRoutes = (dependencies: OauthConnectionRouteDe
     },
   );
 
-  router.get(
-    "/workspaces/:workspaceId/oauth-connections/:connectionId",
+  router.post(
+    "/workspaces/:workspaceId/email-connections",
     workspaceSession,
-    settingsRead,
+    settingsManage,
+    validateBody(customerEmailConnectionCreateSchema),
+    async (req, res, next) => {
+      try {
+        const workspaceId = parseUuid(req.params.workspaceId, "workspaceId");
+        const connection = await dependencies.customerEmailConnectionService.create(workspaceId, req.body);
+        res.status(201).json({ connection });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.patch(
+    "/workspaces/:workspaceId/email-connections/:connectionId",
+    workspaceSession,
+    settingsManage,
+    validateBody(customerEmailConnectionUpdateSchema),
     async (req, res, next) => {
       try {
         const workspaceId = parseUuid(req.params.workspaceId, "workspaceId");
         const connectionId = parseUuid(req.params.connectionId, "connectionId");
-        const connection = await dependencies.oauthConnectionService.get(workspaceId, connectionId);
+        const connection = await dependencies.customerEmailConnectionService.update(workspaceId, connectionId, req.body);
         res.status(200).json({ connection });
       } catch (error) {
         next(error);
@@ -92,32 +87,36 @@ export const createOauthConnectionRoutes = (dependencies: OauthConnectionRouteDe
   );
 
   router.post(
-    "/workspaces/:workspaceId/oauth-connections/:connectionId/reauthorize",
+    "/workspaces/:workspaceId/email-connections/:connectionId/health-check",
     workspaceSession,
     settingsManage,
     async (req, res, next) => {
       try {
         const workspaceId = parseUuid(req.params.workspaceId, "workspaceId");
         const connectionId = parseUuid(req.params.connectionId, "connectionId");
-        res.status(200).json(await dependencies.oauthConnectionService.reauthorize(workspaceId, connectionId));
+        const connection = await dependencies.customerEmailConnectionService.checkHealth(workspaceId, connectionId);
+        res.status(200).json({ connection });
       } catch (error) {
         next(error);
       }
     },
   );
 
-  router.get("/oauth/callback/:provider", async (req, res, next) => {
-    try {
-      const provider = z.string().trim().min(1).parse(req.params.provider);
-      const completed = await dependencies.oauthConnectionService.completeCallback(
-        provider,
-        parseCallbackQuery(req.query),
-      );
-      res.redirect(302, completed.redirectUrl);
-    } catch (error) {
-      next(error);
-    }
-  });
+  router.delete(
+    "/workspaces/:workspaceId/email-connections/:connectionId",
+    workspaceSession,
+    settingsManage,
+    async (req, res, next) => {
+      try {
+        const workspaceId = parseUuid(req.params.workspaceId, "workspaceId");
+        const connectionId = parseUuid(req.params.connectionId, "connectionId");
+        await dependencies.customerEmailConnectionService.remove(workspaceId, connectionId);
+        res.status(204).send();
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   return router;
 };

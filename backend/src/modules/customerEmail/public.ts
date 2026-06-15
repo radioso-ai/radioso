@@ -33,3 +33,28 @@ export {
   CustomerEmailOAuthService,
   type CustomerEmailOAuthPort,
 } from "./services/customerEmailOAuthService.js";
+export {
+  CustomerEmailConnectionService,
+  type CustomerEmailConnectionServiceOptions,
+  type CustomerEmailOauthStatusPort,
+} from "./services/customerEmailConnectionService.js";
+export {
+  customerEmailConnectionCreateSchema,
+  customerEmailConnectionStatuses,
+  customerEmailConnectionUpdateSchema,
+  customerEmailHealthStatuses,
+  type CustomerEmailConnectionCreateInput,
+  type CustomerEmailConnectionStatus,
+  type CustomerEmailConnectionSummary,
+  type CustomerEmailConnectionUpdateInput,
+  type CustomerEmailHealthStatus,
+} from "./domain.js";
+export {
+  MockCustomerEmailProviderAdapter,
+} from "./providers/mockEmailProvider.js";
+export {
+  StaticCustomerEmailProviderRegistry,
+  type CustomerEmailProviderAdapter,
+  type CustomerEmailProviderHealthResult,
+  type CustomerEmailProviderRegistryPort,
+} from "./providers/customerEmailProvider.js";

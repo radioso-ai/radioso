@@ -16797,6 +16797,118 @@
             }
           }
         }
+      },
+      "get": {
+        "tags": [
+          "OAuth Connections"
+        ],
+        "summary": "List non-secret workspace OAuth connection statuses",
+        "operationId": "listWorkspaceOauthConnections",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OAuth connections",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "connections": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "provider": {
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "authorized",
+                              "needs_reauth",
+                              "disabled",
+                              "error"
+                            ]
+                          },
+                          "grantedScopes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "providerAccountId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "provider",
+                          "displayName",
+                          "status",
+                          "grantedScopes",
+                          "providerAccountId",
+                          "updatedAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "connections"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace settings permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/workspaces/{workspaceId}/oauth-connections/{connectionId}": {
@@ -17094,6 +17206,824 @@
           },
           "503": {
             "description": "OAuth encryption is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/email-connections": {
+      "get": {
+        "tags": [
+          "Customer Email Connections"
+        ],
+        "summary": "List workspace customer email connections",
+        "operationId": "listWorkspaceEmailConnections",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Customer email connections",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "connections": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "workspaceId": {
+                            "type": "string"
+                          },
+                          "oauthConnectionId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "provider": {
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "type": "string"
+                          },
+                          "senderEmail": {
+                            "type": "string"
+                          },
+                          "senderName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "replyToEmail": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "authorized",
+                              "disabled",
+                              "needs_reauth",
+                              "error"
+                            ]
+                          },
+                          "lastHealthStatus": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "enum": [
+                              "ok",
+                              "failed",
+                              "unknown"
+                            ]
+                          },
+                          "lastHealthCheckedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "lastErrorCode": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "workspaceId",
+                          "oauthConnectionId",
+                          "provider",
+                          "displayName",
+                          "senderEmail",
+                          "senderName",
+                          "replyToEmail",
+                          "status",
+                          "lastHealthStatus",
+                          "lastHealthCheckedAt",
+                          "lastErrorCode",
+                          "updatedAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "connections"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace settings permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Customer Email Connections"
+        ],
+        "summary": "Create a workspace customer email connection",
+        "operationId": "createWorkspaceEmailConnection",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "oauthConnectionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "senderEmail": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "senderName": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "replyToEmail": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "email"
+                  }
+                },
+                "required": [
+                  "oauthConnectionId",
+                  "displayName",
+                  "senderEmail"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Customer email connection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "connection": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "workspaceId": {
+                          "type": "string"
+                        },
+                        "oauthConnectionId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "provider": {
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "type": "string"
+                        },
+                        "senderEmail": {
+                          "type": "string"
+                        },
+                        "senderName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "replyToEmail": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "authorized",
+                            "disabled",
+                            "needs_reauth",
+                            "error"
+                          ]
+                        },
+                        "lastHealthStatus": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "ok",
+                            "failed",
+                            "unknown"
+                          ]
+                        },
+                        "lastHealthCheckedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "lastErrorCode": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "workspaceId",
+                        "oauthConnectionId",
+                        "provider",
+                        "displayName",
+                        "senderEmail",
+                        "senderName",
+                        "replyToEmail",
+                        "status",
+                        "lastHealthStatus",
+                        "lastHealthCheckedAt",
+                        "lastErrorCode",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "connection"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or OAuth connection is not usable for email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace settings permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "OAuth connection not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/email-connections/{connectionId}": {
+      "patch": {
+        "tags": [
+          "Customer Email Connections"
+        ],
+        "summary": "Update or enable/disable a workspace customer email connection",
+        "operationId": "updateWorkspaceEmailConnection",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "connectionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "displayName": {
+                    "type": "string"
+                  },
+                  "senderEmail": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "senderName": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "replyToEmail": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "email"
+                  },
+                  "disabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Customer email connection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "connection": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "workspaceId": {
+                          "type": "string"
+                        },
+                        "oauthConnectionId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "provider": {
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "type": "string"
+                        },
+                        "senderEmail": {
+                          "type": "string"
+                        },
+                        "senderName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "replyToEmail": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "authorized",
+                            "disabled",
+                            "needs_reauth",
+                            "error"
+                          ]
+                        },
+                        "lastHealthStatus": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "ok",
+                            "failed",
+                            "unknown"
+                          ]
+                        },
+                        "lastHealthCheckedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "lastErrorCode": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "workspaceId",
+                        "oauthConnectionId",
+                        "provider",
+                        "displayName",
+                        "senderEmail",
+                        "senderName",
+                        "replyToEmail",
+                        "status",
+                        "lastHealthStatus",
+                        "lastHealthCheckedAt",
+                        "lastErrorCode",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "connection"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace settings permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Customer email connection not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Customer Email Connections"
+        ],
+        "summary": "Delete a workspace customer email connection",
+        "operationId": "deleteWorkspaceEmailConnection",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "connectionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace settings permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Customer email connection not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Customer email connection is still referenced by an email skill",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/email-connections/{connectionId}/health-check": {
+      "post": {
+        "tags": [
+          "Customer Email Connections"
+        ],
+        "summary": "Check customer email connection health",
+        "operationId": "checkWorkspaceEmailConnectionHealth",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "connectionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Customer email connection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "connection": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "workspaceId": {
+                          "type": "string"
+                        },
+                        "oauthConnectionId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "provider": {
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "type": "string"
+                        },
+                        "senderEmail": {
+                          "type": "string"
+                        },
+                        "senderName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "replyToEmail": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "authorized",
+                            "disabled",
+                            "needs_reauth",
+                            "error"
+                          ]
+                        },
+                        "lastHealthStatus": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "ok",
+                            "failed",
+                            "unknown"
+                          ]
+                        },
+                        "lastHealthCheckedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "lastErrorCode": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "workspaceId",
+                        "oauthConnectionId",
+                        "provider",
+                        "displayName",
+                        "senderEmail",
+                        "senderName",
+                        "replyToEmail",
+                        "status",
+                        "lastHealthStatus",
+                        "lastHealthCheckedAt",
+                        "lastErrorCode",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "connection"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace settings permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Customer email connection not found",
             "content": {
               "application/json": {
                 "schema": {

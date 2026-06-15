@@ -62,7 +62,13 @@ import {
 import type { ConversationModelGateway } from "@radioso/conversation-contract";
 import type { ModelInferencePipeline } from "../../shared/infra/llm/modelInferencePipeline.js";
 import { OauthConnectionService, StaticOauthProviderRegistry } from "../../modules/integrationOauth/public.js";
-import { CustomerEmailOAuthService } from "../../modules/customerEmail/public.js";
+import {
+  CustomerEmailConnectionService,
+  CustomerEmailOAuthService,
+  MockCustomerEmailProviderAdapter,
+  StaticCustomerEmailProviderRegistry,
+  customerEmailOauthProviderIds,
+} from "../../modules/customerEmail/public.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -126,6 +132,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
   });
   const customerEmailOAuthService = new CustomerEmailOAuthService(oauthConnectionService);
+  const customerEmailConnectionService = new CustomerEmailConnectionService({
+    repository: repositories.customerEmailConnectionRepository,
+    oauthConnections: oauthConnectionService,
+    providers: new StaticCustomerEmailProviderRegistry(
+      customerEmailOauthProviderIds.map((provider) => new MockCustomerEmailProviderAdapter(provider)),
+    ),
+  });
   const mcpConnectionRepository = new McpConnectionRepository(infrastructure.database);
   const externalSkillDefinitionRepository = new ExternalSkillDefinitionRepository(infrastructure.database);
   const mcpConnectionService = new McpConnectionService({
@@ -422,6 +435,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceProviderCredentialsService,
     oauthConnectionService,
     customerEmailOAuthService,
+    customerEmailConnectionService,
     mcpConnectionService,
     externalSkillDefinitionService,
     webhookDestinations,

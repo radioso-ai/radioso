@@ -1146,7 +1146,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List non-secret workspace OAuth connection statuses */
+        get: operations["listWorkspaceOauthConnections"];
         put?: never;
         /** Create and start a workspace OAuth connection */
         post: operations["createWorkspaceOauthConnection"];
@@ -1201,6 +1202,59 @@ export interface paths {
         get: operations["completeWorkspaceOauthCallback"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/email-connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List workspace customer email connections */
+        get: operations["listWorkspaceEmailConnections"];
+        put?: never;
+        /** Create a workspace customer email connection */
+        post: operations["createWorkspaceEmailConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/email-connections/{connectionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a workspace customer email connection */
+        delete: operations["deleteWorkspaceEmailConnection"];
+        options?: never;
+        head?: never;
+        /** Update or enable/disable a workspace customer email connection */
+        patch: operations["updateWorkspaceEmailConnection"];
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/email-connections/{connectionId}/health-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check customer email connection health */
+        post: operations["checkWorkspaceEmailConnectionHealth"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8564,6 +8618,58 @@ export interface operations {
             };
         };
     };
+    listWorkspaceOauthConnections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OAuth connections */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connections: {
+                            /** Format: uuid */
+                            id: string;
+                            provider: string;
+                            displayName: string;
+                            /** @enum {string} */
+                            status: "pending" | "authorized" | "needs_reauth" | "disabled" | "error";
+                            grantedScopes: string[];
+                            providerAccountId: string | null;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     createWorkspaceOauthConnection: {
         parameters: {
             query?: never;
@@ -8804,6 +8910,375 @@ export interface operations {
             };
             /** @description OAuth encryption is not configured */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listWorkspaceEmailConnections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Customer email connections */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connections: {
+                            /** Format: uuid */
+                            id: string;
+                            workspaceId: string;
+                            /** Format: uuid */
+                            oauthConnectionId: string;
+                            provider: string;
+                            displayName: string;
+                            senderEmail: string;
+                            senderName: string | null;
+                            replyToEmail: string | null;
+                            /** @enum {string} */
+                            status: "authorized" | "disabled" | "needs_reauth" | "error";
+                            /** @enum {string|null} */
+                            lastHealthStatus: "ok" | "failed" | "unknown" | null;
+                            lastHealthCheckedAt: string | null;
+                            lastErrorCode: string | null;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createWorkspaceEmailConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    oauthConnectionId: string;
+                    displayName: string;
+                    /** Format: email */
+                    senderEmail: string;
+                    senderName?: string | null;
+                    /** Format: email */
+                    replyToEmail?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Customer email connection */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connection: {
+                            /** Format: uuid */
+                            id: string;
+                            workspaceId: string;
+                            /** Format: uuid */
+                            oauthConnectionId: string;
+                            provider: string;
+                            displayName: string;
+                            senderEmail: string;
+                            senderName: string | null;
+                            replyToEmail: string | null;
+                            /** @enum {string} */
+                            status: "authorized" | "disabled" | "needs_reauth" | "error";
+                            /** @enum {string|null} */
+                            lastHealthStatus: "ok" | "failed" | "unknown" | null;
+                            lastHealthCheckedAt: string | null;
+                            lastErrorCode: string | null;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid input or OAuth connection is not usable for email */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description OAuth connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteWorkspaceEmailConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Customer email connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Customer email connection is still referenced by an email skill */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateWorkspaceEmailConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    displayName?: string;
+                    /** Format: email */
+                    senderEmail?: string;
+                    senderName?: string | null;
+                    /** Format: email */
+                    replyToEmail?: string | null;
+                    disabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Customer email connection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connection: {
+                            /** Format: uuid */
+                            id: string;
+                            workspaceId: string;
+                            /** Format: uuid */
+                            oauthConnectionId: string;
+                            provider: string;
+                            displayName: string;
+                            senderEmail: string;
+                            senderName: string | null;
+                            replyToEmail: string | null;
+                            /** @enum {string} */
+                            status: "authorized" | "disabled" | "needs_reauth" | "error";
+                            /** @enum {string|null} */
+                            lastHealthStatus: "ok" | "failed" | "unknown" | null;
+                            lastHealthCheckedAt: string | null;
+                            lastErrorCode: string | null;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Customer email connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    checkWorkspaceEmailConnectionHealth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Customer email connection */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connection: {
+                            /** Format: uuid */
+                            id: string;
+                            workspaceId: string;
+                            /** Format: uuid */
+                            oauthConnectionId: string;
+                            provider: string;
+                            displayName: string;
+                            senderEmail: string;
+                            senderName: string | null;
+                            replyToEmail: string | null;
+                            /** @enum {string} */
+                            status: "authorized" | "disabled" | "needs_reauth" | "error";
+                            /** @enum {string|null} */
+                            lastHealthStatus: "ok" | "failed" | "unknown" | null;
+                            lastHealthCheckedAt: string | null;
+                            lastErrorCode: string | null;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Customer email connection not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

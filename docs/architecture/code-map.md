@@ -81,6 +81,36 @@ Related docs:
 
 - [Architecture Extension Points](../architecture-extension-points.md)
 
+## Customer Email
+
+Owns workspace customer email connections backed by authorized OAuth
+credentials. It does not own Radioso transactional email; password reset and
+email verification stay in `backend/src/modules/mail/` and auth services.
+
+Public surfaces and contracts:
+
+- `backend/src/modules/customerEmail/public.ts`
+- `backend/src/modules/customerEmail/domain.ts`
+- `backend/src/modules/customerEmail/services/customerEmailConnectionService.ts`
+- `backend/src/db/repositories/customerEmailConnectionRepository.ts`
+- `backend/src/app/http/routes/customerEmailConnectionRoutes.ts`
+- `backend/src/app/http/openapi/paths/customerEmailPaths.ts`
+
+Useful searches:
+
+- `rg "CustomerEmail|customerEmail|email-connections" backend/src frontend`
+- `rg "oauth-connections" backend/src/app/http frontend/lib/api-customer-email.ts`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/customerEmail/customer-email-connection-service.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/customerEmail/customer-email-connection-repository.test.ts`
+- `cd backend && pnpm exec vitest run tests/contract/customer-email-connections.contract.test.ts`
+
+Related docs:
+
+- [Customer Email Connections](../customer-email-skills.md)
+
 ## Shared Agent Runtime
 
 Owns the reusable in-repo substrate for tool-calling LLM agents: the typed tool

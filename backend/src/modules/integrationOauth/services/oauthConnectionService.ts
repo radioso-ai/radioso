@@ -146,6 +146,11 @@ export class OauthConnectionService {
     return toSummary(await this.requireConnection(workspaceId, connectionId));
   }
 
+  async list(workspaceId: string): Promise<OauthConnectionSummary[]> {
+    const records = await this.options.repository.listByWorkspace(workspaceId);
+    return records.map(toSummary);
+  }
+
   async reauthorize(workspaceId: string, connectionId: string): Promise<OauthAuthorizationStartResult> {
     const key = this.requireEncryptionKey();
     const record = await this.requireConnection(workspaceId, connectionId);

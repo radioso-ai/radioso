@@ -73,22 +73,22 @@
 
 ### Tests for User Story 2
 
-- [ ] T027 [P] [US2] Add failing repository tests for customer email connections in `backend/tests/integration/customerEmail/customer-email-connection-repository.test.ts`
-- [ ] T028 [P] [US2] Add failing service tests for disable/delete/reference rules in `backend/tests/unit/customerEmail/customer-email-connection-service.test.ts`
-- [ ] T029 [P] [US2] Add failing regression test proving password reset uses `modules/mail` in `backend/tests/unit/auth-email-services.test.ts`
-- [ ] T030 [P] [US2] Add contract tests for email connection CRUD/status endpoints in `backend/tests/contract/customer-email-connections.contract.test.ts`
+- [x] T027 [P] [US2] Add failing repository tests for customer email connections in `backend/tests/integration/customerEmail/customer-email-connection-repository.test.ts`
+- [x] T028 [P] [US2] Add failing service tests for disable/delete/reference rules in `backend/tests/unit/customerEmail/customer-email-connection-service.test.ts`
+- [x] T029 [P] [US2] Add failing regression test proving password reset uses `modules/mail` in `backend/tests/unit/auth-email-services.test.ts`
+- [x] T030 [P] [US2] Add contract tests for email connection CRUD/status endpoints in `backend/tests/contract/customer-email-connections.contract.test.ts`
 
 ### Implementation for User Story 2
 
-- [ ] T031 [US2] Add customer email connection domain schemas in `backend/src/modules/customerEmail/domain.ts`
-- [ ] T032 [US2] Add customer email connection migration in `backend/src/db/migrations/095_customer_email_connections.sql`
-- [ ] T033 [US2] Add customer email connection repository in `backend/src/db/repositories/customerEmailConnectionRepository.ts`
-- [ ] T034 [US2] Add customer email connection service in `backend/src/modules/customerEmail/services/customerEmailConnectionService.ts`
-- [ ] T035 [US2] Add mock customer email provider adapter in `backend/src/modules/customerEmail/providers/mockEmailProvider.ts`
-- [ ] T036 [US2] Add email connection HTTP routes in `backend/src/app/http/routes/customerEmailConnectionRoutes.ts`
-- [ ] T037 [US2] Register email connection OpenAPI paths in `backend/src/app/http/openapi/paths/customerEmailPaths.ts`
-- [ ] T038 [US2] Wire customer email providers and services in `backend/src/app/composition/defaultComposition.ts`
-- [ ] T039 [US2] Complete connection management UI in `frontend/components/dashboard/settings/workspace-email-connections-section.tsx`
+- [x] T031 [US2] Add customer email connection domain schemas in `backend/src/modules/customerEmail/domain.ts`
+- [x] T032 [US2] Add customer email connection migration in `backend/src/db/migrations/096_customer_email_connections.sql`
+- [x] T033 [US2] Add customer email connection repository in `backend/src/db/repositories/customerEmailConnectionRepository.ts`
+- [x] T034 [US2] Add customer email connection service in `backend/src/modules/customerEmail/services/customerEmailConnectionService.ts`
+- [x] T035 [US2] Add mock customer email provider adapter in `backend/src/modules/customerEmail/providers/mockEmailProvider.ts`
+- [x] T036 [US2] Add email connection HTTP routes in `backend/src/app/http/routes/customerEmailConnectionRoutes.ts`
+- [x] T037 [US2] Register email connection OpenAPI paths in `backend/src/app/http/openapi/paths/customerEmailPaths.ts`
+- [x] T038 [US2] Wire customer email providers and services in `backend/src/app/composition/defaultComposition.ts`
+- [x] T039 [US2] Complete connection management UI in `frontend/components/dashboard/settings/workspace-email-connections-section.tsx`
 
 **Checkpoint**: US2 works with mock provider and keeps system transactional mail separate.
 

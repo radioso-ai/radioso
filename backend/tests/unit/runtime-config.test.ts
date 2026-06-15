@@ -110,6 +110,7 @@ describe("runtime configuration", () => {
       "packages/conversation-contract/package.json",
       "packages/conversation-engine/package.json",
       "packages/conversation-defaults/package.json",
+      "packages/conversation-tools/package.json",
       "packages/connector-api/package.json",
       "packages/crawler/package.json",
       "packages/document-parser/package.json",
@@ -127,8 +128,26 @@ describe("runtime configuration", () => {
     expect(dockerfile).toContain("@radioso/conversation-defaults...");
     expect(entrypoint).toContain("backend/node_modules/@radioso/conversation-engine");
     expect(entrypoint).toContain("backend/node_modules/@radioso/conversation-defaults");
+    expect(entrypoint).toContain("backend/node_modules/@radioso/conversation-tools");
     expect(entrypoint).toContain("packages/conversation-defaults/node_modules/@radioso/conversation-contract/package.json");
     expect(entrypoint).toContain("@radioso/conversation-defaults...");
+    expect(entrypoint).toContain("@radioso/conversation-tools...");
+  });
+
+  it("keeps backend deploy image packaging aligned with backend workspace imports", async () => {
+    const dockerfile = await readFile(new URL("../../../infra/backend.Dockerfile", import.meta.url), "utf8");
+    const workflow = await readFile(new URL("../../../.github/workflows/deploy-staging.yml", import.meta.url), "utf8");
+
+    for (const expected of [
+      "COPY packages/conversation-tools/package.json ./packages/conversation-tools/package.json",
+      "COPY packages/conversation-tools ./packages/conversation-tools",
+      "COPY --chown=node:node --from=build /app/packages/conversation-tools/dist ./packages/conversation-tools/dist",
+      "@radioso/conversation-tools...",
+    ]) {
+      expect(dockerfile).toContain(expected);
+    }
+
+    expect(workflow).toContain("packages/conversation-tools/**");
   });
 
   it("clears incomplete frontend Next dev caches with missing vendor chunks", async () => {

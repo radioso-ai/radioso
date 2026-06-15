@@ -10,25 +10,31 @@ import type {
   AuthoredDirectiveCondition,
 } from "./authoredDirectives.js";
 import type { ChatTurnRoute } from "../../shared/domain/chatTurnRoute.js";
+import {
+  refPlaceholder,
+  secretPlaceholder,
+  type AgentConfigPortability,
+  type AgentConfigRefKind,
+  type AgentConfigRefPlaceholder,
+  type AgentConfigSecretPlaceholder,
+} from "./agentConfigPlaceholders.js";
+import {
+  EMPTY_EXTERNAL_SKILLS,
+  EXTERNAL_SKILLS_PORTABILITY,
+  projectInternalExternalSkills,
+  serializeExternalSkills,
+  type AgentExternalSkillsConfig,
+  type InternalAgentExternalSkillsConfig,
+} from "./externalSkillsConfig.js";
 
-export const AGENT_CONFIG_SCHEMA_VERSION = 2;
+export const AGENT_CONFIG_SCHEMA_VERSION = 3;
 
-export type AgentConfigPortability = "portable" | "ref" | "secret";
-
-export type AgentConfigRefKind =
-  | "documentSource"
-  | "storageBucket"
-  | "storageObjectPath"
-  | "storageGeneration"
-  | "websiteEmbedAllowedOrigin";
-
-export interface AgentConfigSecretPlaceholder {
-  __redacted: "secret";
-}
-
-export interface AgentConfigRefPlaceholder {
-  __ref: AgentConfigRefKind;
-}
+export type {
+  AgentConfigPortability,
+  AgentConfigRefKind,
+  AgentConfigRefPlaceholder,
+  AgentConfigSecretPlaceholder,
+} from "./agentConfigPlaceholders.js";
 
 export interface AgentLogoConfig {
   bucket: AgentConfigRefPlaceholder;
@@ -132,17 +138,29 @@ export interface AgentConfig {
   skillSettings: AgentSkillSettingsConfig;
   chatModelOverride: ConversationAgent["chatModelOverride"];
   authoredDirectives: AuthoredDirectiveConfig[];
+  externalSkills: AgentExternalSkillsConfig;
 }
 
 type InternalAgentConfigValueField =
   | "logo"
   | "surfaceSettings"
-  | "skillSettings";
+  | "skillSettings"
+  | "externalSkills";
 
 export interface InternalAgentConfig extends Omit<AgentConfig, InternalAgentConfigValueField> {
   logo: InternalAgentLogoConfig | null;
   surfaceSettings: InternalAgentSurfaceConfig;
   skillSettings: InternalAgentSkillSettingsConfig;
+  externalSkills: InternalAgentExternalSkillsConfig;
+}
+
+/**
+ * Extra non-agent data the serializer pulls in alongside the `ConversationAgent`.
+ * External skills and MCP connections are agent-scoped but live in their own
+ * tables, so the export caller supplies them here (defaults to empty).
+ */
+export interface AgentConfigSerializeContext {
+  externalSkills?: InternalAgentExternalSkillsConfig;
 }
 
 type AgentConfigFieldName = Exclude<keyof AgentConfig, "schemaVersion" | "portability">;
@@ -150,12 +168,8 @@ type AgentConfigFieldName = Exclude<keyof AgentConfig, "schemaVersion" | "portab
 interface AgentConfigFieldDescriptor<FieldName extends AgentConfigFieldName> {
   portability: AgentConfigPortability;
   nestedPortability?: readonly [path: string, portability: AgentConfigPortability][];
-  serialize: (agent: ConversationAgent) => AgentConfig[FieldName];
+  serialize: (agent: ConversationAgent, context: AgentConfigSerializeContext) => AgentConfig[FieldName];
 }
-
-const secretPlaceholder = (): AgentConfigSecretPlaceholder => ({ __redacted: "secret" });
-
-const refPlaceholder = (kind: AgentConfigRefKind): AgentConfigRefPlaceholder => ({ __ref: kind });
 
 const cloneJson = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -485,6 +499,12 @@ export const AGENT_CONFIG_FIELD_DESCRIPTORS = {
     portability: "portable",
     serialize: (agent) => serializeAuthoredDirectives(agent.authoredDirectives),
   }),
+  externalSkills: descriptor({
+    portability: "portable",
+    nestedPortability: EXTERNAL_SKILLS_PORTABILITY,
+    serialize: (_agent, context) =>
+      serializeExternalSkills(context.externalSkills ?? EMPTY_EXTERNAL_SKILLS),
+  }),
 } satisfies {
   [FieldName in AgentConfigFieldName]: AgentConfigFieldDescriptor<FieldName>;
 };
@@ -500,20 +520,26 @@ const buildPortabilityMap = (): Record<string, AgentConfigPortability> => {
   return portability;
 };
 
-export const serializeAgentConfig = (agent: ConversationAgent): AgentConfig => {
+export const serializeAgentConfig = (
+  agent: ConversationAgent,
+  context: AgentConfigSerializeContext = {},
+): AgentConfig => {
   const config: Partial<AgentConfig> = {
     schemaVersion: AGENT_CONFIG_SCHEMA_VERSION,
     portability: buildPortabilityMap(),
   };
 
   for (const [fieldName, field] of Object.entries(AGENT_CONFIG_FIELD_DESCRIPTORS)) {
-    config[fieldName as AgentConfigFieldName] = field.serialize(agent) as never;
+    config[fieldName as AgentConfigFieldName] = field.serialize(agent, context) as never;
   }
 
   return config as AgentConfig;
 };
 
-export const projectInternalAgentConfig = (agent: ConversationAgent): InternalAgentConfig => ({
+export const projectInternalAgentConfig = (
+  agent: ConversationAgent,
+  context: AgentConfigSerializeContext = {},
+): InternalAgentConfig => ({
   schemaVersion: AGENT_CONFIG_SCHEMA_VERSION,
   portability: buildPortabilityMap(),
   name: agent.name,
@@ -531,6 +557,7 @@ export const projectInternalAgentConfig = (agent: ConversationAgent): InternalAg
   skillSettings: projectInternalSkillSettings(agent, cloneJson(agent.sourceScope)),
   chatModelOverride: agent.chatModelOverride ? cloneJson(agent.chatModelOverride) : null,
   authoredDirectives: serializeAuthoredDirectives(agent.authoredDirectives),
+  externalSkills: projectInternalExternalSkills(context.externalSkills ?? EMPTY_EXTERNAL_SKILLS),
 });
 
 const INTERNAL_CONFIG_DATE = new Date(0);

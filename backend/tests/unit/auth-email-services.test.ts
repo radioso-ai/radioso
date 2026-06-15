@@ -5,6 +5,7 @@ import { EmailVerificationService } from "../../src/modules/auth/services/emailV
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { sha256, verifyPassword } from "../../src/modules/auth/domain/authPrimitives.js";
 import { EmailService, type EmailDriver, type EmailMessage } from "../../src/modules/mail/public.js";
+import { CustomerEmailConnectionService } from "../../src/modules/customerEmail/services/customerEmailConnectionService.js";
 import { WorkspaceService } from "../../src/modules/workspace/public.js";
 import { createTestEnv } from "../support/testApp.js";
 import {
@@ -117,6 +118,45 @@ describe("PasswordResetService", () => {
     expect(resetUrl).toContain("https://app.example.com/reset-password?token=");
     expect(stored?.tokenHash).toBe(sha256(token));
     expect(stored?.tokenHash).not.toBe(token);
+  });
+
+  it("continues to use modules/mail even when customer email connections exist", async () => {
+    const { passwordResetService, mailDriver } = await createHarness();
+    let customerEmailHealthChecks = 0;
+    const customerEmailService = new CustomerEmailConnectionService({
+      repository: {
+        create: async () => {
+          throw new Error("customer email repository must not be used by password reset");
+        },
+        findById: async () => null,
+        listByWorkspace: async () => [],
+        update: async () => null,
+        countSkillReferences: async () => 0,
+        remove: async () => false,
+      },
+      oauthConnections: {
+        get: async () => {
+          throw new Error("customer email OAuth must not be used by password reset");
+        },
+      },
+      providers: {
+        get: () => ({
+          provider: "google_mail",
+          checkHealth: async () => {
+            customerEmailHealthChecks += 1;
+            return { status: "ok" };
+          },
+        }),
+      },
+    });
+
+    expect(customerEmailService).toBeInstanceOf(CustomerEmailConnectionService);
+    await expect(passwordResetService.requestReset({ email: "ada@example.com" }))
+      .resolves.toEqual({ accepted: true });
+
+    expect(mailDriver.messages).toHaveLength(1);
+    expect(mailDriver.messages[0]?.from.email).toBe("noreply@example.com");
+    expect(customerEmailHealthChecks).toBe(0);
   });
 
   it("confirms the latest active token, changes password, verifies email, revokes old sessions, and creates a new session", async () => {

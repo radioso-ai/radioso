@@ -60,6 +60,7 @@ describe("default application composition", () => {
       "radioso-quality",
       "radioso-contact-routine",
       "radioso-webhook-send",
+      "radioso-customer-email",
     ]);
     expect(composition.directiveRegistrations.map((registration) => registration.directive.name)).toEqual([
       "concise-readable-formatting",
@@ -80,6 +81,46 @@ describe("default application composition", () => {
     expect(composition.actionCapabilityMap.has(WEBHOOK_SEND_ACTION_TYPE)).toBe(true);
     expect(composition.actionCapabilityMap.requiredCapabilitiesFor(WEBHOOK_SEND_ACTION_TYPE)).toEqual([]);
     expect(composition.organizationCreationGuardRegistration).toBeUndefined();
+    expect(composition.oauthProviders).toEqual([]);
+  });
+
+  it("registers customer email OAuth providers when credentials are configured", () => {
+    const composition = createDefaultApplicationComposition({
+      logger: createLogger(),
+      env: {
+        GOOGLE_MAIL_OAUTH_CLIENT_ID: "google-client",
+        GOOGLE_MAIL_OAUTH_CLIENT_SECRET: "google-secret",
+        MICROSOFT_GRAPH_MAIL_OAUTH_CLIENT_ID: "microsoft-client",
+        MICROSOFT_GRAPH_MAIL_OAUTH_CLIENT_SECRET: "microsoft-secret",
+      },
+    });
+
+    expect(composition.oauthProviders).toEqual([
+      {
+        id: "google_mail",
+        authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+        tokenEndpoint: "https://oauth2.googleapis.com/token",
+        clientId: "google-client",
+        clientSecret: "google-secret",
+        defaultScopes: [
+          "https://www.googleapis.com/auth/gmail.compose",
+          "https://www.googleapis.com/auth/gmail.send",
+        ],
+        allowedScopes: [
+          "https://www.googleapis.com/auth/gmail.compose",
+          "https://www.googleapis.com/auth/gmail.send",
+        ],
+      },
+      {
+        id: "microsoft_graph_mail",
+        authorizationEndpoint: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+        tokenEndpoint: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        clientId: "microsoft-client",
+        clientSecret: "microsoft-secret",
+        defaultScopes: ["Mail.ReadWrite", "Mail.Send"],
+        allowedScopes: ["Mail.ReadWrite", "Mail.Send"],
+      },
+    ]);
   });
 
   it("applies optional connector contributions through module registration", async () => {
@@ -106,8 +147,32 @@ describe("default application composition", () => {
       "radioso-quality",
       "radioso-contact-routine",
       "radioso-webhook-send",
+      "radioso-customer-email",
       "connector-module",
     ]);
+  });
+
+  it("collects OAuth providers through module registration", () => {
+    const provider = {
+      id: "custom_mail",
+      authorizationEndpoint: "https://oauth.example.com/authorize",
+      tokenEndpoint: "https://oauth.example.com/token",
+      clientId: "client",
+      defaultScopes: ["mail.send"],
+    };
+    const composition = createDefaultApplicationComposition({
+      logger: createLogger(),
+      modules: [
+        {
+          id: "oauth-provider-module",
+          register(context) {
+            context.registerOauthProvider(provider);
+          },
+        },
+      ],
+    });
+
+    expect(composition.oauthProviders).toEqual([provider]);
   });
 
   it("collects an optional organization creation guard through module registration", () => {

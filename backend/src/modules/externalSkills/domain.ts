@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  oauthCompleteInputSchema,
+  oauthConfigInputSchema,
+  oauthHttpsUrlSchema,
+} from "../integrationOauth/public.js";
 
 /**
  * Domain schemas for the External Skills via MCP capability (feature 087).
@@ -39,64 +44,7 @@ const outcomeNamePattern = /^[a-z][a-z0-9_]*$/u;
 
 const trimmedText = (maxLength: number) => z.string().trim().min(1).max(maxLength);
 
-/**
- * Server URL validation at the schema layer: a well-formed https URL with no
- * embedded credentials (userinfo). Rejecting `user:pass@host` keeps secrets out
- * of this non-secret column. Network-level SSRF protection (private IP / loopback
- * rejection) is enforced at the service layer via the shared URL policy, since it
- * requires DNS resolution.
- */
-/**
- * A well-formed https URL with no embedded credentials (userinfo). Shared by the
- * MCP server address and the OAuth authorization/token endpoints. Network-level
- * SSRF protection is enforced at the service layer via the shared URL policy.
- */
-const httpsUrlSchema = (maxLength: number, field: string) =>
-  trimmedText(maxLength).superRefine((value, ctx) => {
-    let url: URL;
-    try {
-      url = new URL(value);
-    } catch {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${field} must be a valid URL` });
-      return;
-    }
-    if (url.protocol !== "https:") {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${field} must use https` });
-    }
-    if (url.username !== "" || url.password !== "") {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${field} must not embed credentials (userinfo)` });
-    }
-  });
-
-const serverUrlSchema = httpsUrlSchema(EXTERNAL_SKILLS_LIMITS.serverUrl, "serverUrl");
-
-/**
- * OAuth authorization-code configuration an author supplies when connecting a
- * hosted MCP server (US2). Endpoints may be entered explicitly. The client
- * secret is optional (public PKCE clients omit it) and, like all secrets, is
- * encrypted at rest and never returned by the API.
- */
-export const oauthConfigInputSchema = z
-  .object({
-    authorizationEndpoint: httpsUrlSchema(EXTERNAL_SKILLS_LIMITS.serverUrl, "authorizationEndpoint"),
-    tokenEndpoint: httpsUrlSchema(EXTERNAL_SKILLS_LIMITS.serverUrl, "tokenEndpoint"),
-    clientId: trimmedText(2048),
-    clientSecret: trimmedText(4096).optional(),
-    scopes: z.array(trimmedText(512)).max(50).optional(),
-  })
-  .strict();
-
-export type OauthConfigInput = z.infer<typeof oauthConfigInputSchema>;
-
-/** Body of the OAuth completion call: the provider's authorization code + state. */
-export const oauthCompleteInputSchema = z
-  .object({
-    code: trimmedText(8192),
-    state: trimmedText(2048),
-  })
-  .strict();
-
-export type OauthCompleteInput = z.infer<typeof oauthCompleteInputSchema>;
+const serverUrlSchema = oauthHttpsUrlSchema(EXTERNAL_SKILLS_LIMITS.serverUrl, "serverUrl");
 
 export const mcpConnectionInputSchema = z
   .object({
@@ -133,35 +81,17 @@ export const mcpConnectionInputSchema = z
 
 export type McpConnectionInput = z.infer<typeof mcpConnectionInputSchema>;
 
-/**
- * Persisted (encrypted) OAuth client config. Endpoints + clientId are not strictly
- * secret, but the whole record — including the client secret — is encrypted as one
- * blob in `oauth_client_ciphertext` to keep secret handling uniform.
- */
-export interface StoredOauthClientConfig {
-  authorizationEndpoint: string;
-  tokenEndpoint: string;
-  clientId: string;
-  clientSecret?: string;
-  scopes?: string[];
-}
-
-/** Persisted (encrypted) OAuth tokens stored in `credential_ciphertext`. */
-export interface StoredOauthTokens {
-  accessToken: string;
-  refreshToken?: string;
-  /** Absolute expiry in epoch milliseconds, when the server returned `expires_in`. */
-  expiresAt?: number;
-  tokenType?: string;
-  scope?: string;
-}
-
-/** Transient PKCE/state for an in-flight authorization, stored in `oauth_flow_ciphertext`. */
-export interface StoredOauthFlow {
-  state: string;
-  codeVerifier: string;
-  redirectUri: string;
-}
+export {
+  oauthCompleteInputSchema,
+  oauthConfigInputSchema,
+};
+export type {
+  OauthCompleteInput,
+  OauthConfigInput,
+  StoredOauthClientConfig,
+  StoredOauthFlow,
+  StoredOauthTokens,
+} from "../integrationOauth/public.js";
 
 /** Specification of an input the conversation fills at run time. */
 export const exposedParamSpecSchema = z

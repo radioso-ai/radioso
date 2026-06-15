@@ -68,8 +68,17 @@ const mapRecord = (row: ExternalSkillDefinitionRow): ExternalSkillDefinitionReco
   updatedAt: new Date(row.updated_at),
 });
 
-const COLUMNS =
-  "id, agent_id, connection_id, skill_name, tool_name, bound_params, exposed_params, declared_outcomes, outcome_map, enabled, created_at, updated_at";
+// External MCP skills live on the shared `agent_skills` spine (kind = 'external_mcp')
+// joined to their typed `external_skill_details`. The persisted record shape and the
+// repository port are unchanged from when external skills owned a dedicated table.
+const SELECT_COLUMNS = `s.id, s.agent_id, d.connection_id, s.skill_name, d.tool_name,
+         d.bound_params, d.exposed_params, d.declared_outcomes, d.outcome_map,
+         s.enabled, s.created_at, s.updated_at`;
+
+const SELECT_BASE = `SELECT ${SELECT_COLUMNS}
+   FROM agent_skills s
+   JOIN external_skill_details d ON d.skill_id = s.id
+   WHERE s.kind = 'external_mcp'`;
 
 export interface ExternalSkillDefinitionRepositoryPort {
   create(input: CreateExternalSkillDefinitionInput): Promise<ExternalSkillDefinitionRecord>;
@@ -85,11 +94,25 @@ export class ExternalSkillDefinitionRepository implements ExternalSkillDefinitio
   constructor(private readonly database: Database) {}
 
   async create(input: CreateExternalSkillDefinitionInput): Promise<ExternalSkillDefinitionRecord> {
+    // Single data-modifying CTE so the spine row and its detail row are written
+    // atomically without a separate transaction round-trip. workspace_id is derived
+    // from the agent so the create input shape stays unchanged.
     const [row] = await this.database.query<ExternalSkillDefinitionRow>(
-      `INSERT INTO external_skill_definitions
-         (id, agent_id, connection_id, skill_name, tool_name, bound_params, exposed_params, declared_outcomes, outcome_map, enabled)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9::jsonb, $10)
-       RETURNING ${COLUMNS}`,
+      `WITH new_skill AS (
+         INSERT INTO agent_skills (id, agent_id, workspace_id, skill_name, kind, enabled)
+         SELECT $1, $2, a.workspace_id, $4, 'external_mcp', $10
+         FROM agents a WHERE a.id = $2
+         RETURNING id, agent_id, skill_name, enabled, created_at, updated_at
+       ), new_detail AS (
+         INSERT INTO external_skill_details
+           (skill_id, connection_id, tool_name, bound_params, exposed_params, declared_outcomes, outcome_map)
+         SELECT id, $3, $5, $6::jsonb, $7::jsonb, $8, $9::jsonb FROM new_skill
+         RETURNING skill_id, connection_id, tool_name, bound_params, exposed_params, declared_outcomes, outcome_map
+       )
+       SELECT s.id, s.agent_id, d.connection_id, s.skill_name, d.tool_name,
+              d.bound_params, d.exposed_params, d.declared_outcomes, d.outcome_map,
+              s.enabled, s.created_at, s.updated_at
+       FROM new_skill s JOIN new_detail d ON d.skill_id = s.id`,
       [
         randomUUID(),
         input.agentId,
@@ -108,7 +131,7 @@ export class ExternalSkillDefinitionRepository implements ExternalSkillDefinitio
 
   async findById(agentId: string, id: string): Promise<ExternalSkillDefinitionRecord | null> {
     const [row] = await this.database.query<ExternalSkillDefinitionRow>(
-      `SELECT ${COLUMNS} FROM external_skill_definitions WHERE agent_id = $1 AND id = $2`,
+      `${SELECT_BASE} AND s.agent_id = $1 AND s.id = $2`,
       [agentId, id],
     );
     return row ? mapRecord(row) : null;
@@ -119,8 +142,7 @@ export class ExternalSkillDefinitionRepository implements ExternalSkillDefinitio
     skillName: string,
   ): Promise<ExternalSkillDefinitionRecord | null> {
     const [row] = await this.database.query<ExternalSkillDefinitionRow>(
-      `SELECT ${COLUMNS} FROM external_skill_definitions
-       WHERE agent_id = $1 AND skill_name = $2 AND enabled = TRUE`,
+      `${SELECT_BASE} AND s.agent_id = $1 AND s.skill_name = $2 AND s.enabled = TRUE`,
       [agentId, skillName],
     );
     return row ? mapRecord(row) : null;
@@ -128,7 +150,7 @@ export class ExternalSkillDefinitionRepository implements ExternalSkillDefinitio
 
   async listByAgent(agentId: string): Promise<ExternalSkillDefinitionRecord[]> {
     const rows = await this.database.query<ExternalSkillDefinitionRow>(
-      `SELECT ${COLUMNS} FROM external_skill_definitions WHERE agent_id = $1 ORDER BY skill_name ASC`,
+      `${SELECT_BASE} AND s.agent_id = $1 ORDER BY s.skill_name ASC`,
       [agentId],
     );
     return rows.map(mapRecord);
@@ -139,8 +161,7 @@ export class ExternalSkillDefinitionRepository implements ExternalSkillDefinitio
     connectionId: string,
   ): Promise<ExternalSkillDefinitionRecord[]> {
     const rows = await this.database.query<ExternalSkillDefinitionRow>(
-      `SELECT ${COLUMNS} FROM external_skill_definitions
-       WHERE agent_id = $1 AND connection_id = $2 ORDER BY skill_name ASC`,
+      `${SELECT_BASE} AND s.agent_id = $1 AND d.connection_id = $2 ORDER BY s.skill_name ASC`,
       [agentId, connectionId],
     );
     return rows.map(mapRecord);
@@ -151,16 +172,27 @@ export class ExternalSkillDefinitionRepository implements ExternalSkillDefinitio
     id: string,
     input: UpdateExternalSkillDefinitionInput,
   ): Promise<ExternalSkillDefinitionRecord | null> {
+    // Bump the spine (enabled/updated_at) and patch the detail in one statement.
     const [row] = await this.database.query<ExternalSkillDefinitionRow>(
-      `UPDATE external_skill_definitions SET
-         bound_params = COALESCE($3::jsonb, bound_params),
-         exposed_params = COALESCE($4::jsonb, exposed_params),
-         declared_outcomes = COALESCE($5, declared_outcomes),
-         outcome_map = COALESCE($6::jsonb, outcome_map),
-         enabled = COALESCE($7, enabled),
-         updated_at = NOW()
-       WHERE agent_id = $1 AND id = $2
-       RETURNING ${COLUMNS}`,
+      `WITH upd_skill AS (
+         UPDATE agent_skills SET
+           enabled = COALESCE($7, enabled),
+           updated_at = NOW()
+         WHERE agent_id = $1 AND id = $2 AND kind = 'external_mcp'
+         RETURNING id, agent_id, skill_name, enabled, created_at, updated_at
+       ), upd_detail AS (
+         UPDATE external_skill_details d SET
+           bound_params = COALESCE($3::jsonb, d.bound_params),
+           exposed_params = COALESCE($4::jsonb, d.exposed_params),
+           declared_outcomes = COALESCE($5, d.declared_outcomes),
+           outcome_map = COALESCE($6::jsonb, d.outcome_map)
+         FROM upd_skill s WHERE d.skill_id = s.id
+         RETURNING d.skill_id, d.connection_id, d.tool_name, d.bound_params, d.exposed_params, d.declared_outcomes, d.outcome_map
+       )
+       SELECT s.id, s.agent_id, d.connection_id, s.skill_name, d.tool_name,
+              d.bound_params, d.exposed_params, d.declared_outcomes, d.outcome_map,
+              s.enabled, s.created_at, s.updated_at
+       FROM upd_skill s JOIN upd_detail d ON d.skill_id = s.id`,
       [
         agentId,
         id,
@@ -175,8 +207,9 @@ export class ExternalSkillDefinitionRepository implements ExternalSkillDefinitio
   }
 
   async remove(agentId: string, id: string): Promise<boolean> {
+    // Deleting the spine row cascades to external_skill_details.
     const affected = await this.database.execute(
-      `DELETE FROM external_skill_definitions WHERE agent_id = $1 AND id = $2`,
+      `DELETE FROM agent_skills WHERE agent_id = $1 AND id = $2 AND kind = 'external_mcp'`,
       [agentId, id],
     );
     return affected > 0;

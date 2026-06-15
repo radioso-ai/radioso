@@ -50,6 +50,7 @@ import type { TextChunkingProviderPort } from "../../modules/retrieval/public.js
 import type { ChatActionSuggestionProvider } from "../../modules/chat/services/actionSuggestions/chatActionSuggestionProvider.js";
 import type { WebhookDestinationRuntimePort } from "../../modules/webhooks/public.js";
 import type { Env } from "../config/env.js";
+import type { OauthProviderDefinition } from "../../modules/integrationOauth/public.js";
 
 export type ApplicationChatActionSuggestionProviderRegistration =
   | ChatActionSuggestionProvider
@@ -224,6 +225,7 @@ export interface ApplicationExtensionRegistry {
   directiveMatchGatewayFactory?: DirectiveMatchGatewayFactory;
   agentSurfaceExtensions: AgentSurfaceExtension[];
   chatActionSuggestionProviders: ApplicationChatActionSuggestionProviderRegistration[];
+  oauthProviders: OauthProviderDefinition[];
 }
 
 export interface ApplicationModuleRegistrationContext {
@@ -259,6 +261,7 @@ export interface ApplicationModuleRegistrationContext {
   registerDirectiveMatchGatewayFactory(factory: DirectiveMatchGatewayFactory): void;
   registerAgentSurfaceExtension(extension: AgentSurfaceExtension): void;
   registerChatActionSuggestionProvider(provider: ApplicationChatActionSuggestionProviderRegistration): void;
+  registerOauthProvider(provider: OauthProviderDefinition): void;
 }
 
 export interface ApplicationModule {
@@ -286,6 +289,7 @@ export const createApplicationExtensionRegistry = (): ApplicationExtensionRegist
   directiveRegistrations: [],
   agentSurfaceExtensions: [],
   chatActionSuggestionProviders: [],
+  oauthProviders: [],
 });
 
 const createRegistrationContext = (registry: ApplicationExtensionRegistry): ApplicationModuleRegistrationContext => ({
@@ -386,6 +390,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerChatActionSuggestionProvider(provider) {
     registry.chatActionSuggestionProviders.push(provider);
+  },
+  registerOauthProvider(provider) {
+    registry.oauthProviders.push(provider);
   },
 });
 

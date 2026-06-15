@@ -35,6 +35,8 @@ import type { WorkspaceSummaryService } from "../../modules/workspace/services/w
 import type { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
 import type { McpConnectionService } from "../../modules/externalSkills/services/mcpConnectionService.js";
 import type { ExternalSkillDefinitionService } from "../../modules/externalSkills/services/externalSkillDefinitionService.js";
+import type { OauthConnectionService } from "../../modules/integrationOauth/public.js";
+import type { CustomerEmailConnectionService, CustomerEmailOAuthService, EmailSkillDefinitionService } from "../../modules/customerEmail/public.js";
 import type { ChunkRepositoryPort } from "../../modules/documents/contracts/index.js";
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
 import type { AccountRepositoryPort } from "../../modules/auth/services/authService.js";
@@ -64,6 +66,7 @@ import type { SkillCatalogService } from "../../modules/skills/public.js";
 import type { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../modules/agents/public.js";
 import type { RoutineDefinitionService, RoutineDraftAssistService } from "../../modules/routines/public.js";
 import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.js";
+import type { EmailSkillActivityRepositoryPort } from "../../db/repositories/emailSkillActivityRepository.js";
 import type { DocumentSourceRepositoryPort } from "../../db/repositories/documentSourceRepository.js";
 import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
 import type { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
@@ -99,6 +102,11 @@ export interface AppDependencies {
   workspaceSessionService: WorkspaceSessionService;
   abuseControlService: AbuseControlService;
   workspaceProviderCredentialsService: WorkspaceProviderCredentialsService;
+  oauthConnectionService: OauthConnectionService;
+  customerEmailOAuthService: CustomerEmailOAuthService;
+  customerEmailConnectionService: CustomerEmailConnectionService;
+  emailSkillDefinitionService: EmailSkillDefinitionService;
+  emailSkillActivityRepository: EmailSkillActivityRepositoryPort;
   mcpConnectionService: McpConnectionService;
   externalSkillDefinitionService: ExternalSkillDefinitionService;
   webhookDestinations: WebhookDestinationPublicAdapter;

@@ -81,6 +81,61 @@ Related docs:
 
 - [Architecture Extension Points](../architecture-extension-points.md)
 
+## Customer Email
+
+Owns workspace customer email connections backed by authorized OAuth
+credentials. It does not own Radioso transactional email; password reset and
+email verification stay in `backend/src/modules/mail/` and auth services.
+
+Public surfaces and contracts:
+
+- `backend/src/modules/customerEmail/public.ts`
+- `backend/src/modules/customerEmail/domain.ts`
+- `backend/src/modules/customerEmail/services/customerEmailConnectionService.ts`
+- `backend/src/db/repositories/customerEmailConnectionRepository.ts`
+- `backend/src/app/http/routes/customerEmailConnectionRoutes.ts`
+- `backend/src/app/http/openapi/paths/customerEmailPaths.ts`
+
+Useful searches:
+
+- `rg "CustomerEmail|customerEmail|email-connections" backend/src frontend`
+- `rg "oauth-connections" backend/src/app/http frontend/lib/api-customer-email.ts`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/customerEmail/customer-email-connection-service.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/customerEmail/customer-email-connection-repository.test.ts`
+- `cd backend && pnpm exec vitest run tests/contract/customer-email-connections.contract.test.ts`
+
+Related docs:
+
+- [Customer Email Connections](../customer-email-skills.md)
+
+## Agent Skill Definitions (shared spine)
+
+External MCP skills (`externalSkills`) and customer email skills (`customerEmail`)
+share one persistence spine: `agent_skills` holds the common columns and a single
+`@mention` namespace per agent enforced **across kinds**, with per-kind detail
+tables (`external_skill_details`, `email_skill_details`) that keep the typed
+connection foreign key and typed config. Each module's repository port and record
+shape are unchanged, so its service, executor, routes, and export/import are
+unaffected — only the SQL is joined (spine + detail via CTEs).
+
+OAuth connection/token lifecycle is provider-neutral in `integrationOauth` and is
+consumed by both MCP and customer email.
+
+Public surfaces and key files:
+
+- `backend/src/modules/agentSkills/public.ts` (kind vocabulary + spine type)
+- `backend/src/modules/integrationOauth/public.ts` (OAuth lifecycle)
+- `backend/src/db/repositories/externalSkillDefinitionRepository.ts`, `emailSkillDefinitionRepository.ts`
+- `backend/src/db/migrations/099_agent_skills_spine.sql`, `100_email_skills_into_spine.sql`
+
+Focused checks (real Postgres via `INTEGRATION_DATABASE_URL`):
+
+- `cd backend && pnpm exec vitest run tests/integration/externalSkills/repositories.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/customerEmail/email-skill-definition-repository.test.ts`
+
 ## Shared Agent Runtime
 
 Owns the reusable in-repo substrate for tool-calling LLM agents: the typed tool

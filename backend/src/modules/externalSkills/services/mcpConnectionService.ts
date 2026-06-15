@@ -1,27 +1,25 @@
 import { AppError, badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
 import { encryptField, decryptField } from "../../../shared/infra/crypto/fieldEncryption.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
+import {
+  buildAuthorizationUrl,
+  createOauthState,
+  createPkcePair,
+  decryptOauthClientConfig,
+  decryptOauthFlow,
+  encryptOauthClientConfig,
+  encryptOauthFlow,
+  encryptOauthTokens,
+  exchangeAuthorizationCode,
+  resolveFreshAccessToken,
+  type FetchLike,
+} from "../../integrationOauth/public.js";
 import type {
   McpConnectionRecord,
   McpConnectionRepositoryPort,
 } from "../../../db/repositories/mcpConnectionRepository.js";
 import type { McpConnectionInput, McpConnectionUpdateInput, StoredOauthClientConfig } from "../domain.js";
 import type { ToolServiceFactory } from "../executor/mcpSkillExecutor.js";
-import {
-  buildAuthorizationUrl,
-  createOauthState,
-  createPkcePair,
-  exchangeAuthorizationCode,
-  type FetchLike,
-} from "../oauth/oauthClient.js";
-import {
-  decryptOauthClientConfig,
-  decryptOauthFlow,
-  encryptOauthClientConfig,
-  encryptOauthFlow,
-  encryptOauthTokens,
-} from "../oauth/oauthCrypto.js";
-import { resolveFreshAccessToken } from "../oauth/oauthAccessTokenResolver.js";
 
 /** Non-secret view of a connection (the only shape returned to clients). */
 export interface McpConnectionSummary {
@@ -240,7 +238,7 @@ export class McpConnectionService {
       }
       oauthAccessTokenProvider = () =>
         resolveFreshAccessToken({
-          agentId,
+          subjectId: agentId,
           record,
           repository: this.options.repository,
           encryptionKey: this.options.encryptionKey!,
@@ -248,6 +246,7 @@ export class McpConnectionService {
           assertPublicUrl: this.options.assertPublicUrl,
           fetchImpl: this.options.fetchImpl,
           logger: this.options.logger,
+          logContext: { integration: "external_skill_mcp", agentId },
         });
     }
 

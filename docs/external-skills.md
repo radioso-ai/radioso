@@ -4,6 +4,10 @@ External skills let an agent's routines call tools on an external MCP server. Yo
 connect a server, define named skills that bind its tools, and reference those
 skills from routine steps. Adding an integration is configuration, not code.
 
+Customer-owned email uses the shared OAuth substrate but has its own connection
+model and transactional-mail boundary. See
+[Customer Email Connections](./customer-email-skills.md).
+
 In practice there are three things to set up, in order: a **connection**, one or
 more **skill definitions**, and a routine **step** that uses a skill. All of it
 lives under an agent's **Behavior** settings.

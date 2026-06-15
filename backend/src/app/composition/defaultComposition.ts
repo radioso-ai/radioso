@@ -51,6 +51,7 @@ import { createUsageReportingApplicationModule } from "./builtIn/usageReportingM
 import { createAnswerDirectivesApplicationModule } from "./builtIn/answerDirectivesModule.js";
 import { createContactRoutineApplicationModule } from "./builtIn/contactRoutineModule.js";
 import { createWebhookSendApplicationModule } from "./builtIn/webhookSendModule.js";
+import { createCustomerEmailApplicationModule } from "../../modules/customerEmail/composition.js";
 import {
   createDefaultSkillCatalogRegistry,
   SkillExecutorRegistry,
@@ -99,12 +100,20 @@ export interface ApplicationComposition {
   skillCatalogRegistry: SkillCatalogRegistry<SkillCatalogEntryDefinition>;
   skillExecutorRegistry: SkillExecutorRegistry;
   chatActionSuggestionProviders: ReturnType<typeof createApplicationExtensionRegistry>["chatActionSuggestionProviders"];
+  oauthProviders: ReturnType<typeof createApplicationExtensionRegistry>["oauthProviders"];
   lifecycle: ApplicationModuleCoordinator;
   modules: ApplicationModule[];
 }
 
 export const createDefaultApplicationComposition = (options: {
   logger: Pick<AppLogger, "error">;
+  env?: Partial<Pick<
+    Env,
+    | "GOOGLE_MAIL_OAUTH_CLIENT_ID"
+    | "GOOGLE_MAIL_OAUTH_CLIENT_SECRET"
+    | "MICROSOFT_GRAPH_MAIL_OAUTH_CLIENT_ID"
+    | "MICROSOFT_GRAPH_MAIL_OAUTH_CLIENT_SECRET"
+  >>;
   modules?: ApplicationModule[];
   widgetOrigin?: string;
 }): ApplicationComposition => {
@@ -124,6 +133,7 @@ export const createDefaultApplicationComposition = (options: {
     createQualityApplicationModule(),
     createContactRoutineApplicationModule(),
     createWebhookSendApplicationModule(),
+    createCustomerEmailApplicationModule(options.env),
     ...(options.modules ?? []),
   ]);
 
@@ -162,6 +172,7 @@ export const createDefaultApplicationComposition = (options: {
     ]),
     skillExecutorRegistry: new SkillExecutorRegistry(registry.skillExecutors),
     chatActionSuggestionProviders: registry.chatActionSuggestionProviders,
+    oauthProviders: registry.oauthProviders,
     lifecycle: coordinator,
     modules: coordinator.registeredModules,
   };

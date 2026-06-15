@@ -484,9 +484,15 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
 
     const result = await new DefaultConversationEngine().processTurn(input);
 
+    // Global directives co-compose into the clarifying question: no routine is
+    // active yet (we're disambiguating which to start), so the matched directive
+    // reaches the clarifier as turn steering, exactly like the resume path.
     expect(clarifier.phraseQuestion).toHaveBeenCalledWith({
       candidates,
-      turn: expect.objectContaining({ sessionId: "session_1" }),
+      turn: expect.objectContaining({
+        sessionId: "session_1",
+        steering: [expect.objectContaining({ source: "directive", action: "Keep the response concise." })],
+      }),
     });
     expect(clarificationStore.save).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: "session_1",
@@ -514,7 +520,12 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
       "message",
       "gather",
       "clarification",
+      "directive_steering",
     ]);
+    expect(result.trace.stages.at(-1)?.outputs).toMatchObject({
+      matchCount: 1,
+      directives: [expect.objectContaining({ action: "Keep the response concise." })],
+    });
     expect(result.trace.stages.find((stage) => stage.kind === "clarification")?.outputs).toMatchObject({
       surface: "routine_activation",
       decision: "asked",

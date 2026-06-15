@@ -163,12 +163,11 @@ const buildDirectiveTraceStage = (input: {
   status: input.matches.length > 0 ? "applied" : "skipped",
   outputs: {
     matchCount: input.matches.length,
-    directives: input.kind === "directive_steering"
-      ? input.matches.map((match) => ({
-          id: match.directive.id,
-          name: match.directive.name,
-        }))
-      : input.matches.map(summarizeDirectiveMatch),
+    // Both the selection-time match stage and the routine-turn steering stage
+    // carry the full directive summary, so the debug flow renders the mixed-in
+    // directives identically on routine and normal turns. Directive copy is
+    // authored config (not user/assistant content), so it is safe in the trace.
+    directives: input.matches.map(summarizeDirectiveMatch),
     candidateCount: input.candidateCount,
     ...(input.scopeFilteredCount !== undefined ? { scopeFilteredCount: input.scopeFilteredCount } : {}),
   },
@@ -504,9 +503,22 @@ export class DefaultConversationEngine implements ConversationEngine {
         if (!input.clarifier || !input.clarificationStore) {
           return null;
         }
+        // Co-compose directives into the clarifying question. No routine is active
+        // yet (we're disambiguating which to start), so only global/unscoped
+        // directives are eligible — routine/step-scoped ones can't match a routine
+        // that hasn't been chosen. The matched steering reaches the clarifier and is
+        // traced as `directive_steering`, at parity with the resume path.
+        const clarifySteering = await buildResolvedSteering({
+          turn: baseTurn,
+          directives: input.directives,
+          directiveMatcher: input.directiveMatcher,
+          steeringResolver: input.steeringResolver,
+          baseSteering: [],
+          traceKind: "directive_steering",
+        });
         const answer = await input.clarifier.phraseQuestion({
           candidates: activation.candidates,
-          turn: baseTurn,
+          turn: { ...baseTurn, steering: clarifySteering.steering },
         });
         const response: RenderableTurn = { answer };
         const events: ConversationEvent[] = [];
@@ -566,6 +578,7 @@ export class DefaultConversationEngine implements ConversationEngine {
               surface: "routine_activation",
               decision: { kind: "ask", candidates: activation.candidates },
             }),
+            clarifySteering.traceStage,
           ]),
         });
       }

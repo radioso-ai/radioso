@@ -35,6 +35,9 @@ describe('spineStageLabel', () => {
     expect(spineStageLabel({ id: 'g', kind: 'gather', status: 'applied' })).toBe('Gather')
     expect(spineStageLabel({ id: 'd', kind: 'skill_dispatch', status: 'applied' })).toBe('Dispatch')
     expect(spineStageLabel({ id: 'c', kind: 'clarification', status: 'applied' })).toBe('Clarification')
+    // Both the selection-time match stage and the routine-turn steering stage are "Directives".
+    expect(spineStageLabel({ id: 'd', kind: 'directive_match', status: 'applied' })).toBe('Directives')
+    expect(spineStageLabel({ id: 's', kind: 'directive_steering', status: 'applied' })).toBe('Directives')
     expect(spineStageLabel({ id: 'x', kind: 'custom_phase', status: 'applied' })).toBe('custom phase')
   })
 })

@@ -52,6 +52,46 @@ describe("DefaultClarifier", () => {
     expect(request.systemPrompt).not.toContain("payload_billing");
   });
 
+  it("folds turn steering into the question prompt as guidance", async () => {
+    const modelGateway = gateway("¿Facturacion o soporte?");
+    const clarifier = new DefaultClarifier(modelGateway, {
+      questionPromptTemplate: "Ask using only these options:\n{{options}}",
+      replyMapPromptTemplate: "unused",
+    });
+
+    await clarifier.phraseQuestion({
+      candidates,
+      turn: {
+        ...turn("Necesito ayuda"),
+        steering: [
+          { action: "Use a warm, friendly tone.", source: "directive", lifespan: "response" },
+          { action: "Keep it to one sentence.", source: "directive", lifespan: "response", condition: "the user seems rushed" },
+        ],
+      },
+    });
+
+    const systemPrompt = vi.mocked(modelGateway.complete).mock.calls[0]![0].systemPrompt
+    expect(systemPrompt).toContain("Use a warm, friendly tone.")
+    expect(systemPrompt).toContain("Keep it to one sentence.")
+    expect(systemPrompt).toContain("the user seems rushed")
+  });
+
+  it("leaves the question prompt unchanged when there is no steering", async () => {
+    const modelGateway = gateway("¿Facturacion o soporte?");
+    const clarifier = new DefaultClarifier(modelGateway, {
+      questionPromptTemplate: "Ask using only these options:\n{{options}}",
+      replyMapPromptTemplate: "unused",
+    });
+
+    await clarifier.phraseQuestion({ candidates, turn: turn("Necesito ayuda") });
+
+    const systemPrompt = vi.mocked(modelGateway.complete).mock.calls[0]![0].systemPrompt
+    expect(systemPrompt).toBe(`Ask using only these options:\n${[
+      "1. id: billing\nLabel: Facturacion\nDescription: Preguntas sobre pagos y facturas.",
+      "2. id: support\nLabel: Soporte tecnico\nDescription: Ayuda con un problema tecnico.",
+    ].join("\n\n")}`)
+  });
+
   it("maps a multilingual free-text reply to a chosen candidate", async () => {
     const modelGateway = gateway('{"kind":"chosen","id":"support"}');
     const clarifier = new DefaultClarifier(modelGateway, {

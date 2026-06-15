@@ -19,6 +19,14 @@ export interface RoutineSkillExecutorDispatcherOptions {
 }
 
 const allowAllRoutineCapabilityGate: RoutineCapabilityGate = async () => ({ allowed: true });
+const routineDispatchFailureReasons = new Set([
+  "unknown_skill",
+  "no_execution",
+  "no_executor",
+  "capability_denied",
+  "executor_error",
+  "deferred",
+]);
 
 /**
  * Resolves an authored routine skill reference (its `@name`) to the runtime skill
@@ -154,10 +162,8 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
 
   private recordDispatchMetric(result: RoutineSkillResult): void {
     this.metricsRegistry?.incrementCounter("routine_skill_dispatch_total", {
-      help: "Routine skill dispatch outcomes by status.",
-      labels: {
-        status: result.status,
-      },
+      help: "Routine skill dispatch outcomes.",
+      labels: routineDispatchMetricLabels(result),
     });
   }
 }
@@ -185,5 +191,19 @@ const routineDispatchResultAttributes = (result: RoutineSkillResult): Record<str
   return {
     "outcome.status": result.status,
     "outcome.reason": reason ?? result.status,
+  };
+};
+
+const routineDispatchMetricLabels = (result: RoutineSkillResult): Record<string, string> => {
+  if (result.status !== "failed") {
+    return {
+      outcome: "settled",
+      reason: "none",
+    };
+  }
+  const reason = typeof result.outputs?.reason === "string" ? result.outputs.reason : undefined;
+  return {
+    outcome: "failed",
+    reason: reason && routineDispatchFailureReasons.has(reason) ? reason : "skill_failed",
   };
 };

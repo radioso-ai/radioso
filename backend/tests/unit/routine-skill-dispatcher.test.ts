@@ -343,9 +343,33 @@ describe("RoutineSkillExecutorDispatcher", () => {
 
     const metrics = metricsRegistry.renderPrometheus();
     expect(metrics).toContain("radioso_routine_skill_dispatch_total");
-    expect(metrics).toContain('status="completed"');
+    expect(metrics).toContain('outcome="settled"');
+    expect(metrics).toContain('reason="none"');
     expect(metrics).not.toContain("routine-1");
     expect(metrics).not.toContain("book_meeting");
+  });
+
+  it("does not use custom routine result statuses as metric labels", async () => {
+    const metricsRegistry = new MetricsRegistry();
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([skillNamed("book_meeting")]),
+      registryWith(settledExecutor({
+        status: "slot_conflict",
+        outputs: { requested: "2026-06-20T10:00" },
+      } as unknown as SkillOutcome)),
+      { metricsRegistry },
+    );
+
+    await dispatcher.dispatch({
+      skillName: "book_meeting",
+      state: routineState({}),
+      turn,
+    });
+
+    const metrics = metricsRegistry.renderPrometheus();
+    expect(metrics).toContain('outcome="settled"');
+    expect(metrics).toContain('reason="none"');
+    expect(metrics).not.toContain("slot_conflict");
   });
 
   it("records a privacy-safe span and metric for an unavailable dispatch", async () => {
@@ -374,7 +398,8 @@ describe("RoutineSkillExecutorDispatcher", () => {
     expect(serializedAttributes).not.toContain("answer");
 
     const metrics = metricsRegistry.renderPrometheus();
-    expect(metrics).toContain('status="failed"');
+    expect(metrics).toContain('outcome="failed"');
+    expect(metrics).toContain('reason="unknown_skill"');
     expect(metrics).not.toContain("routine-1");
     expect(metrics).not.toContain("missing");
   });

@@ -88,4 +88,45 @@ describe("integration OAuth client", () => {
       message: "Token refresh failed",
     } satisfies Partial<OauthClientError>);
   });
+
+  const config = {
+    authorizationEndpoint: "https://auth.example.com/authorize",
+    tokenEndpoint: "https://auth.example.com/token",
+    clientId: "client-1",
+  };
+  const refresh = (fetchImpl: FetchLike) =>
+    refreshAccessToken({ config, tokens: { accessToken: "access-1", refreshToken: "refresh-1" }, fetchImpl });
+
+  it("marks a 4xx provider rejection as permanent (not retryable)", async () => {
+    const error = await refresh(async () => ({ ok: false, status: 401, json: async () => ({ error: "invalid_grant" }) }))
+      .catch((caught) => caught);
+    expect(error).toBeInstanceOf(OauthClientError);
+    expect((error as OauthClientError).retryable).toBe(false);
+  });
+
+  it("marks a 5xx or 429 as transient (retryable)", async () => {
+    for (const status of [500, 503, 429]) {
+      const error = await refresh(async () => ({ ok: false, status, json: async () => ({}) })).catch((caught) => caught);
+      expect(error).toBeInstanceOf(OauthClientError);
+      expect((error as OauthClientError).retryable).toBe(true);
+    }
+  });
+
+  it("marks a network/transport failure as transient (retryable)", async () => {
+    const error = await refresh(async () => {
+      throw new Error("ECONNRESET");
+    }).catch((caught) => caught);
+    expect(error).toBeInstanceOf(OauthClientError);
+    expect((error as OauthClientError).retryable).toBe(true);
+  });
+
+  it("treats a missing refresh token as permanent (not retryable)", async () => {
+    const error = await refreshAccessToken({
+      config,
+      tokens: { accessToken: "access-1" },
+      fetchImpl: async () => okResponse({ access_token: "x" }),
+    }).catch((caught) => caught);
+    expect(error).toBeInstanceOf(OauthClientError);
+    expect((error as OauthClientError).retryable).toBe(false);
+  });
 });

@@ -848,6 +848,14 @@ export const buildChatServices = (input: {
     !input.composition.skillExecutorRegistry.resolve({ kind: "internal", adapter: CUSTOMER_EMAIL_SKILLS_ADAPTER })
   ) {
     const oauthConnectionRepository = new OauthConnectionRepository(input.database);
+    // No real Gmail/Microsoft Graph adapter is wired yet (spec 089 follow-up): the
+    // mock provider accepts every draft/send and returns a placeholder message id, so
+    // `drafted`/`sent` outcomes do NOT mean a message was delivered. Warn loudly so
+    // operators do not trust activity receipts as proof of delivery.
+    input.logger.warn(
+      { event: "customer_email", provider: "mock" },
+      "Customer email skills are using the MOCK provider; no real email is delivered and drafted/sent outcomes are simulated",
+    );
     const customerEmailProviderRegistry = new StaticCustomerEmailProviderRegistry(
       customerEmailOauthProviderIds.map((provider) => new MockCustomerEmailProviderAdapter(provider)),
     );

@@ -94,7 +94,7 @@ describe("integration OAuth access token resolver", () => {
     expect(repository.updateStatus).not.toHaveBeenCalled();
   });
 
-  it("marks the credential as needing reauthorization when refresh fails", async () => {
+  it("marks the credential as needing reauthorization when refresh fails permanently", async () => {
     const repository: OauthTokenPersistencePort = {
       setOauthTokens: vi.fn(),
       updateStatus: vi.fn(async () => null),
@@ -114,5 +114,55 @@ describe("integration OAuth access token resolver", () => {
     })).rejects.toBeInstanceOf(OauthNotAuthorizedError);
 
     expect(repository.updateStatus).toHaveBeenCalledWith("workspace-1", "oauth-1", "needs_reauth");
+  });
+
+  it("keeps the connection authorized when refresh fails transiently", async () => {
+    const repository: OauthTokenPersistencePort = {
+      setOauthTokens: vi.fn(),
+      updateStatus: vi.fn(async () => null),
+    };
+    const fetchImpl: FetchLike = async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({}),
+    });
+
+    const error = await resolveFreshAccessToken({
+      subjectId: "workspace-1",
+      record: record({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: Date.now() - 1 }),
+      repository,
+      encryptionKey,
+      fetchImpl,
+    }).catch((caught) => caught);
+
+    // A momentary 5xx must not force a manual re-authorization.
+    expect(error).not.toBeInstanceOf(OauthNotAuthorizedError);
+    expect(repository.updateStatus).not.toHaveBeenCalled();
+  });
+
+  it("single-flights concurrent refreshes for the same connection", async () => {
+    const repository: OauthTokenPersistencePort = {
+      setOauthTokens: vi.fn(async () => null),
+      updateStatus: vi.fn(),
+    };
+    let refreshCalls = 0;
+    const fetchImpl: FetchLike = async () => {
+      refreshCalls += 1;
+      // Yield so both callers are in flight before either resolves.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return { ok: true, status: 200, json: async () => ({ access_token: "access-2", refresh_token: "refresh-2", expires_in: 3600 }) };
+    };
+
+    const expired = () => record({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: Date.now() - 1 });
+    const resolve = () =>
+      resolveFreshAccessToken({ subjectId: "workspace-1", record: expired(), repository, encryptionKey, fetchImpl });
+
+    const [a, b] = await Promise.all([resolve(), resolve()]);
+
+    expect(a).toBe("access-2");
+    expect(b).toBe("access-2");
+    // The rotating refresh token is spent exactly once even under concurrency.
+    expect(refreshCalls).toBe(1);
+    expect(repository.setOauthTokens).toHaveBeenCalledTimes(1);
   });
 });

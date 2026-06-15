@@ -115,6 +115,21 @@ uses the skill name, for example `support_email_customer`. The routine runtime
 resolves that name through the shared skill executor path. It does not call a
 mail provider directly and does not handle OAuth tokens.
 
+## Provider Delivery Status
+
+The connection, skill, OAuth, and activity paths are complete. The provider
+adapter that talks to Gmail or Microsoft Graph is not wired yet. The current
+build uses a mock provider for both `google_mail` and `microsoft_graph_mail`.
+
+The key point is that no real email is sent yet. The mock provider accepts every
+draft and send request and returns a placeholder message id. So a `drafted` or
+`sent` outcome means the request passed validation and reached the provider
+step, not that a message was delivered. Activity receipts are not proof of
+delivery.
+
+The backend logs a warning at startup when the mock provider is active. Treat
+delivery as simulated until a real provider adapter is wired.
+
 ## Routine Outcomes
 
 Routine tool steps can branch on email skill outcomes with an `outcome` guard.

@@ -15,6 +15,27 @@ CREATE TABLE IF NOT EXISTS email_skill_details (
 CREATE INDEX IF NOT EXISTS idx_email_skill_details_connection
   ON email_skill_details (connection_id);
 
+-- The spine enforces UNIQUE (agent_id, skill_name) ACROSS kinds, so an agent that
+-- already has an external MCP skill (backfilled by 099) sharing a name with a
+-- customer email skill would otherwise abort this backfill with an opaque 23505.
+-- Surface an actionable error naming the collision instead. This can only occur in
+-- environments that ran an intermediate build which created email skills before
+-- this migration; rename the conflicting skill, then re-deploy.
+DO $$
+DECLARE
+  collision RECORD;
+BEGIN
+  SELECT e.agent_id, e.skill_name INTO collision
+  FROM email_skill_definitions e
+  JOIN agent_skills s ON s.agent_id = e.agent_id AND s.skill_name = e.skill_name
+  LIMIT 1;
+  IF FOUND THEN
+    RAISE EXCEPTION
+      'Cannot migrate email skill "%" for agent %: an agent skill with that name already exists on the shared agent_skills spine. Rename the conflicting skill before applying migration 100.',
+      collision.skill_name, collision.agent_id;
+  END IF;
+END $$;
+
 -- Backfill, preserving primary keys.
 INSERT INTO agent_skills (id, agent_id, workspace_id, skill_name, kind, enabled, created_at, updated_at)
 SELECT id, agent_id, workspace_id, skill_name, 'customer_email', enabled, created_at, updated_at

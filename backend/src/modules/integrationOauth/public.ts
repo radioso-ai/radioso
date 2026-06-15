@@ -47,6 +47,11 @@ export {
   type ResolveFreshAccessTokenInput,
 } from "./services/oauthAccessTokenResolver.js";
 export {
+  InProcessOauthRefreshCoordinator,
+  defaultOauthRefreshCoordinator,
+  type OauthRefreshCoordinator,
+} from "./services/oauthRefreshCoordinator.js";
+export {
   OauthConnectionService,
   StaticOauthProviderRegistry,
   type OauthConnectionServiceOptions,

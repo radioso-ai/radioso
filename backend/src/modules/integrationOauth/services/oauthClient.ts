@@ -27,11 +27,39 @@ export class OauthClientError extends Error {
   constructor(
     readonly code: OauthClientErrorCode,
     message: string,
+    /**
+     * True when the failure is transient (5xx / 429 / network / timeout) and the
+     * stored credential is probably still valid. Callers should retry later and
+     * keep the connection authorized rather than forcing re-authorization, which
+     * is reserved for permanent failures (4xx `invalid_grant`, missing token).
+     */
+    readonly retryable = false,
   ) {
     super(message);
     this.name = "OauthClientError";
   }
 }
+
+/** Token endpoint returned a non-2xx HTTP status. Internal; never carries the body. */
+class TokenEndpointHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`Token endpoint responded with ${status}`);
+    this.name = "TokenEndpointHttpError";
+  }
+}
+
+/**
+ * A token-endpoint failure is transient (retry, keep authorized) for 5xx, 429,
+ * and any non-HTTP error (network reset, DNS, abort/timeout). A 4xx is a
+ * permanent provider rejection (e.g. `invalid_grant`) that re-authorization,
+ * not a retry, must resolve.
+ */
+const isTransientTokenFailure = (error: unknown): boolean => {
+  if (error instanceof TokenEndpointHttpError) {
+    return error.status >= 500 || error.status === 429;
+  }
+  return true;
+};
 
 export interface BuildAuthorizationUrlInput {
   config: Pick<StoredOauthClientConfig, "authorizationEndpoint" | "clientId" | "scopes">;
@@ -123,7 +151,7 @@ const postForm = async (
       signal: controller.signal,
     });
     if (!response.ok) {
-      return Promise.reject(response.status);
+      throw new TokenEndpointHttpError(response.status);
     }
     return (await response.json()) as TokenEndpointResponse;
   } finally {
@@ -162,7 +190,11 @@ export const exchangeAuthorizationCode = async (input: ExchangeCodeInput): Promi
     if (error instanceof OauthClientError) {
       throw error;
     }
-    throw new OauthClientError("token_exchange_failed", "Authorization code exchange failed");
+    throw new OauthClientError(
+      "token_exchange_failed",
+      "Authorization code exchange failed",
+      isTransientTokenFailure(error),
+    );
   }
 };
 
@@ -199,7 +231,7 @@ export const refreshAccessToken = async (input: RefreshTokensInput): Promise<Sto
     if (error instanceof OauthClientError) {
       throw error;
     }
-    throw new OauthClientError("refresh_failed", "Token refresh failed");
+    throw new OauthClientError("refresh_failed", "Token refresh failed", isTransientTokenFailure(error));
   }
 };
 

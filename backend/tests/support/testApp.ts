@@ -81,11 +81,23 @@ import { AbuseControlService } from "../../src/modules/security/services/abuseCo
 import { WorkspaceProviderCredentialsService } from "../../src/modules/security/credentials/services/workspaceProviderCredentialsService.js";
 import { McpConnectionService } from "../../src/modules/externalSkills/services/mcpConnectionService.js";
 import { ExternalSkillDefinitionService } from "../../src/modules/externalSkills/services/externalSkillDefinitionService.js";
+import { OauthConnectionService, StaticOauthProviderRegistry } from "../../src/modules/integrationOauth/public.js";
+import {
+  CustomerEmailConnectionService,
+  CustomerEmailOAuthService,
+  EmailSkillDefinitionService,
+  MockCustomerEmailProviderAdapter,
+  StaticCustomerEmailProviderRegistry,
+} from "../../src/modules/customerEmail/public.js";
 import {
   InMemoryMcpConnectionRepository,
   InMemoryExternalSkillDefinitionRepository,
   createMockToolServiceFactory,
 } from "./inMemoryExternalSkills.js";
+import { InMemoryOauthConnectionRepository } from "./inMemoryOauthConnections.js";
+import { InMemoryCustomerEmailConnectionRepository } from "./inMemoryCustomerEmailConnections.js";
+import { InMemoryEmailSkillDefinitionRepository } from "./inMemoryEmailSkillDefinitions.js";
+import { InMemoryEmailSkillActivityRepository } from "./inMemoryEmailSkillActivity.js";
 import {
   DefaultWebhookDestinationAdapter,
   WebhookDestinationService,
@@ -700,6 +712,69 @@ export const createTestDependencies = (overrides: {
     auditService,
     { key: env.CONNECTOR_ENCRYPTION_KEY },
   );
+  const oauthConnectionService = new OauthConnectionService({
+    repository: new InMemoryOauthConnectionRepository(),
+    providers: new StaticOauthProviderRegistry([
+      {
+        id: "google_mail",
+        authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+        tokenEndpoint: "https://oauth2.googleapis.com/token",
+        clientId: "test-google-client",
+        clientSecret: "test-google-secret",
+        defaultScopes: [
+          "https://www.googleapis.com/auth/gmail.compose",
+          "https://www.googleapis.com/auth/gmail.send",
+        ],
+        allowedScopes: [
+          "https://www.googleapis.com/auth/gmail.compose",
+          "https://www.googleapis.com/auth/gmail.send",
+        ],
+      },
+      {
+        id: "microsoft_graph_mail",
+        authorizationEndpoint: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+        tokenEndpoint: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        clientId: "test-microsoft-client",
+        clientSecret: "test-microsoft-secret",
+        defaultScopes: ["Mail.ReadWrite", "Mail.Send"],
+        allowedScopes: ["Mail.ReadWrite", "Mail.Send"],
+      },
+      {
+        id: "test_mail",
+        authorizationEndpoint: "https://oauth.test.example.com/authorize",
+        tokenEndpoint: "https://oauth.test.example.com/token",
+        clientId: "test-client-id",
+        clientSecret: "test-client-secret",
+        defaultScopes: ["mail.send"],
+        allowedScopes: ["mail.send", "mail.read"],
+      },
+    ]),
+    encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
+    appBaseUrl: env.APP_BASE_URL,
+    assertPublicUrl: () => undefined,
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ access_token: "test-access-token", refresh_token: "test-refresh", expires_in: 3600 }),
+    }),
+    logger,
+  });
+  const customerEmailOAuthService = new CustomerEmailOAuthService(oauthConnectionService);
+  const customerEmailConnectionRepository = new InMemoryCustomerEmailConnectionRepository();
+  const emailSkillDefinitionRepository = new InMemoryEmailSkillDefinitionRepository();
+  const emailSkillActivityRepository = new InMemoryEmailSkillActivityRepository();
+  customerEmailConnectionRepository.setReferenceChecker((connectionId) =>
+    emailSkillDefinitionRepository.countByConnection("", connectionId),
+  );
+  const customerEmailConnectionService = new CustomerEmailConnectionService({
+    repository: customerEmailConnectionRepository,
+    oauthConnections: oauthConnectionService,
+    providers: new StaticCustomerEmailProviderRegistry([
+      new MockCustomerEmailProviderAdapter("google_mail"),
+      new MockCustomerEmailProviderAdapter("microsoft_graph_mail"),
+      new MockCustomerEmailProviderAdapter("test_mail"),
+    ]),
+  });
   const mcpConnectionRepository = new InMemoryMcpConnectionRepository();
   const externalSkillDefinitionRepository = new InMemoryExternalSkillDefinitionRepository();
   // Model the ON DELETE RESTRICT FK so the route DELETE 409 is exercised.
@@ -724,6 +799,10 @@ export const createTestDependencies = (overrides: {
     externalSkillDefinitionRepository,
     mcpConnectionService,
   );
+  const emailSkillDefinitionService = new EmailSkillDefinitionService({
+    repository: emailSkillDefinitionRepository,
+    connections: customerEmailConnectionRepository,
+  });
   const workspaceLlmCapabilitySettingsService = new WorkspaceLlmCapabilitySettingsService(
     retrievalSettingsRepository,
     auditService,
@@ -996,6 +1075,11 @@ export const createTestDependencies = (overrides: {
     workspaceSessionService,
     abuseControlService,
     workspaceProviderCredentialsService,
+    oauthConnectionService,
+    customerEmailOAuthService,
+    customerEmailConnectionService,
+    emailSkillDefinitionService,
+    emailSkillActivityRepository,
     mcpConnectionService,
     externalSkillDefinitionService,
     webhookDestinations,

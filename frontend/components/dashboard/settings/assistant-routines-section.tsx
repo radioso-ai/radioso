@@ -34,6 +34,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { customerEmailApi, type CustomerEmailSkillDefinition } from '@/lib/api-customer-email'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import {
   RoutinePublishRejectedError,
@@ -408,6 +409,7 @@ function RoutineEditorScreen({
   const [webhookDestinations, setWebhookDestinations] = useState<WebhookDestination[]>([])
   const [isWebhookDestinationsLoading, setIsWebhookDestinationsLoading] = useState(true)
   const [webhookDestinationsError, setWebhookDestinationsError] = useState<string | null>(null)
+  const [emailSkills, setEmailSkills] = useState<CustomerEmailSkillDefinition[]>([])
   const [error, setError] = useState<string | null>(null)
   const currentRoutineIdRef = useRef<string | null>(null)
   const { beginSave, isCurrentSave, markError, markSaved } = useSettingsSaveStatus(onSaveStateChange)
@@ -481,6 +483,22 @@ function RoutineEditorScreen({
       active = false
     }
   }, [])
+
+  useEffect(() => {
+    let active = true
+    queueMicrotask(() => {
+      void customerEmailApi.listEmailSkills(agentId)
+        .then((response) => {
+          if (active) setEmailSkills(response.skills)
+        })
+        .catch(() => {
+          if (active) setEmailSkills([])
+        })
+    })
+    return () => {
+      active = false
+    }
+  }, [agentId])
 
   useEffect(() => {
     let active = true
@@ -865,6 +883,7 @@ function RoutineEditorScreen({
               webhookDestinations={webhookDestinations}
               isWebhookDestinationsLoading={isWebhookDestinationsLoading}
               webhookDestinationsError={webhookDestinationsError}
+              emailSkills={emailSkills}
               onChange={updateForm}
             />
           ) : null}

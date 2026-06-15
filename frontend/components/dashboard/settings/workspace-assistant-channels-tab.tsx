@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Building2, ChevronLeft, DatabaseZap, ExternalLink, FolderOpen, Globe, KeyRound, Link as LinkIcon, MessageCircle, RefreshCw, ShieldAlert, Trash2, UserRound, Webhook, Wrench } from 'lucide-react'
@@ -15,7 +16,7 @@ import { ConnectorSetupDialog } from '@/components/dashboard/documents/connector
 import { McpChannelCard } from '@/components/dashboard/settings/mcp-channel-card'
 import { SettingsRow, SettingsRowList } from '@/components/dashboard/settings/settings-row-list'
 import { type AgentSectionId } from '@/lib/dashboard-areas'
-import type { DashboardRouteState } from '@/lib/dashboard-routes'
+import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import {
   getAssistantLocaleLabel,
   NO_GREETING_LOCALE_LABEL,
@@ -307,6 +308,13 @@ export function WorkspaceAssistantChannelsTab({
   const canManageWorkspaceLifecycle = currentAccountRole === 'owner' || currentAccountRole === 'admin'
   const canReadWorkspaceTokens = Boolean(currentAccountRole)
   const canRotateWorkspaceTokens = currentAccountRole === 'owner' || currentAccountRole === 'admin'
+  const webhookDestinationsHref = buildDashboardHref(accountId, {
+    section: 'settings',
+    settingsTab: 'workspace',
+    anchor: 'webhook-destinations',
+    ...(activeWorkspaceId ? { workspaceId: activeWorkspaceId } : {}),
+    ...(activeWorkspace?.publicRouteKey ? { workspacePublicRouteKey: activeWorkspace.publicRouteKey } : {}),
+  })
 
   const loadGeneralSettings = useCallback(async () => {
     return agentId ? agentsApi.getGeneralSettings(agentId) : generalSettingsApi.getGeneralSettings({ auth: 'session' })
@@ -1203,9 +1211,17 @@ export function WorkspaceAssistantChannelsTab({
                 />
               )}
             >
-              <p className="text-sm text-muted-foreground">
-                Keep this off for agents that should never call external endpoints from routine terminals.
-              </p>
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Keep this off for agents that should never call external endpoints from routine terminals.
+                </p>
+                <Button asChild variant="outline" size="sm">
+                  <Link href={webhookDestinationsHref}>
+                    Manage destinations
+                    <ExternalLink className="ml-2 h-4 w-4" />
+                  </Link>
+                </Button>
+              </div>
             </SettingsCard>
             <SettingsCard
               id="retrieval-answers"

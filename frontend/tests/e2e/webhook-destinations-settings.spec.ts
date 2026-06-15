@@ -77,6 +77,12 @@ test("assistant skills expose and persist the webhook exports gate", async ({ pa
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
 
   await expect(page.getByRole("heading", { name: "Webhook exports" })).toBeVisible();
+  await page.getByRole("link", { name: "Manage destinations" }).click();
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/settings\\?anchor=webhook-destinations$`));
+  await expect(page.getByRole("heading", { name: "Webhook destinations" })).toBeVisible();
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
+  await expect(page.getByRole("heading", { name: "Webhook exports" })).toBeVisible();
   await page.locator("#webhookExportsToggle").click();
 
   await expect.poll(() => agentUpdates.length).toBeGreaterThanOrEqual(1);

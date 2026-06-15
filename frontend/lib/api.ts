@@ -54,6 +54,16 @@ export { documentsApi } from './api-documents'
 export { evalsApi } from './api-eval'
 export { externalSkillsApi } from './api-external-skills'
 export type { ExternalSkillDefinition, McpConnection } from './api-external-skills'
+export { customerEmailApi } from './api-customer-email'
+export type {
+  CreateWorkspaceOauthConnectionInput,
+  CustomerEmailConnection,
+  CustomerEmailConnectionStatus,
+  CustomerEmailOauthProviderId,
+  WorkspaceOauthAuthorization,
+  WorkspaceOauthConnection,
+  WorkspaceOauthConnectionStatus,
+} from './api-customer-email'
 export { workbenchApi } from './api-workbench'
 export { publicChatApi } from './api-public-chat'
 export { agentsApi, generalSettingsApi, settingsApi, webhookDestinationsApi } from './api-settings'

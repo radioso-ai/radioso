@@ -6,7 +6,7 @@ import { decryptField } from "../../shared/infra/crypto/fieldEncryption.js";
 import { McpConnectionRepository } from "../../db/repositories/mcpConnectionRepository.js";
 import { ExternalSkillDefinitionRepository } from "../../db/repositories/externalSkillDefinitionRepository.js";
 import { SdkMcpToolService } from "./toolService/sdkMcpToolService.js";
-import { resolveFreshAccessToken } from "./oauth/oauthAccessTokenResolver.js";
+import { resolveFreshAccessToken } from "../integrationOauth/public.js";
 import type {
   ConnectionLookup,
   McpConnectionRecord,
@@ -76,7 +76,7 @@ export class LiveMcpConnectionLookup implements ConnectionLookup {
         authMethod: record.authMethod,
         oauthAccessTokenProvider: () =>
           resolveFreshAccessToken({
-            agentId,
+            subjectId: agentId,
             record,
             repository: this.repository,
             encryptionKey: this.encryptionKey,
@@ -84,6 +84,7 @@ export class LiveMcpConnectionLookup implements ConnectionLookup {
             assertPublicUrl: this.options.assertPublicUrl,
             fetchImpl: this.options.fetchImpl,
             logger: this.options.logger,
+            logContext: { integration: "external_skill_mcp", agentId },
           }),
       };
     }

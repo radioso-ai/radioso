@@ -29,6 +29,7 @@ import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-s
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
 import { WebhookDestinationsPanel } from '@/components/dashboard/settings/webhook-destinations-panel'
 import { WebsiteEmbedSettingsController } from '@/components/dashboard/settings/website-embed-settings-controller'
+import { WorkspaceEmailConnectionsSection } from '@/components/dashboard/settings/workspace-email-connections-section'
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
 import {
@@ -1459,6 +1460,12 @@ export function WorkspaceAssistantChannelsTab({
               connectorId="whatsapp"
               onOpenChange={setWhatsappSetupOpen}
             />
+          </section>
+          ) : null}
+
+          {mode === 'workspace' ? (
+          <section>
+            <WorkspaceEmailConnectionsSection workspaceId={activeWorkspaceId} />
           </section>
           ) : null}
 

@@ -1,5 +1,5 @@
 import type { AppLogger } from "../../../shared/observability/logger.js";
-import type { McpConnectionRecord } from "../../../db/repositories/mcpConnectionRepository.js";
+import type { OauthCredentialRecord, OauthReauthStatus } from "../domain.js";
 import {
   isAccessTokenExpired,
   refreshAccessToken,
@@ -11,15 +11,14 @@ import {
   encryptOauthTokens,
 } from "./oauthCrypto.js";
 
-/** Narrow persistence port the resolver needs to store refreshed tokens / flag re-auth. */
 export interface OauthTokenPersistencePort {
   setOauthTokens(
-    agentId: string,
+    subjectId: string,
     id: string,
     credentialCiphertext: string,
     encryptionKeyId: string | null,
-  ): Promise<McpConnectionRecord | null>;
-  updateStatus(agentId: string, id: string, status: "needs_reauth"): Promise<McpConnectionRecord | null>;
+  ): Promise<OauthCredentialRecord | null>;
+  updateStatus(subjectId: string, id: string, status: OauthReauthStatus): Promise<OauthCredentialRecord | null>;
 }
 
 export class OauthNotAuthorizedError extends Error {
@@ -30,28 +29,26 @@ export class OauthNotAuthorizedError extends Error {
 }
 
 export interface ResolveFreshAccessTokenInput {
-  agentId: string;
-  record: McpConnectionRecord;
+  subjectId: string;
+  record: OauthCredentialRecord;
   repository: OauthTokenPersistencePort;
   encryptionKey: string;
   encryptionKeyId?: string | null;
   assertPublicUrl?: (url: string) => void | Promise<void>;
   fetchImpl?: FetchLike;
   logger?: AppLogger;
+  logContext?: Record<string, string>;
 }
 
-/**
- * Resolve a usable access token for an OAuth connection at call time (US2 AC2/AC3):
- * return the stored token if still valid, otherwise refresh it transparently and
- * persist the result. If refresh fails (or no credential is stored), flag the
- * connection `needs_reauth` and throw so the skill degrades to its failure
- * outcome. Never logs tokens or secrets — identity fields only.
- */
 export const resolveFreshAccessToken = async (input: ResolveFreshAccessTokenInput): Promise<string> => {
-  const { agentId, record, repository, encryptionKey } = input;
+  const { subjectId, record, repository, encryptionKey } = input;
+
+  if (record.status === "disabled") {
+    throw new OauthNotAuthorizedError("OAuth connection is disabled");
+  }
 
   if (!record.credentialCiphertext || !record.oauthClientCiphertext) {
-    await repository.updateStatus(agentId, record.id, "needs_reauth").catch(() => undefined);
+    await repository.updateStatus(subjectId, record.id, "needs_reauth").catch(() => undefined);
     throw new OauthNotAuthorizedError("OAuth connection is not authorized");
   }
 
@@ -69,21 +66,21 @@ export const resolveFreshAccessToken = async (input: ResolveFreshAccessTokenInpu
       fetchImpl: input.fetchImpl ?? defaultFetch,
     });
     await repository.setOauthTokens(
-      agentId,
+      subjectId,
       record.id,
       encryptOauthTokens(refreshed, encryptionKey),
       input.encryptionKeyId ?? null,
     );
     input.logger?.info(
-      { event: "external_skill.oauth", phase: "refreshed", agentId, connectionId: record.id },
-      "MCP OAuth token refreshed",
+      { event: "integration.oauth", phase: "refreshed", subjectId, connectionId: record.id, ...input.logContext },
+      "OAuth token refreshed",
     );
     return refreshed.accessToken;
   } catch {
-    await repository.updateStatus(agentId, record.id, "needs_reauth").catch(() => undefined);
+    await repository.updateStatus(subjectId, record.id, "needs_reauth").catch(() => undefined);
     input.logger?.warn(
-      { event: "external_skill.oauth", phase: "refresh_failed", agentId, connectionId: record.id },
-      "MCP OAuth token refresh failed; connection needs re-authorization",
+      { event: "integration.oauth", phase: "refresh_failed", subjectId, connectionId: record.id, ...input.logContext },
+      "OAuth token refresh failed; connection needs re-authorization",
     );
     throw new OauthNotAuthorizedError("OAuth token refresh failed");
   }

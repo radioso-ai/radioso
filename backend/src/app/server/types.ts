@@ -35,6 +35,8 @@ import type { WorkspaceSummaryService } from "../../modules/workspace/services/w
 import type { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
 import type { McpConnectionService } from "../../modules/externalSkills/services/mcpConnectionService.js";
 import type { ExternalSkillDefinitionService } from "../../modules/externalSkills/services/externalSkillDefinitionService.js";
+import type { OauthConnectionService } from "../../modules/integrationOauth/public.js";
+import type { CustomerEmailOAuthService } from "../../modules/customerEmail/public.js";
 import type { ChunkRepositoryPort } from "../../modules/documents/contracts/index.js";
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
 import type { AccountRepositoryPort } from "../../modules/auth/services/authService.js";
@@ -99,6 +101,8 @@ export interface AppDependencies {
   workspaceSessionService: WorkspaceSessionService;
   abuseControlService: AbuseControlService;
   workspaceProviderCredentialsService: WorkspaceProviderCredentialsService;
+  oauthConnectionService: OauthConnectionService;
+  customerEmailOAuthService: CustomerEmailOAuthService;
   mcpConnectionService: McpConnectionService;
   externalSkillDefinitionService: ExternalSkillDefinitionService;
   webhookDestinations: WebhookDestinationPublicAdapter;

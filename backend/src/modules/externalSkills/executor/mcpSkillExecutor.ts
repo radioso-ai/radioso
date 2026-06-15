@@ -16,8 +16,15 @@ export interface McpConnectionRecord {
   id: string;
   serverUrl: string;
   authMethod: "access_token" | "oauth";
-  /** Decrypted access token (resolved by the connection lookup; never logged). */
+  /** Decrypted access token (access_token connections; resolved by the lookup; never logged). */
   accessToken?: string;
+  /**
+   * OAuth connections: resolves a fresh bearer token at call time (refreshing
+   * transparently). Throws if the connection is not authorized / refresh fails,
+   * which degrades the skill to its failure outcome. Built by the connection
+   * lookup so the agent-bound refresh/persist logic stays in composition.
+   */
+  oauthAccessTokenProvider?: () => Promise<string>;
 }
 
 /** Persisted skill definition: a named binding of one tool on one connection. */

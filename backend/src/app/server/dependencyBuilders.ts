@@ -818,7 +818,9 @@ export const buildChatServices = (input: {
       kind: "internal",
       adapter: EXTERNAL_SKILLS_ADAPTER,
       executor: new McpSkillExecutor(
-        buildExternalSkillsDeps(input.database, input.env.CONNECTOR_ENCRYPTION_KEY, input.assertPublicWebsiteUrl),
+        buildExternalSkillsDeps(input.database, input.env.CONNECTOR_ENCRYPTION_KEY, input.assertPublicWebsiteUrl, {
+          logger: input.logger,
+        }),
       ),
     });
   }

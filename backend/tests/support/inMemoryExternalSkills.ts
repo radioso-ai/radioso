@@ -35,7 +35,8 @@ export class InMemoryMcpConnectionRepository implements McpConnectionRepositoryP
       authMethod: input.authMethod,
       credentialCiphertext: input.credentialCiphertext ?? null,
       encryptionKeyId: input.encryptionKeyId ?? null,
-      oauthClientCiphertext: null,
+      oauthClientCiphertext: input.oauthClientCiphertext ?? null,
+      oauthFlowCiphertext: null,
       status: input.status ?? "unconfigured",
       createdAt: now,
       updatedAt: now,
@@ -72,6 +73,34 @@ export class InMemoryMcpConnectionRepository implements McpConnectionRepositoryP
     if (input.credentialCiphertext !== undefined) record.credentialCiphertext = input.credentialCiphertext;
     if (input.encryptionKeyId !== undefined) record.encryptionKeyId = input.encryptionKeyId;
     if (input.status !== undefined) record.status = input.status;
+    record.updatedAt = new Date();
+    return { ...record };
+  }
+
+  async setOauthFlow(agentId: string, id: string, oauthFlowCiphertext: string): Promise<McpConnectionRecord | null> {
+    const record = this.rows.get(id);
+    if (!record || record.agentId !== agentId) {
+      return null;
+    }
+    record.oauthFlowCiphertext = oauthFlowCiphertext;
+    record.updatedAt = new Date();
+    return { ...record };
+  }
+
+  async setOauthTokens(
+    agentId: string,
+    id: string,
+    credentialCiphertext: string,
+    encryptionKeyId: string | null,
+  ): Promise<McpConnectionRecord | null> {
+    const record = this.rows.get(id);
+    if (!record || record.agentId !== agentId) {
+      return null;
+    }
+    record.credentialCiphertext = credentialCiphertext;
+    record.encryptionKeyId = encryptionKeyId;
+    record.oauthFlowCiphertext = null;
+    record.status = "authorized";
     record.updatedAt = new Date();
     return { ...record };
   }

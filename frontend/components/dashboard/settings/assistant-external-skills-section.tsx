@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { CheckCircle2, PlugZap, Plus, RefreshCw, Trash2, Wrench, X } from 'lucide-react'
+import { CheckCircle2, KeyRound, PlugZap, Plus, RefreshCw, Trash2, Wrench, X } from 'lucide-react'
 
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { Badge } from '@/components/ui/badge'
@@ -24,12 +24,18 @@ import { getApiErrorMessage } from '@/lib/api-error'
 import { externalSkillsApi, type ExternalSkillDefinition, type McpConnection } from '@/lib/api'
 import {
   buildExternalSkillDraft,
+  buildOauthConfigPayload,
   defaultParamModes,
   defaultSkillName,
+  emptyOauthDraft,
   getToolInputFields,
+  isConnectionDraftComplete,
+  MCP_OAUTH_PENDING_KEY,
   type BoundValueMap,
   type DiscoveredMcpTool,
   type ExposedParamDraftMap,
+  type McpAuthMethodChoice,
+  type OauthConnectionDraft,
   type ParamMode,
   type ParamModeMap,
   type ToolInputField,
@@ -89,7 +95,10 @@ export function AssistantExternalSkillsSection({ agentId }: { agentId: string })
   const [isAddingConnection, setIsAddingConnection] = useState(false)
   const [connectionName, setConnectionName] = useState('')
   const [serverUrl, setServerUrl] = useState('')
+  const [authMethod, setAuthMethod] = useState<McpAuthMethodChoice>('access_token')
   const [accessToken, setAccessToken] = useState('')
+  const [oauthDraft, setOauthDraft] = useState<OauthConnectionDraft>(emptyOauthDraft)
+  const [authorizingConnectionId, setAuthorizingConnectionId] = useState<string | null>(null)
   const [selectedConnectionId, setSelectedConnectionId] = useState('')
   const [tools, setTools] = useState<DiscoveredMcpTool[]>([])
   const [selectedToolName, setSelectedToolName] = useState('')
@@ -134,6 +143,20 @@ export function AssistantExternalSkillsSection({ agentId }: { agentId: string })
     })
   }, [selectedConnectionId])
 
+  // After completing OAuth consent in another tab, refresh on return so the
+  // connection's authorization status updates.
+  useEffect(() => {
+    const onFocus = () => {
+      if (typeof window !== 'undefined' && window.localStorage.getItem(MCP_OAUTH_PENDING_KEY)) {
+        window.localStorage.removeItem(MCP_OAUTH_PENDING_KEY)
+        void load()
+      }
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load is stable for this agent.
+  }, [agentId])
+
   useEffect(() => {
     queueMicrotask(() => {
       if (!selectedTool) {
@@ -158,19 +181,42 @@ export function AssistantExternalSkillsSection({ agentId }: { agentId: string })
       const connection = await externalSkillsApi.createConnection(agentId, {
         displayName: connectionName,
         serverUrl,
-        authMethod: 'access_token',
-        accessToken,
+        authMethod,
+        ...(authMethod === 'access_token'
+          ? { accessToken }
+          : { oauth: buildOauthConfigPayload(oauthDraft) }),
       })
       setConnections((current) => [connection, ...current])
       setSelectedConnectionId(connection.id)
       setConnectionName('')
       setServerUrl('')
       setAccessToken('')
+      setOauthDraft(emptyOauthDraft())
+      setAuthMethod('access_token')
       setIsAddingConnection(false)
     } catch (saveError) {
       setError(getApiErrorMessage(saveError, 'Failed to create MCP connection.'))
     } finally {
       setIsSavingConnection(false)
+    }
+  }
+
+  // Start the one-time OAuth consent flow: open the provider in a new tab and
+  // record which connection it belongs to so the callback page can complete it.
+  // Returning to this tab re-loads the list, picking up the new status.
+  const authorizeConnection = async (connectionId: string) => {
+    setAuthorizingConnectionId(connectionId)
+    setError(null)
+    try {
+      const { authorizationUrl } = await externalSkillsApi.startOauth(agentId, connectionId)
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(MCP_OAUTH_PENDING_KEY, JSON.stringify({ agentId, connectionId }))
+        window.open(authorizationUrl, '_blank', 'noopener,noreferrer')
+      }
+    } catch (authorizeError) {
+      setError(getApiErrorMessage(authorizeError, 'Failed to start OAuth authorization.'))
+    } finally {
+      setAuthorizingConnectionId(null)
     }
   }
 
@@ -244,7 +290,13 @@ export function AssistantExternalSkillsSection({ agentId }: { agentId: string })
   }
 
   const showConnectionForm = isAddingConnection || connections.length === 0
-  const canSaveConnection = Boolean(connectionName.trim() && serverUrl.trim() && accessToken.trim())
+  const canSaveConnection = isConnectionDraftComplete({
+    displayName: connectionName,
+    serverUrl,
+    authMethod,
+    accessToken,
+    oauth: oauthDraft,
+  })
 
   return (
     <SettingsCard
@@ -307,16 +359,33 @@ export function AssistantExternalSkillsSection({ agentId }: { agentId: string })
                             <span className="mt-0.5 block truncate text-xs text-muted-foreground">{connection.serverUrl}</span>
                           </span>
                         </button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="m-1.5 shrink-0"
-                          aria-label={`Delete ${connection.displayName}`}
-                          onClick={() => void deleteConnection(connection.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="flex shrink-0 items-center gap-1 p-1.5">
+                          {connection.authMethod === 'oauth' && connection.status !== 'authorized' ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={authorizingConnectionId === connection.id}
+                              onClick={() => void authorizeConnection(connection.id)}
+                            >
+                              {authorizingConnectionId === connection.id ? (
+                                <Spinner className="h-4 w-4" />
+                              ) : (
+                                <KeyRound className="h-4 w-4" />
+                              )}
+                              {connection.status === 'needs_reauth' ? 'Re-authorize' : 'Authorize'}
+                            </Button>
+                          ) : null}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Delete ${connection.displayName}`}
+                            onClick={() => void deleteConnection(connection.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                     )
                   })}
@@ -343,9 +412,50 @@ export function AssistantExternalSkillsSection({ agentId }: { agentId: string })
                     <Input id="externalSkillServerUrl" type="url" value={serverUrl} onChange={(event) => setServerUrl(event.target.value)} placeholder="https://mcp.example.com/mcp" />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="externalSkillAccessToken">Access token</Label>
-                    <Input id="externalSkillAccessToken" type="password" value={accessToken} onChange={(event) => setAccessToken(event.target.value)} placeholder="Stored encrypted by the backend" />
+                    <Label htmlFor="externalSkillAuthMethod">Authentication</Label>
+                    <Select value={authMethod} onValueChange={(value) => setAuthMethod(value as McpAuthMethodChoice)}>
+                      <SelectTrigger id="externalSkillAuthMethod" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="access_token">Access token</SelectItem>
+                        <SelectItem value="oauth">OAuth</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
+                  {authMethod === 'access_token' ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="externalSkillAccessToken">Access token</Label>
+                      <Input id="externalSkillAccessToken" type="password" value={accessToken} onChange={(event) => setAccessToken(event.target.value)} placeholder="Stored encrypted by the backend" />
+                    </div>
+                  ) : (
+                    <div className="space-y-3 rounded-md border border-border bg-background/50 p-3">
+                      <p className="text-xs text-muted-foreground">
+                        After saving, use <span className="font-medium">Authorize</span> to grant access once. Tokens are
+                        stored encrypted and refreshed automatically.
+                      </p>
+                      <div className="space-y-2">
+                        <Label htmlFor="externalSkillOauthAuthEndpoint">Authorization endpoint</Label>
+                        <Input id="externalSkillOauthAuthEndpoint" type="url" value={oauthDraft.authorizationEndpoint} onChange={(event) => setOauthDraft((current) => ({ ...current, authorizationEndpoint: event.target.value }))} placeholder="https://auth.example.com/authorize" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="externalSkillOauthTokenEndpoint">Token endpoint</Label>
+                        <Input id="externalSkillOauthTokenEndpoint" type="url" value={oauthDraft.tokenEndpoint} onChange={(event) => setOauthDraft((current) => ({ ...current, tokenEndpoint: event.target.value }))} placeholder="https://auth.example.com/token" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="externalSkillOauthClientId">Client ID</Label>
+                        <Input id="externalSkillOauthClientId" value={oauthDraft.clientId} onChange={(event) => setOauthDraft((current) => ({ ...current, clientId: event.target.value }))} placeholder="your-client-id" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="externalSkillOauthClientSecret">Client secret</Label>
+                        <Input id="externalSkillOauthClientSecret" type="password" value={oauthDraft.clientSecret} onChange={(event) => setOauthDraft((current) => ({ ...current, clientSecret: event.target.value }))} placeholder="Leave blank for a public PKCE client" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="externalSkillOauthScopes">Scopes</Label>
+                        <Input id="externalSkillOauthScopes" value={oauthDraft.scopes} onChange={(event) => setOauthDraft((current) => ({ ...current, scopes: event.target.value }))} placeholder="read write (space or comma separated)" />
+                      </div>
+                    </div>
+                  )}
                   <Button
                     type="button"
                     onClick={() => void createConnection()}

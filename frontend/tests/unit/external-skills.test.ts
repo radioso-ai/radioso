@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildExternalSkillDraft,
+  buildOauthConfigPayload,
   defaultParamModes,
   defaultSkillName,
+  emptyOauthDraft,
   getToolInputFields,
+  isConnectionDraftComplete,
   normalizeSkillName,
+  parseOauthCallbackParams,
 } from '@/lib/external-skills'
 
 describe('external skills helpers', () => {
@@ -79,5 +83,48 @@ describe('external skills helpers', () => {
       },
       enabled: true,
     })
+  })
+
+  it('requires the right fields per auth method before a connection can be saved', () => {
+    const base = { displayName: 'Slack', serverUrl: 'https://mcp.example.com', accessToken: '', oauth: emptyOauthDraft() }
+    expect(isConnectionDraftComplete({ ...base, authMethod: 'access_token' })).toBe(false)
+    expect(isConnectionDraftComplete({ ...base, authMethod: 'access_token', accessToken: 'tok' })).toBe(true)
+
+    expect(isConnectionDraftComplete({ ...base, authMethod: 'oauth' })).toBe(false)
+    expect(
+      isConnectionDraftComplete({
+        ...base,
+        authMethod: 'oauth',
+        oauth: {
+          ...emptyOauthDraft(),
+          authorizationEndpoint: 'https://auth.example.com/authorize',
+          tokenEndpoint: 'https://auth.example.com/token',
+          clientId: 'client-1',
+        },
+      }),
+    ).toBe(true)
+  })
+
+  it('builds an OAuth payload, splitting scopes and omitting blanks', () => {
+    expect(
+      buildOauthConfigPayload({
+        authorizationEndpoint: ' https://auth.example.com/authorize ',
+        tokenEndpoint: 'https://auth.example.com/token',
+        clientId: 'client-1',
+        clientSecret: '',
+        scopes: 'read, write  offline_access',
+      }),
+    ).toEqual({
+      authorizationEndpoint: 'https://auth.example.com/authorize',
+      tokenEndpoint: 'https://auth.example.com/token',
+      clientId: 'client-1',
+      scopes: ['read', 'write', 'offline_access'],
+    })
+  })
+
+  it('parses the OAuth callback query string', () => {
+    expect(parseOauthCallbackParams('?code=abc&state=xyz')).toEqual({ code: 'abc', state: 'xyz' })
+    expect(parseOauthCallbackParams('?state=xyz')).toBeNull()
+    expect(parseOauthCallbackParams('')).toBeNull()
   })
 })

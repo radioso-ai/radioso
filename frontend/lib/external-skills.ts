@@ -70,6 +70,76 @@ export function getToolInputFields(inputSchema: unknown): ToolInputField[] {
     })
 }
 
+export type McpAuthMethodChoice = 'access_token' | 'oauth'
+
+export type OauthConnectionDraft = {
+  authorizationEndpoint: string
+  tokenEndpoint: string
+  clientId: string
+  clientSecret: string
+  scopes: string
+}
+
+export const emptyOauthDraft = (): OauthConnectionDraft => ({
+  authorizationEndpoint: '',
+  tokenEndpoint: '',
+  clientId: '',
+  clientSecret: '',
+  scopes: '',
+})
+
+/** A connection draft is complete enough to save (access-token vs OAuth required fields). */
+export function isConnectionDraftComplete(input: {
+  displayName: string
+  serverUrl: string
+  authMethod: McpAuthMethodChoice
+  accessToken: string
+  oauth: OauthConnectionDraft
+}): boolean {
+  if (!input.displayName.trim() || !input.serverUrl.trim()) return false
+  if (input.authMethod === 'access_token') return Boolean(input.accessToken.trim())
+  return Boolean(
+    input.oauth.authorizationEndpoint.trim() &&
+      input.oauth.tokenEndpoint.trim() &&
+      input.oauth.clientId.trim(),
+  )
+}
+
+/** Build the OAuth config payload from the form draft (omitting blank optional fields). */
+export function buildOauthConfigPayload(draft: OauthConnectionDraft): {
+  authorizationEndpoint: string
+  tokenEndpoint: string
+  clientId: string
+  clientSecret?: string
+  scopes?: string[]
+} {
+  const scopes = draft.scopes
+    .split(/[\s,]+/)
+    .map((scope) => scope.trim())
+    .filter(Boolean)
+  return {
+    authorizationEndpoint: draft.authorizationEndpoint.trim(),
+    tokenEndpoint: draft.tokenEndpoint.trim(),
+    clientId: draft.clientId.trim(),
+    ...(draft.clientSecret.trim() ? { clientSecret: draft.clientSecret.trim() } : {}),
+    ...(scopes.length > 0 ? { scopes } : {}),
+  }
+}
+
+/** Storage key holding the connection an in-flight OAuth authorization belongs to. */
+export const MCP_OAUTH_PENDING_KEY = 'radioso.mcpOauthPending'
+
+export type McpOauthPending = { agentId: string; connectionId: string }
+
+/** Parse `code`/`state` from the provider's callback query string. */
+export function parseOauthCallbackParams(search: string): { code: string; state: string } | null {
+  const params = new URLSearchParams(search)
+  const code = params.get('code')
+  const state = params.get('state')
+  if (!code || !state) return null
+  return { code, state }
+}
+
 export function defaultParamModes(fields: readonly ToolInputField[]): ParamModeMap {
   return Object.fromEntries(fields.map((field) => [field.name, field.required ? 'expose' : 'ignore']))
 }

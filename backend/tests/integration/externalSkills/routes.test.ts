@@ -111,6 +111,58 @@ describe("external skills routes", () => {
     await request(app).delete(`/api/v1/agents/${agentId}/mcp-connections/${connectionId}`).set(headers).expect(204);
   });
 
+  it("creates an OAuth connection and runs the authorize/complete flow to authorized", async () => {
+    const { app, headers, agentId } = await setup();
+
+    const created = await request(app)
+      .post(`/api/v1/agents/${agentId}/mcp-connections`)
+      .set(headers)
+      .send({
+        displayName: "Scheduler",
+        serverUrl: "https://mcp.example.com",
+        authMethod: "oauth",
+        oauth: {
+          authorizationEndpoint: "https://auth.example.com/authorize",
+          tokenEndpoint: "https://auth.example.com/token",
+          clientId: "client-123",
+          clientSecret: "client-secret-xyz",
+          scopes: ["read"],
+        },
+      });
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({ authMethod: "oauth", status: "unconfigured", hasCredential: false });
+    expect(JSON.stringify(created.body)).not.toContain("client-secret-xyz");
+    const connectionId = created.body.id as string;
+
+    const authorize = await request(app)
+      .post(`/api/v1/agents/${agentId}/mcp-connections/${connectionId}/oauth/authorize`)
+      .set(headers)
+      .expect(200);
+    const authUrl = new URL(authorize.body.authorizationUrl);
+    expect(authUrl.searchParams.get("code_challenge_method")).toBe("S256");
+    const state = authUrl.searchParams.get("state") as string;
+
+    const complete = await request(app)
+      .post(`/api/v1/agents/${agentId}/mcp-connections/${connectionId}/oauth/complete`)
+      .set(headers)
+      .send({ code: "auth-code", state })
+      .expect(200);
+    expect(complete.body).toMatchObject({ status: "authorized", hasCredential: true });
+    expect(JSON.stringify(complete.body)).not.toContain("test-access-token");
+  });
+
+  it("rejects starting OAuth on an access_token connection (400)", async () => {
+    const { app, headers, agentId } = await setup();
+    const conn = await request(app)
+      .post(`/api/v1/agents/${agentId}/mcp-connections`)
+      .set(headers)
+      .send({ displayName: "Slack", serverUrl: "https://mcp.example.com", authMethod: "access_token", accessToken: "tok" });
+    await request(app)
+      .post(`/api/v1/agents/${agentId}/mcp-connections/${conn.body.id}/oauth/authorize`)
+      .set(headers)
+      .expect(400);
+  });
+
   it("gets and updates a connection (rename) and a skill (disable)", async () => {
     const { app, headers, agentId } = await setup();
     const conn = await request(app)

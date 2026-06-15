@@ -1105,6 +1105,40 @@ export interface paths {
         patch: operations["updateExternalSkill"];
         trace?: never;
     };
+    "/api/v1/agents/{agentId}/mcp-connections/{connectionId}/oauth/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start the OAuth authorization flow for a connection */
+        post: operations["startMcpConnectionOauth"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/mcp-connections/{connectionId}/oauth/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete the OAuth authorization flow */
+        post: operations["completeMcpConnectionOauth"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/retrieval/answer": {
         parameters: {
             query?: never;
@@ -7714,6 +7748,17 @@ export interface operations {
                     authMethod: "access_token" | "oauth";
                     /** @description Required when authMethod is access_token. Write-only — never returned in responses. */
                     accessToken?: string;
+                    /** @description Required when authMethod is oauth. Secrets are write-only. */
+                    oauth?: {
+                        /** Format: uri */
+                        authorizationEndpoint: string;
+                        /** Format: uri */
+                        tokenEndpoint: string;
+                        clientId: string;
+                        /** @description Write-only — never returned in responses. */
+                        clientSecret?: string;
+                        scopes?: string[];
+                    };
                 };
             };
         };
@@ -8311,6 +8356,136 @@ export interface operations {
                 };
             };
             /** @description Skill or connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    startMcpConnectionOauth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Authorization URL */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Open in the author's browser to grant consent. */
+                        authorizationUrl: string;
+                    };
+                };
+            };
+            /** @description Connection is not an OAuth connection or is misconfigured */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Connection not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description OAuth redirect URI or encryption not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    completeMcpConnectionOauth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Authorization code returned by the provider. */
+                    code: string;
+                    /** @description State value returned by the provider; must match the started flow. */
+                    state: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Connection authorized */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        displayName: string;
+                        serverUrl: string;
+                        authMethod: string;
+                        status: string;
+                        hasCredential: boolean;
+                        createdAt: string;
+                        updatedAt: string;
+                    };
+                };
+            };
+            /** @description State mismatch or authorization could not be completed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Connection not found */
             404: {
                 headers: {
                     [name: string]: unknown;

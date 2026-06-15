@@ -7,6 +7,16 @@ const AgentParams = z.object({ agentId: z.string().uuid() });
 const ConnectionParams = AgentParams.extend({ connectionId: z.string().uuid() });
 const SkillParams = AgentParams.extend({ skillId: z.string().uuid() });
 
+const OauthConfigSchema = z
+  .object({
+    authorizationEndpoint: z.string().url(),
+    tokenEndpoint: z.string().url(),
+    clientId: z.string(),
+    clientSecret: z.string().optional().describe("Write-only — never returned in responses."),
+    scopes: z.array(z.string()).optional(),
+  })
+  .describe("Required when authMethod is oauth. Secrets are write-only.");
+
 const ConnectionCreateSchema = z.object({
   displayName: z.string(),
   serverUrl: z.string().url().describe("HTTPS MCP server URL. Must not embed credentials (userinfo)."),
@@ -15,6 +25,16 @@ const ConnectionCreateSchema = z.object({
     .string()
     .optional()
     .describe("Required when authMethod is access_token. Write-only — never returned in responses."),
+  oauth: OauthConfigSchema.optional(),
+});
+
+const OauthAuthorizeResponseSchema = z.object({
+  authorizationUrl: z.string().describe("Open in the author's browser to grant consent."),
+});
+
+const OauthCompleteSchema = z.object({
+  code: z.string().describe("Authorization code returned by the provider."),
+  state: z.string().describe("State value returned by the provider; must match the started flow."),
 });
 
 const ConnectionSummarySchema = z.object({
@@ -189,6 +209,39 @@ export const registerExternalSkillsPaths = (
       204: { description: "Skill deleted" },
       401: errorResponse("Authentication required"),
       404: errorResponse("Skill not found"),
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/{agentId}/mcp-connections/{connectionId}/oauth/authorize",
+    tags: TAGS,
+    summary: "Start the OAuth authorization flow for a connection",
+    operationId: "startMcpConnectionOauth",
+    security: sec,
+    request: { params: ConnectionParams },
+    responses: {
+      200: { description: "Authorization URL", content: json(OauthAuthorizeResponseSchema) },
+      400: errorResponse("Connection is not an OAuth connection or is misconfigured"),
+      401: errorResponse("Authentication required"),
+      404: errorResponse("Connection not found"),
+      503: errorResponse("OAuth redirect URI or encryption not configured"),
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/{agentId}/mcp-connections/{connectionId}/oauth/complete",
+    tags: TAGS,
+    summary: "Complete the OAuth authorization flow",
+    operationId: "completeMcpConnectionOauth",
+    security: sec,
+    request: { params: ConnectionParams, body: { required: true, content: json(OauthCompleteSchema) } },
+    responses: {
+      200: { description: "Connection authorized", content: json(ConnectionSummarySchema) },
+      400: errorResponse("State mismatch or authorization could not be completed"),
+      401: errorResponse("Authentication required"),
+      404: errorResponse("Connection not found"),
     },
   });
 

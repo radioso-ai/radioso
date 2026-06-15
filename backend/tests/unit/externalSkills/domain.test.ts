@@ -38,13 +38,19 @@ describe("mcpConnectionInputSchema", () => {
     expect(() => mcpConnectionInputSchema.parse({ ...base, accessToken: undefined })).toThrow();
   });
 
-  it("does not require an access token for oauth connections", () => {
+  it("requires oauth config (not an access token) for oauth connections", () => {
     const parsed = mcpConnectionInputSchema.parse({
       displayName: "Cal",
       serverUrl: "https://mcp.cal.com",
       authMethod: "oauth",
+      oauth: {
+        authorizationEndpoint: "https://auth.cal.com/authorize",
+        tokenEndpoint: "https://auth.cal.com/token",
+        clientId: "cal-client",
+      },
     });
     expect(parsed.authMethod).toBe("oauth");
+    expect(parsed.accessToken).toBeUndefined();
   });
 
   it("rejects an unknown auth method", () => {

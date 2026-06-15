@@ -15,12 +15,26 @@ import { refPlaceholder, secretPlaceholder } from "./agentConfigPlaceholders.js"
  */
 
 /** Non-redacting source shape (real ids + `hasCredential`) drawn from the repos. */
+export interface InternalMcpOauthClientConfig {
+  authorizationEndpoint: string;
+  tokenEndpoint: string;
+  clientId: string;
+  hasClientSecret: boolean;
+  scopes?: string[];
+}
+
 export interface InternalMcpConnectionConfig {
   id: string;
   displayName: string;
   serverUrl: string;
   authMethod: McpAuthMethod;
+  /**
+   * Static access-token credential presence. OAuth issued tokens are runtime
+   * credentials and are not exported; OAuth client config is represented by
+   * `oauth` instead.
+   */
   hasCredential: boolean;
+  oauth?: InternalMcpOauthClientConfig | null;
 }
 
 export interface InternalExternalSkillConfig {
@@ -39,15 +53,25 @@ export interface InternalAgentExternalSkillsConfig {
   skills: InternalExternalSkillConfig[];
 }
 
-/** Portable (export-ready) connection: server address travels, the credential does not. */
+export interface McpOauthClientConfig {
+  authorizationEndpoint: string;
+  tokenEndpoint: string;
+  clientId: string;
+  clientSecret: AgentConfigSecretPlaceholder | null;
+  scopes: string[];
+}
+
+/** Portable (export-ready) connection: server address travels, credentials do not. */
 export interface McpConnectionConfig {
   /** Within-bundle stable key for ref re-binding; NOT the database id. */
   key: string;
   displayName: string;
   serverUrl: string;
   authMethod: McpAuthMethod;
-  /** `secret` placeholder when the source had a stored credential; re-entered on import. */
+  /** Static access-token placeholder. OAuth access/refresh tokens are never exported. */
   credential: AgentConfigSecretPlaceholder | null;
+  /** OAuth client configuration needed to re-authorize after import. */
+  oauth: McpOauthClientConfig | null;
 }
 
 export interface ExternalSkillConfig {
@@ -80,8 +104,22 @@ export const EMPTY_EXTERNAL_SKILLS: InternalAgentExternalSkillsConfig = { connec
  */
 export const EXTERNAL_SKILLS_PORTABILITY: readonly [path: string, portability: "ref" | "secret"][] = [
   ["externalSkills.connections[].credential", "secret"],
+  ["externalSkills.connections[].oauth.clientSecret", "secret"],
   ["externalSkills.skills[].connection", "ref"],
 ];
+
+const serializeOauthClient = (connection: InternalMcpConnectionConfig): McpOauthClientConfig | null => {
+  if (connection.authMethod !== "oauth" || !connection.oauth) {
+    return null;
+  }
+  return {
+    authorizationEndpoint: connection.oauth.authorizationEndpoint,
+    tokenEndpoint: connection.oauth.tokenEndpoint,
+    clientId: connection.oauth.clientId,
+    clientSecret: connection.oauth.hasClientSecret ? secretPlaceholder() : null,
+    scopes: [...(connection.oauth.scopes ?? [])],
+  };
+};
 
 /**
  * Render the relational external-skill data into the portable bundle: connections
@@ -100,7 +138,8 @@ export const serializeExternalSkills = (
       displayName: connection.displayName,
       serverUrl: connection.serverUrl,
       authMethod: connection.authMethod,
-      credential: connection.hasCredential ? secretPlaceholder() : null,
+      credential: connection.authMethod === "access_token" && connection.hasCredential ? secretPlaceholder() : null,
+      oauth: serializeOauthClient(connection),
     } satisfies McpConnectionConfig;
   });
 

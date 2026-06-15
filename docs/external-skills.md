@@ -74,10 +74,11 @@ MCP connections and skill definitions as data.
 
 Two things are handled with care:
 
-- **Secrets stay in the secret store.** Access tokens (and OAuth secrets, where
-  used) are never written to an export. Each connection that had a stored
-  credential exports a placeholder instead. After import, the connection needs the
-  credential entered again before it can be used.
+- **Secrets stay in the secret store.** Static access tokens and OAuth client
+  secrets are never written to an export. They appear as placeholders. OAuth
+  access and refresh tokens are not exported at all; after import, authorize the
+  OAuth connection again. The non-secret OAuth client details, such as endpoints,
+  client id, and scopes, stay in the bundle so re-authorization is possible.
 - **Skill-to-connection links are rebuilt on import.** A skill points to one
   connection. The export records this link by a within-bundle key, not by the
   connection's database id. On import, Radioso recreates the connections first,

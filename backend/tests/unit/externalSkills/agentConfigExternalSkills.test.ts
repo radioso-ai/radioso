@@ -66,7 +66,16 @@ const externalSkillsSource = (): InternalAgentExternalSkillsConfig => ({
       displayName: "Scheduler",
       serverUrl: "https://mcp.scheduler.example.com",
       authMethod: "oauth",
-      hasCredential: false,
+      // Simulates an already-authorized OAuth connection. Issued OAuth tokens are
+      // runtime credentials and must not be exported.
+      hasCredential: true,
+      oauth: {
+        authorizationEndpoint: "https://auth.scheduler.example.com/authorize",
+        tokenEndpoint: "https://auth.scheduler.example.com/token",
+        clientId: "scheduler-client",
+        hasClientSecret: true,
+        scopes: ["calendar.read", "calendar.write"],
+      },
     },
   ],
   skills: [
@@ -104,6 +113,7 @@ describe("serializeExternalSkills", () => {
         serverUrl: "https://mcp.slack.example.com",
         authMethod: "access_token",
         credential: { __redacted: "secret" },
+        oauth: null,
       },
       {
         key: "connection-1",
@@ -111,6 +121,13 @@ describe("serializeExternalSkills", () => {
         serverUrl: "https://mcp.scheduler.example.com",
         authMethod: "oauth",
         credential: null,
+        oauth: {
+          authorizationEndpoint: "https://auth.scheduler.example.com/authorize",
+          tokenEndpoint: "https://auth.scheduler.example.com/token",
+          clientId: "scheduler-client",
+          clientSecret: { __redacted: "secret" },
+          scopes: ["calendar.read", "calendar.write"],
+        },
       },
     ]);
 
@@ -131,6 +148,7 @@ describe("serializeExternalSkills", () => {
     expect(config.externalSkills.skills).toHaveLength(2);
     expect(config.portability["externalSkills"]).toBe("portable");
     expect(config.portability["externalSkills.connections[].credential"]).toBe("secret");
+    expect(config.portability["externalSkills.connections[].oauth.clientSecret"]).toBe("secret");
     expect(config.portability["externalSkills.skills[].connection"]).toBe("ref");
   });
 

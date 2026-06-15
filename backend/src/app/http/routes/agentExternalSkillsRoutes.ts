@@ -9,6 +9,7 @@ import { badRequest } from "../../../shared/domain/errors.js";
 import {
   mcpConnectionInputSchema,
   mcpConnectionUpdateSchema,
+  oauthCompleteInputSchema,
   skillDefinitionInputSchema,
   skillDefinitionUpdateSchema,
 } from "../../../modules/externalSkills/domain.js";
@@ -78,6 +79,47 @@ export const createAgentExternalSkillsRoutes = (dependencies: AppDependencies): 
       next(error);
     }
   });
+
+  // Start the one-time OAuth consent flow; returns the provider authorization URL.
+  router.post(
+    "/:agentId/mcp-connections/:connectionId/oauth/authorize",
+    workspaceSession,
+    agentManage,
+    async (req, res, next) => {
+      try {
+        const agentId = await resolveAgentId(req, res);
+        const result = await dependencies.mcpConnectionService.startOauthAuthorization(
+          agentId,
+          parseId(req.params.connectionId, "connectionId"),
+        );
+        res.status(200).json(result);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  // Complete the OAuth consent flow with the provider's authorization code + state.
+  router.post(
+    "/:agentId/mcp-connections/:connectionId/oauth/complete",
+    workspaceSession,
+    agentManage,
+    validateBody(oauthCompleteInputSchema),
+    async (req, res, next) => {
+      try {
+        const agentId = await resolveAgentId(req, res);
+        const summary = await dependencies.mcpConnectionService.completeOauthAuthorization(
+          agentId,
+          parseId(req.params.connectionId, "connectionId"),
+          req.body.code,
+          req.body.state,
+        );
+        res.status(200).json(summary);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   router.get("/:agentId/mcp-connections/:connectionId", workspaceSession, agentRead, async (req, res, next) => {
     try {

@@ -4,6 +4,7 @@ import { ExternalSkillDefinitionService } from "../../modules/externalSkills/ser
 import { McpConnectionRepository } from "../../db/repositories/mcpConnectionRepository.js";
 import { ExternalSkillDefinitionRepository } from "../../db/repositories/externalSkillDefinitionRepository.js";
 import { createMcpToolServiceFactory } from "../../modules/externalSkills/composition.js";
+import { MCP_OAUTH_CALLBACK_PATH } from "../../modules/externalSkills/domain.js";
 import {
   createDefaultApplicationComposition,
   createDefaultAgentSkillSettingsRegistry,
@@ -119,6 +120,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     toolServiceFactory: createMcpToolServiceFactory(assertPublicWebsiteUrl),
     encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
     assertPublicUrl: assertPublicWebsiteUrl,
+    oauthRedirectUri: env.APP_BASE_URL ? `${env.APP_BASE_URL.replace(/\/$/, "")}${MCP_OAUTH_CALLBACK_PATH}` : undefined,
+    logger,
   });
   const externalSkillDefinitionService = new ExternalSkillDefinitionService(
     externalSkillDefinitionRepository,

@@ -195,6 +195,55 @@ describe('envelopeToFlowGraph', () => {
     )
   })
 
+  it('fans the routine-turn directive_steering stage in as the Directives input', () => {
+    // Routine turns co-compose directives at render time and trace them as a
+    // `directive_steering` spine stage (not `directive_match`). The flow graph
+    // must surface them as the same Directives input it shows on normal turns.
+    const routineTurn: TurnTraceEnvelope = {
+      version: 1,
+      spine: {
+        traceId: 'conversation-turn-3',
+        startedAt: '2026-01-01T00:00:00.000Z',
+        stages: [
+          {
+            id: 'message',
+            kind: 'message',
+            status: 'applied',
+            outputs: { kind: 'user.chat', eventId: 'msg_user_3', contentLength: 9 },
+          },
+          { id: 'gather', kind: 'gather', status: 'applied', outputs: { historyCount: 0 } },
+          {
+            id: 'routine_resume',
+            kind: 'routine_resume',
+            status: 'applied',
+            outputs: { routineId: 'contact', answerLength: 40 },
+          },
+          {
+            id: 'directive_steering',
+            kind: 'directive_steering',
+            status: 'applied',
+            outputs: {
+              matchCount: 1,
+              candidateCount: 2,
+              directives: [{ id: 'directive_1', name: 'warmth' }],
+            },
+          },
+        ],
+      },
+    }
+
+    const graph = envelopeToFlowGraph(routineTurn)
+    const directives = graph.nodes.find((n) => n.id === 'input:directives')
+
+    expect(directives).toMatchObject({
+      nodeKind: 'input',
+      label: 'Directives',
+      sublabel: '1 of 2 matched',
+      detail: { kind: 'spine', spineStageId: 'directive_steering' },
+    })
+    expect(edge(graph, 'input:directives', 'engine')?.kind).toBe('fan-in')
+  })
+
   it('places clarification before the outcome on claimed routine turns', () => {
     const claimed: TurnTraceEnvelope = {
       version: 1,

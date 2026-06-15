@@ -18,6 +18,8 @@ const SPINE_STAGE_LABELS: Record<string, string> = {
   message: 'Message',
   gather: 'Gather',
   directive_match: 'Directives',
+  // Routine turns co-compose directives at render time under this kind.
+  directive_steering: 'Directives',
   skill_selection: 'Select skill',
   skill_dispatch: 'Dispatch',
   compose: 'Compose',

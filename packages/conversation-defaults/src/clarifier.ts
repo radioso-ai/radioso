@@ -5,6 +5,7 @@ import type {
   ConversationMessage,
   ConversationModelGateway,
   ClarificationReplyMapInput,
+  SteeringRule,
   TurnContext,
 } from "@radioso/conversation-contract";
 
@@ -75,6 +76,23 @@ const turnMessages = (turn: TurnContext): ConversationMessage[] => [
   ...turn.history,
   { role: "user", content: turn.inputEvent.content },
 ];
+
+/**
+ * Appends co-composed steering (matched directives) as guidance the clarifying
+ * question must follow, so a routine-activation clarification is shaped by the
+ * agent's directives (tone, format, language) the same way a routine step reply
+ * is. Empty when no steering applies, leaving the prompt — and every non-routine
+ * clarifier caller — unchanged.
+ */
+const appendGuidance = (prompt: string, steering: SteeringRule[] = []): string => {
+  if (steering.length === 0) {
+    return prompt;
+  }
+  const lines = steering
+    .map((rule) => (rule.condition ? `- ${rule.action} (when: ${rule.condition})` : `- ${rule.action}`))
+    .join("\n");
+  return `${prompt}\n\nAlso follow this guidance when phrasing the question:\n${lines}`;
+};
 
 const optionsBlock = (candidates: ClarificationCandidate[]): string =>
   candidates
@@ -193,7 +211,7 @@ export class DefaultClarifier implements ConversationClarifier {
     });
     const { text } = await this.modelGateway.complete({
       messages: turnMessages(input.turn),
-      systemPrompt,
+      systemPrompt: appendGuidance(systemPrompt, input.turn.steering),
     });
     return text.trim();
   }

@@ -84,6 +84,12 @@ the assistant asks a blocking question, it leads directly to the outcome because
 no routine or retrieval candidate executes yet. On a silent pick or retrieval
 offer, the turn continues through the routine or retrieval path.
 
+When the agent has directives that apply, a **Directives** node also appears,
+fanning into the engine next to the message and history. On a routine-activation
+clarification it shows the directives that shaped the clarifying question. Only
+global directives apply here, because no routine is selected yet, so routine- or
+step-scoped directives cannot match. Open the node to see each matched directive.
+
 The detail panel shows:
 
 - `surface` — where the ambiguity came from, such as `routine_activation` or

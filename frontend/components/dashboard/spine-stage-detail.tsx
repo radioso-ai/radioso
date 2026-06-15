@@ -756,6 +756,9 @@ export function SpineStageDetail({
     case 'gather':
       return <GatherStageDetail stage={stage} ctx={ctx} />
     case 'directive_match':
+    // Routine turns trace co-composed directives under `directive_steering`; the
+    // payload is the same directive summary, so it renders through the same view.
+    case 'directive_steering':
       return <DirectiveMatchStageDetail stage={stage} />
     case 'skill_selection':
       return <SkillSelectionStageDetail stage={stage} />

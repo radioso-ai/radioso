@@ -124,14 +124,14 @@ describe("one steering-list pipeline", () => {
       "routine_resume",
       "directive_steering",
     ]);
+    // The routine-turn directive stage carries the same full, inspectable detail
+    // as the normal-turn match stage, so the debug flow can render the mixed-in
+    // directives' copy (directive text is authored config — safe in the trace).
     expect(result.trace.stages.at(-1)?.outputs).toMatchObject({
       matchCount: 1,
       candidateCount: 1,
-      directives: [{ id: "directive_1", name: "warmth" }],
+      directives: [{ id: "directive_1", name: "warmth", action: "Use a warm tone." }],
     });
-    expect(result.trace.stages.at(-1)?.outputs?.directives).not.toEqual([
-      expect.objectContaining({ action: "Use a warm tone." }),
-    ]);
   });
 
   it("passes active routine and rendered step ids to the directive matcher on routine turns", async () => {

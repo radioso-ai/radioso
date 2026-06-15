@@ -367,6 +367,7 @@ describe("EvalSnapshotService.capture", () => {
             credentialCiphertext: "encrypted-token",
             encryptionKeyId: null,
             oauthClientCiphertext: null,
+            oauthFlowCiphertext: null,
             status: "authorized" as const,
             createdAt: fixedDate,
             updatedAt: fixedDate,

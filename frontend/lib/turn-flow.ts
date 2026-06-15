@@ -162,7 +162,10 @@ export const envelopeToFlowGraph = (envelope: TurnTraceEnvelope): TurnFlowGraph 
 
   const message = findStage(spine, 'message')
   const gather = findStage(spine, 'gather')
-  const directives = findStage(spine, 'directive_match')
+  // Normal turns trace directives as `directive_match` (before selection);
+  // routine turns co-compose them at render time as `directive_steering`. Both
+  // fan into the engine as the same Directives input.
+  const directives = findStage(spine, 'directive_match') ?? findStage(spine, 'directive_steering')
   const selection = findStage(spine, 'skill_selection')
   const clarification = findStage(spine, 'clarification')
   const dispatch = spine.stages.find((stage) => stage.kind === 'skill_dispatch')

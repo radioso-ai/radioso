@@ -1,11 +1,27 @@
-import { AppError, conflict, notFound } from "../../../shared/domain/errors.js";
+import { AppError, badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
 import { encryptField, decryptField } from "../../../shared/infra/crypto/fieldEncryption.js";
+import type { AppLogger } from "../../../shared/observability/logger.js";
 import type {
   McpConnectionRecord,
   McpConnectionRepositoryPort,
 } from "../../../db/repositories/mcpConnectionRepository.js";
-import type { McpConnectionInput, McpConnectionUpdateInput } from "../domain.js";
+import type { McpConnectionInput, McpConnectionUpdateInput, StoredOauthClientConfig } from "../domain.js";
 import type { ToolServiceFactory } from "../executor/mcpSkillExecutor.js";
+import {
+  buildAuthorizationUrl,
+  createOauthState,
+  createPkcePair,
+  exchangeAuthorizationCode,
+  type FetchLike,
+} from "../oauth/oauthClient.js";
+import {
+  decryptOauthClientConfig,
+  decryptOauthFlow,
+  encryptOauthClientConfig,
+  encryptOauthFlow,
+  encryptOauthTokens,
+} from "../oauth/oauthCrypto.js";
+import { resolveFreshAccessToken } from "../oauth/oauthAccessTokenResolver.js";
 
 /** Non-secret view of a connection (the only shape returned to clients). */
 export interface McpConnectionSummary {
@@ -57,7 +73,28 @@ export interface McpConnectionServiceOptions {
    * user cannot point a connection at internal infrastructure.
    */
   assertPublicUrl?: (url: string) => void | Promise<void>;
+  /**
+   * Absolute redirect URI registered with OAuth providers (the front-end callback
+   * page). Required to start an OAuth authorization. Derived from APP_BASE_URL in
+   * composition.
+   */
+  oauthRedirectUri?: string;
+  /** Injectable token-endpoint fetch (defaults to global fetch); test seam. */
+  fetchImpl?: FetchLike;
+  /** Optional logger for status-transition signals (identity-only, no secrets). */
+  logger?: AppLogger;
 }
+
+/** Adapt Node's global fetch to the narrow {@link FetchLike} the OAuth client expects. */
+const globalFetchAdapter: FetchLike = async (url, init) => {
+  const response = await fetch(url, {
+    method: init.method,
+    headers: init.headers,
+    body: init.body,
+    signal: init.signal,
+  });
+  return { ok: response.ok, status: response.status, json: () => response.json() };
+};
 
 /**
  * Owns the connection lifecycle: encrypts credentials on write, never returns
@@ -77,6 +114,7 @@ export class McpConnectionService {
     await this.options.assertPublicUrl?.(input.serverUrl);
 
     let credentialCiphertext: string | null = null;
+    let oauthClientCiphertext: string | null = null;
     let encryptionKeyId: string | null = null;
     let status: McpConnectionRecord["status"] = "unconfigured";
 
@@ -92,12 +130,29 @@ export class McpConnectionService {
       status = "authorized";
     }
 
+    if (input.authMethod === "oauth") {
+      if (!input.oauth) {
+        throw badRequest("oauth config is required for oauth connections");
+      }
+      if (!this.options.encryptionKey) {
+        throw new EncryptionNotConfiguredError();
+      }
+      // SSRF guard for the authorization server endpoints too.
+      await this.options.assertPublicUrl?.(input.oauth.authorizationEndpoint);
+      await this.options.assertPublicUrl?.(input.oauth.tokenEndpoint);
+      oauthClientCiphertext = encryptOauthClientConfig(input.oauth, this.options.encryptionKey);
+      encryptionKeyId = this.options.encryptionKeyId ?? null;
+      // Stays unconfigured until the one-time consent flow completes.
+      status = "unconfigured";
+    }
+
     const record = await this.options.repository.create({
       agentId,
       displayName: input.displayName,
       serverUrl: input.serverUrl,
       authMethod: input.authMethod,
       credentialCiphertext,
+      oauthClientCiphertext,
       encryptionKeyId,
       status,
     });
@@ -127,6 +182,9 @@ export class McpConnectionService {
     let encryptionKeyId: string | undefined;
     let status: McpConnectionRecord["status"] | undefined;
     if (input.accessToken !== undefined) {
+      if (existing.authMethod !== "access_token") {
+        throw badRequest("accessToken rotation is only valid for access-token connections");
+      }
       if (!this.options.encryptionKey) {
         throw new EncryptionNotConfiguredError();
       }
@@ -171,16 +229,34 @@ export class McpConnectionService {
     // Re-check immediately before the outbound fetch (defense against a record
     // whose host has since become non-public).
     await this.options.assertPublicUrl?.(record.serverUrl);
-    const accessToken =
-      record.authMethod === "access_token" && record.credentialCiphertext && this.options.encryptionKey
-        ? decryptField(record.credentialCiphertext, this.options.encryptionKey)
-        : undefined;
+    let accessToken: string | undefined;
+    let oauthAccessTokenProvider: (() => Promise<string>) | undefined;
+    if (record.authMethod === "access_token" && record.credentialCiphertext && this.options.encryptionKey) {
+      accessToken = decryptField(record.credentialCiphertext, this.options.encryptionKey);
+    }
+    if (record.authMethod === "oauth") {
+      if (!this.options.encryptionKey) {
+        throw new EncryptionNotConfiguredError();
+      }
+      oauthAccessTokenProvider = () =>
+        resolveFreshAccessToken({
+          agentId,
+          record,
+          repository: this.options.repository,
+          encryptionKey: this.options.encryptionKey!,
+          encryptionKeyId: this.options.encryptionKeyId ?? null,
+          assertPublicUrl: this.options.assertPublicUrl,
+          fetchImpl: this.options.fetchImpl,
+          logger: this.options.logger,
+        });
+    }
 
     const service = this.options.toolServiceFactory.create({
       id: record.id,
       serverUrl: record.serverUrl,
       authMethod: record.authMethod,
       ...(accessToken ? { accessToken } : {}),
+      ...(oauthAccessTokenProvider ? { oauthAccessTokenProvider } : {}),
     });
     try {
       const tools = await service.listTools();
@@ -188,5 +264,117 @@ export class McpConnectionService {
     } finally {
       await (service as { close?: () => Promise<void> }).close?.().catch(() => undefined);
     }
+  }
+
+  private requireOauthConnection(record: McpConnectionRecord | null): {
+    record: McpConnectionRecord;
+    config: StoredOauthClientConfig;
+    key: string;
+  } {
+    if (!record) {
+      throw notFound("MCP connection not found");
+    }
+    if (record.authMethod !== "oauth") {
+      throw badRequest("Connection is not an OAuth connection");
+    }
+    if (!this.options.encryptionKey) {
+      throw new EncryptionNotConfiguredError();
+    }
+    if (!record.oauthClientCiphertext) {
+      throw badRequest("OAuth connection is missing its client configuration");
+    }
+    return {
+      record,
+      config: decryptOauthClientConfig(record.oauthClientCiphertext, this.options.encryptionKey),
+      key: this.options.encryptionKey,
+    };
+  }
+
+  /**
+   * Start the one-time consent flow: generate PKCE + state, persist the in-flight
+   * flow, and return the provider authorization URL for the author's browser.
+   */
+  async startOauthAuthorization(agentId: string, id: string): Promise<{ authorizationUrl: string }> {
+    const { record, config, key } = this.requireOauthConnection(
+      await this.options.repository.findById(agentId, id),
+    );
+    const redirectUri = this.options.oauthRedirectUri;
+    if (!redirectUri) {
+      throw new AppError(
+        503,
+        "oauth_redirect_not_configured",
+        "APP_BASE_URL must be set so MCP OAuth connections have a redirect URI",
+      );
+    }
+    // SSRF re-check immediately before handing the author an outbound URL.
+    await this.options.assertPublicUrl?.(config.authorizationEndpoint);
+    await this.options.assertPublicUrl?.(config.tokenEndpoint);
+
+    const { codeVerifier, codeChallenge } = createPkcePair();
+    const state = createOauthState();
+    await this.options.repository.setOauthFlow(
+      agentId,
+      id,
+      encryptOauthFlow({ state, codeVerifier, redirectUri }, key),
+    );
+    const authorizationUrl = buildAuthorizationUrl({ config, redirectUri, state, codeChallenge });
+    this.options.logger?.info(
+      { event: "external_skill.oauth", phase: "authorize_started", agentId, connectionId: record.id },
+      "MCP OAuth authorization started",
+    );
+    return { authorizationUrl };
+  }
+
+  /**
+   * Complete the consent flow: validate state, exchange the code for tokens, store
+   * them encrypted, and mark the connection authorized. Sanitized on failure — no
+   * provider error text or secret reaches the caller.
+   */
+  async completeOauthAuthorization(
+    agentId: string,
+    id: string,
+    code: string,
+    state: string,
+  ): Promise<McpConnectionSummary> {
+    const { record, config, key } = this.requireOauthConnection(
+      await this.options.repository.findById(agentId, id),
+    );
+    if (!record.oauthFlowCiphertext) {
+      throw badRequest("No pending authorization for this connection");
+    }
+    const flow = decryptOauthFlow(record.oauthFlowCiphertext, key);
+    if (!state || state !== flow.state) {
+      throw badRequest("OAuth state mismatch");
+    }
+    await this.options.assertPublicUrl?.(config.tokenEndpoint);
+
+    let tokens;
+    try {
+      tokens = await exchangeAuthorizationCode({
+        config,
+        code,
+        codeVerifier: flow.codeVerifier,
+        redirectUri: flow.redirectUri,
+        fetchImpl: this.options.fetchImpl ?? globalFetchAdapter,
+      });
+    } catch {
+      // Sanitized: do not surface the provider's raw error.
+      throw badRequest("Authorization could not be completed");
+    }
+
+    const updated = await this.options.repository.setOauthTokens(
+      agentId,
+      id,
+      encryptOauthTokens(tokens, key),
+      this.options.encryptionKeyId ?? null,
+    );
+    if (!updated) {
+      throw notFound("MCP connection not found");
+    }
+    this.options.logger?.info(
+      { event: "external_skill.oauth", phase: "authorized", agentId, connectionId: record.id },
+      "MCP OAuth connection authorized",
+    );
+    return toSummary(updated);
   }
 }

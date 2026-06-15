@@ -84,6 +84,7 @@ describeIfDatabase("external skills services (postgres)", () => {
       CREATE TABLE agents (id UUID PRIMARY KEY, workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE);
     `);
     await client.query(await readFile(path.join(testMigrationsPath, "093_external_skills.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "094_external_skills_oauth_flow.sql"), "utf8"));
     await client.query(`INSERT INTO workspaces (id) VALUES ($1)`, [workspaceId]);
     await client.query(`INSERT INTO agents (id, workspace_id) VALUES ($1, $2)`, [agentId, workspaceId]);
 

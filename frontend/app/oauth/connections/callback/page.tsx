@@ -16,9 +16,13 @@ export default function OauthConnectionCallbackPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    setProvider(params.get('provider'))
     const authorized = params.get('status') === 'authorized'
-    setState(authorized ? 'authorized' : 'error')
+    // Defer the state update so the first paint matches the static prerender
+    // ('pending') and we avoid a synchronous setState in the effect body.
+    queueMicrotask(() => {
+      setProvider(params.get('provider'))
+      setState(authorized ? 'authorized' : 'error')
+    })
     if (!authorized) {
       return
     }

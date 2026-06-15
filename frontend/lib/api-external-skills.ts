@@ -29,11 +29,20 @@ export type ExternalSkillDefinition = {
   updatedAt: string
 }
 
+export type OauthConnectionConfig = {
+  authorizationEndpoint: string
+  tokenEndpoint: string
+  clientId: string
+  clientSecret?: string
+  scopes?: string[]
+}
+
 export type CreateMcpConnectionInput = {
   displayName: string
   serverUrl: string
   authMethod: McpAuthMethod
   accessToken?: string
+  oauth?: OauthConnectionConfig
 }
 
 export type CreateExternalSkillInput = {
@@ -74,6 +83,26 @@ export const externalSkillsApi = {
     await request<void>(`/agents/${agentId}/mcp-connections/${connectionId}`, {
       method: 'DELETE',
     }, { withApiToken: true })
+  },
+
+  async startOauth(agentId: string, connectionId: string): Promise<{ authorizationUrl: string }> {
+    return request<{ authorizationUrl: string }>(
+      `/agents/${agentId}/mcp-connections/${connectionId}/oauth/authorize`,
+      { method: 'POST' },
+      { withApiToken: true },
+    )
+  },
+
+  async completeOauth(
+    agentId: string,
+    connectionId: string,
+    data: { code: string; state: string },
+  ): Promise<McpConnection> {
+    return request<McpConnection>(
+      `/agents/${agentId}/mcp-connections/${connectionId}/oauth/complete`,
+      { method: 'POST', body: JSON.stringify(data) },
+      { withApiToken: true },
+    )
   },
 
   async discoverTools(agentId: string, connectionId: string): Promise<{ tools: DiscoveredMcpTool[] }> {

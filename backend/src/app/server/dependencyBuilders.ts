@@ -141,11 +141,11 @@ import {
 } from "../../modules/settings/composition.js";
 import type { EmbeddingModelId } from "../../modules/settings/contracts/ingestion.js";
 import { SkillCatalogService, retrievalAnswerSkillDefinition } from "../../modules/skills/public.js";
-import {
-  RoutineSkillExecutorDispatcher,
-  StaticRoutineSkillResolver,
-} from "../../modules/routines/public.js";
 import { RETRIEVAL_ANSWER_ADAPTER, RetrievalAnswerSkillExecutor } from "../../modules/retrieval/public.js";
+import { EXTERNAL_SKILLS_ADAPTER, McpSkillExecutor } from "../../modules/externalSkills/executor/mcpSkillExecutor.js";
+import { buildExternalSkillsDeps } from "../../modules/externalSkills/composition.js";
+import { ExternalSkillRoutineSkillResolver } from "../../modules/externalSkills/routineSkillResolver.js";
+import { RoutineSkillExecutorDispatcher } from "../../modules/routines/public.js";
 import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
@@ -806,6 +806,22 @@ export const buildChatServices = (input: {
       executor: new RetrievalAnswerSkillExecutor(input.retrievalPipeline),
     });
   }
+  // Register the external-skills (MCP) executor here, where the database + encryption
+  // key are available (spec 087). Guarded for repeated dependency builds; skipped when
+  // no encryption key is configured, since stored credentials cannot be decrypted then
+  // (routine skill steps then degrade to a failed outcome rather than crashing).
+  if (
+    input.env.CONNECTOR_ENCRYPTION_KEY &&
+    !input.composition.skillExecutorRegistry.resolve({ kind: "internal", adapter: EXTERNAL_SKILLS_ADAPTER })
+  ) {
+    input.composition.skillExecutorRegistry.register({
+      kind: "internal",
+      adapter: EXTERNAL_SKILLS_ADAPTER,
+      executor: new McpSkillExecutor(
+        buildExternalSkillsDeps(input.database, input.env.CONNECTOR_ENCRYPTION_KEY, input.assertPublicWebsiteUrl),
+      ),
+    });
+  }
   const publicChatActionAdvertisers = input.composition.publicChatActionAdvertiserRegistrations.map((registration) =>
     typeof registration === "function" ? registration(publicChatActionAdvertiserContext) : registration,
   );
@@ -1004,14 +1020,8 @@ export const buildChatServices = (input: {
             promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
             responseLanguage,
           }),
-          // A routine tool step dispatches through the same skill-executor port
-          // the chat turn uses, so any skill behind the registry — including
-          // external MCP skills — is usable in a routine with no runner change.
-          // The resolver is the per-agent authored-skill allow-list; until
-          // authored skills exist it is empty and a tool step fails closed as
-          // `routine_skill_unknown` rather than invoking an unauthored skill.
           new RoutineSkillExecutorDispatcher(
-            new StaticRoutineSkillResolver([]),
+            new ExternalSkillRoutineSkillResolver(),
             input.composition.skillExecutorRegistry,
           ),
         ),

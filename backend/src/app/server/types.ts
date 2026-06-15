@@ -33,6 +33,8 @@ import type { AuditService } from "../../modules/audit/composition.js";
 import type { WorkspaceService } from "../../modules/workspace/services/workspaceService.js";
 import type { WorkspaceSummaryService } from "../../modules/workspace/services/workspaceSummaryService.js";
 import type { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
+import type { McpConnectionService } from "../../modules/externalSkills/services/mcpConnectionService.js";
+import type { ExternalSkillDefinitionService } from "../../modules/externalSkills/services/externalSkillDefinitionService.js";
 import type { ChunkRepositoryPort } from "../../modules/documents/contracts/index.js";
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
 import type { AccountRepositoryPort } from "../../modules/auth/services/authService.js";
@@ -97,6 +99,8 @@ export interface AppDependencies {
   workspaceSessionService: WorkspaceSessionService;
   abuseControlService: AbuseControlService;
   workspaceProviderCredentialsService: WorkspaceProviderCredentialsService;
+  mcpConnectionService: McpConnectionService;
+  externalSkillDefinitionService: ExternalSkillDefinitionService;
   webhookDestinations: WebhookDestinationPublicAdapter;
   workspaceLlmCapabilitySettingsService: WorkspaceLlmCapabilitySettingsService;
   auditService: AuditService;

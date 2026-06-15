@@ -52,6 +52,8 @@ export type {
 export { connectorsApi } from './api-connectors'
 export { documentsApi } from './api-documents'
 export { evalsApi } from './api-eval'
+export { externalSkillsApi } from './api-external-skills'
+export type { ExternalSkillDefinition, McpConnection } from './api-external-skills'
 export { workbenchApi } from './api-workbench'
 export { publicChatApi } from './api-public-chat'
 export { agentsApi, generalSettingsApi, settingsApi, webhookDestinationsApi } from './api-settings'

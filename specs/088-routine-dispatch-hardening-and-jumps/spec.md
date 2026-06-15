@@ -117,3 +117,9 @@ A routine author can branch a step to **any** named step in the routine, not onl
 - Async/deferred routine skill reconciliation (still degrades, per #720).
 - A visual/canvas routine graph editor; jumps are authored in prose only.
 - Changes to the external-skills connection/skill-definition model from 087.
+
+## Implementation notes (as built)
+
+- **Stable step ids (US4).** A step gains a stable id by being given a **title** in the prose editor: a `Step` toolbar button turns a line into an h1 heading whose text pins the id (a slug) and the author label (stored in the existing `step.metadata.outlineLabel` field, preserved from PR-1). Untitled lines keep their original positional `step_N` ids — the change is additive, so existing routines are unaffected. Only titled steps can be jump targets (a jump needs a stable name).
+- **Authoring a jump.** A `Jump` toolbar button opens a dialog: pick the target titled step; for a backward jump (loop), tick "Loop back" and set a max count. A forward jump compiles to an AI-decided (`llm`) or condition (`field`) edge; a bounded backward jump compiles to a `counter` edge — the bound the FR-008 validator requires. No `"jump"` flow-target kind was added (a jump is a `step`-targeted branch the runtime already represents). h2 substeps are deferred to a follow-up.
+- The prose ↔ draft ↔ compiled round-trip carries titled steps + jumps losslessly (unit-tested); the editor renders headings + `step` chips (with the loop bound on the chip face). A Playwright journey authors a counter-bounded backward jump end-to-end.

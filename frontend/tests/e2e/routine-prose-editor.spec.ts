@@ -290,6 +290,52 @@ test("a skill chip compiles to a tool step naming the skill", async ({ page }) =
   expect(toolStep).toMatchObject({ kind: "tool", toolRef: "book_meeting" });
 });
 
+test("a step jump loops back to an earlier titled step with a bounded counter", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Verify identity");
+  await page.getByLabel("Trigger", { exact: true }).fill("When a caller must verify their identity");
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+
+  // Two titled steps (h1). The Step button names the current line so a jump can target it.
+  await editor.pressSequentially("Ask for code");
+  await page.getByRole("button", { name: "Step", exact: true }).click();
+  await page.keyboard.press("Enter");
+  await editor.pressSequentially("Check the code");
+  await page.getByRole("button", { name: "Step", exact: true }).click();
+  await page.keyboard.press("Enter");
+
+  // A branch that loops back to the first step, capped at 3 — the cap is the counter guard.
+  // (exact: the dev-build overlay button's label contains the branch name "088-jumps".)
+  await page.getByRole("button", { name: "Jump", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Step").selectOption({ label: "Ask for code" });
+  await dialog.getByRole("checkbox").check();
+  await dialog.getByLabel("Max times").fill("3");
+  await dialog.getByRole("button", { name: "Add jump" }).click();
+  await expect(page.locator('[data-routine-chip="step"]')).toBeVisible();
+
+  await page.getByRole("button", { name: "Save routine" }).click();
+
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  const created = routineUpdates.find((update) => update.method === "POST");
+  // Each titled step carries a stable, slug-derived id.
+  const stepIds = (created?.body?.steps ?? []).map((step: { stableStepId: string }) => step.stableStepId);
+  expect(stepIds).toEqual(["ask_for_code", "check_the_code"]);
+  // The backward jump compiles to a counter-guarded loop edge the backend accepts.
+  const loop = (created?.body?.transitions ?? []).find(
+    (transition: { toRef: string; guardKind: string }) => transition.toRef === "ask_for_code" && transition.guardKind === "counter",
+  );
+  expect(loop).toMatchObject({ fromStep: "check_the_code", toRef: "ask_for_code", guardKind: "counter", counterLimit: 3 });
+});
+
 test("an end chip completes the routine on a decided-in-code branch", async ({ page }) => {
   const routineUpdates: RoutineMutationFixture[] = [];
 

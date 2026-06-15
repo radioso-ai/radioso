@@ -7,6 +7,7 @@ import { Building2, ChevronLeft, DatabaseZap, ExternalLink, FolderOpen, Globe, K
 import { ApiChannelCard } from '@/components/dashboard/settings/api-channel-card'
 import { AssistantBehaviorSection } from '@/components/dashboard/settings/assistant-behavior-section'
 import { AssistantDirectivesSection } from '@/components/dashboard/settings/assistant-directives-section'
+import { AssistantExternalSkillsSection } from '@/components/dashboard/settings/assistant-external-skills-section'
 import { AssistantIdentityAppearanceSection } from '@/components/dashboard/settings/assistant-identity-appearance-section'
 import { AssistantPreviewRail } from '@/components/dashboard/settings/assistant-preview-rail'
 import { AssistantRetrievalSkillSettingsSection } from '@/components/dashboard/settings/assistant-retrieval-skill-settings-section'
@@ -1111,6 +1112,7 @@ export function WorkspaceAssistantChannelsTab({
 
           {mode === 'assistant' && showSection('skills') ? (
           <section id="assistant-skills" className="space-y-6 scroll-mt-24">
+            {agentId ? <AssistantExternalSkillsSection agentId={agentId} /> : null}
             <SettingsCard
               id="contact-requests"
               icon={<UserRound className="h-5 w-5 text-primary" />}

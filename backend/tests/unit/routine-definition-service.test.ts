@@ -391,26 +391,16 @@ describe("RoutineDefinitionService", () => {
     });
   });
 
-  it("rejects publishing a tool step until routine skill dispatch is supported", async () => {
-    const { repository, service } = createService();
+  it("publishes a tool step that names a skill, dispatched through the skill port", async () => {
+    const { service } = createService();
     const draft = await service.createDraft(workspaceId, agentId, toolDraft());
 
     const result = await service.publish(workspaceId, agentId, draft.routine.id);
 
     expect(result).toMatchObject({
-      rejected: true,
-      validation: {
-        ok: false,
-        diagnostics: [
-          expect.objectContaining({
-            code: "unsupported_tool_step",
-            location: "step:step_lookup",
-            message: expect.stringContaining("tool steps are not yet supported"),
-          }),
-        ],
-      },
+      routine: { id: draft.routine.id, status: "published" },
+      validation: { ok: true, diagnostics: [] },
     });
-    expect(await repository.listByAgent(agentId)).toHaveLength(1);
   });
 
   it("rejects publishing an action step with no follow-up", async () => {

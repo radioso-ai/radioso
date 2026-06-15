@@ -10,19 +10,19 @@ import {
   Eye,
   FormInput,
   History,
-  ListTree,
   Pencil,
   Plus,
   RotateCcw,
   Route,
   Send,
+  Sparkles,
   Trash2,
 } from 'lucide-react'
 
-import { RoutineDraftAssistDialog } from '@/components/dashboard/settings/routine-draft-assist-dialog'
 import { RoutineDiagnosticList } from '@/components/dashboard/settings/routine-editor-controls'
 import { RoutineFormEditor } from '@/components/dashboard/settings/routine-form-editor'
-import { RoutineOutlineEditor } from '@/components/dashboard/settings/routine-outline-editor'
+import { RoutineProseEditor } from '@/components/dashboard/settings/routine-prose-editor'
+import { RoutineProseTab } from '@/components/dashboard/settings/routine-prose-tab'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
 import { Badge } from '@/components/ui/badge'
@@ -52,18 +52,19 @@ import {
   type RoutineDraftHeader,
   type RoutineFormState,
 } from '@/lib/routine-form'
-import {
-  createEmptyRoutineOutline,
-  outlineToRoutineDraft,
-  routineDraftProposalToOutline,
-  routineDraftToOutline,
-  type RoutineOutlineActionOption,
-  type RoutineOutlineState,
-} from '@/lib/routine-outline'
+import { routineToChipDoc } from '@/lib/routine-prose'
 
-const outlineActionOptions: RoutineOutlineActionOption[] = [
-  { ref: 'contact.send', label: 'Contact Send', kind: 'action' },
-]
+// A blank routine for the Form tab: one empty step the author fills in, no transitions
+// yet, and a single complete terminal. The Prose tab starts from the steps-stripped
+// variant (an empty document) so the editor shows its placeholder.
+const emptyRoutineDraft = (): RoutineDefinitionDraft => ({
+  name: '',
+  activation: { triggerDescription: '', gateRef: null, priority: 0 },
+  slots: [],
+  steps: [{ stableStepId: 'step_1', kind: 'chat', instruction: '', toolRef: null, actionType: null, ordinal: 0, metadata: {} }],
+  transitions: [],
+  terminals: [{ stableStepId: 'complete', kind: 'complete', instruction: 'Confirm completion.', ordinal: 0 }],
+})
 
 const draftError = (draft: RoutineDefinitionDraft): string | null => {
   if (!draft.name.trim()) return 'Name is required.'
@@ -98,7 +99,7 @@ const draftAsRoutine = (draft: RoutineDefinitionDraft, routine?: RoutineDefiniti
   updatedAt: routine?.updatedAt ?? new Date(0).toISOString(),
 })
 
-const headerFromDraft = (draft: RoutineDefinitionDraft | RoutineDefinition | RoutineOutlineState | RoutineFormState): RoutineDraftHeader => ({
+const headerFromDraft = (draft: RoutineDefinitionDraft | RoutineDefinition | RoutineFormState): RoutineDraftHeader => ({
   name: draft.name,
   activation: {
     triggerDescription: draft.activation.triggerDescription,
@@ -180,6 +181,7 @@ function RoutineListScreen({
   const [routines, setRoutines] = useState<RoutineDefinition[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [proseOpen, setProseOpen] = useState(false)
 
   const groupedRoutines = useMemo(
     () => groupRoutineLineages(routines),
@@ -310,6 +312,19 @@ function RoutineListScreen({
     )
   }
 
+  if (proseOpen) {
+    return (
+      <RoutineProseEditor
+        agentId={agentId}
+        onClose={() => setProseOpen(false)}
+        onCreated={(routine) => {
+          setProseOpen(false)
+          router.push(buildRoutineHref(routine.id))
+        }}
+      />
+    )
+  }
+
   return (
     <SettingsCard
       id="assistant-routines-card"
@@ -317,10 +332,16 @@ function RoutineListScreen({
       title="Routines"
       description="Structured multi-step routines this agent can validate and publish."
       headerEnd={(
-        <Button type="button" size="sm" onClick={() => router.push(buildRoutineHref('new'))}>
-          <Plus className="mr-2 h-4 w-4" />
-          New routine
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={() => setProseOpen(true)}>
+            <Sparkles className="mr-2 h-4 w-4" />
+            Write in prose
+          </Button>
+          <Button type="button" size="sm" onClick={() => router.push(buildRoutineHref('new'))}>
+            <Plus className="mr-2 h-4 w-4" />
+            New routine
+          </Button>
+        </div>
       )}
     >
       <div className="space-y-6">
@@ -376,15 +397,14 @@ function RoutineEditorScreen({
   const [editingRoutine, setEditingRoutine] = useState<RoutineDefinition | null>(null)
   const [allRoutines, setAllRoutines] = useState<RoutineDefinition[]>([])
   const [form, setForm] = useState<RoutineFormState | null>(null)
-  const [outline, setOutline] = useState<RoutineOutlineState | null>(null)
-  const [draftHeader, setDraftHeader] = useState<RoutineDraftHeader>(() => headerFromDraft(createEmptyRoutineOutline()))
-  const [viewMode, setViewMode] = useState<'outline' | 'form'>('outline')
+  const [proseSource, setProseSource] = useState<RoutineDefinitionDraft | null>(null)
+  const [proseDraft, setProseDraft] = useState<RoutineDefinitionDraft | null>(null)
+  const [proseKey, setProseKey] = useState(0)
+  const [draftHeader, setDraftHeader] = useState<RoutineDraftHeader>(() => headerFromDraft(emptyRoutineDraft()))
+  const [viewMode, setViewMode] = useState<'prose' | 'form'>('prose')
   const [validation, setValidation] = useState<RoutineValidationResult | null>(null)
   const [isLoading, setIsLoading] = useState(!isNewRoutine)
   const [isSaving, setIsSaving] = useState(false)
-  const [isDraftingFromProcedure, setIsDraftingFromProcedure] = useState(false)
-  const [draftAssistOpen, setDraftAssistOpen] = useState(false)
-  const [draftAssistProse, setDraftAssistProse] = useState('')
   const [webhookDestinations, setWebhookDestinations] = useState<WebhookDestination[]>([])
   const [isWebhookDestinationsLoading, setIsWebhookDestinationsLoading] = useState(true)
   const [webhookDestinationsError, setWebhookDestinationsError] = useState<string | null>(null)
@@ -420,10 +440,8 @@ function RoutineEditorScreen({
   }
 
   const slotKeys = useMemo(
-    () => viewMode === 'outline'
-      ? outline?.variables.map((slot) => slot.key.trim()).filter(Boolean) ?? []
-      : form?.slots.map((slot) => slot.key.trim()).filter(Boolean) ?? [],
-    [form, outline, viewMode],
+    () => form?.slots.map((slot) => slot.key.trim()).filter(Boolean) ?? [],
+    [form],
   )
   const routineDiagnostics = useMemo(
     () => (validation?.diagnostics ?? []).filter((diagnostic) => diagnosticTargetFor(diagnostic).scope === 'routine'),
@@ -475,20 +493,19 @@ function RoutineEditorScreen({
 
       setValidation(null)
       setError(null)
-      setDraftAssistOpen(false)
-      setDraftAssistProse('')
-      setViewMode('outline')
 
       if (routineRouteId === 'new') {
-        const nextOutline = createEmptyRoutineOutline()
-        const nextHeader = headerFromDraft(nextOutline)
+        const nextDraft = emptyRoutineDraft()
         currentRoutineIdRef.current = null
         setEditingRoutineId(null)
         setEditingRoutine(null)
         setAllRoutines([])
-        setDraftHeader(nextHeader)
-        setOutline(nextOutline)
-        setForm(routineToForm(draftAsRoutine(outlineToRoutineDraft(nextOutline, { actionOptions: outlineActionOptions, header: nextHeader }))))
+        setDraftHeader(headerFromDraft(nextDraft))
+        setForm(routineToForm(draftAsRoutine(nextDraft)))
+        setProseSource({ ...nextDraft, steps: [], transitions: [] })
+        setProseDraft(null)
+        setProseKey((key) => key + 1)
+        setViewMode('prose')
         setIsLoading(false)
         return
       }
@@ -497,7 +514,7 @@ function RoutineEditorScreen({
       setEditingRoutineId(routineRouteId)
       setEditingRoutine(null)
       setForm(null)
-      setOutline(null)
+      setProseSource(null)
       setIsLoading(true)
       void Promise.all([
         routinesApi.getRoutine(agentId, routineRouteId),
@@ -511,7 +528,13 @@ function RoutineEditorScreen({
           setAllRoutines(listResponse.routines)
           setDraftHeader(headerFromDraft(response.routine))
           setForm(routineToForm(response.routine))
-          setOutline(routineDraftToOutline(response.routine, { actionOptions: outlineActionOptions }))
+          setProseSource(response.routine)
+          setProseDraft(null)
+          setProseKey((key) => key + 1)
+          // Prose-representable drafts open in the prose editor; advanced routines and
+          // read-only (non-draft) versions open in the strict Form tab.
+          const editable = response.routine.status === 'draft'
+          setViewMode(editable && routineToChipDoc(response.routine) ? 'prose' : 'form')
         })
         .catch((loadError) => {
           if (!active) return
@@ -528,19 +551,23 @@ function RoutineEditorScreen({
   }, [agentId, routineRouteId])
 
   const activeDraft = (): RoutineDefinitionDraft | null => {
-    if (viewMode === 'outline') {
-      return outline ? outlineToRoutineDraft(outline, { actionOptions: outlineActionOptions, header: draftHeader }) : null
+    if (viewMode === 'prose') {
+      return proseDraft
     }
     return form ? formToRoutineDraft(form, { header: draftHeader }) : null
   }
 
-  const synchronizeView = (nextView: 'outline' | 'form') => {
+  const synchronizeView = (nextView: 'prose' | 'form') => {
     if (nextView === viewMode) return
-    if (nextView === 'outline' && form) {
-      setOutline(routineDraftToOutline(formToRoutineDraft(form, { header: draftHeader }), { actionOptions: outlineActionOptions }))
+    if (nextView === 'form' && proseDraft && proseDraft.steps.length > 0) {
+      setForm(routineToForm(draftAsRoutine(proseDraft, editingRoutine)))
     }
-    if (nextView === 'form' && outline) {
-      setForm(routineToForm(draftAsRoutine(outlineToRoutineDraft(outline, { actionOptions: outlineActionOptions, header: draftHeader }), editingRoutine)))
+    if (nextView === 'prose' && form) {
+      // Re-seed prose from the current form draft; routineToChipDoc inside the prose tab
+      // decides whether it's representable (else it shows the "edit in Form" fallback).
+      setProseSource(formToRoutineDraft(form, { header: draftHeader }))
+      setProseDraft(null)
+      setProseKey((key) => key + 1)
     }
     setViewMode(nextView)
   }
@@ -568,7 +595,9 @@ function RoutineEditorScreen({
       mergeLoadedRoutine(response.routine)
       setDraftHeader(headerFromDraft(response.routine))
       setForm(routineToForm(response.routine))
-      setOutline(routineDraftToOutline(response.routine, { actionOptions: outlineActionOptions }))
+      setProseSource(response.routine)
+      setProseDraft(null)
+      setProseKey((key) => key + 1)
       setValidation(response.validation)
       markSaved()
       if (wasNew) {
@@ -666,7 +695,9 @@ function RoutineEditorScreen({
       mergeLoadedRoutine(response.routine)
       setDraftHeader(headerFromDraft(response.routine))
       setForm(routineToForm(response.routine))
-      setOutline(routineDraftToOutline(response.routine, { actionOptions: outlineActionOptions }))
+      setProseSource(response.routine)
+      setProseDraft(null)
+      setProseKey((key) => key + 1)
       setValidation(null)
       markSaved()
       router.replace(buildPersistedHref(response.routine.id))
@@ -692,7 +723,9 @@ function RoutineEditorScreen({
       mergeLoadedRoutine(response.routine)
       setDraftHeader(headerFromDraft(response.routine))
       setForm(routineToForm(response.routine))
-      setOutline(routineDraftToOutline(response.routine, { actionOptions: outlineActionOptions }))
+      setProseSource(response.routine)
+      setProseDraft(null)
+      setProseKey((key) => key + 1)
     } catch (archiveError) {
       setError(getApiErrorMessage(archiveError, 'Failed to archive routine.'))
     } finally {
@@ -712,7 +745,9 @@ function RoutineEditorScreen({
       mergeLoadedRoutine(response.routine)
       setDraftHeader(headerFromDraft(response.routine))
       setForm(routineToForm(response.routine))
-      setOutline(routineDraftToOutline(response.routine, { actionOptions: outlineActionOptions }))
+      setProseSource(response.routine)
+      setProseDraft(null)
+      setProseKey((key) => key + 1)
     } catch (restoreError) {
       setError(getApiErrorMessage(restoreError, 'Failed to restore routine.'))
     } finally {
@@ -720,34 +755,8 @@ function RoutineEditorScreen({
     }
   }
 
-  const draftFromProcedure = async () => {
-    const prose = draftAssistProse.trim()
-    if (!outline || !prose || editingRoutineId) return
-    setIsDraftingFromProcedure(true)
-    setError(null)
-    try {
-      const response = await routinesApi.draftRoutineFromProcedure(agentId, { prose })
-      const nextOutline = routineDraftProposalToOutline(response.draft, { actionOptions: outlineActionOptions })
-      setDraftHeader(headerFromDraft(response.draft))
-      setOutline(nextOutline)
-      setForm(routineToForm(draftAsRoutine(response.draft)))
-      setValidation(response.validation)
-      setViewMode('outline')
-      setDraftAssistOpen(false)
-      setDraftAssistProse('')
-    } catch (assistError) {
-      setError(getApiErrorMessage(assistError, 'Failed to draft routine from procedure.'))
-    } finally {
-      setIsDraftingFromProcedure(false)
-    }
-  }
-
   const updateForm = (updater: (current: RoutineFormState) => RoutineFormState) => {
     setForm((current) => current ? updater(current) : current)
-  }
-
-  const updateOutline = (updater: (current: RoutineOutlineState) => RoutineOutlineState) => {
-    setOutline((current) => current ? updater(current) : current)
   }
 
   return (
@@ -777,7 +786,7 @@ function RoutineEditorScreen({
       </div>
 
       {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
-      {isLoading || !form || !outline ? (
+      {isLoading || !form ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Spinner className="h-4 w-4" />
           Loading routine...
@@ -823,11 +832,13 @@ function RoutineEditorScreen({
           </div>
           <RoutineDiagnosticList diagnostics={routineDiagnostics} />
 
-          <Tabs value={viewMode} onValueChange={(value) => synchronizeView(value as 'outline' | 'form')}>
+          <Tabs value={viewMode} onValueChange={(value) => synchronizeView(value as 'prose' | 'form')}>
             <TabsList aria-label="Routine editor view">
-              <TabsTrigger value="outline">
-                <ListTree className="h-4 w-4" />
-                Outline
+              {/* The chip editor has no read-only mode; a published/archived routine
+                  is viewed in the (disabled) Form tab rather than an editable prose surface. */}
+              <TabsTrigger value="prose" disabled={isReadOnly}>
+                <Sparkles className="h-4 w-4" />
+                Prose
               </TabsTrigger>
               <TabsTrigger value="form">
                 <FormInput className="h-4 w-4" />
@@ -836,25 +847,12 @@ function RoutineEditorScreen({
             </TabsList>
           </Tabs>
 
-          {viewMode === 'outline' && !editingRoutineId ? (
-            <RoutineDraftAssistDialog
-              isOpen={draftAssistOpen}
-              isDrafting={isDraftingFromProcedure}
-              prose={draftAssistProse}
-              onOpenChange={setDraftAssistOpen}
-              onProseChange={setDraftAssistProse}
-              onLoadProposal={() => void draftFromProcedure()}
-            />
-          ) : null}
-
-          {viewMode === 'outline' ? (
-            <RoutineOutlineEditor
-              outline={outline}
-              diagnostics={validationDiagnostics}
-              isPublished={isReadOnly}
-              slotKeys={slotKeys}
-              actionOptions={outlineActionOptions}
-              onChange={updateOutline}
+          {viewMode === 'prose' && proseSource ? (
+            <RoutineProseTab
+              key={proseKey}
+              source={proseSource}
+              header={draftHeader}
+              onDraftChange={setProseDraft}
             />
           ) : null}
 

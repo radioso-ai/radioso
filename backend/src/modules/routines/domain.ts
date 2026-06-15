@@ -12,12 +12,16 @@ export const ROUTINE_DEFINITION_LIMITS = {
   guardText: 2000,
   actionType: 300,
   destinationRef: 300,
+  fieldRef: 200,
+  fieldValue: 500,
 } as const;
 
 export const routineDefinitionStatuses = ["draft", "published", "superseded", "archived"] as const;
 export const routineSlotTypes = ["text", "number", "boolean", "email", "date"] as const;
 export const routineStepKinds = ["chat", "tool", "action"] as const;
-export const routineGuardKinds = ["llm", "default", "slot_filled", "outcome", "counter"] as const;
+export const routineGuardKinds = ["llm", "default", "slot_filled", "outcome", "counter", "field"] as const;
+export const routineFieldGuardOps = ["is_true", "is_false", "equals", "not_equals", "in", "is_present", "is_absent", "gt", "gte", "lt", "lte", "older_than", "within"] as const;
+export const routineFieldGuardUnits = ["days", "weeks", "months", "years"] as const;
 export const routineTerminalKinds = ["complete", "handoff"] as const;
 export const routineCompletionExportTriggerKinds = routineTerminalKinds;
 
@@ -57,6 +61,12 @@ export const routineStepSchema = z.object({
   metadata: z.record(z.unknown()).optional().default({}),
 }).strict();
 
+const fieldGuardValueSchema = z.union([
+  z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.fieldValue),
+  z.number(),
+  z.boolean(),
+]);
+
 export const routineTransitionSchema = z.object({
   fromStep: stableIdSchema,
   toRef: stableIdSchema,
@@ -64,6 +74,14 @@ export const routineTransitionSchema = z.object({
   guardText: optionalTrimmedText(ROUTINE_DEFINITION_LIMITS.guardText),
   outcomeStatus: optionalStructuredParamText(ROUTINE_DEFINITION_LIMITS.stableId),
   counterLimit: z.number().int().positive().optional().nullable(),
+  // Field guard params (guardKind === "field"): branch deterministically on a resolved
+  // value — a skill output field or a captured slot — via `fieldOp`.
+  fieldRef: optionalStructuredParamText(ROUTINE_DEFINITION_LIMITS.fieldRef),
+  fieldOp: z.enum(routineFieldGuardOps).optional().nullable(),
+  fieldValue: fieldGuardValueSchema.optional().nullable(),
+  fieldValues: z.array(fieldGuardValueSchema).min(1).optional().nullable(),
+  // Duration unit for the relative-date operators ("older_than" / "within").
+  fieldUnit: z.enum(routineFieldGuardUnits).optional().nullable(),
   ordinal: z.number().int().min(0),
 }).strict();
 
@@ -125,6 +143,18 @@ export const routineDefinitionSchema = routineDefinitionDraftInputSchema.extend(
 export type RoutineSlotType = typeof routineSlotTypes[number];
 export type RoutineStepKind = typeof routineStepKinds[number];
 export type RoutineGuardKind = typeof routineGuardKinds[number];
+export type RoutineFieldGuardOp = typeof routineFieldGuardOps[number];
+export type RoutineFieldGuardUnit = typeof routineFieldGuardUnits[number];
+
+/**
+ * Whether a condition is decided in code (`exact`) or by the model (`judgment`).
+ * Surfacing this is the determinism boundary the author must be able to see
+ * (spec FR-5): everything except an `llm` guard resolves deterministically.
+ */
+export type RoutineGuardProvenance = "exact" | "judgment";
+
+export const routineGuardProvenance = (guardKind: RoutineGuardKind): RoutineGuardProvenance =>
+  guardKind === "llm" ? "judgment" : "exact";
 export type RoutineTerminalKind = typeof routineTerminalKinds[number];
 export type RoutineCompletionExportTriggerKind = typeof routineCompletionExportTriggerKinds[number];
 export type RoutineCompletionExport = z.infer<typeof routineCompletionExportSchema>;

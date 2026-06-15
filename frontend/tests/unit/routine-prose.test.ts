@@ -159,6 +159,87 @@ describe('routine prose helpers', () => {
   })
 })
 
+describe('titled steps and jumps', () => {
+  it('compiles an h1 heading into a titled step: slug id, author label, title as instruction', () => {
+    const draft = draftFromChipDoc({
+      name: 'Onboard',
+      trigger: 'new customer',
+      blocks: [{ text: 'Collect email', chips: [], headingLevel: 1 }],
+      variables: [],
+    })
+    expect(draft.steps[0]).toMatchObject({
+      stableStepId: 'collect_email',
+      kind: 'chat',
+      instruction: 'Collect email',
+      metadata: { outlineLabel: 'Collect email' },
+    })
+  })
+
+  it('uses the body prose under a heading as the step instruction (title is the label)', () => {
+    const draft = draftFromChipDoc({
+      name: 'Onboard',
+      trigger: 'new customer',
+      blocks: [
+        { text: 'Collect email', chips: [], headingLevel: 1 },
+        { text: 'Ask the customer for their email address.', chips: [] },
+      ],
+      variables: [],
+    })
+    expect(draft.steps).toHaveLength(1)
+    expect(draft.steps[0]).toMatchObject({
+      stableStepId: 'collect_email',
+      instruction: 'Ask the customer for their email address.',
+      metadata: { outlineLabel: 'Collect email' },
+    })
+  })
+
+  it('compiles a forward step jump into an AI-decided (llm) edge to the target step', () => {
+    const draft = draftFromChipDoc({
+      name: 'Support',
+      trigger: 'needs help',
+      blocks: [
+        { text: 'Triage', chips: [], headingLevel: 1 },
+        { text: 'If it is a billing question,', chips: [{ kind: 'step', refId: 'resolve_billing' }] },
+        { text: 'Resolve billing', chips: [], headingLevel: 1 },
+      ],
+      variables: [],
+    })
+    const jump = draft.transitions.find((transition) => transition.toRef === 'resolve_billing' && transition.fromStep === 'triage')
+    expect(jump).toMatchObject({ guardKind: 'llm', guardText: 'If it is a billing question,' })
+    // The target step exists with the matching stable id.
+    expect(draft.steps.map((step) => step.stableStepId)).toContain('resolve_billing')
+  })
+
+  it('compiles a backward step jump with a max count into a counter-guarded loop edge', () => {
+    const draft = draftFromChipDoc({
+      name: 'Verify',
+      trigger: 'verify identity',
+      blocks: [
+        { text: 'Ask for code', chips: [], headingLevel: 1 },
+        { text: 'Check the code', chips: [], headingLevel: 1 },
+        { text: 'If the code is wrong,', chips: [{ kind: 'step', refId: 'ask_for_code', counterLimit: 3 }] },
+      ],
+      variables: [],
+    })
+    const loop = draft.transitions.find((transition) => transition.toRef === 'ask_for_code' && transition.fromStep === 'check_the_code')
+    expect(loop).toMatchObject({ guardKind: 'counter', counterLimit: 3 })
+  })
+
+  it('keeps untitled blocks on the original positional-id behavior (no regression)', () => {
+    const draft = draftFromChipDoc({
+      name: 'Plain',
+      trigger: 'x',
+      blocks: [
+        { text: 'Do the first thing.', chips: [] },
+        { text: 'Do the second thing.', chips: [] },
+      ],
+      variables: [],
+    })
+    expect(draft.steps.map((step) => step.stableStepId)).toEqual(['step_1', 'step_2'])
+    expect(draft.steps.every((step) => Object.keys(step.metadata).length === 0)).toBe(true)
+  })
+})
+
 describe('routineToChipDoc (inverse serializer)', () => {
   it('round-trips a linear routine with an inline variable chip', () => {
     const { draft, redraft } = roundTrip(

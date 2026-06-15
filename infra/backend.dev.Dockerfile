@@ -19,6 +19,7 @@ COPY packages/conversation-contract/package.json ./packages/conversation-contrac
 COPY packages/conversation-contract/*.d.ts ./packages/conversation-contract/
 COPY packages/conversation-engine/package.json ./packages/conversation-engine/package.json
 COPY packages/conversation-defaults/package.json ./packages/conversation-defaults/package.json
+COPY packages/conversation-tools/package.json ./packages/conversation-tools/package.json
 COPY packages/connector-api/package.json ./packages/connector-api/package.json
 COPY packages/connector-api/*.d.ts ./packages/connector-api/
 COPY packages/crawler/package.json ./packages/crawler/package.json
@@ -32,7 +33,7 @@ COPY packages/skill-contract/*.d.ts ./packages/skill-contract/
 COPY packages/usage-contract/package.json ./packages/usage-contract/package.json
 COPY packages/usage-contract/*.d.ts ./packages/usage-contract/
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-  pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler... --filter @radioso/mcp-server... --filter @radioso/conversation-engine... --filter @radioso/conversation-defaults...
+  pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler... --filter @radioso/mcp-server... --filter @radioso/conversation-engine... --filter @radioso/conversation-defaults... --filter @radioso/conversation-tools...
 
 COPY infra/backend.dev.entrypoint.sh /usr/local/bin/backend-dev-entrypoint.sh
 RUN chmod +x /usr/local/bin/backend-dev-entrypoint.sh
@@ -45,6 +46,7 @@ COPY backend/src ./backend/src
 COPY packages/conversation-contract ./packages/conversation-contract
 COPY packages/conversation-engine ./packages/conversation-engine
 COPY packages/conversation-defaults ./packages/conversation-defaults
+COPY packages/conversation-tools ./packages/conversation-tools
 COPY packages/connector-api ./packages/connector-api
 COPY packages/crawler ./packages/crawler
 COPY packages/document-parser ./packages/document-parser

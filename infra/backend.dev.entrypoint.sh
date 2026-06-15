@@ -88,6 +88,7 @@ backend_modules_ready() {
   for workspace_package in \
     "backend/node_modules/@radioso/conversation-engine" \
     "backend/node_modules/@radioso/conversation-defaults" \
+    "backend/node_modules/@radioso/conversation-tools" \
     "backend/node_modules/@radioso/crawler"
   do
     [ -f "$workspace_package/package.json" ] || return 1
@@ -112,7 +113,7 @@ backend_dependencies_ready() {
 
 install_backend_dependencies() {
   echo "Installing backend workspace dependencies..."
-  pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler... --filter @radioso/mcp-server... --filter @radioso/conversation-engine... --filter @radioso/conversation-defaults...
+  pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler... --filter @radioso/mcp-server... --filter @radioso/conversation-engine... --filter @radioso/conversation-defaults... --filter @radioso/conversation-tools...
   mkdir -p node_modules
   mkdir -p backend/node_modules
   backend_modules_ready || return 1

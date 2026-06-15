@@ -58,6 +58,14 @@ inline reference, not raw syntax. Each kind has its own colour:
 - **End** - a branch target that completes the routine.
 - **Condition** - a decided-in-code comparison on a variable. Build it from the
   **Condition** toolbar button (see below).
+- **Step title** - names a step so a jump can target it. Use the **Step** toolbar
+  button to turn the current line into a titled step; its title becomes a stable
+  id, and the following lines are that step's instruction. Untitled lines are
+  still steps - only a jump target needs a title.
+- **Jump** - a branch target that sends the routine to another named step. Use the
+  **Jump** toolbar button: choose the target step; to loop back to an earlier step,
+  tick **Loop back** and set a max count. A backward jump must be bounded so the
+  loop always ends (the count compiles to a `counter` guard).
 
 The key point: chips for structure, prose for instruction. You never type curly
 braces or arrows.
@@ -124,7 +132,7 @@ Each row has:
 Row order is precedence: the first matching branch wins. Put the default branch
 last by leaving its condition, outcome status, and counter limit empty.
 
-The outline view infers the stored guard from the row:
+The Form view infers the stored guard from the row:
 
 - A row with **Max N** becomes a `counter` branch.
 - A row with **Outcome status** becomes an `outcome` branch.
@@ -134,6 +142,11 @@ The outline view infers the stored guard from the row:
 A `default` branch has two roles. If it is the only branch, it is the normal next
 path. If it sits after conditioned branches, it is the last path when the others
 do not match.
+
+A branch can jump to any step, not only the next one. A forward jump can skip
+steps when a condition makes them unnecessary. A backward jump, including a jump
+back to the same step, creates a loop and must use **Max N** so the runtime can
+bound how many times that branch is taken.
 
 For a retry loop, put the counter on the row that loops back. When the counter is
 exhausted, that row stops matching and the routine takes the default branch from

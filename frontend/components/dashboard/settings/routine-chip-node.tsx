@@ -47,6 +47,7 @@ export type SerializedChipNode = Spread<
     value?: RoutineFieldGuardValue | null
     values?: RoutineFieldGuardValue[] | null
     unit?: RoutineFieldGuardUnit | null
+    counterLimit?: number | null
   },
   SerializedLexicalNode
 >
@@ -126,13 +127,14 @@ export class ChipNode extends DecoratorNode<JSX.Element> {
   __value: RoutineFieldGuardValue | null
   __values: RoutineFieldGuardValue[] | null
   __unit: RoutineFieldGuardUnit | null
+  __counterLimit: number | null
 
   static getType(): string {
     return 'routine-chip'
   }
 
   static clone(node: ChipNode): ChipNode {
-    return new ChipNode(node.__chipKind, node.__refId, node.__label, node.__key, node.__op, node.__value, node.__values, node.__unit)
+    return new ChipNode(node.__chipKind, node.__refId, node.__label, node.__key, node.__op, node.__value, node.__values, node.__unit, node.__counterLimit)
   }
 
   static importJSON(serialized: SerializedChipNode): ChipNode {
@@ -145,6 +147,7 @@ export class ChipNode extends DecoratorNode<JSX.Element> {
       serialized.value ?? null,
       serialized.values ?? null,
       serialized.unit ?? null,
+      serialized.counterLimit ?? null,
     )
   }
 
@@ -157,6 +160,7 @@ export class ChipNode extends DecoratorNode<JSX.Element> {
     value: RoutineFieldGuardValue | null = null,
     values: RoutineFieldGuardValue[] | null = null,
     unit: RoutineFieldGuardUnit | null = null,
+    counterLimit: number | null = null,
   ) {
     super(key)
     this.__chipKind = chipKind
@@ -166,6 +170,7 @@ export class ChipNode extends DecoratorNode<JSX.Element> {
     this.__value = value
     this.__values = values
     this.__unit = unit
+    this.__counterLimit = counterLimit
   }
 
   exportJSON(): SerializedChipNode {
@@ -179,6 +184,7 @@ export class ChipNode extends DecoratorNode<JSX.Element> {
       value: this.__value,
       values: this.__values,
       unit: this.__unit,
+      counterLimit: this.__counterLimit,
     }
   }
 
@@ -224,6 +230,10 @@ export class ChipNode extends DecoratorNode<JSX.Element> {
     return this.__unit
   }
 
+  getChipCounterLimit(): number | null {
+    return this.__counterLimit
+  }
+
   // What a serialized line contributes. A variable becomes the {{slot.x}} wire form; all
   // other chips are structural and contribute no readable text — the line's prose carries
   // the instruction, while the chip's metadata (a skill's name, a branch target, a
@@ -234,12 +244,23 @@ export class ChipNode extends DecoratorNode<JSX.Element> {
   }
 
   decorate(): JSX.Element {
-    return <ChipMenu nodeKey={this.getKey()} kind={this.__chipKind} refId={this.__refId} label={this.__label} />
+    // A step (jump) chip surfaces its loop bound on the face so a backward jump reads as
+    // "go to X · max N".
+    const label = this.__chipKind === 'step' && this.__counterLimit != null
+      ? `${this.__label} · max ${this.__counterLimit}`
+      : this.__label
+    return <ChipMenu nodeKey={this.getKey()} kind={this.__chipKind} refId={this.__refId} label={label} />
   }
 }
 
 export function $createChipNode(chipKind: RoutineChipKind, refId: string, label: string): ChipNode {
   return new ChipNode(chipKind, refId, label)
+}
+
+// A jump (`step`) chip targets another step by its stable id; a counter limit makes it a
+// bounded backward loop (the bound the runtime + validator require on a back-edge).
+export function $createStepChipNode(refId: string, label: string, counterLimit: number | null = null): ChipNode {
+  return new ChipNode('step', refId, label, undefined, null, null, null, null, counterLimit)
 }
 
 export function $createConditionChipNode(

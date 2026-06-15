@@ -138,6 +138,7 @@ export const routineDocumentToDraft = (document: RoutineDocument): RoutineDocume
   const sourceMap = emptySourceMap();
   const section = routineSectionFor(document);
   const slotKeys = new Set(section.variables.map((slot) => slot.key));
+  const terminalIds = new Set(section.ends.map((end) => end.stableStepId));
   const transitionDrafts: RoutineDefinitionDraftInput["transitions"] = [];
   let transitionOrdinal = 0;
 
@@ -162,6 +163,16 @@ export const routineDocumentToDraft = (document: RoutineDocument): RoutineDocume
     for (const branch of step.branches) {
       if (branch.range) {
         sourceMap.transitions[transitionKey(branch.fromStepId, branch.target.stableId)] = branch.range;
+      }
+      if (branch.target.kind === "step" && terminalIds.has(branch.target.stableId)) {
+        diagnostics.push({
+          code: "invalid_transition",
+          location: `transition:${branch.fromStepId}->${branch.target.stableId}`,
+          message: `invalid transition: branch from "${branch.fromStepId}" targets terminal "${branch.target.stableId}" as a step; use an end target instead.`,
+          range: branch.range,
+        });
+        transitionOrdinal += 1;
+        continue;
       }
       transitionDrafts.push({
         fromStep: branch.fromStepId,

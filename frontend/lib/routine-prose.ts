@@ -94,8 +94,14 @@ export type RoutineDocChip = {
   value?: RoutineFieldGuardValue | null
   values?: RoutineFieldGuardValue[] | null
   unit?: RoutineFieldGuardUnit | null
+  // For a `step` (jump) chip that loops back to an earlier step: the max iterations.
+  // A bounded back-edge compiles to a counter guard; the backend validator requires it.
+  counterLimit?: number | null
 }
-export type RoutineDocBlock = { text: string; chips: RoutineDocChip[] }
+// A block carrying `headingLevel` is an h1 step title (its text names the step and pins a
+// stable id); following non-heading blocks are that step's body. Untitled blocks keep the
+// original one-line-one-step behavior.
+export type RoutineDocBlock = { text: string; chips: RoutineDocChip[]; headingLevel?: 1 }
 
 const DONE_TERMINAL_ID = 'done'
 const HANDOFF_TERMINAL_ID = 'handoff'
@@ -106,11 +112,13 @@ const HANDOFF_TERMINAL_ID = 'handoff'
 const DEFAULT_COMPLETE_INSTRUCTION = 'All set.'
 const DEFAULT_HANDOFF_INSTRUCTION = 'Bringing in a teammate.'
 
-// Serialize the chip document into a routine draft. Non-branch blocks become chat steps,
-// chained in order and ending on a complete terminal. A block with a handoff chip is a
-// conditional branch from the current step to a handoff terminal, with the block's prose
-// as the condition (an AI-decided / llm guard). Structured "decided in code" conditions
-// and step-jump targets are later increments.
+// Serialize the chip document into a routine draft. An h1 heading block names a step
+// (its title pins a stable id + author label; following prose is the step's body); an
+// untitled block is a one-line step (the original behavior). A block with a target chip
+// is a conditional branch from the current step: a handoff/end chip targets a terminal,
+// a `step` chip jumps to a named step (forward, or backward as a counter-bounded loop).
+// A condition chip makes the guard decided-in-code (field); otherwise the prose is an
+// AI-decided (llm) guard.
 export function draftFromChipDoc(input: {
   name: string
   trigger: string
@@ -147,45 +155,98 @@ export function draftFromChipDoc(input: {
   let needHandoffTerminal = false
   let lastStepId: string | null = null
   let ordinal = 0
+  // The titled step (started by an h1 heading) currently accreting body prose. Untitled
+  // authoring leaves this null and keeps the original one-line-one-step behavior.
+  let titledStep: { step: RoutineDefinitionDraft['steps'][number]; body: string[] } | null = null
+  const flushTitledBody = () => {
+    if (!titledStep) return
+    const body = titledStep.body.join('\n').trim()
+    // Body prose is the instruction; the title is the fallback so every step is non-empty.
+    if (body) titledStep.step.instruction = body
+  }
+
+  // Emit a guarded edge from the current step. A condition chip → field guard; a `step`
+  // chip carrying a counter limit → a bounded loop (counter guard); otherwise the prose
+  // is an AI-decided (llm) guard.
+  const branchFrom = (fromStep: string, toRef: string, block: RoutineDocBlock) => {
+    const condition = block.chips.find((chip) => chip.kind === 'condition')
+    const stepChip = block.chips.find((chip) => chip.kind === 'step')
+    if (condition?.op) {
+      transitions.push({
+        fromStep,
+        toRef,
+        guardKind: 'field',
+        guardText: null,
+        outcomeStatus: null,
+        counterLimit: null,
+        fieldRef: condition.refId,
+        fieldOp: condition.op,
+        fieldValue: condition.value ?? null,
+        fieldValues: condition.values ?? null,
+        fieldUnit: condition.unit ?? null,
+        ordinal: ordinal++,
+      })
+    } else if (stepChip && stepChip.counterLimit != null) {
+      transitions.push({
+        fromStep,
+        toRef,
+        guardKind: 'counter',
+        guardText: null,
+        outcomeStatus: null,
+        counterLimit: stepChip.counterLimit,
+        ordinal: ordinal++,
+      })
+    } else {
+      transitions.push({
+        fromStep,
+        toRef,
+        guardKind: 'llm',
+        guardText: block.text.trim(),
+        outcomeStatus: null,
+        counterLimit: null,
+        ordinal: ordinal++,
+      })
+    }
+  }
 
   for (const block of blocks) {
     const handoffChip = block.chips.find((chip) => chip.kind === 'handoff')
     const endChip = block.chips.find((chip) => chip.kind === 'end')
-    if (handoffChip || endChip) {
-      // A conditional branch from the step we're currently in: to a handoff terminal
-      // (escalate) or the complete terminal (end). A condition chip makes it decided-in-code
-      // (field guard); otherwise the prose is an AI-decided guard.
+    const stepChip = block.chips.find((chip) => chip.kind === 'step')
+    if (handoffChip || endChip || stepChip) {
+      // A branch from the step we're currently in. A `step` chip jumps to a named step;
+      // otherwise the target is a terminal (handoff escalates, end completes).
       if (lastStepId) {
-        const target = handoffChip ? HANDOFF_TERMINAL_ID : DONE_TERMINAL_ID
-        if (handoffChip) needHandoffTerminal = true
-        const condition = block.chips.find((chip) => chip.kind === 'condition')
-        if (condition?.op) {
-          transitions.push({
-            fromStep: lastStepId,
-            toRef: target,
-            guardKind: 'field',
-            guardText: null,
-            outcomeStatus: null,
-            counterLimit: null,
-            fieldRef: condition.refId,
-            fieldOp: condition.op,
-            fieldValue: condition.value ?? null,
-            fieldValues: condition.values ?? null,
-            fieldUnit: condition.unit ?? null,
-            ordinal: ordinal++,
-          })
+        if (stepChip) {
+          branchFrom(lastStepId, stepChip.refId, block)
         } else {
-          transitions.push({
-            fromStep: lastStepId,
-            toRef: target,
-            guardKind: 'llm',
-            guardText: block.text.trim(),
-            outcomeStatus: null,
-            counterLimit: null,
-            ordinal: ordinal++,
-          })
+          if (handoffChip) needHandoffTerminal = true
+          branchFrom(lastStepId, handoffChip ? HANDOFF_TERMINAL_ID : DONE_TERMINAL_ID, block)
         }
       }
+      continue
+    }
+    if (block.headingLevel === 1 && block.text.trim()) {
+      // An h1 heading names a step: the title is the stable id + author label; following
+      // body prose becomes the instruction (the title is the fallback when there's none).
+      flushTitledBody()
+      const title = block.text.trim()
+      const id = slugifyVariableKey(title)
+      const step = {
+        stableStepId: id,
+        kind: 'chat' as const,
+        instruction: title,
+        toolRef: null,
+        actionType: null,
+        ordinal: steps.length,
+        metadata: { outlineLabel: title },
+      }
+      steps.push(step)
+      if (lastStepId) {
+        transitions.push({ fromStep: lastStepId, toRef: id, guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, ordinal: ordinal++ })
+      }
+      lastStepId = id
+      titledStep = { step, body: [] }
       continue
     }
     // A skill chip turns the step into a tool step the runner dispatches through the
@@ -194,6 +255,16 @@ export function draftFromChipDoc(input: {
     const instruction = block.text.trim()
     if (!instruction && !skillChip) {
       // A non-branch block with no prose (e.g. an orphan condition chip) isn't a step.
+      continue
+    }
+    if (titledStep) {
+      // Body of the current titled step (a skill chip makes it a tool step).
+      if (instruction) titledStep.body.push(instruction)
+      if (skillChip) {
+        titledStep.step.kind = 'tool'
+        titledStep.step.toolRef = skillChip.refId
+      }
+      flushTitledBody()
       continue
     }
     const id = `step_${steps.length + 1}`
@@ -222,6 +293,7 @@ export function draftFromChipDoc(input: {
     lastStepId = id
   }
 
+  flushTitledBody()
   if (lastStepId) {
     transitions.push({
       fromStep: lastStepId,
@@ -270,13 +342,18 @@ export type ProseSegment =
       value?: RoutineFieldGuardValue | null
       values?: RoutineFieldGuardValue[] | null
       unit?: RoutineFieldGuardUnit | null
+      // For a `step` (jump) chip that loops back: the max iterations (counter bound).
+      counterLimit?: number | null
     }
-export type ProseParagraph = ProseSegment[]
+// A paragraph is a step title (headingLevel 1) or ordinary prose/branch content. The
+// title pins the step's stable id + label; the following non-heading paragraphs are its
+// body. Headings let an author name a step so a jump can target it.
+export type ProseParagraph = { headingLevel?: 1; segments: ProseSegment[] }
 export type ProseDoc = { variables: ChipDocVariable[]; paragraphs: ProseParagraph[] }
 
 const HANDOFF_CHIP_LABEL = 'handoff'
 
-function parseInstructionSegments(instruction: string, nameByRef: Map<string, string>): ProseParagraph {
+function parseInstructionSegments(instruction: string, nameByRef: Map<string, string>): ProseSegment[] {
   const segments: ProseSegment[] = []
   let lastIndex = 0
   for (const match of instruction.matchAll(SLOT_REFERENCE)) {
@@ -290,11 +367,13 @@ function parseInstructionSegments(instruction: string, nameByRef: Map<string, st
   return segments.length > 0 ? segments : [{ kind: 'text', text: instruction }]
 }
 
-function branchSegments(edge: RoutineTransition, nameByRef: Map<string, string>, target: 'handoff' | 'end'): ProseParagraph {
-  const segments: ProseSegment[] = []
+// The guard prefix of a branch paragraph: a condition chip (decided-in-code), or the
+// AI-decided prose. A counter-bounded loop has no prose prefix — the bound rides on the
+// trailing step chip — so it returns nothing here.
+function branchGuardSegments(edge: RoutineTransition, nameByRef: Map<string, string>): ProseSegment[] {
   if (edge.guardKind === 'field' && edge.fieldRef && edge.fieldOp) {
     const name = nameByRef.get(edge.fieldRef) ?? edge.fieldRef
-    segments.push({
+    return [{
       kind: 'chip',
       chipKind: 'condition',
       refId: edge.fieldRef,
@@ -303,16 +382,18 @@ function branchSegments(edge: RoutineTransition, nameByRef: Map<string, string>,
       value: edge.fieldValue ?? null,
       values: edge.fieldValues ?? null,
       unit: edge.fieldUnit ?? null,
-    })
-  } else if (edge.guardKind === 'llm' && edge.guardText) {
-    segments.push({ kind: 'text', text: edge.guardText })
+    }]
   }
-  segments.push(
-    target === 'end'
-      ? { kind: 'chip', chipKind: 'end', refId: DONE_TERMINAL_ID, label: 'end' }
-      : { kind: 'chip', chipKind: 'handoff', refId: HANDOFF_TERMINAL_ID, label: HANDOFF_CHIP_LABEL },
-  )
-  return segments
+  if (edge.guardKind === 'llm' && edge.guardText) {
+    return [{ kind: 'text', text: edge.guardText }]
+  }
+  return []
+}
+
+// A branch paragraph = the guard prefix followed by the target chip (handoff/end terminal
+// or a `step` jump chip).
+function branchParagraph(edge: RoutineTransition, nameByRef: Map<string, string>, trailing: ProseSegment): ProseParagraph {
+  return { segments: [...branchGuardSegments(edge, nameByRef), trailing] }
 }
 
 // Inverse of draftFromChipDoc: rebuild the chip document (variables + paragraphs with
@@ -364,33 +445,60 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
     outgoing.set(transition.fromStep, list)
   }
 
+  const titleOf = (step: RoutineDefinitionDraft['steps'][number]): string | null => {
+    const label = (step.metadata as Record<string, unknown> | undefined)?.outlineLabel
+    return typeof label === 'string' && label.trim() ? label.trim() : null
+  }
+  const titleByStepId = new Map(steps.map((step) => [step.stableStepId, titleOf(step)] as const))
+
   const paragraphs: ProseParagraph[] = []
   for (let index = 0; index < steps.length; index++) {
     const step = steps[index]!
-    const segments = parseInstructionSegments(step.instruction ?? '', nameByRef)
-    if (step.kind === 'tool' && step.toolRef) {
-      segments.push({ kind: 'chip', chipKind: 'skill', refId: step.toolRef, label: `@${step.toolRef}` })
+    const title = titleOf(step)
+    if (title) {
+      // A titled step: an h1 heading (its stable name) plus an optional body paragraph —
+      // the instruction when it isn't just the title echoed back. A tool step's skill chip
+      // rides on the body.
+      paragraphs.push({ headingLevel: 1, segments: [{ kind: 'text', text: title }] })
+      const bodyText = (step.instruction ?? '') !== title ? (step.instruction ?? '') : ''
+      const bodySegments = bodyText ? parseInstructionSegments(bodyText, nameByRef) : []
+      if (step.kind === 'tool' && step.toolRef) {
+        bodySegments.push({ kind: 'chip', chipKind: 'skill', refId: step.toolRef, label: `@${step.toolRef}` })
+      }
+      if (bodySegments.length > 0) paragraphs.push({ segments: bodySegments })
+    } else {
+      const segments = parseInstructionSegments(step.instruction ?? '', nameByRef)
+      if (step.kind === 'tool' && step.toolRef) {
+        segments.push({ kind: 'chip', chipKind: 'skill', refId: step.toolRef, label: `@${step.toolRef}` })
+      }
+      paragraphs.push({ segments })
     }
-    paragraphs.push(segments)
 
-    // A prose step continues via exactly one default edge (to the next step, or to the
-    // single complete terminal for the last step). Any llm/field edges are handoff
-    // branches, rendered as the paragraphs that follow this step. Anything else means
-    // the routine isn't prose-shaped.
+    // A step continues via exactly one default edge (to the next step, or the complete
+    // terminal for the last step). Non-default edges are branches: llm/field to a terminal
+    // (handoff/end), or llm/field/counter to another step (a jump — a counter bound makes it
+    // a safe backward loop). A jump can only target a titled step (it needs a stable name).
+    // Anything else isn't prose-shaped.
     const chainTarget = steps[index + 1]?.stableStepId ?? completeId
     let sawChain = false
     for (const edge of [...(outgoing.get(step.stableStepId) ?? [])].sort((left, right) => left.ordinal - right.ordinal)) {
       if (edge.guardKind === 'default') {
         if (sawChain || edge.toRef !== chainTarget) return null
         sawChain = true
-      } else if (edge.guardKind === 'llm' || edge.guardKind === 'field') {
-        if (handoffId && edge.toRef === handoffId) {
-          paragraphs.push(branchSegments(edge, nameByRef, 'handoff'))
-        } else if (edge.toRef === completeId) {
-          paragraphs.push(branchSegments(edge, nameByRef, 'end'))
-        } else {
-          return null
-        }
+      } else if (handoffId && edge.toRef === handoffId && (edge.guardKind === 'llm' || edge.guardKind === 'field')) {
+        paragraphs.push(branchParagraph(edge, nameByRef, { kind: 'chip', chipKind: 'handoff', refId: HANDOFF_TERMINAL_ID, label: HANDOFF_CHIP_LABEL }))
+      } else if (edge.toRef === completeId && (edge.guardKind === 'llm' || edge.guardKind === 'field')) {
+        paragraphs.push(branchParagraph(edge, nameByRef, { kind: 'chip', chipKind: 'end', refId: DONE_TERMINAL_ID, label: 'end' }))
+      } else if (stepIds.has(edge.toRef) && (edge.guardKind === 'llm' || edge.guardKind === 'field' || edge.guardKind === 'counter')) {
+        const targetTitle = titleByStepId.get(edge.toRef)
+        if (!targetTitle) return null
+        paragraphs.push(branchParagraph(edge, nameByRef, {
+          kind: 'chip',
+          chipKind: 'step',
+          refId: edge.toRef,
+          label: targetTitle,
+          counterLimit: edge.guardKind === 'counter' ? (edge.counterLimit ?? null) : null,
+        }))
       } else {
         return null
       }

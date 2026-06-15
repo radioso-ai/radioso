@@ -66,6 +66,29 @@ The key points:
 - **Calls carry only their params** — the bound values plus the exposed inputs the
   conversation provides. Nothing else is sent to the server.
 
+## Export and import
+
+An agent's external-skill setup travels with its exported configuration, the same
+way directives, branding, and skill settings do. The export includes the agent's
+MCP connections and skill definitions as data.
+
+Two things are handled with care:
+
+- **Secrets stay in the secret store.** Access tokens (and OAuth secrets, where
+  used) are never written to an export. Each connection that had a stored
+  credential exports a placeholder instead. After import, the connection needs the
+  credential entered again before it can be used.
+- **Skill-to-connection links are rebuilt on import.** A skill points to one
+  connection. The export records this link by a within-bundle key, not by the
+  connection's database id. On import, Radioso recreates the connections first,
+  then re-binds each skill to its connection using that key.
+
+In practice, an exported bundle round-trips: import recreates the connections
+(minus secrets) and the skill definitions, and re-links each skill to its
+connection. If a skill refers to a connection that is missing from the bundle,
+that skill is reported as unresolved and skipped — a skill cannot exist without
+its connection.
+
 ## Managing connections and skills
 
 Both connections and skills support full create, read, update, and delete. You

@@ -5,6 +5,7 @@ export const routineValidationCodes = [
   "missing_terminal",
   "dangling_action_reference",
   "dangling_step_reference",
+  "unbounded_back_edge",
   "missing_action_follow_up",
   "declared_unused_slot",
   "referenced_undeclared_slot",
@@ -45,6 +46,15 @@ const metadataAttemptLimit = (metadata: Record<string, unknown>): number | null 
     ? metadata.attemptLimit
     : null;
 
+const isBackEdge = (
+  transition: RoutineDefinition["transitions"][number],
+  stepOrdinalById: ReadonlyMap<string, number>,
+): boolean => {
+  const fromOrdinal = stepOrdinalById.get(transition.fromStep);
+  const toOrdinal = stepOrdinalById.get(transition.toRef);
+  return fromOrdinal !== undefined && toOrdinal !== undefined && toOrdinal <= fromOrdinal;
+};
+
 // A field guard's operator must fit the variable's type: relative-date ops need a date,
 // numeric comparisons need a number, boolean checks need a boolean. The rest apply to any.
 const isFieldOpCompatible = (op: string, slotType: string): boolean => {
@@ -68,6 +78,7 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
   const terminals = [...definition.terminals].sort((left, right) => left.ordinal - right.ordinal);
   const stepIds = new Set(steps.map((step) => step.stableStepId));
   const stepById = new Map(steps.map((step) => [step.stableStepId, step]));
+  const stepOrdinalById = new Map(steps.map((step) => [step.stableStepId, step.ordinal]));
   const terminalIds = new Set(terminals.map((terminal) => terminal.stableStepId));
   const nodeIds = new Set([...stepIds, ...terminalIds]);
 
@@ -120,6 +131,15 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
         code: "dangling_step_reference",
         location: `transition:${transition.fromStep}->${transition.toRef}`,
         message: `dangling step reference: transition points to unknown step or terminal "${transition.toRef}".`,
+      });
+    }
+    // Conservative v1 loop safety: the bound must be on the back-edge itself,
+    // not merely somewhere else in the cycle.
+    if (isBackEdge(transition, stepOrdinalById) && transition.guardKind !== "counter") {
+      diagnostics.push({
+        code: "unbounded_back_edge",
+        location: `transition:${transition.fromStep}->${transition.toRef}`,
+        message: `unbounded back-edge: transition from "${transition.fromStep}" to "${transition.toRef}" targets an earlier-or-same step and must use a counter guard.`,
       });
     }
     if (transition.guardKind === "outcome") {

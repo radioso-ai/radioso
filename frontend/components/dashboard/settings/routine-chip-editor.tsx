@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
-import { AtSign, BadgeCheck, Bold, Flag, Italic } from 'lucide-react'
+import { AtSign, BadgeCheck, Bold, CornerUpRight, Flag, Heading1, Italic } from 'lucide-react'
 
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
 import { ContentEditable } from '@lexical/react/LexicalContentEditable'
@@ -27,7 +27,9 @@ import {
   type TextNode,
 } from 'lexical'
 
-import { $createChipNode, $createConditionChipNode, $isChipNode, ChipNode, type RoutineChipKind } from '@/components/dashboard/settings/routine-chip-node'
+import { $createHeadingNode, $isHeadingNode, HeadingNode } from '@lexical/rich-text'
+
+import { $createChipNode, $createConditionChipNode, $createStepChipNode, $isChipNode, ChipNode, type RoutineChipKind } from '@/components/dashboard/settings/routine-chip-node'
 import { RoutineVariablesProvider } from '@/components/dashboard/settings/routine-variables-context'
 import { Button } from '@/components/ui/button'
 import {
@@ -228,9 +230,82 @@ function ConditionBuilderDialog({
   )
 }
 
+// Insert a jump to a named step. A jump back to an earlier step is a loop, so it must be
+// capped — the limit compiles to a counter guard (the bound the runtime + validator need).
+function JumpDialog({
+  open,
+  onOpenChange,
+  targets,
+  onConfirm,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  targets: { id: string; title: string }[]
+  onConfirm: (target: { id: string; title: string }, counterLimit: number | null) => void
+}) {
+  const [targetId, setTargetId] = useState('')
+  const [loop, setLoop] = useState(false)
+  const [maxText, setMaxText] = useState('3')
+  const selected = targets.find((target) => target.id === targetId)
+
+  const reset = () => { setTargetId(''); setLoop(false); setMaxText('3') }
+  const confirm = () => {
+    if (!selected) return
+    const limit = loop ? Math.max(1, Number.parseInt(maxText, 10) || 0) : null
+    onConfirm(selected, limit)
+    reset()
+    onOpenChange(false)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => { if (!next) reset(); onOpenChange(next) }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Jump to a step</DialogTitle>
+          <DialogDescription>Send the routine to another named step. A jump back to an earlier step is a loop — cap how many times it can repeat so it always ends.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="jumpTarget">Step</Label>
+            <select
+              id="jumpTarget"
+              value={targetId}
+              onChange={(event) => setTargetId(event.target.value)}
+              className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+            >
+              <option value="">Choose a step…</option>
+              {targets.map((target) => (
+                <option key={target.id} value={target.id}>{target.title}</option>
+              ))}
+            </select>
+            {targets.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Give a step a title first (the Step button) so a jump can target it.</p>
+            ) : null}
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={loop} onChange={(event) => setLoop(event.target.checked)} />
+            Loop back (repeat a limited number of times)
+          </label>
+          {loop ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="jumpMax">Max times</Label>
+              <Input id="jumpMax" type="number" min={1} value={maxText} onChange={(event) => setMaxText(event.target.value)} />
+            </div>
+          ) : null}
+        </div>
+        <DialogFooter>
+          <Button type="button" onClick={confirm} disabled={!selected}>Add jump</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVariable[]; onSetVariableType: (refId: string, type: RoutineSlotType) => void }) {
   const [editor] = useLexicalComposerContext()
   const [conditionOpen, setConditionOpen] = useState(false)
+  const [jumpOpen, setJumpOpen] = useState(false)
+  const [jumpTargets, setJumpTargets] = useState<{ id: string; title: string }[]>([])
   const [formats, setFormats] = useState({ bold: false, italic: false })
 
   // Track the active inline formats at the caret so Bold/Italic show their pressed state.
@@ -286,6 +361,52 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
     })
   }
 
+  // Turn the current line into a step title (h1). A titled step gets a stable id, so a jump
+  // can target it by name.
+  const markLineAsStep = () => {
+    editor.focus(() => {
+      editor.update(() => {
+        const selection = $getSelection()
+        if (!$isRangeSelection(selection)) return
+        const block = selection.anchor.getNode().getTopLevelElement()
+        if (!block || $isHeadingNode(block)) return
+        const heading = $createHeadingNode('h1')
+        for (const child of block.getChildren()) heading.append(child)
+        block.replace(heading)
+        heading.selectEnd()
+      })
+    })
+  }
+
+  // The jump targets are the titled steps (h1 headings) currently in the document.
+  const openJump = () => {
+    const targets: { id: string; title: string }[] = []
+    editor.getEditorState().read(() => {
+      for (const block of $getRoot().getChildren()) {
+        if ($isHeadingNode(block)) {
+          const title = block.getTextContent().trim()
+          if (title) targets.push({ id: slugifyVariableKey(title), title })
+        }
+      }
+    })
+    setJumpTargets(targets)
+    setJumpOpen(true)
+  }
+
+  const insertJump = (target: { id: string; title: string }, counterLimit: number | null) => {
+    editor.focus(() => {
+      editor.update(() => {
+        const selection = $getSelection()
+        if (!$isRangeSelection(selection)) return
+        const chip = $createStepChipNode(target.id, target.title, counterLimit)
+        selection.insertNodes([chip])
+        const trailing = $createTextNode(' ')
+        chip.insertAfter(trailing)
+        trailing.select()
+      })
+    })
+  }
+
   return (
     <div className="flex items-center gap-0.5 border-b border-input px-1.5 py-1">
       <Button type="button" variant={formats.bold ? 'secondary' : 'ghost'} size="sm" className="h-7 w-7 p-0" aria-label="Bold" aria-pressed={formats.bold} onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold')}>
@@ -307,7 +428,17 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
         <Flag className="h-4 w-4" />
         End
       </Button>
+      <Separator orientation="vertical" className="mx-1 h-5" />
+      <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={markLineAsStep}>
+        <Heading1 className="h-4 w-4" />
+        Step
+      </Button>
+      <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={openJump}>
+        <CornerUpRight className="h-4 w-4" />
+        Jump
+      </Button>
       <ConditionBuilderDialog open={conditionOpen} onOpenChange={setConditionOpen} variables={variables} onConfirm={insertCondition} onSetVariableType={onSetVariableType} />
+      <JumpDialog open={jumpOpen} onOpenChange={setJumpOpen} targets={jumpTargets} onConfirm={insertJump} />
     </div>
   )
 }
@@ -450,6 +581,8 @@ function ChipTypeaheadPlugin({
 // on-mount emit (so a loaded document seeds the host's draft without a second encoder).
 function $serializeBlocks(): RoutineDocBlock[] {
   return $getRoot().getChildren().map((block) => ({
+    // An h1 heading names a step; the compiler reads headingLevel to pin a stable id.
+    ...($isHeadingNode(block) ? { headingLevel: 1 as const } : {}),
     text: block.getTextContent(),
     chips: $isElementNode(block)
       ? block.getChildren().filter($isChipNode).map((chip) => ({
@@ -459,6 +592,7 @@ function $serializeBlocks(): RoutineDocBlock[] {
           value: chip.getChipValue(),
           values: chip.getChipValues(),
           unit: chip.getChipUnit(),
+          counterLimit: chip.getChipCounterLimit(),
         }))
       : [],
   }))
@@ -470,12 +604,14 @@ function $initializeFromParagraphs(paragraphs: ProseParagraph[]): void {
   const root = $getRoot()
   if (root.getChildrenSize() > 0) return
   for (const paragraph of paragraphs) {
-    const node = $createParagraphNode()
-    for (const segment of paragraph) {
+    const node = paragraph.headingLevel === 1 ? $createHeadingNode('h1') : $createParagraphNode()
+    for (const segment of paragraph.segments) {
       if (segment.kind === 'text') {
         node.append($createTextNode(segment.text))
       } else if (segment.chipKind === 'condition' && segment.op) {
         node.append($createConditionChipNode(segment.refId, segment.op, segment.label, segment.value ?? null, segment.values ?? null, segment.unit ?? null))
+      } else if (segment.chipKind === 'step') {
+        node.append($createStepChipNode(segment.refId, segment.label, segment.counterLimit ?? null))
       } else {
         node.append($createChipNode(segment.chipKind, segment.refId, segment.label))
       }
@@ -521,7 +657,7 @@ export function RoutineChipEditor({
     <LexicalComposer
       initialConfig={{
         namespace: 'routine-chip-editor',
-        nodes: [ChipNode],
+        nodes: [ChipNode, HeadingNode],
         onError: (error: Error) => {
           throw error
         },

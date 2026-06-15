@@ -15,16 +15,17 @@ import {
 // OnDocChangePlugin), so a round-trip test can prove the inverse serializer is faithful.
 function paragraphsToBlocks(paragraphs: ProseParagraph[]): RoutineDocBlock[] {
   return paragraphs.map((paragraph) => ({
-    text: paragraph
+    ...(paragraph.headingLevel ? { headingLevel: paragraph.headingLevel } : {}),
+    text: paragraph.segments
       .map((segment) => {
         if (segment.kind === 'text') return segment.text
         if (segment.chipKind === 'variable') return `{{slot.${segment.refId}}}`
         return ''
       })
       .join(''),
-    chips: paragraph.flatMap((segment) =>
+    chips: paragraph.segments.flatMap((segment) =>
       segment.kind === 'chip'
-        ? [{ kind: segment.chipKind, refId: segment.refId, op: segment.op ?? null, value: segment.value ?? null, values: segment.values ?? null, unit: segment.unit ?? null }]
+        ? [{ kind: segment.chipKind, refId: segment.refId, op: segment.op ?? null, value: segment.value ?? null, values: segment.values ?? null, unit: segment.unit ?? null, counterLimit: segment.counterLimit ?? null }]
         : [],
     ),
   }))
@@ -156,6 +157,137 @@ describe('routine prose helpers', () => {
     const draft = draftFromChipDoc({ name: '  ', trigger: '', blocks: [{ text: 'Do a thing.', chips: [] }], variables: [] })
     expect(draft.name).toBe('Untitled routine')
     expect(draft.activation.triggerDescription).toBe('When this routine applies.')
+  })
+})
+
+describe('titled steps and jumps', () => {
+  it('compiles an h1 heading into a titled step: slug id, author label, title as instruction', () => {
+    const draft = draftFromChipDoc({
+      name: 'Onboard',
+      trigger: 'new customer',
+      blocks: [{ text: 'Collect email', chips: [], headingLevel: 1 }],
+      variables: [],
+    })
+    expect(draft.steps[0]).toMatchObject({
+      stableStepId: 'collect_email',
+      kind: 'chat',
+      instruction: 'Collect email',
+      metadata: { outlineLabel: 'Collect email' },
+    })
+  })
+
+  it('uses the body prose under a heading as the step instruction (title is the label)', () => {
+    const draft = draftFromChipDoc({
+      name: 'Onboard',
+      trigger: 'new customer',
+      blocks: [
+        { text: 'Collect email', chips: [], headingLevel: 1 },
+        { text: 'Ask the customer for their email address.', chips: [] },
+      ],
+      variables: [],
+    })
+    expect(draft.steps).toHaveLength(1)
+    expect(draft.steps[0]).toMatchObject({
+      stableStepId: 'collect_email',
+      instruction: 'Ask the customer for their email address.',
+      metadata: { outlineLabel: 'Collect email' },
+    })
+  })
+
+  it('compiles a forward step jump into an AI-decided (llm) edge to the target step', () => {
+    const draft = draftFromChipDoc({
+      name: 'Support',
+      trigger: 'needs help',
+      blocks: [
+        { text: 'Triage', chips: [], headingLevel: 1 },
+        { text: 'If it is a billing question,', chips: [{ kind: 'step', refId: 'resolve_billing' }] },
+        { text: 'Resolve billing', chips: [], headingLevel: 1 },
+      ],
+      variables: [],
+    })
+    const jump = draft.transitions.find((transition) => transition.toRef === 'resolve_billing' && transition.fromStep === 'triage')
+    expect(jump).toMatchObject({ guardKind: 'llm', guardText: 'If it is a billing question,' })
+    // The target step exists with the matching stable id.
+    expect(draft.steps.map((step) => step.stableStepId)).toContain('resolve_billing')
+  })
+
+  it('compiles a backward step jump with a max count into a counter-guarded loop edge', () => {
+    const draft = draftFromChipDoc({
+      name: 'Verify',
+      trigger: 'verify identity',
+      blocks: [
+        { text: 'Ask for code', chips: [], headingLevel: 1 },
+        { text: 'Check the code', chips: [], headingLevel: 1 },
+        { text: 'If the code is wrong,', chips: [{ kind: 'step', refId: 'ask_for_code', counterLimit: 3 }] },
+      ],
+      variables: [],
+    })
+    const loop = draft.transitions.find((transition) => transition.toRef === 'ask_for_code' && transition.fromStep === 'check_the_code')
+    expect(loop).toMatchObject({ guardKind: 'counter', counterLimit: 3 })
+  })
+
+  it('keeps untitled blocks on the original positional-id behavior (no regression)', () => {
+    const draft = draftFromChipDoc({
+      name: 'Plain',
+      trigger: 'x',
+      blocks: [
+        { text: 'Do the first thing.', chips: [] },
+        { text: 'Do the second thing.', chips: [] },
+      ],
+      variables: [],
+    })
+    expect(draft.steps.map((step) => step.stableStepId)).toEqual(['step_1', 'step_2'])
+    expect(draft.steps.every((step) => Object.keys(step.metadata).length === 0)).toBe(true)
+  })
+
+  it('round-trips a titled step with a body and a variable chip', () => {
+    const { draft, redraft } = roundTrip(
+      'Onboard',
+      'new customer',
+      [
+        { text: 'Collect email', chips: [], headingLevel: 1 },
+        { text: 'Ask for their {{slot.email}}.', chips: [{ kind: 'variable', refId: 'email' }] },
+      ],
+      [{ id: 'email', name: 'email', type: 'email' }],
+    )
+    expect(draft.steps[0]).toMatchObject({ stableStepId: 'collect_email', metadata: { outlineLabel: 'Collect email' } })
+    expect(redraft.steps).toEqual(draft.steps)
+    expect(redraft.transitions).toEqual(draft.transitions)
+  })
+
+  it('round-trips a forward jump that skips a step', () => {
+    const { draft, redraft } = roundTrip(
+      'Support',
+      'needs help',
+      [
+        { text: 'Triage', chips: [], headingLevel: 1 },
+        { text: 'If urgent,', chips: [{ kind: 'step', refId: 'escalate' }] },
+        { text: 'Investigate', chips: [], headingLevel: 1 },
+        { text: 'Escalate', chips: [], headingLevel: 1 },
+      ],
+      [],
+    )
+    expect(draft.transitions).toContainEqual(expect.objectContaining({ fromStep: 'triage', toRef: 'escalate', guardKind: 'llm' }))
+    expect(redraft.steps).toEqual(draft.steps)
+    expect(redraft.transitions).toEqual(draft.transitions)
+  })
+
+  it('round-trips a backward jump bounded by a counter (a loop)', () => {
+    const { draft, redraft } = roundTrip(
+      'Verify',
+      'verify identity',
+      [
+        { text: 'Ask for code', chips: [], headingLevel: 1 },
+        { text: 'Check code', chips: [], headingLevel: 1 },
+        { text: '', chips: [{ kind: 'step', refId: 'ask_for_code', counterLimit: 3 }] },
+      ],
+      [],
+    )
+    expect(draft.transitions).toContainEqual(
+      expect.objectContaining({ fromStep: 'check_code', toRef: 'ask_for_code', guardKind: 'counter', counterLimit: 3 }),
+    )
+    expect(redraft.steps).toEqual(draft.steps)
+    expect(redraft.transitions).toEqual(draft.transitions)
   })
 })
 

@@ -79,6 +79,13 @@ import { ConnectorRegistry } from "../../src/modules/connectors/services/connect
 import { createConnectorChatPort } from "../../src/modules/connectors/services/connectorChatPort.js";
 import { AbuseControlService } from "../../src/modules/security/services/abuseControlService.js";
 import { WorkspaceProviderCredentialsService } from "../../src/modules/security/credentials/services/workspaceProviderCredentialsService.js";
+import { McpConnectionService } from "../../src/modules/externalSkills/services/mcpConnectionService.js";
+import { ExternalSkillDefinitionService } from "../../src/modules/externalSkills/services/externalSkillDefinitionService.js";
+import {
+  InMemoryMcpConnectionRepository,
+  InMemoryExternalSkillDefinitionRepository,
+  createMockToolServiceFactory,
+} from "./inMemoryExternalSkills.js";
 import {
   DefaultWebhookDestinationAdapter,
   WebhookDestinationService,
@@ -693,6 +700,23 @@ export const createTestDependencies = (overrides: {
     auditService,
     { key: env.CONNECTOR_ENCRYPTION_KEY },
   );
+  const mcpConnectionRepository = new InMemoryMcpConnectionRepository();
+  const externalSkillDefinitionRepository = new InMemoryExternalSkillDefinitionRepository();
+  // Model the ON DELETE RESTRICT FK so the route DELETE 409 is exercised.
+  mcpConnectionRepository.setReferenceChecker((connectionId) =>
+    externalSkillDefinitionRepository.hasConnectionReference(connectionId),
+  );
+  const mcpConnectionService = new McpConnectionService({
+    repository: mcpConnectionRepository,
+    toolServiceFactory: createMockToolServiceFactory(),
+    encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
+    // No-op in tests (avoids real DNS); SSRF enforcement is unit-tested directly.
+    assertPublicUrl: () => undefined,
+  });
+  const externalSkillDefinitionService = new ExternalSkillDefinitionService(
+    externalSkillDefinitionRepository,
+    mcpConnectionService,
+  );
   const workspaceLlmCapabilitySettingsService = new WorkspaceLlmCapabilitySettingsService(
     retrievalSettingsRepository,
     auditService,
@@ -965,6 +989,8 @@ export const createTestDependencies = (overrides: {
     workspaceSessionService,
     abuseControlService,
     workspaceProviderCredentialsService,
+    mcpConnectionService,
+    externalSkillDefinitionService,
     webhookDestinations,
     workspaceLlmCapabilitySettingsService,
     authService: new AuthService({

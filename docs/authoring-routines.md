@@ -52,7 +52,8 @@ inline reference, not raw syntax. Each kind has its own colour:
   so `@email` in a step is stored as a structured reference, not literal text.
 - **Skill** - a skill the routine calls, referenced by name. The skill is
   defined for the agent elsewhere; here you only name it. A step that contains a
-  skill chip becomes a tool step the runtime dispatches through the skill port.
+  skill chip becomes a tool step the runtime resolves by name and dispatches
+  through the shared skill-executor registry.
 - **Handoff** - a branch target that ends the routine by escalating to a person.
 - **End** - a branch target that completes the routine.
 - **Condition** - a decided-in-code comparison on a variable. Build it from the
@@ -100,8 +101,56 @@ Use the **Condition** toolbar button to build a comparison:
    than` and `is within the last` for dates.
 4. Enter the value (and unit, for relative-date checks).
 
+A **tool** step calls an external skill. Select the skill from the dropdown, which
+lists the agent's defined external skills by name. The routine fills the skill's
+exposed inputs at run time and branches on the result. See
+[External Skills via MCP](./external-skills.md) for how to connect a server and
+define skills.
+
 A branch with a condition chip is decided by a reliable calculation. A branch
 with only prose is decided by the model. The chip colour tells you which.
+
+## Branch rows
+
+A branch row sends the routine from the current step to another step or end.
+
+Each row has:
+
+- **Condition** - optional prose for when this row should match.
+- **Target** - the step or end to go to.
+- **Max N** - an optional counter limit for retries or loops.
+- **Outcome status** - shown only on steps that contain a known action.
+
+Row order is precedence: the first matching branch wins. Put the default branch
+last by leaving its condition, outcome status, and counter limit empty.
+
+The outline view infers the stored guard from the row:
+
+- A row with **Max N** becomes a `counter` branch.
+- A row with **Outcome status** becomes an `outcome` branch.
+- A row with **Condition** becomes an `llm` branch.
+- A row with none of those fields becomes a `default` branch.
+
+A `default` branch has two roles. If it is the only branch, it is the normal next
+path. If it sits after conditioned branches, it is the last path when the others
+do not match.
+
+For a retry loop, put the counter on the row that loops back. When the counter is
+exhausted, that row stops matching and the routine takes the default branch from
+the same step. In practice, "try twice, then hand off" is a counter branch back
+to the retry step plus a default branch to a handoff end.
+
+## Branch or guidance
+
+Use this rule when deciding whether to create a branch:
+
+- If you want the routine to go somewhere else, add a branch row and choose a
+  **Target**.
+- If you only want to guide the assistant inside the current step, keep it as a
+  sentence in **Instruction**.
+
+In other words: want a branch, give it a target. Want guidance, keep it in the
+step.
 
 ## Ends and handoff
 

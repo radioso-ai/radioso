@@ -6,6 +6,7 @@ import { createAccountUserRoutes } from "./accountUserRoutes.js";
 import { createAuthRoutes } from "./authRoutes.js";
 import { createAssistantRoutes } from "./assistantRoutes.js";
 import { createAgentRoutes } from "./agentRoutes.js";
+import { createAgentExternalSkillsRoutes } from "./agentExternalSkillsRoutes.js";
 import { createDocumentRoutes } from "./documentRoutes.js";
 import { createHistoryRoutes } from "./historyRoutes.js";
 import { createMetricsRoutes } from "./metricsRoutes.js";
@@ -48,6 +49,7 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   router.use("/api/v1/workspace", createWorkspaceRoutes(dependencies));
   router.use("/api/v1/workspace/mcp", createMcpContextRoutes(dependencies));
   router.use("/api/v1/agents", createAgentRoutes(dependencies));
+  router.use("/api/v1/agents", createAgentExternalSkillsRoutes(dependencies));
   router.use("/api/v1/assistant", createAssistantRoutes(dependencies));
   router.use("/api/v1/history", createHistoryRoutes(dependencies));
   router.use("/api/v1/observability", createObservabilityRoutes(dependencies));

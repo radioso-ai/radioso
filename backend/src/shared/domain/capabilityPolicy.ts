@@ -16,6 +16,9 @@ export const capabilityNames = {
   mcp: {
     describeCapabilities: "mcp.describe_capabilities",
   },
+  externalSkills: {
+    invoke: "external_skills.invoke",
+  },
   humanContact: {
     request: "human_contact.request",
   },

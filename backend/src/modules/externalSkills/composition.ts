@@ -1,3 +1,5 @@
+import { createToolSkillExecutor } from "@radioso/conversation-tools";
+
 import type { Database } from "../../shared/infra/database.js";
 import { decryptField } from "../../shared/infra/crypto/fieldEncryption.js";
 import { McpConnectionRepository } from "../../db/repositories/mcpConnectionRepository.js";
@@ -72,4 +74,7 @@ export const buildExternalSkillsDeps = (
   skills: new ExternalSkillDefinitionRepository(database),
   connections: new LiveMcpConnectionLookup(new McpConnectionRepository(database), encryptionKey),
   toolServices: createMcpToolServiceFactory(assertPublicUrl),
+  // The transport-agnostic ToolSkillBridge factory, injected from composition so the
+  // executor stays free of a direct conversation-tools (concrete) dependency.
+  toolSkillExecutorFactory: createToolSkillExecutor,
 });

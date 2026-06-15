@@ -1,5 +1,4 @@
-import { createToolSkillExecutor } from "@radioso/conversation-tools";
-import type { ToolService } from "@radioso/conversation-tools";
+import type { ToolService, ToolSkillExecutorPort } from "@radioso/conversation-tools";
 import type {
   SkillDispatchResult,
   SkillExecutorPort,
@@ -43,10 +42,19 @@ export interface ToolServiceFactory {
   create(connection: McpConnectionRecord): ToolService;
 }
 
+/**
+ * Wraps a ToolService into the transport-agnostic `ToolSkillBridge` executor.
+ * Injected from composition: `conversation-tools` is a concrete that domain/runtime
+ * code must not import directly (boundary rule `engine-concretes-only-via-composition`),
+ * so the `createToolSkillExecutor` factory is supplied here instead.
+ */
+export type ToolSkillExecutorFactory = (service: ToolService) => ToolSkillExecutorPort;
+
 export interface McpSkillExecutorDeps {
   skills: SkillDefinitionLookup;
   connections: ConnectionLookup;
   toolServices: ToolServiceFactory;
+  toolSkillExecutorFactory: ToolSkillExecutorFactory;
 }
 
 const settledFailure = (code: string, message: string): SkillDispatchResult => ({
@@ -118,7 +126,7 @@ export class McpSkillExecutor implements SkillExecutorPort {
     }
 
     try {
-      const toolExecutor = createToolSkillExecutor(service);
+      const toolExecutor = this.deps.toolSkillExecutorFactory(service);
       return (await toolExecutor.dispatch({
         skill: { name: skillName, metadata: { conversationTool: { toolName: record.toolName } } },
         collected: input,

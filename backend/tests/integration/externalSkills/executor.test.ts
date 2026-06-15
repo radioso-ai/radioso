@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { createToolSkillExecutor } from "@radioso/conversation-tools";
+
 import { connectMockMcpServer, type MockTool } from "../../support/mockMcpServer.js";
 import { SdkMcpToolService } from "../../../src/modules/externalSkills/toolService/sdkMcpToolService.js";
 import {
@@ -36,6 +38,7 @@ const buildExecutor = async (definition: SkillDefinitionRecord | null, tools: Mo
     toolServices: {
       create: () => new SdkMcpToolService({ transportFactory: () => clientTransport }),
     },
+    toolSkillExecutorFactory: createToolSkillExecutor,
   });
 };
 
@@ -104,6 +107,7 @@ describe("McpSkillExecutor", () => {
           throw new Error("missing credentials");
         },
       },
+      toolSkillExecutorFactory: createToolSkillExecutor,
     });
     const result = await dispatch(executor, "handoff_slack", { message: "hi" });
     expect(result).toMatchObject({ disposition: "settled", outcome: { status: "failed", error: { code: "tool_service_unavailable" } } });
@@ -134,6 +138,7 @@ describe("McpSkillExecutor", () => {
             },
           }),
       },
+      toolSkillExecutorFactory: createToolSkillExecutor,
     });
     const result = await dispatch(executor, "handoff_slack", { message: "hi" });
     expect(result).toMatchObject({ disposition: "settled", outcome: { status: "failed" } });

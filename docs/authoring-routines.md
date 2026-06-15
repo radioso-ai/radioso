@@ -1,16 +1,22 @@
 # Authoring Routines
 
 A routine is a multi-step flow your agent runs across turns. It can collect
-values, take an action, branch on what happened, and finish or hand off to a
+values, call a skill, branch on what happened, and finish or hand off to a
 person.
 
 You manage routines in the agent's **Routines** settings. The settings section
 shows one row per routine lineage, not one row per version. Choose **New
 routine** or select an existing routine to open the editor screen.
 
-The primary authoring view is **Outline**: an ordered set of variables, step
-cards, branch rows, and ends. The graph the engine runs is compiled from that
-draft. You do not draw or edit the graph directly.
+The editor has two views of the same routine draft:
+
+- **Prose** - the primary view. You write the routine in plain language and
+  insert inline chips for the parts that need structure.
+- **Form** - a strict, lower-level view for routines the prose editor cannot
+  show. Switching views re-projects the same draft; it does not create a copy.
+
+The graph the engine runs is compiled from that draft. You do not draw or edit
+the graph directly.
 
 For the runtime model behind routines, see
 [Conversational routines](./architecture/conversational-routines.md).
@@ -19,7 +25,8 @@ For the runtime model behind routines, see
 
 Open an agent, go to **Routines**, and choose **New routine**. Radioso opens a
 separate editor screen for the draft. To edit an existing routine, select it
-from the same list.
+from the same list. A routine that the prose editor cannot represent opens in
+the **Form** view instead.
 
 At the top of the editor, set:
 
@@ -31,68 +38,76 @@ At the top of the editor, set:
 The trigger is judged by meaning, not by a keyword list. Write it the way an
 operator would describe the task.
 
-## Draft from procedure
+## Write the routine in prose
 
-When you are creating a new routine in **Outline**, you can use **Draft from
-procedure**.
+In the **Prose** view, write the routine the way you would explain it to a
+teammate. Each line is one step. The default flow runs the steps in order and
+finishes at the end.
 
-1. Choose **Draft from procedure**.
-2. Paste the SOP or operating procedure into **Procedure text**.
-3. Choose **Load proposal**.
-4. Review the proposed variables, steps, branches, and ends in the outline.
-5. Edit anything that is wrong, then save or publish through the normal buttons.
+To add structure, type `@` or use the toolbar to insert a chip. A chip is an
+inline reference, not raw syntax. Each kind has its own colour:
 
-The drafting assist creates an editable proposal. It does not save the routine,
-publish it, or bypass validation. In this version it is only for initial drafting
-of a new routine. It is not shown while editing an existing routine.
+- **Variable** (`@name`) - a value the routine collects, such as `@email` or
+  `@order_id`. It compiles to a typed slot. The variable name is the slot key,
+  so `@email` in a step is stored as a structured reference, not literal text.
+- **Skill** - a skill the routine calls, referenced by name. The skill is
+  defined for the agent elsewhere; here you only name it. A step that contains a
+  skill chip becomes a tool step the runtime dispatches through the skill port.
+- **Handoff** - a branch target that ends the routine by escalating to a person.
+- **End** - a branch target that completes the routine.
+- **Condition** - a decided-in-code comparison on a variable. Build it from the
+  **Condition** toolbar button (see below).
 
-## Variables
+The key point: chips for structure, prose for instruction. You never type curly
+braces or arrows.
 
-Variables are the values the routine collects, such as `email`, `order_id`, or
-`summary`.
+### Variable types
 
-In **Variables**, choose **Add variable** and fill in:
+A variable has a type: `text`, `number`, `boolean`, `email`, or `date`. The type
+is shown on the variable chip. Click the chip to change it, or set it inside the
+**Condition** dialog when you build a comparison. The type decides which exact
+comparisons are available.
 
-- the variable key
-- the type: `text`, `number`, `boolean`, `email`, or `date`
-- the description
-- whether it is **Required**
+A name identifies one thing. Once a name is used by a chip, the `@` menu will not
+let a second chip of a different kind reuse it.
 
-Declare each variable once. In a step instruction, use **Insert variable** or type
-an `@` mention, such as `@email`. The saved draft stores this as a structured
-slot reference.
+## Steps and branches
 
-## Step cards
+A line with no target chip is a step:
 
-A step card is one beat in the routine. Each step has:
+- A plain line is a chat step.
+- A line that contains a skill chip is a tool step that calls that skill.
 
-- **Step label** - the author-facing name for the step.
-- **Instruction** - what the assistant should do at that point.
-- **Branches** - optional rows that decide where the flow goes next.
+A line that carries a **Handoff** or **End** chip is a branch from the current
+step. The branch's guard - what decides whether it is taken - comes from the
+line:
 
-Write instructions as if you were instructing a human agent. Keep normal guidance
-inside the instruction. For example:
+- If the line carries a **Condition** chip, the branch is **decided in code**: a
+  typed comparison evaluated before the model is consulted.
+- Otherwise the line's prose is the guard, **decided by the AI**.
 
-```text
-Ask for @email. If it is about an order, also ask for @order_id.
-```
+In practice, "if the order is older than 6 months, hand off; otherwise continue"
+is one step, one condition chip, and a handoff chip on the branch line.
 
-That sentence is still one step. It does not create a branch because it does not
-point to a different step or end.
+### Decided in code vs decided by the AI
 
-Use **Insert variable** for variables and **Insert action** for actions. In the
-current dashboard, the action picker exposes the registered `Contact Send`
-action. When a step contains a known action mention, the stored step is inferred
-as an action step. Otherwise it is a chat step.
+Use the **Condition** toolbar button to build a comparison:
 
-The step label can change. The routine keeps a stable step id behind the scenes
-so traces and published versions can still resolve the step.
+1. Pick the variable.
+2. Pick its type if it is not already set.
+3. Pick the check. The checks depend on the type - for example `is`, `is one
+   of`, and `is present` for text; `is greater than` for numbers; `is older
+   than` and `is within the last` for dates.
+4. Enter the value (and unit, for relative-date checks).
 
 A **tool** step calls an external skill. Select the skill from the dropdown, which
 lists the agent's defined external skills by name. The routine fills the skill's
 exposed inputs at run time and branches on the result. See
 [External Skills via MCP](./external-skills.md) for how to connect a server and
 define skills.
+
+A branch with a condition chip is decided by a reliable calculation. A branch
+with only prose is decided by the model. The chip colour tells you which.
 
 ## Branch rows
 
@@ -138,15 +153,53 @@ step.
 
 ## Ends and handoff
 
-An end finishes the routine. In **Ends**, choose **Add end** and fill in:
+A routine finishes in one of two ways:
 
-- **End label**
-- **End message**
-- **Handoff**
+- An **End** chip completes the routine.
+- A **Handoff** chip ends the routine by escalating to a person.
 
-With **Handoff** off, the end is a normal completion. With **Handoff** on, the
-routine ends by escalating to a person. Branch targets show handoff ends with the
-word `handoff` in the target list.
+The default flow ends at a normal completion, so a simple linear routine needs
+no end chip. Use end and handoff chips on branch lines when a condition should
+finish or escalate early.
+
+The prose editor regenerates the completion and handoff messages from defaults.
+If you need custom completion or handoff wording, edit the routine in the
+**Form** view, which keeps that copy.
+
+## Validate and publish
+
+Use **Validate** before publishing. Validation reports problems in author terms,
+such as:
+
+- a branch target that no longer exists
+- a step that cannot reach an end
+- a variable used in an instruction but not declared
+- a tool step that names no skill
+- a comparison on a variable that does not exist, or a type that does not fit
+  the check
+- an enabled completion export that points at an unknown webhook destination
+
+Use **Save draft** to keep work in progress. Use **Publish** to create an
+immutable version that the chat runtime can run.
+
+## Form view
+
+**Form** is the strict, lower-level editor. Use it to inspect or adjust the
+underlying draft fields, and to author shapes the prose editor cannot show.
+
+The form exposes:
+
+- slots, including whether each slot is **Required**
+- step ids and step kind: `chat`, `tool`, or `action`
+- transition guard kind: `llm`, `default`, `slot_filled`, `outcome`, or
+  `counter`
+- terminal kind and message: `complete` or `handoff`
+- completion export settings for webhook delivery
+
+A routine that uses any of these advanced shapes - an action (outbox) step, a
+counter or outcome branch, a custom terminal message, a non-required slot, or a
+completion export - opens in **Form** automatically. The **Prose** tab shows a
+short note pointing you to **Form** for that routine.
 
 ### Completion export
 
@@ -163,8 +216,8 @@ A routine can declare a completion export:
 ```
 
 `destinationRef` is the stable id of a workspace webhook destination. It is not
-the destination name or URL. This means a destination can be renamed without
-breaking routines that reference it.
+the destination name or URL. A destination can be renamed without breaking
+routines that reference it.
 
 When completion export is enabled, validation and publish check that the
 destination exists in the same workspace. If it does not, the routine gets a
@@ -172,34 +225,15 @@ diagnostic on `completionExport.destinationRef`. Deleting a destination is also
 blocked while a published routine references it.
 
 When a routine reaches a terminal whose kind appears in `triggerKinds`, the
-runtime emits a `webhook.send` action for this field. The action worker resolves
-the destination, signs the JSON body with the destination secret, and posts it
-over the existing action outbox. Delivery uses the same public-host SSRF guard as
+runtime emits a `webhook.send` action. The action worker resolves the
+destination, signs the JSON body with the destination secret, and posts it over
+the existing action outbox. Delivery uses the same public-host SSRF guard as
 outbound contact webhooks.
 
 Webhook export is gated per agent. If the agent does not have webhook exports
 enabled, the worker records a terminal skip instead of retrying. Missing or
 deleted destinations are also terminal skips; transient transport failures retry
-through the action outbox. The destination's `lastDeliveryStatus` and
-`lastDeliveryAt` fields reflect the latest success, retry, failure, or skip.
-
-## Validate and publish
-
-Use **Validate** before publishing. Validation reports problems in author terms,
-such as:
-
-- a branch target that no longer exists
-- a step that cannot reach an end
-- a variable used in an instruction but not declared
-- an action the agent is not allowed to use
-- an enabled completion export that points at an unknown webhook destination
-- a missing step, branch, or end field
-
-Diagnostics appear near the relevant variable, step card, branch row, end, or
-routine header when possible.
-
-Use **Save draft** to keep work in progress. Use **Publish** to create an
-immutable version that the chat runtime can run.
+through the action outbox.
 
 ## Lifecycle and versions
 
@@ -210,11 +244,11 @@ A routine can have four statuses:
 - `superseded` - an older published version replaced by a newer one.
 - `archived` - a retired version that does not activate for new conversations.
 
-Published, superseded, and archived versions are read-only. Choose **Edit
-revision** on a published routine to create or open the lineage's draft revision.
-Publishing that draft makes the draft row the new immutable published version
-in place, keeping its id and assigned version. The previous published version is
-marked `superseded`.
+Published, superseded, and archived versions are read-only and open in the
+**Form** view. Choose **Edit revision** on a published routine to create or open
+the lineage's draft revision. Publishing that draft makes the draft row the new
+immutable published version in place, keeping its id and assigned version. The
+previous published version is marked `superseded`.
 
 The routine list shows the lineage once. It shows the current state, the active
 version number, and a **draft revision** badge when a published routine has a
@@ -235,20 +269,3 @@ The authoring API exposes the same lifecycle:
 - `POST /api/v1/agents/{agentId}/routines/{routineId}/publish`
 - `POST /api/v1/agents/{agentId}/routines/{routineId}/archive`
 - `POST /api/v1/agents/{agentId}/routines/{routineId}/restore`
-
-## Form view
-
-**Form** remains available as a transitional alternate view while the outline
-surface is completed and verified. It edits the same routine draft as **Outline**.
-Switching views re-projects the same draft rather than creating a second copy.
-
-The form exposes lower-level fields directly:
-
-- slots instead of variables
-- step ids and step kind: `chat`, `tool`, or `action`
-- transition guard kind: `llm`, `default`, `slot_filled`, `outcome`, or `counter`
-- terminal kind: `complete` or `handoff`
-- completion export settings for webhook delivery
-
-Use **Outline** for normal authoring. Use **Form** only when you need to inspect
-or adjust the underlying draft fields while it remains available.

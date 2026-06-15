@@ -81,6 +81,7 @@ export async function POST(
   const parsedBody = rawBody ? JSON.parse(rawBody) as PublicChatProxyRequestBody : {}
   const body = JSON.stringify({
     conversationId: parsedBody.conversationId,
+    bootstrapGreetingId: parsedBody.bootstrapGreetingId,
     message: parsedBody.message ?? parsedBody.query,
     startConversation: parsedBody.startConversation ?? parsedBody.bootstrapGreeting,
     stream: parsedBody.stream,

@@ -2718,10 +2718,17 @@ export interface components {
                 fromStep: string;
                 toRef: string;
                 /** @enum {string} */
-                guardKind: "llm" | "default" | "slot_filled" | "outcome" | "counter";
+                guardKind: "llm" | "default" | "slot_filled" | "outcome" | "counter" | "field";
                 guardText?: string | null;
                 outcomeStatus?: string | null;
                 counterLimit?: number | null;
+                fieldRef?: string | null;
+                /** @enum {string|null} */
+                fieldOp?: "is_true" | "is_false" | "equals" | "not_equals" | "in" | "is_present" | "is_absent" | "gt" | "gte" | "lt" | "lte" | "older_than" | "within" | null;
+                fieldValue?: string | number | boolean | null;
+                fieldValues?: (string | number | boolean)[] | null;
+                /** @enum {string|null} */
+                fieldUnit?: "days" | "weeks" | "months" | "years" | null;
                 ordinal: number;
             }[];
             terminals: {
@@ -2775,10 +2782,17 @@ export interface components {
                 fromStep: string;
                 toRef: string;
                 /** @enum {string} */
-                guardKind: "llm" | "default" | "slot_filled" | "outcome" | "counter";
+                guardKind: "llm" | "default" | "slot_filled" | "outcome" | "counter" | "field";
                 guardText?: string | null;
                 outcomeStatus?: string | null;
                 counterLimit?: number | null;
+                fieldRef?: string | null;
+                /** @enum {string|null} */
+                fieldOp?: "is_true" | "is_false" | "equals" | "not_equals" | "in" | "is_present" | "is_absent" | "gt" | "gte" | "lt" | "lte" | "older_than" | "within" | null;
+                fieldValue?: string | number | boolean | null;
+                fieldValues?: (string | number | boolean)[] | null;
+                /** @enum {string|null} */
+                fieldUnit?: "days" | "weeks" | "months" | "years" | null;
                 ordinal: number;
             }[];
             terminals: {
@@ -2804,7 +2818,7 @@ export interface components {
             ok: boolean;
             diagnostics: {
                 /** @enum {string} */
-                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "unsupported_tool_step" | "completion_export_missing_destination";
+                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination";
                 location: string;
                 message: string;
             }[];
@@ -2844,10 +2858,17 @@ export interface components {
                 fromStep: string;
                 toRef: string;
                 /** @enum {string} */
-                guardKind: "llm" | "default" | "slot_filled" | "outcome" | "counter";
+                guardKind: "llm" | "default" | "slot_filled" | "outcome" | "counter" | "field";
                 guardText?: string | null;
                 outcomeStatus?: string | null;
                 counterLimit?: number | null;
+                fieldRef?: string | null;
+                /** @enum {string|null} */
+                fieldOp?: "is_true" | "is_false" | "equals" | "not_equals" | "in" | "is_present" | "is_absent" | "gt" | "gte" | "lt" | "lte" | "older_than" | "within" | null;
+                fieldValue?: string | number | boolean | null;
+                fieldValues?: (string | number | boolean)[] | null;
+                /** @enum {string|null} */
+                fieldUnit?: "days" | "weeks" | "months" | "years" | null;
                 ordinal: number;
             }[];
             terminals: {
@@ -2942,10 +2963,17 @@ export interface components {
                     fromStep: string;
                     toRef: string;
                     /** @enum {string} */
-                    guardKind: "llm" | "default" | "slot_filled" | "outcome" | "counter";
+                    guardKind: "llm" | "default" | "slot_filled" | "outcome" | "counter" | "field";
                     guardText?: string | null;
                     outcomeStatus?: string | null;
                     counterLimit?: number | null;
+                    fieldRef?: string | null;
+                    /** @enum {string|null} */
+                    fieldOp?: "is_true" | "is_false" | "equals" | "not_equals" | "in" | "is_present" | "is_absent" | "gt" | "gte" | "lt" | "lte" | "older_than" | "within" | null;
+                    fieldValue?: string | number | boolean | null;
+                    fieldValues?: (string | number | boolean)[] | null;
+                    /** @enum {string|null} */
+                    fieldUnit?: "days" | "weeks" | "months" | "years" | null;
                     ordinal: number;
                 }[];
                 terminals: {

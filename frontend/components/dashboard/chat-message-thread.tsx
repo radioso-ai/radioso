@@ -1,13 +1,14 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
-import { Check, Copy, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { Check, CircleCheckBig, Copy, PauseCircle, ThumbsDown, ThumbsUp, Workflow } from 'lucide-react'
 import { DEFAULT_WEBSITE_EMBED_COPY, type WebsiteEmbedCopy, type WebsiteEmbedTheme } from '@/lib/embed-widget'
 import { computeSkillGroupInfo } from '@/lib/skill-thread-grouping'
+import type { RoutineThreadMarker } from '@/lib/routine-thread-grouping'
 import { getSkillDisplay, type SkillCatalogDisplayEntry, type SkillDisplaySource } from '@/lib/skill-display'
 import {
   AssistantMessageContent,
@@ -226,6 +227,68 @@ function SkillReceiptCard({
   )
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// Prefer the catalog name; fall back to a humanized id for built-in routines
+// whose id is a readable handle. Opaque ids (uuids) get the generic label and
+// rely on the id tooltip. This is identifier formatting, not product vocabulary.
+const routineDisplayLabel = (routineId: string | undefined, routineName: string | undefined): string => {
+  const name = routineName?.trim()
+  if (name) {
+    return name
+  }
+  if (!routineId || UUID_PATTERN.test(routineId)) {
+    return 'Routine'
+  }
+  const words = routineId.split(/[._\-/\s]+/).filter(Boolean)
+  if (words.length === 0) {
+    return 'Routine'
+  }
+  const text = words.join(' ')
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+function RoutineStartChip({
+  routineId,
+  routineName,
+  routineHref,
+}: {
+  routineId?: string
+  routineName?: string
+  routineHref?: string
+}) {
+  const label = routineDisplayLabel(routineId, routineName)
+  return (
+    <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+      <span
+        className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background px-2.5 py-1"
+        title={routineId ? `Routine ID: ${routineId}` : undefined}
+      >
+        <Workflow className="size-3.5" aria-hidden />
+        <span>Routine started</span>
+        {routineHref ? (
+          <a href={routineHref} className="font-normal text-primary underline-offset-2 hover:underline">
+            {label}
+          </a>
+        ) : (
+          <span className="font-normal text-muted-foreground/80">{label}</span>
+        )}
+      </span>
+    </div>
+  )
+}
+
+function RoutineEndMarker({ endState }: { endState?: 'paused' | 'ended' }) {
+  const paused = endState === 'paused'
+  const Icon = paused ? PauseCircle : CircleCheckBig
+  return (
+    <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+      <Icon className="size-3.5" aria-hidden />
+      <span>{paused ? 'Routine paused' : 'Routine ended'}</span>
+    </div>
+  )
+}
+
 type FeedbackHandler = (input: {
   assistantMessageId: string
   value: AnswerFeedbackValue
@@ -302,6 +365,7 @@ export function ChatMessageThread({
   analyticsEnabled = true,
   onEmbedAnalyticsEvent,
   skillCatalog = [],
+  routineMarkers,
 }: {
   messages: ChatThreadMessage[]
   onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
@@ -329,6 +393,9 @@ export function ChatMessageThread({
   analyticsEnabled?: boolean
   onEmbedAnalyticsEvent?: (event: WebsiteEmbedAnalyticsInput) => void
   skillCatalog?: SkillCatalogDisplayEntry[]
+  // Diagnostics-only: marks which turns a routine drove so the thread can band
+  // the routine's span. Omitted on public chat/embed, which render plainly.
+  routineMarkers?: readonly RoutineThreadMarker[]
 }) {
   const skillGroupInfo = useMemo(() => computeSkillGroupInfo(messages), [messages])
   const skillCatalogByName = useMemo(
@@ -519,9 +586,7 @@ export function ChatMessageThread({
 
   const suggestionThemeVars = theme ? getThemedSuggestionButtonStyle(theme) : undefined
 
-  return (
-    <div ref={threadRef} className="mx-auto max-w-3xl space-y-6">
-      {messages.map((message, index) => {
+  const renderMessage = (message: ChatThreadMessage, index: number) => {
         const currentDay = dayFormatter.format(new Date(message.createdAt))
         const previousDay =
           index > 0 ? dayFormatter.format(new Date(messages[index - 1].createdAt)) : null
@@ -855,7 +920,48 @@ export function ChatMessageThread({
             </div>
           </div>
         )
-      })}
+  }
+
+  // Walk the thread, banding contiguous routine turns. `routineMarkers` is only
+  // supplied by the diagnostics surface, so public chat/embed fall straight
+  // through to a flat list of rendered messages.
+  const threadContent: ReactNode[] = []
+  for (let index = 0; index < messages.length; index += 1) {
+    const marker = routineMarkers?.[index]
+    if (marker?.isGroupStart) {
+      const groupNodes: ReactNode[] = []
+      let end = index
+      while (end < messages.length) {
+        groupNodes.push(renderMessage(messages[end], end))
+        if (routineMarkers?.[end]?.isGroupEnd) {
+          break
+        }
+        end += 1
+      }
+      threadContent.push(
+        <section
+          key={`routine-band-${marker.groupKey ?? index}`}
+          data-routine-band={marker.groupKey ?? undefined}
+          className="space-y-4 border-y border-border/60 bg-muted/20 px-3 py-4"
+        >
+          <RoutineStartChip
+            routineId={marker.routineId}
+            routineName={marker.routineName}
+            routineHref={marker.routineHref}
+          />
+          <div className="space-y-6">{groupNodes}</div>
+          <RoutineEndMarker endState={routineMarkers?.[end]?.endState} />
+        </section>,
+      )
+      index = end
+      continue
+    }
+    threadContent.push(renderMessage(messages[index], index))
+  }
+
+  return (
+    <div ref={threadRef} className="mx-auto max-w-3xl space-y-6">
+      {threadContent}
     </div>
   )
 }

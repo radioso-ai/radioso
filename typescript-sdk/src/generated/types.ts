@@ -8257,6 +8257,9 @@ export interface operations {
                         };
                     };
                     declaredOutcomes?: string[];
+                    outcomeMap?: {
+                        [key: string]: string;
+                    };
                     enabled?: boolean;
                 };
             };

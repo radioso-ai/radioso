@@ -68,6 +68,7 @@ const SkillUpdateSchema = z.object({
   boundParams: z.record(z.unknown()).optional(),
   exposedParams: z.record(z.object({ slotBinding: z.string().optional(), description: z.string().optional() })).optional(),
   declaredOutcomes: z.array(z.string()).optional(),
+  outcomeMap: z.record(z.string()).optional(),
   enabled: z.boolean().optional(),
 });
 

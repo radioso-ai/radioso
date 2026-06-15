@@ -205,4 +205,23 @@ describeIfDatabase("external skills services (postgres)", () => {
       skills.update(agentId, skill.id, { boundParams: { ghost: "x" }, exposedParams: { message: {} } }),
     ).rejects.toMatchObject({ statusCode: 400 });
   });
+
+  it("persists outcomeMap updates and returns them from get", async () => {
+    const connection = await newConnection();
+    const skill = await skills.create(agentId, {
+      skillName: "outcome_map_editable",
+      connectionId: connection.id,
+      toolName: "post_message",
+      boundParams: { channel: "#x" },
+      exposedParams: { message: {} },
+      outcomeMap: { ok: "completed" },
+      enabled: true,
+    });
+
+    const updated = await skills.update(agentId, skill.id, { outcomeMap: { ok: "sent", fallback: "failed" } });
+    expect(updated.outcomeMap).toEqual({ ok: "sent", fallback: "failed" });
+
+    const fetched = await skills.get(agentId, skill.id);
+    expect(fetched.outcomeMap).toEqual({ ok: "sent", fallback: "failed" });
+  });
 });

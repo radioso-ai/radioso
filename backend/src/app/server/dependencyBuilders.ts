@@ -144,7 +144,8 @@ import { SkillCatalogService, retrievalAnswerSkillDefinition } from "../../modul
 import { RETRIEVAL_ANSWER_ADAPTER, RetrievalAnswerSkillExecutor } from "../../modules/retrieval/public.js";
 import { EXTERNAL_SKILLS_ADAPTER, McpSkillExecutor } from "../../modules/externalSkills/executor/mcpSkillExecutor.js";
 import { buildExternalSkillsDeps } from "../../modules/externalSkills/composition.js";
-import { ExternalSkillRoutineDispatcher } from "../../modules/externalSkills/externalSkillRoutineDispatcher.js";
+import { ExternalSkillRoutineSkillResolver } from "../../modules/externalSkills/routineSkillResolver.js";
+import { RoutineSkillExecutorDispatcher } from "../../modules/routines/public.js";
 import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
@@ -1019,8 +1020,10 @@ export const buildChatServices = (input: {
             promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
             responseLanguage,
           }),
-          // Routine `skill` steps dispatch through the external-skills executor (spec 087).
-          new ExternalSkillRoutineDispatcher(input.composition.skillExecutorRegistry),
+          new RoutineSkillExecutorDispatcher(
+            new ExternalSkillRoutineSkillResolver(),
+            input.composition.skillExecutorRegistry,
+          ),
         ),
       };
     },

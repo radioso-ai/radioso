@@ -16291,6 +16291,12 @@
                       "type": "string"
                     }
                   },
+                  "outcomeMap": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
                   "enabled": {
                     "type": "boolean"
                   }

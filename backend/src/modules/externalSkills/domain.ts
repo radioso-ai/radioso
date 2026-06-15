@@ -150,6 +150,7 @@ export const skillDefinitionUpdateSchema = z
     declaredOutcomes: z
       .array(trimmedText(EXTERNAL_SKILLS_LIMITS.outcomeName).regex(outcomeNamePattern))
       .optional(),
+    outcomeMap: z.record(trimmedText(EXTERNAL_SKILLS_LIMITS.outcomeName).regex(outcomeNamePattern)).optional(),
     enabled: z.boolean().optional(),
   })
   .strict()

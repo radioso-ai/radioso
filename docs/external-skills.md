@@ -70,5 +70,5 @@ The key points:
 
 Both connections and skills support full create, read, update, and delete. You
 can rename a connection, rotate its token, disable a skill, or change a skill's
-bindings without recreating it (so routine references stay intact). Re-binding a
-skill is re-validated against the tool's current schema.
+bindings or outcome map without recreating it (so routine references stay
+intact). Re-binding a skill is re-validated against the tool's current schema.

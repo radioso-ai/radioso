@@ -52,7 +52,8 @@ inline reference, not raw syntax. Each kind has its own colour:
   so `@email` in a step is stored as a structured reference, not literal text.
 - **Skill** - a skill the routine calls, referenced by name. The skill is
   defined for the agent elsewhere; here you only name it. A step that contains a
-  skill chip becomes a tool step the runtime dispatches through the skill port.
+  skill chip becomes a tool step the runtime resolves by name and dispatches
+  through the shared skill-executor registry.
 - **Handoff** - a branch target that ends the routine by escalating to a person.
 - **End** - a branch target that completes the routine.
 - **Condition** - a decided-in-code comparison on a variable. Build it from the

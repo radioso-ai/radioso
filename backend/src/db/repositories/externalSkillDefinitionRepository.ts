@@ -34,6 +34,7 @@ export interface UpdateExternalSkillDefinitionInput {
   boundParams?: Record<string, unknown>;
   exposedParams?: Record<string, ExposedParamSpec>;
   declaredOutcomes?: string[] | null;
+  outcomeMap?: Record<string, string> | null;
   enabled?: boolean;
 }
 
@@ -155,7 +156,8 @@ export class ExternalSkillDefinitionRepository implements ExternalSkillDefinitio
          bound_params = COALESCE($3::jsonb, bound_params),
          exposed_params = COALESCE($4::jsonb, exposed_params),
          declared_outcomes = COALESCE($5, declared_outcomes),
-         enabled = COALESCE($6, enabled),
+         outcome_map = COALESCE($6::jsonb, outcome_map),
+         enabled = COALESCE($7, enabled),
          updated_at = NOW()
        WHERE agent_id = $1 AND id = $2
        RETURNING ${COLUMNS}`,
@@ -165,6 +167,7 @@ export class ExternalSkillDefinitionRepository implements ExternalSkillDefinitio
         input.boundParams ? JSON.stringify(input.boundParams) : null,
         input.exposedParams ? JSON.stringify(input.exposedParams) : null,
         input.declaredOutcomes ?? null,
+        input.outcomeMap ? JSON.stringify(input.outcomeMap) : null,
         input.enabled ?? null,
       ],
     );

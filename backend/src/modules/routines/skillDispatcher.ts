@@ -77,7 +77,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
       // The routine's captured slots are the exposed params the executor fills
       // from; any bound params (e.g. an MCP channel) are merged inside it.
       collected: state.variables ?? {},
-      context: { turn },
+      context: { turn, agentId: turn.agent.id },
       emit: noopSkillEmitPort,
     });
 

@@ -4527,6 +4527,7 @@
                     "missing_terminal",
                     "dangling_action_reference",
                     "dangling_step_reference",
+                    "unbounded_back_edge",
                     "missing_action_follow_up",
                     "declared_unused_slot",
                     "referenced_undeclared_slot",

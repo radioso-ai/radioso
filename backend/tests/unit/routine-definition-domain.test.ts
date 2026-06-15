@@ -185,6 +185,101 @@ describe("routine definition compiler and validator", () => {
     }));
   });
 
+  it("accepts a counter-guarded back-edge with a fallback terminal path", () => {
+    const definition: RoutineDefinition = {
+      ...baseDefinition(),
+      transitions: [
+        { fromStep: "ask_name", toRef: "ask_topic", guardKind: "llm", guardText: "The user provided {{slot.name}}.", ordinal: 0 },
+        { fromStep: "ask_topic", toRef: "ask_name", guardKind: "counter", guardText: null, counterLimit: 2, ordinal: 1 },
+        { fromStep: "ask_topic", toRef: "done", guardKind: "default", guardText: null, ordinal: 2 },
+      ],
+    };
+
+    expect(validateRoutineDefinition(definition)).toEqual({ ok: true, diagnostics: [] });
+  });
+
+  it.each([
+    ["llm", { guardText: "The visitor wants to restart." }],
+    ["default", { guardText: null }],
+    ["field", { guardText: null, fieldRef: "topic", fieldOp: "is_present" }],
+  ] as const)("rejects an unbounded %s-guarded back-edge", (guardKind, guardFields) => {
+    const definition: RoutineDefinition = {
+      ...baseDefinition(),
+      transitions: [
+        { fromStep: "ask_name", toRef: "ask_topic", guardKind: "llm", guardText: "The user provided {{slot.name}}.", ordinal: 0 },
+        { fromStep: "ask_topic", toRef: "ask_name", guardKind, ...guardFields, ordinal: 1 },
+        { fromStep: "ask_topic", toRef: "done", guardKind: "default", guardText: null, ordinal: 2 },
+      ],
+    };
+
+    const result = validateRoutineDefinition(definition);
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: "unbounded_back_edge",
+      location: "transition:ask_topic->ask_name",
+      message: expect.stringContaining("must use a counter guard"),
+    }));
+  });
+
+  it("rejects an unbounded same-step transition as a back-edge", () => {
+    const definition: RoutineDefinition = {
+      ...baseDefinition(),
+      transitions: [
+        { fromStep: "ask_name", toRef: "ask_topic", guardKind: "llm", guardText: "The user provided {{slot.name}}.", ordinal: 0 },
+        { fromStep: "ask_topic", toRef: "ask_topic", guardKind: "llm", guardText: "The visitor needs to answer again.", ordinal: 1 },
+        { fromStep: "ask_topic", toRef: "done", guardKind: "default", guardText: null, ordinal: 2 },
+      ],
+    };
+
+    expect(validateRoutineDefinition(definition).diagnostics).toContainEqual(expect.objectContaining({
+      code: "unbounded_back_edge",
+      location: "transition:ask_topic->ask_topic",
+    }));
+  });
+
+  it.each([
+    ["llm", { guardText: "The visitor is ready for the summary." }],
+    ["default", { guardText: null }],
+    ["field", { guardText: null, fieldRef: "name", fieldOp: "is_present" }],
+    ["counter", { guardText: null, counterLimit: 2 }],
+  ] as const)("allows a forward %s-guarded step jump", (guardKind, guardFields) => {
+    const definition: RoutineDefinition = {
+      ...baseDefinition(),
+      steps: [
+        ...baseDefinition().steps,
+        { stableStepId: "summarize", kind: "chat", instruction: "Summarize {{slot.name}} and {{slot.topic}}.", toolRef: null, ordinal: 2, metadata: {} },
+      ],
+      transitions: [
+        { fromStep: "ask_name", toRef: "ask_topic", guardKind: "default", guardText: null, ordinal: 0 },
+        { fromStep: "ask_name", toRef: "summarize", guardKind, ...guardFields, ordinal: 1 },
+        { fromStep: "ask_name", toRef: "done", guardKind: "default", guardText: null, ordinal: 2 },
+        { fromStep: "ask_topic", toRef: "done", guardKind: "default", guardText: null, ordinal: 3 },
+        { fromStep: "summarize", toRef: "done", guardKind: "default", guardText: null, ordinal: 4 },
+      ],
+    };
+
+    expect(validateRoutineDefinition(definition)).toEqual({ ok: true, diagnostics: [] });
+  });
+
+  it("keeps unknown step targets as dangling step references", () => {
+    const definition: RoutineDefinition = {
+      ...baseDefinition(),
+      transitions: [
+        { fromStep: "ask_name", toRef: "ask_topic", guardKind: "llm", guardText: "The user provided {{slot.name}}.", ordinal: 0 },
+        { fromStep: "ask_topic", toRef: "missing_step", guardKind: "default", guardText: null, ordinal: 1 },
+      ],
+    };
+
+    const result = validateRoutineDefinition(definition);
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: "dangling_step_reference",
+      location: "transition:ask_topic->missing_step",
+    }));
+  });
+
   it("reports outcome guards leaving non-tool steps in author terms", () => {
     const definition: RoutineDefinition = {
       ...baseDefinition(),

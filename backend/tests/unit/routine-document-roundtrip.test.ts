@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import type { RoutineDefinitionDraftInput, RoutineDocument, RoutineValidationDiagnostic } from "../../src/modules/routines/public.js";
+import type { RoutineDefinition, RoutineDefinitionDraftInput, RoutineDocument, RoutineValidationDiagnostic } from "../../src/modules/routines/public.js";
 import {
+  compileRoutineDefinition,
   mapRoutineDiagnosticToDocumentRange,
   parseRoutineDocumentFixture,
   routineDocumentToDraft,
@@ -83,6 +84,17 @@ const fullDraft = (): RoutineDefinitionDraftInput => ({
   ],
 });
 
+const definitionFromDraft = (draft: RoutineDefinitionDraftInput): RoutineDefinition => ({
+  ...draft,
+  id: "def_1",
+  agentId: "agent_1",
+  lineageId: "lineage_1",
+  version: 1,
+  status: "published",
+  createdAt: new Date("2026-06-09T00:00:00.000Z"),
+  updatedAt: new Date("2026-06-09T00:00:00.000Z"),
+});
+
 describe("routine document model round trips", () => {
   it("round-trips every existing draft guard kind through the document AST", () => {
     const document = routineDraftToDocument(fullDraft());
@@ -90,6 +102,81 @@ describe("routine document model round trips", () => {
 
     expect(result.diagnostics).toEqual([]);
     expect(result.draft).toEqual(fullDraft());
+  });
+
+  it("round-trips non-adjacent forward and backward step targets and compiles them unchanged", () => {
+    const draft = fullDraft();
+    const document = routineDraftToDocument(draft);
+    const result = routineDocumentToDraft(document);
+    const routine = compileRoutineDefinition(definitionFromDraft(result.draft));
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.draft).toEqual(draft);
+    expect(document.sections[0]).toMatchObject({
+      kind: "routine",
+      steps: expect.arrayContaining([
+        expect.objectContaining({
+          stableStepId: "lookup",
+          branches: expect.arrayContaining([
+            expect.objectContaining({ target: { kind: "step", stableId: "review" } }),
+          ]),
+        }),
+        expect.objectContaining({
+          stableStepId: "retry",
+          branches: expect.arrayContaining([
+            expect.objectContaining({ target: { kind: "step", stableId: "lookup" } }),
+          ]),
+        }),
+      ]),
+    });
+    expect(routine.transitions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ from: "lookup", to: "review" }),
+      expect.objectContaining({ from: "retry", to: "lookup" }),
+    ]));
+  });
+
+  it.each(["done", "handoff"] as const)("rejects a step-target branch that points at reserved terminal id %s", (terminalId) => {
+    const document: RoutineDocument = {
+      name: "terminal-step-target",
+      activation: {
+        triggerDescription: "support",
+        gateRef: null,
+        priority: 1,
+      },
+      sections: [{
+        kind: "routine",
+        variables: [],
+        steps: [{
+          stableStepId: "start",
+          label: null,
+          instruction: "Start.",
+          kind: "chat",
+          toolRef: null,
+          actionType: null,
+          metadata: {},
+          ordinal: 0,
+          branches: [{
+            fromStepId: "start",
+            target: { kind: "step", stableId: terminalId },
+            guard: { kind: "default" },
+            ordinal: 0,
+          }],
+        }],
+        ends: [
+          { stableStepId: "done", kind: "complete", instruction: "Done.", ordinal: 0 },
+          { stableStepId: "handoff", kind: "handoff", instruction: "Hand off.", ordinal: 1 },
+        ],
+      }],
+    };
+
+    const result = routineDocumentToDraft(document);
+
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: "invalid_transition",
+      location: `transition:start->${terminalId}`,
+      message: expect.stringContaining("use an end target instead"),
+    }));
+    expect(result.draft.transitions).toEqual([]);
   });
 
   it("round-trips every existing draft guard kind through fixture text", () => {

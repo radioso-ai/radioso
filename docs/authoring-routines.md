@@ -135,6 +135,11 @@ A `default` branch has two roles. If it is the only branch, it is the normal nex
 path. If it sits after conditioned branches, it is the last path when the others
 do not match.
 
+A branch can jump to any step, not only the next one. A forward jump can skip
+steps when a condition makes them unnecessary. A backward jump, including a jump
+back to the same step, creates a loop and must use **Max N** so the runtime can
+bound how many times that branch is taken.
+
 For a retry loop, put the counter on the row that loops back. When the counter is
 exhausted, that row stops matching and the routine takes the default branch from
 the same step. In practice, "try twice, then hand off" is a counter branch back

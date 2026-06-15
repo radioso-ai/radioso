@@ -125,6 +125,7 @@ import { WorkspaceProviderCredentialsService } from "../../modules/security/cred
 import { WebhookDestinationRepository } from "../../db/repositories/webhookDestinationRepository.js";
 import { CustomerEmailConnectionRepository } from "../../db/repositories/customerEmailConnectionRepository.js";
 import { EmailSkillDefinitionRepository } from "../../db/repositories/emailSkillDefinitionRepository.js";
+import { EmailSkillActivityRepository } from "../../db/repositories/emailSkillActivityRepository.js";
 import { OauthConnectionRepository } from "../../db/repositories/oauthConnectionRepository.js";
 import {
   DefaultWebhookDestinationAdapter,
@@ -306,6 +307,7 @@ export const buildRepositories = (
   webhookDestinationRepository: new WebhookDestinationRepository(database),
   customerEmailConnectionRepository: new CustomerEmailConnectionRepository(database),
   emailSkillDefinitionRepository: new EmailSkillDefinitionRepository(database),
+  emailSkillActivityRepository: new EmailSkillActivityRepository(database),
 });
 
 export const buildAccessServices = (input: {
@@ -744,6 +746,7 @@ export const buildChatServices = (input: {
   routineDefinitionRepository: RoutineDefinitionRepository;
   customerEmailConnectionRepository: CustomerEmailConnectionRepository;
   emailSkillDefinitionRepository: EmailSkillDefinitionRepository;
+  emailSkillActivityRepository: EmailSkillActivityRepository;
   mailService: ReturnType<typeof buildInfrastructure>["mailService"];
   usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
   retrievalPipeline: RetrievalPipelinePort;
@@ -864,6 +867,7 @@ export const buildChatServices = (input: {
           assertPublicUrl: input.assertPublicWebsiteUrl,
           logger: input.logger,
         }),
+        activity: input.emailSkillActivityRepository,
       }),
     });
   }

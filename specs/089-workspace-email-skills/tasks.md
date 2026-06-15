@@ -158,21 +158,21 @@
 
 ### Tests for User Story 5
 
-- [ ] T064 [P] [US5] Add failing repository tests for email skill activity in `backend/tests/integration/customerEmail/email-skill-activity-repository.test.ts`
-- [ ] T065 [P] [US5] Add failing redaction tests for activity/audit payloads in `backend/tests/unit/customerEmail/email-skill-activity-redaction.test.ts`
-- [ ] T066 [P] [US5] Add contract tests for activity endpoint in `backend/tests/contract/customer-email-activity.contract.test.ts`
-- [ ] T067 [P] [US5] Add Playwright test for sanitized activity UI in `frontend/tests/e2e/customer-email-activity.spec.ts`
+- [x] T064 [P] [US5] Add failing repository tests for email skill activity in `backend/tests/integration/customerEmail/email-skill-activity-repository.test.ts`
+- [x] T065 [P] [US5] Add failing redaction tests for activity/audit payloads in `backend/tests/unit/customerEmail/email-skill-activity-redaction.test.ts`
+- [x] T066 [P] [US5] Add contract tests for activity endpoint in `backend/tests/contract/customer-email-activity.contract.test.ts`
+- [x] T067 [P] [US5] Add Playwright test for sanitized activity UI in `frontend/tests/e2e/customer-email-activity.spec.ts`
 
 ### Implementation for User Story 5
 
-- [ ] T068 [US5] Add email skill activity migration in `backend/src/db/migrations/097_email_skill_activity.sql`
-- [ ] T069 [US5] Add email skill activity repository in `backend/src/db/repositories/emailSkillActivityRepository.ts`
-- [ ] T070 [US5] Add sanitized activity mapper in `backend/src/modules/customerEmail/services/emailSkillActivityPresenter.ts`
-- [ ] T071 [US5] Record activity from email skill executor in `backend/src/modules/customerEmail/executor/emailSkillExecutor.ts`
-- [ ] T072 [US5] Add activity endpoint in `backend/src/app/http/routes/emailSkillActivityRoutes.ts`
-- [ ] T073 [US5] Register activity OpenAPI path in `backend/src/app/http/openapi/paths/customerEmailPaths.ts`
-- [ ] T074 [US5] Add frontend activity API in `frontend/lib/api-customer-email.ts`
-- [ ] T075 [US5] Add sanitized activity UI in `frontend/components/dashboard/settings/customer-email-activity-section.tsx`
+- [x] T068 [US5] Add email skill activity migration in `backend/src/db/migrations/098_email_skill_activity.sql`
+- [x] T069 [US5] Add email skill activity repository in `backend/src/db/repositories/emailSkillActivityRepository.ts`
+- [x] T070 [US5] Add sanitized activity mapper in `backend/src/modules/customerEmail/services/emailSkillActivityPresenter.ts`
+- [x] T071 [US5] Record activity from email skill executor in `backend/src/modules/customerEmail/executor/emailSkillExecutor.ts`
+- [x] T072 [US5] Add activity endpoint in `backend/src/app/http/routes/emailSkillActivityRoutes.ts`
+- [x] T073 [US5] Register activity OpenAPI path in `backend/src/app/http/openapi/paths/customerEmailPaths.ts`
+- [x] T074 [US5] Add frontend activity API in `frontend/lib/api-customer-email.ts`
+- [x] T075 [US5] Add sanitized activity UI in `frontend/components/dashboard/settings/customer-email-activity-section.tsx`
 
 **Checkpoint**: US5 gives operators sanitized visibility.
 

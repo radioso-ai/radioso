@@ -35,6 +35,7 @@ export {
   customerEmailSkillInputKeys,
   customerEmailSkillModes,
   customerEmailSkillOutcomes,
+  emailSkillActivityQuerySchema,
   customerEmailConnectionStatuses,
   customerEmailConnectionUpdateSchema,
   customerEmailHealthStatuses,
@@ -49,7 +50,16 @@ export {
   type CustomerEmailSkillInputKey,
   type CustomerEmailSkillMode,
   type CustomerEmailSkillOutcome,
+  type EmailSkillActivityQueryInput,
+  type EmailSkillActivitySummary,
+  type EmailSkillRecipientSummary,
 } from "./domain.js";
+export {
+  buildEmailSkillActivityAuditPayload,
+  buildEmailSkillActivityRecordInput,
+  presentEmailSkillActivity,
+  summarizeEmailRecipients,
+} from "./services/emailSkillActivityPresenter.js";
 export {
   EmailSkillDefinitionService,
   type EmailSkillDefinitionServiceOptions,
@@ -69,6 +79,7 @@ export {
 export {
   CUSTOMER_EMAIL_SKILLS_ADAPTER,
   EmailSkillExecutor,
+  type EmailSkillActivitySinkPort,
   type EmailSkillExecutorOptions,
 } from "./executor/emailSkillExecutor.js";
 export {

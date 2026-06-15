@@ -38,6 +38,7 @@ const dispatch = (
 
 const buildExecutor = (deliveryResult: CustomerEmailDeliveryResult, record: EmailSkillDefinitionRecord | null = definition()) => {
   const deliveryInputs: unknown[] = [];
+  const activityInputs: unknown[] = [];
   const executor = new EmailSkillExecutor({
     skills: {
       findEnabledByName: async (workspaceId, agentId, skillName) =>
@@ -51,8 +52,13 @@ const buildExecutor = (deliveryResult: CustomerEmailDeliveryResult, record: Emai
         return deliveryResult;
       },
     },
+    activity: {
+      record: async (input) => {
+        activityInputs.push(input);
+      },
+    },
   });
-  return { executor, deliveryInputs };
+  return { executor, deliveryInputs, activityInputs };
 };
 
 describe("EmailSkillExecutor", () => {
@@ -83,7 +89,7 @@ describe("EmailSkillExecutor", () => {
   }
 
   it("returns missing_input without calling delivery when required exposed values are absent", async () => {
-    const { executor, deliveryInputs } = buildExecutor({ outcome: "drafted" });
+    const { executor, deliveryInputs, activityInputs } = buildExecutor({ outcome: "drafted" });
 
     const result = await dispatch(executor, { customerEmail: "customer@example.com" });
 
@@ -92,6 +98,42 @@ describe("EmailSkillExecutor", () => {
       outcome: { status: "missing_input", outputs: { missingInputs: ["bodyText"] } },
     });
     expect(deliveryInputs).toHaveLength(0);
+    expect(activityInputs).toEqual([
+      expect.objectContaining({
+        skillDefinitionId: "skill-1",
+        connectionId: "connection-1",
+        outcome: "missing_input",
+        errorCode: "missing_input",
+      }),
+    ]);
+  });
+
+  it("records sanitized activity through the activity sink", async () => {
+    const { executor, activityInputs } = buildExecutor({ outcome: "failed", errorCode: "provider_failed" });
+
+    await dispatch(executor, {
+      customerEmail: "Customer Person <customer@example.com>",
+      messageBody: "This full body must not be retained",
+    });
+
+    expect(activityInputs).toHaveLength(1);
+    expect(activityInputs[0]).toMatchObject({
+      workspaceId: "workspace-1",
+      agentId: "agent-1",
+      skillDefinitionId: "skill-1",
+      connectionId: "connection-1",
+      skillName: "support_email_customer",
+      mode: "draft",
+      outcome: "failed",
+      errorCode: "provider_failed",
+      recipientSummary: {
+        toCount: 1,
+        ccCount: 0,
+        domains: ["example.com"],
+        redactedRecipients: ["c***@example.com"],
+      },
+    });
+    expect(JSON.stringify(activityInputs[0])).not.toContain("This full body must not be retained");
   });
 
   it("fails closed for undefined or disabled skill names", async () => {

@@ -172,3 +172,41 @@ export interface CustomerEmailSkillDefinitionSummary {
   createdAt: string;
   updatedAt: string;
 }
+
+export const emailSkillActivityQuerySchema = z
+  .object({
+    agentId: z.string().uuid().optional(),
+    connectionId: z.string().uuid().optional(),
+    skillDefinitionId: z.string().uuid().optional(),
+    outcome: z.enum(customerEmailSkillOutcomes).optional(),
+    createdFrom: z.string().datetime().optional(),
+    createdTo: z.string().datetime().optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+  })
+  .strict();
+
+export type EmailSkillActivityQueryInput = z.infer<typeof emailSkillActivityQuerySchema>;
+
+export interface EmailSkillRecipientSummary {
+  toCount: number;
+  ccCount: number;
+  domains: string[];
+  redactedRecipients: string[];
+}
+
+export interface EmailSkillActivitySummary {
+  id: string;
+  workspaceId: string;
+  agentId: string;
+  routineId: string | null;
+  conversationId: string | null;
+  skillDefinitionId: string;
+  connectionId: string;
+  skillName: string;
+  mode: CustomerEmailSkillMode;
+  outcome: CustomerEmailSkillOutcome;
+  recipientSummary: EmailSkillRecipientSummary;
+  providerMessageId: string | null;
+  errorCode: string | null;
+  createdAt: string;
+}

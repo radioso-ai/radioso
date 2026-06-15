@@ -97,6 +97,7 @@ import {
 import { InMemoryOauthConnectionRepository } from "./inMemoryOauthConnections.js";
 import { InMemoryCustomerEmailConnectionRepository } from "./inMemoryCustomerEmailConnections.js";
 import { InMemoryEmailSkillDefinitionRepository } from "./inMemoryEmailSkillDefinitions.js";
+import { InMemoryEmailSkillActivityRepository } from "./inMemoryEmailSkillActivity.js";
 import {
   DefaultWebhookDestinationAdapter,
   WebhookDestinationService,
@@ -761,6 +762,7 @@ export const createTestDependencies = (overrides: {
   const customerEmailOAuthService = new CustomerEmailOAuthService(oauthConnectionService);
   const customerEmailConnectionRepository = new InMemoryCustomerEmailConnectionRepository();
   const emailSkillDefinitionRepository = new InMemoryEmailSkillDefinitionRepository();
+  const emailSkillActivityRepository = new InMemoryEmailSkillActivityRepository();
   customerEmailConnectionRepository.setReferenceChecker((connectionId) =>
     emailSkillDefinitionRepository.countByConnection("", connectionId),
   );
@@ -1077,6 +1079,7 @@ export const createTestDependencies = (overrides: {
     customerEmailOAuthService,
     customerEmailConnectionService,
     emailSkillDefinitionService,
+    emailSkillActivityRepository,
     mcpConnectionService,
     externalSkillDefinitionService,
     webhookDestinations,

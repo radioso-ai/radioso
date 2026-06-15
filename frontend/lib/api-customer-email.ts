@@ -100,6 +100,40 @@ export type CustomerEmailSkillDefinition = {
   updatedAt: string
 }
 
+export type CustomerEmailRecipientSummary = {
+  toCount: number
+  ccCount: number
+  domains: string[]
+  redactedRecipients: string[]
+}
+
+export type CustomerEmailActivity = {
+  id: string
+  workspaceId: string
+  agentId: string
+  routineId: string | null
+  conversationId: string | null
+  skillDefinitionId: string
+  connectionId: string
+  skillName: string
+  mode: CustomerEmailSkillMode
+  outcome: CustomerEmailSkillOutcome
+  recipientSummary: CustomerEmailRecipientSummary
+  providerMessageId: string | null
+  errorCode: string | null
+  createdAt: string
+}
+
+export type CustomerEmailActivityQuery = {
+  agentId?: string
+  connectionId?: string
+  skillDefinitionId?: string
+  outcome?: CustomerEmailSkillOutcome
+  createdFrom?: string
+  createdTo?: string
+  limit?: number
+}
+
 export type CreateCustomerEmailSkillInput = {
   skillName: string
   connectionId: string
@@ -243,6 +277,24 @@ export const customerEmailApi = {
     await request<void>(
       `/agents/${agentId}/email-skills/${skillId}`,
       { method: 'DELETE' },
+      { withApiToken: true },
+    )
+  },
+
+  async listEmailActivity(
+    workspaceId: string,
+    query: CustomerEmailActivityQuery = {},
+  ): Promise<{ activities: CustomerEmailActivity[] }> {
+    const params = new URLSearchParams()
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined && value !== null && value !== '') {
+        params.set(key, String(value))
+      }
+    }
+    const suffix = params.toString() ? `?${params.toString()}` : ''
+    return request<{ activities: CustomerEmailActivity[] }>(
+      `/workspaces/${workspaceId}/email-skill-activity${suffix}`,
+      { method: 'GET' },
       { withApiToken: true },
     )
   },

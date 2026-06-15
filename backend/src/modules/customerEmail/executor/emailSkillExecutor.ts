@@ -13,12 +13,21 @@ import { customerEmailSkillInputKeys } from "../domain.js";
 import type { EmailSkillDefinitionRepositoryPort } from "../../../db/repositories/emailSkillDefinitionRepository.js";
 import type { CustomerEmailDeliveryService } from "../services/customerEmailDeliveryService.js";
 import { setTraceAttributes, traceOperation } from "../../../shared/observability/tracing/operations.js";
+import {
+  buildEmailSkillActivityRecordInput,
+} from "../services/emailSkillActivityPresenter.js";
+import type { CreateEmailSkillActivityInput } from "../../../db/repositories/emailSkillActivityRepository.js";
 
 export const CUSTOMER_EMAIL_SKILLS_ADAPTER = "customer-email-skills";
+
+export interface EmailSkillActivitySinkPort {
+  record(input: CreateEmailSkillActivityInput): Promise<unknown>;
+}
 
 export interface EmailSkillExecutorOptions {
   skills: Pick<EmailSkillDefinitionRepositoryPort, "findEnabledByName">;
   delivery: Pick<CustomerEmailDeliveryService, "deliver">;
+  activity?: EmailSkillActivitySinkPort;
 }
 
 const settled = (
@@ -67,21 +76,27 @@ export class EmailSkillExecutor implements SkillExecutorPort {
     const input = buildRuntimeInput(definition, invocation.collected ?? {});
     const missing = missingInputs(input);
     if (missing.length > 0) {
+      await this.recordActivity(invocation, definition, "missing_input", input, null);
       return settled("missing_input", { missingInputs: missing, skillName: definition.skillName });
     }
 
+    const message = {
+      to: String(input.to),
+      cc: optionalString(input.cc),
+      subject: String(input.subject),
+      bodyText: optionalString(input.bodyText),
+      bodyHtml: optionalString(input.bodyHtml),
+      replyTo: optionalString(input.replyTo),
+    };
     const result = await this.options.delivery.deliver({
       workspaceId,
       connectionId: definition.connectionId,
       mode: definition.mode,
-      message: {
-        to: String(input.to),
-        cc: optionalString(input.cc),
-        subject: String(input.subject),
-        bodyText: optionalString(input.bodyText),
-        bodyHtml: optionalString(input.bodyHtml),
-        replyTo: optionalString(input.replyTo),
-      },
+      message,
+    });
+    await this.recordActivity(invocation, definition, result.outcome, message, {
+      providerMessageId: result.providerMessageId,
+      errorCode: result.errorCode,
     });
 
     return settled(result.outcome, {
@@ -90,6 +105,40 @@ export class EmailSkillExecutor implements SkillExecutorPort {
       ...(result.providerMessageId ? { providerMessageId: result.providerMessageId } : {}),
       ...(result.errorCode ? { reason: result.errorCode } : {}),
     });
+  }
+
+  private async recordActivity(
+    invocation: SkillInvocation,
+    definition: Pick<CustomerEmailSkillDefinitionSummary, "id" | "connectionId" | "skillName" | "mode">,
+    outcome: CustomerEmailSkillOutcome,
+    message: Partial<Record<CustomerEmailSkillInputKey, unknown>> | null,
+    result: { providerMessageId?: string | null; errorCode?: string | null } | null,
+  ): Promise<void> {
+    if (!this.options.activity) return;
+    const agentId = typeof invocation.context?.agentId === "string" ? invocation.context.agentId : "";
+    const workspaceId = typeof invocation.context?.workspaceId === "string" ? invocation.context.workspaceId : "";
+    if (!agentId || !workspaceId) return;
+    await this.options.activity.record(buildEmailSkillActivityRecordInput({
+      workspaceId,
+      agentId,
+      routineId: typeof invocation.context?.routineId === "string" ? invocation.context.routineId : null,
+      conversationId: typeof invocation.context?.conversationId === "string" ? invocation.context.conversationId : null,
+      skillDefinitionId: definition.id,
+      connectionId: definition.connectionId,
+      skillName: definition.skillName,
+      mode: definition.mode,
+      outcome,
+      message: {
+        to: typeof message?.to === "string" ? message.to : undefined,
+        cc: typeof message?.cc === "string" ? message.cc : undefined,
+        subject: typeof message?.subject === "string" ? message.subject : undefined,
+        bodyText: typeof message?.bodyText === "string" ? message.bodyText : undefined,
+        bodyHtml: typeof message?.bodyHtml === "string" ? message.bodyHtml : undefined,
+        replyTo: typeof message?.replyTo === "string" ? message.replyTo : undefined,
+      },
+      providerMessageId: result?.providerMessageId,
+      errorCode: result?.errorCode ?? (outcome === "missing_input" ? "missing_input" : null),
+    }));
   }
 }
 

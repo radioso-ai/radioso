@@ -20,6 +20,7 @@ import { createMcpContextRoutes } from "./mcpContextRoutes.js";
 import { createOauthConnectionRoutes } from "./oauthConnectionRoutes.js";
 import { createCustomerEmailConnectionRoutes } from "./customerEmailConnectionRoutes.js";
 import { createEmailSkillRoutes } from "./emailSkillRoutes.js";
+import { createEmailSkillActivityRoutes } from "./emailSkillActivityRoutes.js";
 import { createRetrievalRoutes } from "./retrievalRoutes.js";
 import { createConnectorRoutes } from "../../../modules/connectors/http/connectorRoutes.js";
 import { createPublicChatRoutes } from "./publicChatRoutes.js";
@@ -53,6 +54,7 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   router.use("/api/v1/workspace/mcp", createMcpContextRoutes(dependencies));
   router.use("/api/v1", createOauthConnectionRoutes(dependencies));
   router.use("/api/v1", createCustomerEmailConnectionRoutes(dependencies));
+  router.use("/api/v1", createEmailSkillActivityRoutes(dependencies));
   router.use("/api/v1/agents", createAgentRoutes(dependencies));
   router.use("/api/v1/agents", createAgentExternalSkillsRoutes(dependencies));
   router.use("/api/v1/agents", createEmailSkillRoutes(dependencies));

@@ -60,6 +60,27 @@ export type CustomerEmailSkillFixture = {
   createdAt: string;
   updatedAt: string;
 };
+export type CustomerEmailActivityFixture = {
+  id: string;
+  workspaceId: string;
+  agentId: string;
+  routineId: string | null;
+  conversationId: string | null;
+  skillDefinitionId: string;
+  connectionId: string;
+  skillName: string;
+  mode: "draft" | "send";
+  outcome: "drafted" | "sent" | "missing_input" | "disabled_connection" | "needs_reauth" | "provider_rejected" | "failed";
+  recipientSummary: {
+    toCount: number;
+    ccCount: number;
+    domains: string[];
+    redactedRecipients: string[];
+  };
+  providerMessageId: string | null;
+  errorCode: string | null;
+  createdAt: string;
+};
 export type WebhookDestinationMutationFixture = {
   method: "POST" | "PUT" | "DELETE" | "ROTATE_SECRET";
   destinationId?: string;
@@ -475,6 +496,7 @@ export const installDashboardApiMocks = async (
     mcpConnections?: McpConnectionFixture[];
     mcpConnectionRequests?: string[];
     emailSkills?: CustomerEmailSkillFixture[];
+    emailActivity?: CustomerEmailActivityFixture[];
   } = {},
 ) => {
   let platformSettings = options.platformSettings ?? basePlatformSettings();
@@ -514,6 +536,7 @@ export const installDashboardApiMocks = async (
   let nextRoutineIndex = 1;
   const routineUpdates = options.routineUpdates;
   const emailSkills = options.emailSkills ?? [];
+  const emailActivity = options.emailActivity ?? [];
   let webhookDestinations = options.webhookDestinations ?? [];
   let nextWebhookDestinationIndex = webhookDestinations.length + 1;
   const mcpConnections = options.mcpConnections ?? [];
@@ -931,6 +954,11 @@ export const installDashboardApiMocks = async (
 
     if (path === `/agents/${defaultAgentId}/email-skills` && request.method() === "GET") {
       await json(route, { skills: emailSkills });
+      return;
+    }
+
+    if (path === `/workspaces/${workspaceId}/email-skill-activity` && request.method() === "GET") {
+      await json(route, { activities: emailActivity });
       return;
     }
 

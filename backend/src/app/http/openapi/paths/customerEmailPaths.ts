@@ -7,6 +7,23 @@ const WorkspaceParams = z.object({ workspaceId: z.string().uuid() });
 const ConnectionParams = WorkspaceParams.extend({ connectionId: z.string().uuid() });
 const AgentParams = z.object({ agentId: z.string().uuid() });
 const EmailSkillParams = AgentParams.extend({ skillId: z.string().uuid() });
+const ActivityQuery = z.object({
+  agentId: z.string().uuid().optional(),
+  connectionId: z.string().uuid().optional(),
+  skillDefinitionId: z.string().uuid().optional(),
+  outcome: z.enum([
+    "drafted",
+    "sent",
+    "missing_input",
+    "disabled_connection",
+    "needs_reauth",
+    "provider_rejected",
+    "failed",
+  ]).optional(),
+  createdFrom: z.string().datetime().optional(),
+  createdTo: z.string().datetime().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
 
 const CustomerEmailConnectionCreateSchema = z.object({
   oauthConnectionId: z.string().uuid(),
@@ -87,8 +104,33 @@ const EmailSkillDefinitionSummarySchema = z.object({
   updatedAt: z.string(),
 });
 
+const EmailSkillRecipientSummarySchema = z.object({
+  toCount: z.number().int().nonnegative(),
+  ccCount: z.number().int().nonnegative(),
+  domains: z.array(z.string()),
+  redactedRecipients: z.array(z.string()),
+});
+
+const EmailSkillActivitySummarySchema = z.object({
+  id: z.string().uuid(),
+  workspaceId: z.string().uuid(),
+  agentId: z.string().uuid(),
+  routineId: z.string().uuid().nullable(),
+  conversationId: z.string().uuid().nullable(),
+  skillDefinitionId: z.string().uuid(),
+  connectionId: z.string().uuid(),
+  skillName: z.string(),
+  mode: EmailSkillModeSchema,
+  outcome: EmailSkillOutcomesSchema,
+  recipientSummary: EmailSkillRecipientSummarySchema,
+  providerMessageId: z.string().nullable(),
+  errorCode: z.string().nullable(),
+  createdAt: z.string(),
+});
+
 const CONNECTION_TAGS = ["Customer Email Connections"];
 const SKILL_TAGS = ["Customer Email Skills"];
+const ACTIVITY_TAGS = ["Customer Email Activity"];
 
 export const registerCustomerEmailPaths = (
   registry: OpenAPIRegistry,
@@ -99,6 +141,22 @@ export const registerCustomerEmailPaths = (
   const json = <T>(schema: T) => ({ "application/json": { schema } });
   const errorResponse = (description: string) => ({ description, content: json(schemas.ErrorResponseSchema) });
   const connectionResponse = json(z.object({ connection: CustomerEmailConnectionSummarySchema }));
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/workspaces/{workspaceId}/email-skill-activity",
+    tags: ACTIVITY_TAGS,
+    summary: "List sanitized workspace customer email skill activity",
+    operationId: "listWorkspaceEmailSkillActivity",
+    security: sec,
+    request: { params: WorkspaceParams, query: ActivityQuery },
+    responses: {
+      200: { description: "Sanitized email skill activity", content: json(z.object({ activities: z.array(EmailSkillActivitySummarySchema) })) },
+      400: errorResponse("Invalid activity query"),
+      401: errorResponse("Authentication required"),
+      403: errorResponse("Workspace settings permission required"),
+    },
+  });
 
   registry.registerPath({
     method: "get",

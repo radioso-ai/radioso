@@ -31,6 +31,7 @@ import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-setti
 import { WebhookDestinationsPanel } from '@/components/dashboard/settings/webhook-destinations-panel'
 import { WebsiteEmbedSettingsController } from '@/components/dashboard/settings/website-embed-settings-controller'
 import { WorkspaceEmailConnectionsSection } from '@/components/dashboard/settings/workspace-email-connections-section'
+import { CustomerEmailActivitySection } from '@/components/dashboard/settings/customer-email-activity-section'
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
 import {
@@ -1466,8 +1467,9 @@ export function WorkspaceAssistantChannelsTab({
           ) : null}
 
           {mode === 'workspace' ? (
-          <section>
+          <section className="space-y-6">
             <WorkspaceEmailConnectionsSection workspaceId={activeWorkspaceId} />
+            <CustomerEmailActivitySection workspaceId={activeWorkspaceId} />
           </section>
           ) : null}
 

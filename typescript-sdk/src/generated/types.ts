@@ -1208,6 +1208,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/email-skill-activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List sanitized workspace customer email skill activity */
+        get: operations["listWorkspaceEmailSkillActivity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/email-connections": {
         parameters: {
             query?: never;
@@ -8947,6 +8964,94 @@ export interface operations {
             };
             /** @description OAuth encryption is not configured */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listWorkspaceEmailSkillActivity: {
+        parameters: {
+            query?: {
+                agentId?: string;
+                connectionId?: string;
+                skillDefinitionId?: string;
+                outcome?: "drafted" | "sent" | "missing_input" | "disabled_connection" | "needs_reauth" | "provider_rejected" | "failed";
+                createdFrom?: string;
+                createdTo?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sanitized email skill activity */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        activities: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            routineId: string | null;
+                            /** Format: uuid */
+                            conversationId: string | null;
+                            /** Format: uuid */
+                            skillDefinitionId: string;
+                            /** Format: uuid */
+                            connectionId: string;
+                            skillName: string;
+                            /** @enum {string} */
+                            mode: "draft" | "send";
+                            /** @enum {string} */
+                            outcome: "drafted" | "sent" | "missing_input" | "disabled_connection" | "needs_reauth" | "provider_rejected" | "failed";
+                            recipientSummary: {
+                                toCount: number;
+                                ccCount: number;
+                                domains: string[];
+                                redactedRecipients: string[];
+                            };
+                            providerMessageId: string | null;
+                            errorCode: string | null;
+                            createdAt: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Invalid activity query */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -137,6 +137,37 @@ Provider calls are bounded by a timeout. Runtime outcomes and logs use stable
 sanitized codes. They must not include OAuth tokens, refresh tokens, client
 secrets, cookies, connection strings, or full message bodies.
 
+## Activity and Inspection
+
+Workspace settings include an email skill activity view. It shows recent
+customer email skill runs with sanitized metadata:
+
+- skill name
+- agent id and optional routine or conversation context
+- connection id
+- draft or send mode
+- stable outcome
+- recipient count, domains, and redacted recipient hints
+- sanitized provider message id or error code when available
+- timestamp
+
+The activity endpoint is:
+
+- `GET /api/v1/workspaces/{workspaceId}/email-skill-activity`
+
+It can be filtered by agent, connection, skill definition, outcome, and date
+range.
+
+The key point is that activity is not a message archive. Radioso does not retain
+full message bodies by default. Activity records also do not store OAuth access
+tokens, refresh tokens, client secrets, cookies, connection strings, raw provider
+credentials, or raw provider error payloads.
+
+When `needs_reauth` appears in activity, reauthorize the OAuth connection before
+expecting skills that use that connection to draft or send again. When
+`disabled_connection` appears, re-enable the customer email connection if that
+runtime path should be allowed.
+
 ## Transactional Mail Boundary
 
 Do not route Radioso-owned mail through customer email connections.

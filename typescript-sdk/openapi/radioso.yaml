@@ -11224,14 +11224,201 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/workspaces/{workspaceId}/email-skill-activity:
+    get:
+      tags:
+        - Customer Email Activity
+      summary: List sanitized workspace customer email skill activity
+      operationId: listWorkspaceEmailSkillActivity
+      security: &a39
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: false
+          name: agentId
+          in: query
+        - schema:
+            type: string
+            format: uuid
+          required: false
+          name: connectionId
+          in: query
+        - schema:
+            type: string
+            format: uuid
+          required: false
+          name: skillDefinitionId
+          in: query
+        - schema:
+            type: string
+            enum:
+              - drafted
+              - sent
+              - missing_input
+              - disabled_connection
+              - needs_reauth
+              - provider_rejected
+              - failed
+          required: false
+          name: outcome
+          in: query
+        - schema:
+            type: string
+            format: date-time
+          required: false
+          name: createdFrom
+          in: query
+        - schema:
+            type: string
+            format: date-time
+          required: false
+          name: createdTo
+          in: query
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          required: false
+          name: limit
+          in: query
+      responses:
+        "200":
+          description: Sanitized email skill activity
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  activities:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        workspaceId:
+                          type: string
+                          format: uuid
+                        agentId:
+                          type: string
+                          format: uuid
+                        routineId:
+                          type:
+                            - string
+                            - "null"
+                          format: uuid
+                        conversationId:
+                          type:
+                            - string
+                            - "null"
+                          format: uuid
+                        skillDefinitionId:
+                          type: string
+                          format: uuid
+                        connectionId:
+                          type: string
+                          format: uuid
+                        skillName:
+                          type: string
+                        mode:
+                          type: string
+                          enum: &a43
+                            - draft
+                            - send
+                        outcome:
+                          type: string
+                          enum: &a44
+                            - drafted
+                            - sent
+                            - missing_input
+                            - disabled_connection
+                            - needs_reauth
+                            - provider_rejected
+                            - failed
+                        recipientSummary:
+                          type: object
+                          properties:
+                            toCount:
+                              type: integer
+                              minimum: 0
+                            ccCount:
+                              type: integer
+                              minimum: 0
+                            domains:
+                              type: array
+                              items:
+                                type: string
+                            redactedRecipients:
+                              type: array
+                              items:
+                                type: string
+                          required:
+                            - toCount
+                            - ccCount
+                            - domains
+                            - redactedRecipients
+                        providerMessageId:
+                          type:
+                            - string
+                            - "null"
+                        errorCode:
+                          type:
+                            - string
+                            - "null"
+                        createdAt:
+                          type: string
+                      required:
+                        - id
+                        - workspaceId
+                        - agentId
+                        - routineId
+                        - conversationId
+                        - skillDefinitionId
+                        - connectionId
+                        - skillName
+                        - mode
+                        - outcome
+                        - recipientSummary
+                        - providerMessageId
+                        - errorCode
+                        - createdAt
+                required:
+                  - activities
+        "400":
+          description: Invalid activity query
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace settings permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-connections:
     get:
-      tags: &a39
+      tags: &a40
         - Customer Email Connections
       summary: List workspace customer email connections
       operationId: listWorkspaceEmailConnections
-      security: &a40
-        - bearerAuth: []
+      security: *a39
       parameters:
         - schema:
             type: string
@@ -11328,10 +11515,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     post:
-      tags: *a39
+      tags: *a40
       summary: Create a workspace customer email connection
       operationId: createWorkspaceEmailConnection
-      security: *a40
+      security: *a39
       parameters:
         - schema:
             type: string
@@ -11460,10 +11647,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-connections/{connectionId}:
     patch:
-      tags: *a39
+      tags: *a40
       summary: Update or enable/disable a workspace customer email connection
       operationId: updateWorkspaceEmailConnection
-      security: *a40
+      security: *a39
       parameters:
         - schema:
             type: string
@@ -11592,10 +11779,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     delete:
-      tags: *a39
+      tags: *a40
       summary: Delete a workspace customer email connection
       operationId: deleteWorkspaceEmailConnection
-      security: *a40
+      security: *a39
       parameters:
         - schema:
             type: string
@@ -11638,10 +11825,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-connections/{connectionId}/health-check:
     post:
-      tags: *a39
+      tags: *a40
       summary: Check customer email connection health
       operationId: checkWorkspaceEmailConnectionHealth
-      security: *a40
+      security: *a39
       parameters:
         - schema:
             type: string
@@ -11742,11 +11929,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/email-skills:
     get:
-      tags: &a43
+      tags: &a45
         - Customer Email Skills
       summary: List agent customer email skills
       operationId: listAgentEmailSkills
-      security: *a40
+      security: *a39
       parameters:
         - schema:
             type: string
@@ -11783,9 +11970,7 @@ paths:
                           type: string
                         mode:
                           type: string
-                          enum: &a44
-                            - draft
-                            - send
+                          enum: *a43
                         boundInputs:
                           type: object
                           additionalProperties: {}
@@ -11804,14 +11989,7 @@ paths:
                           type: array
                           items:
                             type: string
-                            enum: &a45
-                              - drafted
-                              - sent
-                              - missing_input
-                              - disabled_connection
-                              - needs_reauth
-                              - provider_rejected
-                              - failed
+                            enum: *a44
                         createdAt:
                           type: string
                         updatedAt:
@@ -11850,10 +12028,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     post:
-      tags: *a43
+      tags: *a45
       summary: Create an agent customer email skill
       operationId: createAgentEmailSkill
-      security: *a40
+      security: *a39
       parameters:
         - schema:
             type: string
@@ -11875,7 +12053,7 @@ paths:
                   format: uuid
                 mode:
                   type: string
-                  enum: *a44
+                  enum: *a43
                   default: draft
                 boundInputs:
                   type: object
@@ -11924,7 +12102,7 @@ paths:
                         type: string
                       mode:
                         type: string
-                        enum: *a44
+                        enum: *a43
                       boundInputs:
                         type: object
                         additionalProperties: {}
@@ -11943,7 +12121,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a45
+                          enum: *a44
                       createdAt:
                         type: string
                       updatedAt:
@@ -11995,10 +12173,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/email-skills/{skillId}:
     get:
-      tags: *a43
+      tags: *a45
       summary: Get an agent customer email skill
       operationId: getAgentEmailSkill
-      security: *a40
+      security: *a39
       parameters:
         - schema:
             type: string
@@ -12039,7 +12217,7 @@ paths:
                         type: string
                       mode:
                         type: string
-                        enum: *a44
+                        enum: *a43
                       boundInputs:
                         type: object
                         additionalProperties: {}
@@ -12058,7 +12236,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a45
+                          enum: *a44
                       createdAt:
                         type: string
                       updatedAt:
@@ -12097,10 +12275,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     patch:
-      tags: *a43
+      tags: *a45
       summary: Update an agent customer email skill
       operationId: updateAgentEmailSkill
-      security: *a40
+      security: *a39
       parameters:
         - schema:
             type: string
@@ -12123,7 +12301,7 @@ paths:
               properties:
                 mode:
                   type: string
-                  enum: *a44
+                  enum: *a43
                 boundInputs:
                   type: object
                   additionalProperties: {}
@@ -12165,7 +12343,7 @@ paths:
                         type: string
                       mode:
                         type: string
-                        enum: *a44
+                        enum: *a43
                       boundInputs:
                         type: object
                         additionalProperties: {}
@@ -12184,7 +12362,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a45
+                          enum: *a44
                       createdAt:
                         type: string
                       updatedAt:
@@ -12229,10 +12407,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     delete:
-      tags: *a43
+      tags: *a45
       summary: Delete an agent customer email skill
       operationId: deleteAgentEmailSkill
-      security: *a40
+      security: *a39
       parameters:
         - schema:
             type: string

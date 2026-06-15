@@ -17,15 +17,47 @@ Open **Agent → Behavior → MCP connections** and add a connection:
   not embed credentials in the URL, and must resolve to a public host. Loopback,
   private, and internal addresses are rejected, both when you save and again
   before every outbound call. This protects your internal network.
-- **Authentication** — *Access token* stores a bearer token. OAuth is planned and
-  not yet available.
+- **Authentication** — choose *Access token* or *OAuth*.
+  - *Access token* stores a bearer token you already have.
+  - *OAuth* connects a hosted server that requires a one-time consent flow. See
+    [Connecting an OAuth server](#connecting-an-oauth-server) below.
 
 The access token is **write-only**. It is encrypted at rest and never returned by
 the API or shown again. To replace it, edit the connection and enter a new token.
 
 Connecting requires the `CONNECTOR_ENCRYPTION_KEY` environment variable to be set,
-since credentials are encrypted with it. Without it, creating a token-based
-connection fails with a clear configuration error.
+since credentials are encrypted with it. Without it, creating a connection that
+stores a secret fails with a clear configuration error.
+
+### Connecting an OAuth server
+
+Most hosted vendor MCP servers require OAuth. For these, the connection holds an
+OAuth client configuration and you authorize it once; afterwards skills on it call
+the server using stored, automatically-refreshed credentials.
+
+To set one up:
+
+1. Register Radioso as an OAuth client with the vendor. Use this redirect URL:
+   `<APP_BASE_URL>/oauth/mcp-callback` (for example
+   `https://app.example.com/oauth/mcp-callback`). The vendor gives you a client id
+   and, usually, a client secret.
+2. In **MCP connections**, choose **OAuth** and enter the server URL, the
+   provider's **authorization** and **token** endpoints, the **client id**, the
+   **client secret** (leave blank for a public PKCE client), and any **scopes**.
+3. Save. The connection starts as **unconfigured**.
+4. Click **Authorize**. Radioso opens the provider's consent screen. Approve it.
+   On return, the connection becomes **authorized**.
+
+The client secret and the issued tokens are **write-only** — encrypted at rest and
+never returned by the API. The flow uses PKCE.
+
+**Re-authorization.** Before each call, an expired access token is refreshed
+automatically. If a refresh fails (for example the provider revoked access), the
+connection is marked **needs re-authorization** and routine steps that use it take
+their failure path. Open the connection and click **Authorize** again to restore
+it.
+
+Authorizing requires `APP_BASE_URL` to be set, since it forms the redirect URL.
 
 ## 2. Define a skill
 
@@ -55,8 +87,10 @@ outcome (success or failure). See [Authoring Routines](./authoring-routines.md).
 
 The key points:
 
-- **Tokens are encrypted at rest** and never returned. The server URL is held in
-  plain configuration; secrets are not.
+- **Secrets are encrypted at rest** and never returned. This covers access
+  tokens, OAuth client secrets, and OAuth access/refresh tokens. The server URL
+  and OAuth endpoints are held in plain configuration; secrets are not. Secrets
+  are never written to logs or to per-agent settings.
 - **Outbound calls are guarded** against internal targets (no loopback, private,
   or link-local hosts), checked both at save time and immediately before each
   connection.

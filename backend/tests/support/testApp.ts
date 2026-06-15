@@ -712,6 +712,13 @@ export const createTestDependencies = (overrides: {
     encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
     // No-op in tests (avoids real DNS); SSRF enforcement is unit-tested directly.
     assertPublicUrl: () => undefined,
+    // Deterministic OAuth wiring for route tests (no real authorization server).
+    oauthRedirectUri: "https://app.test.example.com/oauth/mcp-callback",
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ access_token: "test-access-token", refresh_token: "test-refresh", expires_in: 3600 }),
+    }),
   });
   const externalSkillDefinitionService = new ExternalSkillDefinitionService(
     externalSkillDefinitionRepository,

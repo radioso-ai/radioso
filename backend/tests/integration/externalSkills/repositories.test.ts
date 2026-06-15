@@ -67,6 +67,7 @@ describeIfDatabase("external skills repositories (postgres)", () => {
     `);
     const migrationSql = await readFile(path.join(testMigrationsPath, "093_external_skills.sql"), "utf8");
     await client.query(migrationSql);
+    await client.query(await readFile(path.join(testMigrationsPath, "094_external_skills_oauth_flow.sql"), "utf8"));
     await client.query(`INSERT INTO workspaces (id) VALUES ($1)`, [workspaceId]);
     await client.query(`INSERT INTO agents (id, workspace_id) VALUES ($1, $2)`, [agentId, workspaceId]);
 
@@ -98,6 +99,32 @@ describeIfDatabase("external skills repositories (postgres)", () => {
     expect(decryptField(found!.credentialCiphertext!, encryptionKey)).toBe("xoxb-secret-token");
     // never stores plaintext
     expect(found?.credentialCiphertext).not.toContain("xoxb-secret-token");
+  });
+
+  it("round-trips an OAuth connection's client config, flow, and tokens", async () => {
+    const clientCiphertext = encryptField(JSON.stringify({ clientId: "c1" }), encryptionKey);
+    const created = await connections.create({
+      agentId,
+      displayName: "Scheduler",
+      serverUrl: "https://mcp.example.com",
+      authMethod: "oauth",
+      oauthClientCiphertext: clientCiphertext,
+      status: "unconfigured",
+    });
+    expect(created.status).toBe("unconfigured");
+    expect(created.oauthClientCiphertext).toBe(clientCiphertext);
+    expect(created.oauthFlowCiphertext).toBeNull();
+
+    const flowCiphertext = encryptField(JSON.stringify({ state: "s", codeVerifier: "v" }), encryptionKey);
+    const withFlow = await connections.setOauthFlow(agentId, created.id, flowCiphertext);
+    expect(withFlow?.oauthFlowCiphertext).toBe(flowCiphertext);
+
+    const tokenCiphertext = encryptField(JSON.stringify({ accessToken: "at" }), encryptionKey);
+    const authorized = await connections.setOauthTokens(agentId, created.id, tokenCiphertext, "k1");
+    expect(authorized?.status).toBe("authorized");
+    expect(authorized?.credentialCiphertext).toBe(tokenCiphertext);
+    // The transient flow is cleared once authorized.
+    expect(authorized?.oauthFlowCiphertext).toBeNull();
   });
 
   it("creates and resolves a skill definition by name, omitting disabled ones", async () => {

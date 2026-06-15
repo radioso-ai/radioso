@@ -12,6 +12,7 @@ export interface McpConnectionRecord {
   credentialCiphertext: string | null;
   encryptionKeyId: string | null;
   oauthClientCiphertext: string | null;
+  oauthFlowCiphertext: string | null;
   status: McpConnectionStatus;
   createdAt: Date;
   updatedAt: Date;
@@ -24,6 +25,7 @@ export interface CreateMcpConnectionInput {
   authMethod: McpAuthMethod;
   credentialCiphertext?: string | null;
   encryptionKeyId?: string | null;
+  oauthClientCiphertext?: string | null;
   status?: McpConnectionStatus;
 }
 
@@ -43,6 +45,7 @@ interface McpConnectionRow {
   credential_ciphertext: string | null;
   encryption_key_id: string | null;
   oauth_client_ciphertext: string | null;
+  oauth_flow_ciphertext: string | null;
   status: McpConnectionStatus;
   created_at: Date;
   updated_at: Date;
@@ -57,13 +60,14 @@ const mapRecord = (row: McpConnectionRow): McpConnectionRecord => ({
   credentialCiphertext: row.credential_ciphertext,
   encryptionKeyId: row.encryption_key_id,
   oauthClientCiphertext: row.oauth_client_ciphertext,
+  oauthFlowCiphertext: row.oauth_flow_ciphertext,
   status: row.status,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
 });
 
 const COLUMNS =
-  "id, agent_id, display_name, server_url, auth_method, credential_ciphertext, encryption_key_id, oauth_client_ciphertext, status, created_at, updated_at";
+  "id, agent_id, display_name, server_url, auth_method, credential_ciphertext, encryption_key_id, oauth_client_ciphertext, oauth_flow_ciphertext, status, created_at, updated_at";
 
 export interface McpConnectionRepositoryPort {
   create(input: CreateMcpConnectionInput): Promise<McpConnectionRecord>;
@@ -71,6 +75,13 @@ export interface McpConnectionRepositoryPort {
   listByAgent(agentId: string): Promise<McpConnectionRecord[]>;
   updateStatus(agentId: string, id: string, status: McpConnectionStatus): Promise<McpConnectionRecord | null>;
   update(agentId: string, id: string, input: UpdateMcpConnectionInput): Promise<McpConnectionRecord | null>;
+  setOauthFlow(agentId: string, id: string, oauthFlowCiphertext: string): Promise<McpConnectionRecord | null>;
+  setOauthTokens(
+    agentId: string,
+    id: string,
+    credentialCiphertext: string,
+    encryptionKeyId: string | null,
+  ): Promise<McpConnectionRecord | null>;
   remove(agentId: string, id: string): Promise<boolean>;
 }
 
@@ -80,8 +91,8 @@ export class McpConnectionRepository implements McpConnectionRepositoryPort {
   async create(input: CreateMcpConnectionInput): Promise<McpConnectionRecord> {
     const [row] = await this.database.query<McpConnectionRow>(
       `INSERT INTO mcp_connections
-         (id, agent_id, display_name, server_url, auth_method, credential_ciphertext, encryption_key_id, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         (id, agent_id, display_name, server_url, auth_method, credential_ciphertext, encryption_key_id, oauth_client_ciphertext, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING ${COLUMNS}`,
       [
         randomUUID(),
@@ -91,10 +102,47 @@ export class McpConnectionRepository implements McpConnectionRepositoryPort {
         input.authMethod,
         input.credentialCiphertext ?? null,
         input.encryptionKeyId ?? null,
+        input.oauthClientCiphertext ?? null,
         input.status ?? "unconfigured",
       ],
     );
     return mapRecord(row);
+  }
+
+  /** Persist the in-flight authorization (PKCE/state); sets status back to unconfigured. */
+  async setOauthFlow(
+    agentId: string,
+    id: string,
+    oauthFlowCiphertext: string,
+  ): Promise<McpConnectionRecord | null> {
+    const [row] = await this.database.query<McpConnectionRow>(
+      `UPDATE mcp_connections SET oauth_flow_ciphertext = $3, updated_at = NOW()
+       WHERE agent_id = $1 AND id = $2
+       RETURNING ${COLUMNS}`,
+      [agentId, id, oauthFlowCiphertext],
+    );
+    return row ? mapRecord(row) : null;
+  }
+
+  /** Store freshly issued/refreshed OAuth tokens, mark authorized, and clear the flow. */
+  async setOauthTokens(
+    agentId: string,
+    id: string,
+    credentialCiphertext: string,
+    encryptionKeyId: string | null,
+  ): Promise<McpConnectionRecord | null> {
+    const [row] = await this.database.query<McpConnectionRow>(
+      `UPDATE mcp_connections SET
+         credential_ciphertext = $3,
+         encryption_key_id = $4,
+         oauth_flow_ciphertext = NULL,
+         status = 'authorized',
+         updated_at = NOW()
+       WHERE agent_id = $1 AND id = $2
+       RETURNING ${COLUMNS}`,
+      [agentId, id, credentialCiphertext, encryptionKeyId],
+    );
+    return row ? mapRecord(row) : null;
   }
 
   async findById(agentId: string, id: string): Promise<McpConnectionRecord | null> {

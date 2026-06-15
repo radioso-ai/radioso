@@ -36,6 +36,16 @@ export type RoutineMutationFixture = {
   body?: unknown;
 };
 type WebhookDestinationFixture = ApiSchemas["WebhookDestination"];
+export type McpConnectionFixture = {
+  id: string;
+  displayName: string;
+  serverUrl: string;
+  authMethod: string;
+  status: string;
+  hasCredential: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
 export type WebhookDestinationMutationFixture = {
   method: "POST" | "PUT" | "DELETE" | "ROTATE_SECRET";
   destinationId?: string;
@@ -448,6 +458,8 @@ export const installDashboardApiMocks = async (
     ingestionSettings?: IngestionSettingsFixture;
     ingestionSettingsUpdates?: unknown[];
     usageTrends?: unknown;
+    mcpConnections?: McpConnectionFixture[];
+    mcpConnectionRequests?: string[];
   } = {},
 ) => {
   let platformSettings = options.platformSettings ?? basePlatformSettings();
@@ -488,6 +500,9 @@ export const installDashboardApiMocks = async (
   const routineUpdates = options.routineUpdates;
   let webhookDestinations = options.webhookDestinations ?? [];
   let nextWebhookDestinationIndex = webhookDestinations.length + 1;
+  const mcpConnections = options.mcpConnections ?? [];
+  const mcpConnectionRequests = options.mcpConnectionRequests;
+  let nextMcpConnectionIndex = mcpConnections.length + 1;
   const webhookDestinationUpdates = options.webhookDestinationUpdates;
   const coherenceFor = (directive: AuthoredDirectiveFixture): ApiSchemas["DirectiveCoherenceVerdict"] => {
     const hasConflict =
@@ -1248,6 +1263,54 @@ export const installDashboardApiMocks = async (
         },
       };
       await json(route, platformSettings);
+      return;
+    }
+
+    if (request.method() === "GET" && path === `/agents/${defaultAgentId}/mcp-connections`) {
+      await json(route, { connections: mcpConnections });
+      return;
+    }
+
+    if (request.method() === "GET" && path === `/agents/${defaultAgentId}/external-skills`) {
+      await json(route, { skills: [] });
+      return;
+    }
+
+    if (request.method() === "POST" && path === `/agents/${defaultAgentId}/mcp-connections`) {
+      const body = request.postDataJSON() as { displayName: string; serverUrl: string; authMethod: string };
+      mcpConnectionRequests?.push(`POST ${path}`);
+      const connection: McpConnectionFixture = {
+        id: `mcp-connection-${nextMcpConnectionIndex++}`,
+        displayName: body.displayName,
+        serverUrl: body.serverUrl,
+        authMethod: body.authMethod,
+        status: body.authMethod === "oauth" ? "unconfigured" : "authorized",
+        hasCredential: body.authMethod !== "oauth",
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+      mcpConnections.unshift(connection);
+      await json(route, connection, 201);
+      return;
+    }
+
+    if (request.method() === "POST" && /\/agents\/[^/]+\/mcp-connections\/[^/]+\/oauth\/authorize$/.test(path)) {
+      mcpConnectionRequests?.push(`POST ${path}`);
+      await json(route, {
+        authorizationUrl: "https://auth.example.com/authorize?response_type=code&state=test-state",
+      });
+      return;
+    }
+
+    if (request.method() === "POST" && /\/agents\/[^/]+\/mcp-connections\/([^/]+)\/oauth\/complete$/.test(path)) {
+      const connectionId = path.split("/")[4];
+      mcpConnectionRequests?.push(`POST ${path}`);
+      const connection = mcpConnections.find((entry) => entry.id === connectionId);
+      if (connection) {
+        connection.status = "authorized";
+        connection.hasCredential = true;
+      }
+      await json(route, connection ?? {}, 200);
       return;
     }
 

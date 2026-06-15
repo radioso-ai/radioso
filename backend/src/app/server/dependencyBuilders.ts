@@ -123,6 +123,10 @@ import {
 } from "../../db/repositories/workspaceProviderCredentialsRepository.js";
 import { WorkspaceProviderCredentialsService } from "../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
 import { WebhookDestinationRepository } from "../../db/repositories/webhookDestinationRepository.js";
+import { CustomerEmailConnectionRepository } from "../../db/repositories/customerEmailConnectionRepository.js";
+import { EmailSkillDefinitionRepository } from "../../db/repositories/emailSkillDefinitionRepository.js";
+import { EmailSkillActivityRepository } from "../../db/repositories/emailSkillActivityRepository.js";
+import { OauthConnectionRepository } from "../../db/repositories/oauthConnectionRepository.js";
 import {
   DefaultWebhookDestinationAdapter,
   WebhookDestinationService,
@@ -145,6 +149,15 @@ import { RETRIEVAL_ANSWER_ADAPTER, RetrievalAnswerSkillExecutor } from "../../mo
 import { EXTERNAL_SKILLS_ADAPTER, McpSkillExecutor } from "../../modules/externalSkills/executor/mcpSkillExecutor.js";
 import { buildExternalSkillsDeps } from "../../modules/externalSkills/composition.js";
 import { ExternalSkillRoutineSkillResolver } from "../../modules/externalSkills/routineSkillResolver.js";
+import {
+  CUSTOMER_EMAIL_SKILLS_ADAPTER,
+  CustomerEmailDeliveryService,
+  CustomerEmailRoutineSkillResolver,
+  EmailSkillExecutor,
+  MockCustomerEmailProviderAdapter,
+  StaticCustomerEmailProviderRegistry,
+  customerEmailOauthProviderIds,
+} from "../../modules/customerEmail/public.js";
 import { RoutineSkillExecutorDispatcher } from "../../modules/routines/public.js";
 import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
@@ -292,6 +305,9 @@ export const buildRepositories = (
   accountInvitationRepository: new AccountInvitationRepository(database),
   workspaceProviderCredentialsRepository: new WorkspaceProviderCredentialsRepository(database),
   webhookDestinationRepository: new WebhookDestinationRepository(database),
+  customerEmailConnectionRepository: new CustomerEmailConnectionRepository(database),
+  emailSkillDefinitionRepository: new EmailSkillDefinitionRepository(database),
+  emailSkillActivityRepository: new EmailSkillActivityRepository(database),
 });
 
 export const buildAccessServices = (input: {
@@ -728,6 +744,9 @@ export const buildChatServices = (input: {
   webhookDestinations: WebhookDestinationRuntimePort;
   productAnalyticsService: ProductAnalyticsService;
   routineDefinitionRepository: RoutineDefinitionRepository;
+  customerEmailConnectionRepository: CustomerEmailConnectionRepository;
+  emailSkillDefinitionRepository: EmailSkillDefinitionRepository;
+  emailSkillActivityRepository: EmailSkillActivityRepository;
   mailService: ReturnType<typeof buildInfrastructure>["mailService"];
   usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
   retrievalPipeline: RetrievalPipelinePort;
@@ -822,6 +841,42 @@ export const buildChatServices = (input: {
           logger: input.logger,
         }),
       ),
+    });
+  }
+  if (
+    input.env.CONNECTOR_ENCRYPTION_KEY &&
+    !input.composition.skillExecutorRegistry.resolve({ kind: "internal", adapter: CUSTOMER_EMAIL_SKILLS_ADAPTER })
+  ) {
+    const oauthConnectionRepository = new OauthConnectionRepository(input.database);
+    // No real Gmail/Microsoft Graph adapter is wired yet (spec 089 follow-up): the
+    // mock provider accepts every draft/send and returns a placeholder message id, so
+    // `drafted`/`sent` outcomes do NOT mean a message was delivered. Warn loudly so
+    // operators do not trust activity receipts as proof of delivery.
+    input.logger.warn(
+      { event: "customer_email", provider: "mock" },
+      "Customer email skills are using the MOCK provider; no real email is delivered and drafted/sent outcomes are simulated",
+    );
+    const customerEmailProviderRegistry = new StaticCustomerEmailProviderRegistry(
+      customerEmailOauthProviderIds.map((provider) => new MockCustomerEmailProviderAdapter(provider)),
+    );
+    input.composition.skillExecutorRegistry.register({
+      kind: "internal",
+      adapter: CUSTOMER_EMAIL_SKILLS_ADAPTER,
+      executor: new EmailSkillExecutor({
+        skills: input.emailSkillDefinitionRepository,
+        delivery: new CustomerEmailDeliveryService({
+          connections: input.customerEmailConnectionRepository,
+          oauthCredentials: {
+            findCredentialById: (workspaceId, id) => oauthConnectionRepository.findById(workspaceId, id),
+          },
+          oauthTokenRepository: oauthConnectionRepository,
+          providers: customerEmailProviderRegistry,
+          encryptionKey: input.env.CONNECTOR_ENCRYPTION_KEY,
+          assertPublicUrl: input.assertPublicWebsiteUrl,
+          logger: input.logger,
+        }),
+        activity: input.emailSkillActivityRepository,
+      }),
     });
   }
   const publicChatActionAdvertisers = input.composition.publicChatActionAdvertiserRegistrations.map((registration) =>
@@ -1009,6 +1064,22 @@ export const buildChatServices = (input: {
       if (routineRegistry.isEmpty && routines.length === 0) {
         return null;
       }
+      let emailSkillNames: string[] = [];
+      try {
+        if (workspaceId && agentId) {
+          emailSkillNames = (await input.emailSkillDefinitionRepository.listByAgent(workspaceId, agentId))
+            .filter((skill) => skill.enabled)
+            .map((skill) => skill.skillName);
+        }
+      } catch (error) {
+        input.logger.warn(
+          {
+            agentId,
+            err: error instanceof Error ? error.message : String(error),
+          },
+          "Customer email skill definitions failed to load for routine routing; continuing without email skills",
+        );
+      }
       return {
         activator: routineRegistry.isEmpty
           ? { activate: async () => null }
@@ -1023,9 +1094,10 @@ export const buildChatServices = (input: {
             responseLanguage,
           }),
           new RoutineSkillExecutorDispatcher(
-            new ExternalSkillRoutineSkillResolver(),
+            new CustomerEmailRoutineSkillResolver(emailSkillNames, new ExternalSkillRoutineSkillResolver()),
             input.composition.skillExecutorRegistry,
             {
+              workspaceId,
               capabilityGate: (capability) =>
                 input.composition.capabilityPolicy.can({
                   capability,

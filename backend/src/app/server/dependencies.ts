@@ -2,6 +2,7 @@ import { getEnv, type Env } from "../config/env.js";
 import { McpConnectionService } from "../../modules/externalSkills/services/mcpConnectionService.js";
 import { ExternalSkillDefinitionService } from "../../modules/externalSkills/services/externalSkillDefinitionService.js";
 import { McpConnectionRepository } from "../../db/repositories/mcpConnectionRepository.js";
+import { OauthConnectionRepository } from "../../db/repositories/oauthConnectionRepository.js";
 import { ExternalSkillDefinitionRepository } from "../../db/repositories/externalSkillDefinitionRepository.js";
 import { createMcpToolServiceFactory } from "../../modules/externalSkills/composition.js";
 import { MCP_OAUTH_CALLBACK_PATH } from "../../modules/externalSkills/domain.js";
@@ -60,6 +61,15 @@ import {
 } from "../../modules/eval/composition.js";
 import type { ConversationModelGateway } from "@radioso/conversation-contract";
 import type { ModelInferencePipeline } from "../../shared/infra/llm/modelInferencePipeline.js";
+import { OauthConnectionService, StaticOauthProviderRegistry } from "../../modules/integrationOauth/public.js";
+import {
+  CustomerEmailConnectionService,
+  CustomerEmailOAuthService,
+  EmailSkillDefinitionService,
+  MockCustomerEmailProviderAdapter,
+  StaticCustomerEmailProviderRegistry,
+  customerEmailOauthProviderIds,
+} from "../../modules/customerEmail/public.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -92,6 +102,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const logger = buildLogger();
   const composition = createDefaultApplicationComposition({
     logger,
+    env,
     modules: options.modules,
     widgetOrigin: env.RADIOSO_WIDGET_ORIGIN ?? env.APP_BASE_URL,
   });
@@ -113,6 +124,22 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     repositories,
   });
+  const oauthConnectionService = new OauthConnectionService({
+    repository: new OauthConnectionRepository(infrastructure.database),
+    providers: new StaticOauthProviderRegistry(composition.oauthProviders),
+    encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
+    appBaseUrl: env.APP_BASE_URL,
+    assertPublicUrl: assertPublicWebsiteUrl,
+    logger,
+  });
+  const customerEmailOAuthService = new CustomerEmailOAuthService(oauthConnectionService);
+  const customerEmailConnectionService = new CustomerEmailConnectionService({
+    repository: repositories.customerEmailConnectionRepository,
+    oauthConnections: oauthConnectionService,
+    providers: new StaticCustomerEmailProviderRegistry(
+      customerEmailOauthProviderIds.map((provider) => new MockCustomerEmailProviderAdapter(provider)),
+    ),
+  });
   const mcpConnectionRepository = new McpConnectionRepository(infrastructure.database);
   const externalSkillDefinitionRepository = new ExternalSkillDefinitionRepository(infrastructure.database);
   const mcpConnectionService = new McpConnectionService({
@@ -127,6 +154,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     externalSkillDefinitionRepository,
     mcpConnectionService,
   );
+  const emailSkillDefinitionService = new EmailSkillDefinitionService({
+    repository: repositories.emailSkillDefinitionRepository,
+    connections: repositories.customerEmailConnectionRepository,
+  });
   const webhookDestinations = buildWebhookDestinationAdapter({
     auditService: infrastructure.auditService,
     env,
@@ -241,6 +272,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     webhookDestinations,
     productAnalyticsService: infrastructure.productAnalyticsService,
     routineDefinitionRepository: repositories.routineDefinitionRepository,
+    customerEmailConnectionRepository: repositories.customerEmailConnectionRepository,
+    emailSkillDefinitionRepository: repositories.emailSkillDefinitionRepository,
+    emailSkillActivityRepository: repositories.emailSkillActivityRepository,
     retrievalPipeline: retrieval.retrievalPipeline,
     usageEventRecorder: infrastructure.usageEventRecorder,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
@@ -407,6 +441,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceSessionService: workspace.workspaceSessionService,
     abuseControlService: chat.abuseControlService,
     workspaceProviderCredentialsService,
+    oauthConnectionService,
+    customerEmailOAuthService,
+    customerEmailConnectionService,
+    emailSkillDefinitionService,
+    emailSkillActivityRepository: repositories.emailSkillActivityRepository,
     mcpConnectionService,
     externalSkillDefinitionService,
     webhookDestinations,

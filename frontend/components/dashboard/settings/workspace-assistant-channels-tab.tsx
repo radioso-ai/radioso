@@ -9,6 +9,7 @@ import { ApiChannelCard } from '@/components/dashboard/settings/api-channel-card
 import { AssistantBehaviorSection } from '@/components/dashboard/settings/assistant-behavior-section'
 import { AssistantDirectivesSection } from '@/components/dashboard/settings/assistant-directives-section'
 import { AssistantExternalSkillsSection } from '@/components/dashboard/settings/assistant-external-skills-section'
+import { AssistantEmailSkillsSection } from '@/components/dashboard/settings/assistant-email-skills-section'
 import { AssistantIdentityAppearanceSection } from '@/components/dashboard/settings/assistant-identity-appearance-section'
 import { AssistantPreviewRail } from '@/components/dashboard/settings/assistant-preview-rail'
 import { AssistantRetrievalSkillSettingsSection } from '@/components/dashboard/settings/assistant-retrieval-skill-settings-section'
@@ -29,6 +30,8 @@ import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-s
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
 import { WebhookDestinationsPanel } from '@/components/dashboard/settings/webhook-destinations-panel'
 import { WebsiteEmbedSettingsController } from '@/components/dashboard/settings/website-embed-settings-controller'
+import { WorkspaceEmailConnectionsSection } from '@/components/dashboard/settings/workspace-email-connections-section'
+import { CustomerEmailActivitySection } from '@/components/dashboard/settings/customer-email-activity-section'
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
 import {
@@ -1121,6 +1124,7 @@ export function WorkspaceAssistantChannelsTab({
           {mode === 'assistant' && showSection('skills') ? (
           <section id="assistant-skills" className="space-y-6 scroll-mt-24">
             {agentId ? <AssistantExternalSkillsSection agentId={agentId} /> : null}
+            {agentId ? <AssistantEmailSkillsSection agentId={agentId} workspaceId={activeWorkspaceId} /> : null}
             <SettingsCard
               id="contact-requests"
               icon={<UserRound className="h-5 w-5 text-primary" />}
@@ -1459,6 +1463,13 @@ export function WorkspaceAssistantChannelsTab({
               connectorId="whatsapp"
               onOpenChange={setWhatsappSetupOpen}
             />
+          </section>
+          ) : null}
+
+          {mode === 'workspace' ? (
+          <section className="space-y-6">
+            <WorkspaceEmailConnectionsSection workspaceId={activeWorkspaceId} />
+            <CustomerEmailActivitySection workspaceId={activeWorkspaceId} />
           </section>
           ) : null}
 

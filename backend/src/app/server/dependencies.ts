@@ -112,14 +112,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     repositories,
   });
+  const mcpConnectionRepository = new McpConnectionRepository(infrastructure.database);
+  const externalSkillDefinitionRepository = new ExternalSkillDefinitionRepository(infrastructure.database);
   const mcpConnectionService = new McpConnectionService({
-    repository: new McpConnectionRepository(infrastructure.database),
+    repository: mcpConnectionRepository,
     toolServiceFactory: createMcpToolServiceFactory(assertPublicWebsiteUrl),
     encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
     assertPublicUrl: assertPublicWebsiteUrl,
   });
   const externalSkillDefinitionService = new ExternalSkillDefinitionService(
-    new ExternalSkillDefinitionRepository(infrastructure.database),
+    externalSkillDefinitionRepository,
     mcpConnectionService,
   );
   const webhookDestinations = buildWebhookDestinationAdapter({
@@ -358,6 +360,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     retrievalDefaultsProvider,
     skillSettingsResolver,
     evalRepository,
+    {
+      connections: mcpConnectionRepository,
+      skillDefinitions: externalSkillDefinitionRepository,
+    },
   );
   const evalCaseService = new EvalCaseService(evalRepository);
   const evalRunService = new EvalRunService(

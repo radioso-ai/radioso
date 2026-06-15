@@ -78,12 +78,25 @@ export {
   type AgentConfigRefKind,
   type AgentConfigRefPlaceholder,
   type AgentConfigSecretPlaceholder,
+  type AgentConfigSerializeContext,
   type InternalAgentConfig,
   type InternalAgentLogoConfig,
   type InternalAgentSourceScopeConfig,
   type InternalAgentSurfaceConfig,
   type InternalWebsiteEmbedSurfaceConfig,
 } from "./agentConfig.js";
+export {
+  resolveExternalSkillRefs,
+  serializeExternalSkills,
+  type AgentExternalSkillsConfig,
+  type ExternalSkillConfig,
+  type ExternalSkillsRefResolution,
+  type InternalAgentExternalSkillsConfig,
+  type InternalExternalSkillConfig,
+  type InternalMcpConnectionConfig,
+  type McpConnectionConfig,
+  type ResolvedExternalSkillImport,
+} from "./externalSkillsConfig.js";
 export { createWebsiteEmbedSurfaceExtension } from "./services/websiteEmbedSurfaceExtension.js";
 export {
   embedConfigCachePath,

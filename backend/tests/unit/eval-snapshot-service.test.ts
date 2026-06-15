@@ -9,7 +9,10 @@ import type { RetrievalSettingsRecord } from "../../src/modules/settings/contrac
 import { defaultRetrievalSettings, freezeRetrievalSettings } from "../../src/modules/settings/contracts/retrieval.js";
 import { createRetrievalSkillSettingsResolver } from "../../src/app/composition/skillSettingsResolver.js";
 import type { RetrievalDefaultsProvider } from "../../src/modules/retrieval/public.js";
-import { EvalSnapshotService } from "../../src/modules/eval/services/evalSnapshotService.js";
+import {
+  EvalSnapshotService,
+  type EvalSnapshotExternalSkillsPort,
+} from "../../src/modules/eval/services/evalSnapshotService.js";
 import type {
   CreateCaseInput,
   CreateRunInput,
@@ -352,6 +355,43 @@ describe("EvalSnapshotService.capture", () => {
       },
     ];
     const repository = new CapturingEvalRepository();
+    const externalSkills = {
+      connections: {
+        listByAgent: async () => [
+          {
+            id: "11111111-1111-4111-8111-111111111111",
+            agentId: originalAgent.id,
+            displayName: "Slack",
+            serverUrl: "https://mcp.slack.example.com",
+            authMethod: "access_token" as const,
+            credentialCiphertext: "encrypted-token",
+            encryptionKeyId: null,
+            oauthClientCiphertext: null,
+            status: "authorized" as const,
+            createdAt: fixedDate,
+            updatedAt: fixedDate,
+          },
+        ],
+      },
+      skillDefinitions: {
+        listByAgent: async () => [
+          {
+            id: "22222222-2222-4222-8222-222222222222",
+            agentId: originalAgent.id,
+            connectionId: "11111111-1111-4111-8111-111111111111",
+            skillName: "handoff_slack",
+            toolName: "post_message",
+            boundParams: { channel: "#support" },
+            exposedParams: { message: {} },
+            declaredOutcomes: null,
+            outcomeMap: null,
+            enabled: true,
+            createdAt: fixedDate,
+            updatedAt: fixedDate,
+          },
+        ],
+      },
+    } satisfies EvalSnapshotExternalSkillsPort;
     const service = new EvalSnapshotService(
       new StubConversationRepository(conversation),
       new StubMessageRepository(messages),
@@ -359,6 +399,7 @@ describe("EvalSnapshotService.capture", () => {
       new StubRetrievalDefaultsProvider(),
       createRetrievalSkillSettingsResolver(),
       repository,
+      externalSkills,
     );
 
     const snapshot = await service.capture({
@@ -369,8 +410,31 @@ describe("EvalSnapshotService.capture", () => {
 
     expect(snapshot.sourceAgentId).toBe(originalAgent.id);
     expect(snapshot.originalAgent).toBeNull();
-    expect(snapshot.originalAgentConfig?.schemaVersion).toBe(2);
+    expect(snapshot.originalAgentConfig?.schemaVersion).toBe(3);
     expect(snapshot.originalAgentConfig?.name).toBe("Snapshot Bot");
+    expect(snapshot.originalAgentConfig?.externalSkills).toEqual({
+      connections: [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          displayName: "Slack",
+          serverUrl: "https://mcp.slack.example.com",
+          authMethod: "access_token",
+          hasCredential: true,
+        },
+      ],
+      skills: [
+        {
+          skillName: "handoff_slack",
+          connectionId: "11111111-1111-4111-8111-111111111111",
+          toolName: "post_message",
+          boundParams: { channel: "#support" },
+          exposedParams: { message: {} },
+          declaredOutcomes: null,
+          outcomeMap: null,
+          enabled: true,
+        },
+      ],
+    });
     expect(snapshot.originalAgentConfig?.surfaceSettings.anonymousChat.token).toBe("anonymous-token");
     expect(snapshot.originalAgentConfig?.surfaceSettings.websiteEmbed.token).toBe("embed-token");
     expect(snapshot.originalAgentConfig?.skillSettings["retrieval.answer"]).toEqual({

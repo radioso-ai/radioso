@@ -1,8 +1,10 @@
 import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
+import type { ExternalSkillDefinitionRepositoryPort } from "../../../db/repositories/externalSkillDefinitionRepository.js";
+import type { McpConnectionRepositoryPort } from "../../../db/repositories/mcpConnectionRepository.js";
 import type { MessageRepositoryPort, MessageRecord } from "../../../db/repositories/messageRepository.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
-import { projectInternalAgentConfig } from "../../agents/public.js";
+import { projectInternalAgentConfig, type InternalAgentExternalSkillsConfig } from "../../agents/public.js";
 import type { AnswerSegment, ChatCitation } from "../../chat/contracts/answerTypes.js";
 import type { RetrievalDefaultsProvider, SkillSettingsResolver } from "../../retrieval/public.js";
 import { freezeRetrievalSettings } from "../../settings/contracts/retrieval.js";
@@ -19,6 +21,11 @@ export interface EvalSnapshotCaptureInput {
   conversationId: string;
   messageId?: string | null;
   capturedBy?: string | null;
+}
+
+export interface EvalSnapshotExternalSkillsPort {
+  connections: Pick<McpConnectionRepositoryPort, "listByAgent">;
+  skillDefinitions: Pick<ExternalSkillDefinitionRepositoryPort, "listByAgent">;
 }
 
 const truncateMessages = (
@@ -146,6 +153,7 @@ export class EvalSnapshotService {
     private readonly retrievalDefaultsProvider: RetrievalDefaultsProvider,
     private readonly skillSettingsResolver: SkillSettingsResolver,
     private readonly repository: EvalRepositoryPort,
+    private readonly externalSkills?: EvalSnapshotExternalSkillsPort,
   ) {}
 
   async getById(workspaceId: string, snapshotId: string): Promise<EvalSnapshot> {
@@ -192,7 +200,12 @@ export class EvalSnapshotService {
     const agent = conversation.agentId
       ? await this.agents.findByIdAndWorkspaceId(conversation.agentId, input.workspaceId)
       : null;
-    const agentConfig = agent ? projectInternalAgentConfig(agent) : null;
+    const externalSkills = agent && conversation.agentId
+      ? await this.loadExternalSkills(conversation.agentId)
+      : null;
+    const agentConfig = agent
+      ? projectInternalAgentConfig(agent, externalSkills ? { externalSkills } : {})
+      : null;
     const defaults = this.retrievalDefaultsProvider.getDefaults(input.workspaceId);
     const settingsSnapshot = freezeRetrievalSettings(
       agent
@@ -219,5 +232,34 @@ export class EvalSnapshotService {
       sourceAgentId: agentConfig ? conversation.agentId : null,
       capturedBy: input.capturedBy ?? null,
     });
+  }
+
+  private async loadExternalSkills(agentId: string): Promise<InternalAgentExternalSkillsConfig | null> {
+    if (!this.externalSkills) {
+      return null;
+    }
+    const [connections, skills] = await Promise.all([
+      this.externalSkills.connections.listByAgent(agentId),
+      this.externalSkills.skillDefinitions.listByAgent(agentId),
+    ]);
+    return {
+      connections: connections.map((connection) => ({
+        id: connection.id,
+        displayName: connection.displayName,
+        serverUrl: connection.serverUrl,
+        authMethod: connection.authMethod,
+        hasCredential: Boolean(connection.credentialCiphertext),
+      })),
+      skills: skills.map((skill) => ({
+        skillName: skill.skillName,
+        connectionId: skill.connectionId,
+        toolName: skill.toolName,
+        boundParams: skill.boundParams,
+        exposedParams: skill.exposedParams,
+        declaredOutcomes: skill.declaredOutcomes,
+        outcomeMap: skill.outcomeMap,
+        enabled: skill.enabled,
+      })),
+    };
   }
 }

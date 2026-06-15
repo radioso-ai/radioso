@@ -230,7 +230,7 @@ describe("serializeAgentConfig", () => {
     const config = serializeAgentConfig(fullyConfiguredAgent());
 
     expect(config.schemaVersion).toBe(AGENT_CONFIG_SCHEMA_VERSION);
-    expect(config.schemaVersion).toBe(2);
+    expect(config.schemaVersion).toBe(3);
     expect(config.name).toBe("Support Bot");
     expect(config.customInstruction).toBe("Answer with precise procurement guidance.");
     expect(config.contactRequestsEnabled).toBe(true);

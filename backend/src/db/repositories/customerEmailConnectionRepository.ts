@@ -181,16 +181,19 @@ export class CustomerEmailConnectionRepository implements CustomerEmailConnectio
   }
 
   async countSkillReferences(workspaceId: string, id: string): Promise<number> {
+    // Email skills live on the shared agent_skills spine + email_skill_details. The guard
+    // keeps this safe for tests/schemas where the skill tables are not present.
     const [table] = await this.database.query<{ to_regclass: string | null }>(
-      "SELECT to_regclass('email_skill_definitions')",
+      "SELECT to_regclass('email_skill_details')",
     );
     if (!table?.to_regclass) {
       return 0;
     }
     const [row] = await this.database.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count
-       FROM email_skill_definitions
-       WHERE workspace_id = $1 AND connection_id = $2`,
+       FROM email_skill_details d
+       JOIN agent_skills s ON s.id = d.skill_id
+       WHERE s.workspace_id = $1 AND d.connection_id = $2`,
       [workspaceId, id],
     );
     return Number(row?.count ?? 0);

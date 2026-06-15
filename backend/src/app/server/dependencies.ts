@@ -65,6 +65,7 @@ import { OauthConnectionService, StaticOauthProviderRegistry } from "../../modul
 import {
   CustomerEmailConnectionService,
   CustomerEmailOAuthService,
+  EmailSkillDefinitionService,
   MockCustomerEmailProviderAdapter,
   StaticCustomerEmailProviderRegistry,
   customerEmailOauthProviderIds,
@@ -153,6 +154,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     externalSkillDefinitionRepository,
     mcpConnectionService,
   );
+  const emailSkillDefinitionService = new EmailSkillDefinitionService({
+    repository: repositories.emailSkillDefinitionRepository,
+    connections: repositories.customerEmailConnectionRepository,
+  });
   const webhookDestinations = buildWebhookDestinationAdapter({
     auditService: infrastructure.auditService,
     env,
@@ -436,6 +441,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     oauthConnectionService,
     customerEmailOAuthService,
     customerEmailConnectionService,
+    emailSkillDefinitionService,
     mcpConnectionService,
     externalSkillDefinitionService,
     webhookDestinations,

@@ -124,6 +124,7 @@ import {
 import { WorkspaceProviderCredentialsService } from "../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
 import { WebhookDestinationRepository } from "../../db/repositories/webhookDestinationRepository.js";
 import { CustomerEmailConnectionRepository } from "../../db/repositories/customerEmailConnectionRepository.js";
+import { EmailSkillDefinitionRepository } from "../../db/repositories/emailSkillDefinitionRepository.js";
 import {
   DefaultWebhookDestinationAdapter,
   WebhookDestinationService,
@@ -294,6 +295,7 @@ export const buildRepositories = (
   workspaceProviderCredentialsRepository: new WorkspaceProviderCredentialsRepository(database),
   webhookDestinationRepository: new WebhookDestinationRepository(database),
   customerEmailConnectionRepository: new CustomerEmailConnectionRepository(database),
+  emailSkillDefinitionRepository: new EmailSkillDefinitionRepository(database),
 });
 
 export const buildAccessServices = (input: {

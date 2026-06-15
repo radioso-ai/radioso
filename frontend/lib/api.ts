@@ -58,13 +58,18 @@ export { customerEmailApi } from './api-customer-email'
 export type {
   CreateWorkspaceOauthConnectionInput,
   CreateCustomerEmailConnectionInput,
+  CreateCustomerEmailSkillInput,
   CustomerEmailConnection,
   CustomerEmailConnectionStatus,
+  CustomerEmailExposedInput,
   CustomerEmailOauthProviderId,
+  CustomerEmailSkillDefinition,
+  CustomerEmailSkillMode,
   WorkspaceOauthAuthorization,
   WorkspaceOauthConnection,
   WorkspaceOauthConnectionStatus,
   UpdateCustomerEmailConnectionInput,
+  UpdateCustomerEmailSkillInput,
 } from './api-customer-email'
 export { workbenchApi } from './api-workbench'
 export { publicChatApi } from './api-public-chat'

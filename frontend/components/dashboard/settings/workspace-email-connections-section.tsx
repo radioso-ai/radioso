@@ -194,7 +194,9 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
   const updateDisabled = async (connection: CustomerEmailConnection, disabled: boolean) => {
     await runAction(
       `disabled:${connection.id}`,
-      () => customerEmailApi.updateEmailConnection(workspaceId!, connection.id, { disabled }),
+      async () => {
+        await customerEmailApi.updateEmailConnection(workspaceId!, connection.id, { disabled })
+      },
       disabled ? 'Failed to disable customer email connection.' : 'Failed to re-enable customer email connection.',
     )
   }
@@ -202,7 +204,9 @@ export function WorkspaceEmailConnectionsSection({ workspaceId }: { workspaceId:
   const checkHealth = async (connection: CustomerEmailConnection) => {
     await runAction(
       `health:${connection.id}`,
-      () => customerEmailApi.checkEmailConnectionHealth(workspaceId!, connection.id),
+      async () => {
+        await customerEmailApi.checkEmailConnectionHealth(workspaceId!, connection.id)
+      },
       'Failed to check customer email connection health.',
     )
   }

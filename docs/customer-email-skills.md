@@ -60,6 +60,61 @@ Deleting a connection is blocked when an email skill references it. Disabling is
 allowed, so existing skill definitions can remain in place while runtime use is
 stopped.
 
+## Skill Authoring
+
+Agent email skills are named actions over a customer email connection. They are
+allowlisted definitions, not raw provider access.
+
+Create them from the assistant skills settings page after a workspace has at
+least one authorized customer email connection.
+
+For each skill, choose:
+
+- a customer email connection
+- a skill name, such as `support_email_customer`
+- `draft` or `send` mode
+- which inputs are fixed by the author
+- which inputs are exposed for conversation or routine slot filling
+- whether the skill is enabled
+
+Required logical inputs must be covered before the skill can be saved:
+
+- `to`
+- `subject`
+- `bodyText` or `bodyHtml`
+
+Optional first-slice inputs are:
+
+- `cc`
+- `replyTo`
+
+Bound and exposed inputs must be separate. For example, `subject` cannot be both
+fixed by the author and filled by a routine slot. `draft` is the safer default.
+Switching to `send` is explicit.
+
+Email skill definition endpoints:
+
+- `GET /api/v1/agents/{agentId}/email-skills`
+- `POST /api/v1/agents/{agentId}/email-skills`
+- `GET /api/v1/agents/{agentId}/email-skills/{skillId}`
+- `PATCH /api/v1/agents/{agentId}/email-skills/{skillId}`
+- `DELETE /api/v1/agents/{agentId}/email-skills/{skillId}`
+
+The response includes the stable outcomes that routines will use when runtime
+dispatch is enabled:
+
+- `drafted`
+- `sent`
+- `missing_input`
+- `disabled_connection`
+- `needs_reauth`
+- `provider_rejected`
+- `failed`
+
+Runtime draft/send dispatch is a separate implementation slice. In this slice,
+authors can create, update, disable, and delete definitions. Only defined,
+enabled skills are intended to become callable by the runtime.
+
 ## Transactional Mail Boundary
 
 Do not route Radioso-owned mail through customer email connections.

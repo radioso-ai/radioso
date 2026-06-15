@@ -85,6 +85,7 @@ import { OauthConnectionService, StaticOauthProviderRegistry } from "../../src/m
 import {
   CustomerEmailConnectionService,
   CustomerEmailOAuthService,
+  EmailSkillDefinitionService,
   MockCustomerEmailProviderAdapter,
   StaticCustomerEmailProviderRegistry,
 } from "../../src/modules/customerEmail/public.js";
@@ -95,6 +96,7 @@ import {
 } from "./inMemoryExternalSkills.js";
 import { InMemoryOauthConnectionRepository } from "./inMemoryOauthConnections.js";
 import { InMemoryCustomerEmailConnectionRepository } from "./inMemoryCustomerEmailConnections.js";
+import { InMemoryEmailSkillDefinitionRepository } from "./inMemoryEmailSkillDefinitions.js";
 import {
   DefaultWebhookDestinationAdapter,
   WebhookDestinationService,
@@ -758,6 +760,10 @@ export const createTestDependencies = (overrides: {
   });
   const customerEmailOAuthService = new CustomerEmailOAuthService(oauthConnectionService);
   const customerEmailConnectionRepository = new InMemoryCustomerEmailConnectionRepository();
+  const emailSkillDefinitionRepository = new InMemoryEmailSkillDefinitionRepository();
+  customerEmailConnectionRepository.setReferenceChecker((connectionId) =>
+    emailSkillDefinitionRepository.countByConnection("", connectionId),
+  );
   const customerEmailConnectionService = new CustomerEmailConnectionService({
     repository: customerEmailConnectionRepository,
     oauthConnections: oauthConnectionService,
@@ -791,6 +797,10 @@ export const createTestDependencies = (overrides: {
     externalSkillDefinitionRepository,
     mcpConnectionService,
   );
+  const emailSkillDefinitionService = new EmailSkillDefinitionService({
+    repository: emailSkillDefinitionRepository,
+    connections: customerEmailConnectionRepository,
+  });
   const workspaceLlmCapabilitySettingsService = new WorkspaceLlmCapabilitySettingsService(
     retrievalSettingsRepository,
     auditService,
@@ -1066,6 +1076,7 @@ export const createTestDependencies = (overrides: {
     oauthConnectionService,
     customerEmailOAuthService,
     customerEmailConnectionService,
+    emailSkillDefinitionService,
     mcpConnectionService,
     externalSkillDefinitionService,
     webhookDestinations,

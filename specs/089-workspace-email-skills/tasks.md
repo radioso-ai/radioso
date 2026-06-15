@@ -102,22 +102,22 @@
 
 ### Tests for User Story 3
 
-- [ ] T040 [P] [US3] Add failing domain tests for email skill validation in `backend/tests/unit/customerEmail/email-skill-domain.test.ts`
-- [ ] T041 [P] [US3] Add failing repository tests for email skill definitions in `backend/tests/integration/customerEmail/email-skill-definition-repository.test.ts`
-- [ ] T042 [P] [US3] Add contract tests for agent email skill CRUD endpoints in `backend/tests/contract/customer-email-skills.contract.test.ts`
-- [ ] T043 [P] [US3] Add frontend unit tests for email skill draft builder in `frontend/tests/unit/customer-email-skills.test.ts`
+- [x] T040 [P] [US3] Add failing domain tests for email skill validation in `backend/tests/unit/customerEmail/email-skill-domain.test.ts`
+- [x] T041 [P] [US3] Add failing repository tests for email skill definitions in `backend/tests/integration/customerEmail/email-skill-definition-repository.test.ts`
+- [x] T042 [P] [US3] Add contract tests for agent email skill CRUD endpoints in `backend/tests/contract/customer-email-skills.contract.test.ts`
+- [x] T043 [P] [US3] Add frontend unit tests for email skill draft builder in `frontend/tests/unit/customer-email-skills.test.ts`
 
 ### Implementation for User Story 3
 
-- [ ] T044 [US3] Add email skill definition migration in `backend/src/db/migrations/096_email_skill_definitions.sql`
-- [ ] T045 [US3] Add email skill definition repository in `backend/src/db/repositories/emailSkillDefinitionRepository.ts`
-- [ ] T046 [US3] Add email skill definition service in `backend/src/modules/customerEmail/services/emailSkillDefinitionService.ts`
-- [ ] T047 [US3] Add email skill CRUD routes in `backend/src/app/http/routes/emailSkillRoutes.ts`
-- [ ] T048 [US3] Register email skill OpenAPI paths in `backend/src/app/http/openapi/paths/customerEmailPaths.ts`
-- [ ] T049 [US3] Add frontend email skill API types and methods in `frontend/lib/api-customer-email.ts`
-- [ ] T050 [US3] Add non-visual email skill draft builder in `frontend/lib/customer-email-skills.ts`
-- [ ] T051 [US3] Add agent email skill builder UI in `frontend/components/dashboard/settings/assistant-email-skills-section.tsx`
-- [ ] T052 [US3] Mount agent email skill builder near external skills in `frontend/components/dashboard/settings/workspace-assistant-channels-tab.tsx`
+- [x] T044 [US3] Add email skill definition migration in `backend/src/db/migrations/097_email_skill_definitions.sql`
+- [x] T045 [US3] Add email skill definition repository in `backend/src/db/repositories/emailSkillDefinitionRepository.ts`
+- [x] T046 [US3] Add email skill definition service in `backend/src/modules/customerEmail/services/emailSkillDefinitionService.ts`
+- [x] T047 [US3] Add email skill CRUD routes in `backend/src/app/http/routes/emailSkillRoutes.ts`
+- [x] T048 [US3] Register email skill OpenAPI paths in `backend/src/app/http/openapi/paths/customerEmailPaths.ts`
+- [x] T049 [US3] Add frontend email skill API types and methods in `frontend/lib/api-customer-email.ts`
+- [x] T050 [US3] Add non-visual email skill draft builder in `frontend/lib/customer-email-skills.ts`
+- [x] T051 [US3] Add agent email skill builder UI in `frontend/components/dashboard/settings/assistant-email-skills-section.tsx`
+- [x] T052 [US3] Mount agent email skill builder near external skills in `frontend/components/dashboard/settings/workspace-assistant-channels-tab.tsx`
 
 **Checkpoint**: US3 allows creating and editing allowlisted email skills.
 

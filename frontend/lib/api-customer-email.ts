@@ -70,6 +70,44 @@ export type UpdateCustomerEmailConnectionInput = {
   disabled?: boolean
 }
 
+export type CustomerEmailSkillMode = 'draft' | 'send'
+
+export type CustomerEmailExposedInput = {
+  description?: string
+  slotBinding?: string
+}
+
+export type CustomerEmailSkillDefinition = {
+  id: string
+  workspaceId: string
+  agentId: string
+  connectionId: string
+  skillName: string
+  mode: CustomerEmailSkillMode
+  boundInputs: Record<string, unknown>
+  exposedInputs: Record<string, CustomerEmailExposedInput>
+  enabled: boolean
+  outcomes: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+export type CreateCustomerEmailSkillInput = {
+  skillName: string
+  connectionId: string
+  mode: CustomerEmailSkillMode
+  boundInputs: Record<string, unknown>
+  exposedInputs: Record<string, CustomerEmailExposedInput>
+  enabled?: boolean
+}
+
+export type UpdateCustomerEmailSkillInput = {
+  mode?: CustomerEmailSkillMode
+  boundInputs?: Record<string, unknown>
+  exposedInputs?: Record<string, CustomerEmailExposedInput>
+  enabled?: boolean
+}
+
 export const customerEmailApi = {
   async startOauth(
     workspaceId: string,
@@ -157,6 +195,45 @@ export const customerEmailApi = {
   async deleteEmailConnection(workspaceId: string, connectionId: string): Promise<void> {
     await request<void>(
       `/workspaces/${workspaceId}/email-connections/${connectionId}`,
+      { method: 'DELETE' },
+      { withApiToken: true },
+    )
+  },
+
+  async listEmailSkills(agentId: string): Promise<{ skills: CustomerEmailSkillDefinition[] }> {
+    return request<{ skills: CustomerEmailSkillDefinition[] }>(
+      `/agents/${agentId}/email-skills`,
+      { method: 'GET' },
+      { withApiToken: true },
+    )
+  },
+
+  async createEmailSkill(
+    agentId: string,
+    input: CreateCustomerEmailSkillInput,
+  ): Promise<{ skill: CustomerEmailSkillDefinition }> {
+    return request<{ skill: CustomerEmailSkillDefinition }>(
+      `/agents/${agentId}/email-skills`,
+      { method: 'POST', body: JSON.stringify(input) },
+      { withApiToken: true },
+    )
+  },
+
+  async updateEmailSkill(
+    agentId: string,
+    skillId: string,
+    input: UpdateCustomerEmailSkillInput,
+  ): Promise<{ skill: CustomerEmailSkillDefinition }> {
+    return request<{ skill: CustomerEmailSkillDefinition }>(
+      `/agents/${agentId}/email-skills/${skillId}`,
+      { method: 'PATCH', body: JSON.stringify(input) },
+      { withApiToken: true },
+    )
+  },
+
+  async deleteEmailSkill(agentId: string, skillId: string): Promise<void> {
+    await request<void>(
+      `/agents/${agentId}/email-skills/${skillId}`,
       { method: 'DELETE' },
       { withApiToken: true },
     )

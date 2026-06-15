@@ -5,18 +5,6 @@
  * Radioso transactional email such as password reset and verification.
  */
 
-export const customerEmailSkillOutcomes = [
-  "drafted",
-  "sent",
-  "missing_input",
-  "disabled_connection",
-  "needs_reauth",
-  "provider_rejected",
-  "failed",
-] as const;
-
-export type CustomerEmailSkillOutcome = (typeof customerEmailSkillOutcomes)[number];
-
 export {
   buildCustomerEmailOauthProviderDefinitions,
   assertCustomerEmailScopes,
@@ -40,6 +28,13 @@ export {
 } from "./services/customerEmailConnectionService.js";
 export {
   customerEmailConnectionCreateSchema,
+  customerEmailBoundInputsSchema,
+  customerEmailExposedInputsSchema,
+  customerEmailSkillDefinitionCreateSchema,
+  customerEmailSkillDefinitionUpdateSchema,
+  customerEmailSkillInputKeys,
+  customerEmailSkillModes,
+  customerEmailSkillOutcomes,
   customerEmailConnectionStatuses,
   customerEmailConnectionUpdateSchema,
   customerEmailHealthStatuses,
@@ -48,7 +43,17 @@ export {
   type CustomerEmailConnectionSummary,
   type CustomerEmailConnectionUpdateInput,
   type CustomerEmailHealthStatus,
+  type CustomerEmailSkillDefinitionCreateInput,
+  type CustomerEmailSkillDefinitionSummary,
+  type CustomerEmailSkillDefinitionUpdateInput,
+  type CustomerEmailSkillInputKey,
+  type CustomerEmailSkillMode,
+  type CustomerEmailSkillOutcome,
 } from "./domain.js";
+export {
+  EmailSkillDefinitionService,
+  type EmailSkillDefinitionServiceOptions,
+} from "./services/emailSkillDefinitionService.js";
 export {
   MockCustomerEmailProviderAdapter,
 } from "./providers/mockEmailProvider.js";

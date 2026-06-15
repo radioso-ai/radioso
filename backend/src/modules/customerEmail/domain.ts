@@ -50,3 +50,125 @@ export interface CustomerEmailConnectionSummary {
   lastErrorCode: string | null;
   updatedAt: string;
 }
+
+export const customerEmailSkillModes = ["draft", "send"] as const;
+export type CustomerEmailSkillMode = (typeof customerEmailSkillModes)[number];
+
+export const customerEmailSkillOutcomes = [
+  "drafted",
+  "sent",
+  "missing_input",
+  "disabled_connection",
+  "needs_reauth",
+  "provider_rejected",
+  "failed",
+] as const;
+export type CustomerEmailSkillOutcome = (typeof customerEmailSkillOutcomes)[number];
+
+export const customerEmailSkillInputKeys = ["to", "cc", "subject", "bodyText", "bodyHtml", "replyTo"] as const;
+export type CustomerEmailSkillInputKey = (typeof customerEmailSkillInputKeys)[number];
+
+export const requiredCustomerEmailSkillInputs = ["to", "subject"] as const;
+
+const skillNamePattern = /^[a-z][a-z0-9_]*$/u;
+const slotBindingPattern = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+const allowedInputKeySet = new Set<string>(customerEmailSkillInputKeys);
+const blockedInputKeys = new Set(["__proto__", "constructor", "prototype"]);
+
+export const customerEmailExposedInputSchema = z
+  .object({
+    description: trimmedText(1000).optional(),
+    slotBinding: trimmedText(120).regex(slotBindingPattern).optional(),
+  })
+  .strict();
+
+const inputKeySchema = z.string().refine(
+  (key) => allowedInputKeySet.has(key) && !blockedInputKeys.has(key),
+  "input key is not supported",
+);
+
+export const customerEmailBoundInputsSchema = z.record(inputKeySchema, z.unknown());
+export const customerEmailExposedInputsSchema = z.record(inputKeySchema, customerEmailExposedInputSchema);
+
+const validateEmailSkillInputs = (
+  value: {
+    boundInputs?: Record<string, unknown>;
+    exposedInputs?: Record<string, unknown>;
+  },
+  ctx: z.RefinementCtx,
+): void => {
+  const boundKeys = Object.keys(value.boundInputs ?? {});
+  const exposedKeys = Object.keys(value.exposedInputs ?? {});
+  const allKeys = new Set([...boundKeys, ...exposedKeys]);
+  const overlap = boundKeys.filter((key) => exposedKeys.includes(key));
+  if (overlap.length > 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["exposedInputs"],
+      message: `bound and exposed inputs must be disjoint (overlap: ${overlap.join(", ")})`,
+    });
+  }
+
+  for (const required of requiredCustomerEmailSkillInputs) {
+    if (!allKeys.has(required)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["boundInputs"],
+        message: `${required} must be bound or exposed`,
+      });
+    }
+  }
+  if (!allKeys.has("bodyText") && !allKeys.has("bodyHtml")) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["boundInputs"],
+      message: "bodyText or bodyHtml must be bound or exposed",
+    });
+  }
+};
+
+export const customerEmailSkillDefinitionCreateSchema = z
+  .object({
+    skillName: trimmedText(120).regex(skillNamePattern),
+    connectionId: z.string().uuid(),
+    mode: z.enum(customerEmailSkillModes).default("draft"),
+    boundInputs: customerEmailBoundInputsSchema.default({}),
+    exposedInputs: customerEmailExposedInputsSchema.default({}),
+    enabled: z.boolean().default(true),
+  })
+  .strict()
+  .superRefine(validateEmailSkillInputs);
+
+export type CustomerEmailSkillDefinitionCreateInput = z.infer<typeof customerEmailSkillDefinitionCreateSchema>;
+
+export const customerEmailSkillDefinitionUpdateSchema = z
+  .object({
+    mode: z.enum(customerEmailSkillModes).optional(),
+    boundInputs: customerEmailBoundInputsSchema.optional(),
+    exposedInputs: customerEmailExposedInputsSchema.optional(),
+    enabled: z.boolean().optional(),
+  })
+  .strict()
+  .refine((input) => Object.keys(input).length > 0, { message: "At least one field must be provided" })
+  .superRefine((value, ctx) => {
+    if (value.boundInputs !== undefined || value.exposedInputs !== undefined) {
+      validateEmailSkillInputs(value, ctx);
+    }
+  });
+
+export type CustomerEmailSkillDefinitionUpdateInput = z.infer<typeof customerEmailSkillDefinitionUpdateSchema>;
+
+export interface CustomerEmailSkillDefinitionSummary {
+  id: string;
+  workspaceId: string;
+  agentId: string;
+  connectionId: string;
+  skillName: string;
+  mode: CustomerEmailSkillMode;
+  boundInputs: Record<string, unknown>;
+  exposedInputs: Record<string, z.infer<typeof customerEmailExposedInputSchema>>;
+  enabled: boolean;
+  outcomes: CustomerEmailSkillOutcome[];
+  createdAt: string;
+  updatedAt: string;
+}

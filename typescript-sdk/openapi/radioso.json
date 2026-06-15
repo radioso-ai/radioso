@@ -3927,7 +3927,8 @@
                     "default",
                     "slot_filled",
                     "outcome",
-                    "counter"
+                    "counter",
+                    "field"
                   ]
                 },
                 "guardText": {
@@ -3952,6 +3953,87 @@
                     "null"
                   ],
                   "exclusiveMinimum": 0
+                },
+                "fieldRef": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "fieldOp": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "is_true",
+                    "is_false",
+                    "equals",
+                    "not_equals",
+                    "in",
+                    "is_present",
+                    "is_absent",
+                    "gt",
+                    "gte",
+                    "lt",
+                    "lte",
+                    "older_than",
+                    "within"
+                  ]
+                },
+                "fieldValue": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "fieldValues": {
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  },
+                  "minItems": 1
+                },
+                "fieldUnit": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "days",
+                    "weeks",
+                    "months",
+                    "years"
+                  ]
                 },
                 "ordinal": {
                   "type": "integer",
@@ -4215,7 +4297,8 @@
                     "default",
                     "slot_filled",
                     "outcome",
-                    "counter"
+                    "counter",
+                    "field"
                   ]
                 },
                 "guardText": {
@@ -4240,6 +4323,87 @@
                     "null"
                   ],
                   "exclusiveMinimum": 0
+                },
+                "fieldRef": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "fieldOp": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "is_true",
+                    "is_false",
+                    "equals",
+                    "not_equals",
+                    "in",
+                    "is_present",
+                    "is_absent",
+                    "gt",
+                    "gte",
+                    "lt",
+                    "lte",
+                    "older_than",
+                    "within"
+                  ]
+                },
+                "fieldValue": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "fieldValues": {
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  },
+                  "minItems": 1
+                },
+                "fieldUnit": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "days",
+                    "weeks",
+                    "months",
+                    "years"
+                  ]
                 },
                 "ordinal": {
                   "type": "integer",
@@ -4373,7 +4537,8 @@
                     "attempt_limit_without_fallback",
                     "outcome_guard_on_non_tool_step",
                     "structured_guard_missing_parameter",
-                    "unsupported_tool_step",
+                    "field_guard_unknown_reference",
+                    "field_guard_incompatible_type",
                     "completion_export_missing_destination"
                   ]
                 },
@@ -4569,7 +4734,8 @@
                     "default",
                     "slot_filled",
                     "outcome",
-                    "counter"
+                    "counter",
+                    "field"
                   ]
                 },
                 "guardText": {
@@ -4594,6 +4760,87 @@
                     "null"
                   ],
                   "exclusiveMinimum": 0
+                },
+                "fieldRef": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "fieldOp": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "is_true",
+                    "is_false",
+                    "equals",
+                    "not_equals",
+                    "in",
+                    "is_present",
+                    "is_absent",
+                    "gt",
+                    "gte",
+                    "lt",
+                    "lte",
+                    "older_than",
+                    "within"
+                  ]
+                },
+                "fieldValue": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "fieldValues": {
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  },
+                  "minItems": 1
+                },
+                "fieldUnit": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "days",
+                    "weeks",
+                    "months",
+                    "years"
+                  ]
                 },
                 "ordinal": {
                   "type": "integer",
@@ -5006,7 +5253,8 @@
                         "default",
                         "slot_filled",
                         "outcome",
-                        "counter"
+                        "counter",
+                        "field"
                       ]
                     },
                     "guardText": {
@@ -5031,6 +5279,87 @@
                         "null"
                       ],
                       "exclusiveMinimum": 0
+                    },
+                    "fieldRef": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "fieldOp": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "is_true",
+                        "is_false",
+                        "equals",
+                        "not_equals",
+                        "in",
+                        "is_present",
+                        "is_absent",
+                        "gt",
+                        "gte",
+                        "lt",
+                        "lte",
+                        "older_than",
+                        "within"
+                      ]
+                    },
+                    "fieldValue": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "fieldValues": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 500
+                          },
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "boolean"
+                          }
+                        ]
+                      },
+                      "minItems": 1
+                    },
+                    "fieldUnit": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "days",
+                        "weeks",
+                        "months",
+                        "years"
+                      ]
                     },
                     "ordinal": {
                       "type": "integer",

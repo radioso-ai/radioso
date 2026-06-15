@@ -1,21 +1,25 @@
 'use client'
 
-import { useEffect, useMemo } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useEffect, useState } from 'react'
 
-type CallbackStatus = 'authorized' | 'error'
+type CallbackState = 'pending' | 'authorized' | 'error'
 
-const parseStatus = (value: string | null): CallbackStatus => (
-  value === 'authorized' ? 'authorized' : 'error'
-)
-
+/**
+ * Landing page for the workspace OAuth redirect. The backend completes the
+ * provider callback and redirects here with `status`/`provider`. Params are read
+ * from `window.location.search` in an effect (not `useSearchParams`) so the page
+ * needs no Suspense boundary and prerenders cleanly, matching the MCP callback.
+ */
 export default function OauthConnectionCallbackPage() {
-  const searchParams = useSearchParams()
-  const status = useMemo(() => parseStatus(searchParams.get('status')), [searchParams])
-  const provider = searchParams.get('provider')
+  const [state, setState] = useState<CallbackState>('pending')
+  const [provider, setProvider] = useState<string | null>(null)
 
   useEffect(() => {
-    if (status !== 'authorized') {
+    const params = new URLSearchParams(window.location.search)
+    setProvider(params.get('provider'))
+    const authorized = params.get('status') === 'authorized'
+    setState(authorized ? 'authorized' : 'error')
+    if (!authorized) {
       return
     }
     window.opener?.focus()
@@ -23,25 +27,32 @@ export default function OauthConnectionCallbackPage() {
       window.close()
     }, 1200)
     return () => window.clearTimeout(timeout)
-  }, [status])
+  }, [])
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 p-8 text-center">
-      {status === 'authorized' ? (
+      {state === 'pending' ? (
+        <>
+          <h1 className="text-lg font-medium">Finishing authorization…</h1>
+          <p className="text-sm text-muted-foreground">Hold on while we connect your mail provider.</p>
+        </>
+      ) : null}
+      {state === 'authorized' ? (
         <>
           <h1 className="text-lg font-medium">Connected</h1>
           <p className="text-sm text-muted-foreground">
             Authorization is complete. You can close this tab and return to workspace settings.
           </p>
         </>
-      ) : (
+      ) : null}
+      {state === 'error' ? (
         <>
           <h1 className="text-lg font-medium">Authorization failed</h1>
           <p className="text-sm text-muted-foreground">
             {provider ? 'The provider did not complete authorization.' : 'The callback URL was missing authorization details.'}
           </p>
         </>
-      )}
+      ) : null}
     </main>
   )
 }

@@ -71,6 +71,14 @@ export type UpdateCustomerEmailConnectionInput = {
 }
 
 export type CustomerEmailSkillMode = 'draft' | 'send'
+export type CustomerEmailSkillOutcome =
+  | 'drafted'
+  | 'sent'
+  | 'missing_input'
+  | 'disabled_connection'
+  | 'needs_reauth'
+  | 'provider_rejected'
+  | 'failed'
 
 export type CustomerEmailExposedInput = {
   description?: string
@@ -87,7 +95,7 @@ export type CustomerEmailSkillDefinition = {
   boundInputs: Record<string, unknown>
   exposedInputs: Record<string, CustomerEmailExposedInput>
   enabled: boolean
-  outcomes: string[]
+  outcomes: CustomerEmailSkillOutcome[]
   createdAt: string
   updatedAt: string
 }

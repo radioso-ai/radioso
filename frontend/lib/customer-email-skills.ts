@@ -1,6 +1,7 @@
 import type {
   CreateCustomerEmailSkillInput,
   CustomerEmailSkillMode,
+  CustomerEmailSkillOutcome,
 } from '@/lib/api-customer-email'
 
 export type CustomerEmailInputKey = 'to' | 'subject' | 'bodyText' | 'bodyHtml' | 'cc' | 'replyTo'
@@ -20,6 +21,34 @@ export const customerEmailInputFields: CustomerEmailInputField[] = [
   { key: 'cc', label: 'Cc', required: false },
   { key: 'replyTo', label: 'Reply-to', required: false },
 ]
+
+export const customerEmailSkillOutcomes: CustomerEmailSkillOutcome[] = [
+  'drafted',
+  'sent',
+  'missing_input',
+  'disabled_connection',
+  'needs_reauth',
+  'provider_rejected',
+  'failed',
+]
+
+export const customerEmailSkillOutcomeLabels: Record<CustomerEmailSkillOutcome, string> = {
+  drafted: 'Drafted',
+  sent: 'Sent',
+  missing_input: 'Missing input',
+  disabled_connection: 'Disabled connection',
+  needs_reauth: 'Needs reauthorization',
+  provider_rejected: 'Provider rejected',
+  failed: 'Failed',
+}
+
+export const getCustomerEmailRoutineOutcomeOptions = (skillOutcomes?: string[]): CustomerEmailSkillOutcome[] => {
+  const allowed = new Set(customerEmailSkillOutcomes)
+  const provided = skillOutcomes?.filter((outcome): outcome is CustomerEmailSkillOutcome =>
+    allowed.has(outcome as CustomerEmailSkillOutcome),
+  ) ?? []
+  return provided.length > 0 ? provided : customerEmailSkillOutcomes
+}
 
 export type CustomerEmailFieldDraft = {
   mode: CustomerEmailFieldMode

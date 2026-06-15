@@ -65,6 +65,7 @@ export type {
   CustomerEmailOauthProviderId,
   CustomerEmailSkillDefinition,
   CustomerEmailSkillMode,
+  CustomerEmailSkillOutcome,
   WorkspaceOauthAuthorization,
   WorkspaceOauthConnection,
   WorkspaceOauthConnectionStatus,

@@ -272,6 +272,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     webhookDestinations,
     productAnalyticsService: infrastructure.productAnalyticsService,
     routineDefinitionRepository: repositories.routineDefinitionRepository,
+    customerEmailConnectionRepository: repositories.customerEmailConnectionRepository,
+    emailSkillDefinitionRepository: repositories.emailSkillDefinitionRepository,
     retrievalPipeline: retrieval.retrievalPipeline,
     usageEventRecorder: infrastructure.usageEventRecorder,
     usageLimitPolicy: infrastructure.usageLimitPolicy,

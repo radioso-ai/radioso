@@ -100,8 +100,7 @@ Email skill definition endpoints:
 - `PATCH /api/v1/agents/{agentId}/email-skills/{skillId}`
 - `DELETE /api/v1/agents/{agentId}/email-skills/{skillId}`
 
-The response includes the stable outcomes that routines will use when runtime
-dispatch is enabled:
+The response includes the stable outcomes that routines use for branching:
 
 - `drafted`
 - `sent`
@@ -111,9 +110,32 @@ dispatch is enabled:
 - `provider_rejected`
 - `failed`
 
-Runtime draft/send dispatch is a separate implementation slice. In this slice,
-authors can create, update, disable, and delete definitions. Only defined,
-enabled skills are intended to become callable by the runtime.
+Only defined and enabled skills are callable by routines. A routine tool step
+uses the skill name, for example `support_email_customer`. The routine runtime
+resolves that name through the shared skill executor path. It does not call a
+mail provider directly and does not handle OAuth tokens.
+
+## Routine Outcomes
+
+Routine tool steps can branch on email skill outcomes with an `outcome` guard.
+Use the stable outcome value, not provider-specific text.
+
+In practice:
+
+- `drafted`: the provider accepted a draft creation request.
+- `sent`: the provider accepted an immediate send request.
+- `missing_input`: a required exposed input was not available in routine state.
+- `disabled_connection`: the referenced customer email connection is disabled.
+- `needs_reauth`: the OAuth connection is no longer usable and must be
+  reauthorized.
+- `provider_rejected`: the provider rejected the draft or send request, such as
+  a quota or policy rejection.
+- `failed`: the runtime could not complete the request for another sanitized
+  reason, such as timeout or unavailable provider configuration.
+
+Provider calls are bounded by a timeout. Runtime outcomes and logs use stable
+sanitized codes. They must not include OAuth tokens, refresh tokens, client
+secrets, cookies, connection strings, or full message bodies.
 
 ## Transactional Mail Boundary
 

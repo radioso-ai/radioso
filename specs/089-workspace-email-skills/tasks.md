@@ -131,20 +131,20 @@
 
 ### Tests for User Story 4
 
-- [ ] T053 [P] [US4] Add failing executor tests for email skill outcomes in `backend/tests/unit/customerEmail/email-skill-executor.test.ts`
-- [ ] T054 [P] [US4] Add integration tests for routine email skill dispatch in `backend/tests/integration/customerEmail/email-skill-routine-dispatch.test.ts`
-- [ ] T055 [P] [US4] Add architecture assertion keeping routine engine provider-free in `backend/tests/unit/customerEmail/email-skill-boundary.test.ts`
-- [ ] T056 [P] [US4] Add Playwright routine authoring test for email skill outcome mapping in `frontend/tests/e2e/customer-email-skills.spec.ts`
+- [x] T053 [P] [US4] Add failing executor tests for email skill outcomes in `backend/tests/unit/customerEmail/email-skill-executor.test.ts`
+- [x] T054 [P] [US4] Add integration tests for routine email skill dispatch in `backend/tests/integration/customerEmail/email-skill-routine-dispatch.test.ts`
+- [x] T055 [P] [US4] Add architecture assertion keeping routine engine provider-free in `backend/tests/unit/customerEmail/email-skill-boundary.test.ts`
+- [x] T056 [P] [US4] Add Playwright routine authoring test for email skill outcome mapping in `frontend/tests/e2e/customer-email-skills.spec.ts`
 
 ### Implementation for User Story 4
 
-- [ ] T057 [US4] Add customer email provider port in `backend/src/modules/customerEmail/providers/customerEmailProvider.ts`
-- [ ] T058 [US4] Add email skill executor in `backend/src/modules/customerEmail/executor/emailSkillExecutor.ts`
-- [ ] T059 [US4] Add routine skill resolver for email skills in `backend/src/modules/customerEmail/routineSkillResolver.ts`
-- [ ] T060 [US4] Register email skill executor and resolver in `backend/src/app/server/dependencyBuilders.ts`
-- [ ] T061 [US4] Add provider timeout and sanitized error mapping in `backend/src/modules/customerEmail/services/customerEmailDeliveryService.ts`
-- [ ] T062 [US4] Add routine authoring support for email skill outcomes in `frontend/lib/customer-email-skills.ts`
-- [ ] T063 [US4] Add email skill outcome options to routine UI in `frontend/components/dashboard/settings/assistant-routines-section.tsx`
+- [x] T057 [US4] Add customer email provider port in `backend/src/modules/customerEmail/providers/customerEmailProvider.ts`
+- [x] T058 [US4] Add email skill executor in `backend/src/modules/customerEmail/executor/emailSkillExecutor.ts`
+- [x] T059 [US4] Add routine skill resolver for email skills in `backend/src/modules/customerEmail/routineSkillResolver.ts`
+- [x] T060 [US4] Register email skill executor and resolver in `backend/src/app/server/dependencyBuilders.ts`
+- [x] T061 [US4] Add provider timeout and sanitized error mapping in `backend/src/modules/customerEmail/services/customerEmailDeliveryService.ts`
+- [x] T062 [US4] Add routine authoring support for email skill outcomes in `frontend/lib/customer-email-skills.ts`
+- [x] T063 [US4] Add email skill outcome options to routine UI in `frontend/components/dashboard/settings/assistant-routines-section.tsx`
 
 **Checkpoint**: US4 works end-to-end through routines with typed outcomes.
 
@@ -182,14 +182,14 @@
 
 **Purpose**: Contracts, docs, generated artifacts, and validation.
 
-- [ ] T076 Update skill catalog entries for customer email skills in `backend/src/modules/skills/defaultCatalog.ts`
-- [ ] T077 Regenerate OpenAPI artifacts via backend OpenAPI script for `backend/openapi.yaml` and `backend/openapi.json`
-- [ ] T078 Update API contract snapshots/tests for generated OpenAPI in `backend/tests/contract/`
-- [ ] T079 Read `docs/document-writer-prompt.md` before documentation edits
-- [ ] T080 [P] Document workspace email setup in `docs/customer-email-skills.md`
+- [x] T076 Update skill catalog entries for customer email skills in `backend/src/modules/skills/defaultCatalog.ts`
+- [x] T077 Regenerate OpenAPI artifacts via backend OpenAPI script for `backend/openapi.yaml` and `backend/openapi.json`
+- [x] T078 Update API contract snapshots/tests for generated OpenAPI in `backend/tests/contract/`
+- [x] T079 Read `docs/document-writer-prompt.md` before documentation edits
+- [x] T080 [P] Document workspace email setup in `docs/customer-email-skills.md`
 - [ ] T081 [P] Update external skills/routines docs references in `docs/external-skills.md`
 - [ ] T082 [P] Update architecture code map if ownership paths changed in `docs/architecture/code-map.md`
-- [ ] T083 Verify message-queue impact remains "no queue changes" in `specs/089-workspace-email-skills/contracts/endpoints.md`
+- [x] T083 Verify message-queue impact remains "no queue changes" in `specs/089-workspace-email-skills/contracts/endpoints.md`
 - [ ] T084 Run backend focused tests with `cd backend && pnpm test -- tests/unit/customerEmail tests/integration/customerEmail`
 - [ ] T085 Run backend contract tests with `cd backend && pnpm run test:contract`
 - [ ] T086 Run frontend unit and e2e coverage with `cd frontend && pnpm test -- tests/unit/customer-email-skills.test.ts && pnpm run test:e2e -- customer-email`

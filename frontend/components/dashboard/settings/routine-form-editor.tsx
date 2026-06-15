@@ -24,6 +24,11 @@ import type {
   WebhookDestination,
 } from '@/lib/api'
 import {
+  customerEmailSkillOutcomeLabels,
+  getCustomerEmailRoutineOutcomeOptions,
+} from '@/lib/customer-email-skills'
+import type { CustomerEmailSkillDefinition, CustomerEmailSkillOutcome } from '@/lib/api-customer-email'
+import {
   buildCompletionExportPayloadPreview,
   createSlotForm,
   createStepForm,
@@ -48,6 +53,7 @@ export function RoutineFormEditor({
   webhookDestinations,
   isWebhookDestinationsLoading,
   webhookDestinationsError,
+  emailSkills,
   onChange,
 }: {
   form: RoutineFormState
@@ -57,6 +63,7 @@ export function RoutineFormEditor({
   webhookDestinations: WebhookDestination[]
   isWebhookDestinationsLoading: boolean
   webhookDestinationsError: string | null
+  emailSkills: CustomerEmailSkillDefinition[]
   onChange: (updater: (current: RoutineFormState) => RoutineFormState) => void
 }) {
   const instructionRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
@@ -235,7 +242,12 @@ export function RoutineFormEditor({
                   Add transition
                 </Button>
               </div>
-              {step.transitions.map((transition, transitionIndex) => (
+              {step.transitions.map((transition, transitionIndex) => {
+                const emailSkill = step.kind === 'tool'
+                  ? emailSkills.find((skill) => skill.enabled && skill.skillName === step.toolRef.trim())
+                  : undefined
+                const emailOutcomeOptions = getCustomerEmailRoutineOutcomeOptions(emailSkill?.outcomes)
+                return (
                 <div key={`${transition.fromStep}-${transitionIndex}`} className="grid gap-2 rounded-md border border-border p-2 sm:grid-cols-[150px_140px_1fr_auto]">
                   <Select value={transition.toRef} disabled={isPublished} onValueChange={(value) => onChange((current) => ({
                     ...current,
@@ -268,13 +280,34 @@ export function RoutineFormEditor({
                     </SelectContent>
                   </Select>
                   {transition.guardKind === 'outcome' ? (
-                    <Input aria-label={`Transition ${transitionIndex + 1} outcome`} placeholder="Outcome status" value={transition.outcomeStatus} disabled={isPublished} onChange={(event) => onChange((current) => ({
-                      ...current,
-                      steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? {
-                        ...item,
-                        transitions: item.transitions.map((candidate, candidateIndex) => candidateIndex === transitionIndex ? { ...candidate, outcomeStatus: event.target.value } : candidate),
-                      } : item),
-                    }))} />
+                    emailSkill ? (
+                      <Select value={transition.outcomeStatus} disabled={isPublished} onValueChange={(value) => onChange((current) => ({
+                        ...current,
+                        steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? {
+                          ...item,
+                          transitions: item.transitions.map((candidate, candidateIndex) => candidateIndex === transitionIndex ? { ...candidate, outcomeStatus: value } : candidate),
+                        } : item),
+                      }))}>
+                        <SelectTrigger aria-label={`Transition ${transitionIndex + 1} outcome`}>
+                          <SelectValue placeholder="Outcome status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {emailOutcomeOptions.map((outcome: CustomerEmailSkillOutcome) => (
+                            <SelectItem key={outcome} value={outcome}>
+                              {customerEmailSkillOutcomeLabels[outcome]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input aria-label={`Transition ${transitionIndex + 1} outcome`} placeholder="Outcome status" value={transition.outcomeStatus} disabled={isPublished} onChange={(event) => onChange((current) => ({
+                        ...current,
+                        steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? {
+                          ...item,
+                          transitions: item.transitions.map((candidate, candidateIndex) => candidateIndex === transitionIndex ? { ...candidate, outcomeStatus: event.target.value } : candidate),
+                        } : item),
+                      }))} />
+                    )
                   ) : transition.guardKind === 'counter' ? (
                     <Input aria-label={`Transition ${transitionIndex + 1} counter limit`} type="number" placeholder="Limit" value={transition.counterLimit} disabled={isPublished} onChange={(event) => onChange((current) => ({
                       ...current,
@@ -308,7 +341,8 @@ export function RoutineFormEditor({
                     })} />
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         ))}

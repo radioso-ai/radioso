@@ -58,8 +58,25 @@ export {
   MockCustomerEmailProviderAdapter,
 } from "./providers/mockEmailProvider.js";
 export {
+  CustomerEmailProviderRejectedError,
   StaticCustomerEmailProviderRegistry,
   type CustomerEmailProviderAdapter,
+  type CustomerEmailMessageInput,
+  type CustomerEmailProviderDeliveryResult,
   type CustomerEmailProviderHealthResult,
   type CustomerEmailProviderRegistryPort,
 } from "./providers/customerEmailProvider.js";
+export {
+  CUSTOMER_EMAIL_SKILLS_ADAPTER,
+  EmailSkillExecutor,
+  type EmailSkillExecutorOptions,
+} from "./executor/emailSkillExecutor.js";
+export {
+  CustomerEmailDeliveryService,
+  type CustomerEmailDeliveryServiceOptions,
+  type CustomerEmailOauthCredentialLookupPort,
+} from "./services/customerEmailDeliveryService.js";
+export {
+  CustomerEmailRoutineSkillResolver,
+  customerEmailRoutineSkillDefinition,
+} from "./routineSkillResolver.js";

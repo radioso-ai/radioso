@@ -46,6 +46,20 @@ export type McpConnectionFixture = {
   createdAt: string;
   updatedAt: string;
 };
+export type CustomerEmailSkillFixture = {
+  id: string;
+  workspaceId: string;
+  agentId: string;
+  connectionId: string;
+  skillName: string;
+  mode: "draft" | "send";
+  boundInputs: Record<string, unknown>;
+  exposedInputs: Record<string, { description?: string; slotBinding?: string }>;
+  enabled: boolean;
+  outcomes: string[];
+  createdAt: string;
+  updatedAt: string;
+};
 export type WebhookDestinationMutationFixture = {
   method: "POST" | "PUT" | "DELETE" | "ROTATE_SECRET";
   destinationId?: string;
@@ -460,6 +474,7 @@ export const installDashboardApiMocks = async (
     usageTrends?: unknown;
     mcpConnections?: McpConnectionFixture[];
     mcpConnectionRequests?: string[];
+    emailSkills?: CustomerEmailSkillFixture[];
   } = {},
 ) => {
   let platformSettings = options.platformSettings ?? basePlatformSettings();
@@ -498,6 +513,7 @@ export const installDashboardApiMocks = async (
   let routines = options.routines ?? [];
   let nextRoutineIndex = 1;
   const routineUpdates = options.routineUpdates;
+  const emailSkills = options.emailSkills ?? [];
   let webhookDestinations = options.webhookDestinations ?? [];
   let nextWebhookDestinationIndex = webhookDestinations.length + 1;
   const mcpConnections = options.mcpConnections ?? [];
@@ -910,6 +926,11 @@ export const installDashboardApiMocks = async (
         },
         validation: { ok: true, diagnostics: [] },
       });
+      return;
+    }
+
+    if (path === `/agents/${defaultAgentId}/email-skills` && request.method() === "GET") {
+      await json(route, { skills: emailSkills });
       return;
     }
 

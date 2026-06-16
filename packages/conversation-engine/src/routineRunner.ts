@@ -9,9 +9,11 @@ import type {
   RoutineActionRequest,
   RoutineGuard,
   RoutineNextStepDecision,
+  RoutineRunTrace,
   RoutineSkillResult,
   RoutineState,
   RoutineStep,
+  RoutineTraceStepEntry,
   RoutineTransition,
   SteeringRule,
   TurnContext,
@@ -285,6 +287,26 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
 
     const currentStepId = state.path.at(-1) ?? routine.rootStepId;
     const currentStep = stepById(currentStepId);
+
+    // Debug trace: a step-by-step log of this turn's traversal, surfaced to the panel.
+    // Slot KEYS only — never the captured values (which may be PII).
+    const declaredSlotKeys = new Set((routine.slots ?? []).map((slot) => slot.key));
+    const traceSteps: RoutineTraceStepEntry[] = [];
+    const capturedKeysFrom = (
+      before: Record<string, unknown>,
+      decision?: { variables?: Record<string, unknown> },
+    ): string[] => {
+      if (!decision?.variables) {
+        return [];
+      }
+      return Object.keys(decision.variables).filter(
+        (key) => !hasVariable(before, key) && (declaredSlotKeys.size === 0 || declaredSlotKeys.has(key)),
+      );
+    };
+    // Set by `selectNext` each call: whether it consulted the LLM selector (vs taking a
+    // default/structured-guard edge). Read immediately after each awaited call.
+    let lastSelectorRan = false;
+
     const attempts: Record<string, number> = { ...(state.attempts ?? {}) };
     if (state.path.length === 0) {
       attempts[currentStepId] = (attempts[currentStepId] ?? 0) + 1;
@@ -320,24 +342,71 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       skillResult?: RoutineSkillResult;
       defaultOnDecline?: boolean;
     }): Promise<RoutineNextStepDecision> => {
+      lastSelectorRan = false;
       const defaultTransition = input.transitions.find(isDefaultTransition);
       const conditionedTransitions = input.transitions.filter((transition) => !isDefaultTransition(transition));
 
+      // A slot-collection step must capture the user's answer even when all of its
+      // branches are deterministic (a field/counter guard, or a bare default) — the
+      // selector is the only place variables are extracted, yet it normally runs only
+      // for an `llm` edge. A step that asks for {{slot.x}} and then branches on x in
+      // code therefore never captured x (so the branch could never see it). When no
+      // `llm` edge will trigger the selector, run an extraction-only pass first and let
+      // the deterministic guards below decide the branch from the merged values.
+      //
+      // Only when at least one collected slot is still missing. A *satisfied* step
+      // (every slot already filled) is reached on the fast-forward walk — running the
+      // selector there would add a model round-trip to a deterministic path, let an
+      // unrelated message overwrite an already-filled slot, and could spuriously yield
+      // the turn. "Already collected" means nothing to extract, so skip it.
+      const collected = collectedSlotsFor(input.step);
+      let extracted: Record<string, unknown> = {};
+      if (
+        collected.length > 0 &&
+        collected.some((key) => !hasVariable(input.variables, key)) &&
+        input.transitions.length > 0 &&
+        !conditionedTransitions.some(isLlmTransition)
+      ) {
+        lastSelectorRan = true;
+        const extraction = await this.selector.select({
+          routine,
+          state: input.state,
+          currentStep: input.step,
+          transitions: input.transitions,
+          turn,
+          ...(input.skillResult ? { skillResult: input.skillResult } : {}),
+        });
+        // Off-topic on a slot step still yields the turn, same as the llm path.
+        if (extraction.yieldTurn) {
+          return extraction;
+        }
+        extracted = extraction.variables ?? {};
+      }
+      const variables = { ...input.variables, ...extracted };
+      // Thread the extraction-only capture onto whatever branch the guards pick, so the
+      // caller merges (and the trace records) the slot even though the LLM didn't choose
+      // the edge.
+      const withExtracted = (decision: RoutineNextStepDecision): RoutineNextStepDecision =>
+        Object.keys(extracted).length > 0
+          ? { ...decision, variables: { ...extracted, ...(decision.variables ?? {}) } }
+          : decision;
+
       if (defaultTransition && conditionedTransitions.length === 0) {
-        return { nextStepId: defaultTransition.to };
+        return withExtracted({ nextStepId: defaultTransition.to });
       }
 
       for (const transition of conditionedTransitions) {
-        if (guardMatches(transition, input.step.id, input.variables, input.skillResult)) {
-          return { nextStepId: transition.to };
+        if (guardMatches(transition, input.step.id, variables, input.skillResult)) {
+          return withExtracted({ nextStepId: transition.to });
         }
       }
 
       const llmTransitions = conditionedTransitions.filter(isLlmTransition);
       if (llmTransitions.length === 0) {
-        return { nextStepId: defaultTransition?.to ?? input.step.id };
+        return withExtracted({ nextStepId: defaultTransition?.to ?? input.step.id });
       }
 
+      lastSelectorRan = true;
       const decision = await this.selector.select({
         routine,
         state: input.state,
@@ -370,9 +439,22 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     if (decision.yieldTurn) {
       return { yielded: true, response: { answer: "" }, nextState: null };
     }
+    const mainSelectorRan = lastSelectorRan;
     const landedId = landingStepId(currentStepId, decision);
     let step = landedId === currentStepId ? currentStep : stepById(landedId);
     let variables = { ...state.variables, ...(decision.variables ?? {}) };
+    // Trace the resume step's outcome: it either advanced off (the user satisfied it) or
+    // was re-asked. Captured keys, if any, belong to this step's edge evaluation.
+    {
+      const captured = capturedKeysFrom(state.variables, decision);
+      traceSteps.push({
+        stepId: currentStep.id,
+        kind: currentStep.kind,
+        event: step.id === currentStepId ? "reasked" : "advanced",
+        ...(captured.length > 0 ? { capturedSlotKeys: captured } : {}),
+        viaSelector: mainSelectorRan,
+      });
+    }
     // Append to the path only on a real advance; re-asking a step keeps it stable.
     const path = step.id === currentStepId ? [...state.path] : [...state.path, step.id];
     if (step.id !== currentStepId) {
@@ -392,11 +474,17 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         break;
       }
 
+      const fastForwardEntry: RoutineTraceStepEntry = {
+        stepId: step.id,
+        kind: step.kind,
+        event: "fast_forwarded",
+      };
       let nextStepId: string;
       if (stepEdges.length === 1) {
         nextStepId = stepEdges[0]!.to;
       } else {
         const fastForwardState: RoutineState = { ...state, path, variables, attempts, status: "active" };
+        const beforeFastForward = variables;
         const fastForwardDecision = await selectNext({
           step,
           transitions: stepEdges,
@@ -406,6 +494,13 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         if (fastForwardDecision.yieldTurn) {
           return { yielded: true, response: { answer: "" }, nextState: null };
         }
+        if (lastSelectorRan) {
+          fastForwardEntry.viaSelector = true;
+        }
+        const captured = capturedKeysFrom(beforeFastForward, fastForwardDecision);
+        if (captured.length > 0) {
+          fastForwardEntry.capturedSlotKeys = captured;
+        }
         variables = { ...variables, ...(fastForwardDecision.variables ?? {}) };
         nextStepId = landingStepId(step.id, fastForwardDecision);
         if (nextStepId === step.id) {
@@ -414,10 +509,13 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       }
 
       // Would re-enter a step already visited this traversal (a loop). Render the step
-      // we're on rather than chasing the cycle.
+      // we're on rather than chasing the cycle. Break BEFORE recording the skip: this
+      // step is about to be rendered, not skipped, so labelling it `fast_forwarded`
+      // would make the debug panel show the step the user replied from as "Skipped".
       if (fastForwarded.has(nextStepId)) {
         break;
       }
+      traceSteps.push(fastForwardEntry);
       step = stepById(nextStepId);
       fastForwarded.add(step.id);
       enterStep(step, path);
@@ -446,6 +544,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         // Fire-and-forget: record the request (authored type + the routine's variables)
         // and auto-advance — there is no result to branch on.
         actions.push({ type: step.actionType, payload: { ...variables } });
+        traceSteps.push({ stepId: step.id, kind: step.kind, event: "action_emitted" });
         step = stepById(actionEdges[0]!.to);
         enterStep(step, path);
         continue;
@@ -464,6 +563,14 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         state: skillStateAtStep,
         turn,
       });
+      const skillEntry: RoutineTraceStepEntry = {
+        stepId: step.id,
+        kind: step.kind,
+        event: "skill_dispatched",
+        ...(step.skillName ? { skillName: step.skillName } : {}),
+        skillStatus: skillResult.status,
+      };
+      traceSteps.push(skillEntry);
       const skillEdges = outgoing(step.id);
       if (skillEdges.length === 0) {
         throw new Error(`routine_skill_step_no_follow_up:${routine.id}:${step.id}`);
@@ -473,6 +580,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         // Legacy single follow-up → deterministic auto-advance, no selector call.
         nextStepId = skillEdges[0]!.to;
       } else {
+        const beforeSkill = variables;
         const skillDecision = await selectNext({
           step,
           transitions: skillEdges,
@@ -481,6 +589,13 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
           skillResult,
           defaultOnDecline: true,
         });
+        if (lastSelectorRan) {
+          skillEntry.viaSelector = true;
+        }
+        const capturedAtSkill = capturedKeysFrom(beforeSkill, skillDecision);
+        if (capturedAtSkill.length > 0) {
+          skillEntry.capturedSlotKeys = capturedAtSkill;
+        }
         variables = { ...variables, ...(skillDecision.variables ?? {}) };
         const chosen = landingStepId(step.id, skillDecision);
         // If the selector declined to pick an edge, advance along the first declared
@@ -521,12 +636,30 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     if (completionExportAction) {
       actions.push(completionExportAction);
     }
+
+    // Mark the step the turn replied from — unless it already has the last entry this
+    // turn (a re-ask renders the very step it stayed on), which would list it twice.
+    const lastTraceEntry = traceSteps[traceSteps.length - 1];
+    if (!lastTraceEntry || lastTraceEntry.stepId !== step.id) {
+      traceSteps.push({ stepId: step.id, kind: step.kind, event: "rendered" });
+    }
+    const trace: RoutineRunTrace = {
+      routineId: routine.id,
+      startStepId: currentStepId,
+      landedStepId: step.id,
+      ...(terminalKind ? { terminalKind } : {}),
+      capturedSlotKeys: [...new Set(traceSteps.flatMap((entry) => entry.capturedSlotKeys ?? []))],
+      filledSlotKeys: [...declaredSlotKeys].filter((key) => hasVariable(variables, key)),
+      steps: traceSteps,
+    };
+
     return {
       response,
       // A terminal step ends the routine — clear its state.
       nextState: step.kind === "terminal" ? null : nextState,
       ...(terminalKind ? { terminal: { kind: terminalKind, stepId: step.id } } : {}),
       ...(actions.length > 0 ? { actions } : {}),
+      trace,
     };
   }
 }

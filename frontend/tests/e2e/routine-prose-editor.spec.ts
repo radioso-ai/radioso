@@ -84,6 +84,50 @@ test("the Bold toolbar button reflects its active state", async ({ page }) => {
   await expect(bold).toHaveAttribute("aria-pressed", "true");
 });
 
+test("the Step toolbar button toggles a heading on/off and renders it larger", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates: [] });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Write in prose" }).click();
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+  await editor.pressSequentially("First step title");
+  await page.keyboard.press("Enter");
+  await editor.pressSequentially("Plain body line");
+
+  const step = page.getByRole("button", { name: "Step", exact: true });
+  // Caret is on the body line → Step shows as off.
+  await expect(step).toHaveAttribute("aria-pressed", "false");
+
+  // Put the caret on the first line and turn it into a step heading.
+  await editor.locator("p", { hasText: "First step title" }).click();
+  await step.click();
+  await expect(step).toHaveAttribute("aria-pressed", "true");
+  const heading = editor.locator("h1", { hasText: "First step title" });
+  await expect(heading).toBeVisible();
+  // The active toggle must be visibly filled, not just aria-pressed — a transparent
+  // background here is the exact bug the user reported ("toggle should be highlighted").
+  const activeBg = await step.evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(activeBg).not.toBe("rgba(0, 0, 0, 0)");
+  expect(activeBg).not.toBe("transparent");
+
+  // The heading must read as a heading: visibly larger than body text.
+  const headingSize = await heading.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  const bodySize = await editor
+    .locator("p", { hasText: "Plain body line" })
+    .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  expect(headingSize).toBeGreaterThan(bodySize);
+
+  // Toggling Step again converts the heading back to normal text.
+  await heading.click();
+  await expect(step).toHaveAttribute("aria-pressed", "true");
+  await step.click();
+  await expect(step).toHaveAttribute("aria-pressed", "false");
+  await expect(editor.locator("h1")).toHaveCount(0);
+});
+
 test("a handoff chip on its own line compiles a forking routine", async ({ page }) => {
   const routineUpdates: RoutineMutationFixture[] = [];
 

@@ -1,16 +1,18 @@
 /**
  * Shared spine for agent skill definitions.
  *
- * Both External MCP skills (feature 087) and Customer Email skills (feature 089)
- * are agent-scoped, named, allowlisted skills dispatched through the same skill
- * executor registry. They share one `agent_skills` table (one @mention namespace
- * per agent, enforced across kinds) with per-kind detail tables that keep typed
- * foreign keys and typed config. This module owns the kind vocabulary that the
- * detail tables, repositories, and routine resolver route on.
+ * Skills share generic target/config columns on `agent_skills`. The table owns
+ * one @mention namespace per agent across all kinds; runtime services own
+ * kind-specific validation.
  */
 
-export const agentSkillKinds = ["external_mcp", "customer_email"] as const;
+export const agentSkillKinds = ["external_mcp", "customer_email", "webhook"] as const;
 export type AgentSkillKind = (typeof agentSkillKinds)[number];
+
+const agentSkillKindSet = new Set<string>(agentSkillKinds);
+
+export const isAgentSkillKind = (value: string): value is AgentSkillKind =>
+  agentSkillKindSet.has(value);
 
 export interface AgentSkillSpine {
   id: string;
@@ -19,6 +21,9 @@ export interface AgentSkillSpine {
   skillName: string;
   kind: AgentSkillKind;
   enabled: boolean;
+  targetType?: string | null;
+  targetId?: string | null;
+  config?: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -60,8 +60,8 @@ describeIfDatabase("email skill definition repository (postgres)", () => {
     await client.query(`SET search_path TO ${schema}, public`);
     await client.query(`CREATE TABLE workspaces (id UUID PRIMARY KEY)`);
     await client.query(`CREATE TABLE agents (id UUID PRIMARY KEY, workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE)`);
-    // 099 (the agent_skills spine) re-homes external skills and references mcp_connections,
-    // so the external-skills migrations (093/094) are part of the chain; 100 re-homes email.
+    // 099/100 create the shared spine + detail tables; 101 moves skill config onto
+    // generic target/config columns.
     await client.query(await readFile(path.join(testMigrationsPath, "093_external_skills.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "094_external_skills_oauth_flow.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "095_integration_oauth_connections.sql"), "utf8"));
@@ -70,6 +70,7 @@ describeIfDatabase("email skill definition repository (postgres)", () => {
     await client.query(await readFile(path.join(testMigrationsPath, "098_email_skill_activity.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "099_agent_skills_spine.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "100_email_skills_into_spine.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "101_agent_skills_generic_targets.sql"), "utf8"));
     await client.query(`INSERT INTO workspaces (id) VALUES ($1), ($2)`, [workspaceId, otherWorkspaceId]);
     await client.query(`INSERT INTO agents (id, workspace_id) VALUES ($1, $2), ($3, $4)`, [
       agentId,
@@ -146,6 +147,9 @@ describeIfDatabase("email skill definition repository (postgres)", () => {
     });
 
     expect(await connectionRepository.countSkillReferences(workspaceId, connectionId)).toBeGreaterThanOrEqual(1);
+    await expect(
+      client.query(`DELETE FROM customer_email_connections WHERE workspace_id = $1 AND id = $2`, [workspaceId, connectionId]),
+    ).rejects.toMatchObject({ code: "23503" });
 
     const updated = await repository.update(workspaceId, agentId, created.id, {
       mode: "send",
@@ -185,11 +189,17 @@ describeIfDatabase("email skill definition repository (postgres)", () => {
 
     // An external (different-kind) skill cannot reuse the same name for the agent: the
     // unified agent_skills spine enforces a single namespace, so there is no shadowing.
+    const externalConnectionId = randomUUID();
+    await client.query(
+      `INSERT INTO mcp_connections (id, agent_id, display_name, server_url, auth_method)
+       VALUES ($1, $2, 'MCP', 'https://mcp.example.com', 'access_token')`,
+      [externalConnectionId, agentId],
+    );
     await expect(
       client.query(
-        `INSERT INTO agent_skills (id, agent_id, workspace_id, skill_name, kind)
-         VALUES ($1, $2, $3, 'shared_name_skill', 'external_mcp')`,
-        [randomUUID(), agentId, workspaceId],
+        `INSERT INTO agent_skills (id, agent_id, workspace_id, skill_name, kind, target_type, target_id, config)
+         VALUES ($1, $2, $3, 'shared_name_skill', 'external_mcp', 'mcp_connection', $4, $5::jsonb)`,
+        [randomUUID(), agentId, workspaceId, externalConnectionId, JSON.stringify({ toolName: "t" })],
       ),
     ).rejects.toMatchObject({ code: "23505" });
   });

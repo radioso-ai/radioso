@@ -1,11 +1,16 @@
 import { createHmac } from "node:crypto";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  FetchWebhookHttpClient,
   createSignedWebhookHeaders,
   verifyWebhookSignature,
-} from "../../src/modules/chat/services/actions/webhookDelivery.js";
+} from "../../src/modules/webhooks/delivery.js";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("webhook delivery signing", () => {
   it("signs the raw body with timestamped HMAC headers and verifies the same bytes", () => {
@@ -57,5 +62,90 @@ describe("webhook delivery signing", () => {
       timestamp,
       signatureHeader: headers["X-Radioso-Signature"],
     })).toBe(false);
+  });
+});
+
+describe("FetchWebhookHttpClient", () => {
+  const redirect = (location: string | null, status = 307): Response =>
+    new Response(null, {
+      status,
+      headers: location ? { location } : undefined,
+    });
+
+  it("re-validates a same-origin redirect hop before following it", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(redirect("/next"))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const assertPublicUrl = vi.fn(async () => undefined);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new FetchWebhookHttpClient(assertPublicUrl);
+    await client.post({
+      url: "https://hooks.example.com/start",
+      rawBody: "{}",
+      headers: { "X-Test": "1" },
+    });
+
+    expect(assertPublicUrl).toHaveBeenNthCalledWith(1, "https://hooks.example.com/start");
+    expect(assertPublicUrl).toHaveBeenNthCalledWith(2, "https://hooks.example.com/next");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("blocks redirects to private addresses on the next hop", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(redirect("http://127.0.0.1/internal"));
+    const assertPublicUrl = vi.fn(async (url: string) => {
+      if (url.startsWith("http://127.0.0.1")) {
+        throw new Error("private url blocked");
+      }
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new FetchWebhookHttpClient(assertPublicUrl);
+    await expect(client.post({
+      url: "https://hooks.example.com/start",
+      rawBody: "{}",
+      headers: {},
+    })).rejects.toThrow("Webhook redirect changed origin");
+
+    expect(assertPublicUrl).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects redirects without a location header", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(redirect(null)));
+
+    const client = new FetchWebhookHttpClient(async () => undefined);
+    await expect(client.post({
+      url: "https://hooks.example.com/start",
+      rawBody: "{}",
+      headers: {},
+    })).rejects.toThrow("had no location");
+  });
+
+  it("rejects redirects that change origin before forwarding the signed body", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(redirect("https://attacker.example.net/capture"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new FetchWebhookHttpClient(async () => undefined);
+    await expect(client.post({
+      url: "https://hooks.example.com/start",
+      rawBody: JSON.stringify({ sensitive: "payload" }),
+      headers: { "X-Radioso-Signature": "sha256=abc" },
+    })).rejects.toThrow("changed origin");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("enforces the redirect ceiling", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(redirect("/again"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new FetchWebhookHttpClient(async () => undefined, { maxRedirects: 1 });
+    await expect(client.post({
+      url: "https://hooks.example.com/start",
+      rawBody: "{}",
+      headers: {},
+    })).rejects.toThrow("exceeded 1 redirects");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

@@ -37,6 +37,7 @@ import type { McpConnectionService } from "../../modules/externalSkills/services
 import type { ExternalSkillDefinitionService } from "../../modules/externalSkills/services/externalSkillDefinitionService.js";
 import type { OauthConnectionService } from "../../modules/integrationOauth/public.js";
 import type { CustomerEmailConnectionService, CustomerEmailOAuthService, EmailSkillDefinitionService } from "../../modules/customerEmail/public.js";
+import type { WebhookSkillDefinitionService } from "../../modules/webhookSkills/public.js";
 import type { ChunkRepositoryPort } from "../../modules/documents/contracts/index.js";
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
 import type { AccountRepositoryPort } from "../../modules/auth/services/authService.js";
@@ -106,6 +107,7 @@ export interface AppDependencies {
   customerEmailOAuthService: CustomerEmailOAuthService;
   customerEmailConnectionService: CustomerEmailConnectionService;
   emailSkillDefinitionService: EmailSkillDefinitionService;
+  webhookSkillDefinitionService: WebhookSkillDefinitionService;
   emailSkillActivityRepository: EmailSkillActivityRepositoryPort;
   mcpConnectionService: McpConnectionService;
   externalSkillDefinitionService: ExternalSkillDefinitionService;

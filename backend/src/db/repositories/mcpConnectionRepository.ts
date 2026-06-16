@@ -195,6 +195,26 @@ export class McpConnectionRepository implements McpConnectionRepositoryPort {
   }
 
   async remove(agentId: string, id: string): Promise<boolean> {
+    const [table] = await this.database.query<{ to_regclass: string | null }>(
+      "SELECT to_regclass('agent_skills')",
+    );
+    if (table?.to_regclass) {
+      const [reference] = await this.database.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count
+         FROM agent_skills
+         WHERE kind = 'external_mcp'
+           AND agent_id = $1
+           AND target_type = 'mcp_connection'
+           AND target_id = $2`,
+        [agentId, id],
+      );
+      if (Number(reference?.count ?? 0) > 0) {
+        const error = new Error("MCP connection is still referenced by skills") as Error & { code?: string };
+        error.code = "23503";
+        throw error;
+      }
+    }
+
     const affected = await this.database.execute(
       `DELETE FROM mcp_connections WHERE agent_id = $1 AND id = $2`,
       [agentId, id],

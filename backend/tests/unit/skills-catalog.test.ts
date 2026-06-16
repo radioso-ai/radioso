@@ -33,6 +33,7 @@ describe("skills catalog", () => {
       "documents.delete",
       "mcp.describe_capabilities",
       "customer_email.skill",
+      "webhook.skill",
     ]);
     expect(catalog.skills.find((skill) => skill.name === "retrieval.answer")).toMatchObject({
       owner: "retrieval",

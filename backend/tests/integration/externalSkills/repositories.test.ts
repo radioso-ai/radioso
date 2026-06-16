@@ -68,8 +68,9 @@ describeIfDatabase("external skills repositories (postgres)", () => {
     const migrationSql = await readFile(path.join(testMigrationsPath, "093_external_skills.sql"), "utf8");
     await client.query(migrationSql);
     await client.query(await readFile(path.join(testMigrationsPath, "094_external_skills_oauth_flow.sql"), "utf8"));
-    // 099 re-homes external_skill_definitions onto the shared agent_skills spine.
+    // 099 creates the shared spine; 101 moves detail config onto generic target/config columns.
     await client.query(await readFile(path.join(testMigrationsPath, "099_agent_skills_spine.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "101_agent_skills_generic_targets.sql"), "utf8"));
     await client.query(`INSERT INTO workspaces (id) VALUES ($1)`, [workspaceId]);
     await client.query(`INSERT INTO agents (id, workspace_id) VALUES ($1, $2)`, [agentId, workspaceId]);
 
@@ -184,6 +185,9 @@ describeIfDatabase("external skills repositories (postgres)", () => {
     });
 
     await expect(connections.remove(agentId, connection.id)).rejects.toMatchObject({ code: "23503" });
+    await expect(
+      client.query(`DELETE FROM mcp_connections WHERE agent_id = $1 AND id = $2`, [agentId, connection.id]),
+    ).rejects.toMatchObject({ code: "23503" });
 
     expect(await skills.remove(agentId, skill.id)).toBe(true);
     expect(await connections.remove(agentId, connection.id)).toBe(true);

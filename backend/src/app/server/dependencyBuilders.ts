@@ -126,10 +126,12 @@ import { WebhookDestinationRepository } from "../../db/repositories/webhookDesti
 import { CustomerEmailConnectionRepository } from "../../db/repositories/customerEmailConnectionRepository.js";
 import { EmailSkillDefinitionRepository } from "../../db/repositories/emailSkillDefinitionRepository.js";
 import { EmailSkillActivityRepository } from "../../db/repositories/emailSkillActivityRepository.js";
+import { WebhookSkillDefinitionRepository } from "../../db/repositories/webhookSkillDefinitionRepository.js";
 import { OauthConnectionRepository } from "../../db/repositories/oauthConnectionRepository.js";
 import {
   DefaultWebhookDestinationAdapter,
   WebhookDestinationService,
+  FetchWebhookHttpClient,
   type WebhookDestinationPublicAdapter,
   type WebhookDestinationRuntimePort,
 } from "../../modules/webhooks/public.js";
@@ -158,6 +160,11 @@ import {
   StaticCustomerEmailProviderRegistry,
   customerEmailOauthProviderIds,
 } from "../../modules/customerEmail/public.js";
+import {
+  WEBHOOK_SKILLS_ADAPTER,
+  WebhookRoutineSkillResolver,
+  WebhookSkillExecutor,
+} from "../../modules/webhookSkills/public.js";
 import { RoutineSkillExecutorDispatcher } from "../../modules/routines/public.js";
 import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
@@ -308,6 +315,7 @@ export const buildRepositories = (
   customerEmailConnectionRepository: new CustomerEmailConnectionRepository(database),
   emailSkillDefinitionRepository: new EmailSkillDefinitionRepository(database),
   emailSkillActivityRepository: new EmailSkillActivityRepository(database),
+  webhookSkillDefinitionRepository: new WebhookSkillDefinitionRepository(database),
 });
 
 export const buildAccessServices = (input: {
@@ -383,6 +391,7 @@ export const buildWebhookDestinationAdapter = (input: {
   repositories: {
     webhookDestinationRepository: WebhookDestinationRepository;
     routineDefinitionRepository: Pick<RoutineDefinitionRepository, "listPublishedRoutineNamesReferencingDestination">;
+    webhookSkillDefinitionRepository?: Pick<WebhookSkillDefinitionRepository, "listSkillNamesByDestination">;
   };
   assertPublicUrl: (url: string) => Promise<void>;
 }): WebhookDestinationPublicAdapter =>
@@ -393,6 +402,13 @@ export const buildWebhookDestinationAdapter = (input: {
     assertPublicUrl: input.assertPublicUrl,
     allowHttpLoopback: false,
     routineReferences: input.repositories.routineDefinitionRepository,
+    skillReferences: input.repositories.webhookSkillDefinitionRepository
+      ? {
+          async listAgentSkillNamesReferencingDestination(workspaceId, destinationId) {
+            return input.repositories.webhookSkillDefinitionRepository!.listSkillNamesByDestination(workspaceId, destinationId);
+          },
+        }
+      : undefined,
   }));
 
 export const buildWorkspaceLlmCapabilitySettingsService = (input: {
@@ -747,6 +763,7 @@ export const buildChatServices = (input: {
   customerEmailConnectionRepository: CustomerEmailConnectionRepository;
   emailSkillDefinitionRepository: EmailSkillDefinitionRepository;
   emailSkillActivityRepository: EmailSkillActivityRepository;
+  webhookSkillDefinitionRepository: WebhookSkillDefinitionRepository;
   mailService: ReturnType<typeof buildInfrastructure>["mailService"];
   usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
   retrievalPipeline: RetrievalPipelinePort;
@@ -876,6 +893,18 @@ export const buildChatServices = (input: {
           logger: input.logger,
         }),
         activity: input.emailSkillActivityRepository,
+      }),
+    });
+  }
+  if (!input.composition.skillExecutorRegistry.resolve({ kind: "internal", adapter: WEBHOOK_SKILLS_ADAPTER })) {
+    input.composition.skillExecutorRegistry.register({
+      kind: "internal",
+      adapter: WEBHOOK_SKILLS_ADAPTER,
+      executor: new WebhookSkillExecutor({
+        skills: input.webhookSkillDefinitionRepository,
+        destinations: input.webhookDestinations,
+        httpClient: new FetchWebhookHttpClient(input.assertPublicWebsiteUrl),
+        logger: input.logger,
       }),
     });
   }
@@ -1065,6 +1094,7 @@ export const buildChatServices = (input: {
         return null;
       }
       let emailSkillNames: string[] = [];
+      let webhookSkillNames: string[] = [];
       try {
         if (workspaceId && agentId) {
           emailSkillNames = (await input.emailSkillDefinitionRepository.listByAgent(workspaceId, agentId))
@@ -1078,6 +1108,21 @@ export const buildChatServices = (input: {
             err: error instanceof Error ? error.message : String(error),
           },
           "Customer email skill definitions failed to load for routine routing; continuing without email skills",
+        );
+      }
+      try {
+        if (workspaceId && agentId) {
+          webhookSkillNames = (await input.webhookSkillDefinitionRepository.listByAgent(workspaceId, agentId))
+            .filter((skill) => skill.enabled)
+            .map((skill) => skill.skillName);
+        }
+      } catch (error) {
+        input.logger.warn(
+          {
+            agentId,
+            err: error instanceof Error ? error.message : String(error),
+          },
+          "Webhook skill definitions failed to load for routine routing; continuing without webhook skills",
         );
       }
       return {
@@ -1094,7 +1139,10 @@ export const buildChatServices = (input: {
             responseLanguage,
           }),
           new RoutineSkillExecutorDispatcher(
-            new CustomerEmailRoutineSkillResolver(emailSkillNames, new ExternalSkillRoutineSkillResolver()),
+            new WebhookRoutineSkillResolver(
+              webhookSkillNames,
+              new CustomerEmailRoutineSkillResolver(emailSkillNames, new ExternalSkillRoutineSkillResolver()),
+            ),
             input.composition.skillExecutorRegistry,
             {
               workspaceId,

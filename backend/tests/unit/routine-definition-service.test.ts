@@ -545,7 +545,36 @@ describe("RoutineDefinitionService", () => {
     expect(parsed.transitions[0]?.guardKind).toBe("default");
   });
 
-  it("compiles default guards to the default runtime guard", () => {
+  it("compiles a non-collecting step's default guard to the default runtime guard", () => {
+    const now = new Date();
+    const routine = compileRoutineDefinition({
+      id: "33333333-3333-4333-8333-333333333333",
+      agentId,
+      lineageId: "55555555-5555-4555-8555-555555555555",
+      version: 1,
+      status: "published",
+      createdAt: now,
+      updatedAt: now,
+      ...validDraft(),
+      slots: [],
+      // A step with no {{slot.x}} reference is not a collection step, so its default
+      // edge stays a literal default guard (not auto-gated).
+      steps: [{ stableStepId: "step_confirm", kind: "chat", instruction: "Confirm with the user.", toolRef: null, actionType: null, ordinal: 0, metadata: {} }],
+      transitions: [{ fromStep: "step_confirm", toRef: "terminal_complete", guardKind: "default", guardText: null, ordinal: 0 }],
+      terminals: [{ stableStepId: "terminal_complete", kind: "complete", instruction: "Thank the user.", ordinal: 0 }],
+    });
+
+    expect(routine.transitions).toEqual([
+      expect.objectContaining({
+        from: "step_confirm",
+        to: "terminal_complete",
+        condition: "default",
+        guard: { kind: "default" },
+      }),
+    ]);
+  });
+
+  it("auto-gates a collection step whose only exit is a default guard (so the slot is captured)", () => {
     const now = new Date();
     const routine = compileRoutineDefinition({
       id: "33333333-3333-4333-8333-333333333333",
@@ -558,14 +587,11 @@ describe("RoutineDefinitionService", () => {
       ...validDraft(),
     });
 
-    expect(routine.transitions).toEqual([
-      expect.objectContaining({
-        from: "step_collect_topic",
-        to: "terminal_complete",
-        condition: "default",
-        guard: { kind: "default" },
-      }),
-    ]);
+    // `step_collect_topic` asks for {{slot.topic}} with a bare default edge: promoted to
+    // a selector-running (llm) transition — no structured guard, slot-aware condition.
+    const edge = routine.transitions.find((transition) => transition.from === "step_collect_topic");
+    expect(edge?.guard).toBeUndefined();
+    expect(edge?.condition).toContain("{{slot.topic}}");
   });
 
   it("rejects publish when enabled completion export has a malformed destination ref", async () => {

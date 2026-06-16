@@ -99,10 +99,32 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
   //     cannot tell two identical conditions apart), and a step that already carries a
   //     structured (`slot_filled`/`counter`/`field`) or `llm` exit is deliberately shaped.
   //     Both are left exactly as authored.
+  // A slot is *collected* by the FIRST chat step (in ordinal order) that references it; a
+  // later `{{slot.x}}` reference is a *use* (interpolation), not a re-collection. Without
+  // this, a content step that merely personalizes with an already-filled slot would be
+  // flagged as a collection step and the runner would fast-forward (skip) it, silently
+  // dropping its message. Only `chat` steps can collect from the user (auto-gating and
+  // fast-forward are chat-only), so the scan is chat-only: a tool/action step that
+  // interpolates `{{slot.x}}` at a lower ordinal must not steal ownership from the chat
+  // step that actually asks for it (which would leave the asker un-gated and uncaptured).
+  const firstReferencerByKey = new Map<string, string>();
+  for (const step of sortedSteps) {
+    if (step.kind !== "chat") {
+      continue;
+    }
+    for (const key of collectedSlotKeys(step.instruction)) {
+      if (!firstReferencerByKey.has(key)) {
+        firstReferencerByKey.set(key, step.stableStepId);
+      }
+    }
+  }
+  const collectedSlotsForStep = (step: RoutineDefinition["steps"][number]): string[] =>
+    collectedSlotKeys(step.instruction).filter((key) => firstReferencerByKey.get(key) === step.stableStepId);
+
   const slotsCollectedByStep = new Map<string, string[]>(
     sortedSteps
       .filter((step) => step.kind === "chat")
-      .map((step): [string, string[]] => [step.stableStepId, collectedSlotKeys(step.instruction)])
+      .map((step): [string, string[]] => [step.stableStepId, collectedSlotsForStep(step)])
       .filter(([, collected]) => collected.length > 0),
   );
   const autoGatedStepIds = new Set(
@@ -127,7 +149,7 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
     }));
   const steps: RoutineStep[] = [
     ...sortedSteps.map((step): RoutineStep => {
-      const collectsSlots = collectedSlotKeys(step.instruction);
+      const collectsSlots = collectedSlotsForStep(step);
       if (step.kind === "tool") {
         return {
           id: step.stableStepId,

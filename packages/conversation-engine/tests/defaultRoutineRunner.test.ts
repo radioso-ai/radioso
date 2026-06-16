@@ -942,3 +942,220 @@ describe("DefaultRoutineRunner field guards (deterministic branch-on-value)", ()
     expect(result.response.answer).toContain("high");
   });
 });
+
+describe("DefaultRoutineRunner trace", () => {
+  const slotRoutine: Routine = {
+    id: "contact",
+    rootStepId: "ask_email",
+    slots: [
+      { id: "slot_email", key: "email", type: "email", required: true },
+      { id: "slot_message", key: "message", type: "text", required: true },
+    ],
+    steps: [
+      { id: "ask_email", kind: "chat", action: "Ask for {{slot.email}}.", metadata: { collectsSlots: ["email"] } },
+      { id: "ask_message", kind: "chat", action: "Ask for {{slot.message}}.", metadata: { collectsSlots: ["message"] } },
+      { id: "done", kind: "terminal", action: "Confirm sent." },
+    ],
+    transitions: [
+      { from: "ask_email", to: "ask_message", condition: "The user provided {{slot.email}}." },
+      { from: "ask_message", to: "done", condition: "The user provided {{slot.message}}." },
+    ],
+  };
+
+  it("records the resumed step, the advance, captured slot keys, and the rendered step", async () => {
+    const runner = new DefaultRoutineRunner(
+      [slotRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "ask_message", variables: { email: "a@b.c" } })) },
+      { render: vi.fn(echoRenderer.render) },
+    );
+
+    const result = await runner.resume({ turn, state: state(["ask_email"]) });
+
+    expect(result.trace).toMatchObject({
+      routineId: "contact",
+      startStepId: "ask_email",
+      landedStepId: "ask_message",
+      capturedSlotKeys: ["email"],
+      filledSlotKeys: ["email"],
+    });
+    expect(result.trace?.steps).toEqual([
+      { stepId: "ask_email", kind: "chat", event: "advanced", capturedSlotKeys: ["email"], viaSelector: true },
+      { stepId: "ask_message", kind: "chat", event: "rendered" },
+    ]);
+  });
+
+  it("records a re-ask (no advance) and carries no slot value, only the key", async () => {
+    const runner = new DefaultRoutineRunner(
+      [slotRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "ask_email" })) },
+      { render: vi.fn(echoRenderer.render) },
+    );
+
+    const result = await runner.resume({ turn, state: state(["ask_email"]) });
+
+    expect(result.trace?.landedStepId).toBe("ask_email");
+    // A re-ask renders the very step it stayed on — listed once, not duplicated as a
+    // separate "rendered" entry.
+    expect(result.trace?.steps).toEqual([
+      { stepId: "ask_email", kind: "chat", event: "reasked", viaSelector: true },
+    ]);
+    // The trace never carries the captured value, only declared keys.
+    expect(JSON.stringify(result.trace)).not.toContain("a@b.c");
+  });
+
+  it("records fast-forwarding over a satisfied downstream slot-collection step", async () => {
+    const runner = new DefaultRoutineRunner(
+      [slotRoutine],
+      // Selector advances off ask_email; both slots are already filled, so the landed
+      // ask_message step is satisfied and fast-forwards to the terminal.
+      { select: vi.fn(async () => ({ nextStepId: "ask_message" })) },
+      { render: vi.fn(echoRenderer.render) },
+    );
+
+    const result = await runner.resume({ turn, state: state(["ask_email"], { email: "a@b.c", message: "hi" }) });
+
+    const events = result.trace?.steps.map((entry) => `${entry.stepId}:${entry.event}`);
+    expect(events).toContain("ask_message:fast_forwarded");
+    expect(result.trace?.landedStepId).toBe("done");
+    expect(result.trace?.filledSlotKeys).toEqual(expect.arrayContaining(["email", "message"]));
+  });
+
+  it("records a skill dispatch with its name and status", async () => {
+    const skillRoutine: Routine = {
+      id: "contact",
+      rootStepId: "ask_email",
+      steps: [
+        { id: "ask_email", kind: "chat", action: "Ask for email." },
+        { id: "lookup", kind: "skill", skillName: "crm_lookup" },
+        { id: "done", kind: "terminal", action: "Done." },
+      ],
+      transitions: [
+        { from: "ask_email", to: "lookup", condition: "email provided" },
+        { from: "lookup", to: "done", condition: "default", guard: { kind: "default" } },
+      ],
+    };
+    const runner = new DefaultRoutineRunner(
+      [skillRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "lookup" })) },
+      { render: vi.fn(echoRenderer.render) },
+      { dispatch: vi.fn(async () => ({ status: "ok" as const, outputs: { found: true } })) },
+    );
+
+    const result = await runner.resume({ turn, state: state(["ask_email"]) });
+
+    const skillEntry = result.trace?.steps.find((entry) => entry.event === "skill_dispatched");
+    expect(skillEntry).toMatchObject({ stepId: "lookup", kind: "skill", skillName: "crm_lookup", skillStatus: "ok" });
+  });
+
+  it("extracts the slot on a step that branches on it deterministically (no llm edge)", async () => {
+    // "Ask for budget, then branch on budget in code." The step collects a slot but its
+    // only edges are a field guard + a default — no llm edge. The selector must still run
+    // to capture the slot, and the field guard must then see the freshly-captured value.
+    const branchRoutine: Routine = {
+      id: "budget",
+      rootStepId: "ask_budget",
+      slots: [{ id: "slot_budget", key: "budget", type: "number", required: true }],
+      steps: [
+        { id: "ask_budget", kind: "chat", action: "Ask for {{slot.budget}}.", metadata: { collectsSlots: ["budget"] } },
+        { id: "premium", kind: "terminal", action: "Premium." },
+        { id: "standard", kind: "terminal", action: "Standard." },
+      ],
+      transitions: [
+        { from: "ask_budget", to: "premium", condition: "budget is at least 1000", guard: { kind: "field", ref: "budget", op: "gte", value: 1000 } },
+        { from: "ask_budget", to: "standard", condition: "default", guard: { kind: "default" } },
+      ],
+    };
+    const select = vi.fn(async () => ({ nextStepId: "ask_budget", variables: { budget: 5000 } }));
+    const runner = new DefaultRoutineRunner([branchRoutine], { select }, { render: vi.fn(echoRenderer.render) });
+
+    const result = await runner.resume({
+      turn,
+      state: { sessionId: "session_1", routineId: "budget", path: ["ask_budget"], variables: {}, status: "active" },
+    });
+
+    expect(select).toHaveBeenCalledTimes(1); // the selector ran for extraction
+    expect(result.nextState).toBeNull(); // reached the premium terminal
+    expect(result.response.answer).toContain("premium");
+    expect(result.trace?.capturedSlotKeys).toEqual(["budget"]);
+    expect(result.trace?.filledSlotKeys).toEqual(["budget"]);
+  });
+
+  it("does NOT run the extraction selector on an already-satisfied deterministic-branch step", async () => {
+    // Same shape, but the slot is already filled (the satisfied/fast-forward case).
+    // Extraction would be a wasted model round-trip and could overwrite the value or
+    // yield — so it must be skipped and the field guard decides in code, model-free.
+    const branchRoutine: Routine = {
+      id: "budget",
+      rootStepId: "ask_budget",
+      slots: [{ id: "slot_budget", key: "budget", type: "number", required: true }],
+      steps: [
+        { id: "ask_budget", kind: "chat", action: "Ask for {{slot.budget}}.", metadata: { collectsSlots: ["budget"] } },
+        { id: "premium", kind: "terminal", action: "Premium." },
+        { id: "standard", kind: "terminal", action: "Standard." },
+      ],
+      transitions: [
+        { from: "ask_budget", to: "premium", condition: "budget is at least 1000", guard: { kind: "field", ref: "budget", op: "gte", value: 1000 } },
+        { from: "ask_budget", to: "standard", condition: "default", guard: { kind: "default" } },
+      ],
+    };
+    const select = vi.fn();
+    const runner = new DefaultRoutineRunner([branchRoutine], { select }, { render: vi.fn(echoRenderer.render) });
+
+    const result = await runner.resume({
+      turn,
+      state: { sessionId: "session_1", routineId: "budget", path: ["ask_budget"], variables: { budget: 5000 }, status: "active" },
+    });
+
+    expect(select).not.toHaveBeenCalled(); // already collected → no extraction round-trip
+    expect(result.response.answer).toContain("premium"); // field guard still decided it
+  });
+
+  it("does not mislabel a cycle-broken step as fast-forwarded (renders it)", async () => {
+    // Two satisfied slot steps whose edges form a loop (a→b→a). The fast-forward walk
+    // skips `a`, lands on `b`, then would loop back to the visited `a` and breaks —
+    // rendering `b`. `b` must read as rendered, not "Skipped", in the debug timeline.
+    const cycleRoutine: Routine = {
+      id: "loop",
+      rootStepId: "start",
+      slots: [
+        { id: "sx", key: "x", type: "text", required: true },
+        { id: "sy", key: "y", type: "text", required: true },
+      ],
+      steps: [
+        { id: "start", kind: "chat", action: "start" },
+        { id: "a", kind: "chat", action: "a", metadata: { collectsSlots: ["x"] } },
+        { id: "b", kind: "chat", action: "b", metadata: { collectsSlots: ["y"] } },
+      ],
+      transitions: [
+        { from: "start", to: "a", condition: "default", guard: { kind: "default" } },
+        { from: "a", to: "b", condition: "default", guard: { kind: "default" } },
+        { from: "b", to: "a", condition: "default", guard: { kind: "default" } },
+      ],
+    };
+    const select = vi.fn();
+    const runner = new DefaultRoutineRunner([cycleRoutine], { select }, { render: vi.fn(echoRenderer.render) });
+
+    const result = await runner.resume({
+      turn,
+      state: { sessionId: "session_1", routineId: "loop", path: ["start"], variables: { x: "1", y: "2" }, status: "active" },
+    });
+
+    expect(result.trace?.landedStepId).toBe("b");
+    const bEntries = result.trace?.steps.filter((entry) => entry.stepId === "b") ?? [];
+    expect(bEntries).toEqual([{ stepId: "b", kind: "chat", event: "rendered" }]);
+    expect(bEntries.some((entry) => entry.event === "fast_forwarded")).toBe(false);
+  });
+
+  it("omits the trace when the routine yields the turn", async () => {
+    const runner = new DefaultRoutineRunner(
+      [slotRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "ask_email", yieldTurn: true })) },
+      { render: vi.fn() },
+    );
+
+    const result = await runner.resume({ turn, state: state(["ask_email"]) });
+
+    expect(result.yielded).toBe(true);
+    expect(result.trace).toBeUndefined();
+  });
+});

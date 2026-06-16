@@ -28,7 +28,7 @@ export function AuthPage() {
             className="mx-auto mb-4 hidden h-28 w-auto object-contain dark:block"
             priority
           />
-          <p className="text-muted-foreground mt-1">Knowledge Agents Platform</p>
+          <p className="text-muted-foreground mt-1">Agents that talk, act, and stay grounded.</p>
         </div>
         <div className="bg-card border border-border rounded-lg p-6 shadow-sm">
           <h2 className="text-lg font-medium text-card-foreground mb-4">

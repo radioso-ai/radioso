@@ -10,7 +10,18 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { routineSkillCatalogApi, type SkillAuthoringDescriptor } from '@/lib/api-routine-skill-catalog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import { routineSkillCatalogApi, type SkillAuthoringDescriptor, type SkillAuthoringInput } from '@/lib/api-routine-skill-catalog'
+import type { RoutineInputBinding, RoutineSkillBindingState, RoutineStepMode } from '@/lib/routine-prose'
 
 type RoutineSkillCatalogState = {
   agentId: string
@@ -79,7 +90,78 @@ function RequiredMarker({ required }: { required: boolean }) {
   )
 }
 
-function SkillCatalogDetails({ descriptor }: { descriptor: SkillAuthoringDescriptor }) {
+type BindingMode = 'unset' | 'literal' | 'variable'
+
+const modeForBinding = (binding: RoutineInputBinding | undefined): BindingMode => {
+  if (!binding) return 'unset'
+  return binding.kind === 'literal' ? 'literal' : 'variable'
+}
+
+const defaultLiteralValue = (input: SkillAuthoringInput): string | number | boolean => {
+  if (input.type === 'number') return 0
+  if (input.type === 'boolean') return false
+  if (input.type === 'enum') return input.enumValues?.[0] ?? ''
+  return ''
+}
+
+const literalTextValue = (value: string | number | boolean | undefined): string => {
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : ''
+  return value ?? ''
+}
+
+const coerceLiteralValue = (input: SkillAuthoringInput, raw: string): string | number | boolean => {
+  if (input.type === 'number') return raw === '' ? 0 : Number(raw)
+  return raw
+}
+
+const cleanRecord = <T,>(record: Record<string, T>): Record<string, T> | undefined =>
+  Object.keys(record).length > 0 ? record : undefined
+
+const IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/u
+
+function SkillCatalogDetails({
+  descriptor,
+  bindingState,
+  availableVariables,
+  onBindingStateChange,
+}: {
+  descriptor: SkillAuthoringDescriptor
+  bindingState: RoutineSkillBindingState
+  availableVariables: string[]
+  onBindingStateChange?: (state: RoutineSkillBindingState) => void
+}) {
+  const inputBindings = bindingState.inputBindings ?? {}
+  const outputAssignments = bindingState.outputAssignments ?? {}
+  const mode = bindingState.mode ?? 'typed'
+
+  const updateState = (next: RoutineSkillBindingState) => {
+    onBindingStateChange?.({
+      inputBindings: cleanRecord(next.inputBindings ?? {}),
+      outputAssignments: cleanRecord(next.outputAssignments ?? {}),
+      mode: next.mode ?? 'typed',
+    })
+  }
+
+  const setMode = (nextMode: RoutineStepMode) => {
+    updateState({ inputBindings, outputAssignments, mode: nextMode })
+  }
+
+  const setInputBinding = (input: SkillAuthoringInput, binding: RoutineInputBinding | undefined) => {
+    const nextBindings = { ...inputBindings }
+    if (binding) nextBindings[input.key] = binding
+    else delete nextBindings[input.key]
+    updateState({ inputBindings: nextBindings, outputAssignments, mode: 'typed' })
+  }
+
+  const setOutputAssignment = (fieldName: string, variableName: string) => {
+    const nextAssignments = { ...outputAssignments }
+    const trimmed = variableName.trim()
+    if (trimmed) nextAssignments[fieldName] = trimmed
+    else delete nextAssignments[fieldName]
+    updateState({ inputBindings, outputAssignments: nextAssignments, mode })
+  }
+
   return (
     <div className="space-y-4">
       <div className="space-y-1">
@@ -93,7 +175,7 @@ function SkillCatalogDetails({ descriptor }: { descriptor: SkillAuthoringDescrip
         {descriptor.description ? <p className="text-xs leading-5 text-muted-foreground">{descriptor.description}</p> : null}
       </div>
 
-      <Tabs value="typed">
+      <Tabs value={mode === 'untyped' ? 'agent-decides' : 'typed'} onValueChange={(value) => setMode(value === 'agent-decides' ? 'untyped' : 'typed')}>
         <TabsList aria-label="Skill input mode" className="h-8">
           <TabsTrigger value="typed" className="text-xs">Typed</TabsTrigger>
           <TabsTrigger value="agent-decides" disabled className="text-xs">Agent decides</TabsTrigger>
@@ -104,23 +186,101 @@ function SkillCatalogDetails({ descriptor }: { descriptor: SkillAuthoringDescrip
         <p className="text-xs font-medium uppercase text-muted-foreground">Inputs</p>
         {descriptor.inputs.length > 0 ? (
           <div className="space-y-2">
-            {descriptor.inputs.map((input) => (
-              <div key={input.key} className="rounded-md border border-border bg-muted/30 p-2">
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className="font-medium text-foreground">{input.key}</span>
-                  <span className="rounded border border-border px-1.5 py-0.5 text-muted-foreground">{input.type}</span>
-                  <RequiredMarker required={input.required} />
-                </div>
-                {input.description ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{input.description}</p> : null}
-                {input.type === 'enum' && input.enumValues?.length ? (
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {input.enumValues.map((value) => (
-                      <span key={value} className="rounded bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground">{value}</span>
-                    ))}
+            {descriptor.inputs.map((input) => {
+              const binding = inputBindings[input.key]
+              return (
+                <div key={input.key} className="rounded-md border border-border bg-muted/30 p-2">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="font-medium text-foreground">{input.key}</span>
+                    <span className="rounded border border-border px-1.5 py-0.5 text-muted-foreground">{input.type}</span>
+                    <RequiredMarker required={input.required} />
                   </div>
-                ) : null}
-              </div>
-            ))}
+                  {input.description ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{input.description}</p> : null}
+                  {input.type === 'enum' && input.enumValues?.length ? (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {input.enumValues.map((value) => (
+                        <span key={value} className="rounded bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground">{value}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="mt-2 grid gap-2">
+                    <div className="space-y-1">
+                      <Label htmlFor={`binding-mode-${input.key}`} className="text-xs">Binding</Label>
+                      <Select
+                        value={modeForBinding(binding)}
+                        onValueChange={(value) => {
+                          if (value === 'unset') {
+                            setInputBinding(input, undefined)
+                          } else if (value === 'literal') {
+                            setInputBinding(input, { kind: 'literal', value: defaultLiteralValue(input) })
+                          } else {
+                            setInputBinding(input, { kind: 'variableRef', ref: availableVariables[0] ?? '' })
+                          }
+                        }}
+                      >
+                        <SelectTrigger id={`binding-mode-${input.key}`} aria-label={`Binding mode for ${input.key}`} className="h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="unset">Unset</SelectItem>
+                          <SelectItem value="literal">Literal</SelectItem>
+                          <SelectItem value="variable">Variable</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {binding?.kind === 'literal' ? (
+                      input.type === 'boolean' ? (
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            id={`literal-${input.key}`}
+                            checked={binding.value === true}
+                            onCheckedChange={(checked) => setInputBinding(input, { kind: 'literal', value: checked })}
+                          />
+                          <Label htmlFor={`literal-${input.key}`} className="text-xs">Literal value for {input.key}</Label>
+                        </div>
+                      ) : input.type === 'enum' ? (
+                        <Select
+                          value={literalTextValue(binding.value)}
+                          onValueChange={(value) => setInputBinding(input, { kind: 'literal', value })}
+                        >
+                          <SelectTrigger aria-label={`Literal value for ${input.key}`} className="h-8">
+                            <SelectValue placeholder="Choose value" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(input.enumValues ?? []).map((value) => (
+                              <SelectItem key={value} value={value}>{value}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input
+                          aria-label={`Literal value for ${input.key}`}
+                          type={input.type === 'number' ? 'number' : input.type === 'date' ? 'date' : input.type === 'email' ? 'email' : input.type === 'phone' ? 'tel' : 'text'}
+                          value={literalTextValue(binding.value)}
+                          onChange={(event) => setInputBinding(input, { kind: 'literal', value: coerceLiteralValue(input, event.target.value) })}
+                        />
+                      )
+                    ) : null}
+                    {binding?.kind === 'variableRef' ? (
+                      <Select
+                        value={binding.ref || '__none'}
+                        onValueChange={(value) => setInputBinding(input, { kind: 'variableRef', ref: value === '__none' ? '' : value })}
+                      >
+                        <SelectTrigger aria-label={`Variable for ${input.key}`} className="h-8">
+                          <SelectValue placeholder="Choose variable" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableVariables.length === 0 ? <SelectItem value="__none">No variables available</SelectItem> : null}
+                          {availableVariables.map((variable) => (
+                            <SelectItem key={variable} value={variable}>{variable}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : null}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         ) : (
           <p className="rounded-md border border-dashed border-border p-2 text-xs text-muted-foreground">
@@ -142,6 +302,19 @@ function SkillCatalogDetails({ descriptor }: { descriptor: SkillAuthoringDescrip
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">{outcome.name}</p>
                 {outcome.description ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{outcome.description}</p> : null}
+                {descriptor.hasDataOutputs ? (
+                  <div className="mt-2 space-y-1">
+                    <Label htmlFor={`output-${outcome.name}`} className="text-xs">Assign to variable</Label>
+                    <Input
+                      id={`output-${outcome.name}`}
+                      aria-label={`Output variable for ${outcome.name}`}
+                      value={outputAssignments[outcome.name] ?? ''}
+                      pattern={IDENTIFIER_PATTERN.source}
+                      aria-invalid={Boolean(outputAssignments[outcome.name]) && !IDENTIFIER_PATTERN.test(outputAssignments[outcome.name] ?? '')}
+                      onChange={(event) => setOutputAssignment(outcome.name, event.target.value)}
+                    />
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>
@@ -164,17 +337,27 @@ export function RoutineSkillCatalogPopover({
   skillName,
   label,
   children,
+  bindingState = {},
+  availableVariables = [],
+  open,
+  onOpenChange,
+  onBindingStateChange,
   onRemove,
 }: {
   skillName: string
   label: string
   children: ReactNode
+  bindingState?: RoutineSkillBindingState
+  availableVariables?: string[]
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  onBindingStateChange?: (state: RoutineSkillBindingState) => void
   onRemove?: () => void
 }) {
   const { descriptor, isLoading, error } = useSkillDescriptor(skillName, label)
 
   return (
-    <DropdownMenu modal={false}>
+    <DropdownMenu modal={false} open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-96 max-w-[calc(100vw-2rem)] p-4" onCloseAutoFocus={(event) => event.preventDefault()}>
         <div role="dialog" aria-label={`Skill catalog for ${label}`}>
@@ -189,7 +372,12 @@ export function RoutineSkillCatalogPopover({
               {error}
             </div>
           ) : descriptor ? (
-            <SkillCatalogDetails descriptor={descriptor} />
+            <SkillCatalogDetails
+              descriptor={descriptor}
+              bindingState={bindingState}
+              availableVariables={availableVariables}
+              onBindingStateChange={onBindingStateChange}
+            />
           ) : (
             <div className="space-y-1">
               <p className="text-sm font-semibold text-foreground">{label}</p>

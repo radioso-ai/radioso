@@ -606,6 +606,9 @@ function $serializeBlocks(): RoutineDocBlock[] {
           values: chip.getChipValues(),
           unit: chip.getChipUnit(),
           counterLimit: chip.getChipCounterLimit(),
+          inputBindings: chip.getInputBindings(),
+          outputAssignments: chip.getOutputAssignments(),
+          mode: chip.getMode() ?? undefined,
         }))
       : [],
   }))
@@ -626,7 +629,11 @@ function $initializeFromParagraphs(paragraphs: ProseParagraph[]): void {
       } else if (segment.chipKind === 'step') {
         node.append($createStepChipNode(segment.refId, segment.label, segment.counterLimit ?? null))
       } else {
-        node.append($createChipNode(segment.chipKind, segment.refId, segment.label))
+        node.append($createChipNode(segment.chipKind, segment.refId, segment.label, {
+          inputBindings: segment.inputBindings,
+          outputAssignments: segment.outputAssignments,
+          mode: segment.mode,
+        }))
       }
     }
     root.append(node)
@@ -660,6 +667,7 @@ export function RoutineChipEditor({
 }): JSX.Element {
   const variablesContext = useMemo(
     () => ({
+      variables,
       getType: (refId: string): RoutineSlotType => variables.find((variable) => variable.id === refId)?.type ?? 'text',
       setType: onSetVariableType,
     }),

@@ -129,6 +129,79 @@ test("a skill chip opens an authoring catalog popover with typed ports and outco
   await expect(catalog.getByRole("tab", { name: "Agent decides" })).toBeDisabled();
 });
 
+test("a skill chip binding editor persists typed input bindings and output assignments", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineUpdates,
+    routineSkillCatalog: [
+      {
+        skillName: "refund",
+        displayName: "Issue refund",
+        description: "Checks eligibility and starts a refund workflow.",
+        inputs: [
+          { key: "order_id", type: "text", required: true, description: "Order identifier" },
+          { key: "customer_email", type: "email", required: true, description: "Customer email" },
+        ],
+        outcomes: [
+          { name: "refund_id", displayName: "Refund id", status: "created", description: "Created refund identifier" },
+        ],
+        hasDataOutputs: true,
+      },
+    ],
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Bind refund ports");
+  await page.getByLabel("Trigger", { exact: true }).fill("When a refund needs typed inputs");
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+  await editor.pressSequentially("Use ");
+  await editor.pressSequentially("@order_id");
+  await expect(page.getByRole("option", { name: /Create variable/ })).toBeVisible();
+  await page.keyboard.press("Enter");
+  await editor.pressSequentially(" to run ");
+  await editor.pressSequentially("@refund");
+  await expect(page.getByRole("option", { name: "Skill: refund" })).toBeVisible();
+  await page.getByRole("option", { name: "Skill: refund" }).click();
+
+  await page.locator('[data-routine-chip="skill"]').click();
+  const catalog = page.getByRole("dialog", { name: "Skill catalog for refund" });
+  await expect(catalog).toBeVisible();
+
+  await catalog.getByLabel("Binding mode for customer_email").click();
+  await page.getByRole("option", { name: "Literal" }).click();
+  await catalog.getByLabel("Literal value for customer_email").fill("buyer@example.com");
+
+  await catalog.getByLabel("Binding mode for order_id").click();
+  await page.getByRole("option", { name: "Variable" }).click();
+  await catalog.getByLabel("Variable for order_id").click();
+  await page.getByRole("option", { name: "order_id" }).click();
+
+  await catalog.getByLabel("Output variable for refund_id").fill("refund_confirmation_id");
+  await page.keyboard.press("Escape");
+  await expect(catalog).toBeHidden();
+
+  await page.getByRole("button", { name: "Save routine" }).click();
+
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  const created = routineUpdates.find((update) => update.method === "POST");
+  const createdBody = created?.body as { steps?: Array<{ toolRef: string | null; metadata?: Record<string, unknown> }> } | undefined;
+  const refundStep = (createdBody?.steps ?? []).find((step) => step.toolRef === "refund");
+
+  expect(refundStep?.metadata?.mode).toBe("typed");
+  expect(refundStep?.metadata?.inputBindings).toEqual({
+    customer_email: { kind: "literal", value: "buyer@example.com" },
+    order_id: { kind: "variableRef", ref: "order_id" },
+  });
+  expect(refundStep?.metadata?.outputAssignments).toEqual({
+    refund_id: "refund_confirmation_id",
+  });
+});
+
 test("the Bold toolbar button reflects its active state", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, { routineUpdates: [] });

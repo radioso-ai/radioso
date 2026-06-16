@@ -2937,7 +2937,22 @@ export interface components {
                 ordinal: number;
                 /** @default {} */
                 metadata: {
-                    [key: string]: unknown;
+                    inputBindings?: {
+                        [key: string]: {
+                            /** @enum {string} */
+                            kind: "literal";
+                            value: string | number | boolean;
+                        } | {
+                            /** @enum {string} */
+                            kind: "variableRef";
+                            ref: string;
+                        };
+                    };
+                    outputAssignments?: {
+                        [key: string]: string;
+                    };
+                    /** @enum {string} */
+                    mode?: "typed" | "untyped";
                 };
             }[];
             /** @default [] */
@@ -3001,7 +3016,22 @@ export interface components {
                 ordinal: number;
                 /** @default {} */
                 metadata: {
-                    [key: string]: unknown;
+                    inputBindings?: {
+                        [key: string]: {
+                            /** @enum {string} */
+                            kind: "literal";
+                            value: string | number | boolean;
+                        } | {
+                            /** @enum {string} */
+                            kind: "variableRef";
+                            ref: string;
+                        };
+                    };
+                    outputAssignments?: {
+                        [key: string]: string;
+                    };
+                    /** @enum {string} */
+                    mode?: "typed" | "untyped";
                 };
             }[];
             /** @default [] */
@@ -3045,7 +3075,7 @@ export interface components {
             ok: boolean;
             diagnostics: {
                 /** @enum {string} */
-                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination";
+                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "variable_name_collision";
                 location: string;
                 message: string;
             }[];
@@ -3077,7 +3107,22 @@ export interface components {
                 ordinal: number;
                 /** @default {} */
                 metadata: {
-                    [key: string]: unknown;
+                    inputBindings?: {
+                        [key: string]: {
+                            /** @enum {string} */
+                            kind: "literal";
+                            value: string | number | boolean;
+                        } | {
+                            /** @enum {string} */
+                            kind: "variableRef";
+                            ref: string;
+                        };
+                    };
+                    outputAssignments?: {
+                        [key: string]: string;
+                    };
+                    /** @enum {string} */
+                    mode?: "typed" | "untyped";
                 };
             }[];
             /** @default [] */
@@ -3182,7 +3227,22 @@ export interface components {
                     ordinal: number;
                     /** @default {} */
                     metadata: {
-                        [key: string]: unknown;
+                        inputBindings?: {
+                            [key: string]: {
+                                /** @enum {string} */
+                                kind: "literal";
+                                value: string | number | boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "variableRef";
+                                ref: string;
+                            };
+                        };
+                        outputAssignments?: {
+                            [key: string]: string;
+                        };
+                        /** @enum {string} */
+                        mode?: "typed" | "untyped";
                     };
                 }[];
                 /** @default [] */

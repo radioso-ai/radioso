@@ -37,7 +37,9 @@ import {
   createTransitionForm,
   diagnosticsForTarget,
   type RoutineFormState,
+  type RoutineStepForm,
 } from '@/lib/routine-form'
+import type { RoutineSkillBindingState } from '@/lib/routine-prose'
 
 const slotTypes: RoutineSlotType[] = ['text', 'number', 'boolean', 'email', 'date']
 const guardKinds: RoutineGuardKind[] = ['llm', 'slot_filled', 'outcome', 'counter', 'default']
@@ -45,6 +47,27 @@ const stepKinds: Array<'chat' | 'tool' | 'action'> = ['chat', 'tool', 'action']
 const terminalKinds: RoutineTerminalKind[] = ['complete', 'handoff']
 
 const optionLabel = (value: string) => value.replace(/_/gu, ' ')
+
+const stepBindingState = (step: RoutineStepForm): RoutineSkillBindingState => ({
+  inputBindings: (step.metadata.inputBindings as RoutineSkillBindingState['inputBindings']) ?? {},
+  outputAssignments: (step.metadata.outputAssignments as RoutineSkillBindingState['outputAssignments']) ?? {},
+  mode: (step.metadata.mode as RoutineSkillBindingState['mode']) ?? 'typed',
+})
+
+const availableVariablesForStep = (form: RoutineFormState, stepIndex: number): string[] => {
+  const variables = new Set<string>()
+  for (const slot of form.slots) {
+    const key = slot.key.trim()
+    if (key) variables.add(key)
+  }
+  for (const step of form.steps.slice(0, stepIndex)) {
+    const assignments = (step.metadata.outputAssignments as Record<string, unknown> | undefined) ?? {}
+    for (const value of Object.values(assignments)) {
+      if (typeof value === 'string' && value.trim()) variables.add(value.trim())
+    }
+  }
+  return [...variables]
+}
 
 export function RoutineFormEditor({
   form,
@@ -193,7 +216,24 @@ export function RoutineFormEditor({
                     ...current,
                     steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? { ...item, toolRef: event.target.value } : item),
                   }))} />
-                  <RoutineSkillCatalogPopover skillName={step.toolRef} label={step.toolRef || `Step ${stepIndex + 1} skill`}>
+                  <RoutineSkillCatalogPopover
+                    skillName={step.toolRef}
+                    label={step.toolRef || `Step ${stepIndex + 1} skill`}
+                    bindingState={stepBindingState(step)}
+                    availableVariables={availableVariablesForStep(form, stepIndex)}
+                    onBindingStateChange={isPublished ? undefined : (bindingState) => onChange((current) => ({
+                      ...current,
+                      steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? {
+                        ...item,
+                        metadata: {
+                          ...item.metadata,
+                          inputBindings: bindingState.inputBindings ?? {},
+                          outputAssignments: bindingState.outputAssignments ?? {},
+                          mode: bindingState.mode ?? 'typed',
+                        },
+                      } : item),
+                    }))}
+                  >
                     <Button type="button" variant="outline" size="sm" className="shrink-0" disabled={!step.toolRef.trim()}>
                       Ports
                     </Button>

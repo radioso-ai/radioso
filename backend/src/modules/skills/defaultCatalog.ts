@@ -39,6 +39,33 @@ export const customerEmailSkillCatalogEntry: SkillCatalogEntryDefinition = {
   ],
 };
 
+export const webhookSkillCatalogEntry: SkillCatalogEntryDefinition = {
+  name: "webhook.skill",
+  displayName: "Webhook skill",
+  description: "Invoke allowlisted webhook destinations from agent routines with configured payload bindings.",
+  display: { icon: "webhook", title: "Webhook" },
+  owner: "platform",
+  executionClass: "interactive",
+  supportedCallers: ["assistant"],
+  requiredCapabilities: ["external_skills.invoke"],
+  contractReferences: [{
+    kind: "documentation",
+    label: "Webhook skills",
+    path: "/docs/webhook-skills",
+  }],
+  diagnostics: {
+    defined: true,
+    shapeAware: false,
+    strategyAware: false,
+  },
+  outcomes: [
+    { name: "delivered", displayName: "Delivered", status: "completed", tone: "positive" },
+    { name: "missing_input", displayName: "Missing input", status: "failed", tone: "warning" },
+    { name: "destination_not_found", displayName: "Destination not found", status: "failed", tone: "warning" },
+    { name: "failed", displayName: "Failed", status: "failed", tone: "warning" },
+  ],
+};
+
 // Every built-in skill is a declarative `skill.json` under `definitions/`, loaded
 // via `loadSkillDefinition`. The catalog assembles them; it owns no skill data.
 export const builtInSkillCatalogEntries: SkillCatalogEntryDefinition[] = [
@@ -51,6 +78,7 @@ export const builtInSkillCatalogEntries: SkillCatalogEntryDefinition[] = [
   documentsDeleteSkillDefinition,
   mcpDescribeCapabilitiesSkillDefinition,
   customerEmailSkillCatalogEntry,
+  webhookSkillCatalogEntry,
 ];
 
 export const createDefaultSkillCatalogRegistry = (

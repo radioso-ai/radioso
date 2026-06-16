@@ -42,6 +42,10 @@ export interface WebhookDestinationRoutineReferencePort {
   listPublishedRoutineNamesReferencingDestination(workspaceId: string, destinationId: string): Promise<string[]>;
 }
 
+export interface WebhookDestinationSkillReferencePort {
+  listAgentSkillNamesReferencingDestination(workspaceId: string, destinationId: string): Promise<string[]>;
+}
+
 export interface WebhookDestinationExistencePort {
   existsByIdAndWorkspace(workspaceId: string, destinationId: string): Promise<boolean>;
 }
@@ -65,15 +69,15 @@ export class EncryptionNotConfiguredError extends AppError {
 }
 
 export class WebhookDestinationInUseError extends AppError {
-  constructor(destinationId: string, routineNames: string[]) {
-    const routineSummary = routineNames.length > 0
-      ? `: ${routineNames.join(", ")}`
+  constructor(destinationId: string, references: string[]) {
+    const referenceSummary = references.length > 0
+      ? `: ${references.join(", ")}`
       : "";
     super(
       409,
       "webhook_destination_in_use",
-      `Webhook destination ${destinationId} is referenced by published routine(s)${routineSummary}`,
-      { destinationId, routineNames },
+      `Webhook destination ${destinationId} is referenced${referenceSummary}`,
+      { destinationId, references },
     );
   }
 }
@@ -127,6 +131,7 @@ export class WebhookDestinationService implements WebhookDestinationExistencePor
     assertPublicUrl: WebhookDestinationUrlGuard;
     allowHttpLoopback?: boolean;
     routineReferences?: WebhookDestinationRoutineReferencePort;
+    skillReferences?: WebhookDestinationSkillReferencePort;
   }) {}
 
   isEncryptionConfigured(): boolean {
@@ -244,8 +249,14 @@ export class WebhookDestinationService implements WebhookDestinationExistencePor
   }
 
   async delete(workspaceId: string, id: string, actor: WebhookDestinationActor): Promise<void> {
-    const references = await this.options.routineReferences
+    const routineReferences = await this.options.routineReferences
       ?.listPublishedRoutineNamesReferencingDestination(workspaceId, id) ?? [];
+    const skillReferences = await this.options.skillReferences
+      ?.listAgentSkillNamesReferencingDestination(workspaceId, id) ?? [];
+    const references = [
+      ...routineReferences,
+      ...skillReferences.map((name) => `skill:${name}`),
+    ];
     if (references.length > 0) {
       throw new WebhookDestinationInUseError(id, references);
     }

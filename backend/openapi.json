@@ -3889,7 +3889,82 @@
                 },
                 "metadata": {
                   "type": "object",
-                  "additionalProperties": {},
+                  "properties": {
+                    "inputBindings": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "literal"
+                                ]
+                              },
+                              "value": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "boolean"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "value"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "variableRef"
+                                ]
+                              },
+                              "ref": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120,
+                                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "ref"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "outputAssignments": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                      }
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "typed",
+                        "untyped"
+                      ]
+                    }
+                  },
                   "default": {}
                 }
               },
@@ -4259,7 +4334,82 @@
                 },
                 "metadata": {
                   "type": "object",
-                  "additionalProperties": {},
+                  "properties": {
+                    "inputBindings": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "literal"
+                                ]
+                              },
+                              "value": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "boolean"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "value"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "variableRef"
+                                ]
+                              },
+                              "ref": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120,
+                                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "ref"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "outputAssignments": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                      }
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "typed",
+                        "untyped"
+                      ]
+                    }
+                  },
                   "default": {}
                 }
               },
@@ -4532,6 +4682,7 @@
                     "declared_unused_slot",
                     "referenced_undeclared_slot",
                     "unregistered_action_type",
+                    "unknown_skill",
                     "action_capability_denied",
                     "invalid_webhook_destination_ref",
                     "unknown_webhook_destination",
@@ -4540,7 +4691,11 @@
                     "structured_guard_missing_parameter",
                     "field_guard_unknown_reference",
                     "field_guard_incompatible_type",
-                    "completion_export_missing_destination"
+                    "completion_export_missing_destination",
+                    "unsatisfiable_required_input",
+                    "input_type_mismatch",
+                    "unknown_input_binding",
+                    "variable_name_collision"
                   ]
                 },
                 "location": {
@@ -4697,7 +4852,82 @@
                 },
                 "metadata": {
                   "type": "object",
-                  "additionalProperties": {},
+                  "properties": {
+                    "inputBindings": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "literal"
+                                ]
+                              },
+                              "value": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "boolean"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "value"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "variableRef"
+                                ]
+                              },
+                              "ref": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120,
+                                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "ref"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "outputAssignments": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                      }
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "typed",
+                        "untyped"
+                      ]
+                    }
+                  },
                   "default": {}
                 }
               },
@@ -5216,7 +5446,82 @@
                     },
                     "metadata": {
                       "type": "object",
-                      "additionalProperties": {},
+                      "properties": {
+                        "inputBindings": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "literal"
+                                    ]
+                                  },
+                                  "value": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "boolean"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "value"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "variableRef"
+                                    ]
+                                  },
+                                  "ref": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 120,
+                                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "ref"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          }
+                        },
+                        "outputAssignments": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120,
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                          }
+                        },
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "typed",
+                            "untyped"
+                          ]
+                        }
+                      },
                       "default": {}
                     }
                   },
@@ -5477,6 +5782,125 @@
         "required": [
           "error",
           "validation"
+        ]
+      },
+      "SkillAuthoringInput": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "number",
+              "boolean",
+              "email",
+              "date",
+              "phone",
+              "enum"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "enumValues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "key",
+          "type",
+          "required"
+        ]
+      },
+      "SkillAuthoringOutcome": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "paused",
+              "awaiting_confirmation",
+              "awaiting_tool",
+              "completed",
+              "cancelled",
+              "expired",
+              "failed"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "displayName",
+          "status"
+        ]
+      },
+      "SkillAuthoringDescriptor": {
+        "type": "object",
+        "properties": {
+          "skillName": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillAuthoringInput"
+            }
+          },
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillAuthoringOutcome"
+            }
+          },
+          "hasDataOutputs": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "skillName",
+          "displayName",
+          "inputs",
+          "outcomes",
+          "hasDataOutputs"
+        ]
+      },
+      "RoutineSkillCatalogResponse": {
+        "type": "object",
+        "properties": {
+          "skills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillAuthoringDescriptor"
+            }
+          }
+        },
+        "required": [
+          "skills"
         ]
       },
       "PublicChatSessionResponse": {
@@ -13918,6 +14342,63 @@
           },
           "404": {
             "description": "Agent or directive not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/routine-skill-catalog": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "List routine-authoring skills for an agent",
+        "operationId": "listAgentRoutineSkillCatalog",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Routine skill catalog returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutineSkillCatalogResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
             "content": {
               "application/json": {
                 "schema": {

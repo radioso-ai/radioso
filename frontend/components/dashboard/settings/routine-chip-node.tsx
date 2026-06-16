@@ -22,6 +22,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { RoutineSkillCatalogPopover } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import type { RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineSlotType } from '@/lib/api-types'
 import { ROUTINE_SLOT_TYPES } from '@/lib/routine-prose'
 
@@ -87,6 +88,16 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
     editor.update(() => {
       $getNodeByKey(nodeKey)?.remove()
     })
+  }
+
+  if (kind === 'skill') {
+    return (
+      <RoutineSkillCatalogPopover skillName={refId} label={label} onRemove={removeSelf}>
+        <button type="button" contentEditable={false} data-routine-chip={kind} className="mx-0.5 cursor-pointer align-baseline outline-none">
+          <ChipBadge kind={kind} label={label} type={type} />
+        </button>
+      </RoutineSkillCatalogPopover>
+    )
   }
 
   return (

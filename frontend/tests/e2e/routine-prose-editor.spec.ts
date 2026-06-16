@@ -66,6 +66,69 @@ test("author a routine with variable and skill chips, set a type, and save", asy
   expect(orderSlot?.type).toBe("date");
 });
 
+test("a skill chip opens an authoring catalog popover with typed ports and outcomes", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineUpdates: [],
+    routineSkillCatalog: [
+      {
+        skillName: "refund",
+        displayName: "Issue refund",
+        description: "Checks eligibility and starts a refund workflow.",
+        inputs: [
+          { key: "order_id", type: "text", required: true, description: "Order identifier" },
+          { key: "refund_type", type: "enum", required: false, enumValues: ["full", "partial"] },
+        ],
+        outcomes: [
+          { name: "approved", displayName: "Approved", status: "approved", description: "Refund can proceed" },
+          { name: "manual_review", displayName: "Manual review", status: "needs_review" },
+        ],
+        hasDataOutputs: false,
+      },
+      {
+        skillName: "lookup_order",
+        displayName: "Lookup order",
+        inputs: [{ key: "email", type: "email", required: true }],
+        outcomes: [{ name: "found", displayName: "Found", status: "found" }],
+        hasDataOutputs: true,
+      },
+    ],
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Write in prose" }).click();
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+  await editor.pressSequentially("Check whether ");
+  await editor.pressSequentially("@refund");
+  await expect(page.getByRole("option", { name: "Skill: refund" })).toBeVisible();
+  await page.getByRole("option", { name: "Skill: refund" }).click();
+
+  await page.locator('[data-routine-chip="skill"]').click();
+  const catalog = page.getByRole("dialog", { name: "Skill catalog for refund" });
+  await expect(catalog).toBeVisible();
+  await expect(catalog).toContainText("Issue refund");
+  await expect(catalog).toContainText("Checks eligibility and starts a refund workflow.");
+
+  await expect(catalog).toContainText("order_id");
+  await expect(catalog).toContainText("text");
+  await expect(catalog).toContainText("required");
+  await expect(catalog).toContainText("refund_type");
+  await expect(catalog).toContainText("enum");
+  await expect(catalog).toContainText("full");
+  await expect(catalog).toContainText("partial");
+
+  await expect(catalog).toContainText("Approved");
+  await expect(catalog).toContainText("approved");
+  await expect(catalog).toContainText("Manual review");
+  await expect(catalog).toContainText("needs_review");
+  await expect(catalog).toContainText("only outcome-based routing is available");
+
+  await expect(catalog.getByRole("tab", { name: "Typed" })).toHaveAttribute("aria-selected", "true");
+  await expect(catalog.getByRole("tab", { name: "Agent decides" })).toBeDisabled();
+});
+
 test("the Bold toolbar button reflects its active state", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, { routineUpdates: [] });

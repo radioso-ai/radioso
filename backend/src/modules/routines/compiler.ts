@@ -1,6 +1,6 @@
 import type { Routine, RoutineGuard, RoutineSkillOutcomeStatus, RoutineSlotSchema, RoutineStep } from "@radioso/conversation-contract";
 
-import type { RoutineDefinition } from "./domain.js";
+import type { RoutineDefinition, RoutineStepMetadata } from "./domain.js";
 import { validateRoutineDefinition } from "./validator.js";
 
 // The compiled routine id IS the definition id. Directive scope tags
@@ -72,6 +72,19 @@ const guardFor = (transition: RoutineDefinition["transitions"][number]): Routine
     default:
       return undefined;
   }
+};
+
+type TypedStepMetadata = Pick<RoutineStepMetadata, "inputBindings" | "outputAssignments" | "mode">;
+
+const typedStepMetadata = (metadata: RoutineStepMetadata): TypedStepMetadata => ({
+  ...(metadata.inputBindings ? { inputBindings: metadata.inputBindings } : {}),
+  ...(metadata.outputAssignments ? { outputAssignments: metadata.outputAssignments } : {}),
+  ...(metadata.mode ? { mode: metadata.mode } : {}),
+});
+
+const authoredMetadata = (metadata: RoutineStepMetadata): Record<string, unknown> => {
+  const { inputBindings: _inputBindings, outputAssignments: _outputAssignments, mode: _mode, ...authorMetadata } = metadata;
+  return authorMetadata;
 };
 
 export const compileRoutineDefinition = (definition: RoutineDefinition): Routine => {
@@ -150,14 +163,16 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
   const steps: RoutineStep[] = [
     ...sortedSteps.map((step): RoutineStep => {
       const collectsSlots = collectedSlotsForStep(step);
+      const authorMetadata = authoredMetadata(step.metadata);
       if (step.kind === "tool") {
         return {
           id: step.stableStepId,
           kind: "skill",
           skillName: step.toolRef ?? undefined,
           action: step.instruction,
+          ...typedStepMetadata(step.metadata),
           metadata: {
-            ...step.metadata,
+            ...authorMetadata,
             authoredKind: step.kind,
             ...(collectsSlots.length > 0 ? { collectsSlots } : {}),
           },
@@ -168,8 +183,8 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
           id: step.stableStepId,
           kind: "action",
           actionType: step.actionType ?? undefined,
-          metadata: Object.keys(step.metadata).length > 0
-            ? { ...step.metadata, authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) }
+          metadata: Object.keys(authorMetadata).length > 0
+            ? { ...authorMetadata, authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) }
             : { authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) },
         };
       }
@@ -177,8 +192,8 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
         id: step.stableStepId,
         kind: "chat",
         action: step.instruction,
-        metadata: Object.keys(step.metadata).length > 0
-          ? { ...step.metadata, authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) }
+        metadata: Object.keys(authorMetadata).length > 0
+          ? { ...authorMetadata, authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) }
           : { authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) },
       };
     }),

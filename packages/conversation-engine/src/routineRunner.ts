@@ -156,6 +156,22 @@ const interpolateSlots = (text: string, variables: Record<string, unknown>): str
   text.replace(SLOT_REFERENCE, (_match, key: string) =>
     Object.prototype.hasOwnProperty.call(variables, key) ? String(variables[key] ?? "") : "");
 
+const assignOutputs = (
+  outputAssignments: Record<string, string> | undefined,
+  outputs: Record<string, unknown> | undefined,
+): Record<string, unknown> => {
+  if (!outputAssignments || !outputs) {
+    return {};
+  }
+  const assigned: Record<string, unknown> = {};
+  for (const [outputField, variableName] of Object.entries(outputAssignments)) {
+    if (Object.prototype.hasOwnProperty.call(outputs, outputField)) {
+      assigned[variableName] = outputs[outputField];
+    }
+  }
+  return assigned;
+};
+
 const hasTypedSlotSchema = (routine: Routine): boolean =>
   Array.isArray(routine.slots) && routine.slots.length > 0;
 
@@ -562,7 +578,10 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         skillName: step.skillName,
         state: skillStateAtStep,
         turn,
+        ...(step.inputBindings ? { inputBindings: step.inputBindings } : {}),
+        ...(step.outputAssignments ? { outputAssignments: step.outputAssignments } : {}),
       });
+      variables = { ...variables, ...assignOutputs(step.outputAssignments, skillResult.outputs) };
       const skillEntry: RoutineTraceStepEntry = {
         stepId: step.id,
         kind: step.kind,
@@ -585,7 +604,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
           step,
           transitions: skillEdges,
           variables,
-          state: skillStateAtStep,
+          state: { ...skillStateAtStep, variables },
           skillResult,
           defaultOnDecline: true,
         });

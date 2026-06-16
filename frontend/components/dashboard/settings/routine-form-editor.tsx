@@ -4,6 +4,7 @@ import { useMemo, useRef } from 'react'
 import { Plus, Trash2, Webhook } from 'lucide-react'
 
 import { RoutineDiagnosticList, RoutineVariableInsertButton } from '@/components/dashboard/settings/routine-editor-controls'
+import { RoutineSkillCatalogPopover } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -187,10 +188,17 @@ export function RoutineFormEditor({
                 </SelectContent>
               </Select>
               {step.kind === 'tool' ? (
-                <Input aria-label={`Step ${stepIndex + 1} tool reference`} value={step.toolRef} disabled={isPublished} onChange={(event) => onChange((current) => ({
-                  ...current,
-                  steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? { ...item, toolRef: event.target.value } : item),
-                }))} />
+                <div className="flex min-w-0 items-center gap-2">
+                  <Input aria-label={`Step ${stepIndex + 1} tool reference`} value={step.toolRef} disabled={isPublished} onChange={(event) => onChange((current) => ({
+                    ...current,
+                    steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? { ...item, toolRef: event.target.value } : item),
+                  }))} />
+                  <RoutineSkillCatalogPopover skillName={step.toolRef} label={step.toolRef || `Step ${stepIndex + 1} skill`}>
+                    <Button type="button" variant="outline" size="sm" className="shrink-0" disabled={!step.toolRef.trim()}>
+                      Ports
+                    </Button>
+                  </RoutineSkillCatalogPopover>
+                </div>
               ) : step.kind === 'action' ? (
                 <Input aria-label={`Step ${stepIndex + 1} action type`} value={step.actionType} disabled={isPublished} onChange={(event) => onChange((current) => ({
                   ...current,

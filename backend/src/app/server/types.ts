@@ -62,7 +62,7 @@ import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { ApplicationModuleCoordinator, ApplicationRouteMount } from "../composition/applicationModule.js";
 import type { PublicChatActionAdvertiserPort, ContactHistoryProviderPort } from "../../modules/chat/contracts/index.js";
 import type { UserRepositoryPort } from "../../db/repositories/userRepository.js";
-import type { SkillCatalogService } from "../../modules/skills/public.js";
+import type { SkillAuthoringCatalog, SkillCatalogService } from "../../modules/skills/public.js";
 import type { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../modules/agents/public.js";
 import type { RoutineDefinitionService, RoutineDraftAssistService } from "../../modules/routines/public.js";
 import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.js";
@@ -149,6 +149,7 @@ export interface AppDependencies {
   evalRunService: EvalRunService;
   platformSettingsService: PlatformSettingsService;
   skillCatalogService: SkillCatalogService;
+  skillAuthoringCatalog: SkillAuthoringCatalog;
   agentService: AgentService;
   authoredDirectiveService: AuthoredDirectiveService;
   routineDefinitionService: RoutineDefinitionService;

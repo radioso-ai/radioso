@@ -199,6 +199,21 @@ export const registerAgentsPaths = (
 
   registry.registerPath({
     method: "get",
+    path: "/api/v1/agents/{agentId}/routine-skill-catalog",
+    tags: ["Agents"],
+    summary: "List routine-authoring skills for an agent",
+    operationId: "listAgentRoutineSkillCatalog",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.AgentParamsSchema },
+    responses: {
+      200: { description: "Routine skill catalog returned", content: { "application/json": { schema: schemas.RoutineSkillCatalogResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
     path: "/api/v1/agents/{agentId}/routines",
     tags: ["Agents"],
     summary: "List routine definitions for an agent",

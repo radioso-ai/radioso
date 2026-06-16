@@ -4,6 +4,7 @@ import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 import { DefaultAllowCapabilityPolicy, type CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../shared/domain/actionCapabilities.js";
 import type { AuditEventInput, AuditPort } from "../audit/contracts/index.js";
+import type { SkillAuthoringCatalog } from "../skills/public.js";
 import {
   routineDefinitionDraftInputSchema,
   type RoutineDefinition,
@@ -72,6 +73,7 @@ export interface RoutineDefinitionServiceOptions {
   webhookDestinations?: {
     existsByIdAndWorkspace(workspaceId: string, destinationId: string): Promise<boolean>;
   };
+  skillAuthoringCatalog?: SkillAuthoringCatalog;
   auditService?: Pick<AuditPort, "record">;
   directiveScopeTags?: {
     repointRoutineScopeTags(input: {
@@ -201,11 +203,13 @@ export class RoutineDefinitionService {
     await this.requireAgent(workspaceId, agentId);
     if ("id" in target) {
       const routine = await this.requireRoutine(agentId, target.id);
-      return this.validatePublishReferences(workspaceId, routine, validateRoutineDefinition(routine));
+      const validation = await this.validateWithAvailableSkills(workspaceId, routine);
+      return this.validatePublishReferences(workspaceId, routine, validation);
     }
     const draft = this.validateInput(target.input);
     const routine = draftDefinitionFromInput(agentId, draft);
-    return this.validatePublishReferences(workspaceId, routine, validateRoutineDefinition(routine));
+    const validation = await this.validateWithAvailableSkills(workspaceId, routine);
+    return this.validatePublishReferences(workspaceId, routine, validation);
   }
 
   async publish(workspaceId: string, agentId: string, id: string): Promise<RoutineDefinitionPublishResult> {
@@ -214,7 +218,7 @@ export class RoutineDefinitionService {
     if (routine.status !== "draft") {
       throw badRequest("Only draft routine definitions can be published");
     }
-    const validation = validateRoutineDefinition(routine);
+    const validation = await this.validateWithAvailableSkills(workspaceId, routine);
     if (!validation.ok) {
       return { rejected: true, validation };
     }
@@ -269,7 +273,7 @@ export class RoutineDefinitionService {
     });
     return {
       routine: published,
-      validation: validateRoutineDefinition(published),
+      validation: await this.validateWithAvailableSkills(workspaceId, published),
       directiveScopeOrphans,
     };
   }
@@ -356,6 +360,23 @@ export class RoutineDefinitionService {
       throw notFound("Routine definition not found");
     }
     return routine;
+  }
+
+  private async validateWithAvailableSkills(
+    workspaceId: string,
+    routine: RoutineDefinition,
+  ): Promise<RoutineValidationResult> {
+    if (!this.options.skillAuthoringCatalog) {
+      return validateRoutineDefinition(routine);
+    }
+    const descriptors = await this.options.skillAuthoringCatalog.listForAgent({
+      workspaceId,
+      agentId: routine.agentId,
+    });
+    return validateRoutineDefinition(routine, {
+      availableSkillNames: new Set(descriptors.map((descriptor) => descriptor.skillName)),
+      skillDescriptors: new Map(descriptors.map((descriptor) => [descriptor.skillName, descriptor])),
+    });
   }
 
   private async recordLifecycleAudit(

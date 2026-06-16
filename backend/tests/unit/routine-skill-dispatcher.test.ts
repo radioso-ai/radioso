@@ -155,6 +155,31 @@ describe("RoutineSkillExecutorDispatcher", () => {
     expect(captured?.collected).toEqual({ email: "a@b.com", duration: 30 });
   });
 
+  it("resolves typed input bindings into executor collected params when provided", async () => {
+    let captured: SkillInvocation | undefined;
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([skillNamed("book_meeting")]),
+      registryWith(
+        settledExecutor({ status: "completed" } as unknown as SkillOutcome, (invocation) => {
+          captured = invocation;
+        }),
+      ),
+    );
+
+    await dispatcher.dispatch({
+      skillName: "book_meeting",
+      state: routineState({ customerEmail: "a@b.com", ignored: "not forwarded" }),
+      inputBindings: {
+        email: { kind: "variableRef", ref: "customerEmail" },
+        duration: { kind: "literal", value: 30 },
+        optional: { kind: "variableRef", ref: "missing" },
+      },
+      turn,
+    });
+
+    expect(captured?.collected).toEqual({ email: "a@b.com", duration: 30 });
+  });
+
   it("threads the turn and agent id into the executor context", async () => {
     let captured: SkillInvocation | undefined;
     const dispatcher = new RoutineSkillExecutorDispatcher(

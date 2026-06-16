@@ -23,6 +23,7 @@ import { RoutineDiagnosticList } from '@/components/dashboard/settings/routine-e
 import { RoutineFormEditor } from '@/components/dashboard/settings/routine-form-editor'
 import { RoutineProseEditor } from '@/components/dashboard/settings/routine-prose-editor'
 import { RoutineProseTab } from '@/components/dashboard/settings/routine-prose-tab'
+import { RoutineSkillCatalogProvider } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
 import { Badge } from '@/components/ui/badge'
@@ -810,7 +811,7 @@ function RoutineEditorScreen({
           Loading routine...
         </div>
       ) : (
-        <>
+        <RoutineSkillCatalogProvider agentId={agentId}>
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
             <div className="space-y-1">
               <Label htmlFor="routineName">Name</Label>
@@ -957,7 +958,7 @@ function RoutineEditorScreen({
               </>
             ) : null}
           </div>
-        </>
+        </RoutineSkillCatalogProvider>
       )}
     </div>
   )

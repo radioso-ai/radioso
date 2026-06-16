@@ -10,6 +10,7 @@ import {
 } from "../skills/public.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import { traceOperation } from "../../shared/observability/tracing/operations.js";
+import { resolveSkillArguments } from "./skillArgumentResolver.js";
 
 export type RoutineCapabilityGate = (capability: string) => Promise<{ allowed: boolean; reason?: string }>;
 
@@ -88,7 +89,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
       name: "routine.skill.dispatch",
       attributes: routineDispatchTraceAttributes(skillName, state),
       run: async () => {
-        const result = await this.dispatchInner({ skillName, state, turn });
+        const result = await this.dispatchInner(input);
         this.recordDispatchMetric(result);
         return result;
       },
@@ -99,7 +100,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
   private async dispatchInner(
     input: Parameters<ConversationRoutineSkillDispatcher["dispatch"]>[0],
   ): Promise<RoutineSkillResult> {
-    const { skillName, state, turn } = input;
+    const { skillName, state, turn, inputBindings } = input;
     // A routine runs on a resumable state machine, and the runner resolves this
     // BEFORE the turn is persisted — so throwing here would 500 the turn AND leave
     // the routine pinned at this step, re-throwing on every subsequent turn (a
@@ -123,12 +124,16 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
     }
 
     let result: SkillDispatchResult;
+    const collected = inputBindings && Object.keys(inputBindings).length > 0
+      ? resolveSkillArguments(inputBindings, state.variables ?? {})
+      : state.variables ?? {};
     try {
       result = await executor.dispatch({
         skill,
-        // The routine's captured slots are the exposed params the executor fills
-        // from; any bound params (e.g. an MCP channel) are merged inside it.
-        collected: state.variables ?? {},
+        // Typed steps resolve authored input bindings first. During the FR-019
+        // compatibility window, untyped/legacy steps still pass captured variables
+        // through so external-skill slotBinding routing keeps working.
+        collected,
         context: { turn, agentId: turn.agent.id, ...(this.workspaceId ? { workspaceId: this.workspaceId } : {}) },
         emit: noopSkillEmitPort,
       });

@@ -83,6 +83,32 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
 
   const sortedSteps = [...definition.steps].sort((left, right) => left.ordinal - right.ordinal);
   const sortedTerminals = [...definition.terminals].sort((left, right) => left.ordinal - right.ordinal);
+
+  // Auto-gate slot-collection steps. A step that asks for a {{slot.x}} must run the LLM
+  // selector to capture the answer and wait for it — the selector is the only place
+  // `variables` are extracted (runner) and it runs only for steps with an `llm` edge.
+  // Authoring tools wire a plain sequential step list with bare `default` edges, which
+  // the runner advances unconditionally and WITHOUT the selector, so the asked-for slot
+  // is never captured (the step is even skipped on the activation turn). When such a
+  // step's ONLY exits are `default` edges, promote them to `llm` (selector-running)
+  // transitions. A step that already carries a structured (`slot_filled`/`counter`/
+  // `field`) or `llm` exit is deliberately shaped and left exactly as authored.
+  const slotsCollectedByStep = new Map<string, string[]>(
+    sortedSteps
+      .map((step): [string, string[]] => [step.stableStepId, collectedSlotKeys(step.instruction)])
+      .filter(([, collected]) => collected.length > 0),
+  );
+  const autoGatedStepIds = new Set(
+    [...slotsCollectedByStep.keys()].filter((stepId) => {
+      const outgoing = definition.transitions.filter((transition) => transition.fromStep === stepId);
+      return outgoing.length > 0 && outgoing.every((transition) => transition.guardKind === "default");
+    }),
+  );
+  // Slot-aware condition for the promoted edge, mirroring authored llm guardText so the
+  // selector can judge "did the user answer?" by meaning (no keyword matching).
+  const autoGateCondition = (collected: string[]): string =>
+    `The user provided ${collected.map((slot) => `{{slot.${slot}}}`).join(" and ")}.`;
+
   const slots: RoutineSlotSchema[] = [...definition.slots]
     .sort((left, right) => left.ordinal - right.ordinal)
     .map((slot) => ({
@@ -145,6 +171,15 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
     transitions: [...definition.transitions]
       .sort((left, right) => left.ordinal - right.ordinal)
       .map((transition) => {
+        if (autoGatedStepIds.has(transition.fromStep)) {
+          // Promote the bare default edge to a selector-running (llm) transition: no
+          // structured guard, slot-aware condition. Extraction + gating now happen.
+          return {
+            from: transition.fromStep,
+            to: transition.toRef,
+            condition: autoGateCondition(slotsCollectedByStep.get(transition.fromStep) ?? []),
+          };
+        }
         const guard = guardFor(transition);
         return {
           from: transition.fromStep,

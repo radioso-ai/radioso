@@ -108,6 +108,71 @@ describe("routine definition compiler and validator", () => {
     ]);
   });
 
+  it("auto-gates a slot-collection step whose only exit is a default edge so the selector runs", () => {
+    // Authoring tools wire a plain numbered step list with bare `default` edges. The
+    // runner advances those unconditionally and WITHOUT the selector, so the asked-for
+    // slot is never captured. The compiler promotes such an edge to an llm (selector-
+    // running) transition that both extracts the slot and waits for the user's answer.
+    const definition: RoutineDefinition = {
+      ...baseDefinition(),
+      slots: [
+        { stableSlotId: "slot_email", key: "email", type: "email", required: true, description: null, ordinal: 0 },
+      ],
+      steps: [
+        { stableStepId: "ask_email", kind: "chat", instruction: "Ask for {{slot.email}}.", toolRef: null, ordinal: 0, metadata: {} },
+        { stableStepId: "wrap", kind: "chat", instruction: "Thank the user.", toolRef: null, ordinal: 1, metadata: {} },
+      ],
+      transitions: [
+        { fromStep: "ask_email", toRef: "wrap", guardKind: "default", guardText: null, ordinal: 0 },
+        { fromStep: "wrap", toRef: "done", guardKind: "llm", guardText: "The user acknowledged.", ordinal: 1 },
+      ],
+      terminals: [
+        { stableStepId: "done", kind: "complete", instruction: "Confirm completion.", ordinal: 0 },
+      ],
+    };
+
+    const routine = compileRoutineDefinition(definition);
+    const collectEdge = routine.transitions.find((transition) => transition.from === "ask_email");
+
+    // Promoted to a selector-running transition: no structured guard, slot-aware condition.
+    expect(collectEdge?.guard).toBeUndefined();
+    expect(collectEdge?.condition).toContain("{{slot.email}}");
+    // A non-collecting step keeps whatever it was authored with.
+    expect(routine.transitions.find((transition) => transition.from === "wrap")).toMatchObject({
+      condition: "The user acknowledged.",
+    });
+  });
+
+  it("leaves a default edge intact when the collection step also has a structured or llm exit", () => {
+    // The additive-guards fixture (ask_email with slot_filled + counter + default) is a
+    // deliberately structured step — its `default` fallback must survive compilation.
+    const definition: RoutineDefinition = {
+      ...baseDefinition(),
+      slots: [
+        { stableSlotId: "slot_email", key: "email", type: "email", required: true, description: null, ordinal: 0 },
+      ],
+      steps: [
+        { stableStepId: "ask_email", kind: "chat", instruction: "Ask for {{slot.email}}.", toolRef: null, ordinal: 0, metadata: {} },
+      ],
+      transitions: [
+        { fromStep: "ask_email", toRef: "done", guardKind: "slot_filled", guardText: "{{slot.email}}", ordinal: 0 },
+        { fromStep: "ask_email", toRef: "handoff", guardKind: "default", guardText: null, ordinal: 1 },
+      ],
+      terminals: [
+        { stableStepId: "done", kind: "complete", instruction: "Confirm completion.", ordinal: 0 },
+        { stableStepId: "handoff", kind: "handoff", instruction: "Route to a human.", ordinal: 1 },
+      ],
+    };
+
+    const routine = compileRoutineDefinition(definition);
+    expect(routine.transitions.find((transition) => transition.to === "handoff")).toEqual({
+      from: "ask_email",
+      to: "handoff",
+      condition: "default",
+      guard: { kind: "default" },
+    });
+  });
+
   it("compiles completion export into the routine contract", () => {
     const routine = compileRoutineDefinition({
       ...baseDefinition(),

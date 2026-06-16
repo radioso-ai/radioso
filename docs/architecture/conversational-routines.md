@@ -60,6 +60,17 @@ are resolved without a model call, so the flow is predictable:
 Like directive conditions, an `llm` guard is never a keyword list. Radioso is
 multilingual; the model judges by meaning, in any language.
 
+Slot filling happens only inside the `llm` selector, and the selector runs only
+for a step that has an `llm` exit. So a step that asks for a slot but whose only
+exits are `default` would advance without ever capturing the value. To prevent
+that, the compiler auto-gates collection steps: when a step references a
+`{{slot.x}}` and all of its outgoing edges are `default`, it promotes those edges
+to `llm` (a selector-running transition with a slot-aware condition). The stored
+draft keeps the `default` edge; only the compiled graph changes, and the change
+applies on the next load, so existing published routines pick it up without a
+re-publish. A step that already has a structured (`slot_filled`/`counter`/
+`outcome`/`field`) or `llm` exit is deliberately shaped and left untouched.
+
 ## Engineer fixture notation
 
 Routine document fixtures use a compact text notation for golden tests,

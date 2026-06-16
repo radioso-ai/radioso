@@ -113,23 +113,25 @@ Related docs:
 
 ## Agent Skill Definitions (shared spine)
 
-External MCP skills (`externalSkills`) and customer email skills (`customerEmail`)
-share one persistence spine: `agent_skills` holds the common columns and a single
-`@mention` namespace per agent enforced **across kinds**, with per-kind detail
-tables (`external_skill_details`, `email_skill_details`) that keep the typed
-connection foreign key and typed config. Each module's repository port and record
-shape are unchanged, so its service, executor, routes, and export/import are
-unaffected — only the SQL is joined (spine + detail via CTEs).
+External MCP skills (`externalSkills`), customer email skills (`customerEmail`),
+and webhook skills (`webhookSkills`) share one persistence spine: `agent_skills`
+holds the common columns, a single `@mention` namespace per agent enforced
+**across kinds**, generic `target_type` / `target_id` references, and a JSON
+`config` object. Database triggers enforce the current target references for MCP
+connections, customer email connections, and webhook destinations. Each module's
+repository port and record shape own kind-specific config validation, so future
+config-backed skill kinds should not add a table or migration unless they need
+genuinely relational state outside the shared skill definition.
 
 OAuth connection/token lifecycle is provider-neutral in `integrationOauth` and is
 consumed by both MCP and customer email.
 
 Public surfaces and key files:
 
-- `backend/src/modules/agentSkills/public.ts` (kind vocabulary + spine type)
+- `backend/src/modules/agentSkills/public.ts` (spine vocabulary + shared type)
 - `backend/src/modules/integrationOauth/public.ts` (OAuth lifecycle)
-- `backend/src/db/repositories/externalSkillDefinitionRepository.ts`, `emailSkillDefinitionRepository.ts`
-- `backend/src/db/migrations/099_agent_skills_spine.sql`, `100_email_skills_into_spine.sql`
+- `backend/src/db/repositories/externalSkillDefinitionRepository.ts`, `emailSkillDefinitionRepository.ts`, `webhookSkillDefinitionRepository.ts`
+- `backend/src/db/migrations/099_agent_skills_spine.sql`, `100_email_skills_into_spine.sql`, `101_agent_skills_generic_targets.sql`
 
 Focused checks (real Postgres via `INTEGRATION_DATABASE_URL`):
 

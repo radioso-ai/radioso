@@ -70,6 +70,7 @@ import {
   StaticCustomerEmailProviderRegistry,
   customerEmailOauthProviderIds,
 } from "../../modules/customerEmail/public.js";
+import { WebhookSkillDefinitionService } from "../../modules/webhookSkills/public.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -164,6 +165,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     repositories,
     assertPublicUrl: assertPublicWebsiteUrl,
+  });
+  const webhookSkillDefinitionService = new WebhookSkillDefinitionService({
+    repository: repositories.webhookSkillDefinitionRepository,
+    destinations: webhookDestinations,
   });
   // Build the registry first (no resolver yet) so we can compute supported embedding
   // models; embedding stays env-default and doesn't need the workspace-aware resolver.
@@ -275,6 +280,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     customerEmailConnectionRepository: repositories.customerEmailConnectionRepository,
     emailSkillDefinitionRepository: repositories.emailSkillDefinitionRepository,
     emailSkillActivityRepository: repositories.emailSkillActivityRepository,
+    webhookSkillDefinitionRepository: repositories.webhookSkillDefinitionRepository,
     retrievalPipeline: retrieval.retrievalPipeline,
     usageEventRecorder: infrastructure.usageEventRecorder,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
@@ -445,6 +451,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     customerEmailOAuthService,
     customerEmailConnectionService,
     emailSkillDefinitionService,
+    webhookSkillDefinitionService,
     emailSkillActivityRepository: repositories.emailSkillActivityRepository,
     mcpConnectionService,
     externalSkillDefinitionService,

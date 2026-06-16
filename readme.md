@@ -1,8 +1,8 @@
-# <img src="./frontend/public/radioso-icon.svg" alt="Radioso logo" width="44" align="center" /> Radioso (early preview)
-
+# Radioso
+# <img src="./frontend/public/radioso-icon.svg" alt="Radioso logo" width="44" align="center" />
 ## Self-hosted conversational agents, grounded in your data and following your rules.
 
-You can wire up LangChain and build a rocketship. You can get a PhD in dragging nodes around a low-code canvas. Or you can run one script, and get a conversational agent that answers from what you actually gave it, follows the flows you define, and behaves the way you tell it to — self-hosted, multi-provider, API-first, today.
+You can wire up LangChain and build a rocketship. You can get a degree in dragging nodes around a low-code canvas. Or you can run one script, and get a conversational agent that answers from what you actually gave it, follows the flows you define, and behaves the way you tell it to — self-hosted, multi-provider, API-first, today.
 
 Every message runs through a plain loop: read it, decide what the turn needs, do that, write the reply. The interesting part is what you plug into the loop — grounded retrieval, your own behavioral rules, multi-turn flows — and that is what the rest of this document is about.
 
@@ -165,7 +165,7 @@ curl -sS -b cookies.txt \
 
 Each workspace payload includes both `id` and `publicRouteKey`. Use `id` for API calls that require a workspace identifier. Use `publicRouteKey` when you need to inspect or build the canonical dashboard URL. If a workspace token, public chat link, or Enterprise embed token is ever exposed, rotate it from the settings screen instead of relying on disable-and-re-enable toggles.
 
-**Agents, assistant, and retrieval.** Use agents to configure knowledge-assistant identity, instructions, source scope, retrieval participation, per-skill settings, and public surface settings. Chat calls use the workspace default agent unless `agentId` is provided. Retrieval configuration lives on the agent `retrieval.answer` skill through `skillSettings["retrieval.answer"]`; omitted fields inherit system/model defaults. Multi-step **routines** are authored per agent under `/api/v1/agents/<agentId>/routines` — create or edit a draft, `POST .../validate`, then `POST .../publish`; see [Authoring routines](./docs/authoring-routines.md).
+**Agents, assistant, and retrieval.** Use agents to configure agent identity, instructions, source scope, retrieval participation, per-skill settings, and public surface settings. Chat calls use the workspace default agent unless `agentId` is provided. Retrieval configuration lives on the agent `retrieval.answer` skill through `skillSettings["retrieval.answer"]`; omitted fields inherit system/model defaults. Multi-step **routines** are authored per agent under `/api/v1/agents/<agentId>/routines` — create or edit a draft, `POST .../validate`, then `POST .../publish`; see [Authoring routines](./docs/authoring-routines.md).
 
 ```bash
 curl -sS \

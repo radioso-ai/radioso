@@ -342,7 +342,7 @@ function FirstRunExperienceContent({ accountId, onboarding }: FirstRunExperience
           <div className="mb-5 space-y-1.5">
             <h1 className="text-[20px] font-medium text-foreground">Get started with Radioso</h1>
             <p className="text-sm leading-6 text-muted-foreground">
-              Upload documents and Radioso will let you ask questions grounded in your content.
+              Upload a document to ground your agent, then start the conversation.
             </p>
           </div>
 

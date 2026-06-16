@@ -1,0 +1,59 @@
+---
+title: What agents can do
+description: Beyond answers — agents steer with directives, run multi-step routines, take action, and hand off to a person.
+---
+
+# What an agent can do
+
+An agent does more than answer a question. It steers its own behavior with directives, runs multi-step routines across turns, takes action through your tools, and hands off to a person when it should. Every part of this is grounded in your data and recorded in the turn trace.
+
+This page explains the four capabilities and how they fit together.
+
+## Answer from your data
+
+The baseline. When the agent has evidence in your documents, it answers and cites the source. When it does not, it says so. See [Grounded answers](/why-radioso/grounded-answers) for how grounding works and how to verify it.
+
+## Steer behavior with directives
+
+A directive is a standing rule. It pairs a condition with how the agent should behave when that condition holds.
+
+> When the customer sounds anxious, slow down and confirm before acting.
+
+A directive never acts on its own. It shapes tone, judgment, and approach — it steers the reply, it does not perform a task. Directives are always on. Each turn, the matching ones are applied by meaning, not by a keyword list, so the same rule works across every language and surface.
+
+Every directive that applies is recorded in the turn trace, with the reason it matched.
+
+## Run multi-step routines
+
+A routine is a flow the agent runs across turns. It can collect the values it needs, call a skill, branch on what happened, and finish or hand off to a person.
+
+You author a routine in plain language in the agent's **Routines** settings. Write the steps the way you would explain them to a teammate. Where a step needs structure, drop in a chip:
+
+- a **variable** to collect (`@email`, `@order_id`), stored as a typed value
+- a **skill** to call as a tool step
+- a **condition** to branch on, decided in code or by the model
+- an **end** or a **handoff** to a person
+
+The platform compiles that draft into a graph the engine runs and resumes turn to turn. There is no canvas to draw and no redeploy: you **validate**, then **publish**, and new conversations use the published version. Conversations already running stay on the version they started on.
+
+A simple example — a return request:
+
+1. Collect the order id.
+2. Check how old the order is.
+3. If it is within the return window, start the refund. Otherwise, hand off to a person.
+
+To author one, see the in-app **Routines** editor, or the authoring API under `/api/v1/agents/{agentId}/routines` ([Agents and skills](/api/agents-and-skills)).
+
+## Take action and hand off
+
+A routine is where talking turns into doing:
+
+- **Call a tool.** A tool step dispatches a skill — for example, a skill backed by an external system over MCP — and the routine branches on the result.
+- **Fire a webhook on completion.** A routine can post a signed payload to a workspace webhook destination when it finishes, so a downstream system picks up the result.
+- **Hand off to a person.** A handoff ends the routine by escalating to a human. The built-in "contact a human" flow — collect an email, collect a message, submit, confirm — is itself an authored routine.
+
+These run through an asynchronous action outbox: actions are dispatched, retried on transient failure, and recorded.
+
+## See why it did what it did
+
+Directives, skills, and routines share one debug surface. Each directive match, each skill dispatch, and each routine step is recorded in the turn trace with the reason it applied. If the agent does the wrong thing, you can see which rule steered it, which tool it called, and which step it was on — the same way you inspect a grounded answer.

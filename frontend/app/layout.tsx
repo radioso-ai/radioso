@@ -17,8 +17,8 @@ const fraunces = Fraunces({
 })
 
 export const metadata: Metadata = {
-  title: 'radioso - Knowledge Agents Platform',
-  description: 'A knowledge agents platform for grounded document Q&A',
+  title: 'Radioso — agents that talk to your customers and get things done',
+  description: 'Self-hosted conversational agents that talk to your users, follow your procedures, and answer from your data.',
   icons: {
     shortcut: '/favicon.ico',
     icon: '/radioso-icon.svg',

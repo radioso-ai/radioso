@@ -501,6 +501,96 @@ describe("routine definition compiler and validator", () => {
     expect((await engine.processTurn(input("Pricing"))).response.answer).toBe("done");
     expect(rows.get("conv_1")).toBeUndefined();
   });
+
+  it("auto-gated bare-default collection step routes through the selector and captures the slot at runtime", async () => {
+    // The behaviour the compile-time auto-gate exists to deliver, proven through the
+    // real runtime. The collection step is authored with a bare `default` edge; before
+    // the auto-gate, the runner advanced past it via the no-selector fast path, so the
+    // slot was never captured and the wait was skipped. Drive the compiled routine
+    // through the engine and assert the opposite: it waits, the selector runs, and the
+    // slot lands in state.
+    const definition: RoutineDefinition = {
+      ...baseDefinition(),
+      slots: [
+        { stableSlotId: "slot_email", key: "email", type: "email", required: true, description: null, ordinal: 0 },
+      ],
+      steps: [
+        { stableStepId: "ask_email", kind: "chat", instruction: "Ask for {{slot.email}}.", toolRef: null, ordinal: 0, metadata: {} },
+        { stableStepId: "wrap", kind: "chat", instruction: "Thank the user.", toolRef: null, ordinal: 1, metadata: {} },
+      ],
+      transitions: [
+        { fromStep: "ask_email", toRef: "wrap", guardKind: "default", guardText: null, ordinal: 0 },
+        { fromStep: "wrap", toRef: "done", guardKind: "llm", guardText: "The user acknowledged.", ordinal: 1 },
+      ],
+      terminals: [
+        { stableStepId: "done", kind: "complete", instruction: "Confirm completion.", ordinal: 0 },
+      ],
+    };
+    const routine = compileRoutineDefinition(definition);
+    const registry = new RoutineRegistry([{ routine, trigger: { description: "Start test routine", priority: 0 } }]);
+    const rows = new Map<string, RoutineState>();
+    const store: ConversationRoutineStore = {
+      loadActive: async ({ sessionId }) => rows.get(sessionId) ?? null,
+      save: async (state) => { rows.set(state.sessionId, state); },
+      clear: async ({ sessionId }) => { rows.delete(sessionId); },
+    };
+    // The selector is the only place variables are extracted; advance off the collection
+    // step only once the user actually supplies an email. A bare-default (non-promoted)
+    // edge would never reach this function.
+    let askEmailSelectorCalls = 0;
+    const selector: ConversationRoutineNextStepSelector = {
+      async select({ currentStep, turn }) {
+        const content = turn.inputEvent.content;
+        if (currentStep.id === "ask_email") {
+          askEmailSelectorCalls += 1;
+          if (!content.includes("@")) return { nextStepId: "ask_email" };
+          return { nextStepId: "wrap", variables: { email: content } };
+        }
+        if (currentStep.id === "wrap") return { nextStepId: "done" };
+        return { nextStepId: currentStep.id };
+      },
+    };
+    const renderer: ConversationRoutineStepRenderer = {
+      render: async ({ step }) => ({ answer: step.id }),
+    };
+    const events: ConversationEvent[] = [];
+    const input = (content: string): ProcessTurnInput => ({
+      agent: { id: "agent_1" },
+      sessionId: "conv_email",
+      inputEvent: { kind: "message", content },
+      skills: [],
+      directives: [],
+      stores: {
+        loadHistory: async () => [],
+        appendEvent: async (event) => { events.push(event); },
+      },
+      modelGateway: { complete: async () => ({ text: "" }) },
+      directiveMatcher: { match: async () => [] },
+      selector: { select: async () => ({ selected: [], reason: "none" }) },
+      dispatcher: { dispatch: async () => { throw new Error("unexpected normal dispatch"); } },
+      composer: { compose: async () => ({ answer: "normal" }) },
+      routineStore: store,
+      routineRunner: new DefaultRoutineRunner([routine], selector, renderer),
+      routineActivator: registry.activator({
+        complete: async () => ({
+          text: JSON.stringify({ matches: [{ routineId: routine.id, confidence: 0.95 }] }),
+        }),
+      }),
+    });
+
+    const engine = createConversationEngine();
+    // Activation turn carries no email: the step WAITS (the pre-fix default fast path
+    // would have skipped straight to "wrap").
+    expect((await engine.processTurn(input("start"))).response.answer).toBe("ask_email");
+    // The answer turn advances, and the slot is captured into routine state.
+    expect((await engine.processTurn(input("alex@example.com"))).response.answer).toBe("wrap");
+    expect(rows.get("conv_email")?.variables).toEqual({ email: "alex@example.com" });
+    // The collection step was routed through the selector — the no-selector default fast
+    // path would have left this counter at 0.
+    expect(askEmailSelectorCalls).toBeGreaterThanOrEqual(2);
+    expect((await engine.processTurn(input("thanks"))).response.answer).toBe("done");
+    expect(rows.get("conv_email")).toBeUndefined();
+  });
 });
 
 describe("routine field guards (deterministic branch-on-value) and provenance", () => {

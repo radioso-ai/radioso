@@ -85,8 +85,9 @@ describeIfDatabase("external skills services (postgres)", () => {
     `);
     await client.query(await readFile(path.join(testMigrationsPath, "093_external_skills.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "094_external_skills_oauth_flow.sql"), "utf8"));
-    // 099 re-homes external_skill_definitions onto the shared agent_skills spine.
+    // 099 creates the shared spine; 101 moves detail config onto generic target/config columns.
     await client.query(await readFile(path.join(testMigrationsPath, "099_agent_skills_spine.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "101_agent_skills_generic_targets.sql"), "utf8"));
     await client.query(`INSERT INTO workspaces (id) VALUES ($1)`, [workspaceId]);
     await client.query(`INSERT INTO agents (id, workspace_id) VALUES ($1, $2)`, [agentId, workspaceId]);
 

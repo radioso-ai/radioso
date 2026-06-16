@@ -60,16 +60,39 @@ are resolved without a model call, so the flow is predictable:
 Like directive conditions, an `llm` guard is never a keyword list. Radioso is
 multilingual; the model judges by meaning, in any language.
 
-Slot filling happens only inside the `llm` selector, and the selector runs only
-for a step that has an `llm` exit. So a step that asks for a slot but whose only
-exits are `default` would advance without ever capturing the value. To prevent
-that, the compiler auto-gates collection steps: when a step references a
-`{{slot.x}}` and all of its outgoing edges are `default`, it promotes those edges
-to `llm` (a selector-running transition with a slot-aware condition). The stored
-draft keeps the `default` edge; only the compiled graph changes, and the change
-applies on the next load, so existing published routines pick it up without a
-re-publish. A step that already has a structured (`slot_filled`/`counter`/
-`outcome`/`field`) or `llm` exit is deliberately shaped and left untouched.
+Slot filling happens inside the `llm` selector, which extracts every declared
+slot the user provided this turn. The selector runs for any step with an `llm`
+exit. Two mechanisms make sure a step that *asks* for a slot still captures it
+even when its branches are deterministic.
+
+First, which step *collects* a slot: a slot is collected by the **first chat step**
+(in ordinal order) whose instruction references `{{slot.x}}`. A later reference is a
+*use* (interpolation) — for example a redirection step that says "looking forward to
+your reply, {{slot.name}}". Only the collecting step is auto-gated or fast-forwarded;
+a step that merely uses a filled slot still renders its message rather than being
+skipped. Only `chat` steps count — a tool/action step that interpolates a slot does
+not own it. Caveat: "first" is ordinal order, not execution order. In a branching
+routine where two branches each ask the same slot, only the lower-ordinal branch is
+treated as collecting it; if the other branch runs, it won't auto-gate/fast-forward
+for that slot. This is fine for the linear common case; branch-specific collection of
+the same slot needs an explicit `llm`/structured edge on the other branch.
+
+- **Auto-gating (compiler).** When a collection step's outgoing edges are all
+  `default`, the compiler promotes those edges to `llm` (a selector-running
+  transition with a slot-aware condition). The stored draft keeps the `default`
+  edge; only the compiled graph changes, and the change applies on the next load,
+  so existing published routines pick it up without a re-publish.
+- **Extraction-only pass (runner).** A collection step can branch on the slot it
+  just asked for — for example, "ask for budget, then route by a `field` guard on
+  `budget`." Such a step has no `llm` edge, so auto-gating leaves it alone. Before
+  evaluating that step's deterministic guards, the runner runs the selector once
+  purely to capture variables, merges them, and *then* lets the `field`/`counter`/
+  `slot_filled` guard decide the branch in code. So the branch sees the value the
+  user just gave, and the LLM never chooses the edge.
+
+The net rule: a slot-collection step always extracts before it advances. A step
+that does not collect a slot and is deliberately shaped (a structured or `llm`
+exit) is left exactly as authored.
 
 ## Engineer fixture notation
 
@@ -149,6 +172,17 @@ A routine keeps its position and captured values in session state until it
 completes or expires. If an action cannot run — for example, the agent no longer
 holds its capability — the turn fails rather than confirming a success that did
 not happen.
+
+Each routine turn records a step-by-step trace that hangs off the turn's
+`Routine` spine stage as a `routine` sub-trace, the way retrieval hangs its own
+trace off the dispatch stage. The conversation debug panel renders it as a
+timeline: which step the turn resumed on, whether it advanced, re-asked,
+fast-forwarded, dispatched a tool, or rendered, plus which slot *keys* were
+captured this turn and which are now filled. The trace carries slot names only —
+never captured values, which may be personal data — so it is safe to show in the
+debug surface. This is the first place to look when a routine "isn't filling
+slots": a step that re-asks without a captured key means the value was not
+extracted from that turn's message.
 
 ## Activation and clarification
 

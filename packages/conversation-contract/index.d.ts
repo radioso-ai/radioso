@@ -704,6 +704,57 @@ export interface ConversationRoutineStore {
   clear(input: { sessionId: string }): Promise<void>;
 }
 
+/**
+ * What happened to one step as the runner walked the graph this turn. A debug-only
+ * record: it carries slot *keys*, never captured *values* (which may be PII).
+ */
+export interface RoutineTraceStepEntry {
+  stepId: string;
+  kind: RoutineStep["kind"];
+  /**
+   * - `resumed`: the step the turn started on.
+   * - `advanced`: moved onto this step from the previous one.
+   * - `reasked`: stayed on the step because it isn't satisfied yet (a re-ask).
+   * - `fast_forwarded`: a satisfied slot-collection step skipped without re-asking.
+   * - `skill_dispatched`: a skill (tool) step ran.
+   * - `action_emitted`: an action step emitted a fire-and-forget request.
+   * - `rendered`: the step whose reply the turn rendered.
+   */
+  event:
+    | "resumed"
+    | "advanced"
+    | "reasked"
+    | "fast_forwarded"
+    | "skill_dispatched"
+    | "action_emitted"
+    | "rendered";
+  /** Declared slot keys captured at this step this turn (names only — never values). */
+  capturedSlotKeys?: string[];
+  /** Whether the LLM next-step selector ran for this step's edges. */
+  viaSelector?: boolean;
+  skillName?: string;
+  skillStatus?: string;
+}
+
+/**
+ * A step-by-step record of one routine turn's traversal, surfaced to the debug panel
+ * as a {@link CapabilitySubTrace} (`namespace: "routine"`). Names and structure only —
+ * no slot values, prompts, or completions.
+ */
+export interface RoutineRunTrace {
+  routineId: string;
+  /** Step the turn resumed on. */
+  startStepId: string;
+  /** Step the turn ultimately rendered. */
+  landedStepId: string;
+  terminalKind?: "complete" | "handoff" | "action";
+  /** Declared slot keys newly captured this turn (names only). */
+  capturedSlotKeys: string[];
+  /** Declared slot keys filled after this turn (names only). */
+  filledSlotKeys: string[];
+  steps: RoutineTraceStepEntry[];
+}
+
 export interface ConversationRoutineResumeResult {
   response: RenderableTurn;
   /** The next state to persist; `null` clears it (the routine reached a terminal step). */
@@ -713,6 +764,8 @@ export interface ConversationRoutineResumeResult {
   outcomes?: TurnOutcome[];
   /** Fire-and-forget side effects the routine emitted this turn, for the host to persist. */
   actions?: RoutineActionRequest[];
+  /** Step-by-step traversal record for the debug panel (omitted on a yield). */
+  trace?: RoutineRunTrace;
   /**
    * When true, the routine *declined* this turn: the user's message was off-topic for
    * the routine, so the engine yields to normal answering and leaves the routine's

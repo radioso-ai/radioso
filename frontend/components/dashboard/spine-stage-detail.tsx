@@ -51,6 +51,9 @@ const asNumber = (value: unknown): number | undefined =>
 
 const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : [])
 
+const asStringArray = (value: unknown): string[] =>
+  asArray(value).filter((entry): entry is string => typeof entry === 'string')
+
 function StageHeader({ stage }: { stage: ConversationTraceStage }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -654,6 +657,158 @@ function ComposeStageDetail({
   )
 }
 
+/** One step's outcome as the runner walked the routine graph this turn. */
+export interface RoutineTraceStepView {
+  stepId: string
+  kind: string
+  event: string
+  capturedSlotKeys: string[]
+  viaSelector: boolean
+  skillName?: string
+  skillStatus?: string
+}
+
+export interface RoutineRunTraceView {
+  startStepId?: string
+  landedStepId?: string
+  terminalKind?: string
+  capturedSlotKeys: string[]
+  filledSlotKeys: string[]
+  steps: RoutineTraceStepView[]
+}
+
+/**
+ * Parse the routine stage's `routine` sub-trace into a renderable, metadata-safe
+ * step-by-step view. Carries slot *keys* only — the runner never puts captured
+ * values on the trace, and this defensively ignores anything else on the payload.
+ * Returns undefined when the stage has no routine sub-trace.
+ */
+export const buildRoutineRunTrace = (
+  stage: ConversationTraceStage,
+): RoutineRunTraceView | undefined => {
+  const subTrace = stage.subTrace
+  if (!subTrace || subTrace.namespace !== 'routine' || !isRecord(subTrace.payload)) {
+    return undefined
+  }
+  const payload = subTrace.payload
+  const steps = asArray(payload.steps)
+    .filter(isRecord)
+    .map((entry): RoutineTraceStepView => ({
+      stepId: asString(entry.stepId) ?? '',
+      kind: asString(entry.kind) ?? 'chat',
+      event: asString(entry.event) ?? '',
+      capturedSlotKeys: asStringArray(entry.capturedSlotKeys),
+      viaSelector: entry.viaSelector === true,
+      ...(asString(entry.skillName) ? { skillName: asString(entry.skillName) } : {}),
+      ...(asString(entry.skillStatus) ? { skillStatus: asString(entry.skillStatus) } : {}),
+    }))
+  return {
+    startStepId: asString(payload.startStepId),
+    landedStepId: asString(payload.landedStepId),
+    terminalKind: asString(payload.terminalKind),
+    capturedSlotKeys: asStringArray(payload.capturedSlotKeys),
+    filledSlotKeys: asStringArray(payload.filledSlotKeys),
+    steps,
+  }
+}
+
+const ROUTINE_EVENT_LABELS: Record<string, string> = {
+  resumed: 'Resumed',
+  advanced: 'Advanced',
+  reasked: 'Re-asked',
+  fast_forwarded: 'Skipped',
+  skill_dispatched: 'Tool ran',
+  action_emitted: 'Action sent',
+  rendered: 'Replied here',
+}
+
+// Plain-language one-liners so the timeline reads without knowing the engine's terms.
+const ROUTINE_EVENT_DESCRIPTIONS: Record<string, string> = {
+  resumed: 'Where the routine picked up this turn.',
+  advanced: 'The step was satisfied, so the routine moved on.',
+  reasked: 'The routine stayed on this step and asked again.',
+  fast_forwarded: 'Skipped without asking — every slot it collects was already filled.',
+  skill_dispatched: 'Ran this step’s tool.',
+  action_emitted: 'Emitted a fire-and-forget action.',
+  rendered: 'The reply you saw was generated from this step.',
+}
+
+const ROUTINE_EVENT_TONE: Record<string, string> = {
+  advanced: 'bg-emerald-500/10 text-emerald-600',
+  reasked: 'bg-amber-500/10 text-amber-600',
+  fast_forwarded: 'bg-sky-500/10 text-sky-600',
+  skill_dispatched: 'bg-primary/10 text-primary',
+  action_emitted: 'bg-primary/10 text-primary',
+  rendered: 'bg-muted text-muted-foreground',
+}
+
+function SlotKeyChips({ keys, tone }: { keys: string[]; tone: string }) {
+  return (
+    <ul className="flex flex-wrap gap-1">
+      {keys.map((key) => (
+        <li key={key} className={`rounded-full px-1.5 py-0.5 font-mono text-[10px] ${tone}`}>
+          {key}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function RoutineStepsTimeline({ trace }: { trace: RoutineRunTraceView }) {
+  return (
+    <Section label={`Steps this turn (${trace.steps.length})`}>
+      {trace.steps.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No step activity recorded for this turn.</p>
+      ) : (
+        <ol className="space-y-1.5">
+          {trace.steps.map((step, idx) => (
+            <li
+              key={`${step.stepId}:${step.event}:${idx}`}
+              className="space-y-1 rounded-md border border-border/60 bg-muted/20 p-2.5"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] text-muted-foreground">{idx + 1}.</span>
+                <code className="text-xs text-foreground">{step.stepId}</code>
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
+                    ROUTINE_EVENT_TONE[step.event] ?? 'bg-muted text-muted-foreground'
+                  }`}
+                >
+                  {ROUTINE_EVENT_LABELS[step.event] ?? step.event}
+                </span>
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{step.kind}</span>
+                {step.viaSelector ? (
+                  <span
+                    className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                    title="The LLM next-step selector ran here — it judged the condition and extracted any slots."
+                  >
+                    AI selector
+                  </span>
+                ) : null}
+              </div>
+              {ROUTINE_EVENT_DESCRIPTIONS[step.event] ? (
+                <p className="text-[11px] text-muted-foreground">{ROUTINE_EVENT_DESCRIPTIONS[step.event]}</p>
+              ) : null}
+              {step.skillName ? (
+                <p className="text-[11px] text-muted-foreground">
+                  Tool <code className="text-foreground">{step.skillName}</code>
+                  {step.skillStatus ? ` → ${step.skillStatus}` : ''}
+                </p>
+              ) : null}
+              {step.capturedSlotKeys.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground">captured</span>
+                  <SlotKeyChips keys={step.capturedSlotKeys} tone="bg-emerald-500/10 text-emerald-600" />
+                </div>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      )}
+    </Section>
+  )
+}
+
 function RoutineStageDetail({
   stage,
   ctx,
@@ -666,6 +821,8 @@ function RoutineStageDetail({
   const answerLength = asNumber(outputs.answerLength)
   const routineId = asString(outputs.routineId)
   const completed = typeof outputs.completed === 'boolean' ? outputs.completed : undefined
+  const trace = buildRoutineRunTrace(stage)
+  const capturedThisTurn = new Set(trace?.capturedSlotKeys ?? [])
   return (
     <div className="space-y-4">
       <StageHeader stage={stage} />
@@ -680,11 +837,38 @@ function RoutineStageDetail({
           </p>
         )}
       </Section>
-      {(routineId || typeof completed === 'boolean' || typeof answerLength === 'number') ? (
+      {trace ? <RoutineStepsTimeline trace={trace} /> : null}
+      {trace && (trace.filledSlotKeys.length > 0 || trace.capturedSlotKeys.length > 0) ? (
+        <Section label={`Slots filled (${trace.filledSlotKeys.length})`}>
+          {trace.filledSlotKeys.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No slots filled yet.</p>
+          ) : (
+            <ul className="flex flex-wrap gap-1.5">
+              {trace.filledSlotKeys.map((key) => (
+                <li
+                  key={key}
+                  className={`rounded-full px-2 py-0.5 font-mono text-[11px] ${
+                    capturedThisTurn.has(key)
+                      ? 'bg-emerald-500/10 text-emerald-600'
+                      : 'bg-muted text-muted-foreground'
+                  }`}
+                >
+                  {key}
+                  {capturedThisTurn.has(key) ? <span className="ml-1 not-italic">• new</span> : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
+      ) : null}
+      {(routineId || typeof completed === 'boolean' || typeof answerLength === 'number' || trace?.terminalKind) ? (
         <Section label="Routine">
           <KeyValueGrid
             record={{
               ...(routineId ? { routineId } : {}),
+              ...(trace?.startStepId ? { startStep: trace.startStepId } : {}),
+              ...(trace?.landedStepId ? { landedStep: trace.landedStepId } : {}),
+              ...(trace?.terminalKind ? { terminalKind: trace.terminalKind } : {}),
               ...(typeof completed === 'boolean' ? { completed } : {}),
               ...(typeof answerLength === 'number' ? { answerLength } : {}),
             }}

@@ -685,6 +685,9 @@ export class DefaultConversationEngine implements ConversationEngine {
         // and the UI joins back to it from there.
         answerLength: result.response.answer.length,
       },
+      // The runner's step-by-step traversal, carried opaquely for the debug panel
+      // (namespace "routine"), mirroring how retrieval hangs its ActivityTrace.
+      ...(result.trace ? { subTrace: { namespace: "routine", version: 1, payload: result.trace } } : {}),
     });
     const routineTraceStages = activationClarificationStage
       ? [messageStage, gatherStage, activationClarificationStage, routineStage, directiveSteeringStage]

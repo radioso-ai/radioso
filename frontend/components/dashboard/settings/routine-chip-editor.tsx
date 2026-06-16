@@ -43,6 +43,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import { cn } from '@/lib/utils'
 import type { RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineSlotType } from '@/lib/api-types'
 import {
   fieldGuardOpLabel,
@@ -301,20 +302,31 @@ function JumpDialog({
   )
 }
 
+// A clearly visible "on" state for the toggle buttons (Bold/Italic/Step). The default
+// `secondary` button variant is a washed-out grey that reads as inactive against the
+// toolbar, so an active toggle gets the solid accent instead.
+const ACTIVE_TOOLBAR_BUTTON = 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
+
 function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVariable[]; onSetVariableType: (refId: string, type: RoutineSlotType) => void }) {
   const [editor] = useLexicalComposerContext()
   const [conditionOpen, setConditionOpen] = useState(false)
   const [jumpOpen, setJumpOpen] = useState(false)
   const [jumpTargets, setJumpTargets] = useState<{ id: string; title: string }[]>([])
-  const [formats, setFormats] = useState({ bold: false, italic: false })
+  const [formats, setFormats] = useState({ bold: false, italic: false, step: false })
 
-  // Track the active inline formats at the caret so Bold/Italic show their pressed state.
+  // Track the caret's active formats so Bold/Italic/Step show their pressed state. `step`
+  // is whether the caret's line is a titled step (an h1 heading).
   useEffect(() => {
     return editor.registerUpdateListener(({ editorState }) => {
       editorState.read(() => {
         const selection = $getSelection()
         if ($isRangeSelection(selection)) {
-          setFormats({ bold: selection.hasFormat('bold'), italic: selection.hasFormat('italic') })
+          const block = selection.anchor.getNode().getTopLevelElement()
+          setFormats({
+            bold: selection.hasFormat('bold'),
+            italic: selection.hasFormat('italic'),
+            step: !!block && $isHeadingNode(block),
+          })
         }
       })
     })
@@ -361,19 +373,20 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
     })
   }
 
-  // Turn the current line into a step title (h1). A titled step gets a stable id, so a jump
-  // can target it by name.
-  const markLineAsStep = () => {
+  // Toggle the current line between a step title (h1) and ordinary prose. A titled step
+  // gets a stable id, so a jump can target it by name; toggling it off turns it back into
+  // body text. Mirrors how Bold/Italic toggle.
+  const toggleLineStep = () => {
     editor.focus(() => {
       editor.update(() => {
         const selection = $getSelection()
         if (!$isRangeSelection(selection)) return
         const block = selection.anchor.getNode().getTopLevelElement()
-        if (!block || $isHeadingNode(block)) return
-        const heading = $createHeadingNode('h1')
-        for (const child of block.getChildren()) heading.append(child)
-        block.replace(heading)
-        heading.selectEnd()
+        if (!block) return
+        const replacement = $isHeadingNode(block) ? $createParagraphNode() : $createHeadingNode('h1')
+        for (const child of block.getChildren()) replacement.append(child)
+        block.replace(replacement)
+        replacement.selectEnd()
       })
     })
   }
@@ -409,10 +422,10 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
 
   return (
     <div className="flex items-center gap-0.5 border-b border-input px-1.5 py-1">
-      <Button type="button" variant={formats.bold ? 'secondary' : 'ghost'} size="sm" className="h-7 w-7 p-0" aria-label="Bold" aria-pressed={formats.bold} onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold')}>
+      <Button type="button" variant="ghost" size="sm" className={cn('h-7 w-7 p-0', formats.bold && ACTIVE_TOOLBAR_BUTTON)} aria-label="Bold" aria-pressed={formats.bold} onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold')}>
         <Bold className="h-4 w-4" />
       </Button>
-      <Button type="button" variant={formats.italic ? 'secondary' : 'ghost'} size="sm" className="h-7 w-7 p-0" aria-label="Italic" aria-pressed={formats.italic} onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic')}>
+      <Button type="button" variant="ghost" size="sm" className={cn('h-7 w-7 p-0', formats.italic && ACTIVE_TOOLBAR_BUTTON)} aria-label="Italic" aria-pressed={formats.italic} onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic')}>
         <Italic className="h-4 w-4" />
       </Button>
       <Separator orientation="vertical" className="mx-1 h-5" />
@@ -429,7 +442,7 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
         End
       </Button>
       <Separator orientation="vertical" className="mx-1 h-5" />
-      <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={markLineAsStep}>
+      <Button type="button" variant="ghost" size="sm" className={cn('h-7 gap-1 px-2', formats.step && ACTIVE_TOOLBAR_BUTTON)} aria-pressed={formats.step} onClick={toggleLineStep}>
         <Heading1 className="h-4 w-4" />
         Step
       </Button>
@@ -675,7 +688,7 @@ export function RoutineChipEditor({
               contentEditable={
                 <ContentEditable
                   aria-label="Routine"
-                  className="min-h-40 w-full px-3 py-2 text-sm outline-none [&_p]:my-1"
+                  className="min-h-40 w-full px-3 py-2 text-sm outline-none [&_p]:my-1 [&_h1]:mb-1 [&_h1]:mt-3 [&_h1]:text-xl [&_h1]:font-bold [&_h1]:leading-tight [&_h1]:text-foreground first:[&_h1]:mt-0"
                 />
               }
               placeholder={() => (

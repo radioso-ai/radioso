@@ -50,6 +50,9 @@ inline reference, not raw syntax. Each kind has its own colour:
 - **Variable** (`@name`) - a value the routine collects, such as `@email` or
   `@order_id`. It compiles to a typed slot. The variable name is the slot key,
   so `@email` in a step is stored as a structured reference, not literal text.
+  When a step asks for a variable, the routine waits on that step until the user
+  provides it, then stores the answer under that name before moving on. You do
+  not need a branch to make a collection step wait.
 - **Skill** - a skill the routine calls, referenced by name. The skill is
   defined for the agent elsewhere; here you only name it. A step that contains a
   skill chip becomes a tool step the runtime resolves by name and dispatches

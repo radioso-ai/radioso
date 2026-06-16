@@ -143,6 +143,81 @@ describe("routine definition compiler and validator", () => {
     });
   });
 
+  it("treats only the first step that references a slot as collecting it (later refs are uses)", () => {
+    // A later step that merely interpolates an already-collected slot (e.g. "mention
+    // their {{slot.name}}") must NOT be marked as a collection step — otherwise the
+    // runner fast-forwards (skips) it once the slot is filled and silently drops its
+    // message. Only the first step to reference a slot collects it.
+    const definition: RoutineDefinition = {
+      ...baseDefinition(),
+      slots: [
+        { stableSlotId: "slot_name", key: "name", type: "text", required: true, description: null, ordinal: 0 },
+      ],
+      steps: [
+        { stableStepId: "ask_name", kind: "chat", instruction: "Ask for their name; record as {{slot.name}}.", toolRef: null, ordinal: 0, metadata: {} },
+        { stableStepId: "redirect", kind: "chat", instruction: "Redirect to the main purpose; mention their {{slot.name}}.", toolRef: null, ordinal: 1, metadata: {} },
+      ],
+      transitions: [
+        { fromStep: "ask_name", toRef: "redirect", guardKind: "default", guardText: null, ordinal: 0 },
+        { fromStep: "redirect", toRef: "done", guardKind: "default", guardText: null, ordinal: 1 },
+      ],
+      terminals: [
+        { stableStepId: "done", kind: "complete", instruction: "All set.", ordinal: 0 },
+      ],
+    };
+
+    const routine = compileRoutineDefinition(definition);
+
+    // The first referencer collects the slot and is auto-gated.
+    const askName = routine.steps.find((step) => step.id === "ask_name");
+    expect(askName?.metadata?.collectsSlots).toEqual(["name"]);
+    expect(routine.transitions.find((transition) => transition.from === "ask_name")?.guard).toBeUndefined();
+
+    // The later step only *uses* the slot: not a collection step, default edge intact,
+    // so the runner renders it rather than skipping it.
+    const redirect = routine.steps.find((step) => step.id === "redirect");
+    expect(redirect?.metadata?.collectsSlots).toBeUndefined();
+    expect(routine.transitions.find((transition) => transition.from === "redirect")).toMatchObject({
+      condition: "default",
+      guard: { kind: "default" },
+    });
+  });
+
+  it("does not let a lower-ordinal tool step steal slot ownership from the chat step that asks it", () => {
+    // Only a chat step asks the user for a slot. A tool/action step that interpolates
+    // {{slot.x}} at a lower ordinal must NOT be treated as the collector — otherwise the
+    // chat asker loses its collectsSlots and is no longer auto-gated, so the slot is
+    // never captured.
+    const definition: RoutineDefinition = {
+      ...baseDefinition(),
+      slots: [
+        { stableSlotId: "slot_name", key: "name", type: "text", required: true, description: null, ordinal: 0 },
+      ],
+      steps: [
+        { stableStepId: "prep", kind: "tool", instruction: "Look up records for {{slot.name}}.", toolRef: "crm_lookup", ordinal: 0, metadata: {} },
+        { stableStepId: "ask_name", kind: "chat", instruction: "Ask for their name; record as {{slot.name}}.", toolRef: null, ordinal: 1, metadata: {} },
+      ],
+      transitions: [
+        { fromStep: "prep", toRef: "ask_name", guardKind: "default", guardText: null, ordinal: 0 },
+        { fromStep: "ask_name", toRef: "done", guardKind: "default", guardText: null, ordinal: 1 },
+      ],
+      terminals: [
+        { stableStepId: "done", kind: "complete", instruction: "Done.", ordinal: 0 },
+      ],
+    };
+
+    const routine = compileRoutineDefinition(definition);
+
+    // The chat asker owns the slot and is auto-gated, even though the tool step
+    // references it at a lower ordinal.
+    const askName = routine.steps.find((step) => step.id === "ask_name");
+    expect(askName?.metadata?.collectsSlots).toEqual(["name"]);
+    expect(routine.transitions.find((transition) => transition.from === "ask_name")?.guard).toBeUndefined();
+    // The tool step does not own the slot.
+    const prep = routine.steps.find((step) => step.id === "prep");
+    expect(prep?.metadata?.collectsSlots).toBeUndefined();
+  });
+
   it("leaves a default edge intact when the collection step also has a structured or llm exit", () => {
     // The additive-guards fixture (ask_email with slot_filled + counter + default) is a
     // deliberately structured step — its `default` fallback must survive compilation.

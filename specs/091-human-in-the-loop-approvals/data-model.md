@@ -67,7 +67,7 @@ Existing per-session routine position, extended:
 ### Pending Decision lifecycle
 ```
 (suspend turn commits) ─▶ pending
-pending ──approve (CAS, hash-match, authorized)──▶ approved ─▶ resume routine at gate, run gated step
+pending ──approve (CAS, hash-match, authorized)──▶ approved ─▶ resume routine at gate, enqueue gated action (outbox)
 pending ──reject  (CAS, hash-match, authorized)──▶ rejected ─▶ resume routine via authored rejection edge
 pending ──conversation ended / superseded──────────▶ cancelled
 (redelivered/stale/double submit) ─▶ no-op 409 (status no longer 'pending' or hash mismatch)
@@ -83,4 +83,4 @@ suspended ──inbound visitor message──▶ suspended  (loadActive returns 
 ### Atomic commit (the fence)
 The suspend turn commits **in one `withTransaction`** (extending `postgresAssistantTurnPersistence.completeAssistantTurn` via the `deferredRoutineStore` command-capture fence): assistant message (the "awaiting review" reply, `source: ai_agent`) + routine state set `suspended` + `pending_decisions` row inserted + the `approval.request` outbox action enqueued + audit. A crash before commit leaves the routine un-advanced (it re-renders the gate), never half-suspended; a routine is never `suspended` without a decision row, and never has a `pending` decision row without being `suspended`.
 
-The resume turn commits the resumed assistant turn + routine-state advance (`suspended→active|completed`, version-guarded) + any emitted action + trace, atomically, after the decision row is CAS-resolved.
+The resume turn commits the **decision CAS-flip + the resumed assistant turn + routine-state advance** (`suspended→active|completed`, version-guarded) + the gated action **enqueued to the outbox** + trace, **all in one transaction** (the `resolve` CAS runs against that transaction's client — not a prior standalone commit). A crash before commit rolls the flip back, so a retry re-resolves cleanly; the gated effect is dispatched idempotently by a worker, so a rolled-back-then-retried resume never double-fires it. A synchronous side-effecting skill run *during* resume would not be crash-safe — gate an outbox `action`.

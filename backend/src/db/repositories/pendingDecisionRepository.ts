@@ -198,8 +198,15 @@ export class PendingDecisionRepository {
     return row ? mapRecord(row) : null;
   }
 
-  async resolve(input: PendingDecisionResolveInput): Promise<PendingDecisionRecord | null> {
-    const row = await this.database.queryOptional<PendingDecisionRow>(
+  // `executor` lets the caller run the CAS inside an open transaction (the turn-commit
+  // fence) so the decision flip, the routine resume, and the assistant-turn persistence
+  // all commit or roll back together. A crash before COMMIT leaves the row `pending`, so
+  // a retried resolve re-runs cleanly (crash-safe; spec 091 review finding P1(b)).
+  async resolve(
+    input: PendingDecisionResolveInput,
+    executor: Pick<Database, "queryOptional"> = this.database,
+  ): Promise<PendingDecisionRecord | null> {
+    const row = await executor.queryOptional<PendingDecisionRow>(
       `UPDATE pending_decisions
           SET status = $2,
               decision = $3::jsonb,

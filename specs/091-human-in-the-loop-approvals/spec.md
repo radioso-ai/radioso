@@ -423,9 +423,14 @@ options of type T"; it never learns who decides, the transport, or the policy.**
   trusting a UI affordance); the submitted content hash matches; and the option is
   valid. Resolution is a **compare-and-set** so exactly one submission wins; a
   redelivered or concurrent second submission is a no-op conflict.
-- On success, in one transaction, it records the decision (idempotently) and an audit
-  event, then drives the engine resume and persists the resumed turn through the
-  normal turn-commit path.
+- On success the CAS flip, the engine resume, and the resumed-turn persistence commit
+  in **one** transaction (the `resolve` CAS runs against the turn-commit transaction
+  client, not as its own commit). A crash before commit rolls the flip back, so a
+  retried submit re-resolves cleanly and the human is never re-prompted. The engine
+  resume is pure: the gated side effect is **enqueued to the outbox** within that
+  transaction and dispatched idempotently by a worker — so a rolled-back-then-retried
+  resume cannot double-fire it. (A synchronous side-effecting skill during resume would
+  not be crash-safe; gate an outbox `action`.)
 - The handle is an **unguessable, single-use** secret, **never** the conversation id.
   Authorization is the operator's authenticated session; the handle is the
   correlation key. This cut does not expose an end-user (public/embed) decision path.
@@ -682,8 +687,12 @@ options of type T"; it never learns who decides, the transport, or the policy.**
 - **FR-007**: Decision resolution MUST be exactly-once (compare-and-set on the pending
   row); a redelivered, double-clicked, or concurrent second submission MUST be a
   no-op conflict and MUST NOT fire the gated action twice.
-- **FR-008**: A decision recorded but interrupted before the resumed turn is persisted
-  MUST be safely resumable on retry without re-prompting the human.
+- **FR-008**: The decision CAS flip, the engine resume, and the resumed-turn
+  persistence MUST commit in a single transaction, so a crash before commit rolls the
+  flip back and a retried submit re-resolves cleanly without re-prompting the human (the
+  decision is never left applied-but-unresumed). The gated side effect MUST be an
+  idempotent outbox action (enqueued in that transaction, worker-dispatched), never a
+  synchronous side-effecting skill run during resume.
 - **FR-009**: A suspended turn MUST be recorded as a distinct, non-answer outcome (not
   billed as an answered turn, distinct audit signal); the resumed turn is the
   answered/billed turn.

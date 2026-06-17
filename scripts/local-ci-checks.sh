@@ -225,6 +225,8 @@ if [ "$backend" = true ]; then
   run pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler...
   run_sh "cd backend && pnpm run lint:boundaries"
   run_sh "cd backend && pnpm run build"
+  require_docker
+  run_sh "cd backend && pnpm run db:schema:check"
   run_sh "cd backend && pnpm run test:unit"
   start_postgres
   run_sh "cd backend && pnpm run test:integration"

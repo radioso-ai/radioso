@@ -27,6 +27,8 @@
     "dev:crawler-worker-server": "tsx watch ./src/crawlerWorkerServer.ts",
     "generate:openapi": "tsx ./scripts/generateOpenApi.ts",
     "generate:skills": "tsx ./scripts/generateSkillContracts.ts",
+    "db:schema": "bash ./scripts/dump-schema.sh",
+    "db:schema:check": "bash ./scripts/dump-schema.sh --check",
     "lint": "pnpm run lint:boundaries",
     "lint:boundaries": "depcruise --config dependency-cruiser.config.cjs src",
     "start": "pnpm run start:http",

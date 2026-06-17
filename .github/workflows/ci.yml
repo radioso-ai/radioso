@@ -248,6 +248,10 @@ jobs:
       - name: Install backend dependencies
         run: pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler...
 
+      - name: Verify schema snapshot matches migrations
+        working-directory: backend
+        run: pnpm run db:schema:check
+
       - name: Test backend integration suite
         working-directory: backend
         run: pnpm run test:integration

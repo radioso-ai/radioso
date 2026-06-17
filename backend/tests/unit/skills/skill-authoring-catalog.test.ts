@@ -128,4 +128,44 @@ describe("SkillAuthoringCatalogService", () => {
     await expect(catalog.getForAgent({ workspaceId: "workspace_1", agentId: "agent_1" }, "missing"))
       .resolves.toBeNull();
   });
+
+  it("still returns system skills when the external-skill source fails", async () => {
+    const warnings: unknown[] = [];
+    const catalog = new SkillAuthoringCatalogService({
+      skillCatalog: {
+        async list() {
+          return { skills: [catalogEntry()] };
+        },
+      },
+      externalSkills: {
+        async list() {
+          throw new Error('relation "external_skill_details" does not exist');
+        },
+      },
+      logger: { warn: (...args: unknown[]) => warnings.push(args) },
+    });
+
+    const descriptors = await catalog.listForAgent({ workspaceId: "workspace_1", agentId: "agent_1" });
+    expect(descriptors.map((descriptor) => descriptor.skillName)).toEqual(["retrieval.answer"]);
+    expect(warnings.length).toBe(1);
+  });
+
+  it("still returns external skills when the system catalog source fails", async () => {
+    const catalog = new SkillAuthoringCatalogService({
+      skillCatalog: {
+        async list() {
+          throw new Error("catalog unavailable");
+        },
+      },
+      externalSkills: {
+        async list() {
+          return [{ skillName: "post_slack", exposedParams: {}, declaredOutcomes: null, outcomeMap: null, enabled: true }];
+        },
+      },
+      logger: { warn: () => {} },
+    });
+
+    const descriptors = await catalog.listForAgent({ workspaceId: "workspace_1", agentId: "agent_1" });
+    expect(descriptors.map((descriptor) => descriptor.skillName)).toEqual(["post_slack"]);
+  });
 });

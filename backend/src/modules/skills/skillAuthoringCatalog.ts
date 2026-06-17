@@ -41,10 +41,15 @@ interface ExternalSkillAuthoringListSource {
   list(agentId: string): Promise<ExternalSkillAuthoringSource[]>;
 }
 
+interface SkillAuthoringCatalogLogger {
+  warn(...args: unknown[]): void;
+}
+
 export class SkillAuthoringCatalogService implements SkillAuthoringCatalog {
   constructor(private readonly sources: {
     skillCatalog: SkillCatalogAuthoringSource;
     externalSkills: ExternalSkillAuthoringListSource;
+    logger?: SkillAuthoringCatalogLogger;
   }) {}
 
   async listForAgent(context: SkillAuthoringCatalogContext): Promise<SkillAuthoringDescriptor[]> {
@@ -53,20 +58,39 @@ export class SkillAuthoringCatalogService implements SkillAuthoringCatalog {
       ...(context.accountId ? { accountId: context.accountId } : {}),
       ...(context.userId ? { userId: context.userId } : {}),
     };
-    const [catalog, externalSkills] = await Promise.all([
+    // Each source degrades independently: a failure fetching external skills (e.g.
+    // a missing table) must not blank the built-in/system skills, which do not
+    // depend on it. We surface the partial catalog and log the failed source.
+    const [catalogResult, externalResult] = await Promise.allSettled([
       this.sources.skillCatalog.list(skillCatalogContext),
       this.sources.externalSkills.list(context.agentId),
     ]);
 
-    const systemDescriptors = catalog.skills
-      .filter((entry) => (entry.availability?.state ?? "available") === "available")
-      .filter(isRoutineDispatchableBuiltInSkill)
-      .map(skillCatalogEntryToAuthoringDescriptor);
-    const externalDescriptors = externalSkills
-      .filter((skill) => skill.enabled ?? true)
-      .map(externalSkillToAuthoringDescriptor);
+    const systemDescriptors = catalogResult.status === "fulfilled"
+      ? catalogResult.value.skills
+        .filter((entry) => (entry.availability?.state ?? "available") === "available")
+        .filter(isRoutineDispatchableBuiltInSkill)
+        .map(skillCatalogEntryToAuthoringDescriptor)
+      : this.warnSourceFailed("system_catalog", context, catalogResult.reason);
+    const externalDescriptors = externalResult.status === "fulfilled"
+      ? externalResult.value
+        .filter((skill) => skill.enabled ?? true)
+        .map(externalSkillToAuthoringDescriptor)
+      : this.warnSourceFailed("external_skills", context, externalResult.reason);
 
     return [...systemDescriptors, ...externalDescriptors];
+  }
+
+  private warnSourceFailed(
+    source: "system_catalog" | "external_skills",
+    context: SkillAuthoringCatalogContext,
+    reason: unknown,
+  ): never[] {
+    this.sources.logger?.warn(
+      { source, agentId: context.agentId, workspaceId: context.workspaceId, err: reason },
+      "skill authoring catalog source failed; returning partial catalog",
+    );
+    return [];
   }
 
   async getForAgent(

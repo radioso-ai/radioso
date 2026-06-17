@@ -488,9 +488,12 @@ export class DefaultConversationEngine implements ConversationEngine {
       if (!input.routineActivator) {
         return null;
       }
+      const completedRoutineIds = (await input.routineStore.loadCompleted?.({ sessionId: input.sessionId }) ?? [])
+        .map((completed) => completed.routineId);
       const activation = await input.routineActivator.activate({
         turn: baseTurn,
         ...(input.loopGuardCandidateIds ? { loopGuardCandidateIds: input.loopGuardCandidateIds } : {}),
+        ...(completedRoutineIds.length > 0 ? { suppressedRoutineIds: completedRoutineIds } : {}),
         ...(input.suppressNewClarification ? { suppressClarificationAsk: input.suppressNewClarification } : {}),
       });
       if (!activation) {
@@ -647,7 +650,15 @@ export class DefaultConversationEngine implements ConversationEngine {
     if (result.nextState) {
       await input.routineStore.save(result.nextState);
     } else {
-      await input.routineStore.clear({ sessionId: input.sessionId });
+      await input.routineStore.save({
+        ...state,
+        path: result.trace?.landedStepId ? [...state.path, result.trace.landedStepId] : state.path,
+        status: "completed",
+        metadata: {
+          ...(state.metadata ?? {}),
+          ...(result.terminal ? { terminalKind: result.terminal.kind, terminalStepId: result.terminal.stepId } : {}),
+        },
+      });
     }
 
     const responseEvent = createResponseEvent(input.sessionId, result.response);

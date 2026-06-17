@@ -202,6 +202,7 @@ export interface RetrievalPipelineService {
 
 export {
   RETRIEVAL_ANSWER_ADAPTER,
+  RETRIEVAL_CONTEXT_SKILL_NAME,
   RetrievalAnswerSkillExecutor,
   readRetrievalResult,
 } from "./services/retrievalAnswerSkillExecutor.js";

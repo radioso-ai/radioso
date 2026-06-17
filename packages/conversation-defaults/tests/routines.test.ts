@@ -156,6 +156,39 @@ describe("routine defaults", () => {
     expect(vi.mocked(gw.complete).mock.calls[0]?.[0].systemPrompt).toContain("Ask the user for their email address.");
   });
 
+  it("passes staged retrieval context as untrusted message data, not system instructions", async () => {
+    const gw = gateway("ok");
+    await new RoutineStepRenderer(gw).render({
+      step: currentStep,
+      steering: [{ action: "Answer from context.", source: "routine", lifespan: "response" }],
+      turn: {
+        ...turn,
+        stagedContext: [{
+          kind: "skill_result",
+          source: "retrieval.context",
+          data: {
+            has_context: true,
+            contexts: [{ title: "Course Guide", content: "Kriya is introduced in the first module." }],
+            citations: [{ title: "Course Guide", documentId: "doc_1", chunkId: "chunk_1" }],
+          },
+        }],
+      },
+    });
+
+    const call = vi.mocked(gw.complete).mock.calls[0]![0];
+    expect(call.systemPrompt).toContain("untrusted quoted data");
+    expect(call.systemPrompt).not.toContain("Course Guide");
+    expect(call.systemPrompt).not.toContain("Kriya is introduced");
+    expect(call.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: "user",
+        content: expect.stringContaining("Retrieved document excerpts follow"),
+      }),
+    ]));
+    expect(call.messages.map((message) => message.content).join("\n")).toContain("Course Guide");
+    expect(call.messages.map((message) => message.content).join("\n")).toContain("Kriya is introduced");
+  });
+
   it("injects the agent scope and an out-of-scope decline rule into the routine reply prompt", async () => {
     const gw = gateway("ok");
     const scopedTurn: TurnContext = {
@@ -216,8 +249,10 @@ describe("routine defaults", () => {
 
     await store.save({ ...state, status: "completed" });
     await expect(store.loadActive({ sessionId: "s1" })).resolves.toBeNull();
+    await expect(store.loadCompleted({ sessionId: "s1" })).resolves.toEqual([{ ...state, status: "completed" }]);
 
     await store.save({ ...state, status: "expired" });
     await expect(store.loadActive({ sessionId: "s1" })).resolves.toBeNull();
+    await expect(store.loadCompleted({ sessionId: "s1" })).resolves.toEqual([]);
   });
 });

@@ -121,8 +121,30 @@ const HANDOFF_TERMINAL_ID = 'handoff'
 // terminal messages, so draftFromChipDoc emits these defaults and routineToChipDoc
 // refuses (falls back to Form) any routine whose terminals differ — otherwise an
 // author's custom completion/handoff message would be silently overwritten on load+save.
-const DEFAULT_COMPLETE_INSTRUCTION = 'All set.'
+const LEGACY_COMPLETE_INSTRUCTION = 'All set.'
 const DEFAULT_HANDOFF_INSTRUCTION = 'Bringing in a teammate.'
+
+export const createEmptyRoutineProseDraft = (input: {
+  name?: string
+  triggerDescription?: string
+  priority?: number
+} = {}): RoutineDefinitionDraft => ({
+  name: input.name ?? '',
+  activation: {
+    triggerDescription: input.triggerDescription ?? '',
+    gateRef: null,
+    priority: input.priority ?? 0,
+  },
+  slots: [],
+  steps: [],
+  transitions: [],
+  terminals: [{
+    stableStepId: DONE_TERMINAL_ID,
+    kind: 'complete',
+    instruction: null,
+    ordinal: 0,
+  }],
+})
 
 // Serialize the chip document into a routine draft. An h1 heading block names a step
 // (its title pins a stable id + author label; following prose is the step's body); an
@@ -336,7 +358,7 @@ export function draftFromChipDoc(input: {
   }
 
   const terminals: RoutineDefinitionDraft['terminals'] = [
-    { stableStepId: DONE_TERMINAL_ID, kind: 'complete', instruction: DEFAULT_COMPLETE_INSTRUCTION, ordinal: 0 },
+    { stableStepId: DONE_TERMINAL_ID, kind: 'complete', instruction: null, ordinal: 0 },
   ]
   if (needHandoffTerminal) {
     terminals.push({ stableStepId: HANDOFF_TERMINAL_ID, kind: 'handoff', instruction: DEFAULT_HANDOFF_INSTRUCTION, ordinal: 1 })
@@ -452,7 +474,10 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
   // ids — so any routine with a custom completion/handoff message or a non-default
   // terminal id must edit in Form, or that copy/id would be lost on a load+save.
   const complete = completeTerminals[0]!
-  if (complete.stableStepId !== DONE_TERMINAL_ID || (complete.instruction ?? '') !== DEFAULT_COMPLETE_INSTRUCTION) return null
+  if (
+    complete.stableStepId !== DONE_TERMINAL_ID ||
+    (complete.instruction !== null && complete.instruction !== LEGACY_COMPLETE_INSTRUCTION)
+  ) return null
   const handoff = handoffTerminals[0]
   if (handoff && (handoff.stableStepId !== HANDOFF_TERMINAL_ID || (handoff.instruction ?? '') !== DEFAULT_HANDOFF_INSTRUCTION)) return null
 

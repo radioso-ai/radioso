@@ -103,6 +103,90 @@ describe("DefaultRoutineRunner", () => {
     expect(result.response.answer).not.toContain("{{slot.phone}}");
   });
 
+  it("dispatches a root skill step and passes its outputs as staged context to the rendered chat step", async () => {
+    const toolRoutine: Routine = {
+      id: "contact",
+      rootStepId: "retrieve_context",
+      steps: [
+        { id: "retrieve_context", kind: "skill", skillName: "retrieval.context", action: "Find grounding context." },
+        { id: "answer", kind: "chat", action: "Answer from the retrieved context." },
+      ],
+      transitions: [
+        { from: "retrieve_context", to: "answer", condition: "context gathered", guard: { kind: "default" } },
+      ],
+    };
+    const dispatch: ConversationRoutineSkillDispatcher["dispatch"] = vi.fn(async () => ({
+      status: "completed",
+      outputs: {
+        has_context: true,
+        contexts: [{ title: "Guide", content: "Kriya is described here." }],
+      },
+    }));
+    const renderer: ConversationRoutineStepRenderer = {
+      render: vi.fn(async ({ turn }) => ({
+        answer: JSON.stringify(turn.stagedContext),
+        metadata: {},
+      })),
+    };
+    const runner = new DefaultRoutineRunner(
+      [toolRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "answer" })) },
+      renderer,
+      { dispatch },
+    );
+
+    const result = await runner.resume({ turn, state: state([]) });
+
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ skillName: "retrieval.context" }));
+    expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({
+      step: expect.objectContaining({ id: "answer" }),
+      turn: expect.objectContaining({
+        stagedContext: [expect.objectContaining({
+          kind: "skill_result",
+          source: "retrieval.context",
+          data: expect.objectContaining({ has_context: true }),
+        })],
+      }),
+    }));
+    expect(result.nextState).toMatchObject({ path: ["retrieve_context", "answer"] });
+  });
+
+  it("routes root skill steps by their routable outcome status", async () => {
+    const toolRoutine: Routine = {
+      id: "contact",
+      rootStepId: "retrieve_context",
+      steps: [
+        { id: "retrieve_context", kind: "skill", skillName: "retrieval.context", action: "Find grounding context." },
+        { id: "answer", kind: "chat", action: "Answer from the retrieved context." },
+        { id: "ask_followup", kind: "chat", action: "Ask a follow-up question." },
+      ],
+      transitions: [
+        { from: "retrieve_context", to: "answer", condition: "context gathered", guard: { kind: "outcome", status: "context_ready" } },
+        { from: "retrieve_context", to: "ask_followup", condition: "no context", guard: { kind: "outcome", status: "no_context" } },
+      ],
+    };
+    const dispatch: ConversationRoutineSkillDispatcher["dispatch"] = vi.fn(async () => ({
+      status: "no_context",
+      outputs: { has_context: false, contexts: [] },
+    }));
+    const renderer: ConversationRoutineStepRenderer = {
+      render: vi.fn(async ({ step }) => ({ answer: step.id, metadata: {} })),
+    };
+    const runner = new DefaultRoutineRunner(
+      [toolRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "answer" })) },
+      renderer,
+      { dispatch },
+    );
+
+    const result = await runner.resume({ turn, state: state([]) });
+
+    expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({
+      step: expect.objectContaining({ id: "ask_followup" }),
+    }));
+    expect(result.nextState).toMatchObject({ path: ["retrieve_context", "ask_followup"] });
+  });
+
   it("clears state (null next) when the routine reaches a terminal step", async () => {
     const runner = new DefaultRoutineRunner(
       [routine],

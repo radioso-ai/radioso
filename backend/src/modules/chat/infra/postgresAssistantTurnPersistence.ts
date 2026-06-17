@@ -73,7 +73,7 @@ const saveRoutineState = async (
   state: RoutineState,
   ttlMs: number,
 ): Promise<void> => {
-  const expiresAt = new Date(Date.now() + ttlMs).toISOString();
+  const expiresAt = state.status === "suspended" ? null : new Date(Date.now() + ttlMs).toISOString();
   await client.query(
     `INSERT INTO routine_states (session_id, routine_id, path, variables, attempts, status, expires_at, updated_at)
      VALUES ($1, $2, $3::text[], $4::jsonb, $5::jsonb, $6, $7, now())

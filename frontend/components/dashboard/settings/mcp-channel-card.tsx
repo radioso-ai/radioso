@@ -172,7 +172,7 @@ export function McpChannelCard({ workspaceId }: { workspaceId: string | null | u
       id="mcp-channel"
       icon={<Plug className="h-5 w-5 text-primary" />}
       title="MCP"
-      description="Let AI tools like Cursor, Claude Desktop, or ChatGPT search your documents."
+      description="Let AI tools like Cursor, Claude Desktop, or ChatGPT talk to this agent and search its grounded data."
     >
       <div className="space-y-5">
         <p className="text-sm text-muted-foreground">

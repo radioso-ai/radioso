@@ -81,6 +81,34 @@ Related docs:
 
 - [Architecture Extension Points](../architecture-extension-points.md)
 
+## Persistence And Data Access
+
+Owns the Postgres implementations of persistence ports: SQL, row→record mapping,
+migrations, and the generated schema snapshot. No ORM; raw SQL via `pg` lives in
+repository adapters behind per-module ports.
+
+Should not own product rules. Domain modules depend on a `*RepositoryPort` (a
+type) and never import `pg`, the `Database` class, or a concrete repository.
+
+Primary paths:
+
+- `backend/src/db/repositories/README.md` — start here; worked example for adding
+  an entity (migration → port → row mapper → repository → composition wiring)
+- `backend/src/db/repositories/` — repository adapters and row mappers
+- `backend/src/db/migrations/` — schema; system of record, applied in order
+- `backend/src/db/schema.sql` — generated read-only snapshot of the full schema
+- `backend/src/shared/infra/database.ts` — `query`/`queryOne`/`withTransaction`
+- `backend/src/app/server/dependencyBuilders.ts` — where repositories are wired
+
+Useful searches:
+
+- `rg "implements .*RepositoryPort" backend/src/db/repositories`
+- `rg "new .*Repository\(database" backend/src/app/server/dependencyBuilders.ts`
+
+Focused checks:
+
+- `cd backend && pnpm run db:schema:check` (drift gate; runs in CI + `ci:local`, needs Docker)
+
 ## Customer Email
 
 Owns workspace customer email connections backed by authorized OAuth
@@ -113,23 +141,25 @@ Related docs:
 
 ## Agent Skill Definitions (shared spine)
 
-External MCP skills (`externalSkills`) and customer email skills (`customerEmail`)
-share one persistence spine: `agent_skills` holds the common columns and a single
-`@mention` namespace per agent enforced **across kinds**, with per-kind detail
-tables (`external_skill_details`, `email_skill_details`) that keep the typed
-connection foreign key and typed config. Each module's repository port and record
-shape are unchanged, so its service, executor, routes, and export/import are
-unaffected — only the SQL is joined (spine + detail via CTEs).
+External MCP skills (`externalSkills`), customer email skills (`customerEmail`),
+and webhook skills (`webhookSkills`) share one persistence spine: `agent_skills`
+holds the common columns, a single `@mention` namespace per agent enforced
+**across kinds**, generic `target_type` / `target_id` references, and a JSON
+`config` object. Database triggers enforce the current target references for MCP
+connections, customer email connections, and webhook destinations. Each module's
+repository port and record shape own kind-specific config validation, so future
+config-backed skill kinds should not add a table or migration unless they need
+genuinely relational state outside the shared skill definition.
 
 OAuth connection/token lifecycle is provider-neutral in `integrationOauth` and is
 consumed by both MCP and customer email.
 
 Public surfaces and key files:
 
-- `backend/src/modules/agentSkills/public.ts` (kind vocabulary + spine type)
+- `backend/src/modules/agentSkills/public.ts` (spine vocabulary + shared type)
 - `backend/src/modules/integrationOauth/public.ts` (OAuth lifecycle)
-- `backend/src/db/repositories/externalSkillDefinitionRepository.ts`, `emailSkillDefinitionRepository.ts`
-- `backend/src/db/migrations/099_agent_skills_spine.sql`, `100_email_skills_into_spine.sql`
+- `backend/src/db/repositories/externalSkillDefinitionRepository.ts`, `emailSkillDefinitionRepository.ts`, `webhookSkillDefinitionRepository.ts`
+- `backend/src/db/migrations/099_agent_skills_spine.sql`, `100_email_skills_into_spine.sql`, `101_agent_skills_generic_targets.sql`
 
 Focused checks (real Postgres via `INTEGRATION_DATABASE_URL`):
 

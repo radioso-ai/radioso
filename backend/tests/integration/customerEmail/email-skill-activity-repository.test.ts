@@ -66,9 +66,11 @@ describeIfDatabase("email skill activity repository (postgres)", () => {
     await client.query(await readFile(path.join(testMigrationsPath, "096_customer_email_connections.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "097_email_skill_definitions.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "098_email_skill_activity.sql"), "utf8"));
-    // 099/100 re-home skill definitions onto the shared agent_skills spine.
+    // 099/100 create the shared spine + detail tables; 101 moves skill config onto
+    // generic target/config columns.
     await client.query(await readFile(path.join(testMigrationsPath, "099_agent_skills_spine.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "100_email_skills_into_spine.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "101_agent_skills_generic_targets.sql"), "utf8"));
     await client.query(`INSERT INTO workspaces (id) VALUES ($1), ($2)`, [workspaceId, otherWorkspaceId]);
     await client.query(`INSERT INTO agents (id, workspace_id) VALUES ($1, $2)`, [agentId, workspaceId]);
     await client.query(

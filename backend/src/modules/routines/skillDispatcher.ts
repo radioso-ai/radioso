@@ -101,6 +101,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
     input: Parameters<ConversationRoutineSkillDispatcher["dispatch"]>[0],
   ): Promise<RoutineSkillResult> {
     const { skillName, state, turn, inputBindings } = input;
+    const stepId = state.path.at(-1);
     // A routine runs on a resumable state machine, and the runner resolves this
     // BEFORE the turn is persisted — so throwing here would 500 the turn AND leave
     // the routine pinned at this step, re-throwing on every subsequent turn (a
@@ -134,7 +135,14 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
         // compatibility window, untyped/legacy steps still pass captured variables
         // through so external-skill slotBinding routing keeps working.
         collected,
-        context: { turn, agentId: turn.agent.id, ...(this.workspaceId ? { workspaceId: this.workspaceId } : {}) },
+        context: {
+          turn,
+          agentId: turn.agent.id,
+          sessionId: turn.sessionId,
+          routineId: state.routineId,
+          ...(stepId ? { stepId } : {}),
+          ...(this.workspaceId ? { workspaceId: this.workspaceId } : {}),
+        },
         emit: noopSkillEmitPort,
       });
     } catch {

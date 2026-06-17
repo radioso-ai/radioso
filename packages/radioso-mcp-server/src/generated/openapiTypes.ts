@@ -1332,6 +1332,43 @@ export interface paths {
         patch: operations["updateAgentEmailSkill"];
         trace?: never;
     };
+    "/api/v1/agents/{agentId}/webhook-skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List agent webhook skills */
+        get: operations["listAgentWebhookSkills"];
+        put?: never;
+        /** Create an agent webhook skill */
+        post: operations["createAgentWebhookSkill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/webhook-skills/{skillId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an agent webhook skill */
+        get: operations["getAgentWebhookSkill"];
+        put?: never;
+        post?: never;
+        /** Delete an agent webhook skill */
+        delete: operations["deleteAgentWebhookSkill"];
+        options?: never;
+        head?: never;
+        /** Update an agent webhook skill */
+        patch: operations["updateAgentWebhookSkill"];
+        trace?: never;
+    };
     "/api/v1/retrieval/answer": {
         parameters: {
             query?: never;
@@ -9989,6 +10026,427 @@ export interface operations {
                 };
             };
             /** @description Agent or email skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentWebhookSkills: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Webhook skill definitions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skills: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            destinationId: string;
+                            skillName: string;
+                            boundPayload: {
+                                [key: string]: unknown;
+                            };
+                            exposedPayload: {
+                                [key: string]: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("delivered" | "missing_input" | "destination_not_found" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAgentWebhookSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    skillName: string;
+                    /** Format: uuid */
+                    destinationId: string;
+                    /** @default {} */
+                    boundPayload?: {
+                        [key: string]: unknown;
+                    };
+                    /** @default {} */
+                    exposedPayload?: {
+                        [key: string]: {
+                            description?: string;
+                            slotBinding?: string;
+                            /** @default true */
+                            required?: boolean;
+                        };
+                    };
+                    /** @default true */
+                    enabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Webhook skill definition */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            destinationId: string;
+                            skillName: string;
+                            boundPayload: {
+                                [key: string]: unknown;
+                            };
+                            exposedPayload: {
+                                [key: string]: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("delivered" | "missing_input" | "destination_not_found" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid webhook skill definition */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or webhook destination not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Webhook skill name already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentWebhookSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Webhook skill definition */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            destinationId: string;
+                            skillName: string;
+                            boundPayload: {
+                                [key: string]: unknown;
+                            };
+                            exposedPayload: {
+                                [key: string]: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("delivered" | "missing_input" | "destination_not_found" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or webhook skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAgentWebhookSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or webhook skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAgentWebhookSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    boundPayload?: {
+                        [key: string]: unknown;
+                    };
+                    exposedPayload?: {
+                        [key: string]: {
+                            description?: string;
+                            slotBinding?: string;
+                            /** @default true */
+                            required?: boolean;
+                        };
+                    };
+                    enabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Webhook skill definition */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            destinationId: string;
+                            skillName: string;
+                            boundPayload: {
+                                [key: string]: unknown;
+                            };
+                            exposedPayload: {
+                                [key: string]: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("delivered" | "missing_input" | "destination_not_found" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid webhook skill definition */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or webhook skill not found */
             404: {
                 headers: {
                     [name: string]: unknown;

@@ -89,6 +89,7 @@ import {
   MockCustomerEmailProviderAdapter,
   StaticCustomerEmailProviderRegistry,
 } from "../../src/modules/customerEmail/public.js";
+import { WebhookSkillDefinitionService } from "../../src/modules/webhookSkills/public.js";
 import {
   InMemoryMcpConnectionRepository,
   InMemoryExternalSkillDefinitionRepository,
@@ -98,6 +99,7 @@ import { InMemoryOauthConnectionRepository } from "./inMemoryOauthConnections.js
 import { InMemoryCustomerEmailConnectionRepository } from "./inMemoryCustomerEmailConnections.js";
 import { InMemoryEmailSkillDefinitionRepository } from "./inMemoryEmailSkillDefinitions.js";
 import { InMemoryEmailSkillActivityRepository } from "./inMemoryEmailSkillActivity.js";
+import { InMemoryWebhookSkillDefinitionRepository } from "./inMemoryWebhookSkillDefinitions.js";
 import {
   DefaultWebhookDestinationAdapter,
   WebhookDestinationService,
@@ -764,6 +766,7 @@ export const createTestDependencies = (overrides: {
   const customerEmailConnectionRepository = new InMemoryCustomerEmailConnectionRepository();
   const emailSkillDefinitionRepository = new InMemoryEmailSkillDefinitionRepository();
   const emailSkillActivityRepository = new InMemoryEmailSkillActivityRepository();
+  const webhookSkillDefinitionRepository = new InMemoryWebhookSkillDefinitionRepository();
   customerEmailConnectionRepository.setReferenceChecker((connectionId) =>
     emailSkillDefinitionRepository.countByConnection("", connectionId),
   );
@@ -820,7 +823,16 @@ export const createTestDependencies = (overrides: {
     encryption: { key: env.CONNECTOR_ENCRYPTION_KEY },
     assertPublicUrl: async () => undefined,
     routineReferences: routineDefinitionRepository,
+    skillReferences: {
+      async listAgentSkillNamesReferencingDestination(workspaceId, destinationId) {
+        return webhookSkillDefinitionRepository.listSkillNamesByDestination(workspaceId, destinationId);
+      },
+    },
   }));
+  const webhookSkillDefinitionService = new WebhookSkillDefinitionService({
+    repository: webhookSkillDefinitionRepository,
+    destinations: webhookDestinations,
+  });
   const accessGrantService = new AccessGrantService({
     repository: accessGrantRepository,
     originMatcher: new DefaultOriginMatcher(),
@@ -1085,6 +1097,7 @@ export const createTestDependencies = (overrides: {
     customerEmailOAuthService,
     customerEmailConnectionService,
     emailSkillDefinitionService,
+    webhookSkillDefinitionService,
     emailSkillActivityRepository,
     mcpConnectionService,
     externalSkillDefinitionService,

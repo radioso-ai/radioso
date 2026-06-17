@@ -1,19 +1,19 @@
 ---
 title: Why Radioso
-description: Ship grounded AI agents your team can actually debug.
+description: Build self-hosted agents that talk, act, and stay grounded — and debug them when they are wrong.
 ---
 
 # Why Radioso
 
-## Ship grounded AI agents your team can actually debug.
+## Agents that talk, act, and stay grounded.
 
-Radioso is an open-source knowledge layer for teams that need their agents to answer from real documents, and need to fix the answer when it is wrong. One knowledge base, five surfaces, one debug loop.
+Most AI agents will happily answer anything — whether or not they actually know. Plenty of them will also happily *do* nothing; they just talk. Radioso agents are different. They talk to your users, follow the procedures you author, take real action, and answer from your own data. And when one gets it wrong, you can see why and fix it. One agent, every surface, one debug loop.
 
 <a href="/quickstarts/run-locally" className="inline-flex h-9 items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground no-underline transition-colors hover:bg-primary/90">Run locally in 5 minutes →</a>
 
 ## Grounded by default
 
-Most AI agents will answer anything you ask them, whether or not they actually know. Radioso does not. When the agent has evidence in your knowledge base, it answers and cites the source. When it does not, it says so.
+Most AI agents will answer anything you ask them, whether or not they actually know. Radioso does not. When the agent has evidence in your data, it answers and cites the source. When it does not, it says so.
 
 This is not a marketing claim. It is the default behavior of every Radioso agent, and it works the same way across every surface: your website chat, your API, your MCP server, and your public link. If you can break it, we want the bug report.
 
@@ -23,15 +23,29 @@ Every agent gets a wrong answer eventually. The question is whether you can find
 
 In Radioso, every answer shows you the retrieval steps that produced it: which documents were considered, which chunks ranked highest, and which made it into the final context. If the answer was wrong, you can edit the source document, replay the question against the updated corpus, and watch the next answer get better. No vendor ticket. No retraining. No guessing.
 
-## One knowledge base, every surface
+## It does the work, not just the talking
 
-Your customers ask questions on your website. Your sales team wants the same answers in a shareable link. Your docs site needs an embedded ask-the-docs widget. Your support team queries through your API. Your engineers want the same knowledge in Cursor and Claude Desktop.
+A bot that can only talk is a glorified search box. Radioso agents act.
 
-Most teams build five different integrations against five different stacks to make this happen. With Radioso, you upload your documents once. Every surface reads from the same corpus, with the same retrieval quality, and the same debug loop when something goes wrong. Update a document, and every surface updates with it.
+**Directives** are standing rules that steer how the agent behaves. *"When the customer sounds anxious, slow down and confirm before doing anything."* You write the rule once; the agent applies it whenever it fits, on every surface, in every language. A directive never acts on its own — it shapes tone and judgment.
+
+**Routines** are multi-step flows the agent runs across turns. A return request, an onboarding check, a "collect these three things and file a ticket" — you write the steps in plain language, drop in a chip where the flow needs to collect a value, call a tool, or branch, and Radioso compiles it into something the engine runs and resumes turn to turn. No canvas to drag around. No redeploy. Validate, publish, done.
+
+And when the agent should stop talking and *do* something, it does: call a tool, fire a webhook when a routine finishes, or hand the conversation to a real person. The built-in "contact a human" flow is itself just a routine — collect an email, collect a message, submit, confirm.
+
+Every step it takes — which directive steered it, which tool it called, which routine step it is on — lands in the same turn trace as the answers. If it does the wrong thing, you can see why.
+
+<a href="/why-radioso/capabilities" className="inline-flex items-center text-sm font-medium text-primary no-underline hover:underline">See everything an agent can do →</a>
+
+## One agent, every surface
+
+Your customers ask questions on your website. Your sales team wants the same agent in a shareable link. Your docs site needs an embedded chat widget. Your support team queries through your API. Your engineers want the same agent in Cursor and Claude Desktop.
+
+Most teams build five different integrations against five different stacks to make this happen. With Radioso, you build your agent once — its data, its procedures, its persona. Every surface talks to the same agent, with the same answers and the same debug loop when something goes wrong. Update a document or a procedure, and every surface updates with it.
 
 <div className="my-6 rounded-2xl border border-border bg-card p-4 shadow-sm">
   <div className="grid gap-3">
-    <div className="rounded-xl border border-secondary/30 bg-secondary/25 p-4 font-semibold text-foreground">Radioso knowledge base</div>
+    <div className="rounded-xl border border-secondary/30 bg-secondary/25 p-4 font-semibold text-foreground">Radioso agent</div>
     <div className="grid gap-3 sm:grid-cols-2">
       <div className="rounded-xl border border-border bg-background/70 p-4 font-medium text-foreground">Website widget</div>
       <div className="rounded-xl border border-border bg-background/70 p-4 font-medium text-foreground">Public chat link</div>
@@ -48,7 +62,7 @@ We would rather lose a deal than win the wrong one. Some honest guidance:
 
 If you want your agent to know about your team's running internal conversation, such as Linear tickets, Confluence pages, or Slack threads, you probably want Confluence MCP or Linear MCP, not Radioso. We are built for curated knowledge bases, not systems of record.
 
-If you want to design complex multi-step AI workflows on a visual canvas with dozens of tool integrations, you probably want Dify. We are focused on one thing: grounded agents on your documents. We do not aim to be a general-purpose AI app builder.
+If you want to design complex multi-step AI workflows on a visual canvas with dozens of tool integrations, you probably want Dify. We are focused on grounded, action-taking agents you put in front of real people. We do not aim to be a general-purpose AI app builder.
 
 If you need an enterprise customer service platform with deep helpdesk integration, ticket routing, and a per-resolution pricing model, you probably want Intercom Fin or similar. We are built for teams who want to own their agent stack, not outsource it.
 

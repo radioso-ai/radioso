@@ -190,7 +190,7 @@ export function ChatView({ accountId, agentId, assistantName, assistantLinkUtmEn
       ? {
           title: 'Your workspace is ready',
           description:
-            'Ask a question about the content you loaded to see grounded answers and citations.',
+            'Send a message to see your agent answer — grounded in your data, with citations.',
           primaryAction: null,
         }
       : {
@@ -217,7 +217,7 @@ export function ChatView({ accountId, agentId, assistantName, assistantLinkUtmEn
   return (
     <DashboardPage
       title="Chat"
-      description="Ask questions about your documents"
+      description="Chat with your agent"
       actions={navigation}
       headerContent={
         <DropdownMenu>

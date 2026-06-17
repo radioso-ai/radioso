@@ -207,7 +207,12 @@ describe("RoutineSkillExecutorDispatcher", () => {
       turn,
     });
 
-    expect(captured?.context).toEqual({ turn, agentId: "agent-1" });
+    expect(captured?.context).toMatchObject({
+      turn,
+      agentId: "agent-1",
+      routineId: "routine-1",
+      stepId: "invoke_skill",
+    });
   });
 
   it("degrades to failed (not a throw) when the referenced skill is not resolvable", async () => {

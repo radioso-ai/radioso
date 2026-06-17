@@ -19644,6 +19644,816 @@
         }
       }
     },
+    "/api/v1/agents/{agentId}/webhook-skills": {
+      "get": {
+        "tags": [
+          "Webhook Skills"
+        ],
+        "summary": "List agent webhook skills",
+        "operationId": "listAgentWebhookSkills",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook skill definitions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "skills": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "workspaceId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "agentId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "destinationId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "skillName": {
+                            "type": "string"
+                          },
+                          "boundPayload": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "exposedPayload": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "object",
+                              "properties": {
+                                "description": {
+                                  "type": "string"
+                                },
+                                "slotBinding": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean",
+                                  "default": true
+                                }
+                              }
+                            }
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "outcomes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "delivered",
+                                "missing_input",
+                                "destination_not_found",
+                                "failed"
+                              ]
+                            }
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "workspaceId",
+                          "agentId",
+                          "destinationId",
+                          "skillName",
+                          "boundPayload",
+                          "exposedPayload",
+                          "enabled",
+                          "outcomes",
+                          "createdAt",
+                          "updatedAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "skills"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent read permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Webhook Skills"
+        ],
+        "summary": "Create an agent webhook skill",
+        "operationId": "createAgentWebhookSkill",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "skillName": {
+                    "type": "string"
+                  },
+                  "destinationId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "boundPayload": {
+                    "type": "object",
+                    "additionalProperties": {},
+                    "default": {}
+                  },
+                  "exposedPayload": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "object",
+                      "properties": {
+                        "description": {
+                          "type": "string"
+                        },
+                        "slotBinding": {
+                          "type": "string"
+                        },
+                        "required": {
+                          "type": "boolean",
+                          "default": true
+                        }
+                      }
+                    },
+                    "default": {}
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "default": true
+                  }
+                },
+                "required": [
+                  "skillName",
+                  "destinationId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Webhook skill definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "skill": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "workspaceId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "agentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "destinationId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "skillName": {
+                          "type": "string"
+                        },
+                        "boundPayload": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "exposedPayload": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "description": {
+                                "type": "string"
+                              },
+                              "slotBinding": {
+                                "type": "string"
+                              },
+                              "required": {
+                                "type": "boolean",
+                                "default": true
+                              }
+                            }
+                          }
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "outcomes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "delivered",
+                              "missing_input",
+                              "destination_not_found",
+                              "failed"
+                            ]
+                          }
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "workspaceId",
+                        "agentId",
+                        "destinationId",
+                        "skillName",
+                        "boundPayload",
+                        "exposedPayload",
+                        "enabled",
+                        "outcomes",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "skill"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid webhook skill definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent manage permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or webhook destination not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Webhook skill name already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/webhook-skills/{skillId}": {
+      "get": {
+        "tags": [
+          "Webhook Skills"
+        ],
+        "summary": "Get an agent webhook skill",
+        "operationId": "getAgentWebhookSkill",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "skillId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook skill definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "skill": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "workspaceId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "agentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "destinationId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "skillName": {
+                          "type": "string"
+                        },
+                        "boundPayload": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "exposedPayload": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "description": {
+                                "type": "string"
+                              },
+                              "slotBinding": {
+                                "type": "string"
+                              },
+                              "required": {
+                                "type": "boolean",
+                                "default": true
+                              }
+                            }
+                          }
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "outcomes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "delivered",
+                              "missing_input",
+                              "destination_not_found",
+                              "failed"
+                            ]
+                          }
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "workspaceId",
+                        "agentId",
+                        "destinationId",
+                        "skillName",
+                        "boundPayload",
+                        "exposedPayload",
+                        "enabled",
+                        "outcomes",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "skill"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent read permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or webhook skill not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Webhook Skills"
+        ],
+        "summary": "Update an agent webhook skill",
+        "operationId": "updateAgentWebhookSkill",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "skillId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "boundPayload": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  },
+                  "exposedPayload": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "object",
+                      "properties": {
+                        "description": {
+                          "type": "string"
+                        },
+                        "slotBinding": {
+                          "type": "string"
+                        },
+                        "required": {
+                          "type": "boolean",
+                          "default": true
+                        }
+                      }
+                    }
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook skill definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "skill": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "workspaceId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "agentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "destinationId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "skillName": {
+                          "type": "string"
+                        },
+                        "boundPayload": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "exposedPayload": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "description": {
+                                "type": "string"
+                              },
+                              "slotBinding": {
+                                "type": "string"
+                              },
+                              "required": {
+                                "type": "boolean",
+                                "default": true
+                              }
+                            }
+                          }
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "outcomes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "delivered",
+                              "missing_input",
+                              "destination_not_found",
+                              "failed"
+                            ]
+                          }
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "workspaceId",
+                        "agentId",
+                        "destinationId",
+                        "skillName",
+                        "boundPayload",
+                        "exposedPayload",
+                        "enabled",
+                        "outcomes",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "skill"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid webhook skill definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent manage permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or webhook skill not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Webhook Skills"
+        ],
+        "summary": "Delete an agent webhook skill",
+        "operationId": "deleteAgentWebhookSkill",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "skillId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent manage permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or webhook skill not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/retrieval/answer": {
       "post": {
         "tags": [

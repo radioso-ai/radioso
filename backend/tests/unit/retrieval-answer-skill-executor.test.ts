@@ -15,10 +15,25 @@ import { noopSkillEmitPort, type SkillDefinition } from "../../src/modules/skill
 const sampleResult = (): RetrievalPipelineResult =>
   ({
     rewrittenQuery: "rewritten",
-    contexts: [],
+    contexts: [{
+      documentId: "doc_1",
+      chunkId: "chunk_1",
+      title: "Course Guide",
+      content: "Kriya is introduced in the first module.",
+      metadata: { sourceUrl: "https://example.com/guide" },
+      retrievalSources: ["semantic_original"],
+      retrievalText: "Kriya is introduced in the first module.",
+      semanticScore: 0.9,
+      lexicalScore: 0,
+      similarity: 0.9,
+      relevanceScore: 0.91,
+      rerankPosition: 0,
+      promptPosition: 0,
+      estimatedTokenCost: 12,
+    }],
     systemPrompt: "system",
     prompt: "prompt",
-    citations: [],
+    citations: [{ documentId: "doc_1", chunkId: "chunk_1", title: "Course Guide" }],
     responseIdentity: null,
     responseSettings: {
       citationDisplayEnabled: true,
@@ -45,6 +60,13 @@ const invocation = (context: Record<string, unknown>, collected: Record<string, 
   emit: noopSkillEmitPort,
 });
 
+const contextInvocation = (context: Record<string, unknown>, collected: Record<string, unknown> = {}) => ({
+  skill: { name: "retrieval.context" } as SkillDefinition,
+  collected,
+  context,
+  emit: noopSkillEmitPort,
+});
+
 describe("RetrievalAnswerSkillExecutor", () => {
   it("declares the retrieval_answer internal adapter key", () => {
     expect(RETRIEVAL_ANSWER_ADAPTER).toBe("retrieval_answer");
@@ -64,6 +86,49 @@ describe("RetrievalAnswerSkillExecutor", () => {
     expect(readRetrievalResult(dispatch.outcome)).toBe(result);
     expect(dispatch.outcome.outputs).toBeUndefined();
     expect(controller.run).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "w1", query: "hello" }));
+  });
+
+  it("settles retrieval.context with safe grounding outputs instead of a ready answer", async () => {
+    const result = sampleResult();
+    const controller = stubController(result);
+    const executor = new RetrievalAnswerSkillExecutor(controller);
+
+    const dispatch = await executor.dispatch(contextInvocation({ request }));
+
+    expect(dispatch.disposition).toBe("settled");
+    if (dispatch.disposition !== "settled") return;
+    expect(dispatch.outcome.status).toBe("context_ready");
+    expect(dispatch.outcome.answer).toBeUndefined();
+    expect(dispatch.outcome.outputs).toMatchObject({
+      has_context: true,
+      source_count: 1,
+      contexts: [{
+        documentId: "doc_1",
+        chunkId: "chunk_1",
+        title: "Course Guide",
+        content: "Kriya is introduced in the first module.",
+      }],
+      citations: [{ documentId: "doc_1", chunkId: "chunk_1", title: "Course Guide" }],
+    });
+    expect(readRetrievalResult(dispatch.outcome)).toBe(result);
+  });
+
+  it("settles retrieval.context with no_context when no chunks were retrieved", async () => {
+    const result = { ...sampleResult(), contexts: [], citations: [] };
+    const controller = stubController(result);
+    const executor = new RetrievalAnswerSkillExecutor(controller);
+
+    const dispatch = await executor.dispatch(contextInvocation({ request }));
+
+    expect(dispatch.disposition).toBe("settled");
+    if (dispatch.disposition !== "settled") return;
+    expect(dispatch.outcome.status).toBe("no_context");
+    expect(dispatch.outcome.outputs).toMatchObject({
+      has_context: false,
+      source_count: 0,
+      contexts: [],
+      citations: [],
+    });
   });
 
   it("dispatches an interpreted result through runInterpreted when provided", async () => {

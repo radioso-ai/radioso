@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   branchDecisionLabel,
+  createEmptyRoutineProseDraft,
   draftFromChipDoc,
   formatConditionLabel,
   routineToChipDoc,
@@ -40,6 +41,23 @@ function roundTrip(name: string, trigger: string, blocks: RoutineDocBlock[], var
 }
 
 describe('routine prose helpers', () => {
+  it('creates a blank prose source that the prose editor can represent', () => {
+    const draft = createEmptyRoutineProseDraft({
+      name: 'Prospect intake',
+      triggerDescription: 'When someone asks about pricing',
+      priority: 5,
+    })
+
+    expect(routineToChipDoc(draft)).toEqual({ variables: [], paragraphs: [] })
+    expect(draft).toMatchObject({
+      name: 'Prospect intake',
+      activation: { triggerDescription: 'When someone asks about pricing', priority: 5 },
+      steps: [],
+      transitions: [],
+      terminals: [{ stableStepId: 'done', instruction: null }],
+    })
+  })
+
   it('labels how each branch is decided in plain language', () => {
     expect(branchDecisionLabel('llm')).toBe('Decided by AI')
     expect(branchDecisionLabel('default')).toBe('Otherwise')
@@ -421,6 +439,10 @@ describe('routineToChipDoc (inverse serializer)', () => {
     expect(routineToChipDoc({ ...base, completionExport: { enabled: true, triggerKinds: ['complete'], destinationRef: 'dest_1' } })).toBeNull()
     // More than one complete terminal isn't a prose shape.
     expect(routineToChipDoc({ ...base, terminals: [...base.terminals, { stableStepId: 'done2', kind: 'complete', instruction: 'x', ordinal: 1 }] })).toBeNull()
+    // Legacy prose completion copy still loads, but new prose drafts emit a null
+    // completion instruction so routines do not say "All set." as an extra final step.
+    expect(routineToChipDoc({ ...base, terminals: [{ ...base.terminals[0]!, instruction: 'All set.' }] })).not.toBeNull()
+    expect(base.terminals[0]?.instruction).toBeNull()
     // A custom completion message can't be shown in prose — would be silently overwritten.
     expect(routineToChipDoc({ ...base, terminals: [{ ...base.terminals[0]!, instruction: 'Thanks, all done!' }] })).toBeNull()
     // A non-default terminal id would be renamed on a prose round-trip.

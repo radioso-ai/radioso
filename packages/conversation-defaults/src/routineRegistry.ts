@@ -142,13 +142,16 @@ export class RoutineRegistry {
 
   activator(modelGateway: ConversationModelGateway): ConversationRoutineActivator {
     return {
-      activate: async ({ turn, loopGuardCandidateIds, suppressClarificationAsk }: {
+      activate: async ({ turn, loopGuardCandidateIds, suppressedRoutineIds, suppressClarificationAsk }: {
         turn: TurnContext;
         loopGuardCandidateIds?: string[];
+        suppressedRoutineIds?: string[];
         suppressClarificationAsk?: boolean;
       }) => {
+        const suppressed = new Set(suppressedRoutineIds ?? []);
         const eligibleRegistrations = this.registrations.filter((registration) =>
-          registration.trigger.eligible?.({ turn }) ?? true
+          !suppressed.has(registration.routine.id) &&
+          (registration.trigger.eligible?.({ turn }) ?? true)
         );
         if (eligibleRegistrations.length === 0) {
           return null;

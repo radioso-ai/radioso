@@ -25,6 +25,10 @@ export class DeferredRoutineStore implements ConversationRoutineStore {
     return this.inner.loadActive(input);
   }
 
+  loadCompleted(input: { sessionId: string }): ReturnType<NonNullable<ConversationRoutineStore["loadCompleted"]>> {
+    return this.inner.loadCompleted?.(input) ?? Promise.resolve([]);
+  }
+
   async save(state: RoutineState): Promise<void> {
     this.transition = { kind: "save", state };
   }

@@ -38,9 +38,9 @@ const stubController = (result: RetrievalPipelineResult): RetrievalPipelinePort 
 
 const request = { workspaceId: "w1", query: "hello", history: [] };
 
-const invocation = (context: Record<string, unknown>) => ({
+const invocation = (context: Record<string, unknown>, collected: Record<string, unknown> = {}) => ({
   skill: { name: "retrieval.answer" } as SkillDefinition,
-  collected: {},
+  collected,
   context,
   emit: noopSkillEmitPort,
 });
@@ -75,6 +75,25 @@ describe("RetrievalAnswerSkillExecutor", () => {
     await executor.dispatch(invocation({ interpreted, withRetrieval: true }));
     expect(controller.runInterpreted).toHaveBeenCalledWith(interpreted);
     expect(controller.run).not.toHaveBeenCalled();
+  });
+
+  it("uses a bound query from collected instead of the turn's latest message", async () => {
+    const controller = stubController(sampleResult());
+    const executor = new RetrievalAnswerSkillExecutor(controller);
+
+    await executor.dispatch(invocation({
+      workspaceId: "w1",
+      turn: {
+        sessionId: "conversation-1",
+        inputEvent: { id: "message-2", kind: "message", content: "the user's latest unrelated reply", locale: "en" },
+        agent: { id: "agent-1", metadata: {} },
+        history: [],
+        stagedContext: [],
+        steering: [],
+      },
+    }, { query: "the bound question" }));
+
+    expect(controller.run).toHaveBeenCalledWith(expect.objectContaining({ query: "the bound question" }));
   });
 
   it("builds a retrieval request from a routine turn context", async () => {

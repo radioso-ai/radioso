@@ -94,11 +94,17 @@ const toRetrievalHistory = (
     createdAt: messageDate(message),
   }));
 
-const requestFromTurn = ({ turn, workspaceId }: TurnInvocationContext): RetrievalPipelineRequest => {
+const requestFromTurn = (
+  { turn, workspaceId }: TurnInvocationContext,
+  boundQuery?: string,
+): RetrievalPipelineRequest => {
   const metadata = optionalRecord(turn.agent.metadata);
   return {
     workspaceId,
-    query: turn.inputEvent.content,
+    // A typed routine step can bind the `query` input to a slot or literal; honor
+    // that over the turn's latest message. Untyped/legacy steps leave it unbound
+    // and fall back to the user's reply.
+    query: boundQuery ?? turn.inputEvent.content,
     history: toRetrievalHistory(turn.history, workspaceId, turn.sessionId),
     ...(turn.inputEvent.locale ? { responseLanguage: turn.inputEvent.locale } : {}),
     ...(metadata?.skillSettings ? { agentSkillSettings: optionalRecord(metadata.skillSettings) } : {}),
@@ -136,7 +142,9 @@ export class RetrievalAnswerSkillExecutor implements SkillExecutorPort {
     }
 
     if (isTurnInvocation(context)) {
-      const result = await this.controller.run(requestFromTurn(context));
+      const bound = invocation.collected?.query;
+      const boundQuery = typeof bound === "string" && bound.trim().length > 0 ? bound : undefined;
+      const result = await this.controller.run(requestFromTurn(context, boundQuery));
       return { disposition: "settled", outcome: embedRetrievalResult(result) };
     }
 

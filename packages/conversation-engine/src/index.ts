@@ -12,6 +12,8 @@ import type {
   ProcessTurnStreamEvent,
   ProcessTurnStreamInput,
   RenderableTurn,
+  ResumeAwaitingDecisionInput,
+  ConversationRoutineDecisionResult,
   RoutineActionRequest,
   SelectionDecision,
   SkillDefinition,
@@ -22,6 +24,7 @@ import type {
   TurnContext,
   TurnOutcome,
 } from "@radioso/conversation-contract";
+import { resumeAwaitingDecision } from "./awaitingDecision.js";
 import { clarificationStage } from "./clarification.js";
 
 const nowIso = (): string => new Date().toISOString();
@@ -710,6 +713,16 @@ export class DefaultConversationEngine implements ConversationEngine {
     });
   }
 
+  async resumeAwaitingDecision(input: ResumeAwaitingDecisionInput): Promise<ConversationRoutineDecisionResult> {
+    return resumeAwaitingDecision({
+      suspendedReader: input.suspendedReader,
+      routineRunner: input.routineRunner,
+      turn: input.turn,
+      decision: input.decision,
+      ...(input.steeringResolver ? { steeringResolver: input.steeringResolver } : {}),
+    });
+  }
+
   async processTurn(input: ProcessTurnInput): Promise<ProcessTurnResult> {
     const resumed = await this.attemptRoutine(input);
     if (resumed) {
@@ -809,6 +822,7 @@ export class DefaultConversationEngine implements ConversationEngine {
 export const createConversationEngine = (): ConversationEngine => new DefaultConversationEngine();
 
 export { DefaultRoutineRunner } from "./routineRunner.js";
+export { resumeAwaitingDecision } from "./awaitingDecision.js";
 export {
   clarificationStage,
   decideClarification,

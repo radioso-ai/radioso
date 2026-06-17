@@ -119,7 +119,7 @@ export const agentBodySchema = z.object({
 
 export { llmProviderNames as agentLlmProviderNames, chatModelOverrideSchema as agentChatModelOverrideSchema };
 
-type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "authoredDirectiveService" | "directiveAuthorService" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger">;
+type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger">;
 
 export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router => {
   const router = Router();
@@ -251,6 +251,30 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
       const parsed = agentDirectiveParamsSchema.parse(req.params);
       await dependencies.authoredDirectiveService.delete(workspaceId, parsed.agentId, parsed.directiveId);
       res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/:agentId/routine-skill-catalog", workspaceSession, agentRead, async (req, res, next) => {
+    try {
+      const { workspaceId, accountId, userId } = res.locals as {
+        workspaceId: string;
+        accountId?: string;
+        userId?: string;
+      };
+      const parsed = agentParamsSchema.parse(req.params);
+      const agent = await dependencies.agentRepository.findByIdAndWorkspaceId(parsed.agentId, workspaceId);
+      if (!agent) {
+        throw notFound("Agent not found");
+      }
+      const skills = await dependencies.skillAuthoringCatalog.listForAgent({
+        workspaceId,
+        agentId: parsed.agentId,
+        ...(accountId ? { accountId } : {}),
+        ...(userId ? { userId } : {}),
+      });
+      res.status(200).json({ skills });
     } catch (error) {
       next(error);
     }

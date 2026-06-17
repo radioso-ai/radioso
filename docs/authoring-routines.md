@@ -53,10 +53,14 @@ inline reference, not raw syntax. Each kind has its own colour:
   When a step asks for a variable, the routine waits on that step until the user
   provides it, then stores the answer under that name before moving on. You do
   not need a branch to make a collection step wait.
-- **Skill** - a skill the routine calls, referenced by name. The skill is
-  defined for the agent elsewhere; here you only name it. A step that contains a
-  skill chip becomes a tool step the runtime resolves by name and dispatches
-  through the shared skill-executor registry.
+- **Skill** - a skill the routine calls. Type `@` and the menu lists the skills
+  the agent actually has, so you pick one instead of guessing its name. The skill
+  is still defined for the agent elsewhere; here you choose it and decide how its
+  inputs are filled. A skill chip whose name the agent does not have is shown as
+  **unknown skill**, so a typo or a forward reference is easy to spot. A step that
+  contains a skill chip becomes a tool step the runtime dispatches through the
+  shared skill port. Click the chip to see its inputs and outcomes and to bind
+  them (see [Bind a skill's inputs and outputs](#bind-a-skills-inputs-and-outputs)).
 - **Handoff** - a branch target that ends the routine by escalating to a person.
 - **End** - a branch target that completes the routine.
 - **Condition** - a decided-in-code comparison on a variable. Build it from the
@@ -112,14 +116,41 @@ Use the **Condition** toolbar button to build a comparison:
    than` and `is within the last` for dates.
 4. Enter the value (and unit, for relative-date checks).
 
-A **tool** step calls an external skill. Select the skill from the dropdown, which
-lists the agent's defined external skills by name. The routine fills the skill's
-exposed inputs at run time and branches on the result. See
-[External Skills via MCP](./external-skills.md) for how to connect a server and
-define skills.
+A **tool** step calls a skill. In the **Form** view, the skill field offers the
+agent's skills and flags a name the agent does not have. The step branches on the
+skill's outcome. See [External Skills via MCP](./external-skills.md) for how to
+connect a server and define external skills.
 
 A branch with a condition chip is decided by a reliable calculation. A branch
 with only prose is decided by the model. The chip colour tells you which.
+
+## Bind a skill's inputs and outputs
+
+Open a skill chip, or the skill row in the **Form** view, to see what the skill
+takes and returns. The panel lists the skill's **inputs** - each with a type and
+whether it is required - and its **outcomes**, the results you can branch on.
+
+For each input you choose where its value comes from:
+
+- **A fixed value** - a literal you type, such as a channel name or a flag. It is
+  the same on every run.
+- **A variable** - a value the routine already holds: a slot it collected from the
+  user, or an output an earlier skill step produced. You pick the variable by
+  name.
+
+The key point: the binding lives on the step, inside the routine. You no longer
+match names by hand in the skill's own settings.
+
+You can also assign a skill's **outputs** to variables. Give an output a variable
+name, and later steps can read it - in a branch condition, or as the input to
+another skill.
+
+In practice, a refund step might bind its `order_id` input to the `@order_id`
+slot you collected, set `channel` to a fixed value, and store the returned
+`refund_id` in a variable that a later message reads back to the user.
+
+A required input must resolve to a literal, or to a variable that is always set
+before the step runs. If it cannot, validation reports it (see below).
 
 ## Branch rows
 
@@ -191,7 +222,10 @@ such as:
 - a branch target that no longer exists
 - a step that cannot reach an end
 - a variable used in an instruction but not declared
-- a tool step that names no skill
+- a tool step that names no skill, or names a skill the agent does not have
+- a required skill input that nothing fills
+- a skill input bound to a value whose type does not fit, or to a variable the
+  routine never sets
 - a comparison on a variable that does not exist, or a type that does not fit
   the check
 - an enabled completion export that points at an unknown webhook destination

@@ -111,6 +111,16 @@ describe("RoutineSkillExecutorDispatcher", () => {
     });
   });
 
+  it("lets static built-ins win before a delegate resolver handles dynamic external names", async () => {
+    const staticSkill = skillNamed("retrieval.answer", TEST_EXECUTION, [capabilityNames.retrieval.answer]);
+    const resolver = new StaticRoutineSkillResolver([staticSkill], {
+      resolve: (name) => skillNamed(name, { kind: "internal", adapter: "external-adapter" }),
+    });
+
+    expect(resolver.resolve("retrieval.answer")).toBe(staticSkill);
+    expect(resolver.resolve("crm_lookup")?.execution).toEqual({ kind: "internal", adapter: "external-adapter" });
+  });
+
   it("carries a custom (fine-grained) status verbatim so the runner can branch on it", async () => {
     // The generic adapter may surface a service-shaped status (design seam: the
     // closed SkillOutcome enum → the open RoutineSkillResult union). It must
@@ -152,6 +162,31 @@ describe("RoutineSkillExecutorDispatcher", () => {
     });
 
     expect(captured?.skill.name).toBe("book_meeting");
+    expect(captured?.collected).toEqual({ email: "a@b.com", duration: 30 });
+  });
+
+  it("resolves typed input bindings into executor collected params when provided", async () => {
+    let captured: SkillInvocation | undefined;
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([skillNamed("book_meeting")]),
+      registryWith(
+        settledExecutor({ status: "completed" } as unknown as SkillOutcome, (invocation) => {
+          captured = invocation;
+        }),
+      ),
+    );
+
+    await dispatcher.dispatch({
+      skillName: "book_meeting",
+      state: routineState({ customerEmail: "a@b.com", ignored: "not forwarded" }),
+      inputBindings: {
+        email: { kind: "variableRef", ref: "customerEmail" },
+        duration: { kind: "literal", value: 30 },
+        optional: { kind: "variableRef", ref: "missing" },
+      },
+      turn,
+    });
+
     expect(captured?.collected).toEqual({ email: "a@b.com", duration: 30 });
   });
 

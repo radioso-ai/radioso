@@ -142,6 +142,7 @@ import { NoopContactHistoryProvider } from "../../src/modules/chat/services/cont
 import type { AnswerFeedbackHistoryProviderPort } from "../../src/modules/chat/services/answerFeedbackHistoryProvider.js";
 import {
   createDefaultSkillCatalogRegistry,
+  SkillAuthoringCatalogService,
   SkillCatalogService,
 } from "../../src/modules/skills/public.js";
 import type { ApplicationRouteMount } from "../../src/app/composition/applicationModule.js";
@@ -858,9 +859,20 @@ export const createTestDependencies = (overrides: {
     },
     registeredCapabilityNames,
   });
+  const skillCatalogRegistry = createDefaultSkillCatalogRegistry();
+  const capabilityPolicy = new DefaultAllowCapabilityPolicy();
+  const skillCatalogService = new SkillCatalogService({
+    capabilityPolicy,
+    registry: skillCatalogRegistry,
+  });
+  const skillAuthoringCatalog = new SkillAuthoringCatalogService({
+    skillCatalog: skillCatalogService,
+    externalSkills: externalSkillDefinitionService,
+  });
   const routineDefinitionService = new RoutineDefinitionService({
     agentRepository,
     repository: routineDefinitionRepository,
+    skillAuthoringCatalog,
     webhookDestinations: {
       existsByIdAndWorkspace: async (inputWorkspaceId, destinationId) =>
         webhookDestinations.existsByIdAndWorkspace(inputWorkspaceId, destinationId),
@@ -921,7 +933,6 @@ export const createTestDependencies = (overrides: {
     : publicChatActionAdvertisers.length === 1
       ? publicChatActionAdvertisers[0]!
       : new ChainedPublicChatActionAdvertiser(publicChatActionAdvertisers);
-  const skillCatalogRegistry = createDefaultSkillCatalogRegistry();
   const fallbackReplyComposer = overrides.fallbackReplyComposer ?? new TestFallbackReplyComposer();
   const publishedRoutineSource = createPublishedRoutineRegistrationSource(routineDefinitionRepository, {
     onDefinitionError: ({ agentId, definitionId, error }) => {
@@ -1049,11 +1060,6 @@ export const createTestDependencies = (overrides: {
     chatGateway,
     usageLimitPolicy,
     auditService,
-  });
-  const capabilityPolicy = new DefaultAllowCapabilityPolicy();
-  const skillCatalogService = new SkillCatalogService({
-    capabilityPolicy,
-    registry: skillCatalogRegistry,
   });
   const platformSettingsService = new PlatformSettingsService({
     workspaceRepository,
@@ -1200,6 +1206,7 @@ export const createTestDependencies = (overrides: {
     directiveAuthorService,
     agentSurfaceExtensions,
     skillCatalogService,
+    skillAuthoringCatalog,
     accountRepository,
     userRepository,
     workspaceRepository,

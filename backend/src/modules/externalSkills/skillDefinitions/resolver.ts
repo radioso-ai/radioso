@@ -8,6 +8,8 @@
  */
 
 export interface ExposedParamSpec {
+  /** Optional author-facing explanation for the exposed input. */
+  description?: string;
   /** Optional explicit routine slot to read instead of the param's own name. */
   slotBinding?: string;
 }

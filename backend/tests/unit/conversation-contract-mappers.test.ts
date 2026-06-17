@@ -112,6 +112,7 @@ describe("conversation contract mappers", () => {
         retrievalEnabled: true,
         contactRequestsEnabled: false,
         webhookExportsEnabled: false,
+        skillSettings: {},
       },
     });
   });

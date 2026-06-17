@@ -4,6 +4,15 @@ export const ROUTINE_SLOT_TYPES: RoutineSlotType[] = ['text', 'number', 'boolean
 export const ROUTINE_FIELD_GUARD_UNITS: RoutineFieldGuardUnit[] = ['days', 'weeks', 'months', 'years']
 
 export type RoutineFieldGuardValue = string | number | boolean
+export type RoutineInputBinding =
+  | { kind: 'literal'; value: string | number | boolean }
+  | { kind: 'variableRef'; ref: string }
+export type RoutineStepMode = 'typed' | 'untyped'
+export type RoutineSkillBindingState = {
+  inputBindings?: Record<string, RoutineInputBinding>
+  outputAssignments?: Record<string, string>
+  mode?: RoutineStepMode
+} & Record<string, unknown>
 
 const OP_LABELS: Record<RoutineFieldGuardOp, string> = {
   is_true: 'is true',
@@ -97,6 +106,9 @@ export type RoutineDocChip = {
   // For a `step` (jump) chip that loops back to an earlier step: the max iterations.
   // A bounded back-edge compiles to a counter guard; the backend validator requires it.
   counterLimit?: number | null
+  inputBindings?: Record<string, RoutineInputBinding>
+  outputAssignments?: Record<string, string>
+  mode?: RoutineStepMode
 }
 // A block carrying `headingLevel` is an h1 step title (its text names the step and pins a
 // stable id); following non-heading blocks are that step's body. Untitled blocks keep the
@@ -137,6 +149,11 @@ export function draftFromChipDoc(input: {
     // A condition chip branches on a variable — that's a slot reference too.
     for (const chip of block.chips) {
       if (chip.kind === 'condition') usedSlotIds.add(chip.refId)
+      if (chip.kind === 'skill') {
+        for (const binding of Object.values(chip.inputBindings ?? {})) {
+          if (binding.kind === 'variableRef') usedSlotIds.add(binding.ref)
+        }
+      }
     }
   }
   const slots = input.variables
@@ -263,6 +280,12 @@ export function draftFromChipDoc(input: {
       if (skillChip) {
         titledStep.step.kind = 'tool'
         titledStep.step.toolRef = skillChip.refId
+        titledStep.step.metadata = {
+          ...(titledStep.step.metadata ?? {}),
+          inputBindings: skillChip.inputBindings ?? {},
+          outputAssignments: skillChip.outputAssignments ?? {},
+          mode: skillChip.mode ?? 'typed',
+        }
       }
       flushTitledBody()
       continue
@@ -277,7 +300,13 @@ export function draftFromChipDoc(input: {
       toolRef: skillChip ? skillChip.refId : null,
       actionType: null,
       ordinal: steps.length,
-      metadata: {},
+      metadata: skillChip
+        ? {
+            inputBindings: skillChip.inputBindings ?? {},
+            outputAssignments: skillChip.outputAssignments ?? {},
+            mode: skillChip.mode ?? 'typed',
+          }
+        : {},
     })
     if (lastStepId) {
       transitions.push({
@@ -344,6 +373,9 @@ export type ProseSegment =
       unit?: RoutineFieldGuardUnit | null
       // For a `step` (jump) chip that loops back: the max iterations (counter bound).
       counterLimit?: number | null
+      inputBindings?: Record<string, RoutineInputBinding>
+      outputAssignments?: Record<string, string>
+      mode?: RoutineStepMode
     }
 // A paragraph is a step title (headingLevel 1) or ordinary prose/branch content. The
 // title pins the step's stable id + label; the following non-heading paragraphs are its
@@ -463,13 +495,31 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
       const bodyText = (step.instruction ?? '') !== title ? (step.instruction ?? '') : ''
       const bodySegments = bodyText ? parseInstructionSegments(bodyText, nameByRef) : []
       if (step.kind === 'tool' && step.toolRef) {
-        bodySegments.push({ kind: 'chip', chipKind: 'skill', refId: step.toolRef, label: `@${step.toolRef}` })
+        const metadata = step.metadata as RoutineSkillBindingState | undefined
+        bodySegments.push({
+          kind: 'chip',
+          chipKind: 'skill',
+          refId: step.toolRef,
+          label: `@${step.toolRef}`,
+          inputBindings: metadata?.inputBindings,
+          outputAssignments: metadata?.outputAssignments,
+          mode: metadata?.mode,
+        })
       }
       if (bodySegments.length > 0) paragraphs.push({ segments: bodySegments })
     } else {
       const segments = parseInstructionSegments(step.instruction ?? '', nameByRef)
       if (step.kind === 'tool' && step.toolRef) {
-        segments.push({ kind: 'chip', chipKind: 'skill', refId: step.toolRef, label: `@${step.toolRef}` })
+        const metadata = step.metadata as RoutineSkillBindingState | undefined
+        segments.push({
+          kind: 'chip',
+          chipKind: 'skill',
+          refId: step.toolRef,
+          label: `@${step.toolRef}`,
+          inputBindings: metadata?.inputBindings,
+          outputAssignments: metadata?.outputAssignments,
+          mode: metadata?.mode,
+        })
       }
       paragraphs.push({ segments })
     }

@@ -13,6 +13,7 @@ import type {
 
 import {
   compileRoutineDefinition,
+  routineStepSchema,
   routineGuardProvenance,
   validateRoutineDefinition,
   type RoutineDefinition,
@@ -51,6 +52,62 @@ const baseDefinition = (): RoutineDefinition => ({
 });
 
 describe("routine definition compiler and validator", () => {
+  it("parses typed skill-step bindings in metadata and preserves author metadata", () => {
+    const parsed = routineStepSchema.parse({
+      stableStepId: "lookup",
+      kind: "tool",
+      instruction: "Look up the order.",
+      toolRef: "order_lookup",
+      actionType: null,
+      ordinal: 0,
+      metadata: {
+        authorNote: "shown in authoring",
+        inputBindings: {
+          email: { kind: "variableRef", ref: "email" },
+          includeHistory: { kind: "literal", value: true },
+          retryCount: { kind: "literal", value: 2 },
+          locale: { kind: "literal", value: "en-US" },
+        },
+        outputAssignments: {
+          status: "order_status",
+          total: "order_total",
+        },
+        mode: "typed",
+      },
+    });
+
+    expect(parsed.metadata).toEqual({
+      authorNote: "shown in authoring",
+      inputBindings: {
+        email: { kind: "variableRef", ref: "email" },
+        includeHistory: { kind: "literal", value: true },
+        retryCount: { kind: "literal", value: 2 },
+        locale: { kind: "literal", value: "en-US" },
+      },
+      outputAssignments: {
+        status: "order_status",
+        total: "order_total",
+      },
+      mode: "typed",
+    });
+  });
+
+  it("rejects an unknown typed skill-step binding kind", () => {
+    expect(() => routineStepSchema.parse({
+      stableStepId: "lookup",
+      kind: "tool",
+      instruction: "Look up the order.",
+      toolRef: "order_lookup",
+      actionType: null,
+      ordinal: 0,
+      metadata: {
+        inputBindings: {
+          email: { kind: "slot", ref: "email" },
+        },
+      },
+    })).toThrow();
+  });
+
   it("compiles an authored definition to the current 069 Routine graph", () => {
     const routine = compileRoutineDefinition(baseDefinition());
 
@@ -461,6 +518,78 @@ describe("routine definition compiler and validator", () => {
     expect(compileRoutineDefinition(definition).steps).toContainEqual(
       expect.objectContaining({ id: "lookup", kind: "skill", skillName: "order_lookup" }),
     );
+  });
+
+  it("compiles typed skill-step bindings onto the routine step contract", () => {
+    const definition: RoutineDefinition = {
+      ...baseDefinition(),
+      steps: [
+        { stableStepId: "ask_email", kind: "chat", instruction: "Ask for {{slot.email}}.", toolRef: null, ordinal: 0, metadata: {} },
+        {
+          stableStepId: "lookup",
+          kind: "tool",
+          instruction: "Look up order.",
+          toolRef: "order_lookup",
+          ordinal: 1,
+          metadata: {
+            inputBindings: {
+              email: { kind: "variableRef", ref: "email" },
+              includeHistory: { kind: "literal", value: true },
+            },
+            outputAssignments: {
+              status: "order_status",
+            },
+            mode: "typed",
+          },
+        },
+      ],
+      slots: [
+        { stableSlotId: "slot_email", key: "email", type: "email", required: true, description: null, ordinal: 0 },
+      ],
+      transitions: [
+        { fromStep: "ask_email", toRef: "lookup", guardKind: "slot_filled", guardText: "{{slot.email}}", ordinal: 0 },
+        { fromStep: "lookup", toRef: "done", guardKind: "default", guardText: null, ordinal: 1 },
+      ],
+    };
+
+    expect(compileRoutineDefinition(definition).steps).toContainEqual(
+      expect.objectContaining({
+        id: "lookup",
+        kind: "skill",
+        skillName: "order_lookup",
+        inputBindings: {
+          email: { kind: "variableRef", ref: "email" },
+          includeHistory: { kind: "literal", value: true },
+        },
+        outputAssignments: {
+          status: "order_status",
+        },
+        mode: "typed",
+      }),
+    );
+  });
+
+  it("leaves compiled skill steps unchanged when they have no typed bindings", () => {
+    const definition: RoutineDefinition = {
+      ...baseDefinition(),
+      steps: [
+        { stableStepId: "lookup", kind: "tool", instruction: "Look up order.", toolRef: "order_lookup", ordinal: 0, metadata: {} },
+      ],
+      slots: [],
+      transitions: [
+        { fromStep: "lookup", toRef: "done", guardKind: "default", guardText: null, ordinal: 0 },
+      ],
+    };
+
+    const step = compileRoutineDefinition(definition).steps.find((candidate) => candidate.id === "lookup");
+
+    expect(step).toEqual({
+      id: "lookup",
+      kind: "skill",
+      skillName: "order_lookup",
+      action: "Look up order.",
+      metadata: { authoredKind: "tool" },
+    });
   });
 
   it("rejects a tool step that names no skill", () => {

@@ -1,5 +1,6 @@
 import type { Page, Route } from "@playwright/test";
 import type { components } from "../../../typescript-sdk/src/generated/types";
+import type { SkillAuthoringDescriptor } from "@/lib/api-routine-skill-catalog";
 
 type ApiSchemas = components["schemas"];
 
@@ -81,6 +82,7 @@ export type CustomerEmailActivityFixture = {
   errorCode: string | null;
   createdAt: string;
 };
+export type RoutineSkillCatalogFixture = SkillAuthoringDescriptor[];
 export type WebhookDestinationMutationFixture = {
   method: "POST" | "PUT" | "DELETE" | "ROTATE_SECRET";
   destinationId?: string;
@@ -497,6 +499,7 @@ export const installDashboardApiMocks = async (
     mcpConnectionRequests?: string[];
     emailSkills?: CustomerEmailSkillFixture[];
     emailActivity?: CustomerEmailActivityFixture[];
+    routineSkillCatalog?: RoutineSkillCatalogFixture;
   } = {},
 ) => {
   let platformSettings = options.platformSettings ?? basePlatformSettings();
@@ -537,6 +540,7 @@ export const installDashboardApiMocks = async (
   const routineUpdates = options.routineUpdates;
   const emailSkills = options.emailSkills ?? [];
   const emailActivity = options.emailActivity ?? [];
+  const routineSkillCatalog = options.routineSkillCatalog ?? [];
   let webhookDestinations = options.webhookDestinations ?? [];
   let nextWebhookDestinationIndex = webhookDestinations.length + 1;
   const mcpConnections = options.mcpConnections ?? [];
@@ -954,6 +958,11 @@ export const installDashboardApiMocks = async (
 
     if (path === `/agents/${defaultAgentId}/email-skills` && request.method() === "GET") {
       await json(route, { skills: emailSkills });
+      return;
+    }
+
+    if (path === `/agents/${defaultAgentId}/routine-skill-catalog` && request.method() === "GET") {
+      await json(route, { skills: routineSkillCatalog });
       return;
     }
 

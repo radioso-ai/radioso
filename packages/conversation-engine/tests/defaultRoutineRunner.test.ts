@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { DefaultRoutineRunner } from "../src/routineRunner.js";
 import type {
   ConversationRoutineNextStepSelector,
+  ConversationRoutineSkillDispatcher,
   ConversationRoutineStepRenderer,
   Routine,
   RoutineState,
@@ -506,6 +507,51 @@ describe("DefaultRoutineRunner skill (tool) steps", () => {
     expect(result.nextState).toBeNull();
   });
 
+  it("passes typed input bindings through skill dispatch so the host can build collected input", async () => {
+    const typedRoutine: Routine = {
+      ...singleEdge,
+      steps: singleEdge.steps.map((step) =>
+        step.id === "submit"
+          ? {
+              ...step,
+              inputBindings: {
+                message: { kind: "variableRef", ref: "message" },
+                priority: { kind: "literal", value: "high" },
+              },
+            }
+          : step,
+      ),
+    };
+    let collected: Record<string, unknown> | undefined;
+    const dispatch: ConversationRoutineSkillDispatcher["dispatch"] = vi.fn(async (input) => {
+      collected = {};
+      for (const [key, binding] of Object.entries(input.inputBindings ?? {})) {
+        if (binding.kind === "literal") {
+          collected[key] = binding.value;
+        } else if (input.state.variables[binding.ref] !== undefined) {
+          collected[key] = input.state.variables[binding.ref];
+        }
+      }
+      return { status: "completed" as const };
+    });
+    const runner = new DefaultRoutineRunner(
+      [typedRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "submit" })) },
+      { render: vi.fn(echoRenderer.render) },
+      { dispatch },
+    );
+
+    await runner.resume({ turn, state: atMessage() });
+
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      inputBindings: {
+        message: { kind: "variableRef", ref: "message" },
+        priority: { kind: "literal", value: "high" },
+      },
+    }));
+    expect(collected).toEqual({ message: "hi", priority: "high" });
+  });
+
   it("defers a multi-edge skill step's follow-up to the selector, passing the skill result", async () => {
     const select = vi.fn(async ({ currentStep }) =>
       currentStep.id === "ask_message" ? { nextStepId: "submit" } : { nextStepId: "done" },
@@ -739,6 +785,58 @@ describe("DefaultRoutineRunner skill (tool) steps", () => {
     expect(dispatch).toHaveBeenCalledTimes(1);
     expect(result.response.answer).toContain("done");
     expect(result.nextState).toBeNull();
+  });
+
+  it("writes assigned skill outputs into variables before later interpolation and field guards", async () => {
+    const outputRoutine: Routine = {
+      id: "refund",
+      rootStepId: "ask",
+      steps: [
+        { id: "ask", kind: "chat", action: "Ask for the order." },
+        {
+          id: "lookup",
+          kind: "skill",
+          skillName: "check_order",
+          outputAssignments: {
+            is_final_sale: "finalSale",
+            policy_message: "policyMessage",
+          },
+        },
+        { id: "explain", kind: "chat", action: "Explain: {{slot.policyMessage}}." },
+        { id: "refund", kind: "terminal", action: "Issue the refund." },
+      ],
+      transitions: [
+        { from: "ask", to: "lookup", condition: "ready" },
+        { from: "lookup", to: "explain", condition: "assigned final sale", guard: { kind: "field", ref: "finalSale", op: "is_true" } },
+        { from: "lookup", to: "refund", condition: "default", guard: { kind: "default" } },
+      ],
+    };
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({ nextStepId: "lookup" }));
+    const dispatch = vi.fn(async () => ({
+      status: "completed" as const,
+      outputs: { is_final_sale: true, policy_message: "This order is final sale." },
+    }));
+    const renderer: ConversationRoutineStepRenderer = {
+      render: vi.fn(async ({ steering }) => ({ answer: steering[0]?.action ?? "", metadata: {} })),
+    };
+    const runner = new DefaultRoutineRunner([outputRoutine], { select }, renderer, { dispatch });
+
+    const result = await runner.resume({
+      turn,
+      state: { sessionId: "session_1", routineId: "refund", path: ["ask"], variables: {}, status: "active" },
+    });
+
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({
+      step: expect.objectContaining({ id: "explain" }),
+    }));
+    expect(result.response.answer).toBe("Explain: This order is final sale..");
+    expect(result.nextState).toMatchObject({
+      variables: {
+        finalSale: true,
+        policyMessage: "This order is final sale.",
+      },
+    });
   });
 });
 

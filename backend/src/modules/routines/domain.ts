@@ -41,6 +41,26 @@ const optionalAuthoringParamText = (maxLength: number) =>
   z.string().trim().min(1).max(maxLength).optional().nullable();
 
 const stableIdSchema = trimmedText(ROUTINE_DEFINITION_LIMITS.stableId).regex(identifierPattern);
+const routineVariableNameSchema = trimmedText(ROUTINE_DEFINITION_LIMITS.slotKey).regex(slotKeyPattern);
+
+export const routineInputBindingSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("literal"),
+    value: z.union([z.string(), z.number(), z.boolean()]),
+  }).strict(),
+  z.object({
+    kind: z.literal("variableRef"),
+    ref: routineVariableNameSchema,
+  }).strict(),
+]);
+
+export const routineStepModeSchema = z.enum(["typed", "untyped"]);
+
+export const routineStepMetadataSchema = z.object({
+  inputBindings: z.record(routineInputBindingSchema).optional(),
+  outputAssignments: z.record(routineVariableNameSchema).optional(),
+  mode: routineStepModeSchema.optional(),
+}).passthrough();
 
 export const routineSlotSchema = z.object({
   stableSlotId: stableIdSchema,
@@ -58,7 +78,7 @@ export const routineStepSchema = z.object({
   toolRef: optionalTrimmedText(ROUTINE_DEFINITION_LIMITS.toolRef),
   actionType: optionalAuthoringParamText(ROUTINE_DEFINITION_LIMITS.actionType),
   ordinal: z.number().int().min(0),
-  metadata: z.record(z.unknown()).optional().default({}),
+  metadata: routineStepMetadataSchema.optional().default({}),
 }).strict();
 
 const fieldGuardValueSchema = z.union([
@@ -157,6 +177,9 @@ export const routineGuardProvenance = (guardKind: RoutineGuardKind): RoutineGuar
   guardKind === "llm" ? "judgment" : "exact";
 export type RoutineTerminalKind = typeof routineTerminalKinds[number];
 export type RoutineCompletionExportTriggerKind = typeof routineCompletionExportTriggerKinds[number];
+export type RoutineInputBinding = z.infer<typeof routineInputBindingSchema>;
+export type RoutineStepMode = z.infer<typeof routineStepModeSchema>;
+export type RoutineStepMetadata = z.infer<typeof routineStepMetadataSchema>;
 export type RoutineCompletionExport = z.infer<typeof routineCompletionExportSchema>;
 export type RoutineDefinitionDraftInput = z.infer<typeof routineDefinitionDraftInputSchema>;
 export type RoutineDefinition = z.infer<typeof routineDefinitionSchema>;

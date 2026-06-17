@@ -1,4 +1,4 @@
-import type { RoutineDefinitionDraftInput } from "../domain.js";
+import type { RoutineDefinitionDraftInput, RoutineStepMetadata } from "../domain.js";
 
 export type RoutineDocumentSectionKind = "routine" | "guidelines" | "glossary";
 
@@ -82,7 +82,7 @@ export interface RoutineDocumentStep {
   kind: RoutineDefinitionDraftInput["steps"][number]["kind"];
   toolRef: string | null;
   actionType: string | null;
-  metadata: Record<string, unknown>;
+  metadata: RoutineStepMetadata;
   ordinal: number;
   branches: RoutineDocumentBranch[];
   range?: DocumentTextRange;

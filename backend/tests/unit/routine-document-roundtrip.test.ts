@@ -104,6 +104,53 @@ describe("routine document model round trips", () => {
     expect(result.draft).toEqual(fullDraft());
   });
 
+  it("round-trips typed skill-step bindings through the document AST", () => {
+    const draft: RoutineDefinitionDraftInput = {
+      ...fullDraft(),
+      steps: fullDraft().steps.map((step) => step.stableStepId === "lookup"
+        ? {
+            ...step,
+            metadata: {
+              authorNote: "kept with typed binding data",
+              inputBindings: {
+                email: { kind: "variableRef", ref: "email" },
+                includeHistory: { kind: "literal", value: true },
+              },
+              outputAssignments: {
+                status: "order_status",
+              },
+              mode: "typed",
+            },
+          }
+        : step),
+    };
+
+    const document = routineDraftToDocument(draft);
+    const result = routineDocumentToDraft(document);
+
+    expect(result.diagnostics).toEqual([]);
+    expect(document.sections[0]).toMatchObject({
+      kind: "routine",
+      steps: expect.arrayContaining([
+        expect.objectContaining({
+          stableStepId: "lookup",
+          metadata: {
+            authorNote: "kept with typed binding data",
+            inputBindings: {
+              email: { kind: "variableRef", ref: "email" },
+              includeHistory: { kind: "literal", value: true },
+            },
+            outputAssignments: {
+              status: "order_status",
+            },
+            mode: "typed",
+          },
+        }),
+      ]),
+    });
+    expect(result.draft).toEqual(draft);
+  });
+
   it("round-trips non-adjacent forward and backward step targets and compiles them unchanged", () => {
     const draft = fullDraft();
     const document = routineDraftToDocument(draft);

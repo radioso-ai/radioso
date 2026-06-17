@@ -1,9 +1,10 @@
 'use client'
 
-import { useMemo, useRef } from 'react'
-import { Plus, Trash2, Webhook } from 'lucide-react'
+import { useContext, useId, useMemo, useRef } from 'react'
+import { AlertTriangle, CheckCircle2, Plus, Trash2, Webhook } from 'lucide-react'
 
 import { RoutineDiagnosticList, RoutineVariableInsertButton } from '@/components/dashboard/settings/routine-editor-controls'
+import { findRoutineSkillDescriptor, RoutineSkillCatalogContext, RoutineSkillCatalogPopover } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -36,7 +37,9 @@ import {
   createTransitionForm,
   diagnosticsForTarget,
   type RoutineFormState,
+  type RoutineStepForm,
 } from '@/lib/routine-form'
+import type { RoutineSkillBindingState } from '@/lib/routine-prose'
 
 const slotTypes: RoutineSlotType[] = ['text', 'number', 'boolean', 'email', 'date']
 const guardKinds: RoutineGuardKind[] = ['llm', 'slot_filled', 'outcome', 'counter', 'default']
@@ -44,6 +47,74 @@ const stepKinds: Array<'chat' | 'tool' | 'action'> = ['chat', 'tool', 'action']
 const terminalKinds: RoutineTerminalKind[] = ['complete', 'handoff']
 
 const optionLabel = (value: string) => value.replace(/_/gu, ' ')
+
+const stepBindingState = (step: RoutineStepForm): RoutineSkillBindingState => ({
+  inputBindings: (step.metadata.inputBindings as RoutineSkillBindingState['inputBindings']) ?? {},
+  outputAssignments: (step.metadata.outputAssignments as RoutineSkillBindingState['outputAssignments']) ?? {},
+  mode: (step.metadata.mode as RoutineSkillBindingState['mode']) ?? 'typed',
+})
+
+const availableVariablesForStep = (form: RoutineFormState, stepIndex: number): string[] => {
+  const variables = new Set<string>()
+  for (const slot of form.slots) {
+    const key = slot.key.trim()
+    if (key) variables.add(key)
+  }
+  for (const step of form.steps.slice(0, stepIndex)) {
+    const assignments = (step.metadata.outputAssignments as Record<string, unknown> | undefined) ?? {}
+    for (const value of Object.values(assignments)) {
+      if (typeof value === 'string' && value.trim()) variables.add(value.trim())
+    }
+  }
+  return [...variables]
+}
+
+function ToolReferenceField({
+  value,
+  disabled,
+  stepIndex,
+  onValueChange,
+}: {
+  value: string
+  disabled: boolean
+  stepIndex: number
+  onValueChange: (value: string) => void
+}) {
+  const listId = useId()
+  const catalog = useContext(RoutineSkillCatalogContext)
+  const descriptor = findRoutineSkillDescriptor(catalog.skills, value, value)
+  const hasValue = value.trim().length > 0
+
+  return (
+    <div className="min-w-0 flex-1 space-y-1">
+      <Input
+        aria-label={`Step ${stepIndex + 1} tool reference`}
+        value={value}
+        disabled={disabled}
+        list={listId}
+        onChange={(event) => onValueChange(event.target.value)}
+      />
+      <datalist id={listId}>
+        {catalog.skills.map((skill) => (
+          <option key={skill.skillName} value={skill.skillName}>
+            {skill.displayName}
+          </option>
+        ))}
+      </datalist>
+      {descriptor ? (
+        <p className="flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-300">
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          {descriptor.displayName}
+        </p>
+      ) : hasValue ? (
+        <p className="flex items-center gap-1 text-xs text-amber-700 dark:text-amber-300">
+          <AlertTriangle className="h-3.5 w-3.5" />
+          unknown skill
+        </p>
+      ) : null}
+    </div>
+  )
+}
 
 export function RoutineFormEditor({
   form,
@@ -187,10 +258,39 @@ export function RoutineFormEditor({
                 </SelectContent>
               </Select>
               {step.kind === 'tool' ? (
-                <Input aria-label={`Step ${stepIndex + 1} tool reference`} value={step.toolRef} disabled={isPublished} onChange={(event) => onChange((current) => ({
-                  ...current,
-                  steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? { ...item, toolRef: event.target.value } : item),
-                }))} />
+                <div className="flex min-w-0 items-center gap-2">
+                  <ToolReferenceField
+                    value={step.toolRef}
+                    disabled={isPublished}
+                    stepIndex={stepIndex}
+                    onValueChange={(value) => onChange((current) => ({
+                      ...current,
+                      steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? { ...item, toolRef: value } : item),
+                    }))}
+                  />
+                  <RoutineSkillCatalogPopover
+                    skillName={step.toolRef}
+                    label={step.toolRef || `Step ${stepIndex + 1} skill`}
+                    bindingState={stepBindingState(step)}
+                    availableVariables={availableVariablesForStep(form, stepIndex)}
+                    onBindingStateChange={isPublished ? undefined : (bindingState) => onChange((current) => ({
+                      ...current,
+                      steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? {
+                        ...item,
+                        metadata: {
+                          ...item.metadata,
+                          inputBindings: bindingState.inputBindings ?? {},
+                          outputAssignments: bindingState.outputAssignments ?? {},
+                          mode: bindingState.mode ?? 'typed',
+                        },
+                      } : item),
+                    }))}
+                  >
+                    <Button type="button" variant="outline" size="sm" className="shrink-0" disabled={!step.toolRef.trim()}>
+                      Ports
+                    </Button>
+                  </RoutineSkillCatalogPopover>
+                </div>
               ) : step.kind === 'action' ? (
                 <Input aria-label={`Step ${stepIndex + 1} action type`} value={step.actionType} disabled={isPublished} onChange={(event) => onChange((current) => ({
                   ...current,

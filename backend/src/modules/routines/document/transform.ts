@@ -83,7 +83,7 @@ export const routineDraftToDocument = (draft: RoutineDefinitionDraftInput): Rout
       kind: step.kind,
       toolRef: step.toolRef ?? null,
       actionType: step.actionType ?? null,
-      metadata: step.metadata ?? {},
+      metadata: { ...(step.metadata ?? {}) },
       ordinal: step.ordinal,
       branches: transitionsByStep.get(step.stableStepId) ?? [],
     })),
@@ -210,7 +210,7 @@ export const routineDocumentToDraft = (document: RoutineDocument): RoutineDocume
         toolRef: step.toolRef,
         actionType: step.actionType,
         ordinal: step.ordinal,
-        metadata: step.metadata,
+        metadata: { ...step.metadata },
       };
     }),
     transitions: transitionDrafts,

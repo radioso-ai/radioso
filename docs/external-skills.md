@@ -82,10 +82,13 @@ first.
 
 ## 3. Use a skill in a routine
 
-In the routine editor, add a **tool** step and select the skill from the
-dropdown. The dropdown lists the agent's defined external skills by name. At run
-time the routine fills the exposed inputs, calls the tool, and branches on the
-outcome (success or failure). See [Authoring Routines](./authoring-routines.md).
+In the routine editor, add a **tool** step and pick the skill - the editor lists
+the agent's skills, so you choose one instead of typing its name. Open the step
+to bind each of the skill's inputs to a fixed value or to a variable the routine
+holds, and to store the skill's outputs in variables for later steps. At run time
+the routine sends those values, calls the tool, and branches on the outcome
+(success or failure). See [Authoring Routines](./authoring-routines.md) for how
+binding works.
 
 ## Security model
 

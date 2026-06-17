@@ -81,6 +81,34 @@ Related docs:
 
 - [Architecture Extension Points](../architecture-extension-points.md)
 
+## Persistence And Data Access
+
+Owns the Postgres implementations of persistence ports: SQL, row→record mapping,
+migrations, and the generated schema snapshot. No ORM; raw SQL via `pg` lives in
+repository adapters behind per-module ports.
+
+Should not own product rules. Domain modules depend on a `*RepositoryPort` (a
+type) and never import `pg`, the `Database` class, or a concrete repository.
+
+Primary paths:
+
+- `backend/src/db/repositories/README.md` — start here; worked example for adding
+  an entity (migration → port → row mapper → repository → composition wiring)
+- `backend/src/db/repositories/` — repository adapters and row mappers
+- `backend/src/db/migrations/` — schema; system of record, applied in order
+- `backend/src/db/schema.sql` — generated read-only snapshot of the full schema
+- `backend/src/shared/infra/database.ts` — `query`/`queryOne`/`withTransaction`
+- `backend/src/app/server/dependencyBuilders.ts` — where repositories are wired
+
+Useful searches:
+
+- `rg "implements .*RepositoryPort" backend/src/db/repositories`
+- `rg "new .*Repository\(database" backend/src/app/server/dependencyBuilders.ts`
+
+Focused checks:
+
+- `cd backend && pnpm run db:schema:check` (drift gate; runs in CI + `ci:local`, needs Docker)
+
 ## Customer Email
 
 Owns workspace customer email connections backed by authorized OAuth

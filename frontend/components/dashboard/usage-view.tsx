@@ -144,7 +144,34 @@ export function UsageView() {
         </Card>
       ) : usageLimitsEnabled && usage ? (
         <div className="space-y-6">
-          <UsageTrendsView />
+          <div className="grid gap-6 lg:grid-cols-2">
+            <UsageMeter
+              label="Monthly answers"
+              used={usage.monthlyAnswers.used}
+              limit={usage.monthlyAnswers.limit}
+              caption="Assistant and retrieval answers used this month."
+            />
+            <UsageMeter
+              label="Indexed storage"
+              unit="bytes"
+              used={usage.storedIndexedBytes.used}
+              limit={usage.storedIndexedBytes.limit}
+              caption="Content Radioso keeps searchable."
+            />
+            <UsageMeter
+              label="Monthly indexed content"
+              unit="bytes"
+              used={usage.monthlyIndexedBytes.used}
+              limit={usage.monthlyIndexedBytes.limit}
+              caption="Content added or refreshed this month."
+            />
+            <UsageMeter
+              label="Stored documents"
+              used={usage.storedDocuments.used}
+              limit={usage.storedDocuments.limit}
+              caption="Document count guardrail."
+            />
+          </div>
 
           {usage?.profile ? (
             <Card>
@@ -172,39 +199,10 @@ export function UsageView() {
             </Card>
           ) : null}
 
-          <div className="grid gap-6 lg:grid-cols-2">
-            <UsageMeter
-              label="Indexed storage"
-              unit="bytes"
-              used={usage?.storedIndexedBytes.used ?? 0}
-              limit={usage?.storedIndexedBytes.limit ?? null}
-              caption="Content Radioso keeps searchable."
-            />
-            <UsageMeter
-              label="Monthly indexed content"
-              unit="bytes"
-              used={usage?.monthlyIndexedBytes.used ?? 0}
-              limit={usage?.monthlyIndexedBytes.limit ?? null}
-              caption="Content added or refreshed this month."
-            />
-            <UsageMeter
-              label="Monthly answers"
-              used={usage?.monthlyAnswers.used ?? 0}
-              limit={usage?.monthlyAnswers.limit ?? null}
-              caption="Assistant and retrieval answers used this month."
-            />
-            <UsageMeter
-              label="Stored documents"
-              used={usage?.storedDocuments.used ?? 0}
-              limit={usage?.storedDocuments.limit ?? null}
-              caption="Document count guardrail."
-            />
-          </div>
+          <UsageTrendsView />
         </div>
       ) : workspaceSummary ? (
         <div className="space-y-6">
-          <UsageTrendsView />
-
           <div className="grid gap-6 lg:grid-cols-2">
             <UsageMeter
               label="Conversations"
@@ -231,6 +229,8 @@ export function UsageView() {
               caption="Documents waiting for processing."
             />
           </div>
+
+          <UsageTrendsView />
         </div>
       ) : (
         <Card>

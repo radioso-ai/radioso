@@ -31,11 +31,34 @@ const resolveFieldValue = (
   variables: Record<string, unknown>,
   skillResult?: RoutineSkillResult,
 ): unknown => {
+  const readPath = (source: Record<string, unknown>, path: string[]): unknown => {
+    let value: unknown = source;
+    for (const segment of path) {
+      if (typeof value !== "object" || value === null || !Object.prototype.hasOwnProperty.call(value, segment)) {
+        return undefined;
+      }
+      value = (value as Record<string, unknown>)[segment];
+    }
+    return value;
+  };
+  const path = ref.split(".");
   const outputs = skillResult?.outputs;
   if (outputs && Object.prototype.hasOwnProperty.call(outputs, ref)) {
     return outputs[ref];
   }
-  return Object.prototype.hasOwnProperty.call(variables, ref) ? variables[ref] : undefined;
+  if (outputs && path.length > 1) {
+    const nested = readPath(outputs, path);
+    if (nested !== undefined) {
+      return nested;
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(variables, ref)) {
+    return variables[ref];
+  }
+  if (path.length > 1) {
+    return readPath(variables, path);
+  }
+  return undefined;
 };
 
 const toNumber = (value: unknown): number | null => {
@@ -290,6 +313,15 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // Injectable so relative-date guards ("older_than 6 months") are deterministic in tests.
     private readonly clock: () => Date = () => new Date(),
   ) {}
+
+  getCurrentStep(state: RoutineState): RoutineStep | null {
+    const routine = this.routines.find((candidate) => candidate.id === state.routineId);
+    if (!routine) {
+      return null;
+    }
+    const stepId = state.path.at(-1) ?? routine.rootStepId;
+    return routine.steps.find((candidate) => candidate.id === stepId) ?? null;
+  }
 
   async resume(input: {
     turn: TurnContext;
@@ -664,6 +696,48 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       }
       step = stepById(nextStepId);
       enterStep(step, path);
+    }
+
+    if (step.kind === "await") {
+      if (!step.decision) {
+        throw new Error(`routine_await_step_missing_decision:${routine.id}:${step.id}`);
+      }
+      const nextState: RoutineState = { ...state, path, variables, attempts, status: "suspended" };
+      const renderedStep = step.action
+        ? { ...step, action: interpolateSlots(step.action, variables) }
+        : step;
+      const baseSteering = projectStep(renderedStep);
+      const steering = input.steeringResolver
+        ? await input.steeringResolver.resolve({ step, baseSteering, turn })
+        : baseSteering;
+      const response = await this.renderer.render({
+        step: renderedStep,
+        steering,
+        turn,
+      });
+      traceSteps.push({ stepId: step.id, kind: step.kind, event: "suspended" });
+      const trace: RoutineRunTrace = {
+        routineId: routine.id,
+        startStepId: currentStepId,
+        landedStepId: step.id,
+        capturedSlotKeys: [...new Set(traceSteps.flatMap((entry) => entry.capturedSlotKeys ?? []))],
+        filledSlotKeys: [...declaredSlotKeys].filter((key) => hasVariable(variables, key)),
+        steps: traceSteps,
+      };
+      const reason = typeof step.metadata?.reason === "string" ? step.metadata.reason : undefined;
+
+      return {
+        response,
+        nextState,
+        awaitingDecision: {
+          stepId: step.id,
+          options: step.decision.options,
+          captureKey: step.decision.captureKey,
+          ...(reason ? { reason } : {}),
+        },
+        ...(actions.length > 0 ? { actions } : {}),
+        trace,
+      };
     }
 
     const nextState: RoutineState = { ...state, path, variables, attempts, status: "active" };

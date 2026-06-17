@@ -74,8 +74,19 @@ export class RoutineStateRepository implements ConversationRoutineStore {
     return rows.map(mapState);
   }
 
+  async loadSuspended(input: { sessionId: string }): Promise<RoutineState | null> {
+    const row = await this.database.queryOptional<RoutineStateRow>(
+      `SELECT session_id, routine_id, path, variables, attempts, status, expires_at
+         FROM routine_states
+        WHERE session_id = $1
+          AND status = 'suspended'`,
+      [input.sessionId],
+    );
+    return row ? mapState(row) : null;
+  }
+
   async save(state: RoutineState): Promise<void> {
-    const expiresAt = new Date(Date.now() + this.ttlMs).toISOString();
+    const expiresAt = state.status === "suspended" ? null : new Date(Date.now() + this.ttlMs).toISOString();
     // One row per session — advancing a routine upserts; an expired row is overwritten
     // when a fresh routine activates for the same session.
     await this.database.execute(

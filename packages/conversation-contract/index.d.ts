@@ -6,10 +6,18 @@
 
 export type ConversationRole = "system" | "user" | "assistant" | "tool";
 
+export type MessageSource =
+  | "customer"
+  | "ai_agent"
+  | "human_agent"
+  | "human_agent_on_behalf_of_ai_agent"
+  | "system";
+
 export interface ConversationMessage {
   id?: string;
   role: ConversationRole;
   content: string;
+  source?: MessageSource;
   createdAt?: string;
   metadata?: Record<string, unknown>;
 }
@@ -337,6 +345,7 @@ export interface ConversationEvent {
   sessionId: string;
   kind: string;
   role?: ConversationRole;
+  source?: MessageSource;
   content?: string;
   metadata?: Record<string, unknown>;
   createdAt?: string;
@@ -502,8 +511,22 @@ export interface RoutineState {
   variables: Record<string, unknown>;
   /** Per-step entry counts, used by deterministic counter guards. */
   attempts?: Record<string, number>;
-  status: "active" | "completed" | "expired";
+  status: "active" | "suspended" | "completed" | "expired";
   metadata?: Record<string, unknown>;
+}
+
+export interface DecisionOption {
+  id: string;
+  label: string;
+  description?: string;
+  payload?: unknown;
+}
+
+export interface RoutineAwaitingDecision {
+  stepId: string;
+  options: DecisionOption[];
+  captureKey: string;
+  reason?: string;
 }
 
 export type RoutineInputBinding =
@@ -519,7 +542,7 @@ export type RoutineStepMode = "typed" | "untyped";
  */
 export interface RoutineStep {
   id: string;
-  kind: "chat" | "skill" | "action" | "terminal";
+  kind: "chat" | "skill" | "action" | "terminal" | "await";
   /** Instruction projected into steering for a `chat`/`terminal` step. */
   action?: string;
   /** The skill a `skill` step dispatches. */
@@ -531,6 +554,10 @@ export interface RoutineStep {
    * model — so an emitted action can't be redirected by user/payload text.
    */
   actionType?: string;
+  decision?: {
+    captureKey: string;
+    options: DecisionOption[];
+  };
   /** Per skill input binding authored for a typed skill step. */
   inputBindings?: Record<string, RoutineInputBinding>;
   /** Per skill output field assignment to a routine variable name. */
@@ -721,6 +748,16 @@ export interface ConversationRoutineStore {
   clear(input: { sessionId: string }): Promise<void>;
 }
 
+export interface SuspendedRoutineReader {
+  loadSuspended(input: { sessionId: string }): Promise<RoutineState | null>;
+}
+
+export interface RoutineDecisionInput {
+  handle: string;
+  optionId: string;
+  payload?: unknown;
+}
+
 /**
  * What happened to one step as the runner walked the graph this turn. A debug-only
  * record: it carries slot *keys*, never captured *values* (which may be PII).
@@ -744,7 +781,10 @@ export interface RoutineTraceStepEntry {
     | "fast_forwarded"
     | "skill_dispatched"
     | "action_emitted"
-    | "rendered";
+    | "rendered"
+    | "suspended"
+    | "decision_notified"
+    | "decision_applied";
   /** Declared slot keys captured at this step this turn (names only — never values). */
   capturedSlotKeys?: string[];
   /** Whether the LLM next-step selector ran for this step's edges. */
@@ -781,6 +821,11 @@ export interface ConversationRoutineResumeResult {
   outcomes?: TurnOutcome[];
   /** Fire-and-forget side effects the routine emitted this turn, for the host to persist. */
   actions?: RoutineActionRequest[];
+  /**
+   * The routine parked at an external decision gate. Mutually exclusive with terminal
+   * exits and yielded turns; when present, `nextState.status === "suspended"`.
+   */
+  awaitingDecision?: RoutineAwaitingDecision;
   /** Step-by-step traversal record for the debug panel (omitted on a yield). */
   trace?: RoutineRunTrace;
   /**
@@ -790,6 +835,10 @@ export interface ConversationRoutineResumeResult {
    * runner returns inert placeholders.
    */
   yielded?: boolean;
+}
+
+export interface ConversationRoutineDecisionResult extends ConversationRoutineResumeResult {
+  resumed: boolean;
 }
 
 /**
@@ -883,6 +932,17 @@ export interface AttemptRoutineInput {
   suppressNewClarification?: boolean;
 }
 
+export interface ResumeAwaitingDecisionInput {
+  agent: ConversationAgentConfig;
+  turn: TurnContext;
+  sessionId: string;
+  decision: RoutineDecisionInput;
+  suspendedReader: SuspendedRoutineReader;
+  routineStore?: ConversationRoutineStore;
+  routineRunner: ConversationRoutineRunner;
+  steeringResolver?: ConversationRoutineSteeringResolver;
+}
+
 export interface ProcessTurnResult {
   sessionId: string;
   events: ConversationEvent[];
@@ -896,6 +956,11 @@ export interface ProcessTurnResult {
    * the engine only declares them.
    */
   actions?: RoutineActionRequest[];
+  /**
+   * Present when a routine parked at an external decision gate and the host must
+   * create a pending decision row before the routine can be resumed.
+   */
+  awaitingDecision?: RoutineAwaitingDecision;
   /** True when a routine ended in a human handoff terminal. */
   handoff?: { routineId: string; stepId: string };
 }
@@ -924,4 +989,5 @@ export interface ConversationEngine {
    * as a multi-turn skill selected before grounding, and only ground when it returns null.
    */
   attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null>;
+  resumeAwaitingDecision(input: ResumeAwaitingDecisionInput): Promise<ConversationRoutineDecisionResult>;
 }

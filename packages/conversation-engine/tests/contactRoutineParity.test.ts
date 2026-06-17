@@ -216,3 +216,97 @@ describe("contact routine — end-to-end parity through the engine", () => {
     });
   });
 });
+
+// Regression guard for spec-091 review finding P1(a): the engine MUST forward the
+// runner's `awaitingDecision` through ProcessTurnResult (and persist status="suspended"),
+// otherwise a routine that hits an approval gate is silently orphaned — it saves a
+// suspended row that loadActive never reloads, with no pending decision and no notice.
+describe("approval gate — engine surfaces awaitingDecision and suspends", () => {
+  const approvalRoutine: Routine = {
+    id: "refund.flow",
+    rootStepId: "gate",
+    steps: [
+      {
+        id: "gate",
+        kind: "await",
+        action: "Tell the customer the request is under review.",
+        decision: {
+          captureKey: "refund_decision",
+          options: [
+            { id: "approve", label: "Approve" },
+            { id: "reject", label: "Reject" },
+          ],
+        },
+        metadata: { reason: "refund_review" },
+      },
+      { id: "issue", kind: "action", actionType: "refund.issue" },
+      { id: "done", kind: "terminal", action: "Confirm the refund was issued." },
+      { id: "declined", kind: "terminal", action: "Explain the refund was declined." },
+    ],
+    transitions: [
+      { from: "gate", to: "issue", condition: "approved", guard: { kind: "field", ref: "refund_decision.id", op: "equals", value: "approve" } },
+      { from: "gate", to: "declined", condition: "rejected", guard: { kind: "field", ref: "refund_decision.id", op: "equals", value: "reject" } },
+      { from: "issue", to: "done", condition: "issued" },
+    ],
+  };
+
+  it("forwards awaitingDecision (handle minted by the host) and persists status=suspended, with no model call", async () => {
+    const store = inMemoryStore();
+    const events: ConversationEvent[] = [];
+    // A selector that throws if consulted — landing on the await gate must be deterministic.
+    const throwingSelector: ConversationRoutineNextStepSelector = {
+      select: vi.fn(async () => {
+        throw new Error("SELECTOR_CALLED");
+      }),
+    };
+    const dispatcher: ConversationRoutineSkillDispatcher = { dispatch: vi.fn() };
+    const engine = new DefaultConversationEngine();
+    const input: ProcessTurnInput = {
+      agent: { id: "agent_1", name: "Vikram" },
+      sessionId: "conv_1",
+      inputEvent: {
+        id: "in_approve",
+        kind: "message",
+        content: "refund please",
+        metadata: { method: "intent_click", intent: { skillName: "refund.flow" } },
+      },
+      skills: [],
+      directives: [],
+      stores: {
+        loadHistory: vi.fn(async () => []),
+        appendEvent: vi.fn(async (event: ConversationEvent) => {
+          events.push(event);
+        }),
+      },
+      modelGateway: { complete: vi.fn(async () => ({ text: "normal answer" })) },
+      directiveMatcher: { match: vi.fn(async () => []) },
+      selector: { select: vi.fn(async () => ({ selected: [], reason: "none" })) },
+      dispatcher: { dispatch: vi.fn() },
+      composer: { compose: vi.fn(async () => ({ answer: "normal answer" })) },
+      routineStore: store,
+      routineRunner: new DefaultRoutineRunner([approvalRoutine], throwingSelector, echoRenderer, dispatcher),
+      routineActivator: {
+        activate: vi.fn(async ({ turn }) =>
+          turn.inputEvent.metadata?.method === "intent_click"
+            ? { kind: "activate", routineId: "refund.flow" }
+            : null,
+        ),
+      },
+    };
+
+    const result = await engine.processTurn(input);
+
+    expect(result.awaitingDecision).toEqual({
+      stepId: "gate",
+      captureKey: "refund_decision",
+      options: [
+        { id: "approve", label: "Approve" },
+        { id: "reject", label: "Reject" },
+      ],
+      reason: "refund_review",
+    });
+    expect(store.rows.get("conv_1")?.status).toBe("suspended");
+    expect(throwingSelector.select).not.toHaveBeenCalled();
+    expect(dispatcher.dispatch).not.toHaveBeenCalled(); // the gated action never fired
+  });
+});

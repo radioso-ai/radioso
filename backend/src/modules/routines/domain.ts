@@ -9,6 +9,9 @@ export const ROUTINE_DEFINITION_LIMITS = {
   slotDescription: 1000,
   instruction: 4000,
   toolRef: 300,
+  approvalOptionCount: 8,
+  approvalOptionLabel: 120,
+  approvalOptionDescription: 500,
   guardText: 2000,
   actionType: 300,
   destinationRef: 300,
@@ -18,7 +21,7 @@ export const ROUTINE_DEFINITION_LIMITS = {
 
 export const routineDefinitionStatuses = ["draft", "published", "superseded", "archived"] as const;
 export const routineSlotTypes = ["text", "number", "boolean", "email", "date"] as const;
-export const routineStepKinds = ["chat", "tool", "action"] as const;
+export const routineStepKinds = ["chat", "tool", "action", "approval"] as const;
 export const routineGuardKinds = ["llm", "default", "slot_filled", "outcome", "counter", "field"] as const;
 export const routineFieldGuardOps = ["is_true", "is_false", "equals", "not_equals", "in", "is_present", "is_absent", "gt", "gte", "lt", "lte", "older_than", "within"] as const;
 export const routineFieldGuardUnits = ["days", "weeks", "months", "years"] as const;
@@ -41,6 +44,19 @@ const optionalAuthoringParamText = (maxLength: number) =>
   z.string().trim().min(1).max(maxLength).optional().nullable();
 
 const stableIdSchema = trimmedText(ROUTINE_DEFINITION_LIMITS.stableId).regex(identifierPattern);
+const optionalCaptureKeySchema = z.string()
+  .trim()
+  .min(1)
+  .max(ROUTINE_DEFINITION_LIMITS.slotKey)
+  .regex(slotKeyPattern)
+  .optional()
+  .nullable();
+
+export const routineApprovalOptionSchema = z.object({
+  id: stableIdSchema,
+  label: trimmedText(ROUTINE_DEFINITION_LIMITS.approvalOptionLabel),
+  description: optionalAuthoringParamText(ROUTINE_DEFINITION_LIMITS.approvalOptionDescription),
+}).strict();
 
 export const routineSlotSchema = z.object({
   stableSlotId: stableIdSchema,
@@ -57,9 +73,71 @@ export const routineStepSchema = z.object({
   instruction: trimmedText(ROUTINE_DEFINITION_LIMITS.instruction),
   toolRef: optionalTrimmedText(ROUTINE_DEFINITION_LIMITS.toolRef),
   actionType: optionalAuthoringParamText(ROUTINE_DEFINITION_LIMITS.actionType),
+  captureKey: optionalCaptureKeySchema,
+  options: z.array(routineApprovalOptionSchema).max(ROUTINE_DEFINITION_LIMITS.approvalOptionCount).optional(),
   ordinal: z.number().int().min(0),
   metadata: z.record(z.unknown()).optional().default({}),
-}).strict();
+}).strict().superRefine((step, ctx) => {
+  const hasCaptureKey = step.captureKey !== undefined && step.captureKey !== null;
+  const options = step.options;
+  const hasOptions = options !== undefined;
+  if (step.kind === "approval") {
+    if (!hasCaptureKey) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["captureKey"],
+        message: "approval step requires captureKey",
+      });
+    }
+    if (!options || options.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["options"],
+        message: "approval step requires at least one option",
+      });
+    }
+    if (step.toolRef !== undefined && step.toolRef !== null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["toolRef"],
+        message: "approval step must not declare toolRef",
+      });
+    }
+    if (step.actionType !== undefined && step.actionType !== null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["actionType"],
+        message: "approval step must not declare actionType",
+      });
+    }
+    const optionIds = new Set<string>();
+    for (const [index, option] of (step.options ?? []).entries()) {
+      if (optionIds.has(option.id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["options", index, "id"],
+          message: `approval option id "${option.id}" must be unique`,
+        });
+      }
+      optionIds.add(option.id);
+    }
+    return;
+  }
+  if (hasCaptureKey) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["captureKey"],
+      message: "captureKey is only valid for approval steps",
+    });
+  }
+  if (hasOptions) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["options"],
+      message: "options are only valid for approval steps",
+    });
+  }
+});
 
 const fieldGuardValueSchema = z.union([
   z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.fieldValue),
@@ -142,6 +220,7 @@ export const routineDefinitionSchema = routineDefinitionDraftInputSchema.extend(
 
 export type RoutineSlotType = typeof routineSlotTypes[number];
 export type RoutineStepKind = typeof routineStepKinds[number];
+export type RoutineApprovalOption = z.infer<typeof routineApprovalOptionSchema>;
 export type RoutineGuardKind = typeof routineGuardKinds[number];
 export type RoutineFieldGuardOp = typeof routineFieldGuardOps[number];
 export type RoutineFieldGuardUnit = typeof routineFieldGuardUnits[number];

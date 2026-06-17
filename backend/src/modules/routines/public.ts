@@ -1,5 +1,6 @@
 export {
   ROUTINE_DEFINITION_LIMITS,
+  routineApprovalOptionSchema,
   routineDefinitionDraftInputSchema,
   routineDefinitionSchema,
   routineDefinitionStatuses,
@@ -13,6 +14,7 @@ export {
   routineCompletionExportTriggerKinds,
   type RoutineCompletionExport,
   type RoutineCompletionExportTriggerKind,
+  type RoutineApprovalOption,
   type RoutineDefinition,
   type RoutineDefinitionDraftInput,
   type RoutineFieldGuardOp,

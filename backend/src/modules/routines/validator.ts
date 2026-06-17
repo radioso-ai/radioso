@@ -19,6 +19,8 @@ export const routineValidationCodes = [
   "field_guard_unknown_reference",
   "field_guard_incompatible_type",
   "completion_export_missing_destination",
+  "approval_step_llm_edge",
+  "approval_step_no_decision_edge",
 ] as const;
 
 export type RoutineValidationCode = (typeof routineValidationCodes)[number];
@@ -72,6 +74,16 @@ const parsePositiveInteger = (value: string | null): number | null => {
   return Number.isInteger(parsed) && parsed > 0 && String(parsed) === value.trim() ? parsed : null;
 };
 
+const isApprovalDecisionFieldRef = (
+  transition: RoutineDefinition["transitions"][number],
+  stepById: ReadonlyMap<string, RoutineDefinition["steps"][number]>,
+): boolean => {
+  const fromStep = stepById.get(transition.fromStep);
+  return fromStep?.kind === "approval" &&
+    Boolean(fromStep.captureKey) &&
+    Boolean(transition.fieldRef?.startsWith(`${fromStep.captureKey}.`));
+};
+
 export const validateRoutineDefinition = (definition: RoutineDefinition): RoutineValidationResult => {
   const diagnostics: RoutineValidationDiagnostic[] = [];
   const steps = [...definition.steps].sort((left, right) => left.ordinal - right.ordinal);
@@ -115,6 +127,28 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
         location: `step:${step.stableStepId}`,
         message: `dangling action reference: step "${step.stableStepId}" is an action step but has no action type.`,
       });
+    }
+    if (step.kind === "approval" && step.captureKey) {
+      const outgoingTransitions = definition.transitions.filter((transition) => transition.fromStep === step.stableStepId);
+      for (const transition of outgoingTransitions) {
+        if (transition.guardKind === "llm") {
+          diagnostics.push({
+            code: "approval_step_llm_edge",
+            location: `step:${step.stableStepId}`,
+            message: `approval step llm edge: approval step "${step.stableStepId}" must branch with deterministic decision guards.`,
+          });
+        }
+      }
+      const hasDecisionEdge = outgoingTransitions.some((transition) =>
+        transition.fieldRef?.startsWith(`${step.captureKey}.`) === true
+      );
+      if (!hasDecisionEdge) {
+        diagnostics.push({
+          code: "approval_step_no_decision_edge",
+          location: `step:${step.stableStepId}`,
+          message: `approval step no decision edge: approval step "${step.stableStepId}" must branch on "${step.captureKey}".`,
+        });
+      }
     }
   }
 
@@ -213,7 +247,7 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
     }
     if (transition.guardKind === "field" && transition.fieldRef) {
       const slot = slotByKey.get(transition.fieldRef);
-      if (!slot) {
+      if (!slot && !isApprovalDecisionFieldRef(transition, stepById)) {
         // Honest provenance: a "decided in code" branch must reference a real variable,
         // not a name nothing provides (else it silently never fires at runtime).
         diagnostics.push({
@@ -221,7 +255,7 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
           location: `transition:${transition.fromStep}->${transition.toRef}`,
           message: `field guard references "${transition.fieldRef}", which is not a declared variable.`,
         });
-      } else {
+      } else if (slot) {
         // A field guard's reference is a slot reference too (it branches on the value).
         referencedSlotKeys.add(transition.fieldRef);
         if (transition.fieldOp && !isFieldOpCompatible(transition.fieldOp, slot.type)) {

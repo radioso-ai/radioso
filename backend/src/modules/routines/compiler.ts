@@ -150,6 +150,24 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
   const steps: RoutineStep[] = [
     ...sortedSteps.map((step): RoutineStep => {
       const collectsSlots = collectedSlotsForStep(step);
+      if (step.kind === "approval") {
+        return {
+          id: step.stableStepId,
+          kind: "await",
+          action: step.instruction,
+          decision: {
+            captureKey: step.captureKey ?? "",
+            options: (step.options ?? []).map((option) => ({
+              id: option.id,
+              label: option.label,
+              ...(option.description ? { description: option.description } : {}),
+            })),
+          },
+          metadata: Object.keys(step.metadata).length > 0
+            ? { ...step.metadata, authoredKind: step.kind }
+            : { authoredKind: step.kind },
+        };
+      }
       if (step.kind === "tool") {
         return {
           id: step.stableStepId,

@@ -59,6 +59,11 @@ export type RoutineFieldGuardOp =
   | 'gt' | 'gte' | 'lt' | 'lte' | 'older_than' | 'within'
 export type RoutineFieldGuardUnit = 'days' | 'weeks' | 'months' | 'years'
 export type RoutineTerminalKind = 'complete' | 'handoff'
+export type RoutineStepMetadata = {
+  inputBindings?: Record<string, { kind: 'literal'; value: string | number | boolean } | { kind: 'variableRef'; ref: string }>
+  outputAssignments?: Record<string, string>
+  mode?: 'typed' | 'untyped'
+} & Record<string, unknown>
 export type RoutineValidationCode =
   | 'unreachable_step'
   | 'missing_terminal'
@@ -88,7 +93,10 @@ export type RoutineValidationResult = {
   diagnostics: RoutineValidationDiagnostic[]
 }
 export type RoutineSlot = Omit<ApiSchemas['RoutineDefinition']['slots'][number], 'type'> & { type: RoutineSlotType }
-export type RoutineStep = Omit<ApiSchemas['RoutineDefinition']['steps'][number], 'kind'> & { kind: RoutineStepKind }
+export type RoutineStep = Omit<ApiSchemas['RoutineDefinition']['steps'][number], 'kind' | 'metadata'> & {
+  kind: RoutineStepKind
+  metadata: RoutineStepMetadata
+}
 export type RoutineTransition = Omit<ApiSchemas['RoutineDefinition']['transitions'][number], 'guardKind'> & {
   guardKind: RoutineGuardKind
 }

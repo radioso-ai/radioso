@@ -789,6 +789,23 @@ export interface paths {
         patch: operations["updateAgentDirective"];
         trace?: never;
     };
+    "/api/v1/agents/{agentId}/routine-skill-catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List routine-authoring skills for an agent */
+        get: operations["listAgentRoutineSkillCatalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agentId}/routines": {
         parameters: {
             query?: never;
@@ -2963,7 +2980,22 @@ export interface components {
                 ordinal: number;
                 /** @default {} */
                 metadata: {
-                    [key: string]: unknown;
+                    inputBindings?: {
+                        [key: string]: {
+                            /** @enum {string} */
+                            kind: "literal";
+                            value: string | number | boolean;
+                        } | {
+                            /** @enum {string} */
+                            kind: "variableRef";
+                            ref: string;
+                        };
+                    };
+                    outputAssignments?: {
+                        [key: string]: string;
+                    };
+                    /** @enum {string} */
+                    mode?: "typed" | "untyped";
                 };
             }[];
             /** @default [] */
@@ -3033,7 +3065,22 @@ export interface components {
                 ordinal: number;
                 /** @default {} */
                 metadata: {
-                    [key: string]: unknown;
+                    inputBindings?: {
+                        [key: string]: {
+                            /** @enum {string} */
+                            kind: "literal";
+                            value: string | number | boolean;
+                        } | {
+                            /** @enum {string} */
+                            kind: "variableRef";
+                            ref: string;
+                        };
+                    };
+                    outputAssignments?: {
+                        [key: string]: string;
+                    };
+                    /** @enum {string} */
+                    mode?: "typed" | "untyped";
                 };
             }[];
             /** @default [] */
@@ -3077,7 +3124,7 @@ export interface components {
             ok: boolean;
             diagnostics: {
                 /** @enum {string} */
-                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option";
+                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "variable_name_collision";
                 location: string;
                 message: string;
             }[];
@@ -3115,7 +3162,22 @@ export interface components {
                 ordinal: number;
                 /** @default {} */
                 metadata: {
-                    [key: string]: unknown;
+                    inputBindings?: {
+                        [key: string]: {
+                            /** @enum {string} */
+                            kind: "literal";
+                            value: string | number | boolean;
+                        } | {
+                            /** @enum {string} */
+                            kind: "variableRef";
+                            ref: string;
+                        };
+                    };
+                    outputAssignments?: {
+                        [key: string]: string;
+                    };
+                    /** @enum {string} */
+                    mode?: "typed" | "untyped";
                 };
             }[];
             /** @default [] */
@@ -3226,7 +3288,22 @@ export interface components {
                     ordinal: number;
                     /** @default {} */
                     metadata: {
-                        [key: string]: unknown;
+                        inputBindings?: {
+                            [key: string]: {
+                                /** @enum {string} */
+                                kind: "literal";
+                                value: string | number | boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "variableRef";
+                                ref: string;
+                            };
+                        };
+                        outputAssignments?: {
+                            [key: string]: string;
+                        };
+                        /** @enum {string} */
+                        mode?: "typed" | "untyped";
                     };
                 }[];
                 /** @default [] */
@@ -3269,6 +3346,34 @@ export interface components {
             /** @enum {string} */
             error: "Routine definition is invalid";
             validation: components["schemas"]["RoutineValidationResult"];
+        };
+        SkillAuthoringInput: {
+            key: string;
+            /** @enum {string} */
+            type: "text" | "number" | "boolean" | "email" | "date" | "phone" | "enum";
+            required: boolean;
+            description?: string;
+            enumValues?: string[];
+        };
+        SkillAuthoringOutcome: {
+            name: string;
+            displayName: string;
+            description?: string;
+            /** @enum {string} */
+            status: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
+        };
+        SkillAuthoringDescriptor: {
+            skillName: string;
+            displayName: string;
+            /** @enum {string} */
+            category: "retrieval" | "built_in" | "external_mcp" | "customer_email";
+            description?: string;
+            inputs: components["schemas"]["SkillAuthoringInput"][];
+            outcomes: components["schemas"]["SkillAuthoringOutcome"][];
+            hasDataOutputs: boolean;
+        };
+        RoutineSkillCatalogResponse: {
+            skills: components["schemas"]["SkillAuthoringDescriptor"][];
         };
         PublicChatSessionResponse: {
             /** Format: uuid */
@@ -7113,6 +7218,46 @@ export interface operations {
             };
             /** @description Directive name already exists for this agent */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentRoutineSkillCatalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Routine skill catalog returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineSkillCatalogResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

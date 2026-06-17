@@ -529,6 +529,12 @@ export interface RoutineAwaitingDecision {
   reason?: string;
 }
 
+export type RoutineInputBinding =
+  | { kind: "literal"; value: string | number | boolean }
+  | { kind: "variableRef"; ref: string };
+
+export type RoutineStepMode = "typed" | "untyped";
+
 /**
  * A Routine is an authored graph of steps connected by conditional transitions.
  * A `chat` step's `action` is projected into a steering rule (it steers the reply);
@@ -552,6 +558,12 @@ export interface RoutineStep {
     captureKey: string;
     options: DecisionOption[];
   };
+  /** Per skill input binding authored for a typed skill step. */
+  inputBindings?: Record<string, RoutineInputBinding>;
+  /** Per skill output field assignment to a routine variable name. */
+  outputAssignments?: Record<string, string>;
+  /** Skill-step mode. Absence is treated as typed by routine authoring. */
+  mode?: RoutineStepMode;
   metadata?: Record<string, unknown>;
 }
 
@@ -673,6 +685,10 @@ export interface ConversationRoutineSkillDispatcher {
     skillName: string;
     state: RoutineState;
     turn: TurnContext;
+    inputBindings?: Record<string, RoutineInputBinding>;
+    // Output→variable assignment is applied by the runner after dispatch (see
+    // DefaultRoutineRunner), not by the dispatcher — so it is intentionally not
+    // part of the dispatch input.
   }): Promise<RoutineSkillResult>;
 }
 

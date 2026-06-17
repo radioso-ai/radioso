@@ -57,6 +57,26 @@ export const routineApprovalOptionSchema = z.object({
   label: trimmedText(ROUTINE_DEFINITION_LIMITS.approvalOptionLabel),
   description: optionalAuthoringParamText(ROUTINE_DEFINITION_LIMITS.approvalOptionDescription),
 }).strict();
+const routineVariableNameSchema = trimmedText(ROUTINE_DEFINITION_LIMITS.slotKey).regex(slotKeyPattern);
+
+export const routineInputBindingSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("literal"),
+    value: z.union([z.string(), z.number(), z.boolean()]),
+  }).strict(),
+  z.object({
+    kind: z.literal("variableRef"),
+    ref: routineVariableNameSchema,
+  }).strict(),
+]);
+
+export const routineStepModeSchema = z.enum(["typed", "untyped"]);
+
+export const routineStepMetadataSchema = z.object({
+  inputBindings: z.record(routineInputBindingSchema).optional(),
+  outputAssignments: z.record(routineVariableNameSchema).optional(),
+  mode: routineStepModeSchema.optional(),
+}).passthrough();
 
 export const routineSlotSchema = z.object({
   stableSlotId: stableIdSchema,
@@ -76,7 +96,7 @@ export const routineStepSchema = z.object({
   captureKey: optionalCaptureKeySchema,
   options: z.array(routineApprovalOptionSchema).max(ROUTINE_DEFINITION_LIMITS.approvalOptionCount).optional(),
   ordinal: z.number().int().min(0),
-  metadata: z.record(z.unknown()).optional().default({}),
+  metadata: routineStepMetadataSchema.optional().default({}),
 }).strict().superRefine((step, ctx) => {
   const hasCaptureKey = step.captureKey !== undefined && step.captureKey !== null;
   const options = step.options;
@@ -236,6 +256,9 @@ export const routineGuardProvenance = (guardKind: RoutineGuardKind): RoutineGuar
   guardKind === "llm" ? "judgment" : "exact";
 export type RoutineTerminalKind = typeof routineTerminalKinds[number];
 export type RoutineCompletionExportTriggerKind = typeof routineCompletionExportTriggerKinds[number];
+export type RoutineInputBinding = z.infer<typeof routineInputBindingSchema>;
+export type RoutineStepMode = z.infer<typeof routineStepModeSchema>;
+export type RoutineStepMetadata = z.infer<typeof routineStepMetadataSchema>;
 export type RoutineCompletionExport = z.infer<typeof routineCompletionExportSchema>;
 export type RoutineDefinitionDraftInput = z.infer<typeof routineDefinitionDraftInputSchema>;
 export type RoutineDefinition = z.infer<typeof routineDefinitionSchema>;

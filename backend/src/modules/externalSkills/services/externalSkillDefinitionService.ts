@@ -5,6 +5,7 @@ import type {
 } from "../../../db/repositories/externalSkillDefinitionRepository.js";
 import { validateParamCoverage, type SkillDefinitionInput, type SkillDefinitionUpdateInput } from "../domain.js";
 import type { McpConnectionService } from "./mcpConnectionService.js";
+import type { ExposedParamSpec } from "../skillDefinitions/resolver.js";
 
 export interface ExternalSkillDefinitionView {
   id: string;
@@ -12,7 +13,7 @@ export interface ExternalSkillDefinitionView {
   skillName: string;
   toolName: string;
   boundParams: Record<string, unknown>;
-  exposedParams: Record<string, { slotBinding?: string }>;
+  exposedParams: Record<string, ExposedParamSpec>;
   declaredOutcomes: string[] | null;
   outcomeMap: Record<string, string> | null;
   enabled: boolean;

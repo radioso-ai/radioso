@@ -1,6 +1,7 @@
 import type { Routine, RoutineGuard, RoutineSkillOutcomeStatus, RoutineSlotSchema, RoutineStep } from "@radioso/conversation-contract";
 
-import type { RoutineDefinition } from "./domain.js";
+import type { RoutineDefinition, RoutineStepMetadata } from "./domain.js";
+import { collectSlotKeys, collectedSlotsByStep } from "./slotCollection.js";
 import { validateRoutineDefinition } from "./validator.js";
 
 // The compiled routine id IS the definition id. Directive scope tags
@@ -19,19 +20,6 @@ export const legacyCompiledRoutineId = (definition: RoutineDefinition): string =
 const conditionFor = (guardKind: string, guardText: string | null): string =>
   guardKind === "llm" ? guardText ?? guardKind : guardKind;
 
-const slotReferencePattern = /\{\{\s*slot\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu;
-
-const collectedSlotKeys = (instruction: string): string[] => {
-  const keys = new Set<string>();
-  for (const match of instruction.matchAll(slotReferencePattern)) {
-    const key = match[1];
-    if (key) {
-      keys.add(key);
-    }
-  }
-  return [...keys];
-};
-
 const parsePositiveInteger = (value: string | null): number | null => {
   if (!value) {
     return null;
@@ -43,7 +31,7 @@ const parsePositiveInteger = (value: string | null): number | null => {
 const guardFor = (transition: RoutineDefinition["transitions"][number]): RoutineGuard | undefined => {
   switch (transition.guardKind) {
     case "slot_filled": {
-      const slots = collectedSlotKeys(transition.guardText ?? "");
+      const slots = collectSlotKeys(transition.guardText ?? "");
       return { kind: "slot_filled", slots };
     }
     case "outcome": {
@@ -72,6 +60,19 @@ const guardFor = (transition: RoutineDefinition["transitions"][number]): Routine
     default:
       return undefined;
   }
+};
+
+type TypedStepMetadata = Pick<RoutineStepMetadata, "inputBindings" | "outputAssignments" | "mode">;
+
+const typedStepMetadata = (metadata: RoutineStepMetadata): TypedStepMetadata => ({
+  ...(metadata.inputBindings ? { inputBindings: metadata.inputBindings } : {}),
+  ...(metadata.outputAssignments ? { outputAssignments: metadata.outputAssignments } : {}),
+  ...(metadata.mode ? { mode: metadata.mode } : {}),
+});
+
+const authoredMetadata = (metadata: RoutineStepMetadata): Record<string, unknown> => {
+  const { inputBindings: _inputBindings, outputAssignments: _outputAssignments, mode: _mode, ...authorMetadata } = metadata;
+  return authorMetadata;
 };
 
 export const compileRoutineDefinition = (definition: RoutineDefinition): Routine => {
@@ -103,30 +104,11 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
   // later `{{slot.x}}` reference is a *use* (interpolation), not a re-collection. Without
   // this, a content step that merely personalizes with an already-filled slot would be
   // flagged as a collection step and the runner would fast-forward (skip) it, silently
-  // dropping its message. Only `chat` steps can collect from the user (auto-gating and
-  // fast-forward are chat-only), so the scan is chat-only: a tool/action step that
-  // interpolates `{{slot.x}}` at a lower ordinal must not steal ownership from the chat
-  // step that actually asks for it (which would leave the asker un-gated and uncaptured).
-  const firstReferencerByKey = new Map<string, string>();
-  for (const step of sortedSteps) {
-    if (step.kind !== "chat") {
-      continue;
-    }
-    for (const key of collectedSlotKeys(step.instruction)) {
-      if (!firstReferencerByKey.has(key)) {
-        firstReferencerByKey.set(key, step.stableStepId);
-      }
-    }
-  }
+  // dropping its message. This rule is shared with the population analysis (see
+  // slotCollection.ts) so validation and runtime agree on where a variable is produced.
+  const slotsCollectedByStep = collectedSlotsByStep(definition);
   const collectedSlotsForStep = (step: RoutineDefinition["steps"][number]): string[] =>
-    collectedSlotKeys(step.instruction).filter((key) => firstReferencerByKey.get(key) === step.stableStepId);
-
-  const slotsCollectedByStep = new Map<string, string[]>(
-    sortedSteps
-      .filter((step) => step.kind === "chat")
-      .map((step): [string, string[]] => [step.stableStepId, collectedSlotsForStep(step)])
-      .filter(([, collected]) => collected.length > 0),
-  );
+    slotsCollectedByStep.get(step.stableStepId) ?? [];
   const autoGatedStepIds = new Set(
     [...slotsCollectedByStep.keys()].filter((stepId) => {
       const outgoing = definition.transitions.filter((transition) => transition.fromStep === stepId);
@@ -150,6 +132,7 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
   const steps: RoutineStep[] = [
     ...sortedSteps.map((step): RoutineStep => {
       const collectsSlots = collectedSlotsForStep(step);
+      const authorMetadata = authoredMetadata(step.metadata);
       if (step.kind === "approval") {
         return {
           id: step.stableStepId,
@@ -163,8 +146,8 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
               ...(option.description ? { description: option.description } : {}),
             })),
           },
-          metadata: Object.keys(step.metadata).length > 0
-            ? { ...step.metadata, authoredKind: step.kind }
+          metadata: Object.keys(authorMetadata).length > 0
+            ? { ...authorMetadata, authoredKind: step.kind }
             : { authoredKind: step.kind },
         };
       }
@@ -174,8 +157,9 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
           kind: "skill",
           skillName: step.toolRef ?? undefined,
           action: step.instruction,
+          ...typedStepMetadata(step.metadata),
           metadata: {
-            ...step.metadata,
+            ...authorMetadata,
             authoredKind: step.kind,
             ...(collectsSlots.length > 0 ? { collectsSlots } : {}),
           },
@@ -186,8 +170,8 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
           id: step.stableStepId,
           kind: "action",
           actionType: step.actionType ?? undefined,
-          metadata: Object.keys(step.metadata).length > 0
-            ? { ...step.metadata, authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) }
+          metadata: Object.keys(authorMetadata).length > 0
+            ? { ...authorMetadata, authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) }
             : { authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) },
         };
       }
@@ -195,8 +179,8 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
         id: step.stableStepId,
         kind: "chat",
         action: step.instruction,
-        metadata: Object.keys(step.metadata).length > 0
-          ? { ...step.metadata, authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) }
+        metadata: Object.keys(authorMetadata).length > 0
+          ? { ...authorMetadata, authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) }
           : { authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) },
       };
     }),

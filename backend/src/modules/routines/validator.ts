@@ -1,4 +1,6 @@
 import type { RoutineDefinition } from "./domain.js";
+import type { SkillAuthoringDescriptor, SkillAuthoringInput } from "../skills/authoringDescriptor.js";
+import { analyzeGuaranteedVariablesOnEntry } from "./variablePopulation.js";
 
 export const routineValidationCodes = [
   "unreachable_step",
@@ -10,6 +12,7 @@ export const routineValidationCodes = [
   "declared_unused_slot",
   "referenced_undeclared_slot",
   "unregistered_action_type",
+  "unknown_skill",
   "action_capability_denied",
   "invalid_webhook_destination_ref",
   "unknown_webhook_destination",
@@ -23,6 +26,11 @@ export const routineValidationCodes = [
   "approval_step_no_decision_edge",
   "approval_step_unknown_option",
   "approval_step_unreachable_option",
+  "unsatisfiable_required_input",
+  "input_type_mismatch",
+  "unknown_input_binding",
+  "unknown_variable_ref",
+  "variable_name_collision",
 ] as const;
 
 export type RoutineValidationCode = (typeof routineValidationCodes)[number];
@@ -36,6 +44,11 @@ export interface RoutineValidationDiagnostic {
 export interface RoutineValidationResult {
   ok: boolean;
   diagnostics: RoutineValidationDiagnostic[];
+}
+
+export interface RoutineValidationContext {
+  availableSkillNames?: ReadonlySet<string>;
+  skillDescriptors?: ReadonlyMap<string, SkillAuthoringDescriptor>;
 }
 
 const slotReferencePattern = /\{\{\s*slot\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu;
@@ -68,6 +81,21 @@ const isFieldOpCompatible = (op: string, slotType: string): boolean => {
   return true;
 };
 
+const expectedRuntimeType = (inputType: SkillAuthoringInput["type"]): "string" | "number" | "boolean" => {
+  if (inputType === "number") return "number";
+  if (inputType === "boolean") return "boolean";
+  return "string";
+};
+
+const isSlotTypeCompatibleWithInput = (
+  slotType: RoutineDefinition["slots"][number]["type"],
+  inputType: SkillAuthoringInput["type"],
+): boolean => {
+  if (inputType === "number") return slotType === "number";
+  if (inputType === "boolean") return slotType === "boolean";
+  return slotType === "text" || slotType === "email" || slotType === "date";
+};
+
 const parsePositiveInteger = (value: string | null): number | null => {
   if (!value) {
     return null;
@@ -92,7 +120,10 @@ const isApprovalDecisionFieldRef = (
     transition.fieldRef === approvalDecisionRef(fromStep.captureKey as string);
 };
 
-export const validateRoutineDefinition = (definition: RoutineDefinition): RoutineValidationResult => {
+export const validateRoutineDefinition = (
+  definition: RoutineDefinition,
+  context: RoutineValidationContext = {},
+): RoutineValidationResult => {
   const diagnostics: RoutineValidationDiagnostic[] = [];
   const steps = [...definition.steps].sort((left, right) => left.ordinal - right.ordinal);
   const terminals = [...definition.terminals].sort((left, right) => left.ordinal - right.ordinal);
@@ -101,6 +132,32 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
   const stepOrdinalById = new Map(steps.map((step) => [step.stableStepId, step.ordinal]));
   const terminalIds = new Set(terminals.map((terminal) => terminal.stableStepId));
   const nodeIds = new Set([...stepIds, ...terminalIds]);
+  const availableSkillNames = context.availableSkillNames ?? (
+    context.skillDescriptors ? new Set(context.skillDescriptors.keys()) : undefined
+  );
+  const slotKeys = new Set(definition.slots.map((slot) => slot.key));
+  const slotByKey = new Map(definition.slots.map((slot) => [slot.key, slot]));
+  const outputAssignmentEntries = steps.flatMap((step) =>
+    Object.entries(step.metadata.outputAssignments ?? {}).map(([outputKey, target]) => ({
+      stepId: step.stableStepId,
+      outputKey,
+      target,
+    }))
+  );
+  const outputAssignmentTargetsByName = new Map<string, typeof outputAssignmentEntries>();
+  for (const entry of outputAssignmentEntries) {
+    outputAssignmentTargetsByName.set(entry.target, [
+      ...(outputAssignmentTargetsByName.get(entry.target) ?? []),
+      entry,
+    ]);
+  }
+  // The routine's variable namespace: customer-collected slots plus skill-output
+  // assignments. A `variableRef` binding may only point into this set.
+  const knownVariableNames = new Set<string>([
+    ...slotKeys,
+    ...outputAssignmentEntries.map((entry) => entry.target),
+  ]);
+  const guaranteedVariablesOnEntry = analyzeGuaranteedVariablesOnEntry(definition);
 
   if (terminals.length === 0) {
     diagnostics.push({
@@ -127,6 +184,17 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
         code: "dangling_action_reference",
         location: `step:${step.stableStepId}`,
         message: `dangling action reference: step "${step.stableStepId}" is a tool step but has no tool reference.`,
+      });
+    } else if (
+      step.kind === "tool" &&
+      availableSkillNames &&
+      step.toolRef &&
+      !availableSkillNames.has(step.toolRef)
+    ) {
+      diagnostics.push({
+        code: "unknown_skill",
+        location: `step:${step.stableStepId}`,
+        message: `unknown skill: tool step "${step.stableStepId}" references "${step.toolRef}", but that skill is not available to this agent.`,
       });
     }
     if (step.kind === "action" && !step.actionType) {
@@ -183,6 +251,102 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
             code: "approval_step_unreachable_option",
             location: `step:${step.stableStepId}`,
             message: `approval step unreachable option: option "${option.id}" of step "${step.stableStepId}" has no decision edge on "${decisionRef}".`,
+          });
+        }
+      }
+    }
+  }
+
+  for (const entry of outputAssignmentEntries) {
+    if (slotKeys.has(entry.target)) {
+      diagnostics.push({
+        code: "variable_name_collision",
+        location: `step:${entry.stepId}.outputAssignments.${entry.outputKey}`,
+        message: `variable name collision: output assignment target "${entry.target}" collides with a declared slot key.`,
+      });
+    }
+    const duplicateEntries = outputAssignmentTargetsByName.get(entry.target) ?? [];
+    if (duplicateEntries.length > 1) {
+      diagnostics.push({
+        code: "variable_name_collision",
+        location: `step:${entry.stepId}.outputAssignments.${entry.outputKey}`,
+        message: `variable name collision: output assignment target "${entry.target}" is assigned by multiple tool outputs.`,
+      });
+    }
+  }
+
+  if (context.skillDescriptors) {
+    for (const step of steps) {
+      if (step.kind !== "tool" || !step.toolRef) {
+        continue;
+      }
+      const descriptor = context.skillDescriptors.get(step.toolRef);
+      if (!descriptor) {
+        continue;
+      }
+      const inputsByKey = new Map(descriptor.inputs.map((input) => [input.key, input]));
+      const inputBindings = step.metadata.inputBindings ?? {};
+      for (const [inputKey, binding] of Object.entries(inputBindings)) {
+        const input = inputsByKey.get(inputKey);
+        if (!input) {
+          diagnostics.push({
+            code: "unknown_input_binding",
+            location: `step:${step.stableStepId}.inputBindings.${inputKey}`,
+            message: `unknown input binding: skill "${step.toolRef}" does not declare an input named "${inputKey}".`,
+          });
+          continue;
+        }
+        const expectedType = expectedRuntimeType(input.type);
+        if (binding.kind === "literal") {
+          const literalType = typeof binding.value;
+          const enumAllowed = input.type !== "enum" || !input.enumValues || input.enumValues.includes(String(binding.value));
+          if (literalType !== expectedType || !enumAllowed) {
+            diagnostics.push({
+              code: "input_type_mismatch",
+              location: `step:${step.stableStepId}.inputBindings.${inputKey}`,
+              message: `input type mismatch: binding for "${inputKey}" must be a ${input.type} value accepted by skill "${step.toolRef}".`,
+            });
+          }
+        } else if (!knownVariableNames.has(binding.ref)) {
+          diagnostics.push({
+            code: "unknown_variable_ref",
+            location: `step:${step.stableStepId}.inputBindings.${inputKey}`,
+            message: `unknown variable reference: binding for "${inputKey}" references variable "${binding.ref}", which is not a declared slot or skill-output assignment.`,
+          });
+        } else {
+          const slot = slotByKey.get(binding.ref);
+          if (slot && !isSlotTypeCompatibleWithInput(slot.type, input.type)) {
+            diagnostics.push({
+              code: "input_type_mismatch",
+              location: `step:${step.stableStepId}.inputBindings.${inputKey}`,
+              message: `input type mismatch: variable "${binding.ref}" has type ${slot.type}, but skill "${step.toolRef}" input "${inputKey}" expects ${input.type}.`,
+            });
+          }
+        }
+      }
+      const guaranteed = guaranteedVariablesOnEntry.get(step.stableStepId) ?? new Set<string>();
+      for (const input of descriptor.inputs) {
+        if (!input.required) {
+          continue;
+        }
+        const binding = inputBindings[input.key];
+        if (!binding) {
+          diagnostics.push({
+            code: "unsatisfiable_required_input",
+            location: `step:${step.stableStepId}.inputBindings.${input.key}`,
+            message: `unsatisfiable required input: skill "${step.toolRef}" requires input "${input.key}", but the routine does not bind it.`,
+          });
+        } else if (
+          binding.kind === "variableRef" &&
+          knownVariableNames.has(binding.ref) &&
+          !guaranteed.has(binding.ref)
+        ) {
+          // An unknown ref is reported once by the per-binding `unknown_variable_ref`
+          // check above; here we only flag a real variable that isn't guaranteed yet.
+          diagnostics.push({
+            code: "unsatisfiable_required_input",
+            location: `step:${step.stableStepId}.inputBindings.${input.key}`,
+            message: `unsatisfiable required input: variable "${binding.ref}" is not guaranteed before step "${step.stableStepId}".`,
           });
         }
       }
@@ -270,21 +434,22 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
     }
   }
 
-  const slotKeys = new Set(definition.slots.map((slot) => slot.key));
   const referencedSlotKeys = new Set<string>();
   for (const step of steps) {
     for (const key of collectSlotReferences(step.instruction)) {
       referencedSlotKeys.add(key);
     }
   }
-  const slotByKey = new Map(definition.slots.map((slot) => [slot.key, slot]));
   for (const transition of definition.transitions) {
     for (const key of collectSlotReferences(transition.guardText)) {
       referencedSlotKeys.add(key);
     }
     if (transition.guardKind === "field" && transition.fieldRef) {
       const slot = slotByKey.get(transition.fieldRef);
-      if (!slot && !isApprovalDecisionFieldRef(transition, stepById)) {
+      if (
+        !knownVariableNames.has(transition.fieldRef) &&
+        !isApprovalDecisionFieldRef(transition, stepById)
+      ) {
         // Honest provenance: a "decided in code" branch must reference a real variable,
         // not a name nothing provides (else it silently never fires at runtime).
         diagnostics.push({

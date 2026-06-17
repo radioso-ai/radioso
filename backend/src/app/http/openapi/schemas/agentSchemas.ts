@@ -7,7 +7,7 @@ import {
   routineDefinitionStatuses,
   routineValidationCodes,
 } from "../../../../modules/routines/public.js";
-import { skillDisplayMetadataSchema } from "../../../../modules/skills/public.js";
+import { skillDisplayMetadataSchema, skillOutcomeStatusSchema } from "../../../../modules/skills/public.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
 
@@ -466,6 +466,47 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }),
   );
 
+  const SkillAuthoringInputSchema = registry.register(
+    "SkillAuthoringInput",
+    z.object({
+      key: z.string(),
+      type: z.enum(["text", "number", "boolean", "email", "date", "phone", "enum"]),
+      required: z.boolean(),
+      description: z.string().optional(),
+      enumValues: z.array(z.string()).optional(),
+    }),
+  );
+
+  const SkillAuthoringOutcomeSchema = registry.register(
+    "SkillAuthoringOutcome",
+    z.object({
+      name: z.string(),
+      displayName: z.string(),
+      description: z.string().optional(),
+      status: skillOutcomeStatusSchema,
+    }),
+  );
+
+  const SkillAuthoringDescriptorSchema = registry.register(
+    "SkillAuthoringDescriptor",
+    z.object({
+      skillName: z.string(),
+      displayName: z.string(),
+      category: z.enum(["retrieval", "built_in", "external_mcp", "customer_email"]),
+      description: z.string().optional(),
+      inputs: z.array(SkillAuthoringInputSchema),
+      outcomes: z.array(SkillAuthoringOutcomeSchema),
+      hasDataOutputs: z.boolean(),
+    }),
+  );
+
+  const RoutineSkillCatalogResponseSchema = registry.register(
+    "RoutineSkillCatalogResponse",
+    z.object({
+      skills: z.array(SkillAuthoringDescriptorSchema),
+    }),
+  );
+
   const PublicChatSessionResponseSchema = registry.register(
     "PublicChatSessionResponse",
     z.object({
@@ -547,7 +588,9 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     RoutineDefinitionLifecycleResponseSchema,
     RoutineDefinitionPublishResponseSchema,
     RoutineDefinitionPublishRejectedResponseSchema,
+    RoutineSkillCatalogResponseSchema,
     RoutineDirectiveScopeOrphanSchema,
+    SkillAuthoringDescriptorSchema,
     RoutineDefinitionResponseSchema,
     RoutineDefinitionSaveResponseSchema,
     RoutineDefinitionUpdateRequestSchema,

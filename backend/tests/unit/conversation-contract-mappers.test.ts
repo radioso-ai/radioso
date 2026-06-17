@@ -16,6 +16,7 @@ const message = (overrides: Partial<MessageRecord> = {}): MessageRecord => ({
   conversationId: "conv_1",
   workspaceId: "workspace_1",
   role: "user",
+  source: "customer",
   content: "Hello",
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
   ...overrides,
@@ -80,6 +81,7 @@ describe("conversation contract mappers", () => {
     expect(toConversationMessage(message({ metadata: { source: "test" } }))).toEqual({
       id: "msg_1",
       role: "user",
+      source: "customer",
       content: "Hello",
       createdAt: "2026-01-01T00:00:00.000Z",
       metadata: { source: "test" },

@@ -7,13 +7,14 @@ describe("message repository", () => {
   it("round-trips nested activity trace metadata through JSON serialization", async () => {
     const database = {
       async query<T = Record<string, unknown>>(_text: string, params: unknown[]): Promise<T[]> {
-        const metadata = JSON.parse(String(params[5])) as Record<string, unknown>;
+        const metadata = JSON.parse(String(params[6])) as Record<string, unknown>;
         return [{
           id: String(params[0]),
           conversation_id: String(params[1]),
           workspace_id: String(params[2]),
           role: params[3],
           content: String(params[4]),
+          source: params[5],
           metadata_json: metadata,
           created_at: new Date("2026-05-04T10:00:00.000Z"),
         } as T];
@@ -83,13 +84,14 @@ describe("message repository", () => {
   it("round-trips structured user intent metadata", async () => {
     const database = {
       async query<T = Record<string, unknown>>(_text: string, params: unknown[]): Promise<T[]> {
-        const metadata = JSON.parse(String(params[5])) as Record<string, unknown>;
+        const metadata = JSON.parse(String(params[6])) as Record<string, unknown>;
         return [{
           id: String(params[0]),
           conversation_id: String(params[1]),
           workspace_id: String(params[2]),
           role: params[3],
           content: String(params[4]),
+          source: params[5],
           metadata_json: metadata,
           created_at: new Date("2026-05-04T10:00:00.000Z"),
         } as T];

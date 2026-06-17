@@ -15,6 +15,7 @@ export const toConversationMessage = (message: MessageRecord): ConversationMessa
   id: message.id,
   role: message.role,
   content: message.content,
+  source: message.source,
   createdAt: message.createdAt.toISOString(),
   metadata: message.metadata,
 });

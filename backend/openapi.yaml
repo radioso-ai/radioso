@@ -2612,6 +2612,7 @@ components:
                   - chat
                   - tool
                   - action
+                  - approval
               instruction:
                 type: string
                 minLength: 1
@@ -2628,6 +2629,38 @@ components:
                   - "null"
                 minLength: 1
                 maxLength: 300
+              captureKey:
+                type:
+                  - string
+                  - "null"
+                minLength: 1
+                maxLength: 120
+                pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+              options:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      minLength: 1
+                      maxLength: 120
+                      pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                    label:
+                      type: string
+                      minLength: 1
+                      maxLength: 120
+                    description:
+                      type:
+                        - string
+                        - "null"
+                      minLength: 1
+                      maxLength: 500
+                  required:
+                    - id
+                    - label
+                  additionalProperties: false
+                maxItems: 8
               ordinal:
                 type: integer
                 minimum: 0
@@ -2937,6 +2970,38 @@ components:
                   - "null"
                 minLength: 1
                 maxLength: 300
+              captureKey:
+                type:
+                  - string
+                  - "null"
+                minLength: 1
+                maxLength: 120
+                pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+              options:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      minLength: 1
+                      maxLength: 120
+                      pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                    label:
+                      type: string
+                      minLength: 1
+                      maxLength: 120
+                    description:
+                      type:
+                        - string
+                        - "null"
+                      minLength: 1
+                      maxLength: 500
+                  required:
+                    - id
+                    - label
+                  additionalProperties: false
+                maxItems: 8
               ordinal:
                 type: integer
                 minimum: 0
@@ -3169,6 +3234,10 @@ components:
                   - field_guard_unknown_reference
                   - field_guard_incompatible_type
                   - completion_export_missing_destination
+                  - approval_step_llm_edge
+                  - approval_step_no_decision_edge
+                  - approval_step_unknown_option
+                  - approval_step_unreachable_option
                   - unsatisfiable_required_input
                   - input_type_mismatch
                   - unknown_input_binding
@@ -3277,6 +3346,38 @@ components:
                   - "null"
                 minLength: 1
                 maxLength: 300
+              captureKey:
+                type:
+                  - string
+                  - "null"
+                minLength: 1
+                maxLength: 120
+                pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+              options:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      minLength: 1
+                      maxLength: 120
+                      pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                    label:
+                      type: string
+                      minLength: 1
+                      maxLength: 120
+                    description:
+                      type:
+                        - string
+                        - "null"
+                      minLength: 1
+                      maxLength: 500
+                  required:
+                    - id
+                    - label
+                  additionalProperties: false
+                maxItems: 8
               ordinal:
                 type: integer
                 minimum: 0
@@ -3664,6 +3765,38 @@ components:
                       - "null"
                     minLength: 1
                     maxLength: 300
+                  captureKey:
+                    type:
+                      - string
+                      - "null"
+                    minLength: 1
+                    maxLength: 120
+                    pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                  options:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          minLength: 1
+                          maxLength: 120
+                          pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                        label:
+                          type: string
+                          minLength: 1
+                          maxLength: 120
+                        description:
+                          type:
+                            - string
+                            - "null"
+                          minLength: 1
+                          maxLength: 500
+                      required:
+                        - id
+                        - label
+                      additionalProperties: false
+                    maxItems: 8
                   ordinal:
                     type: integer
                     minimum: 0
@@ -6785,6 +6918,14 @@ components:
             - user
             - assistant
             - system
+        source:
+          type: string
+          enum:
+            - customer
+            - ai_agent
+            - human_agent
+            - human_agent_on_behalf_of_ai_agent
+            - system
         content:
           type: string
         createdAt:
@@ -6834,6 +6975,7 @@ components:
       required:
         - id
         - role
+        - source
         - content
         - createdAt
     ChatConversationDetail:

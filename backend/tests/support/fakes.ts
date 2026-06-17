@@ -114,6 +114,7 @@ import type {
   MessageRecord,
   MessageRepositoryPort,
 } from "../../src/db/repositories/messageRepository.js";
+import { deriveMessageSourceFromRole } from "../../src/db/repositories/messageRepository.js";
 import type {
   IngestionSettingsRecord,
   ValidatedIngestionSettingsInput,
@@ -3361,6 +3362,7 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
       conversationId: input.conversationId,
       workspaceId: input.workspaceId,
       role: input.role,
+      source: deriveMessageSourceFromRole(input.role),
       content: input.content,
       metadata: input.metadata ?? (input.inputMetadata ? { ...input.inputMetadata } : undefined),
       inputMetadata: input.inputMetadata,

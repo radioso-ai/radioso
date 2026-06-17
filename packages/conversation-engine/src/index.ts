@@ -12,7 +12,10 @@ import type {
   ProcessTurnStreamEvent,
   ProcessTurnStreamInput,
   RenderableTurn,
+  ResumeAwaitingDecisionInput,
+  ConversationRoutineDecisionResult,
   RoutineActionRequest,
+  RoutineAwaitingDecision,
   SelectionDecision,
   SkillDefinition,
   SkillTransientGuidance,
@@ -22,6 +25,7 @@ import type {
   TurnContext,
   TurnOutcome,
 } from "@radioso/conversation-contract";
+import { resumeAwaitingDecision } from "./awaitingDecision.js";
 import { clarificationStage } from "./clarification.js";
 
 const nowIso = (): string => new Date().toISOString();
@@ -288,6 +292,7 @@ const createProcessTurnResult = (input: {
   trace: ConversationTrace;
   actions?: RoutineActionRequest[];
   handoff?: { routineId: string; stepId: string };
+  awaitingDecision?: RoutineAwaitingDecision;
 }): ProcessTurnResult => ({
   sessionId: input.sessionId,
   events: input.events,
@@ -297,6 +302,7 @@ const createProcessTurnResult = (input: {
   trace: input.trace,
   ...(input.actions && input.actions.length > 0 ? { actions: input.actions } : {}),
   ...(input.handoff ? { handoff: input.handoff } : {}),
+  ...(input.awaitingDecision ? { awaitingDecision: input.awaitingDecision } : {}),
 });
 
 export class DefaultConversationEngine implements ConversationEngine {
@@ -706,7 +712,22 @@ export class DefaultConversationEngine implements ConversationEngine {
       handoff: result.terminal?.kind === "handoff"
         ? { routineId: state.routineId, stepId: result.terminal.stepId }
         : undefined,
+      // Forward the suspend signal so the host can mint a handle, insert the
+      // pending_decisions row, and notify an operator. Without this the routine
+      // would save status="suspended" and be orphaned (loadActive filters to active).
+      awaitingDecision: result.awaitingDecision,
       trace: createTrace(routineTraceStages),
+    });
+  }
+
+  async resumeAwaitingDecision(input: ResumeAwaitingDecisionInput): Promise<ConversationRoutineDecisionResult> {
+    return resumeAwaitingDecision({
+      suspendedReader: input.suspendedReader,
+      routineRunner: input.routineRunner,
+      turn: input.turn,
+      sessionId: input.sessionId,
+      decision: input.decision,
+      ...(input.steeringResolver ? { steeringResolver: input.steeringResolver } : {}),
     });
   }
 
@@ -809,6 +830,7 @@ export class DefaultConversationEngine implements ConversationEngine {
 export const createConversationEngine = (): ConversationEngine => new DefaultConversationEngine();
 
 export { DefaultRoutineRunner } from "./routineRunner.js";
+export { resumeAwaitingDecision } from "./awaitingDecision.js";
 export {
   clarificationStage,
   decideClarification,

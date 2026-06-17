@@ -5,6 +5,7 @@ import type { RoutineState } from "@radioso/conversation-contract";
 
 import { DEFAULT_ROUTINE_STATE_TTL_MS } from "../../../db/repositories/routineStateRepository.js";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import type { PendingDecisionCreateInput } from "../../../db/repositories/pendingDecisionRepository.js";
 import { stringifyJsonb } from "../../../shared/infra/jsonb.js";
 import type { Database } from "../../../shared/infra/database.js";
 import {
@@ -73,7 +74,7 @@ const saveRoutineState = async (
   state: RoutineState,
   ttlMs: number,
 ): Promise<void> => {
-  const expiresAt = new Date(Date.now() + ttlMs).toISOString();
+  const expiresAt = state.status === "suspended" ? null : new Date(Date.now() + ttlMs).toISOString();
   await client.query(
     `INSERT INTO routine_states (session_id, routine_id, path, variables, attempts, status, expires_at, updated_at)
      VALUES ($1, $2, $3::text[], $4::jsonb, $5::jsonb, $6, $7, now())
@@ -110,6 +111,43 @@ const applyRoutineStateTransition = async (
     return;
   }
   await client.query(`DELETE FROM routine_states WHERE session_id = $1`, [transition.sessionId]);
+};
+
+const savePendingDecision = async (
+  client: PoolClient,
+  input: PendingDecisionCreateInput,
+): Promise<void> => {
+  await client.query(
+    `INSERT INTO pending_decisions (
+        handle,
+        conversation_id,
+        session_id,
+        workspace_id,
+        agent_id,
+        routine_id,
+        step_id,
+        reason,
+        options,
+        decider_scope,
+        content_hash,
+        deadline
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11, $12)`,
+    [
+      input.handle,
+      input.conversationId,
+      input.sessionId,
+      input.workspaceId,
+      input.agentId,
+      input.routineId,
+      input.stepId,
+      input.reason ?? null,
+      JSON.stringify(input.options),
+      JSON.stringify(input.deciderScope),
+      input.contentHash,
+      input.deadline ?? null,
+    ],
+  );
 };
 
 const saveClarificationState = async (
@@ -170,6 +208,9 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
     return this.database.withTransaction(async (client) => {
       await enqueueActions(client, input);
       await applyRoutineStateTransition(client, input.routineStateTransition, this.routineStateTtlMs);
+      if (input.pendingDecisionTransition) {
+        await savePendingDecision(client, input.pendingDecisionTransition);
+      }
       await applyClarificationTransition(client, input.clarificationTransition);
 
       const messageId = input.assistantMessage.id ?? randomUUID();

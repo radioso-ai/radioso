@@ -7,6 +7,7 @@ import type {
   MessageRecord,
   MessageRepositoryPort,
 } from "../../../db/repositories/messageRepository.js";
+import { deriveMessageSourceFromRole } from "../../../db/repositories/messageRepository.js";
 import type { HistoryItemsRepositoryPort } from "../../../db/repositories/historyItemsRepository.js";
 import type { DocumentSearchHistoryEntry } from "../../documents/contracts/index.js";
 import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
@@ -85,6 +86,7 @@ export interface ChatConversationTurnDebug {
 export interface ChatConversationTurn {
   id: string;
   role: MessageRecord["role"];
+  source: NonNullable<MessageRecord["source"]>;
   content: string;
   createdAt: string;
   inputMetadata?: MessageRecord["inputMetadata"];
@@ -818,6 +820,7 @@ export class ChatHistoryService {
       messages: messages.map((message) => ({
         id: message.id,
         role: message.role,
+        source: message.source ?? deriveMessageSourceFromRole(message.role),
         content: message.content,
         createdAt: toIsoString(message.createdAt),
         inputMetadata: message.inputMetadata,

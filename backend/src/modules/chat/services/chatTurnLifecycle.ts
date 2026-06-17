@@ -7,6 +7,7 @@ import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilit
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
+import type { PendingDecisionCreateInput } from "../../../db/repositories/pendingDecisionRepository.js";
 import {
   ActivitySummaryPresenter,
   ActivityTracePresenter,
@@ -136,6 +137,7 @@ export interface AssistantTurnPersistencePort {
     conversationId: string;
     actions?: RoutineActionRequest[];
     routineStateTransition?: CapturedRoutineTransition | null;
+    pendingDecisionTransition?: PendingDecisionCreateInput | null;
     clarificationTransition?: CapturedClarificationTransition | null;
     assistantMessage: MessageCreateInput;
     auditEvent: AuditEventInput;

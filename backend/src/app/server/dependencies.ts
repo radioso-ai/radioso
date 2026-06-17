@@ -49,7 +49,7 @@ import { EmbeddingService } from "../../modules/retrieval/composition.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
 import { createRadiosoCrawlerUtilityProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
-import { SkillCatalogService } from "../../modules/skills/public.js";
+import { SkillAuthoringCatalogService, SkillCatalogService } from "../../modules/skills/public.js";
 import { createConnectorIngestionPort } from "../../modules/connectors/services/connectorIngestionPort.js";
 import {
   ChatGatewayLlmJudge,
@@ -300,6 +300,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     capabilityPolicy: composition.capabilityPolicy,
     registry: composition.skillCatalogRegistry,
   });
+  const skillAuthoringCatalog = new SkillAuthoringCatalogService({
+    skillCatalog: skillCatalogService,
+    externalSkills: externalSkillDefinitionService,
+    logger,
+  });
   const onAccountCreated = composition.accountCreatedHooks.length === 0
     ? undefined
     : async ({ accountId }: { accountId: string }) => {
@@ -364,6 +369,19 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repository: repositories.routineDefinitionRepository,
     actionCapabilities: composition.actionCapabilityMap,
     capabilityPolicy: composition.capabilityPolicy,
+    skillAuthoringCatalog,
+    // Mirror the runtime routine-skill resolver's name set (enabled webhook +
+    // customer-email skills) so publish validation accepts what runtime routes.
+    additionalRoutineSkillNames: async ({ workspaceId, agentId }) => {
+      const [emails, webhooks] = await Promise.all([
+        emailSkillDefinitionService.list(workspaceId, agentId),
+        webhookSkillDefinitionService.list(workspaceId, agentId),
+      ]);
+      return [
+        ...emails.filter((skill) => skill.enabled).map((skill) => skill.skillName),
+        ...webhooks.filter((skill) => skill.enabled).map((skill) => skill.skillName),
+      ];
+    },
     webhookDestinations: {
       existsByIdAndWorkspace: async (inputWorkspaceId, destinationId) =>
         webhookDestinations.existsByIdAndWorkspace(inputWorkspaceId, destinationId),
@@ -499,6 +517,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     directiveAuthorService,
     agentSurfaceExtensions,
     skillCatalogService,
+    skillAuthoringCatalog,
     accountRepository: repositories.accountRepository,
     userRepository: repositories.userRepository,
     workspaceRepository: repositories.workspaceRepository,

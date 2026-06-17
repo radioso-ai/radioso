@@ -1,7 +1,7 @@
 'use client'
 
-import type { ComponentType, JSX } from 'react'
-import { BadgeCheck, ChevronDown, CornerUpRight, Flag, Zap, type LucideIcon } from 'lucide-react'
+import { useRef, useState, type ComponentType, type JSX } from 'react'
+import { AlertTriangle, BadgeCheck, ChevronDown, CornerUpRight, Flag, Zap, type LucideIcon } from 'lucide-react'
 import {
   $getNodeByKey,
   DecoratorNode,
@@ -22,8 +22,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { useSkillDescriptor, RoutineSkillCatalogPopover } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import type { RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineSlotType } from '@/lib/api-types'
-import { ROUTINE_SLOT_TYPES } from '@/lib/routine-prose'
+import { ROUTINE_SLOT_TYPES, type RoutineInputBinding, type RoutineSkillBindingState, type RoutineStepMode } from '@/lib/routine-prose'
 
 import { useRoutineVariables } from '@/components/dashboard/settings/routine-variables-context'
 
@@ -48,6 +49,9 @@ export type SerializedChipNode = Spread<
     values?: RoutineFieldGuardValue[] | null
     unit?: RoutineFieldGuardUnit | null
     counterLimit?: number | null
+    inputBindings?: Record<string, RoutineInputBinding>
+    outputAssignments?: Record<string, string>
+    mode?: RoutineStepMode
   },
   SerializedLexicalNode
 >
@@ -61,18 +65,33 @@ const KIND_META: Record<RoutineChipKind, { className: string; icon: LucideIcon |
   end: { className: 'border-slate-300 bg-slate-100 text-slate-700', icon: Flag },
 }
 
-function ChipBadge({ kind, label, type }: { kind: RoutineChipKind; label: string; type: RoutineSlotType | null }): JSX.Element {
+function ChipBadge({
+  kind,
+  label,
+  type,
+  className,
+  icon,
+  suffix,
+}: {
+  kind: RoutineChipKind
+  label: string
+  type: RoutineSlotType | null
+  className?: string
+  icon?: LucideIcon | null
+  suffix?: string
+}): JSX.Element {
   const meta = KIND_META[kind]
-  const Icon: ComponentType<{ className?: string }> | null = meta.icon
+  const Icon: ComponentType<{ className?: string }> | null = icon === undefined ? meta.icon : icon
   return (
     <span
-      className={`inline-flex select-none items-center gap-1 rounded-md border px-1.5 py-0 text-xs font-medium ${meta.className}`}
+      className={`inline-flex select-none items-center gap-1 rounded-md border px-1.5 py-0 text-xs font-medium ${className ?? meta.className}`}
     >
       {Icon ? <Icon className="h-3 w-3" /> : null}
       {label}
       {/* The type is part of the variable's identity, so show it on the chip face —
           it also drives which exact checks the author can build on the variable. */}
       {type ? <span className="font-normal opacity-60">· {type}</span> : null}
+      {suffix ? <span className="font-normal opacity-70">· {suffix}</span> : null}
       {kind === 'variable' ? <ChevronDown className="h-3 w-3 opacity-50" /> : null}
     </span>
   )
@@ -80,13 +99,81 @@ function ChipBadge({ kind, label, type }: { kind: RoutineChipKind; label: string
 
 function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: RoutineChipKind; refId: string; label: string }): JSX.Element {
   const [editor] = useLexicalComposerContext()
-  const { getType, setType } = useRoutineVariables()
+  const { getType, setType, variables } = useRoutineVariables()
   const type = kind === 'variable' ? getType(refId) : null
+  const skillCatalog = useSkillDescriptor(refId, label)
+
+  const readBindingState = (): RoutineSkillBindingState => {
+    let next: RoutineSkillBindingState = {}
+    editor.getEditorState().read(() => {
+      const node = $getNodeByKey(nodeKey)
+      if ($isChipNode(node)) next = node.getSkillBindingState()
+    })
+    return next
+  }
+
+  const bindingState = readBindingState()
+  const [isCatalogOpen, setIsCatalogOpen] = useState(false)
+  const [draftBindingState, setDraftBindingState] = useState<RoutineSkillBindingState>(bindingState)
+  const draftBindingStateRef = useRef<RoutineSkillBindingState>(bindingState)
+
+  const commitBindingState = (next: RoutineSkillBindingState) => {
+    editor.update(() => {
+      const node = $getNodeByKey(nodeKey)
+      if ($isChipNode(node)) node.setSkillBindingState(next)
+    })
+  }
+
+  const handleCatalogOpenChange = (open: boolean) => {
+    if (open) {
+      const next = readBindingState()
+      draftBindingStateRef.current = next
+      setDraftBindingState(next)
+      setIsCatalogOpen(true)
+      return
+    }
+    setIsCatalogOpen(false)
+    commitBindingState(draftBindingStateRef.current)
+  }
+
+  const updateDraftBindingState = (next: RoutineSkillBindingState) => {
+    draftBindingStateRef.current = next
+    setDraftBindingState(next)
+  }
 
   const removeSelf = () => {
     editor.update(() => {
-      $getNodeByKey(nodeKey)?.remove()
+      const node = $getNodeByKey(nodeKey)
+      node?.remove()
     })
+  }
+
+  if (kind === 'skill') {
+    const resolvedLabel = skillCatalog.descriptor?.displayName ?? label
+    const isUnknownSkill = !skillCatalog.isLoading && !skillCatalog.descriptor
+    return (
+      <RoutineSkillCatalogPopover
+        skillName={refId}
+        label={resolvedLabel}
+        bindingState={isCatalogOpen ? draftBindingState : bindingState}
+        availableVariables={variables.map((variable) => variable.id)}
+        open={isCatalogOpen}
+        onOpenChange={handleCatalogOpenChange}
+        onBindingStateChange={updateDraftBindingState}
+        onRemove={removeSelf}
+      >
+        <button type="button" contentEditable={false} data-routine-chip={kind} className="mx-0.5 cursor-pointer align-baseline outline-none">
+          <ChipBadge
+            kind={kind}
+            label={isUnknownSkill ? label : resolvedLabel}
+            type={type}
+            className={isUnknownSkill ? 'border-amber-400 bg-amber-100 text-amber-950 dark:border-amber-500/70 dark:bg-amber-500/15 dark:text-amber-100' : undefined}
+            icon={isUnknownSkill ? AlertTriangle : undefined}
+            suffix={isUnknownSkill ? 'unknown skill' : undefined}
+          />
+        </button>
+      </RoutineSkillCatalogPopover>
+    )
   }
 
   return (
@@ -128,13 +215,29 @@ export class ChipNode extends DecoratorNode<JSX.Element> {
   __values: RoutineFieldGuardValue[] | null
   __unit: RoutineFieldGuardUnit | null
   __counterLimit: number | null
+  __inputBindings: Record<string, RoutineInputBinding>
+  __outputAssignments: Record<string, string>
+  __mode: RoutineStepMode | null
 
   static getType(): string {
     return 'routine-chip'
   }
 
   static clone(node: ChipNode): ChipNode {
-    return new ChipNode(node.__chipKind, node.__refId, node.__label, node.__key, node.__op, node.__value, node.__values, node.__unit, node.__counterLimit)
+    return new ChipNode(
+      node.__chipKind,
+      node.__refId,
+      node.__label,
+      node.__key,
+      node.__op,
+      node.__value,
+      node.__values,
+      node.__unit,
+      node.__counterLimit,
+      node.__inputBindings,
+      node.__outputAssignments,
+      node.__mode,
+    )
   }
 
   static importJSON(serialized: SerializedChipNode): ChipNode {
@@ -148,6 +251,9 @@ export class ChipNode extends DecoratorNode<JSX.Element> {
       serialized.values ?? null,
       serialized.unit ?? null,
       serialized.counterLimit ?? null,
+      serialized.inputBindings ?? {},
+      serialized.outputAssignments ?? {},
+      serialized.mode ?? null,
     )
   }
 
@@ -161,6 +267,9 @@ export class ChipNode extends DecoratorNode<JSX.Element> {
     values: RoutineFieldGuardValue[] | null = null,
     unit: RoutineFieldGuardUnit | null = null,
     counterLimit: number | null = null,
+    inputBindings: Record<string, RoutineInputBinding> = {},
+    outputAssignments: Record<string, string> = {},
+    mode: RoutineStepMode | null = null,
   ) {
     super(key)
     this.__chipKind = chipKind
@@ -171,6 +280,9 @@ export class ChipNode extends DecoratorNode<JSX.Element> {
     this.__values = values
     this.__unit = unit
     this.__counterLimit = counterLimit
+    this.__inputBindings = inputBindings
+    this.__outputAssignments = outputAssignments
+    this.__mode = mode
   }
 
   exportJSON(): SerializedChipNode {
@@ -185,6 +297,9 @@ export class ChipNode extends DecoratorNode<JSX.Element> {
       values: this.__values,
       unit: this.__unit,
       counterLimit: this.__counterLimit,
+      inputBindings: this.__inputBindings,
+      outputAssignments: this.__outputAssignments,
+      mode: this.__mode ?? undefined,
     }
   }
 
@@ -234,6 +349,33 @@ export class ChipNode extends DecoratorNode<JSX.Element> {
     return this.__counterLimit
   }
 
+  getSkillBindingState(): RoutineSkillBindingState {
+    return {
+      inputBindings: this.__inputBindings,
+      outputAssignments: this.__outputAssignments,
+      mode: this.__mode ?? 'typed',
+    }
+  }
+
+  getInputBindings(): Record<string, RoutineInputBinding> {
+    return this.__inputBindings
+  }
+
+  getOutputAssignments(): Record<string, string> {
+    return this.__outputAssignments
+  }
+
+  getMode(): RoutineStepMode | null {
+    return this.__mode
+  }
+
+  setSkillBindingState(next: RoutineSkillBindingState): void {
+    const writable = this.getWritable()
+    writable.__inputBindings = next.inputBindings ?? {}
+    writable.__outputAssignments = next.outputAssignments ?? {}
+    writable.__mode = next.mode ?? 'typed'
+  }
+
   // What a serialized line contributes. A variable becomes the {{slot.x}} wire form; all
   // other chips are structural and contribute no readable text — the line's prose carries
   // the instruction, while the chip's metadata (a skill's name, a branch target, a
@@ -253,8 +395,21 @@ export class ChipNode extends DecoratorNode<JSX.Element> {
   }
 }
 
-export function $createChipNode(chipKind: RoutineChipKind, refId: string, label: string): ChipNode {
-  return new ChipNode(chipKind, refId, label)
+export function $createChipNode(chipKind: RoutineChipKind, refId: string, label: string, bindingState: RoutineSkillBindingState = {}): ChipNode {
+  return new ChipNode(
+    chipKind,
+    refId,
+    label,
+    undefined,
+    null,
+    null,
+    null,
+    null,
+    null,
+    bindingState.inputBindings ?? {},
+    bindingState.outputAssignments ?? {},
+    bindingState.mode ?? null,
+  )
 }
 
 // A jump (`step`) chip targets another step by its stable id; a counter limit makes it a

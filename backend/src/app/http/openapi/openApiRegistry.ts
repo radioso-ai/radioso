@@ -61,6 +61,8 @@ export interface OpenApiSchemaCatalog {
   RoutineDefinitionSaveResponseSchema: z.ZodTypeAny;
   RoutineDefinitionUpdateRequestSchema: z.ZodTypeAny;
   RoutineDefinitionValidateResponseSchema: z.ZodTypeAny;
+  RoutineSkillCatalogResponseSchema: z.ZodTypeAny;
+  SkillAuthoringDescriptorSchema: z.ZodTypeAny;
   RoutineValidationResultSchema: z.ZodTypeAny;
   AnswerSegmentSchema: z.ZodTypeAny;
   AnswerFeedbackEntrySchema: z.ZodTypeAny;

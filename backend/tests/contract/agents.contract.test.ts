@@ -923,9 +923,51 @@ describe("agents contract", () => {
       .expect(401);
 
     await request(app)
+      .get("/api/v1/agents/11111111-1111-4111-8111-111111111111/routine-skill-catalog")
+      .expect(401);
+
+    await request(app)
       .post("/api/v1/agents/11111111-1111-4111-8111-111111111111/routines/draft-assist")
       .send({ prose: "Collect email and confirm." })
       .expect(401);
+  });
+
+  it("lists the routine skill catalog for an agent and rejects cross-workspace agent access", async () => {
+    const { app } = createTestApp();
+    const first = await issueTestToken(app, "agents-routine-skill-catalog-first@example.com");
+    const second = await issueTestToken(app, "agents-routine-skill-catalog-second@example.com");
+    const firstAuthorization = `Bearer ${first.token}`;
+    const secondAuthorization = `Bearer ${second.token}`;
+
+    const agent = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", firstAuthorization)
+      .send({ name: "Routine skill catalog" })
+      .expect(201);
+
+    const response = await request(app)
+      .get(`/api/v1/agents/${agent.body.id}/routine-skill-catalog`)
+      .set("Authorization", firstAuthorization)
+      .expect(200);
+
+    expect(response.body.skills).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        skillName: "retrieval.answer",
+        displayName: expect.any(String),
+        category: "retrieval",
+        inputs: expect.any(Array),
+        outcomes: expect.any(Array),
+        hasDataOutputs: false,
+      }),
+    ]));
+    expect(response.body.skills).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ skillName: "retrieval.search" }),
+    ]));
+
+    await request(app)
+      .get(`/api/v1/agents/${agent.body.id}/routine-skill-catalog`)
+      .set("Authorization", secondAuthorization)
+      .expect(404);
   });
 
   it("creates, lists, gets, updates, validates, and publishes routine definitions", async () => {

@@ -28,6 +28,13 @@ export { authApi } from './api-auth'
 export { chatApi } from './api-chat'
 export { directivesApi } from './api-directives'
 export { RoutinePublishRejectedError, routinesApi } from './api-routines'
+export { routineSkillCatalogApi } from './api-routine-skill-catalog'
+export type {
+  SkillAuthoringDescriptor,
+  SkillAuthoringInput,
+  SkillAuthoringInputType,
+  SkillAuthoringOutcome,
+} from './api-routine-skill-catalog'
 export { qualityApi } from './api-quality'
 export type {
   FeedbackValue,

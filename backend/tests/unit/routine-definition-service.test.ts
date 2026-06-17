@@ -10,6 +10,7 @@ import {
   type RoutineDefinitionDraftInput,
   type RoutineDefinitionRepositoryPort,
 } from "../../src/modules/routines/public.js";
+import type { SkillAuthoringCatalog, SkillAuthoringDescriptor } from "../../src/modules/skills/public.js";
 import { capabilityNames, type CapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../src/shared/domain/actionCapabilities.js";
 
@@ -314,11 +315,26 @@ class FakeCapabilityPolicy implements CapabilityPolicy {
   }
 }
 
+const skillDescriptor = (skillName: string): SkillAuthoringDescriptor => ({
+  skillName,
+  displayName: skillName,
+  category: "external_mcp",
+  inputs: [],
+  outcomes: [{
+    name: "completed",
+    displayName: "Completed",
+    status: "completed",
+  }],
+  hasDataOutputs: false,
+});
+
 const createService = (options: {
   actionCapabilities?: ActionCapabilityMap;
   capabilityPolicy?: CapabilityPolicy;
   knownWebhookDestinations?: Set<string>;
   directiveScopeTags?: ConstructorParameters<typeof RoutineDefinitionService>[0]["directiveScopeTags"];
+  skillAuthoringCatalog?: SkillAuthoringCatalog;
+  additionalRoutineSkillNames?: (input: { workspaceId: string; agentId: string }) => Promise<readonly string[]>;
 } = {}) => {
   const repository = new FakeRoutineDefinitionRepository();
   const auditService = { record: vi.fn().mockResolvedValue(undefined) };
@@ -392,7 +408,12 @@ describe("RoutineDefinitionService", () => {
   });
 
   it("publishes a tool step that names a skill, dispatched through the skill port", async () => {
-    const { service } = createService();
+    const { service } = createService({
+      skillAuthoringCatalog: {
+        listForAgent: vi.fn(async () => [skillDescriptor("account.lookup")]),
+        getForAgent: vi.fn(),
+      },
+    });
     const draft = await service.createDraft(workspaceId, agentId, toolDraft());
 
     const result = await service.publish(workspaceId, agentId, draft.routine.id);
@@ -400,6 +421,88 @@ describe("RoutineDefinitionService", () => {
     expect(result).toMatchObject({
       routine: { id: draft.routine.id, status: "published" },
       validation: { ok: true, diagnostics: [] },
+    });
+  });
+
+  it("rejects publish and explicit validation when a tool step references a skill outside the agent catalog", async () => {
+    const catalog = {
+      listForAgent: vi.fn(async () => [skillDescriptor("billing.lookup")]),
+      getForAgent: vi.fn(),
+    };
+    const { service } = createService({ skillAuthoringCatalog: catalog });
+    const draft = await service.createDraft(workspaceId, agentId, toolDraft());
+
+    const validate = await service.validate(workspaceId, agentId, { id: draft.routine.id });
+    const publish = await service.publish(workspaceId, agentId, draft.routine.id);
+
+    expect(validate).toMatchObject({
+      ok: false,
+      diagnostics: [expect.objectContaining({
+        code: "unknown_skill",
+        location: "step:step_lookup",
+      })],
+    });
+    expect(publish).toMatchObject({
+      rejected: true,
+      validation: {
+        ok: false,
+        diagnostics: [expect.objectContaining({
+          code: "unknown_skill",
+          location: "step:step_lookup",
+        })],
+      },
+    });
+    expect(catalog.listForAgent).toHaveBeenCalledWith({ workspaceId, agentId });
+  });
+
+  it("accepts a tool step whose skill is runtime-resolvable but not in the catalog (webhook/customer-email)", async () => {
+    const catalog = {
+      // catalog does NOT include account.lookup (e.g. a webhook/email skill)
+      listForAgent: vi.fn(async () => [skillDescriptor("billing.lookup")]),
+      getForAgent: vi.fn(),
+    };
+    const additionalRoutineSkillNames = vi.fn(async () => ["account.lookup"]);
+    const { service } = createService({ skillAuthoringCatalog: catalog, additionalRoutineSkillNames });
+    const draft = await service.createDraft(workspaceId, agentId, toolDraft());
+
+    const validate = await service.validate(workspaceId, agentId, { id: draft.routine.id });
+    const publish = await service.publish(workspaceId, agentId, draft.routine.id);
+
+    expect(validate.diagnostics.find((d) => d.code === "unknown_skill")).toBeUndefined();
+    expect(publish).not.toMatchObject({ rejected: true });
+    expect(additionalRoutineSkillNames).toHaveBeenCalledWith({ workspaceId, agentId });
+  });
+
+  it("passes skill descriptors into publish validation for typed required inputs", async () => {
+    const catalog = {
+      listForAgent: vi.fn(async () => [{
+        ...skillDescriptor("account.lookup"),
+        inputs: [{ key: "accountId", type: "text", required: true }],
+      } satisfies SkillAuthoringDescriptor]),
+      getForAgent: vi.fn(),
+    };
+    const { service } = createService({ skillAuthoringCatalog: catalog });
+    const draft = await service.createDraft(workspaceId, agentId, toolDraft());
+
+    const validate = await service.validate(workspaceId, agentId, { id: draft.routine.id });
+    const publish = await service.publish(workspaceId, agentId, draft.routine.id);
+
+    expect(validate.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: "unsatisfiable_required_input",
+        location: "step:step_lookup.inputBindings.accountId",
+      }),
+    ]));
+    expect(publish).toMatchObject({
+      rejected: true,
+      validation: {
+        diagnostics: expect.arrayContaining([
+          expect.objectContaining({
+            code: "unsatisfiable_required_input",
+            location: "step:step_lookup.inputBindings.accountId",
+          }),
+        ]),
+      },
     });
   });
 

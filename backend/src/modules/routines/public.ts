@@ -7,7 +7,11 @@ export {
   routineGuardKinds,
   routineFieldGuardOps,
   routineGuardProvenance,
+  routineInputBindingSchema,
   routineSlotTypes,
+  routineStepMetadataSchema,
+  routineStepModeSchema,
+  routineStepSchema,
   routineStepKinds,
   routineTerminalKinds,
   routineCompletionExportTriggerKinds,
@@ -18,11 +22,15 @@ export {
   type RoutineFieldGuardOp,
   type RoutineGuardKind,
   type RoutineGuardProvenance,
+  type RoutineInputBinding,
   type RoutineSlotType,
+  type RoutineStepMetadata,
+  type RoutineStepMode,
   type RoutineStepKind,
   type RoutineTerminalKind,
 } from "./domain.js";
 export { compileRoutineDefinition, legacyCompiledRoutineId } from "./compiler.js";
+export { analyzeGuaranteedVariablesOnEntry } from "./variablePopulation.js";
 export {
   RoutineSkillExecutorDispatcher,
   StaticRoutineSkillResolver,

@@ -44,8 +44,8 @@ test("author a routine with variable and skill chips, set a type, and save", asy
 
   // The same @ menu is kind-aware: pick a skill instead of a variable.
   await editor.pressSequentially("then @refund");
-  await expect(page.getByRole("option", { name: "Skill: refund" })).toBeVisible();
-  await page.getByRole("option", { name: "Skill: refund" }).click();
+  await expect(page.getByRole("option", { name: "Skill (not in catalog): refund" })).toBeVisible();
+  await page.getByRole("option", { name: "Skill (not in catalog): refund" }).click();
   await expect(page.locator('[data-routine-chip="skill"]')).toBeVisible();
 
   // Set the variable's type from its own inline menu (no separate list).
@@ -64,6 +64,154 @@ test("author a routine with variable and skill chips, set a type, and save", asy
   expect(created?.body?.name).toBe("Process a refund request");
   const orderSlot = (created?.body?.slots ?? []).find((slot: { key: string; type: string }) => slot.key === "order_id");
   expect(orderSlot?.type).toBe("date");
+});
+
+test("a skill chip opens an authoring catalog popover with typed ports and outcomes", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineUpdates: [],
+    routineSkillCatalog: [
+      {
+        skillName: "refund",
+        displayName: "Issue refund",
+        category: "external_mcp",
+        description: "Checks eligibility and starts a refund workflow.",
+        inputs: [
+          { key: "order_id", type: "text", required: true, description: "Order identifier" },
+          { key: "refund_type", type: "enum", required: false, enumValues: ["full", "partial"] },
+        ],
+        outcomes: [
+          { name: "approved", displayName: "Approved", status: "approved", description: "Refund can proceed" },
+          { name: "manual_review", displayName: "Manual review", status: "needs_review" },
+        ],
+        hasDataOutputs: false,
+      },
+      {
+        skillName: "lookup_order",
+        displayName: "Lookup order",
+        category: "external_mcp",
+        inputs: [{ key: "email", type: "email", required: true }],
+        outcomes: [{ name: "found", displayName: "Found", status: "found" }],
+        hasDataOutputs: true,
+      },
+    ],
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Write in prose" }).click();
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+  await editor.pressSequentially("Check whether ");
+  await editor.pressSequentially("@refu");
+  await expect(page.getByRole("option", { name: "Skill: Issue refund" })).toBeVisible();
+  await page.getByRole("option", { name: "Skill: Issue refund" }).click();
+  const refundChip = page.locator('[data-routine-chip="skill"]').first();
+  await expect(refundChip).toContainText("Issue refund");
+  await expect(refundChip).not.toContainText("unknown skill");
+
+  await refundChip.click();
+  const catalog = page.getByRole("dialog", { name: "Skill catalog for Issue refund" });
+  await expect(catalog).toBeVisible();
+  await expect(catalog).toContainText("Issue refund");
+  await expect(catalog).toContainText("Checks eligibility and starts a refund workflow.");
+
+  await expect(catalog).toContainText("order_id");
+  await expect(catalog).toContainText("text");
+  await expect(catalog).toContainText("required");
+  await expect(catalog).toContainText("refund_type");
+  await expect(catalog).toContainText("enum");
+  await expect(catalog).toContainText("full");
+  await expect(catalog).toContainText("partial");
+
+  await expect(catalog).toContainText("Approved");
+  await expect(catalog).toContainText("approved");
+  await expect(catalog).toContainText("Manual review");
+  await expect(catalog).toContainText("needs_review");
+  await expect(catalog).toContainText("only outcome-based routing is available");
+
+  await expect(catalog.getByRole("tab", { name: "Typed" })).toHaveAttribute("aria-selected", "true");
+  await expect(catalog.getByRole("tab", { name: "Agent decides" })).toBeDisabled();
+
+  await page.keyboard.press("Escape");
+  await expect(catalog).toBeHidden();
+
+  await editor.click();
+  await editor.pressSequentially(" then @made_up_skill");
+  await expect(page.getByRole("option", { name: "Skill (not in catalog): made_up_skill" })).toBeVisible();
+  await page.getByRole("option", { name: "Skill (not in catalog): made_up_skill" }).click();
+  const unknownChip = page.locator('[data-routine-chip="skill"]').filter({ hasText: "made_up_skill" });
+  await expect(unknownChip).toContainText("unknown skill");
+});
+
+test("a skill chip binding editor persists typed input bindings", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineUpdates,
+    routineSkillCatalog: [
+      {
+        skillName: "refund",
+        displayName: "Issue refund",
+        category: "external_mcp",
+        description: "Checks eligibility and starts a refund workflow.",
+        inputs: [
+          { key: "order_id", type: "text", required: true, description: "Order identifier" },
+          { key: "customer_email", type: "email", required: true, description: "Customer email" },
+        ],
+        outcomes: [
+          { name: "refund_id", displayName: "Refund id", status: "created", description: "Created refund identifier" },
+        ],
+        hasDataOutputs: true,
+      },
+    ],
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Bind refund ports");
+  await page.getByLabel("Trigger", { exact: true }).fill("When a refund needs typed inputs");
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+  await editor.pressSequentially("Use ");
+  await editor.pressSequentially("@order_id");
+  await expect(page.getByRole("option", { name: /Create variable/ })).toBeVisible();
+  await page.keyboard.press("Enter");
+  await editor.pressSequentially(" to run ");
+  await editor.pressSequentially("@refund");
+  await expect(page.getByRole("option", { name: "Skill: Issue refund" })).toBeVisible();
+  await page.getByRole("option", { name: "Skill: Issue refund" }).click();
+
+  await page.locator('[data-routine-chip="skill"]').click();
+  const catalog = page.getByRole("dialog", { name: "Skill catalog for Issue refund" });
+  await expect(catalog).toBeVisible();
+
+  await catalog.getByLabel("Binding mode for customer_email").click();
+  await page.getByRole("option", { name: "Literal" }).click();
+  await catalog.getByLabel("Literal value for customer_email").fill("buyer@example.com");
+
+  await catalog.getByLabel("Binding mode for order_id").click();
+  await page.getByRole("option", { name: "Variable" }).click();
+  await catalog.getByLabel("Variable for order_id").click();
+  await page.getByRole("option", { name: "order_id" }).click();
+
+  await page.keyboard.press("Escape");
+  await expect(catalog).toBeHidden();
+
+  await page.getByRole("button", { name: "Save routine" }).click();
+
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  const created = routineUpdates.find((update) => update.method === "POST");
+  const createdBody = created?.body as { steps?: Array<{ toolRef: string | null; metadata?: Record<string, unknown> }> } | undefined;
+  const refundStep = (createdBody?.steps ?? []).find((step) => step.toolRef === "refund");
+
+  expect(refundStep?.metadata?.mode).toBe("typed");
+  expect(refundStep?.metadata?.inputBindings).toEqual({
+    customer_email: { kind: "literal", value: "buyer@example.com" },
+    order_id: { kind: "variableRef", ref: "order_id" },
+  });
 });
 
 test("the Bold toolbar button reflects its active state", async ({ page }) => {
@@ -302,6 +450,7 @@ test("a name can't be claimed by a second chip kind", async ({ page }) => {
   await editor.pressSequentially(" then @refund");
   await expect(page.getByRole("option", { name: "@refund" })).toBeVisible();
   await expect(page.getByRole("option", { name: "Skill: refund" })).toHaveCount(0);
+  await expect(page.getByRole("option", { name: "Skill (not in catalog): refund" })).toHaveCount(0);
   await expect(page.getByRole("option", { name: "Handoff: refund" })).toHaveCount(0);
 });
 
@@ -321,8 +470,8 @@ test("a skill chip compiles to a tool step naming the skill", async ({ page }) =
   await editor.pressSequentially("Check availability ");
   // The skill is defined elsewhere; the routine references it by name with a skill chip.
   await editor.pressSequentially("@book_meeting");
-  await expect(page.getByRole("option", { name: "Skill: book_meeting" })).toBeVisible();
-  await page.getByRole("option", { name: "Skill: book_meeting" }).click();
+  await expect(page.getByRole("option", { name: "Skill (not in catalog): book_meeting" })).toBeVisible();
+  await page.getByRole("option", { name: "Skill (not in catalog): book_meeting" }).click();
   await expect(page.locator('[data-routine-chip="skill"]')).toBeVisible();
 
   await page.getByRole("button", { name: "Save routine" }).click();

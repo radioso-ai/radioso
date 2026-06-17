@@ -1,7 +1,16 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -20,65 +29,146 @@ import {
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
   defaultUsageTrendQuery,
-  findPeakUsageTrendBucket,
   formatUsageTrendBucketLabel,
   isAgentFilterScopedOut,
-  summarizeUsageTrends,
   type UsageTrendGranularity,
   type UsageTrendQueryState,
 } from '@/lib/usage-trends'
 
 const numberFormatter = new Intl.NumberFormat()
+const compactNumberFormatter = new Intl.NumberFormat(undefined, {
+  notation: 'compact',
+  maximumFractionDigits: 1,
+})
 const ALL_FILTER_VALUE = 'all'
 
 const formatCount = (value: number) => numberFormatter.format(value)
+const formatCompactCount = (value: number) => compactNumberFormatter.format(value)
 
-function MetricCard({
-  label,
-  value,
-  caption,
-}: {
+type UsageChartMode = 'messages' | 'conversations' | 'tokens'
+
+type UsageChartDatum = {
   label: string
-  value: number
-  caption: string
-}) {
-  return (
-    <Card>
-      <CardHeader className="space-y-1">
-        <CardTitle className="text-sm font-medium">{label}</CardTitle>
-        <CardDescription>{caption}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-semibold tracking-normal">{formatCount(value)}</div>
-      </CardContent>
-    </Card>
-  )
+  fullLabel: string
+  conversations: number
+  userMessages: number
+  assistantMessages: number
+  inputTokens: number
+  outputTokens: number
 }
 
-function TrendsBars({ trends }: { trends: UsageTrendsResponse }) {
-  const peak = findPeakUsageTrendBucket(trends)
-  const maxTokens = Math.max(1, peak?.tokens.total ?? 0)
+const chartModes: Array<{ value: UsageChartMode; label: string }> = [
+  { value: 'messages', label: 'Messages' },
+  { value: 'conversations', label: 'Conversations' },
+  { value: 'tokens', label: 'Tokens' },
+]
+
+const chartSeriesLabels: Record<string, string> = {
+  conversations: 'Conversations',
+  userMessages: 'User messages',
+  assistantMessages: 'Assistant messages',
+  inputTokens: 'Input tokens',
+  outputTokens: 'Output tokens',
+}
+
+const buildUsageChartData = (trends: UsageTrendsResponse): UsageChartDatum[] => trends.buckets.map((bucket) => ({
+  label: formatUsageTrendBucketLabel(bucket, trends.granularity),
+  fullLabel: `${bucket.periodStart.slice(0, 10)} through ${bucket.periodEnd.slice(0, 10)}`,
+  conversations: bucket.conversationsCreated,
+  userMessages: bucket.messages.user,
+  assistantMessages: bucket.messages.assistant,
+  inputTokens: bucket.tokens.input,
+  outputTokens: bucket.tokens.output,
+}))
+
+function UsagePeriodChart({
+  trends,
+}: {
+  trends: UsageTrendsResponse
+}) {
+  const [chartMode, setChartMode] = useState<UsageChartMode>('messages')
+  const [chartWidth, setChartWidth] = useState(0)
+  const chartContainerRef = useRef<HTMLDivElement>(null)
+  const chartData = useMemo(() => buildUsageChartData(trends), [trends])
+
+  useEffect(() => {
+    const element = chartContainerRef.current
+    if (!element) return
+
+    const updateChartWidth = () => {
+      setChartWidth(Math.max(0, Math.floor(element.getBoundingClientRect().width)))
+    }
+
+    updateChartWidth()
+    const observer = new ResizeObserver(updateChartWidth)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Trend series</CardTitle>
-        <CardDescription>UTC buckets from {trends.from} through {trends.to}</CardDescription>
+      <CardHeader className="gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-1">
+          <CardTitle>Usage by period</CardTitle>
+          <CardDescription>{trends.granularity === 'day' ? 'Daily' : trends.granularity === 'week' ? 'Weekly' : 'Monthly'} bars from {trends.from} through {trends.to}.</CardDescription>
+        </div>
+        <div className="flex flex-wrap gap-2" aria-label="Usage metric">
+          {chartModes.map((mode) => (
+            <Button
+              key={mode.value}
+              type="button"
+              size="sm"
+              variant="outline"
+              className={chartMode === mode.value ? 'border-foreground bg-foreground text-background hover:bg-foreground/90 hover:text-background' : undefined}
+              onClick={() => setChartMode(mode.value)}
+              aria-pressed={chartMode === mode.value}
+            >
+              {mode.label}
+            </Button>
+          ))}
+        </div>
       </CardHeader>
       <CardContent>
-        <div className="space-y-3">
-          {trends.buckets.map((bucket) => {
-            const width = Math.max(2, Math.round((bucket.tokens.total / maxTokens) * 100))
-            return (
-              <div key={bucket.periodStart} className="grid grid-cols-[5.5rem_1fr_4rem] items-center gap-3 text-sm">
-                <div className="truncate text-muted-foreground">{formatUsageTrendBucketLabel(bucket, trends.granularity)}</div>
-                <div className="h-3 overflow-hidden rounded-full bg-muted">
-                  <div className="h-full rounded-full bg-foreground" style={{ width: `${width}%` }} />
-                </div>
-                <div className="text-right tabular-nums">{formatCount(bucket.tokens.total)}</div>
-              </div>
-            )
-          })}
+        <div ref={chartContainerRef} className="h-80 w-full" data-testid="usage-period-chart">
+          {chartWidth > 0 ? (
+            <BarChart width={chartWidth} height={320} data={chartData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis
+                dataKey="label"
+                tickLine={false}
+                axisLine={false}
+                minTickGap={16}
+                tickMargin={10}
+              />
+              <YAxis
+                tickFormatter={formatCompactCount}
+                tickLine={false}
+                axisLine={false}
+                width={52}
+              />
+              <Tooltip
+                cursor={{ fill: 'var(--muted)', opacity: 0.45 }}
+                formatter={(value, name) => [formatCount(Number(value)), chartSeriesLabels[String(name)] ?? String(name)]}
+                labelFormatter={(_label, payload) => payload[0]?.payload.fullLabel ?? ''}
+              />
+              <Legend />
+              {chartMode === 'conversations' ? (
+                <Bar dataKey="conversations" name={chartSeriesLabels.conversations} fill="var(--foreground)" radius={[4, 4, 0, 0]} />
+              ) : null}
+              {chartMode === 'messages' ? (
+                <>
+                  <Bar dataKey="userMessages" name={chartSeriesLabels.userMessages} stackId="messages" fill="var(--foreground)" radius={[0, 0, 4, 4]} />
+                  <Bar dataKey="assistantMessages" name={chartSeriesLabels.assistantMessages} stackId="messages" fill="var(--muted-foreground)" radius={[4, 4, 0, 0]} />
+                </>
+              ) : null}
+              {chartMode === 'tokens' ? (
+                <>
+                  <Bar dataKey="inputTokens" name={chartSeriesLabels.inputTokens} stackId="tokens" fill="var(--foreground)" radius={[0, 0, 4, 4]} />
+                  <Bar dataKey="outputTokens" name={chartSeriesLabels.outputTokens} stackId="tokens" fill="var(--muted-foreground)" radius={[4, 4, 0, 0]} />
+                </>
+              ) : null}
+            </BarChart>
+          ) : null}
         </div>
       </CardContent>
     </Card>
@@ -126,8 +216,6 @@ export function UsageTrendsView() {
     }
   }, [query, reloadKey])
 
-  const totals = useMemo(() => trends ? summarizeUsageTrends(trends) : null, [trends])
-
   const updateQuery = (patch: Partial<UsageTrendQueryState>) => {
     setQuery((current) => ({ ...current, ...patch }))
   }
@@ -142,7 +230,7 @@ export function UsageTrendsView() {
       <Card>
         <CardHeader>
           <CardTitle>Usage trends</CardTitle>
-          <CardDescription>Conversations, messages, and succeeded token usage by UTC period.</CardDescription>
+          <CardDescription>Conversations, messages, and succeeded token usage for the selected range.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
@@ -241,15 +329,8 @@ export function UsageTrendsView() {
             <CardDescription>{error}</CardDescription>
           </CardHeader>
         </Card>
-      ) : trends && totals ? (
-        <>
-          <div className="grid gap-4 md:grid-cols-3">
-            <MetricCard label="Conversations" value={totals.conversationsCreated} caption="Created in the selected range." />
-            <MetricCard label="Messages" value={totals.messages.total} caption={`${formatCount(totals.messages.user)} user, ${formatCount(totals.messages.assistant)} assistant.`} />
-            <MetricCard label="Tokens" value={totals.tokens.total} caption={`${formatCount(totals.tokens.input)} input, ${formatCount(totals.tokens.output)} output.`} />
-          </div>
-          <TrendsBars trends={trends} />
-        </>
+      ) : trends ? (
+        <UsagePeriodChart trends={trends} />
       ) : null}
     </div>
   )

@@ -1,8 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState, type JSX } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
-import { AtSign, BadgeCheck, Bold, CornerUpRight, Flag, Heading1, Italic } from 'lucide-react'
+import { AtSign, BadgeCheck, Bold, CornerUpRight, Database, Flag, Heading1, Italic } from 'lucide-react'
 
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
 import { ContentEditable } from '@lexical/react/LexicalContentEditable'
@@ -30,6 +30,7 @@ import {
 import { $createHeadingNode, $isHeadingNode, HeadingNode } from '@lexical/rich-text'
 
 import { $createChipNode, $createConditionChipNode, $createStepChipNode, $isChipNode, ChipNode, type RoutineChipKind } from '@/components/dashboard/settings/routine-chip-node'
+import { findRoutineSkillDescriptor, normalizeSkillName, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { RoutineVariablesProvider } from '@/components/dashboard/settings/routine-variables-context'
 import { Button } from '@/components/ui/button'
 import {
@@ -40,9 +41,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import type { RoutineSkillCategory, SkillAuthoringDescriptor } from '@/lib/api-routine-skill-catalog'
 import { cn } from '@/lib/utils'
 import type { RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineSlotType } from '@/lib/api-types'
 import {
@@ -307,12 +318,32 @@ function JumpDialog({
 // toolbar, so an active toggle gets the solid accent instead.
 const ACTIVE_TOOLBAR_BUTTON = 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
 
+const SKILL_CATEGORY_ORDER: RoutineSkillCategory[] = ['retrieval', 'customer_email', 'external_mcp', 'built_in']
+const SKILL_CATEGORY_LABELS: Record<RoutineSkillCategory, string> = {
+  retrieval: 'Retrieval',
+  customer_email: 'Customer email',
+  external_mcp: 'External MCP',
+  built_in: 'Built-in',
+}
+
+const groupSkillsByCategory = (skills: SkillAuthoringDescriptor[]) =>
+  SKILL_CATEGORY_ORDER
+    .map((category) => ({
+      category,
+      skills: skills
+        .filter((skill) => skill.category === category)
+        .sort((left, right) => left.displayName.localeCompare(right.displayName)),
+    }))
+    .filter((group) => group.skills.length > 0)
+
 function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVariable[]; onSetVariableType: (refId: string, type: RoutineSlotType) => void }) {
   const [editor] = useLexicalComposerContext()
+  const skillCatalog = useContext(RoutineSkillCatalogContext)
   const [conditionOpen, setConditionOpen] = useState(false)
   const [jumpOpen, setJumpOpen] = useState(false)
   const [jumpTargets, setJumpTargets] = useState<{ id: string; title: string }[]>([])
   const [formats, setFormats] = useState({ bold: false, italic: false, step: false })
+  const skillGroups = useMemo(() => groupSkillsByCategory(skillCatalog.skills), [skillCatalog.skills])
 
   // Track the caret's active formats so Bold/Italic/Step show their pressed state. `step`
   // is whether the caret's line is a titled step (an h1 heading).
@@ -349,6 +380,20 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
         const selection = $getSelection()
         if (!$isRangeSelection(selection)) return
         const chip = $createConditionChipNode(condition.refId, condition.op, condition.label, condition.value, condition.values, condition.unit)
+        selection.insertNodes([chip])
+        const trailing = $createTextNode(' ')
+        chip.insertAfter(trailing)
+        trailing.select()
+      })
+    })
+  }
+
+  const insertSkill = (skill: SkillAuthoringDescriptor) => {
+    editor.focus(() => {
+      editor.update(() => {
+        const selection = $getSelection()
+        if (!$isRangeSelection(selection)) return
+        const chip = $createChipNode('skill', skill.skillName, skill.displayName)
         selection.insertNodes([chip])
         const trailing = $createTextNode(' ')
         chip.insertAfter(trailing)
@@ -433,6 +478,36 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
         <AtSign className="h-4 w-4" />
         Variable
       </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2">
+            <Database className="h-4 w-4" />
+            Skill
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-64">
+          {skillCatalog.isLoading ? (
+            <DropdownMenuItem disabled>Loading skills...</DropdownMenuItem>
+          ) : skillCatalog.error ? (
+            <DropdownMenuItem disabled>{skillCatalog.error}</DropdownMenuItem>
+          ) : skillGroups.length === 0 ? (
+            <DropdownMenuItem disabled>No routine skills available.</DropdownMenuItem>
+          ) : (
+            skillGroups.map((group, index) => (
+              <DropdownMenuGroup key={group.category}>
+                {index > 0 ? <DropdownMenuSeparator /> : null}
+                <DropdownMenuLabel>{SKILL_CATEGORY_LABELS[group.category]}</DropdownMenuLabel>
+                {group.skills.map((skill) => (
+                  <DropdownMenuItem key={skill.skillName} onSelect={() => insertSkill(skill)} className="flex-col items-start gap-0.5">
+                    <span className="text-sm font-medium">{skill.displayName}</span>
+                    <span className="text-xs text-muted-foreground">{skill.skillName}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuGroup>
+            ))
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
       <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={() => setConditionOpen(true)} disabled={variables.length === 0}>
         <BadgeCheck className="h-4 w-4" />
         Condition
@@ -466,6 +541,7 @@ function ChipTypeaheadPlugin({
   onCreateVariable: (variable: RoutineEditorVariable) => void
 }) {
   const [editor] = useLexicalComposerContext()
+  const skillCatalog = useContext(RoutineSkillCatalogContext)
   const [query, setQuery] = useState<string | null>(null)
   // Custom trigger so variable names with underscores keep the menu open (the default
   // matcher treats "_" as a word boundary and cancels the popover).
@@ -484,6 +560,11 @@ function ChipTypeaheadPlugin({
   const options = useMemo<ChipMenuOption[]>(() => {
     const raw = (query ?? '').trim()
     const lowered = raw.toLowerCase()
+    const reservedKindForRef = (refId: string) => reservedRefKinds[refId] ?? reservedRefKinds[slugifyVariableKey(refId)]
+    const canCreateRef = (kind: RoutineChipKind, refId: string) => {
+      const reservedKind = reservedKindForRef(refId)
+      return !reservedKind || reservedKind === kind
+    }
     const result: ChipMenuOption[] = variables
       .filter((variable) => !lowered || variable.name.toLowerCase().includes(lowered))
       .map((variable) => new ChipMenuOption(`var-${variable.id}`, {
@@ -493,6 +574,20 @@ function ChipTypeaheadPlugin({
         refId: variable.id,
         name: variable.name,
       }))
+    const catalogMatches = skillCatalog.skills
+      .filter((skill) => {
+        const catalogName = normalizeSkillName(skill.skillName)
+        const displayName = normalizeSkillName(skill.displayName)
+        return (!lowered || catalogName.includes(lowered) || displayName.includes(lowered)) && canCreateRef('skill', skill.skillName)
+      })
+      .map((skill) => new ChipMenuOption(`skill-${skill.skillName}`, {
+        display: `Skill: ${skill.displayName}`,
+        kind: 'skill',
+        isNew: false,
+        refId: skill.skillName,
+        name: skill.displayName,
+      }))
+    result.push(...catalogMatches)
     if (raw) {
       // A name identifies one thing: once it's used by a chip, don't offer to
       // create a different kind with the same name (so a variable and an action
@@ -509,9 +604,9 @@ function ChipTypeaheadPlugin({
           name: raw,
         }))
       }
-      if (canCreate('skill')) {
+      if (!findRoutineSkillDescriptor(skillCatalog.skills, raw, raw) && canCreate('skill')) {
         result.push(new ChipMenuOption(`new-skill-${lowered}`, {
-          display: `Skill: ${raw}`,
+          display: `Skill (not in catalog): ${raw}`,
           kind: 'skill',
           isNew: true,
           refId,
@@ -529,7 +624,7 @@ function ChipTypeaheadPlugin({
       }
     }
     return result.slice(0, 8)
-  }, [variables, reservedRefKinds, query])
+  }, [skillCatalog.skills, variables, reservedRefKinds, query])
 
   const onSelectOption = useCallback(
     (option: ChipMenuOption, nodeToReplace: TextNode | null, closeMenu: () => void) => {
@@ -606,6 +701,9 @@ function $serializeBlocks(): RoutineDocBlock[] {
           values: chip.getChipValues(),
           unit: chip.getChipUnit(),
           counterLimit: chip.getChipCounterLimit(),
+          inputBindings: chip.getInputBindings(),
+          outputAssignments: chip.getOutputAssignments(),
+          mode: chip.getMode() ?? undefined,
         }))
       : [],
   }))
@@ -626,7 +724,11 @@ function $initializeFromParagraphs(paragraphs: ProseParagraph[]): void {
       } else if (segment.chipKind === 'step') {
         node.append($createStepChipNode(segment.refId, segment.label, segment.counterLimit ?? null))
       } else {
-        node.append($createChipNode(segment.chipKind, segment.refId, segment.label))
+        node.append($createChipNode(segment.chipKind, segment.refId, segment.label, {
+          inputBindings: segment.inputBindings,
+          outputAssignments: segment.outputAssignments,
+          mode: segment.mode,
+        }))
       }
     }
     root.append(node)
@@ -660,6 +762,7 @@ export function RoutineChipEditor({
 }): JSX.Element {
   const variablesContext = useMemo(
     () => ({
+      variables,
       getType: (refId: string): RoutineSlotType => variables.find((variable) => variable.id === refId)?.type ?? 'text',
       setType: onSetVariableType,
     }),

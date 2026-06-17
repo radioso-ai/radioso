@@ -544,6 +544,9 @@ describe("chat service streaming", () => {
       async attemptRoutine() {
         return null;
       },
+      async resumeAwaitingDecision() {
+        return { resumed: false, response: { answer: "" }, nextState: null };
+      },
       async processTurn(input) {
         processedSessionId = input.sessionId;
         const history = await input.stores.loadHistory({ sessionId: input.sessionId });

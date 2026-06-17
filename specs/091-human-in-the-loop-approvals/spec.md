@@ -401,18 +401,22 @@ options of type T"; it never learns who decides, the transport, or the policy.**
 
 ### Suspended routine state
 
-- Routine state gains a **`suspended`** status. The existing "load active routine for
-  this session" read MUST continue to return only `active` rows, so a suspended
-  routine is invisible to the normal user-turn resume path (this is what makes the
-  pause durable against an inbound user message). A new read loads a suspended routine
-  **by handle** (not by session), so an external decision resumes the exact parked
-  instance.
-- While suspended, the routine state's existing abandon/expiry clock MUST be paused
-  (so the 30-minute abandon sweep cannot silently drop a routine waiting on a human).
-- Concurrent writers (a user turn falling through + an operator resume) MUST NOT
-  clobber each other: the routine-state save on resume is guarded by an expected
-  version (optimistic concurrency), and a losing resume is reported as a conflict for
-  retry rather than overwriting.
+- Routine state uses a **`suspended`** status. No migration is required: the
+  `routine_states.status` column is unconstrained `TEXT`, so `'suspended'` is insertable
+  as-is. The existing "load active routine for this session" read MUST continue to
+  return only `active` rows, so a suspended routine is invisible to the normal user-turn
+  resume path (this is what makes the pause durable against an inbound user message). A
+  `SuspendedRoutineReader` loads a suspended routine **by handle** (mapping
+  `handle → session` via `pending_decisions`, then loading the suspended row), so an
+  external decision resumes the exact parked instance.
+- While suspended, the save MUST set `expires_at = NULL` so the existing 30-minute
+  abandon filter (`expires_at > now()`) cannot silently drop a routine waiting on a human.
+- Concurrency safety does **not** need an optimistic `version` on `routine_states`: the
+  suspended row is never a concurrent-write target — `loadActive` excludes it, routine
+  **activation MUST skip when a suspended row exists for the session** (FR-004, which is
+  what prevents a new routine from clobbering the suspended row), and resume serializes
+  via the `pending_decisions` CAS inside the single resolve+resume+persist transaction.
+  (Optimistic versioning is deferred as future hardening.)
 
 ### Validated decision endpoint
 
@@ -610,8 +614,9 @@ options of type T"; it never learns who decides, the transport, or the policy.**
   - A new pending-decision store port + repository + migration (sibling to the
     conversation-actions outbox), plus extension of the turn-commit fence to persist
     the suspension atomically.
-  - The `suspended` routine-state status + optimistic version guard on routine-state
-    save (migration).
+  - `routineStateRepository` support for the `suspended` status: `loadSuspended`,
+    and `save` setting `expires_at = NULL` when suspended (no migration — status is
+    unconstrained TEXT; no optimistic `version`).
   - The authenticated, validated decision endpoint (sibling to the agent routes,
     which today own authoring CRUD only).
   - A decision-notification outbox action type + handler, registered through the same
@@ -775,8 +780,10 @@ options of type T"; it never learns who decides, the transport, or the policy.**
   status (`pending → approved | rejected | cancelled`); resolved decision, decider
   identity, decided-at. Sibling of the conversation-actions outbox, not part of it.
 - **Suspended Routine State**: existing per-conversation routine position extended
-  with a `suspended` status (excluded from active-routine load), an optimistic
-  version, a paused abandon clock, and a way to be loaded by handle.
+  with a `suspended` status (excluded from active-routine load), a paused abandon clock
+  (`expires_at = NULL`), and a way to be loaded by handle. No migration and no optimistic
+  version (status is unconstrained TEXT; concurrency safety comes from the activation
+  guard + the decision CAS in the resolve transaction).
 - **Decision**: an authorized human's resolution — chosen option id + optional opaque
   payload — validated by the host and handed to the engine, captured as a routine
   variable that the routine's deterministic guards branch on.

@@ -13,7 +13,7 @@
 ## Phase 1: Setup
 
 - [ ] T001 Confirm workspace deps installed (`pnpm install` at repo root) and engine tests run (`cd packages/conversation-engine && pnpm test`); record `INTEGRATION_DATABASE_URL` pointing at the running `radioso-postgres-1` for backend integration/contract lanes.
-- [ ] T002 Reserve migration filenames `102_message_source_discriminator.sql`, `103_routine_states_suspended.sql`, `104_pending_decisions.sql` under `backend/src/db/migrations/` (latest is `101`).
+- [ ] T002 Reserve migration filenames `102_message_source_discriminator.sql` and `104_pending_decisions.sql` under `backend/src/db/migrations/` (latest is `101`). **No `103` needed**: `routine_states.status` is unconstrained `TEXT` (migration 071, no CHECK), so `'suspended'` is insertable as-is, and `expires_at` is already nullable.
 
 ---
 
@@ -56,7 +56,7 @@
 ### Implementation
 
 - [ ] T014 [US1] Add `approval` author step kind + compile to runtime `await` + validator invariants in `backend/src/modules/routines/{domain.ts,compiler.ts,validator.ts}`.
-- [ ] T015 [US1] Migration `103_routine_states_suspended.sql` (status += `suspended`, + `version INT`) + `backend/src/db/repositories/routineStateRepository.ts` (`loadSuspended(handle)`, version-guarded `save`; `loadActive` stays `status='active'`; pause abandon clock while suspended).
+- [ ] T015 [US1] `backend/src/db/repositories/routineStateRepository.ts` (NO migration — status is unconstrained TEXT): `save` sets `expires_at = NULL` when `status === 'suspended'` (pause the abandon clock); add `loadSuspended({ sessionId })` (status `'suspended'`, ignore expiry); `loadActive` stays `status='active'`. Mirror the same `expires_at`-when-suspended rule in `postgresAssistantTurnPersistence.saveRoutineState`. **No optimistic `version`**: the suspended row is never a concurrent-write target — `loadActive` excludes it, activation skips when a suspended row exists (FR-004), and resume serializes via the `pending_decisions` CAS inside the atomic resolve+resume+persist tx. (Optimistic versioning is deferred as future hardening.)
 - [ ] T016 [US1] Migration `104_pending_decisions.sql` (sibling of `routine_action_requests`; unique `handle`; one-open-per-gate partial unique index; queue + deadline indexes) + `backend/src/db/repositories/pendingDecisionRepository.ts` (`create`, `loadByHandle`, `resolve` CAS, `listPending`).
 - [ ] T017 [US1] New module `backend/src/modules/approvals/{public.ts,domain.ts,service.ts}` — decision domain (option-in-set, content-hash, decider-scope) + service (validate → record CAS → invoke `ResumeRunner` port); no chat-internal imports.
 - [ ] T018 [US1] Extend `backend/src/modules/chat/services/deferredRoutineStore.ts` + `infra/postgresAssistantTurnPersistence.ts` to park-and-persist the suspended state + pending-decision row atomically in `completeAssistantTurn`; add the `chat.suspended` non-answer outcome + `hitl.decision` audit + the new trace events in `chatTurnLifecycle.ts`.

@@ -11,7 +11,7 @@ All Tranche A decisions are resolved — there are **no open `NEEDS CLARIFICATIO
 
 ## D2 — Pending decision is a sibling store, not a routine-state flag or an outbox column (RESOLVED)
 
-- **Decision**: A new `pending_decisions` table (1:N per conversation, keyed by opaque `handle`), sibling to `routine_action_requests`. `routine_states` gains only a `suspended` status (to exclude it from `loadActive`) and an optimistic `version`.
+- **Decision**: A new `pending_decisions` table (1:N per conversation, keyed by opaque `handle`), sibling to `routine_action_requests`. `routine_states` needs no migration — it just uses a `suspended` status value (its `status` is unconstrained TEXT) to exclude the parked routine from `loadActive`, with `expires_at = NULL` while suspended. No optimistic `version`: the suspended row is never a concurrent-write target (loadActive excludes it; activation skips when suspended; resume serializes via the `pending_decisions` CAS in the resolve transaction).
 - **Rationale**: `routine_states` is `session_id PRIMARY KEY` with an unconditioned upsert and no lock/version (verified `routineStateRepository.ts`) — a status flag there cannot hold concurrent decisions and races last-writer-wins. The outbox is a fire-and-forget *dispatch* machine (`handle(): void`); a *decision* knows decider scope, option set, content hash, deadline — different concern, and folding it in would collide the outbox's content-addressed idempotency key across re-asked approvals.
 - **Alternatives**: status-flag-on-routine_states (rejected, red-team BLOCKER #1/#4); outbox column-hack (rejected, conflates dispatch with decision).
 

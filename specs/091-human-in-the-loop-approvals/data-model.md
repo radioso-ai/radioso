@@ -43,9 +43,9 @@ Existing per-session routine position, extended:
 
 | Change | Notes |
 |---|---|
-| `status` gains `'suspended'` | `loadActive` continues to filter `status='active'` → suspended is invisible to the user-turn resume path. `loadSuspended(handle)` reads it back by handle. |
-| `+ version INT NOT NULL DEFAULT 0` | optimistic concurrency; `save` becomes version-guarded (`… WHERE version=$expected`); a losing resume → `409 conversation_moved`. |
-| abandon clock | while `suspended`, `expires_at` is set NULL/far-future so the 30-min abandon sweep cannot drop a routine waiting on a human. |
+| `status` value `'suspended'` | **No migration**: `status` is unconstrained `TEXT` (migration 071, no CHECK), so `'suspended'` is insertable as-is. `loadActive` continues to filter `status='active'` → suspended is invisible to the user-turn resume path. `loadSuspended({sessionId})` reads it back (the `SuspendedRoutineReader` maps `handle → session` via `pending_decisions`, then loads the suspended row). |
+| abandon clock | when `status==='suspended'`, `save` sets `expires_at = NULL` so the 30-min abandon filter (`expires_at > now()`) cannot drop a routine waiting on a human. |
+| concurrency (no optimistic `version`) | The suspended row is never a concurrent-write target: `loadActive` excludes it, routine activation skips when a suspended row exists (FR-004), and resume serializes via the `pending_decisions` CAS inside the atomic resolve+resume+persist transaction. Optimistic versioning is deferred as future hardening. |
 
 ### Message Source (ALTER — `messages`)
 
@@ -76,11 +76,11 @@ pending ──conversation ended / superseded──────────▶ c
 ### Routine state during a gated turn
 ```
 active ──reach `await` step──▶ suspended         (atomic with the suspend assistant turn + pending_decisions row)
-suspended ──approved/rejected decision──▶ active  (version-guarded) ──▶ runner.resume from gate ──▶ active | completed
+suspended ──approved/rejected decision──▶ active  (within the resolve tx) ──▶ runner.resume from gate ──▶ active | completed
 suspended ──inbound visitor message──▶ suspended  (loadActive returns null; turn answered normally; no new routine activates)
 ```
 
 ### Atomic commit (the fence)
 The suspend turn commits **in one `withTransaction`** (extending `postgresAssistantTurnPersistence.completeAssistantTurn` via the `deferredRoutineStore` command-capture fence): assistant message (the "awaiting review" reply, `source: ai_agent`) + routine state set `suspended` + `pending_decisions` row inserted + the `approval.request` outbox action enqueued + audit. A crash before commit leaves the routine un-advanced (it re-renders the gate), never half-suspended; a routine is never `suspended` without a decision row, and never has a `pending` decision row without being `suspended`.
 
-The resume turn commits the **decision CAS-flip + the resumed assistant turn + routine-state advance** (`suspended→active|completed`, version-guarded) + the gated action **enqueued to the outbox** + trace, **all in one transaction** (the `resolve` CAS runs against that transaction's client — not a prior standalone commit). A crash before commit rolls the flip back, so a retry re-resolves cleanly; the gated effect is dispatched idempotently by a worker, so a rolled-back-then-retried resume never double-fires it. A synchronous side-effecting skill run *during* resume would not be crash-safe — gate an outbox `action`.
+The resume turn commits the **decision CAS-flip + the resumed assistant turn + routine-state advance** (`suspended→active|completed`) + the gated action **enqueued to the outbox** + trace, **all in one transaction** (the `resolve` CAS runs against that transaction's client — not a prior standalone commit). A crash before commit rolls the flip back, so a retry re-resolves cleanly; the gated effect is dispatched idempotently by a worker, so a rolled-back-then-retried resume never double-fires it. A synchronous side-effecting skill run *during* resume would not be crash-safe — gate an outbox `action`.

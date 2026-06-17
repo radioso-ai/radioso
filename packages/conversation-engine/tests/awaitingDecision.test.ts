@@ -69,7 +69,8 @@ const throwingSelector = (): ConversationRoutineNextStepSelector => ({
 });
 
 const readerFor = (state: RoutineState | null) => ({
-  loadSuspended: vi.fn(async () => state),
+  loadSuspended: vi.fn(async (input: { sessionId: string }) =>
+    input.sessionId === state?.sessionId ? state : null),
 });
 
 describe("resumeAwaitingDecision", () => {
@@ -83,6 +84,7 @@ describe("resumeAwaitingDecision", () => {
       suspendedReader: readerFor(suspendedAtGate),
       routineRunner: runner,
       turn,
+      sessionId: "session_1",
       decision: { handle: "decision_1", optionId: "approve", payload: { reviewedBy: "operator_1" } },
     });
 
@@ -106,6 +108,7 @@ describe("resumeAwaitingDecision", () => {
       suspendedReader: readerFor(suspendedAtGate),
       routineRunner: runner,
       turn,
+      sessionId: "session_1",
       decision: { handle: "decision_1", optionId: "reject" },
     });
 
@@ -135,6 +138,7 @@ describe("resumeAwaitingDecision", () => {
       suspendedReader: readerFor(suspendedAtGate),
       routineRunner: runner,
       turn,
+      sessionId: "session_1",
       decision: { handle: "decision_1", optionId: "reject" },
     });
 

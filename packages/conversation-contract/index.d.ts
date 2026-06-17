@@ -732,7 +732,7 @@ export interface ConversationRoutineStore {
 }
 
 export interface SuspendedRoutineReader {
-  loadSuspended(input: { handle: string }): Promise<RoutineState | null>;
+  loadSuspended(input: { sessionId: string }): Promise<RoutineState | null>;
 }
 
 export interface RoutineDecisionInput {
@@ -917,6 +917,7 @@ export interface AttemptRoutineInput {
 export interface ResumeAwaitingDecisionInput {
   agent: ConversationAgentConfig;
   turn: TurnContext;
+  sessionId: string;
   decision: RoutineDecisionInput;
   suspendedReader: SuspendedRoutineReader;
   routineStore?: ConversationRoutineStore;
@@ -937,6 +938,11 @@ export interface ProcessTurnResult {
    * the engine only declares them.
    */
   actions?: RoutineActionRequest[];
+  /**
+   * Present when a routine parked at an external decision gate and the host must
+   * create a pending decision row before the routine can be resumed.
+   */
+  awaitingDecision?: RoutineAwaitingDecision;
   /** True when a routine ended in a human handoff terminal. */
   handoff?: { routineId: string; stepId: string };
 }

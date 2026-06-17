@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import type { ConversationEngine } from "@radioso/conversation-contract";
+import type { ConversationEngine, RoutineState } from "@radioso/conversation-contract";
 import { createConversationEngine } from "@radioso/conversation-engine";
 import {
   BlankChatAnswerError,
@@ -75,6 +75,7 @@ const makeChatService = (
     routineStore: ChatServiceOptions["routineStore"];
     routineProvider: ChatServiceOptions["routineProvider"];
     actionOutbox?: ChatServiceOptions["actionOutbox"];
+    suspendedRoutineReader?: ChatServiceOptions["suspendedRoutineReader"];
   },
   turnRouter: ChatServiceOptions["turnRouter"] = {
     async classify(input) {
@@ -115,6 +116,7 @@ const makeChatService = (
     conversationEngine,
     routineStore: routine?.routineStore,
     routineProvider: routine?.routineProvider,
+    suspendedRoutineReader: routine?.suspendedRoutineReader,
     actionOutbox: routine?.actionOutbox,
   });
 
@@ -331,7 +333,7 @@ describe("chat service streaming", () => {
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
       forTurn: async () => ({
-        activator: { activate: async () => ({ kind: "activate", routineId: "contact.request" }) },
+        activator: { activate: async () => ({ kind: "activate" as const, routineId: "contact.request" }) },
         runner: {
           resume: async () => ({
             response: { answer: "What is your email?" },
@@ -380,6 +382,198 @@ describe("chat service streaming", () => {
     expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
   });
 
+  it("skips routine activation when a suspended routine exists for the conversation", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const existingConversation = await conversationRepository.create("workspace-1", null);
+    const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
+      loadActive: vi.fn(async () => null),
+      save: vi.fn(async () => {}),
+      clear: vi.fn(async () => {}),
+    };
+    const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      forTurn: vi.fn(async () => ({
+        activator: { activate: async () => ({ kind: "activate" as const, routineId: "contact.request" }) },
+        runner: {
+          resume: async () => ({
+            response: { answer: "Routine should not run." },
+            nextState: {
+              sessionId: existingConversation.id,
+              routineId: "contact.request",
+              path: ["ask_email"],
+              variables: {},
+              status: "active" as const,
+            },
+          }),
+        },
+      })),
+    };
+    const suspendedState: RoutineState = {
+      sessionId: existingConversation.id,
+      routineId: "contact.request",
+      path: ["await_approval"],
+      variables: {},
+      status: "suspended",
+    };
+    const suspendedRoutineReader: NonNullable<ChatServiceOptions["suspendedRoutineReader"]> = {
+      loadSuspended: vi.fn(async () => suspendedState),
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline({
+        async interpret() {
+          return {
+            retrievalQuery: "hello",
+            shouldRetrieve: false,
+            reason: "direct",
+          };
+        },
+        async runInterpreted() {
+          throw new Error("retrieval should not run for a direct guard turn");
+        },
+        async runWithoutRetrieval() {
+          return {
+            rewrittenQuery: "hello",
+            contexts: [],
+            prompt: "",
+            citations: [],
+            responseIdentity: null,
+            responseSettings: {
+              citationDisplayEnabled: true,
+              suggestedQuestionsEnabled: true,
+              suggestedQuestionsCount: 3,
+              customInstruction: "",
+              responseLanguagePolicy: "match_user_question",
+            },
+            diagnostics: {
+              rewriteStatus: "skipped",
+              retrievalSkipped: true,
+            },
+            trace: {
+              traceId: "trace_direct",
+              startedAt: "2026-01-01T00:00:00.000Z",
+              stages: [],
+              links: [],
+            },
+          };
+        },
+      }) as never),
+      {
+        async answer() {
+          return "Normal answer.";
+        },
+        async *streamAnswer() {
+          yield "Normal answer.";
+        },
+      },
+      auditService,
+      fallbackReplyComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      createConversationEngine(),
+      { routineStore, routineProvider, suspendedRoutineReader },
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      conversationId: existingConversation.id,
+      query: "hello",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("Normal answer.");
+    expect(suspendedRoutineReader.loadSuspended).toHaveBeenCalledWith({ sessionId: existingConversation.id });
+    expect(routineProvider.forTurn).not.toHaveBeenCalled();
+  });
+
+  it("attempts routine activation when no suspended routine exists for the conversation", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const existingConversation = await conversationRepository.create("workspace-1", null);
+    const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
+      loadActive: vi.fn(async () => null),
+      save: vi.fn(async () => {}),
+      clear: vi.fn(async () => {}),
+    };
+    const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      forTurn: vi.fn(async () => ({
+        activator: { activate: async () => ({ kind: "activate" as const, routineId: "contact.request" }) },
+        runner: {
+          resume: async () => ({
+            response: { answer: "What is your email?" },
+            nextState: {
+              sessionId: existingConversation.id,
+              routineId: "contact.request",
+              path: ["ask_email"],
+              variables: {},
+              status: "active" as const,
+            },
+          }),
+        },
+      })),
+    };
+    const suspendedRoutineReader: NonNullable<ChatServiceOptions["suspendedRoutineReader"]> = {
+      loadSuspended: vi.fn(async () => null),
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline({
+        async interpret() {
+          throw new Error("retrieval should not run when routine claims the turn");
+        },
+        async runInterpreted() {
+          throw new Error("retrieval should not run when routine claims the turn");
+        },
+        async runWithoutRetrieval() {
+          throw new Error("direct answer should not run when routine claims the turn");
+        },
+      }) as never),
+      {
+        async answer() {
+          return "Normal answer.";
+        },
+        async *streamAnswer() {
+          yield "Normal answer.";
+        },
+      },
+      auditService,
+      fallbackReplyComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      createConversationEngine(),
+      { routineStore, routineProvider, suspendedRoutineReader },
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      conversationId: existingConversation.id,
+      query: "Ma soovin kellegagi ühendust võtta.",
+      stream: false,
+    });
+
+    expect(response.answer).toContain("What is your email?");
+    expect(suspendedRoutineReader.loadSuspended).toHaveBeenCalledWith({ sessionId: existingConversation.id });
+    expect(routineProvider.forTurn).toHaveBeenCalledOnce();
+  });
+
   // A routine that emits an action and reaches a terminal step (clears its state).
   const emittingRoutine = (order: string[]) => {
     const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
@@ -389,7 +583,7 @@ describe("chat service streaming", () => {
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
       forTurn: async () => ({
-        activator: { activate: async () => ({ kind: "activate", routineId: "contact.request" }) },
+        activator: { activate: async () => ({ kind: "activate" as const, routineId: "contact.request" }) },
         runner: {
           resume: async () => ({
             response: { answer: "Got it — someone will be in touch." },

@@ -725,6 +725,7 @@ export class DefaultConversationEngine implements ConversationEngine {
       suspendedReader: input.suspendedReader,
       routineRunner: input.routineRunner,
       turn: input.turn,
+      sessionId: input.sessionId,
       decision: input.decision,
       ...(input.steeringResolver ? { steeringResolver: input.steeringResolver } : {}),
     });

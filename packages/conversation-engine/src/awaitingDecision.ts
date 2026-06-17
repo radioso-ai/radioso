@@ -26,10 +26,11 @@ export const resumeAwaitingDecision = async (input: {
   suspendedReader: SuspendedRoutineReader;
   routineRunner: ConversationRoutineRunner;
   turn: TurnContext;
+  sessionId: string;
   decision: RoutineDecisionInput;
   steeringResolver?: ConversationRoutineSteeringResolver;
 }): Promise<ConversationRoutineDecisionResult> => {
-  const state = await input.suspendedReader.loadSuspended({ handle: input.decision.handle });
+  const state = await input.suspendedReader.loadSuspended({ sessionId: input.sessionId });
   if (!state || state.status !== "suspended" || !canLookupStep(input.routineRunner)) {
     return inertResult();
   }

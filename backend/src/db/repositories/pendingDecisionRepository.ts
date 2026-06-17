@@ -1,4 +1,8 @@
-import type { Database } from "../../shared/infra/database.js";
+import {
+  databaseExecutorFromClient,
+  type Database,
+  type DatabaseExecutor,
+} from "../../shared/infra/database.js";
 
 export type PendingDecisionStatus = "pending" | "approved" | "rejected" | "cancelled";
 export type PendingDecisionOutcome = "approved" | "rejected";
@@ -204,7 +208,7 @@ export class PendingDecisionRepository {
   // a retried resolve re-runs cleanly (crash-safe; spec 091 review finding P1(b)).
   async resolve(
     input: PendingDecisionResolveInput,
-    executor: Pick<Database, "queryOptional"> = this.database,
+    executor: Pick<DatabaseExecutor, "queryOptional"> = this.database,
   ): Promise<PendingDecisionRecord | null> {
     const row = await executor.queryOptional<PendingDecisionRow>(
       `UPDATE pending_decisions
@@ -227,6 +231,23 @@ export class PendingDecisionRepository {
     );
 
     return row ? mapRecord(row) : null;
+  }
+
+  async resolveInTransaction<T>(
+    input: PendingDecisionResolveInput,
+    onResolved: (
+      record: PendingDecisionRecord,
+      executor: DatabaseExecutor,
+    ) => Promise<T>,
+  ): Promise<T | null> {
+    return this.database.withTransaction(async (client) => {
+      const executor = databaseExecutorFromClient(client);
+      const resolved = await this.resolve(input, executor);
+      if (!resolved) {
+        return null;
+      }
+      return onResolved(resolved, executor);
+    });
   }
 
   async listPending(input: PendingDecisionListInput): Promise<PendingDecisionRecord[]> {

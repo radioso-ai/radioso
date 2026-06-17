@@ -66,6 +66,29 @@ test("author a routine with variable and skill chips, set a type, and save", asy
   expect(orderSlot?.type).toBe("date");
 });
 
+test("a blank form draft can switch back to prose without advanced fallback", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates: [] });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "New routine" }).click();
+  await expect(page.getByRole("tab", { name: "Prose" })).toHaveAttribute("data-state", "active");
+
+  await page.getByRole("tab", { name: "Form" }).click();
+  await expect(page.getByRole("tab", { name: "Form" })).toHaveAttribute("data-state", "active");
+  await expect(page.getByLabel("Step 1 instruction")).toBeVisible();
+
+  await page.getByRole("tab", { name: "Prose" }).click();
+  await expect(page.getByRole("tab", { name: "Prose" })).toHaveAttribute("data-state", "active");
+  await expect(page.getByText(/advanced steps the prose editor can.t show/i)).toHaveCount(0);
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await editor.pressSequentially("Ask for the prospect email.");
+  await expect(editor).toContainText("Ask for the prospect email.");
+});
+
 test("a skill chip opens an authoring catalog popover with typed ports and outcomes", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {

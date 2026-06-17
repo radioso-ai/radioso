@@ -716,6 +716,7 @@ export interface ConversationRoutineSteeringResolver {
  */
 export interface ConversationRoutineStore {
   loadActive(input: { sessionId: string }): Promise<RoutineState | null>;
+  loadCompleted?(input: { sessionId: string }): Promise<RoutineState[]>;
   save(state: RoutineState): Promise<void>;
   clear(input: { sessionId: string }): Promise<void>;
 }
@@ -813,6 +814,7 @@ export interface ConversationRoutineActivator {
   activate(input: {
     turn: TurnContext;
     loopGuardCandidateIds?: string[];
+    suppressedRoutineIds?: string[];
     suppressClarificationAsk?: boolean;
   }): Promise<
     | {

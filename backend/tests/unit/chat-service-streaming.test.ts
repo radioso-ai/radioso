@@ -425,8 +425,8 @@ describe("chat service streaming", () => {
 
     await service.answer({ workspaceId: "workspace-1", query: "contact me", stream: false });
 
-    // The action is durably enqueued first; only then is the routine state cleared.
-    expect(order).toEqual(["enqueue", "clear"]);
+    // The action is durably enqueued first; only then is the completed routine state saved.
+    expect(order).toEqual(["enqueue", "save"]);
   });
 
   it("does not advance routine state when the action enqueue fails (so the request is not lost)", async () => {
@@ -487,7 +487,7 @@ describe("chat service streaming", () => {
     }
 
     // The confirmation chunk is streamed only after enqueue + routine-state advance.
-    expect(order).toEqual(["enqueue", "clear", "chunk"]);
+    expect(order).toEqual(["enqueue", "save", "chunk"]);
   });
 
   it("never streams the routine confirmation when the action enqueue fails", async () => {

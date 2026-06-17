@@ -27,6 +27,7 @@ describe("skills catalog", () => {
       "assistant.chat",
       "retrieval.search",
       "retrieval.answer",
+      "retrieval.context",
       "direct.answer",
       "documents.ingest",
       "documents.search",
@@ -76,6 +77,32 @@ describe("skills catalog", () => {
       outcomes: expect.arrayContaining([
         expect.objectContaining({ name: "grounded", status: "completed", groundedAnswer: true }),
         expect.objectContaining({ name: "no_context", status: "completed" }),
+      ]),
+    });
+    expect(catalog.skills.find((skill) => skill.name === "retrieval.context")).toMatchObject({
+      owner: "retrieval",
+      executionClass: "interactive",
+      availability: { state: "available" },
+      supportedCallers: ["assistant"],
+      requiredCapabilities: [capabilityNames.retrieval.answer],
+      diagnostics: {
+        defined: true,
+        shapeAware: true,
+        strategyAware: true,
+      },
+      intake: expect.objectContaining({
+        fields: expect.arrayContaining([
+          expect.objectContaining({ name: "query", type: "string", required: false }),
+        ]),
+      }),
+      execution: {
+        kind: "internal",
+        adapter: "retrieval_answer",
+        enqueue: false,
+      },
+      outcomes: expect.arrayContaining([
+        expect.objectContaining({ name: "context_ready", status: "completed", groundedAnswer: false }),
+        expect.objectContaining({ name: "no_context", status: "completed", groundedAnswer: false }),
       ]),
     });
     for (const skill of catalog.skills) {

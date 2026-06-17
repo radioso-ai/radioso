@@ -89,6 +89,18 @@ export class InMemoryConversationRoutineStore implements ConversationRoutineStor
     return cloneRecord(stored.state);
   }
 
+  async loadCompleted(input: { sessionId: string }): Promise<RoutineState[]> {
+    const stored = this.states.get(input.sessionId);
+    if (!stored) {
+      return [];
+    }
+    if (this.isExpired(stored)) {
+      this.states.delete(input.sessionId);
+      return [];
+    }
+    return stored.state.status === "completed" ? [cloneRecord(stored.state)] : [];
+  }
+
   async save(state: RoutineState): Promise<void> {
     this.states.set(state.sessionId, {
       state: cloneRecord(state),

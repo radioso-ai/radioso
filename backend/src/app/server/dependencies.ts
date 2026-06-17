@@ -370,6 +370,18 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     actionCapabilities: composition.actionCapabilityMap,
     capabilityPolicy: composition.capabilityPolicy,
     skillAuthoringCatalog,
+    // Mirror the runtime routine-skill resolver's name set (enabled webhook +
+    // customer-email skills) so publish validation accepts what runtime routes.
+    additionalRoutineSkillNames: async ({ workspaceId, agentId }) => {
+      const [emails, webhooks] = await Promise.all([
+        emailSkillDefinitionService.list(workspaceId, agentId),
+        webhookSkillDefinitionService.list(workspaceId, agentId),
+      ]);
+      return [
+        ...emails.filter((skill) => skill.enabled).map((skill) => skill.skillName),
+        ...webhooks.filter((skill) => skill.enabled).map((skill) => skill.skillName),
+      ];
+    },
     webhookDestinations: {
       existsByIdAndWorkspace: async (inputWorkspaceId, destinationId) =>
         webhookDestinations.existsByIdAndWorkspace(inputWorkspaceId, destinationId),

@@ -74,6 +74,17 @@ export interface RoutineDefinitionServiceOptions {
     existsByIdAndWorkspace(workspaceId: string, destinationId: string): Promise<boolean>;
   };
   skillAuthoringCatalog?: SkillAuthoringCatalog;
+  /**
+   * Names of routine-dispatchable skills that the authoring catalog does not
+   * enumerate but the runtime resolver still routes (customer-email, webhook).
+   * Folded into the publish/validate allow-list so existing routines that use
+   * them are not rejected as `unknown_skill`. Must mirror the runtime resolver's
+   * name derivation (enabled skills only).
+   */
+  additionalRoutineSkillNames?: (input: {
+    workspaceId: string;
+    agentId: string;
+  }) => Promise<readonly string[]>;
   auditService?: Pick<AuditPort, "record">;
   directiveScopeTags?: {
     repointRoutineScopeTags(input: {
@@ -369,12 +380,19 @@ export class RoutineDefinitionService {
     if (!this.options.skillAuthoringCatalog) {
       return validateRoutineDefinition(routine);
     }
-    const descriptors = await this.options.skillAuthoringCatalog.listForAgent({
-      workspaceId,
-      agentId: routine.agentId,
-    });
+    const [descriptors, additionalNames] = await Promise.all([
+      this.options.skillAuthoringCatalog.listForAgent({ workspaceId, agentId: routine.agentId }),
+      this.options.additionalRoutineSkillNames?.({ workspaceId, agentId: routine.agentId }) ?? Promise.resolve([]),
+    ]);
     return validateRoutineDefinition(routine, {
-      availableSkillNames: new Set(descriptors.map((descriptor) => descriptor.skillName)),
+      // The catalog covers built-in + external skills (which also carry typed
+      // descriptors); webhook/customer-email skills are runtime-resolvable but
+      // not catalogued, so add their names to the allow-list to avoid false
+      // `unknown_skill` rejections at publish.
+      availableSkillNames: new Set([
+        ...descriptors.map((descriptor) => descriptor.skillName),
+        ...additionalNames,
+      ]),
       skillDescriptors: new Map(descriptors.map((descriptor) => [descriptor.skillName, descriptor])),
     });
   }

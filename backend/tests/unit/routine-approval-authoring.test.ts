@@ -182,4 +182,55 @@ describe("routine approval authoring", () => {
 
     expect(result.success).toBe(false);
   });
+
+  it("rejects a decision edge whose value is not a declared option", () => {
+    const base = approvalDefinition();
+    const definition: RoutineDefinition = {
+      ...base,
+      transitions: base.transitions.map((transition) =>
+        transition.toRef === "issue_refund" ? { ...transition, fieldValue: "maybe" } : transition),
+    };
+
+    const result = validateRoutineDefinition(definition);
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: "approval_step_unknown_option",
+    }));
+  });
+
+  it("rejects a declared option that has no decision edge", () => {
+    const base = approvalDefinition();
+    const definition: RoutineDefinition = {
+      ...base,
+      steps: base.steps.map((step) =>
+        step.stableStepId === "request_approval"
+          ? { ...step, options: [...(step.options ?? []), { id: "escalate", label: "Escalate" }] }
+          : step),
+    };
+
+    const result = validateRoutineDefinition(definition);
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: "approval_step_unreachable_option",
+      message: expect.stringContaining("escalate"),
+    }));
+  });
+
+  it("does not exempt non-`.id` decision paths from the declared-variable check", () => {
+    const base = approvalDefinition();
+    const definition: RoutineDefinition = {
+      ...base,
+      transitions: base.transitions.map((transition) =>
+        transition.toRef === "issue_refund" ? { ...transition, fieldRef: "refund_decision.foo" } : transition),
+    };
+
+    const result = validateRoutineDefinition(definition);
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: "field_guard_unknown_reference",
+    }));
+  });
 });

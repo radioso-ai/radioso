@@ -21,6 +21,8 @@ export const routineValidationCodes = [
   "completion_export_missing_destination",
   "approval_step_llm_edge",
   "approval_step_no_decision_edge",
+  "approval_step_unknown_option",
+  "approval_step_unreachable_option",
 ] as const;
 
 export type RoutineValidationCode = (typeof routineValidationCodes)[number];
@@ -74,6 +76,12 @@ const parsePositiveInteger = (value: string | null): number | null => {
   return Number.isInteger(parsed) && parsed > 0 && String(parsed) === value.trim() ? parsed : null;
 };
 
+// The ONLY decision path resume populates is `<captureKey>.id` (the chosen option id);
+// resume writes `{ id, payload }` under the capture key, so any other `<captureKey>.*`
+// ref (e.g. a typo'd `.foo`) resolves to undefined and the branch can never fire. Exempt
+// only the exact `.id` ref from the declared-variable check; everything else stays unknown.
+const approvalDecisionRef = (captureKey: string): string => `${captureKey}.id`;
+
 const isApprovalDecisionFieldRef = (
   transition: RoutineDefinition["transitions"][number],
   stepById: ReadonlyMap<string, RoutineDefinition["steps"][number]>,
@@ -81,7 +89,7 @@ const isApprovalDecisionFieldRef = (
   const fromStep = stepById.get(transition.fromStep);
   return fromStep?.kind === "approval" &&
     Boolean(fromStep.captureKey) &&
-    Boolean(transition.fieldRef?.startsWith(`${fromStep.captureKey}.`));
+    transition.fieldRef === approvalDecisionRef(fromStep.captureKey as string);
 };
 
 export const validateRoutineDefinition = (definition: RoutineDefinition): RoutineValidationResult => {
@@ -129,6 +137,7 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
       });
     }
     if (step.kind === "approval" && step.captureKey) {
+      const decisionRef = approvalDecisionRef(step.captureKey);
       const outgoingTransitions = definition.transitions.filter((transition) => transition.fromStep === step.stableStepId);
       for (const transition of outgoingTransitions) {
         if (transition.guardKind === "llm") {
@@ -139,15 +148,43 @@ export const validateRoutineDefinition = (definition: RoutineDefinition): Routin
           });
         }
       }
-      const hasDecisionEdge = outgoingTransitions.some((transition) =>
-        transition.fieldRef?.startsWith(`${step.captureKey}.`) === true
+      // The decision edges branch on the chosen option id via `<captureKey>.id == <optionId>`.
+      const decisionEdges = outgoingTransitions.filter(
+        (transition) => transition.guardKind === "field" && transition.fieldRef === decisionRef && transition.fieldOp === "equals",
       );
-      if (!hasDecisionEdge) {
+      if (decisionEdges.length === 0) {
         diagnostics.push({
           code: "approval_step_no_decision_edge",
           location: `step:${step.stableStepId}`,
-          message: `approval step no decision edge: approval step "${step.stableStepId}" must branch on "${step.captureKey}".`,
+          message: `approval step no decision edge: approval step "${step.stableStepId}" must branch on "${decisionRef}".`,
         });
+      }
+      const optionIds = new Set((step.options ?? []).map((option) => option.id));
+      // An edge whose value is not a declared option can never match → dead branch.
+      for (const edge of decisionEdges) {
+        const value = typeof edge.fieldValue === "string" ? edge.fieldValue : null;
+        if (value === null || !optionIds.has(value)) {
+          diagnostics.push({
+            code: "approval_step_unknown_option",
+            location: `transition:${edge.fromStep}->${edge.toRef}`,
+            message: `approval step unknown option: decision edge on "${decisionRef}" compares to "${value ?? edge.fieldValue ?? ""}", which is not a declared option of step "${step.stableStepId}".`,
+          });
+        }
+      }
+      // A declared option with no edge is unreachable → the chosen outcome falls through.
+      const branchedValues = new Set(
+        decisionEdges
+          .map((edge) => (typeof edge.fieldValue === "string" ? edge.fieldValue : null))
+          .filter((value): value is string => value !== null),
+      );
+      for (const option of step.options ?? []) {
+        if (!branchedValues.has(option.id)) {
+          diagnostics.push({
+            code: "approval_step_unreachable_option",
+            location: `step:${step.stableStepId}`,
+            message: `approval step unreachable option: option "${option.id}" of step "${step.stableStepId}" has no decision edge on "${decisionRef}".`,
+          });
+        }
       }
     }
   }

@@ -8,6 +8,7 @@ import {
 } from "../../scripts/skillContractArtifacts.js";
 import {
   retrievalAnswerSkillDefinition,
+  retrievalContextSkillDefinition,
   skillDefinitionSchema,
 } from "../../src/modules/skills/public.js";
 
@@ -41,6 +42,32 @@ describe("skill manifests", () => {
   it("validates the hand-authored retrieval.answer skill manifest", () => {
     const manifestPath = new URL(
       "../../src/modules/skills/definitions/retrieval.answer/skill.json",
+      import.meta.url,
+    );
+
+    expect(skillDefinitionSchema.safeParse(JSON.parse(readFileSync(manifestPath, "utf8"))).success).toBe(true);
+  });
+
+  it("loads retrieval.context from a valid manifest", () => {
+    expect(retrievalContextSkillDefinition).toMatchObject({
+      name: "retrieval.context",
+      requiredCapabilities: ["retrieval.answer"],
+      execution: {
+        kind: "internal",
+        adapter: "retrieval_answer",
+        enqueue: false,
+      },
+      outcomes: expect.arrayContaining([
+        expect.objectContaining({ name: "context_ready", groundedAnswer: false }),
+      ]),
+    });
+    expect(retrievalContextSkillDefinition).not.toHaveProperty("generatedContract");
+    expect(retrievalContextSkillDefinition).not.toHaveProperty("instructions");
+  });
+
+  it("validates the hand-authored retrieval.context skill manifest", () => {
+    const manifestPath = new URL(
+      "../../src/modules/skills/definitions/retrieval.context/skill.json",
       import.meta.url,
     );
 

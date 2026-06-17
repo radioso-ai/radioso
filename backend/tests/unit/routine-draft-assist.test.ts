@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   RoutineDraftAssistService,
+  type RoutineDraftAssistActionCatalogEntry,
   type RoutineDraftAssistTextGenerationPort,
 } from "../../src/modules/routines/public.js";
 
@@ -94,7 +95,10 @@ const createRepository = () => ({
   }),
 });
 
-const createService = (textGenerationClient: FakeTextClient, actionCatalog = [{ type: "contact.send", kind: "action" as const }]) => {
+const createService = (
+  textGenerationClient: FakeTextClient,
+  actionCatalog: RoutineDraftAssistActionCatalogEntry[] = [{ type: "contact.send", kind: "action" }],
+) => {
   const repository = createRepository();
   const logger = {
     info: vi.fn(),
@@ -223,6 +227,72 @@ describe("RoutineDraftAssistService", () => {
     });
   });
 
+  it("permits retrieval.context tool steps from the prose composer catalog", async () => {
+    const draft = validDraft({
+      steps: [
+        {
+          stableStepId: "retrieve_context",
+          kind: "tool",
+          instruction: "Retrieve workspace context for the latest user question.",
+          toolRef: "retrieval.context",
+          actionType: null,
+          ordinal: 0,
+          metadata: { outlineLabel: "Retrieve context" },
+        },
+        {
+          stableStepId: "answer_question",
+          kind: "chat",
+          instruction: "Answer the user's latest question using the retrieved context, then ask if they want contact.",
+          toolRef: null,
+          actionType: null,
+          ordinal: 1,
+          metadata: { outlineLabel: "Answer and qualify" },
+        },
+      ],
+      transitions: [
+        {
+          fromStep: "retrieve_context",
+          toRef: "answer_question",
+          guardKind: "default",
+          guardText: null,
+          outcomeStatus: null,
+          counterLimit: null,
+          ordinal: 0,
+        },
+        {
+          fromStep: "answer_question",
+          toRef: "complete",
+          guardKind: "default",
+          guardText: null,
+          outcomeStatus: null,
+          counterLimit: null,
+          ordinal: 1,
+        },
+      ],
+      slots: [],
+    });
+    const textGenerationClient = new FakeTextClient([completion(draft)]);
+    const { service } = createService(textGenerationClient, [{
+      type: "retrieval.context",
+      kind: "tool",
+      label: "Retrieval context",
+      description: "Retrieve chunks for a routine reply.",
+      outcomeStatuses: ["context_ready", "no_context"],
+    }]);
+
+    const result = await service.draft(workspaceId, agentId, {
+      prose: "Use retrieval context, answer the question, then ask if they want contact.",
+    });
+
+    expect(textGenerationClient.calls[0]?.prompt).toContain('"type": "retrieval.context"');
+    expect(textGenerationClient.calls[0]?.prompt).toContain('"kind": "tool"');
+    expect(result.draft.steps[0]).toMatchObject({
+      kind: "tool",
+      toolRef: "retrieval.context",
+    });
+    expect(result.validation).toEqual({ ok: true, diagnostics: [] });
+  });
+
   it("normalizes bare brace slot references from declared slots before validation", async () => {
     const textGenerationClient = new FakeTextClient([
       completion(validDraft({
@@ -261,6 +331,42 @@ describe("RoutineDraftAssistService", () => {
     });
 
     expect(result.draft.steps[0]?.instruction).toBe("Ask for {{slot.email}} before sending.");
+    expect(result.validation).toEqual({ ok: true, diagnostics: [] });
+  });
+
+  it("uses @identifier procedure hints to repair undeclared recorded slots", async () => {
+    const textGenerationClient = new FakeTextClient([
+      completion(validDraft({
+        slots: [],
+        steps: [{
+          ...validDraft().steps[0],
+          instruction: "Ask for their email and record it as @prospect_email.",
+        }, {
+          ...validDraft().steps[1],
+          instruction: "Send the support request for @prospect_email.",
+        }],
+        terminals: [{
+          ...validDraft().terminals[0],
+          instruction: "Confirm @prospect_email is captured.",
+        }],
+      })),
+    ]);
+    const { service } = createService(textGenerationClient);
+
+    const result = await service.draft(workspaceId, agentId, {
+      prose: "Ask them for their email and record it as @prospect_email, then summarize it.",
+    });
+
+    expect(textGenerationClient.calls[0]?.prompt).toContain('"prospect_email"');
+    expect(result.draft.slots).toEqual([
+      expect.objectContaining({ key: "prospect_email", required: true }),
+    ]);
+    expect(result.draft.steps[0]?.instruction).toBe(
+      "Ask for their email and record it as {{slot.prospect_email}}.",
+    );
+    expect(result.draft.terminals[0]?.instruction).toBe(
+      "Confirm {{slot.prospect_email}} is captured.",
+    );
     expect(result.validation).toEqual({ ok: true, diagnostics: [] });
   });
 

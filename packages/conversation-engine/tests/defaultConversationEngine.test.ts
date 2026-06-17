@@ -304,15 +304,33 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     ]);
   });
 
-  it("clears routine state when the routine completes (null next state)", async () => {
+  it("saves a completed marker when the routine completes (null next state)", async () => {
     const input = withRoutine({
-      resume: vi.fn(async () => ({ response: { answer: "Sent — thanks!" }, nextState: null })),
+      resume: vi.fn(async () => ({
+        response: { answer: "Sent — thanks!" },
+        nextState: null,
+        terminal: { kind: "complete", stepId: "done" },
+        trace: {
+          routineId: "contact",
+          startStepId: "ask_email",
+          landedStepId: "done",
+          terminalKind: "complete",
+          capturedSlotKeys: [],
+          filledSlotKeys: [],
+          steps: [],
+        },
+      })),
     });
 
     await new DefaultConversationEngine().processTurn(input);
 
-    expect(input.routineStore!.clear).toHaveBeenCalledWith({ sessionId: "session_1" });
-    expect(input.routineStore!.save).not.toHaveBeenCalled();
+    expect(input.routineStore!.save).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "session_1",
+      routineId: "contact",
+      status: "completed",
+      metadata: expect.objectContaining({ terminalKind: "complete", terminalStepId: "done" }),
+    }));
+    expect(input.routineStore!.clear).not.toHaveBeenCalled();
   });
 
   it("falls through to the normal turn when no routine is active", async () => {
@@ -398,6 +416,33 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
       "routine_activate",
       "directive_steering",
     ]);
+  });
+
+  it("passes completed routine ids to the activator on idle turns", async () => {
+    const completed: RoutineState = {
+      ...activeState,
+      status: "completed",
+      path: ["ask_email", "done"],
+    };
+    const input: ProcessTurnInput = {
+      ...createInput(),
+      routineStore: {
+        loadActive: vi.fn(async () => null),
+        loadCompleted: vi.fn(async () => [completed]),
+        save: vi.fn(async () => {}),
+        clear: vi.fn(async () => {}),
+      },
+      routineActivator: { activate: vi.fn(async () => null) },
+      routineRunner: { resume: vi.fn() },
+    };
+
+    await new DefaultConversationEngine().processTurn(input);
+
+    expect(input.routineStore!.loadCompleted).toHaveBeenCalledWith({ sessionId: "session_1" });
+    expect(input.routineActivator!.activate).toHaveBeenCalledWith(expect.objectContaining({
+      suppressedRoutineIds: ["contact"],
+    }));
+    expect(input.routineRunner!.resume).not.toHaveBeenCalled();
   });
 
   it("emits clarification trace metadata before routine activation for silent auto-picks", async () => {

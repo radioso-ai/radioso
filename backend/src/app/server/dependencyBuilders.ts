@@ -836,9 +836,8 @@ export const buildChatServices = (input: {
     skillExecutorRegistry: input.composition.skillExecutorRegistry,
     agentService: input.agentService,
   };
-  // Register retrieval.answer as a dispatchable skill (spec 066 slice 1). The
-  // chat path does not consume it yet; the loop re-seam (slice 2) routes through
-  // it. Guarded so repeated dependency builds (tests) do not double-register.
+  // Register the retrieval adapter once; it serves both answer and context
+  // retrieval skills. Guarded so repeated dependency builds (tests) do not double-register.
   if (!input.composition.skillExecutorRegistry.resolve({ kind: "internal", adapter: RETRIEVAL_ANSWER_ADAPTER })) {
     input.composition.skillExecutorRegistry.register({
       kind: "internal",

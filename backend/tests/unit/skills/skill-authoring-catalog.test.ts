@@ -7,9 +7,9 @@ import type { SkillCatalogDescriptorSource } from "../../../src/modules/skills/a
 type TestCatalogEntry = SkillCatalogDescriptorSource & { availability?: SkillAvailability };
 
 const catalogEntry = (overrides: Partial<TestCatalogEntry> = {}): TestCatalogEntry => ({
-  name: "retrieval.answer",
-  displayName: "Grounded answer",
-  description: "Answer from documents.",
+  name: "retrieval.context",
+  displayName: "Retrieval context",
+  description: "Retrieve chunks for a routine reply.",
   owner: "retrieval",
   intake: {
     enabled: true,
@@ -93,10 +93,10 @@ describe("SkillAuthoringCatalogService", () => {
     });
 
     expect(descriptors.map((descriptor) => descriptor.skillName)).toEqual([
-      "retrieval.answer",
+      "retrieval.context",
       "post_slack",
     ]);
-    expect(descriptors.find((descriptor) => descriptor.skillName === "retrieval.answer")?.category).toBe("retrieval");
+    expect(descriptors.find((descriptor) => descriptor.skillName === "retrieval.context")?.category).toBe("retrieval");
     expect(descriptors.find((descriptor) => descriptor.skillName === "post_slack")?.category).toBe("external_mcp");
     expect(descriptors.find((descriptor) => descriptor.skillName === "post_slack")?.inputs).toEqual([
       { key: "message", type: "text", required: false, description: "Message body." },
@@ -146,7 +146,7 @@ describe("SkillAuthoringCatalogService", () => {
     });
 
     const descriptors = await catalog.listForAgent({ workspaceId: "workspace_1", agentId: "agent_1" });
-    expect(descriptors.map((descriptor) => descriptor.skillName)).toEqual(["retrieval.answer"]);
+    expect(descriptors.map((descriptor) => descriptor.skillName)).toEqual(["retrieval.context"]);
     expect(warnings.length).toBe(1);
   });
 

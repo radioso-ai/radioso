@@ -54,7 +54,7 @@ import {
   type RoutineDraftHeader,
   type RoutineFormState,
 } from '@/lib/routine-form'
-import { routineToChipDoc } from '@/lib/routine-prose'
+import { createEmptyRoutineProseDraft, routineToChipDoc } from '@/lib/routine-prose'
 
 // A blank routine for the Form tab: one empty step the author fills in, no transitions
 // yet, and a single complete terminal. The Prose tab starts from the steps-stripped
@@ -108,6 +108,23 @@ const headerFromDraft = (draft: RoutineDefinitionDraft | RoutineDefinition | Rou
     priority: String(draft.activation.priority),
   },
 })
+
+const emptyProseDraftFromHeader = (header: RoutineDraftHeader): RoutineDefinitionDraft =>
+  createEmptyRoutineProseDraft({
+    name: header.name,
+    triggerDescription: header.activation.triggerDescription,
+    priority: Number.parseInt(header.activation.priority, 10) || 0,
+  })
+
+const isBlankFormDraft = (draft: RoutineDefinitionDraft): boolean =>
+  draft.slots.length === 0 &&
+  draft.steps.length === 1 &&
+  draft.transitions.length === 0 &&
+  !draft.completionExport?.enabled &&
+  draft.steps[0]?.kind === 'chat' &&
+  !draft.steps[0]?.instruction.trim() &&
+  !draft.steps[0]?.toolRef &&
+  !draft.steps[0]?.actionType
 
 const routineStatusLabel = (status: RoutineDefinition['status']) => {
   switch (status) {
@@ -515,13 +532,14 @@ function RoutineEditorScreen({
 
       if (routineRouteId === 'new') {
         const nextDraft = emptyRoutineDraft()
+        const nextHeader = headerFromDraft(nextDraft)
         currentRoutineIdRef.current = null
         setEditingRoutineId(null)
         setEditingRoutine(null)
         setAllRoutines([])
-        setDraftHeader(headerFromDraft(nextDraft))
+        setDraftHeader(nextHeader)
         setForm(routineToForm(draftAsRoutine(nextDraft)))
-        setProseSource({ ...nextDraft, steps: [], transitions: [] })
+        setProseSource(emptyProseDraftFromHeader(nextHeader))
         setProseDraft(null)
         setProseKey((key) => key + 1)
         setViewMode('prose')
@@ -584,7 +602,8 @@ function RoutineEditorScreen({
     if (nextView === 'prose' && form) {
       // Re-seed prose from the current form draft; routineToChipDoc inside the prose tab
       // decides whether it's representable (else it shows the "edit in Form" fallback).
-      setProseSource(formToRoutineDraft(form, { header: draftHeader }))
+      const formDraft = formToRoutineDraft(form, { header: draftHeader })
+      setProseSource(isBlankFormDraft(formDraft) ? emptyProseDraftFromHeader(draftHeader) : formDraft)
       setProseDraft(null)
       setProseKey((key) => key + 1)
     }

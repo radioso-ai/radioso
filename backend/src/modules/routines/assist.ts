@@ -91,14 +91,37 @@ const renderTemplate = (template: string, variables: Record<string, string>): st
 
 const serializePromptData = (value: unknown): string => JSON.stringify(value, null, 2);
 
-const parseDraft = (raw: string): RoutineDefinitionDraftInput | null => {
+const actionAliasTokens = (catalog: RoutineDraftAssistActionCatalogEntry[]): Set<string> => {
+  const aliases = new Set<string>();
+  for (const entry of catalog) {
+    aliases.add(entry.type);
+    const [prefix] = entry.type.split(/[.:/-]/u);
+    if (prefix) {
+      aliases.add(prefix);
+    }
+  }
+  return aliases;
+};
+
+const extractVariableHints = (
+  prose: string,
+  catalog: RoutineDraftAssistActionCatalogEntry[],
+): string[] => {
+  const actionAliases = actionAliasTokens(catalog);
+  const hints = [...prose.matchAll(/@([A-Za-z_][A-Za-z0-9_]*)\b/gu)]
+    .map((match) => match[1]!)
+    .filter((key) => !actionAliases.has(key));
+  return [...new Set(hints)];
+};
+
+const parseDraft = (raw: string, variableHints: string[] = []): RoutineDefinitionDraftInput | null => {
   try {
     const parsed = JSON.parse(cleanJsonCompletion(raw)) as unknown;
     const container = z.object({ draft: routineDefinitionDraftInputSchema }).strict().safeParse(parsed);
     if (!container.success) {
       return null;
     }
-    const normalizedDraft = normalizeDraftSlotReferences(container.data.draft);
+    const normalizedDraft = normalizeDraftSlotReferences(container.data.draft, variableHints);
     const normalizedContainer = routineDefinitionDraftInputSchema.safeParse(normalizedDraft);
     return normalizedContainer.success ? normalizedContainer.data : null;
   } catch {
@@ -118,13 +141,48 @@ const normalizeSlotReferencesInText = (text: string | null, slotKeys: Set<string
   );
 };
 
-const normalizeDraftSlotReferences = (draft: RoutineDefinitionDraftInput): RoutineDefinitionDraftInput => {
-  const slotKeys = new Set(draft.slots.map((slot) => slot.key));
+const draftTextFields = (draft: RoutineDefinitionDraftInput): string[] => [
+  ...draft.steps.map((step) => step.instruction),
+  ...draft.transitions.flatMap((transition) => [transition.guardText].filter((value): value is string => Boolean(value))),
+  ...draft.terminals.flatMap((terminal) => [terminal.instruction].filter((value): value is string => Boolean(value))),
+];
+
+const hintedSlotKeysUsedInDraft = (
+  draft: RoutineDefinitionDraftInput,
+  variableHints: string[],
+): string[] => {
+  if (variableHints.length === 0) {
+    return [];
+  }
+  const text = draftTextFields(draft).join("\n");
+  return variableHints.filter((key) => new RegExp(`(^|[^A-Za-z0-9_])@${key}\\b`, "u").test(text));
+};
+
+const normalizeDraftSlotReferences = (
+  draft: RoutineDefinitionDraftInput,
+  variableHints: string[] = [],
+): RoutineDefinitionDraftInput => {
+  const existingSlotKeys = new Set(draft.slots.map((slot) => slot.key));
+  const hintedSlots = hintedSlotKeysUsedInDraft(draft, variableHints)
+    .filter((key) => !existingSlotKeys.has(key));
+  const slots = [
+    ...draft.slots,
+    ...hintedSlots.map((key, index) => ({
+      stableSlotId: `slot_${key}`,
+      key,
+      type: "text" as const,
+      required: true,
+      description: key,
+      ordinal: draft.slots.length + index,
+    })),
+  ];
+  const slotKeys = new Set(slots.map((slot) => slot.key));
   if (slotKeys.size === 0) {
     return draft;
   }
   return {
     ...draft,
+    slots,
     steps: draft.steps.map((step) => ({
       ...step,
       instruction: normalizeSlotReferencesInText(step.instruction, slotKeys) ?? step.instruction,
@@ -220,7 +278,8 @@ export class RoutineDraftAssistService {
     const parsedInput = routineDraftAssistRequestSchema.parse(input);
     const agent = await this.requireAgent(workspaceId, agentId);
     const requestId = randomUUID();
-    const prompt = this.buildPrompt(agent, parsedInput);
+    const variableHints = extractVariableHints(parsedInput.prose, this.actionCatalog);
+    const prompt = this.buildPrompt(agent, parsedInput, variableHints);
 
     const primary = await this.callLlm({
       workspaceId,
@@ -230,7 +289,7 @@ export class RoutineDraftAssistService {
       proseLength: parsedInput.prose.length,
       attemptKey: "primary",
     });
-    const primaryDraft = parseDraft(primary);
+    const primaryDraft = parseDraft(primary, variableHints);
     if (primaryDraft) {
       return this.finalizeWithValidationRetry({
         workspaceId,
@@ -238,6 +297,7 @@ export class RoutineDraftAssistService {
         requestId,
         prompt,
         proseLength: parsedInput.prose.length,
+        variableHints,
         draft: primaryDraft,
       });
     }
@@ -258,7 +318,7 @@ export class RoutineDraftAssistService {
       proseLength: parsedInput.prose.length,
       attemptKey: "schema_retry",
     });
-    const retryDraft = parseDraft(retry);
+    const retryDraft = parseDraft(retry, variableHints);
     if (retryDraft) {
       return this.finalizeWithValidationRetry({
         workspaceId,
@@ -266,6 +326,7 @@ export class RoutineDraftAssistService {
         requestId,
         prompt,
         proseLength: parsedInput.prose.length,
+        variableHints,
         draft: retryDraft,
       });
     }
@@ -286,6 +347,7 @@ export class RoutineDraftAssistService {
     requestId: string;
     prompt: string;
     proseLength: number;
+    variableHints: string[];
     draft: RoutineDefinitionDraftInput;
   }): Promise<RoutineDraftAssistResponse> {
     const original = this.finalizeDraft(input.agentId, input.draft);
@@ -301,7 +363,7 @@ export class RoutineDraftAssistService {
       proseLength: input.proseLength,
       attemptKey: "validation_retry",
     });
-    const retryDraft = parseDraft(retry);
+    const retryDraft = parseDraft(retry, input.variableHints);
     if (!retryDraft) {
       this.options.logger.warn({
         workspaceId: input.workspaceId,
@@ -333,7 +395,11 @@ export class RoutineDraftAssistService {
     };
   }
 
-  private buildPrompt(agent: RoutineDraftAssistAgentContext, input: RoutineDraftAssistRequest): string {
+  private buildPrompt(
+    agent: RoutineDraftAssistAgentContext,
+    input: RoutineDraftAssistRequest,
+    variableHints: string[],
+  ): string {
     const template = loadPromptTemplate(PROMPT_PATH);
     return renderTemplate(template, {
       agent_context: serializePromptData({
@@ -343,6 +409,7 @@ export class RoutineDraftAssistService {
         greetingInstruction: agent.greetingInstruction ?? null,
       }),
       permitted_action_catalog: serializePromptData(this.actionCatalog),
+      variable_hints: serializePromptData(variableHints),
       procedure_text: input.prose,
     });
   }

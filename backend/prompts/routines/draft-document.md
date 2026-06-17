@@ -14,6 +14,11 @@ Permitted action catalog:
 {{permitted_action_catalog}}
 </permitted_action_catalog>
 
+Variable hints:
+<variable_hints>
+{{variable_hints}}
+</variable_hints>
+
 Operator procedure:
 <procedure_text>
 {{procedure_text}}
@@ -48,6 +53,7 @@ activation:
 
 slots:
 - Candidate variables the routine must collect or reference.
+- Treat variable hints as candidate slot keys from @identifier markers in the operator procedure. Declare and reference them when the procedure says to collect, record, store, summarize, or otherwise use that value.
 - Use stableSlotId equal to the key.
 - key must match ^[A-Za-z_][A-Za-z0-9_]*$.
 - type must be one of "text", "number", "boolean", "email", or "date"; use "text" when not clear.

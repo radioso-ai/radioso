@@ -62,6 +62,18 @@ export class RoutineStateRepository implements ConversationRoutineStore {
     return row ? mapState(row) : null;
   }
 
+  async loadCompleted(input: { sessionId: string }): Promise<RoutineState[]> {
+    const rows = await this.database.query<RoutineStateRow>(
+      `SELECT session_id, routine_id, path, variables, attempts, status, expires_at
+         FROM routine_states
+        WHERE session_id = $1
+          AND status = 'completed'
+          AND (expires_at IS NULL OR expires_at > now())`,
+      [input.sessionId],
+    );
+    return rows.map(mapState);
+  }
+
   async loadSuspended(input: { sessionId: string }): Promise<RoutineState | null> {
     const row = await this.database.queryOptional<RoutineStateRow>(
       `SELECT session_id, routine_id, path, variables, attempts, status, expires_at

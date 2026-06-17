@@ -160,12 +160,15 @@ describe("contact routine — end-to-end parity through the engine", () => {
     expect(t3.response.answer).toContain("ask_message");
     expect(store.rows.get("conv_1")?.variables).toMatchObject({ email: "alex@example.com" });
 
-    // Turn 4 — user supplies the message → submit (skill) → done; state cleared.
+    // Turn 4 — user supplies the message → submit (skill) → done; state marked completed.
     const t4 = await run("Please call me about pricing.");
     expect(submit).toHaveBeenCalledTimes(1);
     expect(submit).toHaveBeenCalledWith(expect.objectContaining({ skillName: "human_contact.request" }));
     expect(t4.response.answer).toContain("done");
-    expect(store.rows.get("conv_1")).toBeUndefined(); // terminal → cleared
+    expect(store.rows.get("conv_1")).toMatchObject({
+      routineId: "human_contact.request",
+      status: "completed",
+    });
   });
 
   it("re-asks (stays) on an invalid email, then advances once a valid one arrives", async () => {
@@ -207,7 +210,10 @@ describe("contact routine — end-to-end parity through the engine", () => {
     await run("alex@example.com");
     const failed = await run("Please help.");
     expect(failed.response.answer).toContain("failed");
-    expect(store.rows.get("conv_1")).toBeUndefined();
+    expect(store.rows.get("conv_1")).toMatchObject({
+      routineId: "human_contact.request",
+      status: "completed",
+    });
   });
 });
 

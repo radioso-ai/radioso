@@ -149,7 +149,7 @@ describe("contact routine — end-to-end through the engine (action emission)", 
     });
   });
 
-  it("gathers email + message, then emits contact.send with the gathered payload and clears state", async () => {
+  it("gathers email + message, then emits contact.send with the gathered payload and completes state", async () => {
     const store = inMemoryStore();
     const engine = createConversationEngine();
     const events: ConversationEvent[] = [];
@@ -174,7 +174,7 @@ describe("contact routine — end-to-end through the engine (action emission)", 
     expect(store.rows.get("conv_1")?.variables).toMatchObject({ email: "alex@example.com" });
 
     // Turn 3 — user provides the message; the action step emits contact.send (carrying
-    // the gathered variables), the routine confirms at the terminal step, state cleared.
+    // the gathered variables), the routine confirms at the terminal step, state completed.
     const t3 = await run("Please call me about pricing.");
     expect(t3.actions).toEqual([
       {
@@ -183,7 +183,10 @@ describe("contact routine — end-to-end through the engine (action emission)", 
       },
     ]);
     expect(t3.response.answer).toContain("done");
-    expect(store.rows.get("conv_1")).toBeUndefined();
+    expect(store.rows.get("conv_1")).toMatchObject({
+      status: "completed",
+      metadata: { terminalKind: "complete", terminalStepId: "done" },
+    });
   });
 
   it("cancels the contact routine when the user declines before giving an email", async () => {
@@ -203,7 +206,10 @@ describe("contact routine — end-to-end through the engine (action emission)", 
 
     expect(declined.actions ?? []).toEqual([]);
     expect(declined.response.answer).toContain("cancelled");
-    expect(store.rows.get("conv_1")).toBeUndefined();
+    expect(store.rows.get("conv_1")).toMatchObject({
+      status: "completed",
+      metadata: { terminalKind: "complete", terminalStepId: "cancelled" },
+    });
   });
 
   it("cancels the contact routine when the user declines before giving a message", async () => {
@@ -224,6 +230,9 @@ describe("contact routine — end-to-end through the engine (action emission)", 
 
     expect(declined.actions ?? []).toEqual([]);
     expect(declined.response.answer).toContain("cancelled");
-    expect(store.rows.get("conv_1")).toBeUndefined();
+    expect(store.rows.get("conv_1")).toMatchObject({
+      status: "completed",
+      metadata: { terminalKind: "complete", terminalStepId: "cancelled" },
+    });
   });
 });

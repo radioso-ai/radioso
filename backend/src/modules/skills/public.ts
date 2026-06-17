@@ -45,6 +45,7 @@ export {
   type ResolvedSkillStep,
 } from "./domain.js";
 export { retrievalAnswerSkillDefinition } from "./definitions/retrieval.answer.js";
+export { retrievalContextSkillDefinition } from "./definitions/retrieval.context.js";
 export { builtInSkillCatalogEntries, createDefaultSkillCatalogRegistry } from "./defaultCatalog.js";
 export { directAnswerSkillDefinition } from "./definitions/direct.js";
 export { SkillCatalogService, type SkillCatalogContext } from "./skillCatalogService.js";
@@ -64,7 +65,10 @@ export {
   type SkillCatalogDescriptorSource,
 } from "./authoringDescriptor.js";
 export {
+  isRoutineAuthoringBuiltInSkill,
   isRoutineDispatchableBuiltInSkill,
+  routineAuthoringBuiltInSkillNames,
+  routineAuthoringBuiltInSkills,
   routineDispatchableBuiltInSkillNames,
   routineDispatchableBuiltInSkills,
   routineSkillCategories,

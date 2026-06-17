@@ -185,6 +185,32 @@ describe("RoutineRegistry ranked activation", () => {
     expect(result).toMatchObject({ kind: "activate", routineId: "enabled", variables: undefined });
   });
 
+  it("filters suppressed routines before explicit claims and ranking", async () => {
+    const gw = gateway(rankedJson([
+      { routineId: "available", confidence: 0.82 },
+    ]));
+
+    const result = await new RoutineRegistry([
+      registration("completed", {
+        description: "Completed routine must not be ranked",
+        explicitClaim: () => ({ variables: { source: "completed" } }),
+      }),
+      registration("available", {
+        description: "Available routine can be ranked",
+      }),
+    ], { policy }).activator(gw).activate({
+      turn,
+      suppressedRoutineIds: ["completed"],
+    });
+
+    expect(gw.complete).toHaveBeenCalledTimes(1);
+    const prompt = vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt;
+    expect(prompt).toContain("available");
+    expect(prompt).not.toContain("completed");
+    expect(prompt).not.toContain("Completed routine must not be ranked");
+    expect(result).toMatchObject({ kind: "activate", routineId: "available", variables: undefined });
+  });
+
   it("activates the first eligible explicit claim without a gateway call", async () => {
     const gw = gateway(rankedJson([]));
 

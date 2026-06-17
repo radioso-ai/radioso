@@ -1,0 +1,75 @@
+{
+  "name": "retrieval.context",
+  "displayName": "Retrieval context",
+  "description": "Retrieve grounded workspace context for a routine to compose into its own reply.",
+  "owner": "retrieval",
+  "executionClass": "interactive",
+  "supportedCallers": ["assistant"],
+  "requiredCapabilities": ["retrieval.answer"],
+  "contractReferences": [
+    {
+      "kind": "documentation",
+      "label": "Routine retrieval context",
+      "path": "/docs/routines"
+    }
+  ],
+  "intake": {
+    "enabled": true,
+    "supportedCallers": ["assistant"],
+    "intent": {
+      "description": "Retrieve workspace evidence for a routine step without composing the final assistant answer.",
+      "examples": [
+        "Find context for the user's latest question.",
+        "Gather source chunks before answering inside the routine."
+      ]
+    },
+    "fields": [
+      {
+        "name": "query",
+        "displayName": "query",
+        "type": "string",
+        "required": false,
+        "maxLength": 8000,
+        "extractionHint": "Use the current user query as the retrieval question unless the routine binds a different query."
+      }
+    ],
+    "confirmation": "none",
+    "interruptionPolicy": "cancel_on_topic_change"
+  },
+  "execution": {
+    "kind": "internal",
+    "adapter": "retrieval_answer",
+    "enqueue": false
+  },
+  "diagnostics": {
+    "defined": true,
+    "shapeAware": true,
+    "strategyAware": true,
+    "supportedFields": [
+      "skillName",
+      "strategy",
+      "parameters",
+      "outcome",
+      "evidence"
+    ]
+  },
+  "outcomes": [
+    {
+      "name": "context_ready",
+      "displayName": "Context ready",
+      "description": "Workspace context was retrieved and staged for the next routine reply.",
+      "status": "completed",
+      "groundedAnswer": false,
+      "tone": "positive"
+    },
+    {
+      "name": "no_context",
+      "displayName": "No context",
+      "description": "No workspace context was available; the routine can continue without grounding or ask a follow-up.",
+      "status": "completed",
+      "groundedAnswer": false,
+      "tone": "warning"
+    }
+  ],
+  "steps": []
+}

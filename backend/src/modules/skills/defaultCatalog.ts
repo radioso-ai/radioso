@@ -3,6 +3,7 @@ import { type SkillCatalogEntryDefinition } from "./domain.js";
 import { assistantChatSkillDefinition } from "./definitions/assistant.chat.js";
 import { retrievalSearchSkillDefinition } from "./definitions/retrieval.search.js";
 import { retrievalAnswerSkillDefinition } from "./definitions/retrieval.answer.js";
+import { retrievalContextSkillDefinition } from "./definitions/retrieval.context.js";
 import { directAnswerSkillDefinition } from "./definitions/direct.js";
 import { documentsIngestSkillDefinition } from "./definitions/documents.ingest.js";
 import { documentsSearchSkillDefinition } from "./definitions/documents.search.js";
@@ -72,6 +73,7 @@ export const builtInSkillCatalogEntries: SkillCatalogEntryDefinition[] = [
   assistantChatSkillDefinition,
   retrievalSearchSkillDefinition,
   retrievalAnswerSkillDefinition,
+  retrievalContextSkillDefinition,
   directAnswerSkillDefinition,
   documentsIngestSkillDefinition,
   documentsSearchSkillDefinition,

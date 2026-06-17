@@ -49,7 +49,11 @@ import { EmbeddingService } from "../../modules/retrieval/composition.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
 import { createRadiosoCrawlerUtilityProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
-import { SkillAuthoringCatalogService, SkillCatalogService } from "../../modules/skills/public.js";
+import {
+  SkillAuthoringCatalogService,
+  SkillCatalogService,
+  routineAuthoringBuiltInSkills,
+} from "../../modules/skills/public.js";
 import { createConnectorIngestionPort } from "../../modules/connectors/services/connectorIngestionPort.js";
 import {
   ChatGatewayLlmJudge,
@@ -395,10 +399,19 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       complete: async ({ signal: _signal, ...input }) =>
         (await chatInferencePipeline.complete(input)).text,
     },
-    actionCatalog: composition.actionHandlerRegistrations.map((registration) => ({
-      type: registration.type,
-      kind: "action",
-    })),
+    actionCatalog: [
+      ...routineAuthoringBuiltInSkills.map((skill) => ({
+        type: skill.name,
+        kind: "tool" as const,
+        label: skill.displayName,
+        description: skill.description,
+        outcomeStatuses: skill.outcomes?.map((outcome) => outcome.name),
+      })),
+      ...composition.actionHandlerRegistrations.map((registration) => ({
+        type: registration.type,
+        kind: "action" as const,
+      })),
+    ],
     logger,
     telemetryService: infrastructure.telemetryService,
   });

@@ -703,7 +703,10 @@ describe("routine definition compiler and validator", () => {
     expect((await engine.processTurn(input("start"))).response.answer).toBe("ask_name");
     expect((await engine.processTurn(input("Alex"))).response.answer).toBe("ask_topic");
     expect((await engine.processTurn(input("Pricing"))).response.answer).toBe("done");
-    expect(rows.get("conv_1")).toBeUndefined();
+    expect(rows.get("conv_1")).toMatchObject({
+      status: "completed",
+      metadata: { terminalKind: "complete", terminalStepId: "done" },
+    });
   });
 
   it("auto-gated bare-default collection step routes through the selector and captures the slot at runtime", async () => {
@@ -793,7 +796,10 @@ describe("routine definition compiler and validator", () => {
     // path would have left this counter at 0.
     expect(askEmailSelectorCalls).toBeGreaterThanOrEqual(2);
     expect((await engine.processTurn(input("thanks"))).response.answer).toBe("done");
-    expect(rows.get("conv_email")).toBeUndefined();
+    expect(rows.get("conv_email")).toMatchObject({
+      status: "completed",
+      metadata: { terminalKind: "complete", terminalStepId: "done" },
+    });
   });
 });
 

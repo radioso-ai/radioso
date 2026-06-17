@@ -19,6 +19,7 @@ import type { RetrievalPipelineRequest } from "./retrievalPipelineStages.js";
 
 /** Internal-adapter key the `retrieval.answer` skill declares in its execution descriptor. */
 export const RETRIEVAL_ANSWER_ADAPTER = "retrieval_answer";
+export const RETRIEVAL_CONTEXT_SKILL_NAME = "retrieval.context";
 
 // The rich RetrievalPipelineResult is not a model-visible answer/output — it is
 // loop-internal context the chat turn composes its response from. It therefore
@@ -31,6 +32,35 @@ const embedRetrievalResult = (result: RetrievalPipelineResult): SkillOutcome => 
   status: "completed",
   metadata: { [RETRIEVAL_RESULT_KEY]: result },
 });
+
+const toRetrievalContextOutputs = (result: RetrievalPipelineResult): Record<string, unknown> => ({
+  has_context: result.contexts.length > 0,
+  source_count: result.contexts.length,
+  rewritten_query: result.rewrittenQuery,
+  contexts: result.contexts.map((context) => ({
+    documentId: context.documentId,
+    chunkId: context.chunkId,
+    title: context.title,
+    content: context.content,
+    metadata: context.metadata,
+    score: context.relevanceScore,
+    promptPosition: context.promptPosition,
+  })),
+  citations: result.citations.map((citation) => ({
+    documentId: citation.documentId,
+    chunkId: citation.chunkId,
+    title: citation.title,
+  })),
+});
+
+const embedRetrievalContextResult = (result: RetrievalPipelineResult): SkillOutcome => ({
+  status: (result.contexts.length > 0 ? "context_ready" : "no_context") as SkillOutcome["status"],
+  outputs: toRetrievalContextOutputs(result),
+  metadata: { [RETRIEVAL_RESULT_KEY]: result },
+});
+
+const outcomeForSkill = (skillName: string, result: RetrievalPipelineResult): SkillOutcome =>
+  skillName === RETRIEVAL_CONTEXT_SKILL_NAME ? embedRetrievalContextResult(result) : embedRetrievalResult(result);
 
 /** Extracts the RetrievalPipelineResult a retrieval.answer dispatch settled with, if present. */
 export const readRetrievalResult = (outcome: SkillOutcome): RetrievalPipelineResult | null => {
@@ -133,19 +163,19 @@ export class RetrievalAnswerSkillExecutor implements SkillExecutorPort {
       const result = context.withRetrieval
         ? await this.controller.runInterpreted(context.interpreted)
         : await this.controller.runWithoutRetrieval(context.interpreted);
-      return { disposition: "settled", outcome: embedRetrievalResult(result) };
+      return { disposition: "settled", outcome: outcomeForSkill(invocation.skill.name, result) };
     }
 
     if (isRequest(context.request)) {
       const result = await this.controller.run(context.request);
-      return { disposition: "settled", outcome: embedRetrievalResult(result) };
+      return { disposition: "settled", outcome: outcomeForSkill(invocation.skill.name, result) };
     }
 
     if (isTurnInvocation(context)) {
       const bound = invocation.collected?.query;
       const boundQuery = typeof bound === "string" && bound.trim().length > 0 ? bound : undefined;
       const result = await this.controller.run(requestFromTurn(context, boundQuery));
-      return { disposition: "settled", outcome: embedRetrievalResult(result) };
+      return { disposition: "settled", outcome: outcomeForSkill(invocation.skill.name, result) };
     }
 
     throw new Error(

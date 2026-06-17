@@ -163,6 +163,7 @@ describe("attemptRoutineTurnWithConversationEngine", () => {
       processTurnStream: async function* () {
         throw new Error("processTurnStream should not run when attempting a routine");
       },
+      resumeAwaitingDecision: async () => ({ resumed: false, response: { answer: "" }, nextState: null }),
     }) as ConversationEngine;
 
   it("presents the routine reply when the engine claims the turn", async () => {
@@ -202,6 +203,9 @@ const drivingEngine = (): { engine: ConversationEngine; dispatched: string[]; se
   const engine: ConversationEngine = {
     async attemptRoutine() {
       return null;
+    },
+    async resumeAwaitingDecision() {
+      return { resumed: false, response: { answer: "" }, nextState: null };
     },
     async processTurn(input) {
       const history = await input.stores.loadHistory({ sessionId: input.sessionId });

@@ -368,6 +368,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     z.object({
       id: z.string().uuid(),
       role: z.enum(["user", "assistant", "system"]),
+      source: z.enum(["customer", "ai_agent", "human_agent", "human_agent_on_behalf_of_ai_agent", "system"]),
       content: z.string(),
       createdAt: z.string().datetime(),
       inputMetadata: z.object({

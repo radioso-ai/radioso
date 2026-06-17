@@ -1195,6 +1195,7 @@ export const buildChatServices = (input: {
   const responseLanguageDetector = new LlmResponseLanguageDetector(
     input.llmRegistry.createRewriteInferencePipeline(input.usageEventRecorder),
   );
+  const routineStateRepository = new RoutineStateRepository(input.database);
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
     messageRepository: input.messageRepository,
@@ -1232,7 +1233,8 @@ export const buildChatServices = (input: {
     capabilityPolicy: input.composition.capabilityPolicy,
     logger: input.logger,
     // Routine resume/activate per turn — present only when routines are registered.
-    routineStore: new RoutineStateRepository(input.database),
+    routineStore: routineStateRepository,
+    suspendedRoutineReader: routineStateRepository,
     routineProvider,
     clarifierFactory: ({ session, accountId }) => new DefaultClarifier(
       new RoutineChatModelGateway(chatGateway, {

@@ -9,18 +9,30 @@ test("account usage page shows trends and reloads when controls change", async (
 
   await page.goto(`/w/${workspaceKey}/usage`);
 
+  const readyDocumentsCard = page.locator('[data-slot="card"]').filter({ hasText: "Ready documents" }).first();
+  const chartCard = page.locator('[data-slot="card"]').filter({ hasText: "Usage by period" }).first();
+  await expect(readyDocumentsCard).toBeVisible();
+  await expect(chartCard).toBeVisible();
+  const readyDocumentsBox = await readyDocumentsCard.boundingBox();
+  const chartBox = await chartCard.boundingBox();
+  expect(readyDocumentsBox).not.toBeNull();
+  expect(chartBox).not.toBeNull();
+  expect(readyDocumentsBox!.y).toBeLessThan(chartBox!.y);
+
   const usageTrends = page.getByTestId("usage-trends");
   await expect(usageTrends.getByText("Usage trends")).toBeVisible();
-  await expect(usageTrends.getByText("Conversations", { exact: true })).toBeVisible();
-  await expect(usageTrends.getByText("Messages", { exact: true })).toBeVisible();
-  await expect(usageTrends.getByText("Tokens", { exact: true })).toBeVisible();
-  await expect(usageTrends.getByText("600")).toBeVisible();
+  await expect(usageTrends.getByText("Usage by period")).toBeVisible();
+  await expect(usageTrends.getByTestId("usage-period-chart").getByRole("application")).toBeVisible();
+  await expect(usageTrends.getByText("User messages")).toBeVisible();
+  await expect(usageTrends.getByText("Assistant messages")).toBeVisible();
+  await expect(usageTrends.getByText("Trend series")).toHaveCount(0);
 
-  // Radix Select can race a React re-render and close the popover before the
-  // option is clicked, which is intermittent under parallel-suite load. Retry
-  // the open+select as one unit so a closed popover is simply reopened.
+  await usageTrends.getByRole("button", { name: "Tokens" }).click();
+  await expect(usageTrends.getByText("Input tokens")).toBeVisible();
+  await expect(usageTrends.getByText("Output tokens")).toBeVisible();
+
   await expect(async () => {
-    await page.getByLabel("Granularity").click();
+    await usageTrends.getByLabel("Granularity").click();
     await page.getByRole("option", { name: "Weekly" }).click({ timeout: 2000 });
   }).toPass({ timeout: 20000 });
 

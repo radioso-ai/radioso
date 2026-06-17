@@ -659,7 +659,9 @@ export interface ConversationRoutineSkillDispatcher {
     state: RoutineState;
     turn: TurnContext;
     inputBindings?: Record<string, RoutineInputBinding>;
-    outputAssignments?: Record<string, string>;
+    // Output→variable assignment is applied by the runner after dispatch (see
+    // DefaultRoutineRunner), not by the dispatcher — so it is intentionally not
+    // part of the dispatch input.
   }): Promise<RoutineSkillResult>;
 }
 

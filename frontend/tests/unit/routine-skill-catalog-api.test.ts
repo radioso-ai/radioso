@@ -43,6 +43,7 @@ describe('routineSkillCatalogApi', () => {
       skills: [{
         skillName: 'send_email',
         displayName: 'Send email',
+        category: 'external_mcp',
         description: 'Drafts a customer reply.',
         inputs: [
           { key: 'recipient', type: 'email', required: true, description: 'Customer address' },
@@ -56,6 +57,7 @@ describe('routineSkillCatalogApi', () => {
     expect(skills).toEqual([{
       skillName: 'send_email',
       displayName: 'Send email',
+      category: 'external_mcp',
       description: 'Drafts a customer reply.',
       inputs: [
         { key: 'recipient', type: 'email', required: true, description: 'Customer address' },
@@ -71,11 +73,26 @@ describe('routineSkillCatalogApi', () => {
       skills: [{
         skillName: 'send_email',
         displayName: 'Send email',
+        category: 'external_mcp',
         inputs: [{ key: 'recipient', type: 'file', required: true }],
         outcomes: [],
         hasDataOutputs: true,
       }],
     })).toThrow(/unsupported type/u)
+  })
+
+  it('infers a category for older catalog responses that do not include one', () => {
+    const skills = parseSkillAuthoringCatalogResponse({
+      skills: [{
+        skillName: 'retrieval.answer',
+        displayName: 'Retrieval answer',
+        inputs: [],
+        outcomes: [],
+        hasDataOutputs: false,
+      }],
+    })
+
+    expect(skills[0]?.category).toBe('retrieval')
   })
 
   it('requests the per-agent catalog with workspace bearer auth', async () => {

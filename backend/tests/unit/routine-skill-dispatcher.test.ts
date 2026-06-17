@@ -111,6 +111,16 @@ describe("RoutineSkillExecutorDispatcher", () => {
     });
   });
 
+  it("lets static built-ins win before a delegate resolver handles dynamic external names", async () => {
+    const staticSkill = skillNamed("retrieval.answer", TEST_EXECUTION, [capabilityNames.retrieval.answer]);
+    const resolver = new StaticRoutineSkillResolver([staticSkill], {
+      resolve: (name) => skillNamed(name, { kind: "internal", adapter: "external-adapter" }),
+    });
+
+    expect(resolver.resolve("retrieval.answer")).toBe(staticSkill);
+    expect(resolver.resolve("crm_lookup")?.execution).toEqual({ kind: "internal", adapter: "external-adapter" });
+  });
+
   it("carries a custom (fine-grained) status verbatim so the runner can branch on it", async () => {
     // The generic adapter may surface a service-shaped status (design seam: the
     // closed SkillOutcome enum → the open RoutineSkillResult union). It must

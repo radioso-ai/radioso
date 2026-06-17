@@ -13,6 +13,8 @@ import type {
   SkillOutcomeDefinition,
   SkillOutcomeStatus,
 } from "./domain.js";
+import type { RoutineSkillCategory } from "./routineAuthoringPolicy.js";
+import { routineSkillCategoryForBuiltIn } from "./routineAuthoringPolicy.js";
 
 /**
  * Input type vocabulary shown to the author. It preserves the richer skill
@@ -50,6 +52,7 @@ export interface SkillAuthoringOutcome {
 export interface SkillAuthoringDescriptor {
   skillName: string;
   displayName: string;
+  category: RoutineSkillCategory;
   description?: string;
   inputs: SkillAuthoringInput[];
   /**
@@ -68,7 +71,7 @@ export interface SkillAuthoringDescriptor {
 /** The narrow slice of a catalog entry this projection needs. */
 export type SkillCatalogDescriptorSource = Pick<
   SkillCatalogEntry,
-  "name" | "displayName" | "description" | "intake" | "outcomes"
+  "name" | "displayName" | "description" | "owner" | "intake" | "outcomes"
 >;
 
 export interface ExternalSkillAuthoringDescriptorSource {
@@ -118,6 +121,7 @@ export const skillCatalogEntryToAuthoringDescriptor = (
 ): SkillAuthoringDescriptor => ({
   skillName: entry.name,
   displayName: entry.displayName,
+  category: routineSkillCategoryForBuiltIn(entry),
   ...(entry.description ? { description: entry.description } : {}),
   inputs: (entry.intake?.fields ?? []).map(toAuthoringInput),
   outcomes: (entry.outcomes ?? []).map(toAuthoringOutcome),
@@ -162,6 +166,7 @@ export const externalSkillToAuthoringDescriptor = (
   return {
     skillName: source.skillName,
     displayName: source.displayName ?? source.skillName,
+    category: "external_mcp",
     ...(source.description ? { description: source.description } : {}),
     inputs: Object.entries(source.exposedParams).map(([key, spec]) => ({
       key,

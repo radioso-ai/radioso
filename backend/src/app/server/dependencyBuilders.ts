@@ -144,7 +144,11 @@ import {
   PlatformSettingsService,
 } from "../../modules/settings/composition.js";
 import type { EmbeddingModelId } from "../../modules/settings/contracts/ingestion.js";
-import { SkillCatalogService, retrievalAnswerSkillDefinition } from "../../modules/skills/public.js";
+import {
+  SkillCatalogService,
+  retrievalAnswerSkillDefinition,
+  routineDispatchableBuiltInSkills,
+} from "../../modules/skills/public.js";
 import { RETRIEVAL_ANSWER_ADAPTER, RetrievalAnswerSkillExecutor } from "../../modules/retrieval/public.js";
 import { EXTERNAL_SKILLS_ADAPTER, McpSkillExecutor } from "../../modules/externalSkills/executor/mcpSkillExecutor.js";
 import { buildExternalSkillsDeps } from "../../modules/externalSkills/composition.js";
@@ -158,7 +162,7 @@ import {
   StaticCustomerEmailProviderRegistry,
   customerEmailOauthProviderIds,
 } from "../../modules/customerEmail/public.js";
-import { RoutineSkillExecutorDispatcher } from "../../modules/routines/public.js";
+import { RoutineSkillExecutorDispatcher, StaticRoutineSkillResolver } from "../../modules/routines/public.js";
 import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
@@ -1094,7 +1098,10 @@ export const buildChatServices = (input: {
             responseLanguage,
           }),
           new RoutineSkillExecutorDispatcher(
-            new CustomerEmailRoutineSkillResolver(emailSkillNames, new ExternalSkillRoutineSkillResolver()),
+            new StaticRoutineSkillResolver(
+              routineDispatchableBuiltInSkills,
+              new CustomerEmailRoutineSkillResolver(emailSkillNames, new ExternalSkillRoutineSkillResolver()),
+            ),
             input.composition.skillExecutorRegistry,
             {
               workspaceId,

@@ -132,6 +132,34 @@ describe("analyzeGuaranteedVariablesOnEntry", () => {
     });
   });
 
+  it("does not guarantee a slot whose collecting step is on only one branch, even when another branch re-references it", () => {
+    // The slot is *collected* by the first-ordinal chat step that references it (`left`).
+    // `right` merely interpolates `{{slot.x}}` (a use), so on the start→right→merge path
+    // the slot is never collected. The analysis must agree with the compiler's
+    // first-referencer rule and NOT treat `right` as a producer — otherwise validation
+    // would let a required input bound to `x` reach `merge` with `x` unpopulated.
+    const result = analyzeGuaranteedVariablesOnEntry(definition([
+      chat("start", 0, "Start."),
+      chat("left", 1, "Ask for {{slot.x}}."),
+      chat("right", 2, "We will follow up about {{slot.x}}."),
+      tool("merge", 3),
+    ], [
+      transition("start", "left", 0),
+      transition("start", "right", 1),
+      transition("left", "merge", 2),
+      transition("right", "merge", 3),
+      transition("merge", "done", 4),
+    ], [
+      { stableSlotId: "slot_x", key: "x", type: "text", required: true, description: null, ordinal: 0 },
+    ]));
+
+    expect(asRecord(result)).toMatchObject({
+      left: [],
+      right: [],
+      merge: [],
+    });
+  });
+
   it("guarantees a variable produced at step 1 by step 3 in a linear chain", () => {
     const result = analyzeGuaranteedVariablesOnEntry(definition([
       chat("collect", 0, "Ask for {{slot.email}}."),

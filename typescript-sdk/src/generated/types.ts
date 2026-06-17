@@ -3075,7 +3075,7 @@ export interface components {
             ok: boolean;
             diagnostics: {
                 /** @enum {string} */
-                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "variable_name_collision";
+                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "variable_name_collision";
                 location: string;
                 message: string;
             }[];
@@ -3304,6 +3304,8 @@ export interface components {
         SkillAuthoringDescriptor: {
             skillName: string;
             displayName: string;
+            /** @enum {string} */
+            category: "retrieval" | "built_in" | "external_mcp" | "customer_email";
             description?: string;
             inputs: components["schemas"]["SkillAuthoringInput"][];
             outcomes: components["schemas"]["SkillAuthoringOutcome"][];

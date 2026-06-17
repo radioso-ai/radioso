@@ -77,6 +77,55 @@ describe("RetrievalAnswerSkillExecutor", () => {
     expect(controller.run).not.toHaveBeenCalled();
   });
 
+  it("builds a retrieval request from a routine turn context", async () => {
+    const result = sampleResult();
+    const controller = stubController(result);
+    const executor = new RetrievalAnswerSkillExecutor(controller);
+
+    await executor.dispatch(invocation({
+      workspaceId: "w1",
+      turn: {
+        sessionId: "conversation-1",
+        inputEvent: { id: "message-2", kind: "message", content: "What is Kriya?", locale: "en" },
+        agent: {
+          id: "agent-1",
+          metadata: {
+            skillSettings: {
+              "retrieval.answer": { vectorTopK: 4 },
+            },
+          },
+        },
+        history: [{
+          id: "message-1",
+          role: "user",
+          content: "Earlier question",
+          createdAt: "2026-06-17T08:00:00.000Z",
+          metadata: { source: "test" },
+        }],
+        stagedContext: [],
+        steering: [],
+      },
+    }));
+
+    expect(controller.run).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: "w1",
+      query: "What is Kriya?",
+      responseLanguage: "en",
+      agentSkillSettings: {
+        "retrieval.answer": { vectorTopK: 4 },
+      },
+    }));
+    expect(controller.run).toHaveBeenCalledWith(expect.objectContaining({
+      history: [expect.objectContaining({
+        id: "message-1",
+        conversationId: "conversation-1",
+        workspaceId: "w1",
+        role: "user",
+        content: "Earlier question",
+      })],
+    }));
+  });
+
   it("uses runWithoutRetrieval for an interpreted, non-retrieval turn", async () => {
     const controller = stubController(sampleResult());
     const executor = new RetrievalAnswerSkillExecutor(controller);

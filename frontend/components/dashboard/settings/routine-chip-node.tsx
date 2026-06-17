@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState, type ComponentType, type JSX } from 'react'
-import { BadgeCheck, ChevronDown, CornerUpRight, Flag, Zap, type LucideIcon } from 'lucide-react'
+import { AlertTriangle, BadgeCheck, ChevronDown, CornerUpRight, Flag, Zap, type LucideIcon } from 'lucide-react'
 import {
   $getNodeByKey,
   DecoratorNode,
@@ -22,7 +22,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { RoutineSkillCatalogPopover } from '@/components/dashboard/settings/routine-skill-catalog-popover'
+import { useSkillDescriptor, RoutineSkillCatalogPopover } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import type { RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineSlotType } from '@/lib/api-types'
 import { ROUTINE_SLOT_TYPES, type RoutineInputBinding, type RoutineSkillBindingState, type RoutineStepMode } from '@/lib/routine-prose'
 
@@ -65,18 +65,33 @@ const KIND_META: Record<RoutineChipKind, { className: string; icon: LucideIcon |
   end: { className: 'border-slate-300 bg-slate-100 text-slate-700', icon: Flag },
 }
 
-function ChipBadge({ kind, label, type }: { kind: RoutineChipKind; label: string; type: RoutineSlotType | null }): JSX.Element {
+function ChipBadge({
+  kind,
+  label,
+  type,
+  className,
+  icon,
+  suffix,
+}: {
+  kind: RoutineChipKind
+  label: string
+  type: RoutineSlotType | null
+  className?: string
+  icon?: LucideIcon | null
+  suffix?: string
+}): JSX.Element {
   const meta = KIND_META[kind]
-  const Icon: ComponentType<{ className?: string }> | null = meta.icon
+  const Icon: ComponentType<{ className?: string }> | null = icon === undefined ? meta.icon : icon
   return (
     <span
-      className={`inline-flex select-none items-center gap-1 rounded-md border px-1.5 py-0 text-xs font-medium ${meta.className}`}
+      className={`inline-flex select-none items-center gap-1 rounded-md border px-1.5 py-0 text-xs font-medium ${className ?? meta.className}`}
     >
       {Icon ? <Icon className="h-3 w-3" /> : null}
       {label}
       {/* The type is part of the variable's identity, so show it on the chip face —
           it also drives which exact checks the author can build on the variable. */}
       {type ? <span className="font-normal opacity-60">· {type}</span> : null}
+      {suffix ? <span className="font-normal opacity-70">· {suffix}</span> : null}
       {kind === 'variable' ? <ChevronDown className="h-3 w-3 opacity-50" /> : null}
     </span>
   )
@@ -86,6 +101,7 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
   const [editor] = useLexicalComposerContext()
   const { getType, setType, variables } = useRoutineVariables()
   const type = kind === 'variable' ? getType(refId) : null
+  const skillCatalog = useSkillDescriptor(refId, label)
 
   const readBindingState = (): RoutineSkillBindingState => {
     let next: RoutineSkillBindingState = {}
@@ -133,10 +149,12 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
   }
 
   if (kind === 'skill') {
+    const resolvedLabel = skillCatalog.descriptor?.displayName ?? label
+    const isUnknownSkill = !skillCatalog.isLoading && !skillCatalog.descriptor
     return (
       <RoutineSkillCatalogPopover
         skillName={refId}
-        label={label}
+        label={resolvedLabel}
         bindingState={isCatalogOpen ? draftBindingState : bindingState}
         availableVariables={variables.map((variable) => variable.id)}
         open={isCatalogOpen}
@@ -145,7 +163,14 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
         onRemove={removeSelf}
       >
         <button type="button" contentEditable={false} data-routine-chip={kind} className="mx-0.5 cursor-pointer align-baseline outline-none">
-          <ChipBadge kind={kind} label={label} type={type} />
+          <ChipBadge
+            kind={kind}
+            label={isUnknownSkill ? label : resolvedLabel}
+            type={type}
+            className={isUnknownSkill ? 'border-amber-400 bg-amber-100 text-amber-950 dark:border-amber-500/70 dark:bg-amber-500/15 dark:text-amber-100' : undefined}
+            icon={isUnknownSkill ? AlertTriangle : undefined}
+            suffix={isUnknownSkill ? 'unknown skill' : undefined}
+          />
         </button>
       </RoutineSkillCatalogPopover>
     )

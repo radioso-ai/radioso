@@ -3172,6 +3172,7 @@ components:
                   - unsatisfiable_required_input
                   - input_type_mismatch
                   - unknown_input_binding
+                  - unknown_variable_ref
                   - variable_name_collision
               location:
                 type: string
@@ -3928,6 +3929,13 @@ components:
           type: string
         displayName:
           type: string
+        category:
+          type: string
+          enum:
+            - retrieval
+            - built_in
+            - external_mcp
+            - customer_email
         description:
           type: string
         inputs:
@@ -3943,6 +3951,7 @@ components:
       required:
         - skillName
         - displayName
+        - category
         - inputs
         - outcomes
         - hasDataOutputs

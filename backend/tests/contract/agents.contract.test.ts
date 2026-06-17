@@ -954,10 +954,14 @@ describe("agents contract", () => {
       expect.objectContaining({
         skillName: "retrieval.answer",
         displayName: expect.any(String),
+        category: "retrieval",
         inputs: expect.any(Array),
         outcomes: expect.any(Array),
         hasDataOutputs: false,
       }),
+    ]));
+    expect(response.body.skills).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ skillName: "retrieval.search" }),
     ]));
 
     await request(app)

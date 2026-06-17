@@ -30,7 +30,7 @@ type RoutineSkillCatalogState = {
   error: string | null
 }
 
-const RoutineSkillCatalogContext = createContext<RoutineSkillCatalogState>({
+export const RoutineSkillCatalogContext = createContext<RoutineSkillCatalogState>({
   agentId: '',
   skills: [],
   isLoading: false,
@@ -54,9 +54,14 @@ export function RoutineSkillCatalogProvider({ agentId, children }: { agentId: st
     }
   }, [agentId])
 
-  const value = state.agentId === agentId
-    ? state
-    : { agentId, skills: [], isLoading: true, error: null }
+  // Memoize so the context value keeps a stable identity across renders. Skill
+  // chips now consume this context for found/unknown resolution; an unstable
+  // value object re-renders every chip on every render (Playwright saw elements
+  // "not stable"), so the identity must only change when the state does.
+  const value = useMemo(
+    () => (state.agentId === agentId ? state : { agentId, skills: [], isLoading: true, error: null }),
+    [state, agentId],
+  )
 
   return (
     <RoutineSkillCatalogContext.Provider value={value}>
@@ -65,19 +70,23 @@ export function RoutineSkillCatalogProvider({ agentId, children }: { agentId: st
   )
 }
 
-const normalizeSkillName = (value: string) => value.trim().toLowerCase()
+export const normalizeSkillName = (value: string) => value.trim().toLowerCase()
 
-function useSkillDescriptor(skillName: string, fallbackLabel: string) {
-  const catalog = useContext(RoutineSkillCatalogContext)
+export function findRoutineSkillDescriptor(skills: SkillAuthoringDescriptor[], skillName: string, fallbackLabel = '') {
   const normalizedName = normalizeSkillName(skillName)
   const normalizedLabel = normalizeSkillName(fallbackLabel)
+  return skills.find((skill) => {
+    const catalogName = normalizeSkillName(skill.skillName)
+    const displayName = normalizeSkillName(skill.displayName)
+    return catalogName === normalizedName || catalogName === normalizedLabel || displayName === normalizedName || displayName === normalizedLabel
+  })
+}
+
+export function useSkillDescriptor(skillName: string, fallbackLabel: string) {
+  const catalog = useContext(RoutineSkillCatalogContext)
   const descriptor = useMemo(
-    () => catalog.skills.find((skill) => {
-      const catalogName = normalizeSkillName(skill.skillName)
-      const displayName = normalizeSkillName(skill.displayName)
-      return catalogName === normalizedName || catalogName === normalizedLabel || displayName === normalizedName || displayName === normalizedLabel
-    }),
-    [catalog.skills, normalizedLabel, normalizedName],
+    () => findRoutineSkillDescriptor(catalog.skills, skillName, fallbackLabel),
+    [catalog.skills, fallbackLabel, skillName],
   )
   return { ...catalog, descriptor }
 }
@@ -118,8 +127,6 @@ const coerceLiteralValue = (input: SkillAuthoringInput, raw: string): string | n
 const cleanRecord = <T,>(record: Record<string, T>): Record<string, T> | undefined =>
   Object.keys(record).length > 0 ? record : undefined
 
-const IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/u
-
 function SkillCatalogDetails({
   descriptor,
   bindingState,
@@ -152,14 +159,6 @@ function SkillCatalogDetails({
     if (binding) nextBindings[input.key] = binding
     else delete nextBindings[input.key]
     updateState({ inputBindings: nextBindings, outputAssignments, mode: 'typed' })
-  }
-
-  const setOutputAssignment = (fieldName: string, variableName: string) => {
-    const nextAssignments = { ...outputAssignments }
-    const trimmed = variableName.trim()
-    if (trimmed) nextAssignments[fieldName] = trimmed
-    else delete nextAssignments[fieldName]
-    updateState({ inputBindings, outputAssignments: nextAssignments, mode })
   }
 
   return (
@@ -302,19 +301,6 @@ function SkillCatalogDetails({
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">{outcome.name}</p>
                 {outcome.description ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{outcome.description}</p> : null}
-                {descriptor.hasDataOutputs ? (
-                  <div className="mt-2 space-y-1">
-                    <Label htmlFor={`output-${outcome.name}`} className="text-xs">Assign to variable</Label>
-                    <Input
-                      id={`output-${outcome.name}`}
-                      aria-label={`Output variable for ${outcome.name}`}
-                      value={outputAssignments[outcome.name] ?? ''}
-                      pattern={IDENTIFIER_PATTERN.source}
-                      aria-invalid={Boolean(outputAssignments[outcome.name]) && !IDENTIFIER_PATTERN.test(outputAssignments[outcome.name] ?? '')}
-                      onChange={(event) => setOutputAssignment(outcome.name, event.target.value)}
-                    />
-                  </div>
-                ) : null}
               </div>
             ))}
           </div>

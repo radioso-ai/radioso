@@ -64,6 +64,14 @@ export {
   type SkillCatalogDescriptorSource,
 } from "./authoringDescriptor.js";
 export {
+  isRoutineDispatchableBuiltInSkill,
+  routineDispatchableBuiltInSkillNames,
+  routineDispatchableBuiltInSkills,
+  routineSkillCategories,
+  routineSkillCategoryForBuiltIn,
+  type RoutineSkillCategory,
+} from "./routineAuthoringPolicy.js";
+export {
   SkillCatalogRegistry,
   SkillExecutorRegistry,
   SkillRunResolver,

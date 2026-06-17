@@ -36,6 +36,7 @@ const descriptor = (
 ): SkillAuthoringDescriptor => ({
   skillName,
   displayName: skillName,
+  category: "external_mcp",
   inputs,
   outcomes: [{
     name: "completed",
@@ -222,6 +223,56 @@ describe("validateRoutineDefinition authoring catalog context", () => {
       code: "unknown_input_binding",
       location: "step:lookup.inputBindings.extra",
     }));
+  });
+
+  it("flags an optional input bound to a variable that no slot or output assignment declares", () => {
+    const result = validateRoutineDefinition({
+      ...definitionWithTool("order.lookup"),
+      steps: [{
+        ...definitionWithTool("order.lookup").steps[0]!,
+        metadata: {
+          inputBindings: {
+            orderId: { kind: "variableRef", ref: "typoVariable" },
+          },
+        },
+      }],
+    }, {
+      skillDescriptors: descriptors(descriptor("order.lookup", [
+        { key: "orderId", type: "text", required: false },
+      ])),
+    });
+
+    // An optional binding to a non-existent variable would otherwise be silently dropped
+    // at dispatch; the unknown reference must be flagged at validate time.
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: "unknown_variable_ref",
+      location: "step:lookup.inputBindings.orderId",
+    }));
+  });
+
+  it("reports a required input bound to an unknown variable only as an unknown reference, not also as unsatisfiable", () => {
+    const result = validateRoutineDefinition({
+      ...definitionWithTool("order.lookup"),
+      steps: [{
+        ...definitionWithTool("order.lookup").steps[0]!,
+        metadata: {
+          inputBindings: {
+            orderId: { kind: "variableRef", ref: "typoVariable" },
+          },
+        },
+      }],
+    }, {
+      skillDescriptors: descriptors(descriptor("order.lookup", [
+        { key: "orderId", type: "text", required: true },
+      ])),
+    });
+
+    const orderIdDiagnostics = result.diagnostics.filter(
+      (diagnostic) => diagnostic.location === "step:lookup.inputBindings.orderId",
+    );
+    expect(orderIdDiagnostics).toEqual([
+      expect.objectContaining({ code: "unknown_variable_ref" }),
+    ]);
   });
 
   it("flags output-assignment target names that collide with slot keys or other output targets", () => {

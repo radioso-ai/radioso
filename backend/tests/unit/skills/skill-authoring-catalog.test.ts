@@ -10,6 +10,7 @@ const catalogEntry = (overrides: Partial<TestCatalogEntry> = {}): TestCatalogEnt
   name: "retrieval.answer",
   displayName: "Grounded answer",
   description: "Answer from documents.",
+  owner: "retrieval",
   intake: {
     enabled: true,
     supportedCallers: ["assistant"],
@@ -44,9 +45,16 @@ describe("SkillAuthoringCatalogService", () => {
             skills: [
               catalogEntry(),
               catalogEntry({
+                name: "retrieval.search",
+                displayName: "Search",
+                description: "Not routine-dispatchable.",
+                owner: "retrieval",
+              }),
+              catalogEntry({
                 name: "documents.ingest",
                 displayName: "Ingest",
                 description: "Unavailable.",
+                owner: "documents",
                 availability: { state: "forbidden", reason: "capability_denied" },
               }),
             ],
@@ -88,6 +96,8 @@ describe("SkillAuthoringCatalogService", () => {
       "retrieval.answer",
       "post_slack",
     ]);
+    expect(descriptors.find((descriptor) => descriptor.skillName === "retrieval.answer")?.category).toBe("retrieval");
+    expect(descriptors.find((descriptor) => descriptor.skillName === "post_slack")?.category).toBe("external_mcp");
     expect(descriptors.find((descriptor) => descriptor.skillName === "post_slack")?.inputs).toEqual([
       { key: "message", type: "text", required: false, description: "Message body." },
     ]);

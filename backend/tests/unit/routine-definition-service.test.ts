@@ -318,6 +318,7 @@ class FakeCapabilityPolicy implements CapabilityPolicy {
 const skillDescriptor = (skillName: string): SkillAuthoringDescriptor => ({
   skillName,
   displayName: skillName,
+  category: "external_mcp",
   inputs: [],
   outcomes: [{
     name: "completed",

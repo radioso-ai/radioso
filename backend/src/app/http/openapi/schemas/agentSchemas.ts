@@ -492,6 +492,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     z.object({
       skillName: z.string(),
       displayName: z.string(),
+      category: z.enum(["retrieval", "built_in", "external_mcp", "customer_email"]),
       description: z.string().optional(),
       inputs: z.array(SkillAuthoringInputSchema),
       outcomes: z.array(SkillAuthoringOutcomeSchema),

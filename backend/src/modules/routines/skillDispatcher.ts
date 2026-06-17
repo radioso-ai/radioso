@@ -44,12 +44,12 @@ export interface RoutineSkillResolver {
 export class StaticRoutineSkillResolver implements RoutineSkillResolver {
   private readonly byName: Map<string, SkillDefinition>;
 
-  constructor(skills: readonly SkillDefinition[]) {
+  constructor(skills: readonly SkillDefinition[], private readonly delegate: RoutineSkillResolver | null = null) {
     this.byName = new Map(skills.map((skill) => [skill.name, skill]));
   }
 
   resolve(skillName: string): SkillDefinition | null {
-    return this.byName.get(skillName) ?? null;
+    return this.byName.get(skillName) ?? this.delegate?.resolve(skillName) ?? null;
   }
 }
 

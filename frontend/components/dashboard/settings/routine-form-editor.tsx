@@ -1,10 +1,10 @@
 'use client'
 
-import { useMemo, useRef } from 'react'
-import { Plus, Trash2, Webhook } from 'lucide-react'
+import { useContext, useId, useMemo, useRef } from 'react'
+import { AlertTriangle, CheckCircle2, Plus, Trash2, Webhook } from 'lucide-react'
 
 import { RoutineDiagnosticList, RoutineVariableInsertButton } from '@/components/dashboard/settings/routine-editor-controls'
-import { RoutineSkillCatalogPopover } from '@/components/dashboard/settings/routine-skill-catalog-popover'
+import { findRoutineSkillDescriptor, RoutineSkillCatalogContext, RoutineSkillCatalogPopover } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -67,6 +67,53 @@ const availableVariablesForStep = (form: RoutineFormState, stepIndex: number): s
     }
   }
   return [...variables]
+}
+
+function ToolReferenceField({
+  value,
+  disabled,
+  stepIndex,
+  onValueChange,
+}: {
+  value: string
+  disabled: boolean
+  stepIndex: number
+  onValueChange: (value: string) => void
+}) {
+  const listId = useId()
+  const catalog = useContext(RoutineSkillCatalogContext)
+  const descriptor = findRoutineSkillDescriptor(catalog.skills, value, value)
+  const hasValue = value.trim().length > 0
+
+  return (
+    <div className="min-w-0 flex-1 space-y-1">
+      <Input
+        aria-label={`Step ${stepIndex + 1} tool reference`}
+        value={value}
+        disabled={disabled}
+        list={listId}
+        onChange={(event) => onValueChange(event.target.value)}
+      />
+      <datalist id={listId}>
+        {catalog.skills.map((skill) => (
+          <option key={skill.skillName} value={skill.skillName}>
+            {skill.displayName}
+          </option>
+        ))}
+      </datalist>
+      {descriptor ? (
+        <p className="flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-300">
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          {descriptor.displayName}
+        </p>
+      ) : hasValue ? (
+        <p className="flex items-center gap-1 text-xs text-amber-700 dark:text-amber-300">
+          <AlertTriangle className="h-3.5 w-3.5" />
+          unknown skill
+        </p>
+      ) : null}
+    </div>
+  )
 }
 
 export function RoutineFormEditor({
@@ -212,10 +259,15 @@ export function RoutineFormEditor({
               </Select>
               {step.kind === 'tool' ? (
                 <div className="flex min-w-0 items-center gap-2">
-                  <Input aria-label={`Step ${stepIndex + 1} tool reference`} value={step.toolRef} disabled={isPublished} onChange={(event) => onChange((current) => ({
-                    ...current,
-                    steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? { ...item, toolRef: event.target.value } : item),
-                  }))} />
+                  <ToolReferenceField
+                    value={step.toolRef}
+                    disabled={isPublished}
+                    stepIndex={stepIndex}
+                    onValueChange={(value) => onChange((current) => ({
+                      ...current,
+                      steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? { ...item, toolRef: value } : item),
+                    }))}
+                  />
                   <RoutineSkillCatalogPopover
                     skillName={step.toolRef}
                     label={step.toolRef || `Step ${stepIndex + 1} skill`}

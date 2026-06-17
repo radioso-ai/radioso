@@ -1,21 +1,16 @@
 import type { RoutineDefinition } from "./domain.js";
+import { collectedSlotsByStep } from "./slotCollection.js";
 
-const slotReferencePattern = /\{\{\s*slot\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu;
-
-const collectSlotReferences = (text: string): string[] => {
-  const keys = new Set<string>();
-  for (const match of text.matchAll(slotReferencePattern)) {
-    const key = match[1];
-    if (key) {
-      keys.add(key);
-    }
-  }
-  return [...keys];
-};
-
-const stepProducers = (step: RoutineDefinition["steps"][number]): ReadonlySet<string> => {
+// A chat step produces exactly the slots it *collects* under the shared first-referencer
+// rule — NOT every slot it interpolates. A later `{{slot.x}}` use does not re-produce x;
+// modelling it as a producer here (while the compiler does not) would over-approximate
+// guaranteed population and let validation pass a routine with a real runtime gap.
+const stepProducers = (
+  step: RoutineDefinition["steps"][number],
+  collectionByStep: ReadonlyMap<string, string[]>,
+): ReadonlySet<string> => {
   if (step.kind === "chat") {
-    return new Set(collectSlotReferences(step.instruction));
+    return new Set(collectionByStep.get(step.stableStepId) ?? []);
   }
   if (step.kind === "tool") {
     return new Set(Object.values(step.metadata.outputAssignments ?? {}));
@@ -50,7 +45,8 @@ export const analyzeGuaranteedVariablesOnEntry = (
   const entryStepId = steps[0]?.stableStepId;
   const stepIds = new Set(steps.map((step) => step.stableStepId));
   const stepById = new Map(steps.map((step) => [step.stableStepId, step]));
-  const producersByStep = new Map(steps.map((step) => [step.stableStepId, stepProducers(step)]));
+  const collectionByStep = collectedSlotsByStep(definition);
+  const producersByStep = new Map(steps.map((step) => [step.stableStepId, stepProducers(step, collectionByStep)]));
   const universe = new Set([
     ...definition.slots.map((slot) => slot.key),
     ...steps.flatMap((step) => Object.values(step.metadata.outputAssignments ?? {})),

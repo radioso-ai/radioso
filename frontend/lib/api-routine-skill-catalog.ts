@@ -1,6 +1,7 @@
 import { request } from './api-client'
 
 export type SkillAuthoringInputType = 'text' | 'number' | 'boolean' | 'email' | 'date' | 'phone' | 'enum'
+export type RoutineSkillCategory = 'retrieval' | 'built_in' | 'external_mcp' | 'customer_email'
 
 export interface SkillAuthoringInput {
   key: string
@@ -20,6 +21,7 @@ export interface SkillAuthoringOutcome {
 export interface SkillAuthoringDescriptor {
   skillName: string
   displayName: string
+  category: RoutineSkillCategory
   description?: string
   inputs: SkillAuthoringInput[]
   outcomes: SkillAuthoringOutcome[]
@@ -31,12 +33,26 @@ interface SkillAuthoringCatalogResponse {
 }
 
 const inputTypes: readonly SkillAuthoringInputType[] = ['text', 'number', 'boolean', 'email', 'date', 'phone', 'enum']
+const skillCategories: readonly RoutineSkillCategory[] = ['retrieval', 'built_in', 'external_mcp', 'customer_email']
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 
 const optionalString = (value: unknown): string | undefined =>
   typeof value === 'string' && value.trim().length > 0 ? value : undefined
+
+const inferSkillCategory = (skillName: string): RoutineSkillCategory => {
+  if (skillName.startsWith('retrieval.')) return 'retrieval'
+  if (skillName.startsWith('customer_email.')) return 'customer_email'
+  return 'external_mcp'
+}
+
+const parseSkillCategory = (value: unknown, skillName: string): RoutineSkillCategory => {
+  if (skillCategories.includes(value as RoutineSkillCategory)) {
+    return value as RoutineSkillCategory
+  }
+  return inferSkillCategory(skillName)
+}
 
 const parseInput = (value: unknown): SkillAuthoringInput => {
   if (!isRecord(value)) {
@@ -104,6 +120,7 @@ export const parseSkillAuthoringCatalogResponse = (payload: unknown): SkillAutho
     if (typeof value.displayName !== 'string' || value.displayName.trim().length === 0) {
       throw new Error(`Skill catalog descriptor "${value.skillName}" is missing displayName.`)
     }
+    const category = parseSkillCategory(value.category, value.skillName)
     if (!Array.isArray(value.inputs)) {
       throw new Error(`Skill catalog descriptor "${value.skillName}" is missing inputs.`)
     }
@@ -117,6 +134,7 @@ export const parseSkillAuthoringCatalogResponse = (payload: unknown): SkillAutho
     return {
       skillName: value.skillName,
       displayName: value.displayName,
+      category,
       ...(description ? { description } : {}),
       inputs: value.inputs.map(parseInput),
       outcomes: value.outcomes.map(parseOutcome),

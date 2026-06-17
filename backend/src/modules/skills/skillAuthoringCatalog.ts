@@ -6,6 +6,7 @@ import {
   type SkillCatalogDescriptorSource,
 } from "./authoringDescriptor.js";
 import type { SkillAvailability } from "./domain.js";
+import { isRoutineDispatchableBuiltInSkill } from "./routineAuthoringPolicy.js";
 
 export interface SkillAuthoringCatalogContext {
   workspaceId: string;
@@ -59,6 +60,7 @@ export class SkillAuthoringCatalogService implements SkillAuthoringCatalog {
 
     const systemDescriptors = catalog.skills
       .filter((entry) => (entry.availability?.state ?? "available") === "available")
+      .filter(isRoutineDispatchableBuiltInSkill)
       .map(skillCatalogEntryToAuthoringDescriptor);
     const externalDescriptors = externalSkills
       .filter((skill) => skill.enabled ?? true)

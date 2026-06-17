@@ -43,6 +43,7 @@ export const toConversationAgentConfig = (agent: AgentRecord): ConversationAgent
   metadata: {
     workspaceId: agent.workspaceId,
     retrievalEnabled: agent.retrievalEnabled,
+    skillSettings: agent.skillSettings,
     // Read by the contact routine activator to gate activation on the per-agent flag.
     contactRequestsEnabled: agent.contactRequestsEnabled,
     webhookExportsEnabled: agent.webhookExportsEnabled,

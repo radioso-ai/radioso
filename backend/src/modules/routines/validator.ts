@@ -25,6 +25,7 @@ export const routineValidationCodes = [
   "unsatisfiable_required_input",
   "input_type_mismatch",
   "unknown_input_binding",
+  "unknown_variable_ref",
   "variable_name_collision",
 ] as const;
 
@@ -130,6 +131,12 @@ export const validateRoutineDefinition = (
       entry,
     ]);
   }
+  // The routine's variable namespace: customer-collected slots plus skill-output
+  // assignments. A `variableRef` binding may only point into this set.
+  const knownVariableNames = new Set<string>([
+    ...slotKeys,
+    ...outputAssignmentEntries.map((entry) => entry.target),
+  ]);
   const guaranteedVariablesOnEntry = analyzeGuaranteedVariablesOnEntry(definition);
 
   if (terminals.length === 0) {
@@ -229,6 +236,12 @@ export const validateRoutineDefinition = (
               message: `input type mismatch: binding for "${inputKey}" must be a ${input.type} value accepted by skill "${step.toolRef}".`,
             });
           }
+        } else if (!knownVariableNames.has(binding.ref)) {
+          diagnostics.push({
+            code: "unknown_variable_ref",
+            location: `step:${step.stableStepId}.inputBindings.${inputKey}`,
+            message: `unknown variable reference: binding for "${inputKey}" references variable "${binding.ref}", which is not a declared slot or skill-output assignment.`,
+          });
         } else {
           const slot = slotByKey.get(binding.ref);
           if (slot && !isSlotTypeCompatibleWithInput(slot.type, input.type)) {
@@ -252,7 +265,13 @@ export const validateRoutineDefinition = (
             location: `step:${step.stableStepId}.inputBindings.${input.key}`,
             message: `unsatisfiable required input: skill "${step.toolRef}" requires input "${input.key}", but the routine does not bind it.`,
           });
-        } else if (binding.kind === "variableRef" && !guaranteed.has(binding.ref)) {
+        } else if (
+          binding.kind === "variableRef" &&
+          knownVariableNames.has(binding.ref) &&
+          !guaranteed.has(binding.ref)
+        ) {
+          // An unknown ref is reported once by the per-binding `unknown_variable_ref`
+          // check above; here we only flag a real variable that isn't guaranteed yet.
           diagnostics.push({
             code: "unsatisfiable_required_input",
             location: `step:${step.stableStepId}.inputBindings.${input.key}`,

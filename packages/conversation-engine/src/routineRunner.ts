@@ -579,7 +579,6 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         state: skillStateAtStep,
         turn,
         ...(step.inputBindings ? { inputBindings: step.inputBindings } : {}),
-        ...(step.outputAssignments ? { outputAssignments: step.outputAssignments } : {}),
       });
       variables = { ...variables, ...assignOutputs(step.outputAssignments, skillResult.outputs) };
       const skillEntry: RoutineTraceStepEntry = {

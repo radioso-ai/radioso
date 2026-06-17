@@ -10,6 +10,7 @@ const retrievalLike: SkillCatalogDescriptorSource = {
   name: "retrieval.answer",
   displayName: "Grounded answer",
   description: "Answer a question from indexed documents.",
+  owner: "retrieval",
   intake: {
     enabled: true,
     supportedCallers: ["assistant"],
@@ -39,6 +40,7 @@ describe("skillCatalogEntryToAuthoringDescriptor", () => {
 
     expect(descriptor.skillName).toBe("retrieval.answer");
     expect(descriptor.displayName).toBe("Grounded answer");
+    expect(descriptor.category).toBe("retrieval");
     expect(descriptor.description).toBe("Answer a question from indexed documents.");
     expect(descriptor.inputs).toEqual([
       { key: "query", type: "text", required: true, description: "the user's question" },
@@ -59,6 +61,7 @@ describe("skillCatalogEntryToAuthoringDescriptor", () => {
       name: "demo.skill",
       displayName: "Demo",
       description: "",
+      owner: "platform",
       intake: {
         enabled: true,
         supportedCallers: ["assistant"],
@@ -90,6 +93,7 @@ describe("skillCatalogEntryToAuthoringDescriptor", () => {
       name: "customer_email.skill",
       displayName: "Customer email skill",
       description: "Send customer email.",
+      owner: "platform",
       outcomes: [
         { name: "sent", displayName: "Sent", status: "completed" },
         { name: "failed", displayName: "Failed", status: "failed" },
@@ -122,6 +126,7 @@ describe("externalSkillToAuthoringDescriptor", () => {
     expect(descriptor).toMatchObject({
       skillName: "post_slack",
       displayName: "Post Slack",
+      category: "external_mcp",
       description: "Post a message to Slack.",
       inputs: [
         { key: "message", type: "text", required: false, description: "Message body." },

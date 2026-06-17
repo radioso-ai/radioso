@@ -1,5 +1,12 @@
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
 
+export interface DatabaseExecutor {
+  query<T extends QueryResultRow>(text: string, params?: unknown[]): Promise<T[]>;
+  queryOptional<T extends QueryResultRow>(text: string, params?: unknown[]): Promise<T | null>;
+  queryOne<T extends QueryResultRow>(text: string, params?: unknown[]): Promise<T>;
+  execute(text: string, params?: unknown[]): Promise<number>;
+}
+
 export interface DatabaseOptions {
   poolMax?: number;
   idleTimeoutMs?: number;
@@ -71,3 +78,29 @@ export class Database {
     await this.pool.end();
   }
 }
+
+export const databaseExecutorFromClient = (client: Pick<PoolClient, "query">): DatabaseExecutor => ({
+  async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
+    const result = await client.query<T>(text, params);
+    return result.rows;
+  },
+
+  async queryOptional<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T | null> {
+    const result = await client.query<T>(text, params);
+    return result.rows[0] ?? null;
+  },
+
+  async queryOne<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T> {
+    const result = await client.query<T>(text, params);
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error("Expected query to return one row");
+    }
+    return row;
+  },
+
+  async execute(text: string, params: unknown[] = []): Promise<number> {
+    const result = await client.query(text, params);
+    return result.rowCount ?? 0;
+  },
+});

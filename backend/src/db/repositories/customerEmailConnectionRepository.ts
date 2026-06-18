@@ -1,10 +1,12 @@
-import { randomUUID } from "node:crypto";
-
 import type {
   CustomerEmailConnectionStatus,
   CustomerEmailHealthStatus,
 } from "../../modules/customerEmail/domain.js";
-import type { Database } from "../../shared/infra/database.js";
+import {
+  IntegrationConnectionRepository,
+  type IntegrationConnectionRecord,
+} from "../../modules/integrationConnections/public.js";
+import type { Database, DatabaseExecutor } from "../../shared/infra/database.js";
 
 export interface CustomerEmailConnectionRecord {
   id: string;
@@ -48,41 +50,41 @@ export interface UpdateCustomerEmailConnectionInput {
   lastErrorCode?: string | null;
 }
 
-interface CustomerEmailConnectionRow {
-  id: string;
-  workspace_id: string;
-  oauth_connection_id: string;
-  provider: string;
-  display_name: string;
-  sender_email: string;
-  sender_name: string | null;
-  reply_to_email: string | null;
-  status: CustomerEmailConnectionStatus;
-  last_health_status: CustomerEmailHealthStatus | null;
-  last_health_checked_at: Date | null;
-  last_error_code: string | null;
-  created_at: Date;
-  updated_at: Date;
-}
+const customerEmailProviderToIntegrationProvider = (provider: string): string => {
+  if (provider === "google_mail") return "customer_email_google";
+  if (provider === "microsoft_graph_mail") return "customer_email_microsoft";
+  return provider;
+};
 
-const COLUMNS =
-  "id, workspace_id, oauth_connection_id, provider, display_name, sender_email, sender_name, reply_to_email, status, last_health_status, last_health_checked_at, last_error_code, created_at, updated_at";
+const integrationProviderToCustomerEmailProvider = (provider: string): string => {
+  if (provider === "customer_email_google") return "google_mail";
+  if (provider === "customer_email_microsoft") return "microsoft_graph_mail";
+  return provider;
+};
 
-const mapRecord = (row: CustomerEmailConnectionRow): CustomerEmailConnectionRecord => ({
-  id: row.id,
-  workspaceId: row.workspace_id,
-  oauthConnectionId: row.oauth_connection_id,
-  provider: row.provider,
-  displayName: row.display_name,
-  senderEmail: row.sender_email,
-  senderName: row.sender_name,
-  replyToEmail: row.reply_to_email,
-  status: row.status,
-  lastHealthStatus: row.last_health_status,
-  lastHealthCheckedAt: row.last_health_checked_at ? new Date(row.last_health_checked_at) : null,
-  lastErrorCode: row.last_error_code,
-  createdAt: new Date(row.created_at),
-  updatedAt: new Date(row.updated_at),
+const isCustomerEmailIntegrationProvider = (provider: string): boolean =>
+  provider.startsWith("customer_email_") || provider.endsWith("_mail");
+
+const configString = (config: Record<string, unknown>, key: string): string | null => {
+  const value = config[key];
+  return typeof value === "string" ? value : null;
+};
+
+const mapRecord = (record: IntegrationConnectionRecord): CustomerEmailConnectionRecord => ({
+  id: record.id,
+  workspaceId: record.workspaceId,
+  oauthConnectionId: record.oauthConnectionId,
+  provider: integrationProviderToCustomerEmailProvider(record.provider),
+  displayName: record.displayName,
+  senderEmail: configString(record.config, "senderEmail") ?? "",
+  senderName: configString(record.config, "senderName"),
+  replyToEmail: configString(record.config, "replyToEmail"),
+  status: record.status,
+  lastHealthStatus: record.lastHealthStatus,
+  lastHealthCheckedAt: record.lastHealthCheckedAt,
+  lastErrorCode: record.lastErrorCode,
+  createdAt: record.createdAt,
+  updatedAt: record.updatedAt,
 });
 
 export interface CustomerEmailConnectionRepositoryPort {
@@ -99,50 +101,41 @@ export interface CustomerEmailConnectionRepositoryPort {
 }
 
 export class CustomerEmailConnectionRepository implements CustomerEmailConnectionRepositoryPort {
-  constructor(private readonly database: Database) {}
+  private readonly integrationConnections: IntegrationConnectionRepository;
+
+  constructor(private readonly database: Database | DatabaseExecutor) {
+    this.integrationConnections = new IntegrationConnectionRepository(database);
+  }
 
   async create(input: CreateCustomerEmailConnectionInput): Promise<CustomerEmailConnectionRecord> {
-    const [row] = await this.database.query<CustomerEmailConnectionRow>(
-      `INSERT INTO customer_email_connections
-         (id, workspace_id, oauth_connection_id, provider, display_name, sender_email, sender_name,
-          reply_to_email, status, last_health_status, last_health_checked_at, last_error_code)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-       RETURNING ${COLUMNS}`,
-      [
-        randomUUID(),
-        input.workspaceId,
-        input.oauthConnectionId,
-        input.provider,
-        input.displayName,
-        input.senderEmail,
-        input.senderName ?? null,
-        input.replyToEmail ?? null,
-        input.status ?? "authorized",
-        input.lastHealthStatus ?? null,
-        input.lastHealthCheckedAt ?? null,
-        input.lastErrorCode ?? null,
-      ],
-    );
-    return mapRecord(row);
+    const created = await this.integrationConnections.create({
+      workspaceId: input.workspaceId,
+      oauthConnectionId: input.oauthConnectionId,
+      provider: customerEmailProviderToIntegrationProvider(input.provider),
+      displayName: input.displayName,
+      status: input.status ?? "authorized",
+      lastHealthStatus: input.lastHealthStatus ?? null,
+      lastHealthCheckedAt: input.lastHealthCheckedAt ?? null,
+      lastErrorCode: input.lastErrorCode ?? null,
+      config: {
+        senderEmail: input.senderEmail,
+        senderName: input.senderName ?? null,
+        replyToEmail: input.replyToEmail ?? null,
+      },
+    });
+    return mapRecord(created);
   }
 
   async findById(workspaceId: string, id: string): Promise<CustomerEmailConnectionRecord | null> {
-    const [row] = await this.database.query<CustomerEmailConnectionRow>(
-      `SELECT ${COLUMNS} FROM customer_email_connections WHERE workspace_id = $1 AND id = $2`,
-      [workspaceId, id],
-    );
-    return row ? mapRecord(row) : null;
+    const record = await this.integrationConnections.findById(workspaceId, id);
+    return record ? mapRecord(record) : null;
   }
 
   async listByWorkspace(workspaceId: string): Promise<CustomerEmailConnectionRecord[]> {
-    const rows = await this.database.query<CustomerEmailConnectionRow>(
-      `SELECT ${COLUMNS}
-       FROM customer_email_connections
-       WHERE workspace_id = $1
-       ORDER BY created_at ASC`,
-      [workspaceId],
-    );
-    return rows.map(mapRecord);
+    const records = await this.integrationConnections.listByWorkspace(workspaceId);
+    return records
+      .filter((record) => isCustomerEmailIntegrationProvider(record.provider))
+      .map(mapRecord);
   }
 
   async update(
@@ -150,34 +143,20 @@ export class CustomerEmailConnectionRepository implements CustomerEmailConnectio
     id: string,
     input: UpdateCustomerEmailConnectionInput,
   ): Promise<CustomerEmailConnectionRecord | null> {
-    const assignments: string[] = [];
-    const params: unknown[] = [workspaceId, id];
-    const addAssignment = (column: string, value: unknown): void => {
-      params.push(value);
-      assignments.push(`${column} = $${params.length}`);
-    };
+    const config: Record<string, unknown> = {};
+    if ("senderEmail" in input) config.senderEmail = input.senderEmail;
+    if ("senderName" in input) config.senderName = input.senderName ?? null;
+    if ("replyToEmail" in input) config.replyToEmail = input.replyToEmail ?? null;
 
-    if ("displayName" in input) addAssignment("display_name", input.displayName);
-    if ("senderEmail" in input) addAssignment("sender_email", input.senderEmail);
-    if ("senderName" in input) addAssignment("sender_name", input.senderName ?? null);
-    if ("replyToEmail" in input) addAssignment("reply_to_email", input.replyToEmail ?? null);
-    if ("status" in input) addAssignment("status", input.status);
-    if ("lastHealthStatus" in input) addAssignment("last_health_status", input.lastHealthStatus ?? null);
-    if ("lastHealthCheckedAt" in input) addAssignment("last_health_checked_at", input.lastHealthCheckedAt ?? null);
-    if ("lastErrorCode" in input) addAssignment("last_error_code", input.lastErrorCode ?? null);
-
-    if (assignments.length === 0) {
-      return this.findById(workspaceId, id);
-    }
-
-    const [row] = await this.database.query<CustomerEmailConnectionRow>(
-      `UPDATE customer_email_connections
-       SET ${assignments.join(", ")}, updated_at = NOW()
-       WHERE workspace_id = $1 AND id = $2
-       RETURNING ${COLUMNS}`,
-      params,
-    );
-    return row ? mapRecord(row) : null;
+    const updated = await this.integrationConnections.update(workspaceId, id, {
+      ...("displayName" in input ? { displayName: input.displayName } : {}),
+      ...("status" in input ? { status: input.status } : {}),
+      ...("lastHealthStatus" in input ? { lastHealthStatus: input.lastHealthStatus ?? null } : {}),
+      ...("lastHealthCheckedAt" in input ? { lastHealthCheckedAt: input.lastHealthCheckedAt ?? null } : {}),
+      ...("lastErrorCode" in input ? { lastErrorCode: input.lastErrorCode ?? null } : {}),
+      ...(Object.keys(config).length > 0 ? { config } : {}),
+    });
+    return updated ? mapRecord(updated) : null;
   }
 
   async countSkillReferences(workspaceId: string, id: string): Promise<number> {
@@ -202,10 +181,6 @@ export class CustomerEmailConnectionRepository implements CustomerEmailConnectio
   }
 
   async remove(workspaceId: string, id: string): Promise<boolean> {
-    const affected = await this.database.execute(
-      `DELETE FROM customer_email_connections WHERE workspace_id = $1 AND id = $2`,
-      [workspaceId, id],
-    );
-    return affected > 0;
+    return this.integrationConnections.remove(workspaceId, id);
   }
 }

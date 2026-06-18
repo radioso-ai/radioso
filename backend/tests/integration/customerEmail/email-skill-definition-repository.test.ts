@@ -71,6 +71,8 @@ describeIfDatabase("email skill definition repository (postgres)", () => {
     await client.query(await readFile(path.join(testMigrationsPath, "099_agent_skills_spine.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "100_email_skills_into_spine.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "101_agent_skills_generic_targets.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "105_integration_connections.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "106_customer_email_connections_to_integration_connections.sql"), "utf8"));
     await client.query(`INSERT INTO workspaces (id) VALUES ($1), ($2)`, [workspaceId, otherWorkspaceId]);
     await client.query(`INSERT INTO agents (id, workspace_id) VALUES ($1, $2), ($3, $4)`, [
       agentId,
@@ -148,7 +150,7 @@ describeIfDatabase("email skill definition repository (postgres)", () => {
 
     expect(await connectionRepository.countSkillReferences(workspaceId, connectionId)).toBeGreaterThanOrEqual(1);
     await expect(
-      client.query(`DELETE FROM customer_email_connections WHERE workspace_id = $1 AND id = $2`, [workspaceId, connectionId]),
+      client.query(`DELETE FROM integration_connections WHERE workspace_id = $1 AND id = $2`, [workspaceId, connectionId]),
     ).rejects.toMatchObject({ code: "23503" });
 
     const updated = await repository.update(workspaceId, agentId, created.id, {

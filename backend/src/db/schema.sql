@@ -59,6 +59,10 @@ CREATE FUNCTION public.block_agent_skill_customer_email_connection_delete() RETU
     LANGUAGE plpgsql
     AS $$
 BEGIN
+  IF OLD.provider NOT LIKE 'customer_email_%' AND OLD.provider NOT LIKE '%\_mail' ESCAPE '\' THEN
+    RETURN OLD;
+  END IF;
+
   IF NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
     RETURN OLD;
   END IF;
@@ -208,9 +212,10 @@ BEGIN
     END IF;
     target_uuid := agent_skill_target_uuid(NEW.target_id, 'customer_email_connection');
     SELECT TRUE INTO target_exists
-    FROM customer_email_connections
+    FROM integration_connections
     WHERE id = target_uuid
       AND workspace_id = NEW.workspace_id
+      AND (provider LIKE 'customer_email_%' OR provider LIKE '%\_mail' ESCAPE '\')
     FOR KEY SHARE;
     IF target_exists IS NOT TRUE THEN
       RAISE EXCEPTION 'customer_email skill % references unknown customer email connection %', NEW.id, NEW.target_id
@@ -1028,30 +1033,6 @@ CREATE TABLE public.conversations (
 
 
 --
--- Name: customer_email_connections; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.customer_email_connections (
-    id uuid NOT NULL,
-    workspace_id uuid NOT NULL,
-    oauth_connection_id uuid NOT NULL,
-    provider text NOT NULL,
-    display_name text NOT NULL,
-    sender_email text NOT NULL,
-    sender_name text,
-    reply_to_email text,
-    status text DEFAULT 'authorized'::text NOT NULL,
-    last_health_status text,
-    last_health_checked_at timestamp with time zone,
-    last_error_code text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT customer_email_connections_last_health_status_check CHECK (((last_health_status IS NULL) OR (last_health_status = ANY (ARRAY['ok'::text, 'failed'::text, 'unknown'::text])))),
-    CONSTRAINT customer_email_connections_status_check CHECK ((status = ANY (ARRAY['authorized'::text, 'disabled'::text, 'needs_reauth'::text, 'error'::text])))
-);
-
-
---
 -- Name: document_processing_jobs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1264,6 +1245,28 @@ CREATE TABLE public.ingestion_settings (
 
 
 --
+-- Name: integration_connections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.integration_connections (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    oauth_connection_id uuid NOT NULL,
+    provider text NOT NULL,
+    display_name text NOT NULL,
+    status text DEFAULT 'authorized'::text NOT NULL,
+    last_health_status text,
+    last_health_checked_at timestamp with time zone,
+    last_error_code text,
+    config jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT integration_connections_last_health_status_check CHECK (((last_health_status IS NULL) OR (last_health_status = ANY (ARRAY['ok'::text, 'failed'::text, 'unknown'::text])))),
+    CONSTRAINT integration_connections_status_check CHECK ((status = ANY (ARRAY['authorized'::text, 'disabled'::text, 'needs_reauth'::text, 'error'::text])))
+);
+
+
+--
 -- Name: integration_oauth_connections; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1323,7 +1326,8 @@ CREATE TABLE public.messages (
     metadata_json jsonb DEFAULT '{}'::jsonb NOT NULL,
     skill_name text,
     skill_outcome text,
-    skill_status text
+    skill_status text,
+    source text
 );
 
 
@@ -1340,6 +1344,33 @@ CREATE TABLE public.password_reset_tokens (
     request_ip text,
     request_user_agent text,
     created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: pending_decisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pending_decisions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    handle text NOT NULL,
+    conversation_id uuid NOT NULL,
+    session_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    agent_id uuid NOT NULL,
+    routine_id text NOT NULL,
+    step_id text NOT NULL,
+    reason text,
+    options jsonb DEFAULT '[]'::jsonb NOT NULL,
+    decider_scope jsonb NOT NULL,
+    content_hash text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    decision jsonb,
+    decided_by uuid,
+    decided_at timestamp with time zone,
+    deadline timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -2364,14 +2395,6 @@ ALTER TABLE ONLY public.conversations
 
 
 --
--- Name: customer_email_connections customer_email_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.customer_email_connections
-    ADD CONSTRAINT customer_email_connections_pkey PRIMARY KEY (id);
-
-
---
 -- Name: document_processing_jobs document_processing_jobs_document_id_document_revision_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2468,6 +2491,14 @@ ALTER TABLE ONLY public.ingestion_settings
 
 
 --
+-- Name: integration_connections integration_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.integration_connections
+    ADD CONSTRAINT integration_connections_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: integration_oauth_connections integration_oauth_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2505,6 +2536,14 @@ ALTER TABLE ONLY public.password_reset_tokens
 
 ALTER TABLE ONLY public.password_reset_tokens
     ADD CONSTRAINT password_reset_tokens_token_hash_key UNIQUE (token_hash);
+
+
+--
+-- Name: pending_decisions pending_decisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_decisions
+    ADD CONSTRAINT pending_decisions_pkey PRIMARY KEY (id);
 
 
 --
@@ -3624,20 +3663,6 @@ CREATE INDEX idx_conversations_workspace_id ON public.conversations USING btree 
 
 
 --
--- Name: idx_customer_email_connections_oauth; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_customer_email_connections_oauth ON public.customer_email_connections USING btree (oauth_connection_id);
-
-
---
--- Name: idx_customer_email_connections_workspace; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_customer_email_connections_workspace ON public.customer_email_connections USING btree (workspace_id);
-
-
---
 -- Name: idx_document_processing_jobs_claim; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3796,6 +3821,27 @@ CREATE INDEX idx_eval_snapshots_source_conversation ON public.eval_snapshots USI
 --
 
 CREATE INDEX idx_eval_snapshots_workspace_captured_at ON public.eval_snapshots USING btree (workspace_id, captured_at DESC);
+
+
+--
+-- Name: idx_integration_connections_oauth; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_integration_connections_oauth ON public.integration_connections USING btree (oauth_connection_id);
+
+
+--
+-- Name: idx_integration_connections_workspace; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_integration_connections_workspace ON public.integration_connections USING btree (workspace_id);
+
+
+--
+-- Name: idx_integration_connections_workspace_provider; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_integration_connections_workspace_provider ON public.integration_connections USING btree (workspace_id, provider);
 
 
 --
@@ -4041,6 +4087,34 @@ CREATE INDEX messages_workspace_role_created_id_idx ON public.messages USING btr
 --
 
 CREATE INDEX messages_workspace_skill_turn_idx ON public.messages USING btree (workspace_id, skill_name, skill_outcome, skill_status, created_at DESC);
+
+
+--
+-- Name: pending_decisions_deadline_pending_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pending_decisions_deadline_pending_idx ON public.pending_decisions USING btree (deadline) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: pending_decisions_handle_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX pending_decisions_handle_idx ON public.pending_decisions USING btree (handle);
+
+
+--
+-- Name: pending_decisions_one_open_gate_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX pending_decisions_one_open_gate_idx ON public.pending_decisions USING btree (conversation_id, routine_id, step_id) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: pending_decisions_workspace_pending_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pending_decisions_workspace_pending_idx ON public.pending_decisions USING btree (workspace_id, created_at) WHERE (status = 'pending'::text);
 
 
 --
@@ -4877,10 +4951,10 @@ CREATE TRIGGER trg_agent_skills_target_reference BEFORE INSERT OR UPDATE OF kind
 
 
 --
--- Name: customer_email_connections trg_customer_email_connections_block_agent_skill_reference; Type: TRIGGER; Schema: public; Owner: -
+-- Name: integration_connections trg_integration_connections_block_customer_email_agent_skill_re; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER trg_customer_email_connections_block_agent_skill_reference BEFORE DELETE ON public.customer_email_connections FOR EACH ROW EXECUTE FUNCTION public.block_agent_skill_customer_email_connection_delete();
+CREATE TRIGGER trg_integration_connections_block_customer_email_agent_skill_re BEFORE DELETE ON public.integration_connections FOR EACH ROW EXECUTE FUNCTION public.block_agent_skill_customer_email_connection_delete();
 
 
 --
@@ -5184,22 +5258,6 @@ ALTER TABLE ONLY public.conversations
 
 
 --
--- Name: customer_email_connections customer_email_connections_oauth_connection_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.customer_email_connections
-    ADD CONSTRAINT customer_email_connections_oauth_connection_id_fkey FOREIGN KEY (oauth_connection_id) REFERENCES public.integration_oauth_connections(id) ON DELETE RESTRICT;
-
-
---
--- Name: customer_email_connections customer_email_connections_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.customer_email_connections
-    ADD CONSTRAINT customer_email_connections_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
-
-
---
 -- Name: document_processing_jobs document_processing_jobs_document_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5252,7 +5310,7 @@ ALTER TABLE ONLY public.email_skill_activity
 --
 
 ALTER TABLE ONLY public.email_skill_activity
-    ADD CONSTRAINT email_skill_activity_connection_id_fkey FOREIGN KEY (connection_id) REFERENCES public.customer_email_connections(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT email_skill_activity_connection_id_fkey FOREIGN KEY (connection_id) REFERENCES public.integration_connections(id) ON DELETE RESTRICT;
 
 
 --
@@ -5365,6 +5423,22 @@ ALTER TABLE ONLY public.eval_snapshots
 
 ALTER TABLE ONLY public.ingestion_settings
     ADD CONSTRAINT ingestion_settings_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: integration_connections integration_connections_oauth_connection_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.integration_connections
+    ADD CONSTRAINT integration_connections_oauth_connection_id_fkey FOREIGN KEY (oauth_connection_id) REFERENCES public.integration_oauth_connections(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: integration_connections integration_connections_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.integration_connections
+    ADD CONSTRAINT integration_connections_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

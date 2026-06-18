@@ -57,7 +57,7 @@ describeIfDatabase("customer email connection repository (postgres)", () => {
     await client.query(`SET search_path TO ${schema}, public`);
     await client.query(`CREATE TABLE workspaces (id UUID PRIMARY KEY)`);
     await client.query(await readFile(path.join(testMigrationsPath, "095_integration_oauth_connections.sql"), "utf8"));
-    await client.query(await readFile(path.join(testMigrationsPath, "096_customer_email_connections.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "105_integration_connections.sql"), "utf8"));
     await client.query(`INSERT INTO workspaces (id) VALUES ($1), ($2)`, [workspaceId, otherWorkspaceId]);
     await client.query(
       `INSERT INTO integration_oauth_connections (id, workspace_id, provider, display_name, status, granted_scopes)

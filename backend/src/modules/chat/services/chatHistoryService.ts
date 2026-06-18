@@ -3,6 +3,7 @@ import type { AuditEventRecord, AuditEventRepositoryPort } from "../../../db/rep
 import type {
   ConversationRepositoryPort,
 } from "../../../db/repositories/conversationRepository.js";
+import type { ConversationOwnershipRecord } from "../../../db/repositories/conversationOwnershipRepository.js";
 import type {
   MessageRecord,
   MessageRepositoryPort,
@@ -45,6 +46,50 @@ import {
   type ChatAnswerFeedbackEntry,
 } from "./answerFeedbackHistoryProvider.js";
 
+// Read-surface projection of conversation ownership (Date fields as ISO strings). Mirrors
+// the OpenAPI ConversationOwnership schema and the write surface's ownership envelope.
+export interface ChatConversationOwnership {
+  conversationId: string;
+  workspaceId: string;
+  state: ConversationOwnershipRecord["state"];
+  ownerAccountId: string | null;
+  ownerDisplayName: string | null;
+  reason: string | null;
+  version: number;
+  takenOverAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Narrow read port the history service needs — single load for detail, batch for lists
+// (no N+1). A missing entry means AI-owned (the ownership table is lazy).
+export interface ConversationOwnershipHistoryReader {
+  load(conversationId: string): Promise<ConversationOwnershipRecord | null>;
+  loadByConversationIds(conversationIds: string[]): Promise<Map<string, ConversationOwnershipRecord>>;
+}
+
+class NoopConversationOwnershipReader implements ConversationOwnershipHistoryReader {
+  async load(): Promise<ConversationOwnershipRecord | null> {
+    return null;
+  }
+  async loadByConversationIds(): Promise<Map<string, ConversationOwnershipRecord>> {
+    return new Map();
+  }
+}
+
+const toChatConversationOwnership = (record: ConversationOwnershipRecord): ChatConversationOwnership => ({
+  conversationId: record.conversationId,
+  workspaceId: record.workspaceId,
+  state: record.state,
+  ownerAccountId: record.ownerAccountId,
+  ownerDisplayName: record.ownerDisplayName,
+  reason: record.reason,
+  version: record.version,
+  takenOverAt: record.takenOverAt ? toIsoString(record.takenOverAt) : null,
+  createdAt: toIsoString(record.createdAt),
+  updatedAt: toIsoString(record.updatedAt),
+});
+
 export interface ChatConversationSummary {
   id: string;
   agentId: string | null;
@@ -58,6 +103,7 @@ export interface ChatConversationSummary {
   userMessageCount: number;
   assistantMessageCount: number;
   preview: string | null;
+  ownership?: ChatConversationOwnership;
 }
 
 export interface ChatConversationTurnDebug {
@@ -114,6 +160,7 @@ export interface ChatConversationDetail {
   hasOlderMessages: boolean;
   nextCursor: string | null;
   messages: ChatConversationTurn[];
+  ownership?: ChatConversationOwnership;
 }
 
 export interface ChatConversationPage {
@@ -636,6 +683,8 @@ export class ChatHistoryService {
     private readonly contactHistoryProvider: ContactHistoryProviderPort = new NoopContactHistoryProvider(),
     private readonly answerFeedbackHistoryProvider: AnswerFeedbackHistoryProviderPort =
       new NoopAnswerFeedbackHistoryProvider(),
+    private readonly conversationOwnership: ConversationOwnershipHistoryReader =
+      new NoopConversationOwnershipReader(),
   ) {}
 
   async listConversations(
@@ -646,13 +695,18 @@ export class ChatHistoryService {
       workspaceId,
       input,
     );
-    const messageSummaries = await this.messageRepository.summarizeByConversationIds(
-      workspaceId,
-      conversations.map((conversation) => conversation.id),
-    );
+    const conversationIds = conversations.map((conversation) => conversation.id);
+    const [messageSummaries, ownershipByConversationId] = await Promise.all([
+      this.messageRepository.summarizeByConversationIds(workspaceId, conversationIds),
+      this.conversationOwnership.loadByConversationIds(conversationIds),
+    ]);
 
     return {
-      conversations: conversations.map((conversation) => buildChatConversationSummary(conversation, messageSummaries.get(conversation.id))),
+      conversations: conversations.map((conversation) => {
+        const summary = buildChatConversationSummary(conversation, messageSummaries.get(conversation.id));
+        const ownership = ownershipByConversationId.get(conversation.id);
+        return ownership ? { ...summary, ownership: toChatConversationOwnership(ownership) } : summary;
+      }),
       total,
       nextCursor,
       hasMore,
@@ -781,9 +835,10 @@ export class ChatHistoryService {
       throw notFound("Conversation not found");
     }
 
-    const [{ messages, total, nextCursor, hasMore }, messageSummaries] = await Promise.all([
+    const [{ messages, total, nextCursor, hasMore }, messageSummaries, ownershipRecord] = await Promise.all([
       this.messageRepository.listWindowByConversationId(workspaceId, conversation.id, input),
       this.messageRepository.summarizeByConversationIds(workspaceId, [conversation.id]),
+      this.conversationOwnership.load(conversation.id),
     ]);
     const assistantMessageIds = messages
       .filter((message) => message.role === "assistant")
@@ -830,6 +885,7 @@ export class ChatHistoryService {
         answerFeedbackEntries: message.role === "assistant" ? feedbackByAssistantMessageId.get(message.id) : undefined,
         debug: message.role === "assistant" ? debugByAssistantMessageId.get(message.id) : undefined,
       })),
+      ...(ownershipRecord ? { ownership: toChatConversationOwnership(ownershipRecord) } : {}),
     };
   }
 

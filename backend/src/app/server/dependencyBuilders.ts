@@ -1302,6 +1302,7 @@ export const buildChatServices = (input: {
     input.historyItemsRepository,
     contactHistoryProvider,
     answerFeedbackHistoryProvider,
+    input.conversationOwnershipRepository,
   );
   const retrievalAnswerService = new RetrievalAnswerService({
     retrievalPipeline: input.retrievalPipeline,

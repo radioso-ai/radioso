@@ -4449,6 +4449,25 @@ export interface components {
                 };
             };
         };
+        ConversationOwnership: {
+            /** Format: uuid */
+            conversationId: string;
+            /** Format: uuid */
+            workspaceId: string;
+            /** @enum {string} */
+            state: "ai_owned" | "human_owned";
+            /** Format: uuid */
+            ownerAccountId: string | null;
+            ownerDisplayName: string | null;
+            reason: string | null;
+            version: number;
+            /** Format: date-time */
+            takenOverAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
         ChatConversationSummary: {
             /** Format: uuid */
             id: string;
@@ -4466,6 +4485,7 @@ export interface components {
             userMessageCount: number;
             assistantMessageCount: number;
             preview: string | null;
+            ownership?: components["schemas"]["ConversationOwnership"];
         };
         ChatHistoryListResponse: {
             workspaceName?: string;
@@ -4605,25 +4625,6 @@ export interface components {
             answerFeedbackEntries?: components["schemas"]["AnswerFeedbackEntry"][];
             debug?: components["schemas"]["ChatConversationMessageDebug"];
         };
-        ConversationOwnership: {
-            /** Format: uuid */
-            conversationId: string;
-            /** Format: uuid */
-            workspaceId: string;
-            /** @enum {string} */
-            state: "ai_owned" | "human_owned";
-            /** Format: uuid */
-            ownerAccountId: string | null;
-            ownerDisplayName: string | null;
-            reason: string | null;
-            version: number;
-            /** Format: date-time */
-            takenOverAt: string | null;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-        };
         ConversationOwnershipResponse: {
             ownership: components["schemas"]["ConversationOwnership"];
         };
@@ -4683,6 +4684,7 @@ export interface components {
             hasOlderMessages: boolean;
             nextCursor: string | null;
             messages: components["schemas"]["ChatConversationMessage"][];
+            ownership?: components["schemas"]["ConversationOwnership"];
         };
         PublicConversationSummary: {
             /** Format: uuid */

@@ -169,7 +169,7 @@ export interface AppDependencies {
   conversationRepository: ConversationRepositoryPort;
   conversationOwnershipRepository: Pick<
     ConversationOwnershipRepository,
-    "load" | "requestHandoff" | "takeOver" | "transfer" | "handBack"
+    "load" | "loadByConversationIds" | "requestHandoff" | "takeOver" | "transfer" | "handBack"
   >;
   messageRepository: MessageRepositoryPort;
   connectorRegistry: ConnectorRegistry;

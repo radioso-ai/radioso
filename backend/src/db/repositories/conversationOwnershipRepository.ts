@@ -103,6 +103,24 @@ export class ConversationOwnershipRepository {
     return row ? mapRecord(row) : null;
   }
 
+  // Batch read for list surfaces: one query for a page of conversations (no N+1). Returns a
+  // map keyed by conversationId; a missing key means AI-owned (the table is lazy, no row).
+  async loadByConversationIds(
+    conversationIds: string[],
+    executor: Pick<DatabaseExecutor, "query"> = this.database,
+  ): Promise<Map<string, ConversationOwnershipRecord>> {
+    if (conversationIds.length === 0) {
+      return new Map();
+    }
+    const rows = await executor.query<ConversationOwnershipRow>(
+      `SELECT ${conversationOwnershipColumns}
+         FROM conversation_ownership
+        WHERE conversation_id = ANY($1::uuid[])`,
+      [conversationIds],
+    );
+    return new Map(rows.map((row) => [row.conversation_id, mapRecord(row)]));
+  }
+
   async requestHandoff(
     input: ConversationOwnershipRequestHandoffInput,
     executor: Pick<DatabaseExecutor, "queryOptional"> = this.database,

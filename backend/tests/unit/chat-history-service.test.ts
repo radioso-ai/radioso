@@ -8,6 +8,7 @@ import type {
 } from "../../src/modules/chat/services/contactHistoryProvider.js";
 import {
   InMemoryAuditEventRepository,
+  InMemoryConversationOwnershipRepository,
   InMemoryConversationRepository,
   InMemoryHistoryItemsRepository,
   InMemoryMessageRepository,
@@ -18,11 +19,21 @@ const createService = () => {
   const messageRepository = new InMemoryMessageRepository();
   const auditRepository = new InMemoryAuditEventRepository();
   const historyItemsRepository = new InMemoryHistoryItemsRepository(conversationRepository, auditRepository);
+  const conversationOwnershipRepository = new InMemoryConversationOwnershipRepository();
   return {
     conversationRepository,
     messageRepository,
     auditRepository,
-    service: new ChatHistoryService(conversationRepository, messageRepository, auditRepository, historyItemsRepository),
+    conversationOwnershipRepository,
+    service: new ChatHistoryService(
+      conversationRepository,
+      messageRepository,
+      auditRepository,
+      historyItemsRepository,
+      undefined,
+      undefined,
+      conversationOwnershipRepository,
+    ),
   };
 };
 
@@ -57,6 +68,61 @@ class InMemoryContactHistoryProvider implements ContactHistoryProviderPort {
     return this.contacts.find((contact) => contact.workspaceId === workspaceId && contact.id === requestId) ?? null;
   }
 }
+
+describe("chat history service ownership read surface", () => {
+  it("includes ownership in conversation detail when the conversation is human-owned", async () => {
+    const { conversationRepository, conversationOwnershipRepository, service } = createService();
+    const conversation = await conversationRepository.create("workspace-1");
+    await conversationOwnershipRepository.requestHandoff({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      reason: "routine_handoff",
+    });
+    await conversationOwnershipRepository.takeOver({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      accountId: "operator-1",
+      displayName: "Operator One",
+    });
+
+    const detail = await service.getConversation("workspace-1", conversation.id);
+
+    expect(detail.ownership).toMatchObject({
+      conversationId: conversation.id,
+      state: "human_owned",
+      ownerAccountId: "operator-1",
+      ownerDisplayName: "Operator One",
+    });
+    expect(typeof detail.ownership?.takenOverAt).toBe("string");
+  });
+
+  it("omits ownership from detail when the conversation is AI-owned (no row)", async () => {
+    const { conversationRepository, service } = createService();
+    const conversation = await conversationRepository.create("workspace-1");
+
+    const detail = await service.getConversation("workspace-1", conversation.id);
+
+    expect(detail.ownership).toBeUndefined();
+  });
+
+  it("includes ownership per row in the conversation list, omitting AI-owned ones", async () => {
+    const { conversationRepository, conversationOwnershipRepository, service } = createService();
+    const human = await conversationRepository.create("workspace-1");
+    const ai = await conversationRepository.create("workspace-1");
+    await conversationOwnershipRepository.requestHandoff({
+      conversationId: human.id,
+      workspaceId: "workspace-1",
+      reason: "retrieval_miss",
+    });
+
+    const page = await service.listConversations("workspace-1", { limit: 50, offset: 0 });
+    const humanRow = page.conversations.find((row) => row.id === human.id);
+    const aiRow = page.conversations.find((row) => row.id === ai.id);
+
+    expect(humanRow?.ownership).toMatchObject({ state: "human_owned", reason: "retrieval_miss" });
+    expect(aiRow?.ownership).toBeUndefined();
+  });
+});
 
 describe("chat history service", () => {
   it("replays activity trace metadata for assistant turns", async () => {

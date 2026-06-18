@@ -6588,6 +6588,58 @@ components:
           required:
             - method
       description: "`message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`."
+    ConversationOwnership:
+      type: object
+      properties:
+        conversationId:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum:
+            - ai_owned
+            - human_owned
+        ownerAccountId:
+          type:
+            - string
+            - "null"
+          format: uuid
+        ownerDisplayName:
+          type:
+            - string
+            - "null"
+        reason:
+          type:
+            - string
+            - "null"
+        version:
+          type: integer
+          minimum: 0
+        takenOverAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - conversationId
+        - workspaceId
+        - state
+        - ownerAccountId
+        - ownerDisplayName
+        - reason
+        - version
+        - takenOverAt
+        - createdAt
+        - updatedAt
     ChatConversationSummary:
       type: object
       properties:
@@ -6634,6 +6686,8 @@ components:
           type:
             - string
             - "null"
+        ownership:
+          $ref: "#/components/schemas/ConversationOwnership"
       required:
         - id
         - agentId
@@ -7028,58 +7082,6 @@ components:
         - source
         - content
         - createdAt
-    ConversationOwnership:
-      type: object
-      properties:
-        conversationId:
-          type: string
-          format: uuid
-        workspaceId:
-          type: string
-          format: uuid
-        state:
-          type: string
-          enum:
-            - ai_owned
-            - human_owned
-        ownerAccountId:
-          type:
-            - string
-            - "null"
-          format: uuid
-        ownerDisplayName:
-          type:
-            - string
-            - "null"
-        reason:
-          type:
-            - string
-            - "null"
-        version:
-          type: integer
-          minimum: 0
-        takenOverAt:
-          type:
-            - string
-            - "null"
-          format: date-time
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-      required:
-        - conversationId
-        - workspaceId
-        - state
-        - ownerAccountId
-        - ownerDisplayName
-        - reason
-        - version
-        - takenOverAt
-        - createdAt
-        - updatedAt
     ConversationOwnershipResponse:
       type: object
       properties:
@@ -7220,6 +7222,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ChatConversationMessage"
+        ownership:
+          $ref: "#/components/schemas/ConversationOwnership"
       required:
         - conversationId
         - workspaceId

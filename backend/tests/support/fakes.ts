@@ -3288,12 +3288,25 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
 
 export class InMemoryConversationOwnershipRepository implements Pick<
   ConversationOwnershipRepository,
-  "load" | "requestHandoff" | "takeOver" | "transfer" | "handBack"
+  "load" | "loadByConversationIds" | "requestHandoff" | "takeOver" | "transfer" | "handBack"
 > {
   readonly items = new Map<string, ConversationOwnershipRecord>();
 
   async load(conversationId: string): Promise<ConversationOwnershipRecord | null> {
     return this.items.get(conversationId) ?? null;
+  }
+
+  async loadByConversationIds(
+    conversationIds: string[],
+  ): Promise<Map<string, ConversationOwnershipRecord>> {
+    const result = new Map<string, ConversationOwnershipRecord>();
+    for (const conversationId of conversationIds) {
+      const record = this.items.get(conversationId);
+      if (record) {
+        result.set(conversationId, record);
+      }
+    }
+    return result;
   }
 
   async requestHandoff(input: ConversationOwnershipRequestHandoffInput): Promise<ConversationOwnershipRecord> {

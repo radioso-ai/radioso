@@ -7241,6 +7241,36 @@ components:
         - hasOlderMessages
         - nextCursor
         - messages
+    ChatConversationTail:
+      type: object
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatConversationMessage"
+        cursor:
+          type:
+            - string
+            - "null"
+        ownership:
+          $ref: "#/components/schemas/ConversationOwnership"
+      required:
+        - messages
+        - cursor
+    PublicChatConversationTail:
+      type: object
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatConversationMessage"
+        cursor:
+          type:
+            - string
+            - "null"
+      required:
+        - messages
+        - cursor
     PublicConversationSummary:
       type: object
       properties:
@@ -14902,6 +14932,59 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/history/chat/{conversationId}/tail:
+    get:
+      tags:
+        - History
+      summary: Poll new messages for a saved assistant conversation
+      operationId: tailHistoryConversation
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: conversationId
+          in: path
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          required: false
+          name: limit
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+          required: false
+          name: cursor
+          in: query
+      responses:
+        "200":
+          description: New conversation messages after the supplied tail cursor
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatConversationTail"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/history/{conversationId}:
     get:
       tags:
@@ -16172,6 +16255,61 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ChatConversationDetail"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+      description: |-
+        Anonymous session continuity is maintained by an HttpOnly cookie set by the server.
+
+        The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
+  /api/v1/public/chat/{token}/tail/{conversationId}:
+    get:
+      tags:
+        - Assistant
+      summary: Poll new public conversation messages for the current anonymous session
+      operationId: tailPublicChatHistoryConversation
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: token
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: conversationId
+          in: path
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          required: false
+          name: limit
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+          required: false
+          name: cursor
+          in: query
+      responses:
+        "200":
+          description: New public conversation messages after the supplied tail cursor
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicChatConversationTail"
         "400":
           description: Request validation failed
           content:

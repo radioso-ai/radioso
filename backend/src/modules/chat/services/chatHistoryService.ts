@@ -1,4 +1,5 @@
 import { notFound } from "../../../shared/domain/errors.js";
+import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js";
 import type { AuditEventRecord, AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
 import type {
   ConversationRepositoryPort,
@@ -160,6 +161,12 @@ export interface ChatConversationDetail {
   hasOlderMessages: boolean;
   nextCursor: string | null;
   messages: ChatConversationTurn[];
+  ownership?: ChatConversationOwnership;
+}
+
+export interface ChatConversationTail {
+  messages: ChatConversationTurn[];
+  cursor: string | null;
   ownership?: ChatConversationOwnership;
 }
 
@@ -895,6 +902,48 @@ export class ChatHistoryService {
       ...(ownershipRecord?.state === "human_owned"
         ? { ownership: toChatConversationOwnership(ownershipRecord) }
         : {}),
+    };
+  }
+
+  async tailConversation(
+    workspaceId: string,
+    conversationId: string,
+    input: { cursor?: string; limit: number },
+    options: { includeOwnership?: boolean } = {},
+  ): Promise<ChatConversationTail> {
+    const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
+
+    if (!conversation) {
+      throw notFound("Conversation not found");
+    }
+
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
+    const [{ messages, latestCursor }, ownershipRecord] = await Promise.all([
+      this.messageRepository.listSinceByConversationId(workspaceId, conversation.id, {
+        sinceCreatedAt: cursor ? new Date(cursor.keys.createdAt) : undefined,
+        sinceId: cursor?.keys.id,
+        limit: input.limit,
+      }),
+      options.includeOwnership ? this.conversationOwnership.load(conversation.id) : Promise.resolve(null),
+    ]);
+
+    return {
+      messages: messages.map((message) => this.toLightweightConversationTurn(message)),
+      cursor: latestCursor,
+      ...(ownershipRecord?.state === "human_owned"
+        ? { ownership: toChatConversationOwnership(ownershipRecord) }
+        : {}),
+    };
+  }
+
+  private toLightweightConversationTurn(message: MessageRecord): ChatConversationTurn {
+    return {
+      id: message.id,
+      role: message.role,
+      source: message.source ?? deriveMessageSourceFromRole(message.role),
+      content: message.content,
+      createdAt: toIsoString(message.createdAt),
+      inputMetadata: message.inputMetadata,
     };
   }
 

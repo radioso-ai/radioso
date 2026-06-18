@@ -469,4 +469,46 @@ export const registerAssistantPublicChatPaths = (
       },
     },
   });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/public/chat/{token}/tail/{conversationId}",
+    tags: ["Assistant"],
+    summary: "Poll new public conversation messages for the current anonymous session",
+    operationId: "tailPublicChatHistoryConversation",
+    security: [{ [security.anonymousSessionCookieScheme.name]: [] }],
+    request: {
+      params: schemas.tokenPathParamsSchema.extend(schemas.publicConversationParamsSchema.shape),
+      query: z.object({
+        limit: z.number().int().min(1).max(100).optional(),
+        cursor: z.string().min(1).optional(),
+      }),
+    },
+    responses: {
+      200: {
+        description: "New public conversation messages after the supplied tail cursor",
+        content: {
+          "application/json": {
+            schema: schemas.PublicChatConversationTailSchema,
+          },
+        },
+      },
+      400: {
+        description: "Request validation failed",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Conversation not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
 };

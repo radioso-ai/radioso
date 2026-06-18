@@ -472,6 +472,23 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
+  const ChatConversationTailSchema = registry.register(
+    "ChatConversationTail",
+    z.object({
+      messages: z.array(ChatConversationMessageSchema),
+      cursor: z.string().nullable(),
+      ownership: ConversationOwnershipSchema.optional(),
+    }),
+  );
+
+  const PublicChatConversationTailSchema = registry.register(
+    "PublicChatConversationTail",
+    z.object({
+      messages: z.array(ChatConversationMessageSchema),
+      cursor: z.string().nullable(),
+    }),
+  );
+
   const PublicConversationSummarySchema = registry.register(
     "PublicConversationSummary",
     z.object({
@@ -548,6 +565,8 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     ClearAnswerFeedbackResponseSchema,
     ChatConversationMessageSchema,
     ChatConversationDetailSchema,
+    ChatConversationTailSchema,
+    PublicChatConversationTailSchema,
     PublicConversationSummarySchema,
     PublicConversationListResponseSchema,
     RateLimitExceededSchema,

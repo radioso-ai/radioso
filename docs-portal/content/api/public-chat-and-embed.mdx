@@ -14,6 +14,7 @@ POST /api/v1/public/chat/{token}/sessions
 GET  /api/v1/public/chat/{token}
 POST /api/v1/public/chat/{token}
 GET  /api/v1/public/chat/{token}/history/{conversationId}
+GET  /api/v1/public/chat/{token}/tail/{conversationId}
 GET  /api/v1/public/chat/{token}/embed-config
 GET  /api/v1/public/chat/{token}/assistant-logo
 ```
@@ -155,6 +156,8 @@ behavior from `action` rather than from `kind`.
 Use `GET /api/v1/public/chat/{token}` to list conversations for the current anonymous session.
 
 Use `GET /api/v1/public/chat/{token}/history/{conversationId}` to fetch one conversation from that same anonymous session.
+
+Use `GET /api/v1/public/chat/{token}/tail/{conversationId}` to poll for messages created after a cursor. Omit `cursor` once to establish a baseline; the response contains no messages and returns the current newest cursor. Then send that cursor on later polls to receive new visitor, AI, or human-agent messages. Public tail responses do not include operator ownership metadata.
 
 ## Common failure modes
 

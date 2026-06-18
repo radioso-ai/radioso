@@ -48,6 +48,11 @@ export interface MessageRepositoryPort {
     conversationId: string,
     input: { limit: number; offset?: number; cursor?: string },
   ): Promise<{ messages: MessageRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
+  listSinceByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    input: { sinceCreatedAt?: Date; sinceId?: string; limit: number },
+  ): Promise<{ messages: MessageRecord[]; latestCursor: string | null }>;
   summarizeByConversationIds(
     workspaceId: string,
     conversationIds: string[],
@@ -235,6 +240,60 @@ export class MessageRepository implements MessageRepositoryPort {
           }, total)
         : null,
       hasMore,
+    };
+  }
+
+  async listSinceByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    input: { sinceCreatedAt?: Date; sinceId?: string; limit: number },
+  ): Promise<{ messages: MessageRecord[]; latestCursor: string | null }> {
+    const latestRow = await this.database.queryOptional<MessageRow>(
+      `SELECT id, conversation_id, workspace_id, role, content, source, metadata_json, skill_name, skill_outcome, skill_status, created_at
+       FROM messages
+       WHERE workspace_id = $1
+         AND conversation_id = $2
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1`,
+      [workspaceId, conversationId],
+    );
+    const latest = latestRow ? mapMessageRow(latestRow) : null;
+    const newestCursor = latest
+      ? encodeCursor({
+          createdAt: latest.createdAt.toISOString(),
+          id: latest.id,
+        })
+      : null;
+
+    if (!input.sinceCreatedAt || !input.sinceId) {
+      return { messages: [], latestCursor: newestCursor };
+    }
+
+    const rows = await this.database.query<MessageRow>(
+      `SELECT id, conversation_id, workspace_id, role, content, source, metadata_json, skill_name, skill_outcome, skill_status, created_at
+       FROM messages
+       WHERE workspace_id = $1
+         AND conversation_id = $2
+         AND (
+           created_at > $3::timestamptz
+           OR (created_at = $3::timestamptz AND id > $4::uuid)
+         )
+       ORDER BY created_at ASC, id ASC
+       LIMIT $5`,
+      [workspaceId, conversationId, input.sinceCreatedAt.toISOString(), input.sinceId, input.limit],
+    );
+
+    const messages = rows.map(mapMessageRow);
+    const lastReturned = messages.at(-1);
+
+    return {
+      messages,
+      latestCursor: lastReturned
+        ? encodeCursor({
+            createdAt: lastReturned.createdAt.toISOString(),
+            id: lastReturned.id,
+          })
+        : newestCursor,
     };
   }
 

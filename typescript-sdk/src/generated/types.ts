@@ -1783,6 +1783,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/history/chat/{conversationId}/tail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Poll new messages for a saved assistant conversation */
+        get: operations["tailHistoryConversation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/history/{conversationId}": {
         parameters: {
             query?: never;
@@ -2091,6 +2108,28 @@ export interface paths {
          *     The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
          */
         get: operations["getPublicChatHistoryConversation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/chat/{token}/tail/{conversationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Poll new public conversation messages for the current anonymous session
+         * @description Anonymous session continuity is maintained by an HttpOnly cookie set by the server.
+         *
+         *     The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
+         */
+        get: operations["tailPublicChatHistoryConversation"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4685,6 +4724,15 @@ export interface components {
             nextCursor: string | null;
             messages: components["schemas"]["ChatConversationMessage"][];
             ownership?: components["schemas"]["ConversationOwnership"];
+        };
+        ChatConversationTail: {
+            messages: components["schemas"]["ChatConversationMessage"][];
+            cursor: string | null;
+            ownership?: components["schemas"]["ConversationOwnership"];
+        };
+        PublicChatConversationTail: {
+            messages: components["schemas"]["ChatConversationMessage"][];
+            cursor: string | null;
         };
         PublicConversationSummary: {
             /** Format: uuid */
@@ -12059,6 +12107,58 @@ export interface operations {
             };
         };
     };
+    tailHistoryConversation: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description New conversation messages after the supplied tail cursor */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatConversationTail"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getLegacyHistoryConversation: {
         parameters: {
             query?: {
@@ -13242,6 +13342,50 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatConversationDetail"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tailPublicChatHistoryConversation: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                token: string;
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description New public conversation messages after the supplied tail cursor */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicChatConversationTail"];
                 };
             };
             /** @description Request validation failed */

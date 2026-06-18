@@ -37,6 +37,16 @@ export class AssistantHistoryService {
     });
   }
 
+  tailConversation(
+    workspaceId: string,
+    conversationId: string,
+    input: { limit: number; cursor?: string },
+  ) {
+    return this.chatHistoryService.tailConversation(workspaceId, conversationId, input, {
+      includeOwnership: true,
+    });
+  }
+
   getContactRequest(
     workspaceId: string,
     requestId: string,

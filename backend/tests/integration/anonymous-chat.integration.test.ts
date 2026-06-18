@@ -135,6 +135,42 @@ describe("anonymous chat bootstrap integration", () => {
       role: "user",
       content: "Can you help me?",
     });
+
+    const baseline = await request(app)
+      .get(`/api/v1/public/chat/${chatToken}/tail/${followUp.body.conversationId}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
+      .set("Cookie", anonCookie!);
+
+    expect(baseline.status).toBe(200);
+    expect(baseline.body).not.toHaveProperty("ownership");
+    expect(baseline.body.messages).toEqual([]);
+    expect(typeof baseline.body.cursor).toBe("string");
+
+    const humanReply = await repositories.messageRepository.create({
+      conversationId: followUp.body.conversationId,
+      workspaceId,
+      role: "assistant",
+      source: "human_agent",
+      content: "A human operator can help from here.",
+    });
+
+    const tail = await request(app)
+      .get(`/api/v1/public/chat/${chatToken}/tail/${followUp.body.conversationId}`)
+      .query({ cursor: baseline.body.cursor })
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
+      .set("Cookie", anonCookie!);
+
+    expect(tail.status).toBe(200);
+    expect(tail.body).not.toHaveProperty("ownership");
+    expect(tail.body.cursor).toEqual(repositories.messageRepository.cursorFor(humanReply));
+    expect(tail.body.messages).toEqual([
+      expect.objectContaining({
+        id: humanReply.id,
+        role: "assistant",
+        source: "human_agent",
+        content: "A human operator can help from here.",
+      }),
+    ]);
   });
 
   it("returns typed deeper and broader suggestions for public exploratory chat", async () => {

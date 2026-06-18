@@ -43,6 +43,7 @@ describe("openapi contract", () => {
     expect(paths["/api/v1/public/chat/{token}"]?.post).not.toHaveProperty("security");
     expect(paths["/api/v1/public/chat/{token}"]?.get).not.toHaveProperty("security");
     expect(paths["/api/v1/public/chat/{token}/history/{conversationId}"]?.get).not.toHaveProperty("security");
+    expect(paths["/api/v1/public/chat/{token}/tail/{conversationId}"]?.get).not.toHaveProperty("security");
   });
 
   it("advertises bearer auth separately from the session cookie scheme", () => {
@@ -82,5 +83,38 @@ describe("openapi contract", () => {
     expect(operation?.responses).toHaveProperty("200");
     expect(operation?.responses).toHaveProperty("400");
     expect(operation?.responses).toHaveProperty("401");
+  });
+
+  it("advertises dashboard and public conversation tail response shapes", () => {
+    const document = createOpenApiDocument();
+    const schemas = document.components?.schemas ?? {};
+    const dashboardTail = schemas.ChatConversationTail;
+    const publicTail = schemas.PublicChatConversationTail;
+
+    expect(document.paths?.["/api/v1/history/chat/{conversationId}/tail"]?.get).toMatchObject({
+      operationId: "tailHistoryConversation",
+      security: [{ bearerAuth: [] }],
+    });
+    expect(document.paths?.["/api/v1/public/chat/{token}/tail/{conversationId}"]?.get).toMatchObject({
+      operationId: "tailPublicChatHistoryConversation",
+    });
+    expect(dashboardTail).toMatchObject({
+      properties: expect.objectContaining({
+        messages: expect.any(Object),
+        cursor: expect.any(Object),
+        ownership: expect.any(Object),
+      }),
+    });
+    expect(publicTail).toMatchObject({
+      properties: expect.objectContaining({
+        messages: expect.any(Object),
+        cursor: expect.any(Object),
+      }),
+    });
+    expect(publicTail).not.toMatchObject({
+      properties: expect.objectContaining({
+        ownership: expect.any(Object),
+      }),
+    });
   });
 });

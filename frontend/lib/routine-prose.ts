@@ -1,4 +1,4 @@
-import type { RoutineDefinitionDraft, RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineSlotType, RoutineTransition } from './api-types'
+import type { RoutineDefinitionDraft, RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineReentryMode, RoutineSlotType, RoutineTransition } from './api-types'
 
 export const ROUTINE_SLOT_TYPES: RoutineSlotType[] = ['text', 'number', 'boolean', 'email', 'date']
 export const ROUTINE_FIELD_GUARD_UNITS: RoutineFieldGuardUnit[] = ['days', 'weeks', 'months', 'years']
@@ -128,12 +128,14 @@ export const createEmptyRoutineProseDraft = (input: {
   name?: string
   triggerDescription?: string
   priority?: number
+  reentryMode?: RoutineReentryMode
 } = {}): RoutineDefinitionDraft => ({
   name: input.name ?? '',
   activation: {
     triggerDescription: input.triggerDescription ?? '',
     gateRef: null,
     priority: input.priority ?? 0,
+    reentryMode: input.reentryMode ?? 'once_per_conversation',
   },
   slots: [],
   steps: [],
@@ -484,6 +486,9 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
   // The prose editor treats every collected variable as required (it regenerates
   // required:true). A non-required slot would be silently flipped on save, so fall back.
   if (routine.slots.some((slot) => slot.required === false)) return null
+  // The prose chip-variable model carries no mutable flag, so a mutable slot would be
+  // silently flipped off on save. Edit those routines in Form. (issue #746)
+  if (routine.slots.some((slot) => slot.mutable)) return null
 
   const completeId = complete.stableStepId
   const handoffId = handoff?.stableStepId ?? null

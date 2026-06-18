@@ -3,6 +3,7 @@ import type {
   RoutineDefinitionDraft,
   RoutineCompletionExport,
   RoutineGuardKind,
+  RoutineReentryMode,
   RoutineSlotType,
   RoutineStepKind,
   RoutineTerminalKind,
@@ -15,6 +16,7 @@ export type RoutineSlotForm = {
   type: RoutineSlotType
   required: boolean
   description: string
+  mutable: boolean
 }
 
 export type RoutineTransitionForm = {
@@ -47,6 +49,7 @@ export type RoutineFormState = {
   activation: {
     triggerDescription: string
     priority: string
+    reentryMode: RoutineReentryMode
   }
   slots: RoutineSlotForm[]
   steps: RoutineStepForm[]
@@ -91,6 +94,7 @@ export const createEmptyRoutineForm = (): RoutineFormState => ({
   activation: {
     triggerDescription: '',
     priority: '0',
+    reentryMode: 'once_per_conversation',
   },
   slots: [],
   steps: [{
@@ -120,6 +124,7 @@ export const createSlotForm = (index: number): RoutineSlotForm => ({
   type: 'text',
   required: true,
   description: '',
+  mutable: false,
 })
 
 export const createStepForm = (index: number): RoutineStepForm => ({
@@ -167,6 +172,7 @@ export const routineToForm = (routine: RoutineDefinition): RoutineFormState => {
     activation: {
       triggerDescription: routine.activation.triggerDescription,
       priority: String(routine.activation.priority),
+      reentryMode: routine.activation.reentryMode ?? 'once_per_conversation',
     },
     slots: [...routine.slots].sort((left, right) => left.ordinal - right.ordinal).map((slot) => ({
       stableSlotId: slot.stableSlotId,
@@ -174,6 +180,7 @@ export const routineToForm = (routine: RoutineDefinition): RoutineFormState => {
       type: slot.type,
       required: slot.required,
       description: slot.description ?? '',
+      mutable: slot.mutable ?? false,
     })),
     steps: [...routine.steps].sort((left, right) => left.ordinal - right.ordinal).map((step) => ({
       stableStepId: step.stableStepId,
@@ -220,6 +227,7 @@ export const formToRoutineDraft = (
     activation: {
       triggerDescription: header.activation.triggerDescription.trim(),
       priority: Number.parseInt(header.activation.priority, 10) || 0,
+      reentryMode: header.activation.reentryMode,
     },
     slots: form.slots.map((slot, index) => {
       const key = slugify(slot.key, `slot_${index + 1}`).replace(/[^A-Za-z0-9_]/gu, '_')
@@ -230,6 +238,7 @@ export const formToRoutineDraft = (
         required: slot.required,
         description: nullableText(slot.description),
         ordinal: index,
+        ...(slot.mutable ? { mutable: true } : {}),
       }
     }),
     steps: form.steps.map((step, index) => ({

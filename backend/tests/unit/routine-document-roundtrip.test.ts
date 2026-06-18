@@ -16,6 +16,7 @@ const fullDraft = (): RoutineDefinitionDraftInput => ({
     triggerDescription: "When the visitor needs order support.",
     gateRef: "support.enabled",
     priority: 20,
+    reentryMode: "once_per_conversation",
   },
   slots: [
     { stableSlotId: "email", key: "email", type: "email", required: true, description: "Customer email.", ordinal: 0 },
@@ -189,6 +190,7 @@ describe("routine document model round trips", () => {
         triggerDescription: "support",
         gateRef: null,
         priority: 1,
+        reentryMode: "once_per_conversation",
       },
       sections: [{
         kind: "routine",
@@ -324,6 +326,7 @@ priority: 1
         triggerDescription: "support",
         gateRef: null,
         priority: 1,
+        reentryMode: "once_per_conversation",
       },
       sections: [{
         kind: "routine",
@@ -489,6 +492,7 @@ priority: 10
         triggerDescription: "customer needs order help",
         gateRef: null,
         priority: 10,
+        reentryMode: "once_per_conversation",
       },
       slots: [
         { stableSlotId: "order_date", key: "order_date", type: "date", required: true, description: "Date returned by the order lookup.", ordinal: 0 },

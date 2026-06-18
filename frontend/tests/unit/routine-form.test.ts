@@ -24,6 +24,7 @@ const routine = {
     triggerDescription: 'Visitor asks for pricing',
     gateRef: null,
     priority: 10,
+    reentryMode: 'always',
   },
   slots: [{
     stableSlotId: 'slot_email',
@@ -31,6 +32,7 @@ const routine = {
     type: 'email',
     required: true,
     description: 'Visitor email',
+    mutable: true,
     ordinal: 0,
   }],
   steps: [{
@@ -75,6 +77,7 @@ describe('routine form transforms', () => {
       activation: {
         triggerDescription: routine.activation.triggerDescription,
         priority: 10,
+        reentryMode: 'always',
       },
       slots: routine.slots,
       steps: routine.steps,
@@ -93,6 +96,7 @@ describe('routine form transforms', () => {
       type: 'email',
       required: true,
       description: '  Email address  ',
+      mutable: true,
     }]
     form.steps[0] = {
       ...form.steps[0]!,
@@ -102,11 +106,12 @@ describe('routine form transforms', () => {
 
     expect(formToRoutineDraft(form)).toMatchObject({
       name: 'Demo routine',
-      activation: { triggerDescription: 'Visitor wants help', priority: 0 },
+      activation: { triggerDescription: 'Visitor wants help', priority: 0, reentryMode: 'once_per_conversation' },
       slots: [{
         stableSlotId: 'Customer_Email',
         key: 'customer_email',
         description: 'Email address',
+        mutable: true,
       }],
       transitions: [{ fromStep: 'step_1', toRef: 'complete', guardKind: 'default' }],
     })

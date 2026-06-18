@@ -10,6 +10,7 @@ const approvalDraft = (): RoutineDefinitionDraftInput => ({
     triggerDescription: "The user asks for a refund that needs human approval.",
     gateRef: null,
     priority: 10,
+    reentryMode: "once_per_conversation",
   },
   slots: [],
   steps: [

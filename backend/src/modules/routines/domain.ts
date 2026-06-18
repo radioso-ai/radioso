@@ -20,6 +20,11 @@ export const ROUTINE_DEFINITION_LIMITS = {
 } as const;
 
 export const routineDefinitionStatuses = ["draft", "published", "superseded", "archived"] as const;
+// Reentry policy for a completed routine instance within a conversation (issue #746).
+// `once_per_conversation` is the safe default and preserves the historical behaviour
+// (a completed instance suppresses re-activation). `semantic` is reserved for a later
+// slice and currently resolves like the default at activation time.
+export const routineReentryModes = ["once_per_conversation", "always", "semantic"] as const;
 export const routineSlotTypes = ["text", "number", "boolean", "email", "date"] as const;
 export const routineStepKinds = ["chat", "tool", "action", "approval"] as const;
 export const routineGuardKinds = ["llm", "default", "slot_filled", "outcome", "counter", "field"] as const;
@@ -85,6 +90,11 @@ export const routineSlotSchema = z.object({
   required: z.boolean(),
   description: optionalTrimmedText(ROUTINE_DEFINITION_LIMITS.slotDescription),
   ordinal: z.number().int().min(0),
+  // Whether the captured value may be corrected after the routine completes (issue #746).
+  // Optional (like `description`): absent means immutable. "Absent = false" is applied at
+  // the compile/persist boundary and by the column default, so existing slot literals and
+  // stored rows stay immutable without a forced field everywhere.
+  mutable: z.boolean().optional(),
 }).strict();
 
 export const routineStepSchema = z.object({
@@ -220,6 +230,7 @@ export const routineDefinitionDraftInputSchema = z.object({
     triggerDescription: trimmedText(ROUTINE_DEFINITION_LIMITS.triggerDescription),
     gateRef: optionalTrimmedText(ROUTINE_DEFINITION_LIMITS.gateRef),
     priority: z.number().int(),
+    reentryMode: z.enum(routineReentryModes).default("once_per_conversation"),
   }).strict(),
   slots: z.array(routineSlotSchema).default([]),
   steps: z.array(routineStepSchema).min(1),
@@ -238,6 +249,7 @@ export const routineDefinitionSchema = routineDefinitionDraftInputSchema.extend(
   updatedAt: z.date(),
 }).strict();
 
+export type RoutineReentryMode = typeof routineReentryModes[number];
 export type RoutineSlotType = typeof routineSlotTypes[number];
 export type RoutineStepKind = typeof routineStepKinds[number];
 export type RoutineApprovalOption = z.infer<typeof routineApprovalOptionSchema>;

@@ -15,6 +15,7 @@ const definitionWithTool = (toolRef: string | null): RoutineDefinition => ({
     triggerDescription: "Look up an account.",
     gateRef: null,
     priority: 10,
+    reentryMode: "once_per_conversation",
   },
   slots: [],
   steps: [

@@ -5,6 +5,8 @@ import type {
   ConversationClarifier,
   ConversationModelGateway,
   ConversationRoutineActivator,
+  ConversationRoutineReentryGate,
+  ConversationRoutineSlotCorrection,
   ConversationRoutineRunner,
   ConversationRoutineStore,
   ConversationSkillDispatcher,
@@ -169,6 +171,8 @@ export interface AttemptRoutineInputOptions {
   routineStore?: ConversationRoutineStore;
   routineRunner?: ConversationRoutineRunner;
   routineActivator?: ConversationRoutineActivator;
+  routineSlotCorrection?: ConversationRoutineSlotCorrection;
+  routineReentryGate?: ConversationRoutineReentryGate;
   clarifier?: ConversationClarifier;
   clarificationStore?: ConversationClarificationStore;
   loopGuardCandidateIds?: string[];
@@ -200,6 +204,8 @@ export const createAttemptRoutineInput = (options: AttemptRoutineInputOptions): 
     ...(options.routineStore ? { routineStore: options.routineStore } : {}),
     ...(options.routineRunner ? { routineRunner: options.routineRunner } : {}),
     ...(options.routineActivator ? { routineActivator: options.routineActivator } : {}),
+    ...(options.routineSlotCorrection ? { routineSlotCorrection: options.routineSlotCorrection } : {}),
+    ...(options.routineReentryGate ? { routineReentryGate: options.routineReentryGate } : {}),
     ...(options.clarifier ? { clarifier: options.clarifier } : {}),
     ...(options.clarificationStore ? { clarificationStore: options.clarificationStore } : {}),
     ...(options.loopGuardCandidateIds ? { loopGuardCandidateIds: options.loopGuardCandidateIds } : {}),

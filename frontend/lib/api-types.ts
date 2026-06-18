@@ -54,6 +54,7 @@ export type RoutineDefinitionStatus = ApiSchemas['RoutineDefinition']['status']
 export type RoutineSlotType = 'text' | 'number' | 'boolean' | 'email' | 'date'
 export type RoutineStepKind = 'chat' | 'tool' | 'action'
 export type RoutineGuardKind = 'llm' | 'default' | 'slot_filled' | 'outcome' | 'counter' | 'field'
+export type RoutineReentryMode = 'once_per_conversation' | 'always' | 'semantic'
 export type RoutineFieldGuardOp =
   | 'is_true' | 'is_false' | 'equals' | 'not_equals' | 'in' | 'is_present' | 'is_absent'
   | 'gt' | 'gte' | 'lt' | 'lte' | 'older_than' | 'within'
@@ -110,6 +111,7 @@ export type RoutineDefinitionDraft = {
     triggerDescription: string
     gateRef?: string | null
     priority: number
+    reentryMode?: RoutineReentryMode
   }
   slots: RoutineSlot[]
   steps: RoutineStep[]

@@ -128,6 +128,7 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
       type: slot.type,
       required: slot.required,
       description: slot.description ?? undefined,
+      ...(slot.mutable ? { mutable: true } : {}),
     }));
   const steps: RoutineStep[] = [
     ...sortedSteps.map((step): RoutineStep => {
@@ -237,6 +238,9 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
         triggerDescription: definition.activation.triggerDescription,
         gateRef: definition.activation.gateRef,
         priority: definition.activation.priority,
+        // Default keeps definitions authored before reentry modes existed suppressing
+        // on completion (the historical, safe behaviour).
+        reentryMode: definition.activation.reentryMode ?? "once_per_conversation",
       },
       slotSchema: slots,
     },

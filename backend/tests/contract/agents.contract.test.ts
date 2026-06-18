@@ -27,6 +27,7 @@ const validRoutineDraft = (overrides: Partial<RoutineDefinitionDraftInput> = {})
     triggerDescription: "When the user asks for support intake",
     gateRef: null,
     priority: 10,
+    reentryMode: "once_per_conversation",
   },
   slots: [{
     stableSlotId: "slot_topic",
@@ -1211,6 +1212,7 @@ describe("agents contract", () => {
         triggerDescription: "When the visitor asks for support intake",
         gateRef: null,
         priority: 0,
+        reentryMode: "once_per_conversation",
       },
     });
     const { app } = createTestApp({

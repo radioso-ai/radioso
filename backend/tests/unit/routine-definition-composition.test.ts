@@ -13,7 +13,7 @@ const definition: RoutineDefinition = {
   name: "handoff",
   version: 1,
   status: "published",
-  activation: { triggerDescription: "The user asks for help.", gateRef: "retrieval.answer", priority: 7 },
+  activation: { triggerDescription: "The user asks for help.", gateRef: "retrieval.answer", priority: 7, reentryMode: "once_per_conversation" },
   slots: [],
   steps: [{ stableStepId: "ask", kind: "chat", instruction: "Ask what they need.", toolRef: null, ordinal: 0, metadata: {} }],
   transitions: [{ fromStep: "ask", toRef: "done", guardKind: "llm", guardText: "The user answered.", ordinal: 0 }],
@@ -42,6 +42,7 @@ describe("DB-backed routine composition source", () => {
     expect(registrations[0]!.trigger).toEqual({
       description: "The user asks for help.",
       priority: 7,
+      reentryMode: "once_per_conversation",
       gateRef: "retrieval.answer",
     });
   });

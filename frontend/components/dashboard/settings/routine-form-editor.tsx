@@ -214,6 +214,11 @@ export function RoutineFormEditor({
                 ...current,
                 slots: current.slots.map((item, itemIndex) => itemIndex === index ? { ...item, required: checked } : item),
               }))} />
+              <Label htmlFor={`slotMutable${index}`} className="text-xs">Editable after</Label>
+              <Switch id={`slotMutable${index}`} checked={slot.mutable} disabled={isPublished} onCheckedChange={(checked) => onChange((current) => ({
+                ...current,
+                slots: current.slots.map((item, itemIndex) => itemIndex === index ? { ...item, mutable: checked } : item),
+              }))} aria-label={`Slot ${index + 1} editable after completion`} />
               <Button type="button" variant="ghost" size="sm" disabled={isPublished} onClick={() => onChange((current) => ({
                 ...current,
                 slots: current.slots.filter((_, itemIndex) => itemIndex !== index),

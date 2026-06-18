@@ -20,6 +20,7 @@ const definition = (
     triggerDescription: "Run the population test.",
     gateRef: null,
     priority: 10,
+    reentryMode: "once_per_conversation",
   },
   slots,
   steps,

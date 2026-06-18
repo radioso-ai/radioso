@@ -3021,6 +3021,11 @@ export interface components {
                 triggerDescription: string;
                 gateRef?: string | null;
                 priority: number;
+                /**
+                 * @default once_per_conversation
+                 * @enum {string}
+                 */
+                reentryMode: "once_per_conversation" | "always" | "semantic";
             };
             /** @default [] */
             slots: {
@@ -3031,6 +3036,7 @@ export interface components {
                 required: boolean;
                 description?: string | null;
                 ordinal: number;
+                mutable?: boolean;
             }[];
             steps: {
                 stableStepId: string;
@@ -3106,6 +3112,11 @@ export interface components {
                 triggerDescription: string;
                 gateRef?: string | null;
                 priority: number;
+                /**
+                 * @default once_per_conversation
+                 * @enum {string}
+                 */
+                reentryMode: "once_per_conversation" | "always" | "semantic";
             };
             /** @default [] */
             slots: {
@@ -3116,6 +3127,7 @@ export interface components {
                 required: boolean;
                 description?: string | null;
                 ordinal: number;
+                mutable?: boolean;
             }[];
             steps: {
                 stableStepId: string;
@@ -3203,6 +3215,11 @@ export interface components {
                 triggerDescription: string;
                 gateRef?: string | null;
                 priority: number;
+                /**
+                 * @default once_per_conversation
+                 * @enum {string}
+                 */
+                reentryMode: "once_per_conversation" | "always" | "semantic";
             };
             /** @default [] */
             slots: {
@@ -3213,6 +3230,7 @@ export interface components {
                 required: boolean;
                 description?: string | null;
                 ordinal: number;
+                mutable?: boolean;
             }[];
             steps: {
                 stableStepId: string;
@@ -3329,6 +3347,11 @@ export interface components {
                     triggerDescription: string;
                     gateRef?: string | null;
                     priority: number;
+                    /**
+                     * @default once_per_conversation
+                     * @enum {string}
+                     */
+                    reentryMode: "once_per_conversation" | "always" | "semantic";
                 };
                 /** @default [] */
                 slots: {
@@ -3339,6 +3362,7 @@ export interface components {
                     required: boolean;
                     description?: string | null;
                     ordinal: number;
+                    mutable?: boolean;
                 }[];
                 steps: {
                     stableStepId: string;

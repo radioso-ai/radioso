@@ -14,12 +14,24 @@ import { renderPromptTemplate } from "./promptTemplate.js";
 /**
  * A registered Routine plus declarative trigger metadata for ranked activation.
  */
+/**
+ * Reentry policy for a completed routine instance within a conversation.
+ * - `once_per_conversation` (default): a completed instance suppresses future
+ *   activation in the same conversation.
+ * - `always`: a completed instance never suppresses; the trigger may fire again.
+ * - `semantic`: an LLM gate decides; not yet implemented at activation time, so it
+ *   is treated as `once_per_conversation` (the safe default) until that slice lands.
+ */
+export type RoutineReentryMode = "once_per_conversation" | "always" | "semantic";
+
 export interface RoutineRegistration {
   routine: Routine;
   trigger: {
     description: string;
     priority: number;
     gateRef?: string;
+    /** Defaults to `once_per_conversation` when omitted. */
+    reentryMode?: RoutineReentryMode;
     eligible?: (input: { turn: TurnContext }) => boolean;
     explicitClaim?: (input: { turn: TurnContext }) => { variables?: Record<string, unknown> } | null;
   };
@@ -148,9 +160,13 @@ export class RoutineRegistry {
         suppressedRoutineIds?: string[];
         suppressClarificationAsk?: boolean;
       }) => {
+        // `suppressedRoutineIds` are the routines that already completed this
+        // conversation. Whether a completed routine actually stays suppressed is the
+        // routine's reentry policy: `always` reopens to re-activation, every other mode
+        // (incl. the default and the not-yet-implemented `semantic`) stays suppressed.
         const suppressed = new Set(suppressedRoutineIds ?? []);
         const eligibleRegistrations = this.registrations.filter((registration) =>
-          !suppressed.has(registration.routine.id) &&
+          (!suppressed.has(registration.routine.id) || registration.trigger.reentryMode === "always") &&
           (registration.trigger.eligible?.({ turn }) ?? true)
         );
         if (eligibleRegistrations.length === 0) {

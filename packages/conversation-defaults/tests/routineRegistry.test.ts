@@ -211,6 +211,44 @@ describe("RoutineRegistry ranked activation", () => {
     expect(result).toMatchObject({ kind: "activate", routineId: "available", variables: undefined });
   });
 
+  it("does not suppress a completed routine whose reentryMode is 'always'", async () => {
+    const gw = gateway(rankedJson([
+      { routineId: "repeatable", confidence: 0.82 },
+    ]));
+
+    const result = await new RoutineRegistry([
+      registration("repeatable", {
+        description: "Repeatable routine can run again after completion",
+        reentryMode: "always",
+      }),
+    ], { policy }).activator(gw).activate({
+      turn,
+      suppressedRoutineIds: ["repeatable"],
+    });
+
+    expect(gw.complete).toHaveBeenCalledTimes(1);
+    const prompt = vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt;
+    expect(prompt).toContain("repeatable");
+    expect(result).toMatchObject({ kind: "activate", routineId: "repeatable" });
+  });
+
+  it("suppresses a completed routine whose reentryMode is 'once_per_conversation' (default)", async () => {
+    const gw = gateway(rankedJson([]));
+
+    const result = await new RoutineRegistry([
+      registration("lead-capture", {
+        description: "Captures a lead once",
+        reentryMode: "once_per_conversation",
+      }),
+    ], { policy }).activator(gw).activate({
+      turn,
+      suppressedRoutineIds: ["lead-capture"],
+    });
+
+    expect(gw.complete).not.toHaveBeenCalled();
+    expect(result).toBeNull();
+  });
+
   it("activates the first eligible explicit claim without a gateway call", async () => {
     const gw = gateway(rankedJson([]));
 

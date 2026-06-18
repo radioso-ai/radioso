@@ -38,6 +38,9 @@ export const contactRoutineDefinition: RoutineDefinition = {
     triggerDescription: "The user asks a human to follow up with them.",
     gateRef: CONTACT_INTENT_SKILL_NAME,
     priority: 100,
+    // A visitor may want to reach a human more than once in the same conversation,
+    // so this routine stays available after it completes.
+    reentryMode: "always",
   },
   // Slots are intentionally not declared here: the validator requires every declared
   // slot to be referenced via `{{slot.key}}` templating, which would mean restructuring

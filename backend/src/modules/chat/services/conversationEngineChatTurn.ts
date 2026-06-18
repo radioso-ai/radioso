@@ -4,6 +4,8 @@ import type {
   ConversationClarifier,
   Directive,
   ConversationRoutineActivator,
+  ConversationRoutineReentryGate,
+  ConversationRoutineSlotCorrection,
   ConversationRoutineRunner,
   ConversationRoutineStore,
   ConversationTrace,
@@ -234,6 +236,8 @@ export const attemptRoutineTurnWithConversationEngine = async (input: {
   routineStore: ConversationRoutineStore;
   routineRunner: ConversationRoutineRunner;
   routineActivator: ConversationRoutineActivator;
+  routineSlotCorrection?: ConversationRoutineSlotCorrection;
+  routineReentryGate?: ConversationRoutineReentryGate;
   clarifier?: ConversationClarifier;
   clarificationStore?: ConversationClarificationStore;
   loopGuardCandidateIds?: string[];
@@ -249,6 +253,8 @@ export const attemptRoutineTurnWithConversationEngine = async (input: {
       routineStore: input.routineStore,
       routineRunner: input.routineRunner,
       routineActivator: input.routineActivator,
+      routineSlotCorrection: input.routineSlotCorrection,
+      routineReentryGate: input.routineReentryGate,
       clarifier: input.clarifier,
       clarificationStore: input.clarificationStore,
       loopGuardCandidateIds: input.loopGuardCandidateIds,

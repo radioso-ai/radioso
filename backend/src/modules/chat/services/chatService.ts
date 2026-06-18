@@ -6,7 +6,9 @@ import type {
   ConversationClarifier,
   ConversationModelGateway,
   ConversationRoutineActivator,
+  ConversationRoutineReentryGate,
   ConversationRoutineRunner,
+  ConversationRoutineSlotCorrection,
   ConversationRoutineStore,
   ConversationTrace,
   ClarificationCandidate,
@@ -214,6 +216,8 @@ export interface ChatRoutineProvider {
   }): Promise<{
     activator: ConversationRoutineActivator;
     runner: ConversationRoutineRunner;
+    slotCorrection?: ConversationRoutineSlotCorrection;
+    reentryGate?: ConversationRoutineReentryGate;
   } | null>;
 }
 
@@ -521,7 +525,7 @@ export class ChatService {
       modelGateway,
       agentId: session.agent.id,
       workspaceId: session.conversation.workspaceId,
-      pinnedRoutineIds: activeRoutine?.status === "active" ? [activeRoutine.routineId] : [],
+      pinnedRoutineIds: await this.routineCatalogPinIds(session, activeRoutine),
       responseLanguage,
     });
     if (!routineTurnPorts) {
@@ -540,6 +544,8 @@ export class ChatService {
       routineStore: deferredStore,
       routineRunner: routineTurnPorts.runner,
       routineActivator: activator,
+      routineSlotCorrection: routineTurnPorts.slotCorrection,
+      routineReentryGate: routineTurnPorts.reentryGate,
       clarifier: clarification?.clarifier ?? this.clarifier,
       clarificationStore: deferredClarificationStore,
       loopGuardCandidateIds: clarification?.resolution?.kind === "normal"
@@ -641,6 +647,20 @@ export class ChatService {
       return null;
     }
     return this.routineStore.loadActive({ sessionId: session.conversation.id });
+  }
+
+  private async routineCatalogPinIds(session: PreparedSession, activeRoutine: RoutineState | null): Promise<string[]> {
+    const pinned = new Set<string>();
+    if (activeRoutine?.status === "active") {
+      pinned.add(activeRoutine.routineId);
+    }
+    if (!activeRoutine && this.routineStore?.loadCompleted) {
+      const completed = await this.routineStore.loadCompleted({ sessionId: session.conversation.id });
+      for (const state of completed) {
+        pinned.add(state.routineId);
+      }
+    }
+    return [...pinned];
   }
 
   private async loadSuspendedRoutine(session: PreparedSession): Promise<RoutineState | null> {

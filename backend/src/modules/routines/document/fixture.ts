@@ -1,4 +1,4 @@
-import type { RoutineDefinitionDraftInput } from "../domain.js";
+import { routineReentryModes, type RoutineDefinitionDraftInput, type RoutineReentryMode } from "../domain.js";
 import {
   encodeRoutineDocumentText,
   routineDocumentToDraft,
@@ -78,6 +78,10 @@ const formatFrontmatter = (document: RoutineDocument): string[] => {
   if (document.activation.gateRef) {
     lines.push(`gate: ${document.activation.gateRef}`);
   }
+  // Only emit a non-default reentry policy so existing fixtures stay byte-identical.
+  if (document.activation.reentryMode && document.activation.reentryMode !== "once_per_conversation") {
+    lines.push(`reentry: ${document.activation.reentryMode}`);
+  }
   lines.push("---");
   return lines;
 };
@@ -118,17 +122,23 @@ export const serializeRoutineDocument = (document: RoutineDocument): string => {
   return `${lines.join("\n").replace(/\n{3,}/gu, "\n\n")}\n`;
 };
 
+const parseReentryMode = (value: string | undefined): RoutineReentryMode =>
+  value && (routineReentryModes as readonly string[]).includes(value)
+    ? (value as RoutineReentryMode)
+    : "once_per_conversation";
+
 const parseFrontmatter = (lineInfos: LineInfo[], diagnostics: RoutineDocumentDiagnostic[]): {
   name: string;
   triggerDescription: string;
   priority: number;
   gateRef: string | null;
+  reentryMode: RoutineReentryMode;
   startIndex: number;
   range?: DocumentTextRange;
 } => {
   if (lineInfos[0]?.text.trim() !== "---") {
     diagnostics.push({ code: "missing_frontmatter", location: "routine", message: "fixture is missing frontmatter." });
-    return { name: "", triggerDescription: "", priority: 0, gateRef: null, startIndex: 0 };
+    return { name: "", triggerDescription: "", priority: 0, gateRef: null, reentryMode: "once_per_conversation", startIndex: 0 };
   }
   const values = new Map<string, string>();
   let index = 1;
@@ -148,6 +158,7 @@ const parseFrontmatter = (lineInfos: LineInfo[], diagnostics: RoutineDocumentDia
     triggerDescription: values.get("trigger") ?? "",
     priority: Number.isInteger(priority) ? priority : 0,
     gateRef: values.get("gate") ?? null,
+    reentryMode: parseReentryMode(values.get("reentry")),
     startIndex: Math.min(index + 1, lineInfos.length),
     range: rangeFromLines(lineInfos[0]!, lineInfos[Math.min(index, lineInfos.length - 1)]!),
   };
@@ -407,6 +418,7 @@ export const parseRoutineDocumentFixture = (
       triggerDescription: frontmatter.triggerDescription,
       gateRef: frontmatter.gateRef,
       priority: frontmatter.priority,
+      reentryMode: frontmatter.reentryMode,
     },
     sections: [{ kind: "routine", variables, steps, ends }, ...placeholders],
   };

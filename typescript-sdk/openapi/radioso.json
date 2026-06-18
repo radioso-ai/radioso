@@ -3781,6 +3781,15 @@
               },
               "priority": {
                 "type": "integer"
+              },
+              "reentryMode": {
+                "type": "string",
+                "enum": [
+                  "once_per_conversation",
+                  "always",
+                  "semantic"
+                ],
+                "default": "once_per_conversation"
               }
             },
             "required": [
@@ -3830,6 +3839,9 @@
                 "ordinal": {
                   "type": "integer",
                   "minimum": 0
+                },
+                "mutable": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -4269,6 +4281,15 @@
               },
               "priority": {
                 "type": "integer"
+              },
+              "reentryMode": {
+                "type": "string",
+                "enum": [
+                  "once_per_conversation",
+                  "always",
+                  "semantic"
+                ],
+                "default": "once_per_conversation"
               }
             },
             "required": [
@@ -4318,6 +4339,9 @@
                 "ordinal": {
                   "type": "integer",
                   "minimum": 0
+                },
+                "mutable": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -4835,6 +4859,15 @@
               },
               "priority": {
                 "type": "integer"
+              },
+              "reentryMode": {
+                "type": "string",
+                "enum": [
+                  "once_per_conversation",
+                  "always",
+                  "semantic"
+                ],
+                "default": "once_per_conversation"
               }
             },
             "required": [
@@ -4884,6 +4917,9 @@
                 "ordinal": {
                   "type": "integer",
                   "minimum": 0
+                },
+                "mutable": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -5472,6 +5508,15 @@
                   },
                   "priority": {
                     "type": "integer"
+                  },
+                  "reentryMode": {
+                    "type": "string",
+                    "enum": [
+                      "once_per_conversation",
+                      "always",
+                      "semantic"
+                    ],
+                    "default": "once_per_conversation"
                   }
                 },
                 "required": [
@@ -5521,6 +5566,9 @@
                     "ordinal": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "mutable": {
+                      "type": "boolean"
                     }
                   },
                   "required": [

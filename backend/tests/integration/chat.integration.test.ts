@@ -52,6 +52,7 @@ const supportIntakeRoutineDraft = (): RoutineDefinitionDraftInput => ({
     triggerDescription: "When the user asks to start support intake.",
     gateRef: null,
     priority: 10,
+    reentryMode: "once_per_conversation",
   },
   slots: [{
     stableSlotId: "slot_topic",

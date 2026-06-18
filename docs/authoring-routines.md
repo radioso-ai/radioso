@@ -32,11 +32,33 @@ At the top of the editor, set:
 
 - **Name** - the routine name shown in settings.
 - **Priority** - the tie-breaker when more than one routine could start.
+- **Reentry** - what happens after the routine finishes in a conversation.
 - **Activation trigger** - a plain-language description of when the routine
   should start.
 
 The trigger is judged by meaning, not by a keyword list. Write it the way an
 operator would describe the task.
+
+### Reentry
+
+A routine can finish more than once in the same conversation. The reentry
+setting decides whether a finished routine can start again. It does not change
+the trigger; it only controls what happens after a run completes.
+
+There are three options:
+
+- **Once per conversation** - the default. After the routine completes, it does
+  not start again in that conversation. Use this for tasks that should happen a
+  single time, such as capturing a lead.
+- **Every time it matches** - the routine can start again after it completes.
+  Use this for repeatable tasks, such as looking up an order.
+- **Let the assistant decide** - after the routine completes, the assistant reads
+  the next message and chooses what to do: resume the same run keeping what it
+  already collected, start a fresh run, or leave it finished. Use this for tasks
+  that a visitor may continue or repeat in different ways.
+
+The key point is that the default stays safe. An existing routine keeps running
+once per conversation until you change this setting.
 
 ## Write the routine in prose
 
@@ -86,6 +108,20 @@ comparisons are available.
 
 A name identifies one thing. Once a name is used by a chip, the `@` menu will not
 let a second chip of a different kind reuse it.
+
+### Editable after completion
+
+A variable can be marked **editable after** in the Form view. This controls one
+thing: whether the visitor can correct that value after the routine has finished,
+without running the whole routine again.
+
+When a variable is editable and the visitor's next message changes it, the
+assistant updates the stored value in place and confirms the change. The new value
+must still match the variable's type — for example, a corrected email must be a
+valid email. A variable that is not marked editable cannot be changed this way.
+
+The default is off. Turn it on only for values a visitor may reasonably want to
+fix, such as an email or a date.
 
 ## Steps and branches
 

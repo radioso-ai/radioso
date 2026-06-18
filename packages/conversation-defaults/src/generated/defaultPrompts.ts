@@ -89,3 +89,83 @@ Rules:
 - \`confidence\` reflects how strongly the condition holds (1 = certain).
 - If no directive applies, return an empty array: []
 - Return only the JSON array, with no other text.`;
+
+export const DEFAULT_ROUTINE_SLOT_CORRECTION_DETECT_PROMPT = `You decide whether the user's latest message changes a value they already gave during a
+task that has finished, and if so, which value and the new content.
+
+You are given the list of changeable fields. Each has a key, a type, and a description.
+
+Return only JSON, with no extra text:
+{"slotKey": "<one of the field keys, or null>", "value": "<the new value, or null>"}
+
+Rules:
+
+- Return a slotKey ONLY when the latest user message clearly asks to change the value of
+  one of the changeable fields below. If the message is a new request, a question, small
+  talk, or anything else, return {"slotKey": null, "value": null}.
+- Judge by meaning, in any language. Do not rely on specific trigger words.
+- Choose at most one field — the one the user is correcting.
+- Return the new value the user stated for that field. Do NOT judge whether the value is
+  valid or well-formed — that is checked separately. If the user clearly gives a new value,
+  return it even if it looks incomplete or wrong (e.g. an email missing the domain).
+- Normalize only the shape, keeping the user's content:
+  - boolean → exactly "true" or "false"
+  - date → ISO calendar format YYYY-MM-DD when the date is unambiguous
+  - number → digits only
+  - email or text → the literal value the user gave
+- Never invent a value the user did not mention at all. If they want to change a field but
+  did not state any new value, return {"slotKey": null, "value": null}.
+
+Changeable fields:
+{{slots}}`;
+
+export const DEFAULT_ROUTINE_SLOT_CORRECTION_CONFIRM_PROMPT = `You are the assistant. The user just corrected one piece of information they had given
+earlier, and it has now been updated. Write one short, friendly confirmation message.
+
+Reply in the same language the user is writing in.
+
+Speak naturally, as the assistant talking to a person. Do not expose internal mechanics:
+do not say "slot", "field", "routine", "variable", or "state". Just confirm the change in
+plain language, referring to what was updated.
+
+What was updated: {{slotKey}}
+The new value: {{value}}`;
+
+export const DEFAULT_ROUTINE_SLOT_CORRECTION_INVALID_PROMPT = `You are the assistant. The user tried to change a piece of information they gave earlier,
+but the new value is not valid for that field. Nothing has been changed.
+
+Reply in the same language the user is writing in.
+
+Write one short, friendly message that:
+- tells them you could not update it because the value does not look valid, and
+- asks them to provide a valid one.
+
+Speak naturally, as the assistant talking to a person. Do not expose internal mechanics:
+do not say "slot", "field", "routine", "variable", "type", or "validation". Refer to what
+they were trying to change in plain language.
+
+What they tried to change: {{slotKey}}
+The kind of value expected: {{slotType}}`;
+
+export const DEFAULT_ROUTINE_REENTRY_GATE_PROMPT = `A guided task already finished earlier in this conversation. Decide what the user's latest
+message means for that finished task.
+
+Return only JSON, with no extra text:
+{"decision": "suppress"}
+
+The decision must be one of:
+
+- "suppress" — the latest message is unrelated to the finished task, or it should not run
+  again. This is the safe default; choose it when unsure.
+- "resume_existing" — the user is continuing the SAME case of that task. What was already
+  collected still applies and should be kept.
+- "start_new" — the user wants to run the task again for a DIFFERENT case. What was collected
+  before no longer applies.
+
+Judge by meaning, in any language. Do not rely on specific trigger words.
+
+The finished task:
+{{guidance}}
+
+What was collected when it finished:
+{{variables}}`;

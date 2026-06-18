@@ -33,7 +33,7 @@ const authored: RoutineDefinition = {
   createdAt: now,
   updatedAt: now,
   name: "Contact us",
-  activation: { triggerDescription: "the user wants to contact a human", gateRef: null, priority: 0 },
+  activation: { triggerDescription: "the user wants to contact a human", gateRef: null, priority: 0, reentryMode: "once_per_conversation" },
   slots: [
     { stableSlotId: "slot_email", key: "email", type: "email", required: true, description: "Reachable email.", ordinal: 0 },
     { stableSlotId: "slot_message", key: "message", type: "text", required: true, description: "What to pass on.", ordinal: 1 },

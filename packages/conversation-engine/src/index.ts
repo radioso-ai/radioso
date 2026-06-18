@@ -15,6 +15,7 @@ import type {
   ResumeAwaitingDecisionInput,
   ConversationRoutineDecisionResult,
   RoutineActionRequest,
+  RoutineState,
   RoutineAwaitingDecision,
   SelectionDecision,
   SkillDefinition,
@@ -26,6 +27,7 @@ import type {
   TurnOutcome,
 } from "@radioso/conversation-contract";
 import { resumeAwaitingDecision } from "./awaitingDecision.js";
+import { verifySlotCorrection } from "./slotCorrection.js";
 import { clarificationStage } from "./clarification.js";
 
 const nowIso = (): string => new Date().toISOString();
@@ -465,6 +467,166 @@ export class DefaultConversationEngine implements ConversationEngine {
    * The user input event is appended only once the turn is committed to a routine,
    * so a non-claiming activation check leaves the normal path to append it.
    */
+  /**
+   * Post-completion slot correction (issue #746). When a routine has completed and the
+   * visitor's latest message edits one of its declared mutable slots, patch the stored
+   * value in place and reply — without rerunning the routine or starting a new one.
+   *
+   * Detection (which slot, what value) is host-owned and model-driven (multilingual); the
+   * engine owns the deterministic gate (`verifySlotCorrection`) and never persists a value
+   * the gate rejects. Returns null — falling through to normal activation — whenever there
+   * is no correction port, no completed instance, no detected correction, or the detected
+   * correction fails verification.
+   */
+  private async tryCompletedRoutineCorrection(
+    input: AttemptRoutineInput,
+    baseTurn: TurnContext,
+    completedStates: RoutineState[],
+  ): Promise<ProcessTurnResult | null> {
+    if (!input.routineSlotCorrection || !input.routineStore) {
+      return null;
+    }
+    // Single-row state model: at most one completed routine per session (the most recent).
+    const completedState = completedStates[0];
+    if (!completedState) {
+      return null;
+    }
+    const candidate = await input.routineSlotCorrection.detect({ turn: baseTurn, completedState });
+    if (!candidate) {
+      return null;
+    }
+    const verdict = verifySlotCorrection({
+      slots: candidate.slots,
+      slotKey: candidate.slotKey,
+      rawValue: candidate.rawValue,
+    });
+    if (!verdict.ok) {
+      // A correction was detected over a real mutable slot but the new value fails its
+      // declared type: re-ask for a valid value rather than silently falling through, so
+      // the visitor knows nothing changed and why. `unknown_slot` / `immutable` are
+      // defensive (detection only surfaces declared mutable slots) — leave those to the
+      // normal turn.
+      if (verdict.reason === "invalid_value") {
+        const answer = await input.routineSlotCorrection.rejectInvalid({
+          turn: baseTurn,
+          routineId: completedState.routineId,
+          slotKey: candidate.slotKey,
+        });
+        return this.buildSlotCorrectionTurn(input, completedState.routineId, answer, {
+          status: "rejected",
+          outputs: { routineId: completedState.routineId, slotKey: candidate.slotKey, reason: "invalid_value" },
+        });
+      }
+      return null;
+    }
+    const answer = await input.routineSlotCorrection.confirm({
+      turn: baseTurn,
+      routineId: completedState.routineId,
+      slotKey: verdict.key,
+      value: verdict.value,
+    });
+    await input.routineStore.save({
+      ...completedState,
+      variables: { ...completedState.variables, [verdict.key]: verdict.value },
+      status: "completed",
+    });
+    return this.buildSlotCorrectionTurn(input, completedState.routineId, answer, {
+      status: "applied",
+      // Slot KEY only — never the corrected value (may be PII), per trace conventions.
+      outputs: { routineId: completedState.routineId, slotKey: verdict.key },
+    });
+  }
+
+  /**
+   * Shared result builder for a completed-routine slot-correction turn: appends the input +
+   * reply events and emits the trace (a `message` stage plus a `routine_slot_correction`
+   * stage carrying the given status/outputs — slot keys only, never values).
+   */
+  private async buildSlotCorrectionTurn(
+    input: AttemptRoutineInput,
+    routineId: string,
+    answer: string,
+    correctionStage: { status: ConversationTraceStage["status"]; outputs: Record<string, unknown> },
+  ): Promise<ProcessTurnResult> {
+    const response: RenderableTurn = { answer };
+    const events: ConversationEvent[] = [];
+    const inputEvent = createInputEvent(input);
+    await input.stores.appendEvent(inputEvent);
+    events.push(inputEvent);
+    const responseEvent = createResponseEvent(input.sessionId, response);
+    await input.stores.appendEvent(responseEvent);
+    events.push(responseEvent);
+    return createProcessTurnResult({
+      sessionId: input.sessionId,
+      events,
+      decision: { selected: [], reason: "routine_slot_correction" },
+      outcomes: [],
+      response,
+      trace: createTrace([
+        stage({
+          id: "message",
+          kind: "message",
+          status: "applied",
+          outputs: {
+            eventId: input.inputEvent.id,
+            kind: input.inputEvent.kind,
+            contentLength: input.inputEvent.content.length,
+            locale: input.inputEvent.locale ?? undefined,
+          },
+        }),
+        stage({
+          id: `routine_slot_correction:${routineId}`,
+          kind: "routine_slot_correction",
+          status: correctionStage.status,
+          outputs: correctionStage.outputs,
+        }),
+      ]),
+    });
+  }
+
+  /**
+   * Semantic reentry (issue #746). When a routine completed in this conversation and its
+   * author chose `semantic` reentry, a host gate decides what the latest message means for
+   * it: re-open the same instance (keeping captured variables), start a fresh one, or stay
+   * suppressed. Returns the `RoutineState` to run, or null to leave the turn to normal
+   * activation — which is also what a non-semantic routine resolves to (the gate returns
+   * `suppress` without a model call). Both reentry kinds restart at the root step; slot
+   * fast-forwarding skips slots that `resume_existing` carried over.
+   */
+  private async tryCompletedRoutineReentry(
+    input: AttemptRoutineInput,
+    baseTurn: TurnContext,
+    completedStates: RoutineState[],
+  ): Promise<RoutineState | null> {
+    if (!input.routineReentryGate) {
+      return null;
+    }
+    const completedState = completedStates[0];
+    if (!completedState) {
+      return null;
+    }
+    const decision = await input.routineReentryGate.decide({ turn: baseTurn, completedState });
+    if (decision.kind === "resume_existing") {
+      return {
+        sessionId: input.sessionId,
+        routineId: completedState.routineId,
+        path: [],
+        variables: { ...completedState.variables },
+        status: "active",
+      };
+    }
+    if (decision.kind === "start_new") {
+      return {
+        sessionId: input.sessionId,
+        routineId: completedState.routineId,
+        path: [],
+        variables: {},
+        status: "active",
+      };
+    }
+    return null;
+  }
+
   async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
     if (!input.routineStore || !input.routineRunner) {
       return null;
@@ -484,12 +646,30 @@ export class DefaultConversationEngine implements ConversationEngine {
 
     let state = resuming ? active! : null;
     let activationClarificationStage: ConversationTraceStage | null = null;
+    // Completed routine instances for this session (single-row model: at most one). Read once
+    // and shared by the interceptor and the suppression list below.
+    const completedStates = state ? [] : ((await input.routineStore.loadCompleted?.({ sessionId: input.sessionId })) ?? []);
+    if (!state) {
+      // Completed-instance interceptor (issue #746): before starting a new routine, check
+      // whether the visitor is correcting a value captured by the routine that just
+      // completed. A confirmed correction patches stored state and replies — it does not
+      // start a routine. Anything else falls through to normal activation below.
+      const correction = await this.tryCompletedRoutineCorrection(input, baseTurn, completedStates);
+      if (correction) {
+        return correction;
+      }
+
+      // Reentry gate (issue #746): for a completed routine whose author chose semantic
+      // reentry, a structured model decision may re-open the same instance (keeping its
+      // captured variables) or start a fresh one. Every other case returns null and leaves
+      // the turn to normal activation below.
+      state = await this.tryCompletedRoutineReentry(input, baseTurn, completedStates);
+    }
     if (!state) {
       if (!input.routineActivator) {
         return null;
       }
-      const completedRoutineIds = (await input.routineStore.loadCompleted?.({ sessionId: input.sessionId }) ?? [])
-        .map((completed) => completed.routineId);
+      const completedRoutineIds = completedStates.map((completed) => completed.routineId);
       const activation = await input.routineActivator.activate({
         turn: baseTurn,
         ...(input.loopGuardCandidateIds ? { loopGuardCandidateIds: input.loopGuardCandidateIds } : {}),
@@ -842,6 +1022,11 @@ export const createConversationEngine = (): ConversationEngine => new DefaultCon
 
 export { DefaultRoutineRunner } from "./routineRunner.js";
 export { resumeAwaitingDecision } from "./awaitingDecision.js";
+export {
+  verifySlotCorrection,
+  type SlotCorrectionResult,
+  type SlotCorrectionRejection,
+} from "./slotCorrection.js";
 export {
   clarificationStage,
   decideClarification,

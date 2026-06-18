@@ -31,6 +31,7 @@ import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
@@ -43,6 +44,7 @@ import {
   webhookDestinationsApi,
   type RoutineDefinition,
   type RoutineDefinitionDraft,
+  type RoutineReentryMode,
   type RoutineValidationResult,
   type WebhookDestination,
 } from '@/lib/api'
@@ -67,6 +69,13 @@ const emptyRoutineDraft = (): RoutineDefinitionDraft => ({
   transitions: [],
   terminals: [{ stableStepId: 'complete', kind: 'complete', instruction: 'Confirm completion.', ordinal: 0 }],
 })
+
+// Author-facing reentry policy options. Order puts the safe default first.
+const REENTRY_MODE_OPTIONS: { value: RoutineReentryMode; label: string; hint: string }[] = [
+  { value: 'once_per_conversation', label: 'Once per conversation', hint: 'Runs a single time; suppressed after it completes.' },
+  { value: 'always', label: 'Every time it matches', hint: 'Can run again after it completes.' },
+  { value: 'semantic', label: 'Let the assistant decide', hint: 'After it completes, the assistant decides whether to resume, restart, or skip it.' },
+]
 
 const draftError = (draft: RoutineDefinitionDraft): string | null => {
   if (!draft.name.trim()) return 'Name is required.'
@@ -106,6 +115,7 @@ const headerFromDraft = (draft: RoutineDefinitionDraft | RoutineDefinition | Rou
   activation: {
     triggerDescription: draft.activation.triggerDescription,
     priority: String(draft.activation.priority),
+    reentryMode: draft.activation.reentryMode ?? 'once_per_conversation',
   },
 })
 
@@ -114,6 +124,7 @@ const emptyProseDraftFromHeader = (header: RoutineDraftHeader): RoutineDefinitio
     name: header.name,
     triggerDescription: header.activation.triggerDescription,
     priority: Number.parseInt(header.activation.priority, 10) || 0,
+    reentryMode: header.activation.reentryMode,
   })
 
 const isBlankFormDraft = (draft: RoutineDefinitionDraft): boolean =>
@@ -853,6 +864,29 @@ function RoutineEditorScreen({
                 }))}
                 disabled={isReadOnly}
               />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="routineReentryMode">Reentry</Label>
+              <Select
+                value={draftHeader.activation.reentryMode}
+                disabled={isReadOnly}
+                onValueChange={(value) => setDraftHeader((current) => ({
+                  ...current,
+                  activation: { ...current.activation, reentryMode: value as RoutineReentryMode },
+                }))}
+              >
+                <SelectTrigger id="routineReentryMode" aria-label="Routine reentry policy">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {REENTRY_MODE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {REENTRY_MODE_OPTIONS.find((option) => option.value === draftHeader.activation.reentryMode)?.hint}
+              </p>
             </div>
             <div className="space-y-1 sm:col-span-2">
               <Label htmlFor="routineTrigger">Activation trigger</Label>

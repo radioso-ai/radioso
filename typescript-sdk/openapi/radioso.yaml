@@ -2550,6 +2550,13 @@ components:
               maxLength: 300
             priority:
               type: integer
+            reentryMode:
+              type: string
+              enum: &a14
+                - once_per_conversation
+                - always
+                - semantic
+              default: once_per_conversation
           required:
             - triggerDescription
             - priority
@@ -2571,7 +2578,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_]*$
               type:
                 type: string
-                enum: &a14
+                enum: &a15
                   - text
                   - number
                   - boolean
@@ -2588,6 +2595,8 @@ components:
               ordinal:
                 type: integer
                 minimum: 0
+              mutable:
+                type: boolean
             required:
               - stableSlotId
               - key
@@ -2595,7 +2604,7 @@ components:
               - required
               - ordinal
             additionalProperties: false
-          default: &a15 []
+          default: &a16 []
         steps:
           type: array
           items:
@@ -2608,7 +2617,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
               kind:
                 type: string
-                enum: &a16
+                enum: &a17
                   - chat
                   - tool
                   - action
@@ -2710,10 +2719,10 @@ components:
                       pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                   mode:
                     type: string
-                    enum: &a17
+                    enum: &a18
                       - typed
                       - untyped
-                default: &a18 {}
+                default: &a19 {}
             required:
               - stableStepId
               - kind
@@ -2738,7 +2747,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
               guardKind:
                 type: string
-                enum: &a19
+                enum: &a20
                   - llm
                   - default
                   - slot_filled
@@ -2772,7 +2781,7 @@ components:
                 type:
                   - string
                   - "null"
-                enum: &a20
+                enum: &a21
                   - is_true
                   - is_false
                   - equals
@@ -2810,7 +2819,7 @@ components:
                 type:
                   - string
                   - "null"
-                enum: &a21
+                enum: &a22
                   - days
                   - weeks
                   - months
@@ -2824,7 +2833,7 @@ components:
               - guardKind
               - ordinal
             additionalProperties: false
-          default: &a22 []
+          default: &a23 []
         terminals:
           type: array
           items:
@@ -2866,7 +2875,7 @@ components:
               items:
                 type: string
                 enum: *a13
-              default: &a23 []
+              default: &a24 []
             destinationRef:
               type: string
               maxLength: 300
@@ -2900,6 +2909,10 @@ components:
               maxLength: 300
             priority:
               type: integer
+            reentryMode:
+              type: string
+              enum: *a14
+              default: once_per_conversation
           required:
             - triggerDescription
             - priority
@@ -2921,7 +2934,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_]*$
               type:
                 type: string
-                enum: *a14
+                enum: *a15
               required:
                 type: boolean
               description:
@@ -2933,6 +2946,8 @@ components:
               ordinal:
                 type: integer
                 minimum: 0
+              mutable:
+                type: boolean
             required:
               - stableSlotId
               - key
@@ -2940,7 +2955,7 @@ components:
               - required
               - ordinal
             additionalProperties: false
-          default: *a15
+          default: *a16
         steps:
           type: array
           items:
@@ -2953,7 +2968,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
               kind:
                 type: string
-                enum: *a16
+                enum: *a17
               instruction:
                 type: string
                 minLength: 1
@@ -3051,8 +3066,8 @@ components:
                       pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                   mode:
                     type: string
-                    enum: *a17
-                default: *a18
+                    enum: *a18
+                default: *a19
             required:
               - stableStepId
               - kind
@@ -3077,7 +3092,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
               guardKind:
                 type: string
-                enum: *a19
+                enum: *a20
               guardText:
                 type:
                   - string
@@ -3105,7 +3120,7 @@ components:
                 type:
                   - string
                   - "null"
-                enum: *a20
+                enum: *a21
               fieldValue:
                 anyOf:
                   - type: string
@@ -3130,7 +3145,7 @@ components:
                 type:
                   - string
                   - "null"
-                enum: *a21
+                enum: *a22
               ordinal:
                 type: integer
                 minimum: 0
@@ -3140,7 +3155,7 @@ components:
               - guardKind
               - ordinal
             additionalProperties: false
-          default: *a22
+          default: *a23
         terminals:
           type: array
           items:
@@ -3180,7 +3195,7 @@ components:
               items:
                 type: string
                 enum: *a13
-              default: *a23
+              default: *a24
             destinationRef:
               type: string
               maxLength: 300
@@ -3276,6 +3291,10 @@ components:
               maxLength: 300
             priority:
               type: integer
+            reentryMode:
+              type: string
+              enum: *a14
+              default: once_per_conversation
           required:
             - triggerDescription
             - priority
@@ -3297,7 +3316,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_]*$
               type:
                 type: string
-                enum: *a14
+                enum: *a15
               required:
                 type: boolean
               description:
@@ -3309,6 +3328,8 @@ components:
               ordinal:
                 type: integer
                 minimum: 0
+              mutable:
+                type: boolean
             required:
               - stableSlotId
               - key
@@ -3316,7 +3337,7 @@ components:
               - required
               - ordinal
             additionalProperties: false
-          default: *a15
+          default: *a16
         steps:
           type: array
           items:
@@ -3329,7 +3350,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
               kind:
                 type: string
-                enum: *a16
+                enum: *a17
               instruction:
                 type: string
                 minLength: 1
@@ -3427,8 +3448,8 @@ components:
                       pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                   mode:
                     type: string
-                    enum: *a17
-                default: *a18
+                    enum: *a18
+                default: *a19
             required:
               - stableStepId
               - kind
@@ -3453,7 +3474,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
               guardKind:
                 type: string
-                enum: *a19
+                enum: *a20
               guardText:
                 type:
                   - string
@@ -3481,7 +3502,7 @@ components:
                 type:
                   - string
                   - "null"
-                enum: *a20
+                enum: *a21
               fieldValue:
                 anyOf:
                   - type: string
@@ -3506,7 +3527,7 @@ components:
                 type:
                   - string
                   - "null"
-                enum: *a21
+                enum: *a22
               ordinal:
                 type: integer
                 minimum: 0
@@ -3516,7 +3537,7 @@ components:
               - guardKind
               - ordinal
             additionalProperties: false
-          default: *a22
+          default: *a23
         terminals:
           type: array
           items:
@@ -3556,7 +3577,7 @@ components:
               items:
                 type: string
                 enum: *a13
-              default: *a23
+              default: *a24
             destinationRef:
               type: string
               maxLength: 300
@@ -3695,6 +3716,10 @@ components:
                   maxLength: 300
                 priority:
                   type: integer
+                reentryMode:
+                  type: string
+                  enum: *a14
+                  default: once_per_conversation
               required:
                 - triggerDescription
                 - priority
@@ -3716,7 +3741,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                   type:
                     type: string
-                    enum: *a14
+                    enum: *a15
                   required:
                     type: boolean
                   description:
@@ -3728,6 +3753,8 @@ components:
                   ordinal:
                     type: integer
                     minimum: 0
+                  mutable:
+                    type: boolean
                 required:
                   - stableSlotId
                   - key
@@ -3735,7 +3762,7 @@ components:
                   - required
                   - ordinal
                 additionalProperties: false
-              default: *a15
+              default: *a16
             steps:
               type: array
               items:
@@ -3748,7 +3775,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
                   kind:
                     type: string
-                    enum: *a16
+                    enum: *a17
                   instruction:
                     type: string
                     minLength: 1
@@ -3846,8 +3873,8 @@ components:
                           pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                       mode:
                         type: string
-                        enum: *a17
-                    default: *a18
+                        enum: *a18
+                    default: *a19
                 required:
                   - stableStepId
                   - kind
@@ -3872,7 +3899,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
                   guardKind:
                     type: string
-                    enum: *a19
+                    enum: *a20
                   guardText:
                     type:
                       - string
@@ -3900,7 +3927,7 @@ components:
                     type:
                       - string
                       - "null"
-                    enum: *a20
+                    enum: *a21
                   fieldValue:
                     anyOf:
                       - type: string
@@ -3925,7 +3952,7 @@ components:
                     type:
                       - string
                       - "null"
-                    enum: *a21
+                    enum: *a22
                   ordinal:
                     type: integer
                     minimum: 0
@@ -3935,7 +3962,7 @@ components:
                   - guardKind
                   - ordinal
                 additionalProperties: false
-              default: *a22
+              default: *a23
             terminals:
               type: array
               items:
@@ -3975,7 +4002,7 @@ components:
                   items:
                     type: string
                     enum: *a13
-                  default: *a23
+                  default: *a24
                 destinationRef:
                   type: string
                   maxLength: 300
@@ -4042,7 +4069,7 @@ components:
           type: string
         status:
           type: string
-          enum: &a25
+          enum: &a26
             - active
             - paused
             - awaiting_confirmation
@@ -5175,7 +5202,7 @@ components:
               type: string
             selectionMode:
               type: string
-              enum: &a28
+              enum: &a29
                 - deterministic
                 - probabilistic
             selectionReason:
@@ -5186,7 +5213,7 @@ components:
               maximum: 1
             callerSurface:
               type: string
-              enum: &a29
+              enum: &a30
                 - assistant
                 - retrieval_api
                 - sdk
@@ -5223,7 +5250,7 @@ components:
                 - used
             outcome:
               type: string
-              enum: &a30
+              enum: &a31
                 - success
                 - unsupported
                 - forbidden
@@ -5260,14 +5287,14 @@ components:
                     additionalProperties: {}
                 evidenceStatus:
                   type: string
-                  enum: &a26
+                  enum: &a27
                     - found
                     - missing
                     - partial
                     - not_applicable
                 supportStatus:
                   type: string
-                  enum: &a27
+                  enum: &a28
                     - supported
                     - unsupported
                     - not_checked
@@ -5552,7 +5579,7 @@ components:
           properties:
             status:
               type: string
-              enum: &a24
+              enum: &a25
                 - supported
                 - unsupported
                 - not_checked
@@ -5595,7 +5622,7 @@ components:
           properties:
             status:
               type: string
-              enum: *a24
+              enum: *a25
           required:
             - status
         debug:
@@ -5693,7 +5720,7 @@ components:
           type: string
         status:
           type: string
-          enum: *a25
+          enum: *a26
         groundedAnswer:
           type: boolean
         tone:
@@ -5730,10 +5757,10 @@ components:
             additionalProperties: {}
         evidenceStatus:
           type: string
-          enum: *a26
+          enum: *a27
         supportStatus:
           type: string
-          enum: *a27
+          enum: *a28
         groundingOutcome:
           type: string
     SkillDiagnosticDefinition:
@@ -5747,7 +5774,7 @@ components:
           type: string
         selectionMode:
           type: string
-          enum: *a28
+          enum: *a29
         selectionReason:
           type: string
         selectionConfidence:
@@ -5756,7 +5783,7 @@ components:
           maximum: 1
         callerSurface:
           type: string
-          enum: *a29
+          enum: *a30
         capabilityChecks:
           type: array
           items:
@@ -5787,7 +5814,7 @@ components:
             - used
         outcome:
           type: string
-          enum: *a30
+          enum: *a31
         error:
           type: object
           properties:
@@ -5819,10 +5846,10 @@ components:
                 additionalProperties: {}
             evidenceStatus:
               type: string
-              enum: *a26
+              enum: *a27
             supportStatus:
               type: string
-              enum: *a27
+              enum: *a28
             groundingOutcome:
               type: string
       required:
@@ -5871,7 +5898,7 @@ components:
           type: array
           items:
             type: string
-            enum: *a29
+            enum: *a30
         requiredCapabilities:
           type: array
           items:
@@ -5898,7 +5925,7 @@ components:
               type: array
               items:
                 type: string
-                enum: *a29
+                enum: *a30
             intent:
               type: object
               properties:

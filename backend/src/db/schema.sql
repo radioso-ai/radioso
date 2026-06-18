@@ -1562,9 +1562,14 @@ CREATE TABLE public.routine_transition (
     ordinal integer NOT NULL,
     outcome_status text,
     counter_limit integer,
+    field_ref text,
+    field_op text,
+    field_value jsonb,
+    field_values jsonb,
+    field_unit text,
     CONSTRAINT routine_transition_counter_limit_check CHECK (((counter_limit IS NULL) OR (counter_limit > 0))),
     CONSTRAINT routine_transition_from_step_check CHECK ((NULLIF(btrim(from_step), ''::text) IS NOT NULL)),
-    CONSTRAINT routine_transition_guard_kind_check CHECK ((guard_kind = ANY (ARRAY['llm'::text, 'default'::text, 'slot_filled'::text, 'outcome'::text, 'counter'::text]))),
+    CONSTRAINT routine_transition_guard_kind_check CHECK ((guard_kind = ANY (ARRAY['llm'::text, 'default'::text, 'slot_filled'::text, 'outcome'::text, 'counter'::text, 'field'::text]))),
     CONSTRAINT routine_transition_ordinal_check CHECK ((ordinal >= 0)),
     CONSTRAINT routine_transition_to_ref_check CHECK ((NULLIF(btrim(to_ref), ''::text) IS NOT NULL))
 );

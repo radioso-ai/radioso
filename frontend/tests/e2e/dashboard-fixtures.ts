@@ -82,6 +82,15 @@ export type CustomerEmailActivityFixture = {
   errorCode: string | null;
   createdAt: string;
 };
+export type SlackInstallStatusFixture = {
+  status: "connected" | "needs_reauth" | "disabled" | "not_configured";
+  teamName?: string;
+  answeringAgentId?: string;
+};
+export type SlackBindingFixture = {
+  answeringAgentId: string | null;
+  escalationChannelId: string | null;
+};
 export type RoutineSkillCatalogFixture = SkillAuthoringDescriptor[];
 export type WebhookDestinationMutationFixture = {
   method: "POST" | "PUT" | "DELETE" | "ROTATE_SECRET";
@@ -499,6 +508,9 @@ export const installDashboardApiMocks = async (
     mcpConnectionRequests?: string[];
     emailSkills?: CustomerEmailSkillFixture[];
     emailActivity?: CustomerEmailActivityFixture[];
+    slackStatus?: SlackInstallStatusFixture;
+    slackBinding?: SlackBindingFixture;
+    slackRequests?: Array<{ method: string; path: string; body?: unknown }>;
     routineSkillCatalog?: RoutineSkillCatalogFixture;
   } = {},
 ) => {
@@ -540,6 +552,8 @@ export const installDashboardApiMocks = async (
   const routineUpdates = options.routineUpdates;
   const emailSkills = options.emailSkills ?? [];
   const emailActivity = options.emailActivity ?? [];
+  let slackStatus = options.slackStatus ?? { status: "not_configured" as const };
+  let slackBinding = options.slackBinding ?? { answeringAgentId: null, escalationChannelId: null };
   const routineSkillCatalog = options.routineSkillCatalog ?? [];
   let webhookDestinations = options.webhookDestinations ?? [];
   let nextWebhookDestinationIndex = webhookDestinations.length + 1;
@@ -741,6 +755,60 @@ export const installDashboardApiMocks = async (
 
     if (request.method() === "GET" && path === `/agents/${defaultAgentId}/channels/lifecycle`) {
       await json(route, channelsLifecycle);
+      return;
+    }
+
+    if (path === `/workspaces/${workspaceId}/agents/${defaultAgentId}/slack/install/status` && request.method() === "GET") {
+      await json(route, slackStatus);
+      return;
+    }
+
+    if (path === `/workspaces/${workspaceId}/agents/${defaultAgentId}/slack/install/start` && request.method() === "POST") {
+      options.slackRequests?.push({ method: request.method(), path });
+      slackStatus = {
+        status: "connected",
+        teamName: "Radioso Test",
+        answeringAgentId: defaultAgentId,
+      };
+      slackBinding = {
+        answeringAgentId: defaultAgentId,
+        escalationChannelId: null,
+      };
+      await json(route, {
+        authorizationUrl: "/oauth/connections/callback?status=authorized&provider=slack",
+        connectionId: "99999999-9999-4999-8999-000000000002",
+        status: "pending",
+      });
+      return;
+    }
+
+    if (path === `/workspaces/${workspaceId}/agents/${defaultAgentId}/slack/binding`) {
+      if (request.method() === "GET") {
+        await json(route, slackBinding);
+        return;
+      }
+
+      if (request.method() === "PUT") {
+        const body = request.postDataJSON() as SlackBindingFixture;
+        options.slackRequests?.push({ method: request.method(), path, body });
+        slackBinding = {
+          answeringAgentId: body.answeringAgentId,
+          escalationChannelId: body.escalationChannelId ?? null,
+        };
+        slackStatus = {
+          ...slackStatus,
+          answeringAgentId: slackBinding.answeringAgentId ?? undefined,
+        };
+        await json(route, slackBinding);
+        return;
+      }
+    }
+
+    if (path === `/workspaces/${workspaceId}/agents/${defaultAgentId}/slack/installation` && request.method() === "DELETE") {
+      options.slackRequests?.push({ method: request.method(), path });
+      slackStatus = { status: "not_configured" };
+      slackBinding = { answeringAgentId: null, escalationChannelId: null };
+      await route.fulfill({ status: 204 });
       return;
     }
 

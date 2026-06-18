@@ -6,6 +6,7 @@ import { AccessGrantRepository } from "../../db/repositories/accessGrantReposito
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
 import { RoutineDefinitionRepository } from "../../db/repositories/routineDefinitionRepository.js";
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
+import { PendingDecisionRepository } from "../../db/repositories/pendingDecisionRepository.js";
 import { ClarificationStateRepository } from "../../db/repositories/clarificationStateRepository.js";
 import { createConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
 import type { AgentSkillSettingsRegistry, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
@@ -35,6 +36,7 @@ import { AccountAccessService, AccountInvitationService } from "../../modules/ac
 import { AccessGrantService, DefaultOriginMatcher } from "../../modules/accessGrants/public.js";
 import { AgentService } from "../../modules/agents/public.js";
 import { AuditService } from "../../modules/audit/composition.js";
+import { ApprovalDecisionService } from "../../modules/approvals/public.js";
 import type { AuditPort } from "../../modules/audit/contracts/index.js";
 import { AuthService } from "../../modules/auth/services/authService.js";
 import { EmailVerificationService } from "../../modules/auth/services/emailVerificationService.js";
@@ -1317,6 +1319,10 @@ export const buildChatServices = (input: {
     conversationEngine,
     turnRouter,
   });
+  const approvalDecisionService = new ApprovalDecisionService(
+    new PendingDecisionRepository(input.database),
+    chatService.asApprovalResumeRunner(),
+  );
 
   return {
     abuseControlService,
@@ -1332,6 +1338,7 @@ export const buildChatServices = (input: {
     contactHistoryProvider,
     retrievalAnswerService,
     actionDispatchWorker,
+    approvalDecisionService,
   };
 };
 

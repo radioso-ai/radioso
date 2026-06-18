@@ -10,6 +10,7 @@ import type { ConversationRoutineStore, RoutineState } from "@radioso/conversati
 import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
 import { AccessGrantService, DefaultOriginMatcher } from "../../src/modules/accessGrants/public.js";
 import { AccountInvitationService } from "../../src/modules/account/services/accountInvitationService.js";
+import { ApprovalDecisionService } from "../../src/modules/approvals/public.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { EmailVerificationService } from "../../src/modules/auth/services/emailVerificationService.js";
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
@@ -1072,6 +1073,17 @@ export const createTestDependencies = (overrides: {
     publicChatBaseUrl: env.PUBLIC_CHAT_BASE_URL,
   });
   const retrievalDefaultsProvider = createSystemRetrievalDefaultsProvider();
+  const approvalDecisionService = new ApprovalDecisionService(
+    {
+      loadByHandle: async () => null,
+      resolveInTransaction: async () => null,
+    },
+    {
+      resume: async () => {
+        throw new Error("approval_resume_not_configured");
+      },
+    },
+  );
   const dependencies: AppDependencies = {
     env,
     logger,
@@ -1167,6 +1179,7 @@ export const createTestDependencies = (overrides: {
     documentDeletionService,
     documentStorage,
     chatService,
+    approvalDecisionService,
     workbenchReplayRunner: workbenchReplayRunner as any,
     actionDispatchWorker,
     chatBootstrapService,

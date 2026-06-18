@@ -23,6 +23,41 @@ When backend routes, schemas, or response contracts change:
 
 The key point is that generated clients should drift only inside one local change. A pull request that changes backend API contracts should include the generated downstream artifacts or fail the contract check.
 
+## Approval decisions
+
+Human approval gates are resolved through an authenticated dashboard command:
+
+```http
+POST /api/v1/agents/{agentId}/decisions/{handle}/resolve
+```
+
+Request body:
+
+```json
+{
+  "optionId": "approve",
+  "contentHash": "proposal-content-hash",
+  "payload": {
+    "note": "optional operator context"
+  }
+}
+```
+
+The response is:
+
+```json
+{
+  "status": "resolved",
+  "decision": "approved",
+  "conversationId": "conversation-id",
+  "resumed": true
+}
+```
+
+The endpoint is not a chat surface. It records the operator decision and resumes
+the suspended routine in one database transaction. Any gated side effect is
+enqueued as a routine action and dispatched by the existing outbox worker.
+
 ## Contract check
 
 `scripts/check-api-contracts.mjs` compares the backend OpenAPI artifacts with the SDK snapshot and regenerates expected SDK and MCP OpenAPI types in a temporary directory. It fails when committed generated files are stale.

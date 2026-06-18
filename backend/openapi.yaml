@@ -15269,6 +15269,103 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/decisions/{handle}/resolve:
+    post:
+      tags:
+        - Agents
+      summary: Resolve a pending human approval decision
+      operationId: resolveDecision
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+          required: true
+          name: agentId
+          in: path
+        - schema:
+            type: string
+          required: true
+          name: handle
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                optionId:
+                  type: string
+                payload: {}
+                contentHash:
+                  type: string
+              required:
+                - optionId
+                - contentHash
+              additionalProperties: false
+      responses:
+        "200":
+          description: Decision resolved and routine resume attempted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - resolved
+                  decision:
+                    type: string
+                    enum:
+                      - approved
+                      - rejected
+                  conversationId:
+                    type: string
+                  resumed:
+                    type: boolean
+                required:
+                  - status
+                  - decision
+                  - conversationId
+                  - resumed
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller is not an authorized decider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Decision not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Decision already resolved, stale, or resolved concurrently
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Decision option is invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/connectors:
     get:
       tags:

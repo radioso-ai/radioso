@@ -10,8 +10,9 @@ import type {
 import {
   buildAuthorizationUrl,
   createPkcePair,
-  exchangeAuthorizationCode,
+  exchangeAuthorizationCodeWithMetadata,
   type FetchLike,
+  type OauthTokenResponseNormalizer,
 } from "./oauthClient.js";
 import {
   decryptOauthClientConfig,
@@ -35,6 +36,7 @@ export interface OauthProviderDefinition {
   clientSecret?: string;
   defaultScopes: string[];
   allowedScopes?: string[];
+  tokenResponseNormalizer?: OauthTokenResponseNormalizer;
 }
 
 export interface OauthProviderRegistryPort {
@@ -186,20 +188,22 @@ export class OauthConnectionService {
       throw badRequest("OAuth state mismatch");
     }
 
-    const tokens = await exchangeAuthorizationCode({
+    const tokens = await exchangeAuthorizationCodeWithMetadata({
       config,
       code: input.code,
       codeVerifier: flow.codeVerifier,
       redirectUri: flow.redirectUri,
       fetchImpl: this.options.fetchImpl ?? globalThis.fetch,
+      tokenResponseNormalizer: provider.tokenResponseNormalizer,
     });
-    const grantedScopes = tokens.scope?.split(/\s+/).filter(Boolean) ?? config.scopes ?? record.grantedScopes;
+    const grantedScopes = tokens.tokens.scope?.split(/\s+/).filter(Boolean) ?? config.scopes ?? record.grantedScopes;
     const updated = await this.options.repository.setOauthTokens(
       record.workspaceId,
       record.id,
-      encryptOauthTokens(tokens, key),
+      encryptOauthTokens(tokens.tokens, key),
       null,
       grantedScopes,
+      tokens.providerAccountId ?? null,
     );
     if (!updated) {
       throw notFound("OAuth connection not found");

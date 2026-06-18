@@ -1590,6 +1590,65 @@ CREATE TABLE public.skill_intake_states (
 
 
 --
+-- Name: slack_channel_bindings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.slack_channel_bindings (
+    id uuid NOT NULL,
+    installation_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    answering_agent_id uuid NOT NULL,
+    escalation_channel_id text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: slack_conversation_links; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.slack_conversation_links (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    installation_id uuid NOT NULL,
+    slack_key text NOT NULL,
+    conversation_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: slack_inbound_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.slack_inbound_events (
+    event_id text NOT NULL,
+    team_id text NOT NULL,
+    received_at timestamp with time zone DEFAULT now() NOT NULL,
+    status text DEFAULT 'received'::text NOT NULL,
+    CONSTRAINT slack_inbound_events_status_check CHECK ((status = ANY (ARRAY['received'::text, 'processed'::text, 'skipped'::text])))
+);
+
+
+--
+-- Name: slack_installations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.slack_installations (
+    id uuid NOT NULL,
+    connection_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    team_id text NOT NULL,
+    team_name text,
+    bot_user_id text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: usage_daily_rollups; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2680,6 +2739,62 @@ ALTER TABLE ONLY public.sessions
 
 ALTER TABLE ONLY public.skill_intake_states
     ADD CONSTRAINT skill_intake_states_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: slack_channel_bindings slack_channel_bindings_installation_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_channel_bindings
+    ADD CONSTRAINT slack_channel_bindings_installation_id_key UNIQUE (installation_id);
+
+
+--
+-- Name: slack_channel_bindings slack_channel_bindings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_channel_bindings
+    ADD CONSTRAINT slack_channel_bindings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: slack_conversation_links slack_conversation_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_conversation_links
+    ADD CONSTRAINT slack_conversation_links_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: slack_conversation_links slack_conversation_links_slack_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_conversation_links
+    ADD CONSTRAINT slack_conversation_links_slack_key_key UNIQUE (slack_key);
+
+
+--
+-- Name: slack_inbound_events slack_inbound_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_inbound_events
+    ADD CONSTRAINT slack_inbound_events_pkey PRIMARY KEY (event_id);
+
+
+--
+-- Name: slack_installations slack_installations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_installations
+    ADD CONSTRAINT slack_installations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: slack_installations slack_installations_team_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_installations
+    ADD CONSTRAINT slack_installations_team_id_key UNIQUE (team_id);
 
 
 --
@@ -3954,6 +4069,48 @@ CREATE INDEX idx_routine_terminal_definition_id ON public.routine_terminal USING
 --
 
 CREATE INDEX idx_routine_transition_definition_id ON public.routine_transition USING btree (definition_id);
+
+
+--
+-- Name: idx_slack_channel_bindings_answering_agent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_slack_channel_bindings_answering_agent ON public.slack_channel_bindings USING btree (answering_agent_id);
+
+
+--
+-- Name: idx_slack_channel_bindings_workspace; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_slack_channel_bindings_workspace ON public.slack_channel_bindings USING btree (workspace_id);
+
+
+--
+-- Name: idx_slack_conversation_links_installation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_slack_conversation_links_installation ON public.slack_conversation_links USING btree (installation_id);
+
+
+--
+-- Name: idx_slack_conversation_links_workspace; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_slack_conversation_links_workspace ON public.slack_conversation_links USING btree (workspace_id);
+
+
+--
+-- Name: idx_slack_installations_connection; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_slack_installations_connection ON public.slack_installations USING btree (connection_id);
+
+
+--
+-- Name: idx_slack_installations_workspace; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_slack_installations_workspace ON public.slack_installations USING btree (workspace_id);
 
 
 --
@@ -5567,6 +5724,70 @@ ALTER TABLE ONLY public.skill_intake_states
 
 ALTER TABLE ONLY public.skill_intake_states
     ADD CONSTRAINT skill_intake_states_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: slack_channel_bindings slack_channel_bindings_answering_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_channel_bindings
+    ADD CONSTRAINT slack_channel_bindings_answering_agent_id_fkey FOREIGN KEY (answering_agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: slack_channel_bindings slack_channel_bindings_installation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_channel_bindings
+    ADD CONSTRAINT slack_channel_bindings_installation_id_fkey FOREIGN KEY (installation_id) REFERENCES public.slack_installations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: slack_channel_bindings slack_channel_bindings_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_channel_bindings
+    ADD CONSTRAINT slack_channel_bindings_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: slack_conversation_links slack_conversation_links_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_conversation_links
+    ADD CONSTRAINT slack_conversation_links_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: slack_conversation_links slack_conversation_links_installation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_conversation_links
+    ADD CONSTRAINT slack_conversation_links_installation_id_fkey FOREIGN KEY (installation_id) REFERENCES public.slack_installations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: slack_conversation_links slack_conversation_links_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_conversation_links
+    ADD CONSTRAINT slack_conversation_links_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: slack_installations slack_installations_connection_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_installations
+    ADD CONSTRAINT slack_installations_connection_id_fkey FOREIGN KEY (connection_id) REFERENCES public.integration_connections(id) ON DELETE CASCADE;
+
+
+--
+-- Name: slack_installations slack_installations_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_installations
+    ADD CONSTRAINT slack_installations_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

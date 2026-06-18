@@ -9,6 +9,8 @@ import {
   type RoutineDefinition,
   type RoutineDefinitionDraftInput,
   type RoutineDefinitionPublishOptions,
+  type RoutineFieldGuardOp,
+  type RoutineFieldGuardUnit,
   type RoutineGuardKind,
   type RoutineReentryMode,
   type RoutineSlotType,
@@ -53,6 +55,26 @@ const readBoolean = (record: Record<string, unknown>, key: string): boolean =>
 
 const readMetadata = (record: Record<string, unknown>, key: string): Record<string, unknown> =>
   asRecord(record[key]);
+
+// A field guard's comparison value is a string, number, or boolean (or absent). It rides
+// in a jsonb column, so it arrives already typed — pass it through, drop anything else.
+const readFieldValue = (record: Record<string, unknown>, key: string): string | number | boolean | null => {
+  const value = record[key];
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? value : null;
+};
+
+const readFieldValues = (record: Record<string, unknown>, key: string): (string | number | boolean)[] | null => {
+  const value = record[key];
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const primitives = value.filter((entry): entry is string | number | boolean =>
+    typeof entry === "string" || typeof entry === "number" || typeof entry === "boolean",
+  );
+  // An empty list is not a valid `in` guard (the domain enforces min(1)); surface it as
+  // absent rather than a never-matching `values: []` the compiler would still spread.
+  return primitives.length > 0 ? primitives : null;
+};
 
 const asArray = (value: unknown): Record<string, unknown>[] =>
   Array.isArray(value) ? value.map(asRecord) : [];
@@ -120,6 +142,11 @@ const definitionSelect = `
       'guardText', tr.guard_text,
       'outcomeStatus', tr.outcome_status,
       'counterLimit', tr.counter_limit,
+      'fieldRef', tr.field_ref,
+      'fieldOp', tr.field_op,
+      'fieldValue', tr.field_value,
+      'fieldValues', tr.field_values,
+      'fieldUnit', tr.field_unit,
       'ordinal', tr.ordinal
     ) ORDER BY tr.ordinal ASC, tr.from_step ASC, tr.to_ref ASC) AS items
     FROM routine_transition tr
@@ -186,6 +213,11 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
     guardText: readNullableString(transition, "guardText"),
     outcomeStatus: readNullableString(transition, "outcomeStatus"),
     counterLimit: readNumber(transition, "counterLimit") || null,
+    fieldRef: readNullableString(transition, "fieldRef"),
+    fieldOp: readNullableString(transition, "fieldOp") as RoutineFieldGuardOp | null,
+    fieldValue: readFieldValue(transition, "fieldValue"),
+    fieldValues: readFieldValues(transition, "fieldValues"),
+    fieldUnit: readNullableString(transition, "fieldUnit") as RoutineFieldGuardUnit | null,
     ordinal: readNumber(transition, "ordinal"),
   })),
   terminals: asArray(row.terminals).map((terminal) => ({
@@ -540,9 +572,10 @@ export class RoutineDefinitionRepository {
     for (const transition of input.transitions) {
       await client.query(
         `INSERT INTO routine_transition (
-           definition_id, from_step, to_ref, guard_kind, guard_text, outcome_status, counter_limit, ordinal
+           definition_id, from_step, to_ref, guard_kind, guard_text, outcome_status, counter_limit,
+           field_ref, field_op, field_value, field_values, field_unit, ordinal
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12, $13)`,
         [
           definitionId,
           transition.fromStep,
@@ -551,6 +584,15 @@ export class RoutineDefinitionRepository {
           transition.guardText,
           transition.outcomeStatus,
           transition.counterLimit,
+          transition.fieldRef ?? null,
+          transition.fieldOp ?? null,
+          // Explicit null/undefined check (not a truthy shortcut): a field guard value of
+          // `0` or `false` is meaningful and must survive serialization, not collapse to NULL.
+          transition.fieldValue === null || transition.fieldValue === undefined
+            ? null
+            : JSON.stringify(transition.fieldValue),
+          transition.fieldValues ? JSON.stringify(transition.fieldValues) : null,
+          transition.fieldUnit ?? null,
           transition.ordinal,
         ],
       );

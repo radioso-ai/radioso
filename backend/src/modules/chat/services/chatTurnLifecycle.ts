@@ -8,6 +8,10 @@ import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { PendingDecisionCreateInput } from "../../../db/repositories/pendingDecisionRepository.js";
+import type {
+  ConversationOwnershipReason,
+  ConversationOwnershipRequestHandoffInput,
+} from "../../../db/repositories/conversationOwnershipRepository.js";
 import {
   ActivitySummaryPresenter,
   ActivityTracePresenter,
@@ -141,11 +145,23 @@ export interface AssistantTurnPersistencePort {
     clarificationTransition?: CapturedClarificationTransition | null;
     assistantMessage: MessageCreateInput;
     auditEvent: AuditEventInput;
+    ownershipHandoff?: OwnershipHandoffInput | null;
+    ownershipAuditEvent?: AuditEventInput | null;
   }): Promise<MessageRecord>;
 }
 
 export interface PendingDecisionWriterPort {
   create(input: PendingDecisionCreateInput): Promise<unknown>;
+}
+
+export interface ConversationOwnershipWriterPort {
+  requestHandoff(input: ConversationOwnershipRequestHandoffInput): Promise<unknown>;
+}
+
+export interface OwnershipHandoffInput {
+  reason: ConversationOwnershipReason;
+  routineId?: string;
+  stepId?: string;
 }
 
 interface AssistantTurnSuccessInput {
@@ -323,6 +339,7 @@ export class ChatTurnLifecycle {
     capabilityPolicy?: CapabilityPolicy,
     private readonly logger?: Pick<AppLogger, "warn">,
     private readonly pendingDecisionRepository?: PendingDecisionWriterPort,
+    private readonly conversationOwnershipRepository?: ConversationOwnershipWriterPort,
   ) {
     this.capabilityPolicy = capabilityPolicy ?? new DefaultAllowCapabilityPolicy();
   }
@@ -419,6 +436,7 @@ export class ChatTurnLifecycle {
     commitRoutineState?: () => Promise<void>;
     routineStateTransition?: CapturedRoutineTransition | null;
     pendingDecisionTransition?: PendingDecisionCreateInput | null;
+    ownershipHandoff?: OwnershipHandoffInput | null;
     suspended?: boolean;
     commitClarificationState?: () => Promise<void>;
     clarificationTransition?: CapturedClarificationTransition | null;
@@ -438,6 +456,15 @@ export class ChatTurnLifecycle {
     const auditEvent = suspended
       ? this.buildAssistantTurnSuspendedAuditEvent(presentation.successInput)
       : this.buildAssistantTurnSuccessAuditEvent(presentation.successInput);
+    const ownershipAuditEvent = input.ownershipHandoff
+      ? this.buildOwnershipHandoffAuditEvent({
+          ...input.ownershipHandoff,
+          workspaceId: input.workspaceId,
+          accountId: input.accountId,
+          conversationId: input.session.conversation.id,
+          agentId: input.session.agent.id,
+        })
+      : null;
     await this.assertActionsAuthorized({
       actions: input.actions,
       workspaceId: input.workspaceId,
@@ -454,6 +481,8 @@ export class ChatTurnLifecycle {
         clarificationTransition: input.clarificationTransition,
         assistantMessage: presentation.assistantMessage,
         auditEvent,
+        ownershipHandoff: input.ownershipHandoff,
+        ownershipAuditEvent,
       });
       this.auditService.logRecorded?.(auditEvent);
       if (!suspended) {
@@ -473,11 +502,21 @@ export class ChatTurnLifecycle {
       if (input.pendingDecisionTransition && this.pendingDecisionRepository) {
         await this.pendingDecisionRepository.create(input.pendingDecisionTransition);
       }
+      if (input.ownershipHandoff && this.conversationOwnershipRepository) {
+        await this.conversationOwnershipRepository.requestHandoff({
+          conversationId: input.session.conversation.id,
+          workspaceId: input.workspaceId,
+          reason: input.ownershipHandoff.reason,
+        });
+      }
       await input.commitClarificationState?.();
       if (suspended) {
         await this.finalizeSuspendedAssistantTurn(presentation.successInput);
       } else {
         await this.finalizeAssistantTurn(presentation.successInput);
+      }
+      if (ownershipAuditEvent) {
+        await this.auditService.record(ownershipAuditEvent);
       }
     }
 
@@ -656,6 +695,33 @@ export class ChatTurnLifecycle {
         retrieval: input.diagnostics,
         activityTrace: input.activityTrace,
         ...(input.turnTrace ? { turnTrace: input.turnTrace } : {}),
+      },
+    };
+  }
+
+  private buildOwnershipHandoffAuditEvent(input: OwnershipHandoffInput & {
+    workspaceId: string;
+    accountId?: string;
+    conversationId: string;
+    agentId: string;
+  }): AuditEventInput {
+    return {
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      eventType: "hitl.ownership",
+      eventStatus: "success",
+      metadata: {
+        actor: {
+          type: "system",
+          source: "routine",
+        },
+        action: "handoff_requested",
+        reason: input.reason,
+        conversationId: input.conversationId,
+        agentId: input.agentId,
+        workspaceId: input.workspaceId,
+        routineId: input.routineId,
+        stepId: input.stepId,
       },
     };
   }

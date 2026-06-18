@@ -152,4 +152,95 @@ describe("PostgresAssistantTurnPersistence", () => {
       { id: "a", label: "Alpha", confidence: 0.8, payload: { opaque: "a" } },
     ]));
   });
+
+  it("requests ownership handoff and records ownership audit inside the assistant turn transaction", async () => {
+    const calls: QueryCall[] = [];
+    let insideTransaction = false;
+    const handoffCallWasInsideTransaction = { value: false };
+    const client = {
+      query: vi.fn(async (sql: string, params?: unknown[]) => {
+        calls.push([sql, params]);
+        if (sql.includes("RETURNING id, conversation_id")) {
+          return queryResult([{
+            id: "assistant_msg_1",
+            conversation_id: "conv_1",
+            workspace_id: "workspace_1",
+            role: "assistant",
+            content: "A person will help you from here.",
+            metadata_json: {},
+            skill_name: null,
+            skill_outcome: null,
+            skill_status: null,
+            created_at: new Date("2026-06-09T00:00:00.000Z"),
+          }]);
+        }
+        return queryResult([]);
+      }),
+    };
+    const database = {
+      withTransaction: vi.fn(async (callback: (transactionClient: PoolClient) => Promise<unknown>) => {
+        insideTransaction = true;
+        try {
+          return await callback(client as unknown as PoolClient);
+        } finally {
+          insideTransaction = false;
+        }
+      }),
+    } as unknown as Database;
+    const conversationOwnershipRepository = {
+      requestHandoff: vi.fn(async (_input, executor) => {
+        handoffCallWasInsideTransaction.value = insideTransaction;
+        await executor?.queryOptional("SELECT 1", []);
+        return null;
+      }),
+    };
+
+    await new PostgresAssistantTurnPersistence(
+      database,
+      60_000,
+      conversationOwnershipRepository as never,
+    ).completeAssistantTurn({
+      workspaceId: "workspace_1",
+      conversationId: "conv_1",
+      assistantMessage: {
+        id: "assistant_msg_1",
+        conversationId: "conv_1",
+        workspaceId: "workspace_1",
+        role: "assistant",
+        content: "A person will help you from here.",
+      },
+      auditEvent: {
+        eventType: "chat.answer",
+        eventStatus: "success",
+        workspaceId: "workspace_1",
+        metadata: {},
+      },
+      ownershipHandoff: { reason: "routine_handoff", routineId: "routine_1", stepId: "handoff" },
+      ownershipAuditEvent: {
+        eventType: "hitl.ownership",
+        eventStatus: "success",
+        workspaceId: "workspace_1",
+        metadata: {
+          action: "handoff_requested",
+          conversationId: "conv_1",
+          routineId: "routine_1",
+          stepId: "handoff",
+        },
+      },
+    });
+
+    expect(conversationOwnershipRepository.requestHandoff).toHaveBeenCalledWith(
+      {
+        conversationId: "conv_1",
+        workspaceId: "workspace_1",
+        reason: "routine_handoff",
+      },
+      expect.objectContaining({ queryOptional: expect.any(Function) }),
+    );
+    expect(handoffCallWasInsideTransaction.value).toBe(true);
+    expect(calls.some(([sql]) => sql === "SELECT 1")).toBe(true);
+    const auditCalls = calls.filter(([sql]) => sql.includes("INSERT INTO audit_events"));
+    expect(auditCalls).toHaveLength(2);
+    expect(auditCalls[1]![1]?.[3]).toBe("hitl.ownership");
+  });
 });

@@ -322,6 +322,23 @@ enabled, the worker records a terminal skip instead of retrying. Missing or
 deleted destinations are also terminal skips; transient transport failures retry
 through the action outbox.
 
+### Handoff notifications
+
+When a routine reaches a `handoff` terminal, the chat turn still renders the
+routine-authored reply. In the same turn commit, Radioso requests human ownership
+for the conversation and enqueues a `handoff.notify` action.
+
+The action payload contains conversation, workspace, agent, and triggering user
+message ids, the handoff reason, the routine and step ids, and a dashboard path
+for opening the conversation. It does not include prompts, completions,
+retrieved content, slot values, credentials, or connection strings.
+
+`handoff.notify` uses the same contact-delivery configuration as `contact.send`.
+The action worker resolves the configured recipients or workspace owner fallback
+and sends a neutral notice that a conversation needs a human operator. It uses
+the existing routine action outbox, so lease, retry, idempotency, and failure
+semantics are unchanged.
+
 ## Lifecycle and versions
 
 A routine can have four statuses:

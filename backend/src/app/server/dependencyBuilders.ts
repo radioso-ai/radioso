@@ -12,6 +12,7 @@ import type { AgentSkillSettingsRegistry, AgentSurfaceExtensionRegistry } from "
 import { AuditEventRepository } from "../../db/repositories/auditEventRepository.js";
 import { BootstrapGreetingCacheRepository } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
 import { ConversationRepository } from "../../db/repositories/conversationRepository.js";
+import { ConversationOwnershipRepository } from "../../db/repositories/conversationOwnershipRepository.js";
 import { DocumentProcessingJobRepository } from "../../db/repositories/documentProcessingJobRepository.js";
 import { DocumentRepository } from "../../db/repositories/documentRepository.js";
 import { DocumentSourceRepository } from "../../db/repositories/documentSourceRepository.js";
@@ -298,6 +299,7 @@ export const buildRepositories = (
   bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database),
   chunkRepository: new ChunkRepository(database, new PgVectorChunkStorage()),
   conversationRepository: new ConversationRepository(database),
+  conversationOwnershipRepository: new ConversationOwnershipRepository(database),
   documentProcessingJobRepository: new DocumentProcessingJobRepository(database),
   documentRepository: new DocumentRepository(database),
   documentSourceRepository: new DocumentSourceRepository(database),
@@ -753,6 +755,7 @@ export const buildChatServices = (input: {
   auditService: AuditService;
   bootstrapGreetingCacheRepository: BootstrapGreetingCacheRepository;
   composition: ApplicationComposition;
+  conversationOwnershipRepository: ConversationOwnershipRepository;
   conversationRepository: ConversationRepository;
   database: Database;
   env: Env;
@@ -1240,13 +1243,19 @@ export const buildChatServices = (input: {
     // Turn-emitted action intents land here, persisted to the outbox and
     // dispatched out of band by `actionDispatchWorker` in the worker process.
     actionOutbox,
-    assistantTurnPersistence: new PostgresAssistantTurnPersistence(input.database),
+    assistantTurnPersistence: new PostgresAssistantTurnPersistence(
+      input.database,
+      undefined,
+      input.conversationOwnershipRepository,
+    ),
     actionCapabilities: input.composition.actionCapabilityMap,
     capabilityPolicy: input.composition.capabilityPolicy,
     logger: input.logger,
+    conversationOwnershipRepository: input.conversationOwnershipRepository,
     // Routine resume/activate per turn — present only when routines are registered.
     routineStore: routineStateRepository,
     suspendedRoutineReader: routineStateRepository,
+    conversationOwnershipReader: input.conversationOwnershipRepository,
     routineProvider,
     clarifierFactory: ({ session, accountId }) => new DefaultClarifier(
       new RoutineChatModelGateway(chatGateway, {

@@ -1012,6 +1012,24 @@ CREATE TABLE public.connector_whatsapp_message_log (
 
 
 --
+-- Name: conversation_ownership; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.conversation_ownership (
+    conversation_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    state text NOT NULL,
+    owner_account_id uuid,
+    owner_display_name text,
+    reason text,
+    version integer DEFAULT 1 NOT NULL,
+    taken_over_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: conversations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2387,6 +2405,14 @@ ALTER TABLE ONLY public.connector_whatsapp_message_log
 
 
 --
+-- Name: conversation_ownership conversation_ownership_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_ownership
+    ADD CONSTRAINT conversation_ownership_pkey PRIMARY KEY (conversation_id);
+
+
+--
 -- Name: conversations conversations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3429,6 +3455,13 @@ CREATE INDEX chunks_p9_workspace_id_idx ON public.chunks_p9 USING btree (workspa
 --
 
 CREATE INDEX clarification_states_pending_idx ON public.clarification_states USING btree (session_id) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: conversation_ownership_workspace_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX conversation_ownership_workspace_idx ON public.conversation_ownership USING btree (workspace_id);
 
 
 --
@@ -5232,6 +5265,14 @@ ALTER TABLE ONLY public.connector_whatsapp_contacts
 
 ALTER TABLE ONLY public.connector_whatsapp_message_log
     ADD CONSTRAINT connector_whatsapp_message_log_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: conversation_ownership conversation_ownership_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_ownership
+    ADD CONSTRAINT conversation_ownership_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
 
 
 --

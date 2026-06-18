@@ -67,6 +67,10 @@ import type { ConversationModelGateway } from "@radioso/conversation-contract";
 import type { ModelInferencePipeline } from "../../shared/infra/llm/modelInferencePipeline.js";
 import { OauthConnectionService, StaticOauthProviderRegistry } from "../../modules/integrationOauth/public.js";
 import {
+  SlackInstallationService,
+  type SlackOauthMetadata,
+} from "../../modules/slack/public.js";
+import {
   CustomerEmailConnectionService,
   CustomerEmailOAuthService,
   EmailSkillDefinitionService,
@@ -129,6 +133,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     repositories,
   });
+  const slackInstallationService = new SlackInstallationService({
+    oauthConnections: new OauthConnectionRepository(infrastructure.database),
+    integrationConnections: repositories.integrationConnectionRepository,
+    installations: repositories.slackInstallationRepository,
+    bindings: repositories.slackChannelBindingRepository,
+    encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
+  });
   const oauthConnectionService = new OauthConnectionService({
     repository: new OauthConnectionRepository(infrastructure.database),
     providers: new StaticOauthProviderRegistry(composition.oauthProviders),
@@ -136,6 +147,24 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     appBaseUrl: env.APP_BASE_URL,
     assertPublicUrl: assertPublicWebsiteUrl,
     logger,
+    onAuthorized: async ({ connection, tokens, metadata }) => {
+      if (connection.provider !== "slack") {
+        return;
+      }
+      const slackMetadata = metadata as Partial<SlackOauthMetadata>;
+      if (!slackMetadata.teamId || !slackMetadata.botUserId) {
+        throw new Error("Slack OAuth metadata was missing team or bot identity");
+      }
+      await slackInstallationService.saveInstallation({
+        workspaceId: connection.workspaceId,
+        oauthConnectionId: connection.id,
+        teamId: slackMetadata.teamId,
+        teamName: slackMetadata.teamName ?? null,
+        botUserId: slackMetadata.botUserId,
+        botAccessToken: tokens.accessToken,
+        grantedScopes: connection.grantedScopes,
+      });
+    },
   });
   const customerEmailOAuthService = new CustomerEmailOAuthService(oauthConnectionService);
   const customerEmailConnectionService = new CustomerEmailConnectionService({
@@ -479,6 +508,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     abuseControlService: chat.abuseControlService,
     workspaceProviderCredentialsService,
     oauthConnectionService,
+    slackInstallationService,
     customerEmailOAuthService,
     customerEmailConnectionService,
     emailSkillDefinitionService,

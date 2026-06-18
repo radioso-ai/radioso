@@ -6,6 +6,7 @@ import type {
   OauthConnectionSummary,
   StoredOauthClientConfig,
   StoredOauthFlow,
+  StoredOauthTokens,
 } from "../domain.js";
 import {
   buildAuthorizationUrl,
@@ -63,6 +64,11 @@ export interface OauthConnectionServiceOptions {
   fetchImpl?: FetchLike;
   assertPublicUrl?: (url: string) => Promise<void> | void;
   logger?: Pick<AppLogger, "info" | "warn">;
+  onAuthorized?: (input: {
+    connection: OauthConnectionRecord;
+    tokens: StoredOauthTokens;
+    metadata: Record<string, unknown>;
+  }) => Promise<void>;
 }
 
 interface SignedStatePayload {
@@ -208,6 +214,11 @@ export class OauthConnectionService {
     if (!updated) {
       throw notFound("OAuth connection not found");
     }
+    await this.options.onAuthorized?.({
+      connection: updated,
+      tokens: tokens.tokens,
+      metadata: tokens.metadata ?? {},
+    });
 
     this.options.logger?.info(
       { event: "integration_oauth", phase: "authorized", provider: provider.id, workspaceId: record.workspaceId, connectionId: record.id },

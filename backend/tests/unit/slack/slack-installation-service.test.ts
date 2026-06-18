@@ -22,7 +22,7 @@ import { decryptOauthTokens } from "../../../src/modules/integrationOauth/public
 
 const encryptionKey = Buffer.alloc(32, 7).toString("base64");
 
-class InMemoryOauthConnections implements Pick<OauthConnectionRepositoryPort, "create" | "setOauthTokens"> {
+class InMemoryOauthConnections implements Pick<OauthConnectionRepositoryPort, "create" | "findById" | "setOauthTokens"> {
   readonly rows = new Map<string, OauthConnectionRecord>();
   readonly created: CreateOauthConnectionInput[] = [];
   readonly tokenWrites: Array<{ workspaceId: string; id: string; credentialCiphertext: string; grantedScopes?: string[]; providerAccountId?: string | null }> = [];
@@ -49,6 +49,11 @@ class InMemoryOauthConnections implements Pick<OauthConnectionRepositoryPort, "c
     };
     this.rows.set(record.id, record);
     return { ...record };
+  }
+
+  async findById(workspaceId: string, id: string): Promise<OauthConnectionRecord | null> {
+    const record = this.rows.get(id);
+    return record && record.workspaceId === workspaceId ? { ...record } : null;
   }
 
   async setOauthTokens(
@@ -136,6 +141,10 @@ class InMemorySlackInstallations implements SlackInstallationRepositoryPort {
     return [...this.rows.values()].find((record) => record.teamId === teamId) ?? null;
   }
 
+  async findByWorkspaceId(workspaceId: string) {
+    return [...this.rows.values()].find((record) => record.workspaceId === workspaceId) ?? null;
+  }
+
   async upsert(input: Parameters<SlackInstallationRepositoryPort["upsert"]>[0]) {
     const existing = await this.findByTeamId(input.teamId);
     const now = new Date();
@@ -152,23 +161,45 @@ class InMemorySlackInstallations implements SlackInstallationRepositoryPort {
     this.rows.set(record.id, record);
     return record;
   }
+
+  async removeByWorkspaceId(workspaceId: string): Promise<boolean> {
+    const record = await this.findByWorkspaceId(workspaceId);
+    if (!record) return false;
+    this.rows.delete(record.id);
+    return true;
+  }
 }
 
 class InMemorySlackBindings implements SlackBindingRepositoryPort {
   readonly upserts: Parameters<SlackBindingRepositoryPort["upsert"]>[0][] = [];
+  readonly rows = new Map<string, Awaited<ReturnType<SlackBindingRepositoryPort["upsert"]>>>();
+
+  async findByInstallationId(installationId: string) {
+    return [...this.rows.values()].find((record) => record.installationId === installationId) ?? null;
+  }
 
   async upsert(input: Parameters<SlackBindingRepositoryPort["upsert"]>[0]) {
     this.upserts.push(input);
     const now = new Date();
-    return {
-      id: randomUUID(),
+    const existing = await this.findByInstallationId(input.installationId);
+    const record = {
+      id: existing?.id ?? randomUUID(),
       installationId: input.installationId,
       workspaceId: input.workspaceId,
       answeringAgentId: input.answeringAgentId,
       escalationChannelId: input.escalationChannelId ?? null,
-      createdAt: now,
+      createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     };
+    this.rows.set(record.id, record);
+    return record;
+  }
+
+  async removeByInstallationId(installationId: string): Promise<boolean> {
+    const record = await this.findByInstallationId(installationId);
+    if (!record) return false;
+    this.rows.delete(record.id);
+    return true;
   }
 }
 

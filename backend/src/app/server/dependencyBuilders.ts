@@ -128,6 +128,11 @@ import { EmailSkillDefinitionRepository } from "../../db/repositories/emailSkill
 import { EmailSkillActivityRepository } from "../../db/repositories/emailSkillActivityRepository.js";
 import { WebhookSkillDefinitionRepository } from "../../db/repositories/webhookSkillDefinitionRepository.js";
 import { OauthConnectionRepository } from "../../db/repositories/oauthConnectionRepository.js";
+import { IntegrationConnectionRepository } from "../../modules/integrationConnections/public.js";
+import {
+  SlackChannelBindingRepository,
+  SlackInstallationRepository,
+} from "../../modules/slack/public.js";
 import {
   DefaultWebhookDestinationAdapter,
   WebhookDestinationService,
@@ -317,6 +322,9 @@ export const buildRepositories = (
   workspaceProviderCredentialsRepository: new WorkspaceProviderCredentialsRepository(database),
   webhookDestinationRepository: new WebhookDestinationRepository(database),
   customerEmailConnectionRepository: new CustomerEmailConnectionRepository(database),
+  integrationConnectionRepository: new IntegrationConnectionRepository(database),
+  slackInstallationRepository: new SlackInstallationRepository(database),
+  slackChannelBindingRepository: new SlackChannelBindingRepository(database),
   emailSkillDefinitionRepository: new EmailSkillDefinitionRepository(database),
   emailSkillActivityRepository: new EmailSkillActivityRepository(database),
   webhookSkillDefinitionRepository: new WebhookSkillDefinitionRepository(database),
@@ -1318,7 +1326,7 @@ export const buildConnectorRegistry = (input: {
   env: Env;
   logger: AppLogger;
 }) => {
-  const connectorRegistry = createDefaultConnectorRegistry(input.composition.connectors);
+  const connectorRegistry = createDefaultConnectorRegistry(input.composition.connectors, input.env);
   if (input.env.CONNECTOR_ENCRYPTION_KEY) {
     connectorRegistry.setEncryptionKey(input.env.CONNECTOR_ENCRYPTION_KEY);
   } else {

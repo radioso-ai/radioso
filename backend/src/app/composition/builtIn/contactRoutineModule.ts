@@ -2,11 +2,13 @@ import { capabilityNames } from "../../../shared/domain/capabilityPolicy.js";
 import {
   contactRoutineDefinition,
   CONTACT_SEND_ACTION_TYPE,
+  HANDOFF_NOTIFY_ACTION_TYPE,
   CONTACT_INTENT_SKILL_NAME,
   CONTACT_INTENT_NAME,
   ConfiguredContactDeliveryResolver,
   ContactSendActionHandler,
   FetchContactWebhookHttpClient,
+  HandoffNotifyActionHandler,
   WorkspaceOwnerContactRecipientResolver,
   type PublicChatActionAdvertiserPort,
   type PublicChatIntakeAction,
@@ -92,6 +94,26 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
           logger,
           // SSRF guard: every webhook hop is re-validated against the public-host
           // policy before the worker sends visitor data outbound.
+          new FetchContactWebhookHttpClient(assertPublicWebsiteUrl),
+        );
+      },
+    });
+    context.registerActionHandler({
+      type: HANDOFF_NOTIFY_ACTION_TYPE,
+      requiredCapabilities: [capabilityNames.humanContact.request],
+      handler: ({ database, logger, mailService, assertPublicWebsiteUrl }) => {
+        const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
+          new WorkspaceRepository(database),
+          new AccountMembershipRepository(database),
+        );
+        return new HandoffNotifyActionHandler(
+          mailService,
+          new ConfiguredContactDeliveryResolver(
+            new ConversationRepository(database),
+            new AgentRepository(database),
+            ownerFallback,
+          ),
+          logger,
           new FetchContactWebhookHttpClient(assertPublicWebsiteUrl),
         );
       },

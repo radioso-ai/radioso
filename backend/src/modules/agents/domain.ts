@@ -54,6 +54,7 @@ const DEFAULT_CITATION_DISPLAY_ENABLED = true;
 // capability in the assistant's Skills settings.
 const DEFAULT_CONTACT_REQUESTS_ENABLED = false;
 const DEFAULT_WEBHOOK_EXPORTS_ENABLED = false;
+const DEFAULT_HANDOFF_ON_RETRIEVAL_MISS = false;
 const MAX_CONTACT_REQUEST_RECIPIENT_EMAILS = 5;
 const DEFAULT_AGENT_SURFACE_POSITION: AgentSurfacePosition = "bottom-right";
 const MAX_EMBED_COPY_LOCALES = 10;
@@ -91,6 +92,8 @@ export interface AgentBehaviorSettings {
   // Whether routines owned by this assistant may export completion data to
   // workspace webhook destinations. Dispatch treats disabled as a terminal skip.
   webhookExportsEnabled: boolean;
+  // Whether a structured retrieval no-context outcome should request human ownership.
+  handoffOnRetrievalMiss?: boolean;
   contactRequestDelivery: AgentContactRequestDelivery;
   retrievalEnabled: boolean;
   logo: AgentLogo | null;
@@ -703,6 +706,7 @@ export const validateAgentInput = (
     citationDisplayEnabled: input.citationDisplayEnabled ?? DEFAULT_CITATION_DISPLAY_ENABLED,
     contactRequestsEnabled: input.contactRequestsEnabled ?? DEFAULT_CONTACT_REQUESTS_ENABLED,
     webhookExportsEnabled: input.webhookExportsEnabled ?? DEFAULT_WEBHOOK_EXPORTS_ENABLED,
+    handoffOnRetrievalMiss: input.handoffOnRetrievalMiss ?? DEFAULT_HANDOFF_ON_RETRIEVAL_MISS,
     contactRequestDelivery: normalizeContactRequestDelivery(input.contactRequestDelivery),
     retrievalEnabled: input.retrievalEnabled ?? true,
     sourceScope: normalizeSourceScope(input.sourceScope),

@@ -96,6 +96,38 @@ describe("AgentRepository", () => {
     });
   });
 
+  it("parses retrieval-miss handoff behavior from behavior settings", async () => {
+    const repository = new AgentRepository({
+      queryOptional: async () => agentRow({
+        authenticatedChat: { enabled: true },
+        anonymousChat: { enabled: false, token: null },
+        websiteEmbed: websiteEmbedDefaults(),
+      }, {
+        behavior_settings: {
+          handoffOnRetrievalMiss: true,
+        },
+      }),
+    } as never);
+
+    const agent = await repository.findByIdAndWorkspaceId("agent-1", "workspace-1");
+
+    expect(agent?.handoffOnRetrievalMiss).toBe(true);
+  });
+
+  it("defaults retrieval-miss handoff behavior off when stored behavior predates the setting", async () => {
+    const repository = new AgentRepository({
+      queryOptional: async () => agentRow({
+        authenticatedChat: { enabled: true },
+        anonymousChat: { enabled: false, token: null },
+        websiteEmbed: websiteEmbedDefaults(),
+      }),
+    } as never);
+
+    const agent = await repository.findByIdAndWorkspaceId("agent-1", "workspace-1");
+
+    expect(agent?.handoffOnRetrievalMiss).toBe(false);
+  });
+
   it("persists contact request delivery in behavior settings", async () => {
     const query = vi.fn(async (text: string, _params?: unknown[]) => {
       if (text.includes("INSERT INTO agents")) {

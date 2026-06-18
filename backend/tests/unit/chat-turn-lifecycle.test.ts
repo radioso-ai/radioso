@@ -11,6 +11,7 @@ import {
   type AssistantTurnPersistencePort,
   type ChatActionOutboxPort,
 } from "../../src/modules/chat/services/chatTurnLifecycle.js";
+import { HANDOFF_NOTIFY_ACTION_TYPE } from "../../src/modules/chat/services/routines/contactRoutine.js";
 import type { ChatPresentedAnswer } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import { TURN_TRACE_ENVELOPE_VERSION } from "../../src/modules/chat/services/turnTraceEnvelope.js";
@@ -328,6 +329,94 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     expect(productAnalyticsService.track).not.toHaveBeenCalled();
   });
 
+  it("threads routine ownership handoff and audit through the transaction port", async () => {
+    const records: RecordedAudit[] = [];
+    const auditService = {
+      record: vi.fn(async (event: RecordedAudit) => {
+        records.push(event);
+      }),
+      logRecorded: vi.fn((event: RecordedAudit) => {
+        records.push(event);
+      }),
+      updateChatAnswerSuggestions: vi.fn(async () => {}),
+    } as unknown as AuditService;
+    const conversationRepository = {
+      touch: vi.fn(async () => {}),
+    } as unknown as ConversationRepositoryPort;
+    const messageRepository = {
+      create: vi.fn(async () => ({ id: "assistant_msg_separate_write" })),
+    } as unknown as MessageRepositoryPort;
+    const assistantTurnPersistence: AssistantTurnPersistencePort = {
+      completeAssistantTurn: vi.fn(async (input) => ({
+        id: input.assistantMessage.id!,
+        conversationId: input.assistantMessage.conversationId,
+        workspaceId: input.assistantMessage.workspaceId,
+        role: "assistant" as const,
+        content: input.assistantMessage.content,
+        metadata: input.assistantMessage.metadata,
+        skillName: input.assistantMessage.skillName,
+        skillOutcome: input.assistantMessage.skillOutcome,
+        skillStatus: input.assistantMessage.skillStatus,
+        createdAt: new Date(),
+      })),
+    };
+    const lifecycle = new ChatTurnLifecycle(
+      conversationRepository,
+      messageRepository,
+      auditService,
+      undefined,
+      undefined,
+      assistantTurnPersistence,
+    );
+
+    const completed = await lifecycle.completeAssistantTurn({
+      workspaceId: "workspace_1",
+      accountId: "account_1",
+      session: session(),
+      presentation: { ...presentation(), answer: "A person will help you from here." },
+      answerStartedAt: Date.now(),
+      stream: false,
+      engineTrace: engineTrace(),
+      actions: [{
+        type: HANDOFF_NOTIFY_ACTION_TYPE,
+        payload: {
+          conversationId: "conv_1",
+          workspaceId: "workspace_1",
+          agentId: "agent_1",
+          reason: "routine_handoff",
+          routineId: "routine_1",
+          stepId: "handoff",
+        },
+      }],
+      ownershipHandoff: { reason: "routine_handoff", routineId: "routine_1", stepId: "handoff" },
+    });
+
+    expect(completed.response.answer).toBe("A person will help you from here.");
+    expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenCalledOnce();
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    expect(persisted.ownershipHandoff).toEqual({
+      reason: "routine_handoff",
+      routineId: "routine_1",
+      stepId: "handoff",
+    });
+    expect(persisted.actions?.[0]?.type).toBe(HANDOFF_NOTIFY_ACTION_TYPE);
+    expect(persisted.ownershipAuditEvent).toMatchObject({
+      eventType: "hitl.ownership",
+      eventStatus: "success",
+      metadata: {
+        actor: { type: "system", source: "routine" },
+        action: "handoff_requested",
+        reason: "routine_handoff",
+        conversationId: "conv_1",
+        agentId: "agent_1",
+        workspaceId: "workspace_1",
+        routineId: "routine_1",
+        stepId: "handoff",
+      },
+    });
+    expect(records.map((record) => record.eventType)).toEqual(["chat.answer"]);
+  });
+
   it("keeps normal assistant turns as chat.answer successes without pending decision transitions", async () => {
     const records: RecordedAudit[] = [];
     const auditService = {
@@ -577,6 +666,82 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       idempotencyKey: expect.stringMatching(/^routine-action:conv_1:contact\.send:/),
     }));
     expect(records).toHaveLength(1);
+  });
+
+  it("requests handoff ownership and records hitl audit on the fallback path", async () => {
+    const records: RecordedAudit[] = [];
+    const auditService = {
+      record: vi.fn(async (event: RecordedAudit) => {
+        records.push(event);
+      }),
+      updateChatAnswerSuggestions: vi.fn(async () => {}),
+    } as unknown as AuditService;
+    const conversationRepository = {
+      touch: vi.fn(async () => {}),
+    } as unknown as ConversationRepositoryPort;
+    const messageRepository = {
+      create: vi.fn(async (input) => ({ id: input.id ?? "assistant_msg_1" })),
+    } as unknown as MessageRepositoryPort;
+    const actionOutbox: ChatActionOutboxPort = {
+      enqueue: vi.fn(async () => ({ id: "action_1", duplicate: false })),
+    };
+    const conversationOwnershipRepository = {
+      requestHandoff: vi.fn(async () => null),
+    };
+    const lifecycle = new ChatTurnLifecycle(
+      conversationRepository,
+      messageRepository,
+      auditService,
+      undefined,
+      actionOutbox,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      conversationOwnershipRepository,
+    );
+
+    await lifecycle.completeAssistantTurn({
+      workspaceId: "workspace_1",
+      accountId: "account_1",
+      session: session(),
+      presentation: { ...presentation(), answer: "A person will help you from here." },
+      answerStartedAt: Date.now(),
+      stream: false,
+      engineTrace: engineTrace(),
+      actions: [{
+        type: HANDOFF_NOTIFY_ACTION_TYPE,
+        payload: {
+          conversationId: "conv_1",
+          workspaceId: "workspace_1",
+          agentId: "agent_1",
+          reason: "routine_handoff",
+          routineId: "routine_1",
+          stepId: "handoff",
+        },
+      }],
+      ownershipHandoff: { reason: "routine_handoff", routineId: "routine_1", stepId: "handoff" },
+    });
+
+    expect(actionOutbox.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      type: HANDOFF_NOTIFY_ACTION_TYPE,
+      idempotencyKey: expect.stringMatching(/^routine-action:conv_1:handoff\.notify:/),
+    }));
+    expect(conversationOwnershipRepository.requestHandoff).toHaveBeenCalledWith({
+      conversationId: "conv_1",
+      workspaceId: "workspace_1",
+      reason: "routine_handoff",
+    });
+    expect(records.map((record) => record.eventType)).toEqual(["chat.answer", "hitl.ownership"]);
+    expect(records[1]).toMatchObject({
+      eventType: "hitl.ownership",
+      metadata: {
+        action: "handoff_requested",
+        routineId: "routine_1",
+        stepId: "handoff",
+      },
+    });
   });
 
   it("commits clarification state on the fallback path after the assistant message", async () => {

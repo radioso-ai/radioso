@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
 
-import type { PoolClient } from "pg";
+import type { PoolClient, QueryResultRow } from "pg";
 import type { RoutineState } from "@radioso/conversation-contract";
 
 import { DEFAULT_ROUTINE_STATE_TTL_MS } from "../../../db/repositories/routineStateRepository.js";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { PendingDecisionCreateInput } from "../../../db/repositories/pendingDecisionRepository.js";
+import { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
 import { stringifyJsonb } from "../../../shared/infra/jsonb.js";
-import type { Database } from "../../../shared/infra/database.js";
+import type { Database, DatabaseExecutor } from "../../../shared/infra/database.js";
 import {
   actionIdempotencyKey,
   type AssistantTurnPersistencePort,
@@ -198,10 +199,36 @@ const applyClarificationTransition = async (
   );
 };
 
+const executorFromClient = (client: PoolClient): Pick<DatabaseExecutor, "queryOptional"> => ({
+  async queryOptional<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T | null> {
+    const result = await client.query<T>(text, params);
+    return result.rows[0] ?? null;
+  },
+});
+
+const insertAuditEvent = async (
+  client: PoolClient,
+  event: CompleteAssistantTurnInput["auditEvent"],
+): Promise<void> => {
+  await client.query(
+    `INSERT INTO audit_events (id, account_id, workspace_id, event_type, event_status, metadata_json)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+    [
+      randomUUID(),
+      event.accountId ?? null,
+      event.workspaceId ?? null,
+      event.eventType,
+      event.eventStatus,
+      stringifyJsonb(event.metadata ?? {}),
+    ],
+  );
+};
+
 export class PostgresAssistantTurnPersistence implements AssistantTurnPersistencePort {
   constructor(
     private readonly database: Database,
     private readonly routineStateTtlMs: number = DEFAULT_ROUTINE_STATE_TTL_MS,
+    private readonly conversationOwnershipRepository = new ConversationOwnershipRepository(database),
   ) {}
 
   async completeAssistantTurn(input: CompleteAssistantTurnInput): Promise<MessageRecord> {
@@ -210,6 +237,16 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
       await applyRoutineStateTransition(client, input.routineStateTransition, this.routineStateTtlMs);
       if (input.pendingDecisionTransition) {
         await savePendingDecision(client, input.pendingDecisionTransition);
+      }
+      if (input.ownershipHandoff) {
+        await this.conversationOwnershipRepository.requestHandoff(
+          {
+            conversationId: input.conversationId,
+            workspaceId: input.workspaceId,
+            reason: input.ownershipHandoff.reason,
+          },
+          executorFromClient(client),
+        );
       }
       await applyClarificationTransition(client, input.clarificationTransition);
 
@@ -236,18 +273,10 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
         [input.conversationId, input.workspaceId],
       );
 
-      await client.query(
-        `INSERT INTO audit_events (id, account_id, workspace_id, event_type, event_status, metadata_json)
-         VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
-        [
-          randomUUID(),
-          input.auditEvent.accountId ?? null,
-          input.auditEvent.workspaceId ?? null,
-          input.auditEvent.eventType,
-          input.auditEvent.eventStatus,
-          stringifyJsonb(input.auditEvent.metadata ?? {}),
-        ],
-      );
+      await insertAuditEvent(client, input.auditEvent);
+      if (input.ownershipAuditEvent) {
+        await insertAuditEvent(client, input.ownershipAuditEvent);
+      }
 
       return mapMessage(messageResult.rows[0]!);
     });

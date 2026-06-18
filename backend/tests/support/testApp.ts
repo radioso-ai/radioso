@@ -166,6 +166,7 @@ import {
   InMemoryIngestionSettingsRepository,
   InMemoryHistoryItemsRepository,
   InMemoryMessageRepository,
+  InMemoryConversationOwnershipRepository,
   InMemoryRetrievalSettingsRepository,
   InMemorySessionRepository,
   InMemoryEmailVerificationTokenRepository,
@@ -278,6 +279,7 @@ interface TestRepositories {
   chunkRepository: InMemoryChunkRepository;
   documentProcessingJobRepository: InMemoryDocumentProcessingJobRepository;
   conversationRepository: InMemoryConversationRepository;
+  conversationOwnershipRepository: InMemoryConversationOwnershipRepository;
   messageRepository: InMemoryMessageRepository;
   agentRepository: InMemoryAgentRepository;
   routineDefinitionRepository: InMemoryRoutineDefinitionRepository;
@@ -397,6 +399,7 @@ export const createTestDependencies = (overrides: {
   const chunkRepository = new InMemoryChunkRepository(documentRepository);
   const documentStorage = new InMemoryDocumentStorage();
   const conversationRepository = new InMemoryConversationRepository();
+  const conversationOwnershipRepository = new InMemoryConversationOwnershipRepository();
   const messageRepository = new InMemoryMessageRepository();
   conversationRepository.setMessageRepository(messageRepository);
   const bootstrapGreetingCacheRepository = new InMemoryBootstrapGreetingCacheRepository();
@@ -1213,6 +1216,7 @@ export const createTestDependencies = (overrides: {
     agentRepository,
     bootstrapGreetingCacheRepository,
     conversationRepository,
+    conversationOwnershipRepository,
     messageRepository,
     connectorRegistry,
     connectorIngestionPort: {
@@ -1252,6 +1256,7 @@ export const createTestDependencies = (overrides: {
       chunkRepository,
       documentProcessingJobRepository,
       conversationRepository,
+      conversationOwnershipRepository,
       messageRepository,
       agentRepository,
       routineDefinitionRepository,

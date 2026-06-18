@@ -173,6 +173,10 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     citations: z.array(schemas.CitationSchema).optional(),
     answerSegments: z.array(schemas.AnswerSegmentSchema).optional(),
     suggestions: z.array(ChatSuggestionSchema).optional(),
+    ownership: z.object({
+      state: z.enum(["ai_owned", "human_owned"]),
+      suppressed: z.boolean(),
+    }).optional(),
   };
 
   const AssistantChatDebugSchema = registry.register(
@@ -189,7 +193,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     "ChatResponse",
     z.object({
       conversationId: z.string().uuid(),
-      assistantMessageId: z.string().uuid(),
+      assistantMessageId: z.string(),
       ...chatResponseCoreShape,
       debug: AssistantChatDebugSchema.optional(),
     }),
@@ -387,6 +391,61 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
+  const ConversationOwnershipSchema = registry.register(
+    "ConversationOwnership",
+    z.object({
+      conversationId: z.string().uuid(),
+      workspaceId: z.string().uuid(),
+      state: z.enum(["ai_owned", "human_owned"]),
+      ownerAccountId: z.string().uuid().nullable(),
+      ownerDisplayName: z.string().nullable(),
+      reason: z.string().nullable(),
+      version: z.number().int().nonnegative(),
+      takenOverAt: z.string().datetime().nullable(),
+      createdAt: z.string().datetime(),
+      updatedAt: z.string().datetime(),
+    }),
+  );
+
+  const ConversationOwnershipResponseSchema = registry.register(
+    "ConversationOwnershipResponse",
+    z.object({
+      ownership: ConversationOwnershipSchema,
+    }),
+  );
+
+  const HumanReplyMessageSchema = registry.register(
+    "HumanReplyMessage",
+    z.object({
+      id: z.string().uuid(),
+      conversationId: z.string().uuid(),
+      workspaceId: z.string().uuid(),
+      role: z.enum(["user", "assistant", "system"]),
+      source: z.enum(["customer", "ai_agent", "human_agent", "human_agent_on_behalf_of_ai_agent", "system"]).optional(),
+      content: z.string(),
+      metadata: z.record(z.unknown()).optional(),
+      inputMetadata: z.object({
+        method: z.enum(["typed", "suggestion_click", "intent_click"]),
+        suggestionSourceMessageId: z.string().uuid().optional(),
+        intent: z.object({
+          skillName: z.string(),
+          intentName: z.string().optional(),
+        }).optional(),
+      }).optional(),
+      skillName: z.string().optional(),
+      skillOutcome: z.string().optional(),
+      skillStatus: z.string().optional(),
+      createdAt: z.string().datetime(),
+    }),
+  );
+
+  const HumanReplyMessageResponseSchema = registry.register(
+    "HumanReplyMessageResponse",
+    z.object({
+      message: HumanReplyMessageSchema,
+    }),
+  );
+
   const ChatConversationDetailSchema = registry.register(
     "ChatConversationDetail",
     z.object({
@@ -457,6 +516,8 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     SkillParamsSchema,
     ChatSuggestionActionSchema,
     ChatSuggestionSchema,
+    ConversationOwnershipSchema,
+    ConversationOwnershipResponseSchema,
     AssistantRouteSchema,
     AssistantRouteDiagnosticsSchema,
     CapabilitySubTraceSchema,
@@ -474,6 +535,8 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     ChatHistoryListResponseSchema,
     HistoryItemSchema,
     HistoryItemsResponseSchema,
+    HumanReplyMessageSchema,
+    HumanReplyMessageResponseSchema,
     ChatConversationMessageDebugSchema,
     AnswerFeedbackEntrySchema,
     AnswerFeedbackRequestSchema,

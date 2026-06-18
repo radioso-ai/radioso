@@ -1012,6 +1012,24 @@ CREATE TABLE public.connector_whatsapp_message_log (
 
 
 --
+-- Name: conversation_ownership; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.conversation_ownership (
+    conversation_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    state text NOT NULL,
+    owner_account_id uuid,
+    owner_display_name text,
+    reason text,
+    version integer DEFAULT 1 NOT NULL,
+    taken_over_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: conversations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1323,7 +1341,8 @@ CREATE TABLE public.messages (
     metadata_json jsonb DEFAULT '{}'::jsonb NOT NULL,
     skill_name text,
     skill_outcome text,
-    skill_status text
+    skill_status text,
+    source text
 );
 
 
@@ -1340,6 +1359,33 @@ CREATE TABLE public.password_reset_tokens (
     request_ip text,
     request_user_agent text,
     created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: pending_decisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pending_decisions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    handle text NOT NULL,
+    conversation_id uuid NOT NULL,
+    session_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    agent_id uuid NOT NULL,
+    routine_id text NOT NULL,
+    step_id text NOT NULL,
+    reason text,
+    options jsonb DEFAULT '[]'::jsonb NOT NULL,
+    decider_scope jsonb NOT NULL,
+    content_hash text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    decision jsonb,
+    decided_by uuid,
+    decided_at timestamp with time zone,
+    deadline timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -2356,6 +2402,14 @@ ALTER TABLE ONLY public.connector_whatsapp_message_log
 
 
 --
+-- Name: conversation_ownership conversation_ownership_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_ownership
+    ADD CONSTRAINT conversation_ownership_pkey PRIMARY KEY (conversation_id);
+
+
+--
 -- Name: conversations conversations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2505,6 +2559,14 @@ ALTER TABLE ONLY public.password_reset_tokens
 
 ALTER TABLE ONLY public.password_reset_tokens
     ADD CONSTRAINT password_reset_tokens_token_hash_key UNIQUE (token_hash);
+
+
+--
+-- Name: pending_decisions pending_decisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_decisions
+    ADD CONSTRAINT pending_decisions_pkey PRIMARY KEY (id);
 
 
 --
@@ -3393,6 +3455,13 @@ CREATE INDEX clarification_states_pending_idx ON public.clarification_states USI
 
 
 --
+-- Name: conversation_ownership_workspace_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX conversation_ownership_workspace_idx ON public.conversation_ownership USING btree (workspace_id);
+
+
+--
 -- Name: conversations_workspace_anon_updated_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4041,6 +4110,34 @@ CREATE INDEX messages_workspace_role_created_id_idx ON public.messages USING btr
 --
 
 CREATE INDEX messages_workspace_skill_turn_idx ON public.messages USING btree (workspace_id, skill_name, skill_outcome, skill_status, created_at DESC);
+
+
+--
+-- Name: pending_decisions_deadline_pending_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pending_decisions_deadline_pending_idx ON public.pending_decisions USING btree (deadline) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: pending_decisions_handle_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX pending_decisions_handle_idx ON public.pending_decisions USING btree (handle);
+
+
+--
+-- Name: pending_decisions_one_open_gate_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX pending_decisions_one_open_gate_idx ON public.pending_decisions USING btree (conversation_id, routine_id, step_id) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: pending_decisions_workspace_pending_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pending_decisions_workspace_pending_idx ON public.pending_decisions USING btree (workspace_id, created_at) WHERE (status = 'pending'::text);
 
 
 --
@@ -5165,6 +5262,14 @@ ALTER TABLE ONLY public.connector_whatsapp_contacts
 
 ALTER TABLE ONLY public.connector_whatsapp_message_log
     ADD CONSTRAINT connector_whatsapp_message_log_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: conversation_ownership conversation_ownership_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_ownership
+    ADD CONSTRAINT conversation_ownership_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
 
 
 --

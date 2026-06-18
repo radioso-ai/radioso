@@ -24,6 +24,7 @@ export type AccountPermission =
   | "workspace.rename"
   | "workspace.delete"
   | "workspace.chat.use"
+  | "workspace.conversation.takeover"
   | "workspace.retrieval.query"
   | "workspace.history.read"
   | "workspace.quality.read"
@@ -496,6 +497,7 @@ export class AccountAccessService {
     return [
       "workspace.summary.read",
       "workspace.chat.use",
+      "workspace.conversation.takeover",
       "workspace.retrieval.query",
       "workspace.history.read",
       "workspace.skills.read",

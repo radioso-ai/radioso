@@ -3,6 +3,9 @@ import type { RoutineDefinition } from "../../../routines/public.js";
 /** The action type the contact routine emits; the registered handler dispatches it. */
 export const CONTACT_SEND_ACTION_TYPE = "contact.send";
 
+/** The action type routine handoff terminals emit for operator notification. */
+export const HANDOFF_NOTIFY_ACTION_TYPE = "handoff.notify";
+
 /** The routine id. */
 export const CONTACT_ROUTINE_ID = "contact.request";
 

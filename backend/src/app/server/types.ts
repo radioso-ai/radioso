@@ -43,6 +43,7 @@ import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRep
 import type { AccountRepositoryPort } from "../../modules/auth/services/authService.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
+import type { ConversationOwnershipRepository } from "../../db/repositories/conversationOwnershipRepository.js";
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
 import type { ConnectorIngestionPort } from "@radioso/connector-api";
 import type { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
@@ -164,6 +165,10 @@ export interface AppDependencies {
   accountRepository: AccountRepositoryPort;
   bootstrapGreetingCacheRepository: BootstrapGreetingCacheRepositoryPort;
   conversationRepository: ConversationRepositoryPort;
+  conversationOwnershipRepository: Pick<
+    ConversationOwnershipRepository,
+    "load" | "requestHandoff" | "takeOver" | "transfer" | "handBack"
+  >;
   messageRepository: MessageRepositoryPort;
   connectorRegistry: ConnectorRegistry;
   connectorIngestionPort: ConnectorIngestionPort;

@@ -105,6 +105,40 @@ describe("routine document model round trips", () => {
     expect(result.draft).toEqual(fullDraft());
   });
 
+  it("round-trips a deterministic field guard through the document AST", () => {
+    const fieldDraft = (): RoutineDefinitionDraftInput => ({
+      name: "eligibility",
+      activation: { triggerDescription: "When checking eligibility.", gateRef: null, priority: 5, reentryMode: "always" },
+      slots: [
+        { stableSlotId: "amount", key: "amount", type: "number", required: true, description: "Order total", ordinal: 0 },
+        { stableSlotId: "tier", key: "tier", type: "text", required: true, description: "Tier", ordinal: 1 },
+      ],
+      steps: [{ stableStepId: "decide", kind: "chat", instruction: "Evaluate {{slot.amount}} for {{slot.tier}}.", toolRef: null, ordinal: 0, metadata: {} }],
+      transitions: [
+        { fromStep: "decide", toRef: "big", guardKind: "field", guardText: null, outcomeStatus: null, counterLimit: null, fieldRef: "amount", fieldOp: "gte", fieldValue: 100, fieldValues: null, fieldUnit: null, ordinal: 0 },
+        { fromStep: "decide", toRef: "member", guardKind: "field", guardText: null, outcomeStatus: null, counterLimit: null, fieldRef: "tier", fieldOp: "in", fieldValue: null, fieldValues: ["gold", "platinum"], fieldUnit: null, ordinal: 1 },
+        { fromStep: "decide", toRef: "standard", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 2 },
+      ],
+      terminals: [
+        { stableStepId: "big", kind: "complete", instruction: "Free shipping.", ordinal: 0 },
+        { stableStepId: "member", kind: "complete", instruction: "Member perk.", ordinal: 1 },
+        { stableStepId: "standard", kind: "complete", instruction: "Standard.", ordinal: 2 },
+      ],
+    });
+
+    const document = routineDraftToDocument(fieldDraft());
+    const result = routineDocumentToDraft(document);
+
+    expect(result.diagnostics).toEqual([]);
+    // The field branch must survive both directions, not silently flatten to `default`.
+    expect(result.draft.transitions.find((transition) => transition.toRef === "big")).toMatchObject({
+      guardKind: "field", fieldRef: "amount", fieldOp: "gte", fieldValue: 100,
+    });
+    expect(result.draft.transitions.find((transition) => transition.toRef === "member")).toMatchObject({
+      guardKind: "field", fieldRef: "tier", fieldOp: "in", fieldValues: ["gold", "platinum"],
+    });
+  });
+
   it("round-trips typed skill-step bindings through the document AST", () => {
     const draft: RoutineDefinitionDraftInput = {
       ...fullDraft(),

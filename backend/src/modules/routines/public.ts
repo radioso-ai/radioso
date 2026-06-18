@@ -23,6 +23,7 @@ export {
   type RoutineDefinition,
   type RoutineDefinitionDraftInput,
   type RoutineFieldGuardOp,
+  type RoutineFieldGuardUnit,
   type RoutineGuardKind,
   type RoutineGuardProvenance,
   type RoutineInputBinding,

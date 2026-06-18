@@ -13,6 +13,7 @@ import type {
 
 import {
   compileRoutineDefinition,
+  routineDefinitionDraftInputSchema,
   routineStepSchema,
   routineGuardProvenance,
   validateRoutineDefinition,
@@ -31,6 +32,7 @@ const baseDefinition = (): RoutineDefinition => ({
     triggerDescription: "The user asks to send a handoff request.",
     gateRef: null,
     priority: 10,
+    reentryMode: "once_per_conversation",
   },
   slots: [
     { stableSlotId: "slot_name", key: "name", type: "text", required: true, description: "Visitor name.", ordinal: 0 },
@@ -49,6 +51,93 @@ const baseDefinition = (): RoutineDefinition => ({
   ],
   createdAt: new Date("2026-06-09T00:00:00.000Z"),
   updatedAt: new Date("2026-06-09T00:00:00.000Z"),
+});
+
+describe("routine reentry mode (issue #746)", () => {
+  const draftActivation = {
+    triggerDescription: "The user asks to send a handoff request.",
+    priority: 10,
+  };
+  const draftBody = {
+    name: "handoff",
+    steps: [
+      { stableStepId: "ask_name", kind: "chat" as const, instruction: "Ask for the name.", ordinal: 0 },
+    ],
+    terminals: [
+      { stableStepId: "done", kind: "complete" as const, instruction: "Confirm completion.", ordinal: 0 },
+    ],
+  };
+
+  it("defaults reentryMode to once_per_conversation when omitted", () => {
+    const parsed = routineDefinitionDraftInputSchema.parse({
+      ...draftBody,
+      activation: { ...draftActivation },
+    });
+    expect(parsed.activation.reentryMode).toBe("once_per_conversation");
+  });
+
+  it("accepts the always and semantic reentry modes", () => {
+    for (const mode of ["always", "semantic", "once_per_conversation"] as const) {
+      const parsed = routineDefinitionDraftInputSchema.parse({
+        ...draftBody,
+        activation: { ...draftActivation, reentryMode: mode },
+      });
+      expect(parsed.activation.reentryMode).toBe(mode);
+    }
+  });
+
+  it("rejects an unknown reentry mode", () => {
+    expect(() => routineDefinitionDraftInputSchema.parse({
+      ...draftBody,
+      activation: { ...draftActivation, reentryMode: "whenever" },
+    })).toThrow();
+  });
+
+  it("compiles reentryMode onto the routine activation metadata", () => {
+    const definition = baseDefinition();
+    definition.activation.reentryMode = "always";
+    const routine = compileRoutineDefinition(definition);
+    expect(routine.metadata).toMatchObject({ activation: { reentryMode: "always" } });
+  });
+
+  it("defaults compiled reentryMode to once_per_conversation for legacy definitions", () => {
+    // A definition parsed before the field existed has no reentryMode; the compiler
+    // must still emit a safe default so existing routines keep suppressing on completion.
+    const definition = baseDefinition();
+    delete (definition.activation as { reentryMode?: unknown }).reentryMode;
+    const routine = compileRoutineDefinition(definition);
+    expect(routine.metadata).toMatchObject({ activation: { reentryMode: "once_per_conversation" } });
+  });
+});
+
+describe("routine mutable slots (issue #746)", () => {
+  it("parses an authored mutable slot and leaves legacy slots immutable", () => {
+    const parsed = routineDefinitionDraftInputSchema.parse({
+      name: "intake",
+      activation: { triggerDescription: "Capture contact details.", priority: 0 },
+      slots: [
+        { stableSlotId: "slot_email", key: "email", type: "email", required: true, ordinal: 0, mutable: true },
+        { stableSlotId: "slot_name", key: "name", type: "text", required: true, ordinal: 1 },
+      ],
+      steps: [{ stableStepId: "ask", kind: "chat", instruction: "Ask for {{slot.email}}.", ordinal: 0 }],
+      terminals: [{ stableStepId: "done", kind: "complete", instruction: "Done.", ordinal: 0 }],
+    });
+    expect(parsed.slots[0]?.mutable).toBe(true);
+    expect(parsed.slots[1]?.mutable).toBeUndefined();
+  });
+
+  it("compiles the mutable flag onto the routine slot schema only when set", () => {
+    const definition = baseDefinition();
+    definition.slots = [
+      { stableSlotId: "slot_name", key: "name", type: "text", required: true, description: null, ordinal: 0, mutable: true },
+      { stableSlotId: "slot_topic", key: "topic", type: "text", required: true, description: null, ordinal: 1 },
+    ];
+    const routine = compileRoutineDefinition(definition);
+    expect(routine.slots).toEqual([
+      { id: "slot_name", key: "name", type: "text", required: true, mutable: true },
+      { id: "slot_topic", key: "topic", type: "text", required: true },
+    ]);
+  });
 });
 
 describe("routine definition compiler and validator", () => {

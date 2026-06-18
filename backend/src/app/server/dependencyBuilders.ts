@@ -68,6 +68,8 @@ import {
   RoutineChatModelGateway,
   RoutineNextStepSelector,
   RoutineStepRenderer,
+  RoutineSlotCorrector,
+  RoutineReentryGate,
   DefaultClarifier,
   type RoutineRegistration,
   SkillRetrievalTurnDispatch,
@@ -1135,6 +1137,17 @@ export const buildChatServices = (input: {
         activator: routineRegistry.isEmpty
           ? { activate: async () => null }
           : routineRegistry.activator(modelGateway),
+        // Post-completion slot correction (issue #746): resolves the completed routine
+        // from the same per-turn routine set and runs model-driven detection/confirmation.
+        slotCorrection: new RoutineSlotCorrector(routines, modelGateway, {
+          detectPromptTemplate: loadPromptTemplate("chat/routine-slot-correction-detect.md"),
+          confirmPromptTemplate: loadPromptTemplate("chat/routine-slot-correction-confirm.md"),
+          invalidPromptTemplate: loadPromptTemplate("chat/routine-slot-correction-invalid.md"),
+        }),
+        // Semantic reentry gate (issue #746): inert unless a routine opts into semantic mode.
+        reentryGate: new RoutineReentryGate(routines, modelGateway, {
+          promptTemplate: loadPromptTemplate("chat/routine-reentry-gate.md"),
+        }),
         runner: new DefaultRoutineRunner(
           routines,
           new RoutineNextStepSelector(modelGateway, {

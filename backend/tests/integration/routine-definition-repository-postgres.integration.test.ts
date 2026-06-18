@@ -89,6 +89,7 @@ const createRoutineSchema = async (client: PoolClient, schema: string): Promise<
       activation_trigger_description TEXT NOT NULL,
       activation_gate_ref TEXT NULL,
       activation_priority INTEGER NOT NULL DEFAULT 0,
+      activation_reentry_mode TEXT NOT NULL DEFAULT 'once_per_conversation',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(agent_id, name, version),
@@ -104,6 +105,7 @@ const createRoutineSchema = async (client: PoolClient, schema: string): Promise<
       required BOOLEAN NOT NULL DEFAULT TRUE,
       description TEXT NULL,
       ordinal INTEGER NOT NULL,
+      mutable BOOLEAN NOT NULL DEFAULT FALSE,
       PRIMARY KEY (definition_id, stable_slot_id),
       UNIQUE(definition_id, key),
       UNIQUE(definition_id, ordinal)
@@ -177,6 +179,7 @@ const draftInput = (name = "postgres-lifecycle", label = "v1"): RoutineDefinitio
     triggerDescription: `When the user asks for ${label}.`,
     gateRef: null,
     priority: 10,
+    reentryMode: "once_per_conversation",
   },
   slots: [{
     stableSlotId: "slot_topic",

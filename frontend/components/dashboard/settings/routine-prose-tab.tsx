@@ -55,7 +55,13 @@ export function RoutineProseTab({
     })
     onDraftChange({
       ...draft,
-      activation: { ...draft.activation, priority: Number.parseInt(header.activation.priority, 10) || 0 },
+      // priority and reentryMode are header fields the prose body does not encode; carry
+      // them back from the header so switching to Prose and saving does not reset them.
+      activation: {
+        ...draft.activation,
+        priority: Number.parseInt(header.activation.priority, 10) || 0,
+        reentryMode: header.activation.reentryMode,
+      },
     })
   }, [loaded, blocks, variables, header, onDraftChange])
 

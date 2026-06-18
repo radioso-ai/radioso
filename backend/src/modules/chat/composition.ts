@@ -15,6 +15,8 @@ export {
   RoutineNextStepSelector,
   RoutineRegistry,
   RoutineStepRenderer,
+  RoutineSlotCorrector,
+  RoutineReentryGate,
   DefaultClarifier,
   type RoutineRegistration,
 } from "@radioso/conversation-defaults";

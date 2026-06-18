@@ -6,7 +6,9 @@ import type {
   ConversationClarifier,
   ConversationModelGateway,
   ConversationRoutineActivator,
+  ConversationRoutineReentryGate,
   ConversationRoutineRunner,
+  ConversationRoutineSlotCorrection,
   ConversationRoutineStore,
   ConversationTrace,
   ClarificationCandidate,
@@ -207,6 +209,8 @@ export interface ChatRoutineProvider {
   }): Promise<{
     activator: ConversationRoutineActivator;
     runner: ConversationRoutineRunner;
+    slotCorrection?: ConversationRoutineSlotCorrection;
+    reentryGate?: ConversationRoutineReentryGate;
   } | null>;
 }
 
@@ -428,6 +432,8 @@ export class ChatService {
       routineStore: deferredStore,
       routineRunner: routineTurnPorts.runner,
       routineActivator: activator,
+      routineSlotCorrection: routineTurnPorts.slotCorrection,
+      routineReentryGate: routineTurnPorts.reentryGate,
       clarifier: clarification?.clarifier ?? this.clarifier,
       clarificationStore: deferredClarificationStore,
       loopGuardCandidateIds: clarification?.resolution?.kind === "normal"

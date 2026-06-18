@@ -37,6 +37,10 @@ export {
 } from "./services/actions/contactSendActionHandler.js";
 export { HandoffNotifyActionHandler } from "./services/actions/handoffNotifyActionHandler.js";
 export {
+  ApprovalRequestActionHandler,
+  APPROVAL_REQUEST_ACTION_TYPE,
+} from "./services/actions/approvalRequestActionHandler.js";
+export {
   FetchWebhookHttpClient,
   createSignedWebhookHeaders,
   verifyWebhookSignature,

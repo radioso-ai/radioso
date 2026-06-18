@@ -158,6 +158,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     // Resume must receive the open transaction executor (one-tx crash-safety).
     expect(vi.mocked(runner.resume).mock.calls[0][0].executor).toBeDefined();
     expect(vi.mocked(runner.resume).mock.calls[0][0].outcome).toBe("approved");
+    expect(vi.mocked(runner.resume).mock.calls[0][0].optionId).toBe("approve");
     expect(await statusOf(input.handle)).toBe("approved");
 
     // Exactly-once: a second submit sees a non-pending row.
@@ -188,6 +189,32 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     expect(result).toMatchObject({ status: "resolved", decision: "rejected" });
     expect(vi.mocked(runner.resume).mock.calls[0][0].outcome).toBe("rejected");
     expect(await statusOf(input.handle)).toBe("rejected");
+  });
+
+  it("threads the operator's exact option id (two options share one outcome)", async () => {
+    // Regression: resume must NOT reconstruct the option from the outcome — with two
+    // approve-mapped options the reconstruction would pick the first and branch wrong.
+    const input = decisionInput({
+      options: [
+        { id: "approve_full", label: "Approve full refund", payload: { outcome: "approved" } },
+        { id: "approve_partial", label: "Approve partial refund", payload: { outcome: "approved" } },
+        { id: "reject", label: "Reject" },
+      ],
+    });
+    await repository.create(input);
+    const runner = okRunner();
+    const service = new ApprovalDecisionService(repository, runner);
+
+    const result = await service.resolve({
+      agentId: input.agentId,
+      handle: input.handle,
+      optionId: "approve_partial",
+      contentHash: input.contentHash,
+      caller: { accountId: operatorId, workspaceId },
+    });
+
+    expect(result.decision).toBe("approved");
+    expect(vi.mocked(runner.resume).mock.calls[0][0].optionId).toBe("approve_partial");
   });
 
   it("does not resolve or resume when the content hash is stale", async () => {

@@ -29,6 +29,10 @@ export class ApprovalDecisionServiceError extends Error {
 export interface ResumeRunner {
   resume(input: {
     record: PendingDecisionRecord;
+    // The exact option the operator chose, used as the engine decision id. Distinct from
+    // `outcome` (approved/rejected) because several options can map to one outcome, and a
+    // routine branches on the option id — never reconstruct it from the outcome.
+    optionId: string;
     outcome: ResolvedApprovalDecision["outcome"];
     payload?: unknown;
     decidedBy: string;
@@ -97,6 +101,7 @@ export class ApprovalDecisionService {
     }, async (resolvedRecord, executor) =>
       this.resumeRunner.resume({
         record: resolvedRecord,
+        optionId: resolved.decision.optionId,
         outcome: resolved.outcome,
         payload: input.payload,
         decidedBy: input.caller.accountId,

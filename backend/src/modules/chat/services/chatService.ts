@@ -112,6 +112,7 @@ import {
   type ConversationOwnershipReader,
 } from "../../handoff/public.js";
 import { HANDOFF_NOTIFY_ACTION_TYPE } from "./routines/contactRoutine.js";
+import { APPROVAL_REQUEST_ACTION_TYPE } from "./actions/approvalRequestActionHandler.js";
 import { SKILL_TURN_OUTCOME } from "./assistantTurnOutcomeTypes.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
@@ -279,6 +280,26 @@ const buildHandoffNotifyAction = (input: {
     agentId: input.agentId,
     userMessageId: input.userMessageId,
     reason: input.reason,
+    routineId: input.routineId,
+    stepId: input.stepId,
+    dashboardPath: `/conversations/${input.conversationId}`,
+  },
+});
+
+const buildApprovalRequestAction = (input: {
+  handle: string;
+  conversationId: string;
+  workspaceId: string;
+  agentId: string;
+  routineId?: string;
+  stepId?: string;
+}): RoutineActionRequest => ({
+  type: APPROVAL_REQUEST_ACTION_TYPE,
+  payload: {
+    handle: input.handle,
+    conversationId: input.conversationId,
+    workspaceId: input.workspaceId,
+    agentId: input.agentId,
     routineId: input.routineId,
     stepId: input.stepId,
     dashboardPath: `/conversations/${input.conversationId}`,
@@ -573,10 +594,26 @@ export class ChatService {
       awaitingDecision: outcome.result.awaitingDecision,
       routineStateTransition,
     });
+    // Suspending at an approval gate notifies an operator out-of-band; the action is
+    // enqueued in the same turn transaction as the pending_decisions row, so the
+    // notification can never outrun (or be lost relative to) the durable decision.
+    const actions = pendingDecisionTransition
+      ? [
+          ...(outcome.result.actions ?? []),
+          buildApprovalRequestAction({
+            handle: pendingDecisionTransition.handle,
+            conversationId: pendingDecisionTransition.conversationId,
+            workspaceId: pendingDecisionTransition.workspaceId,
+            agentId: pendingDecisionTransition.agentId,
+            routineId: pendingDecisionTransition.routineId,
+            stepId: pendingDecisionTransition.stepId,
+          }),
+        ]
+      : outcome.result.actions;
     return {
       presentation: outcome.presentation,
       engineTrace: outcome.result.trace,
-      actions: outcome.result.actions,
+      actions,
       handoff: outcome.result.handoff,
       routineStateTransition,
       pendingDecisionTransition,
@@ -653,6 +690,7 @@ export class ChatService {
 
   async resumeAwaitingDecisionTurn(input: {
     record: PendingDecisionRecord;
+    optionId: string;
     outcome: PendingDecisionOutcome;
     payload?: unknown;
     decidedBy: string;
@@ -687,7 +725,7 @@ export class ChatService {
       sessionId: input.record.sessionId,
       decision: {
         handle: input.record.handle,
-        optionId: this.resolvedOptionId(input.record, input.outcome),
+        optionId: input.optionId,
         ...(input.payload !== undefined ? { payload: input.payload } : {}),
       },
       suspendedReader: {
@@ -742,17 +780,6 @@ export class ChatService {
     return {
       resume: (input) => this.resumeAwaitingDecisionTurn(input),
     };
-  }
-
-  private resolvedOptionId(record: PendingDecisionRecord, outcome: PendingDecisionOutcome): string {
-    return record.options.find((option) => {
-      if (option.payload && typeof option.payload === "object" && !Array.isArray(option.payload)) {
-        return (option.payload as { outcome?: unknown }).outcome === outcome;
-      }
-      return outcome === "approved"
-        ? option.id === "approve" || option.id === "approved"
-        : option.id === "reject" || option.id === "rejected";
-    })?.id ?? record.options[0]?.id ?? outcome;
   }
 
   private conversationTraceWithRoutineTrace(

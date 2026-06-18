@@ -239,6 +239,65 @@ describeIfDatabase("MessageRepository forward tail cursor", () => {
     expect(decodeCursorWithKeys(page.latestCursor!, ["createdAt", "id"]).keys.id).toBe(second.id);
   });
 
+  it("continues after a limit-capped page and eventually drains", async () => {
+    const { workspace, conversation } = await seedConversation();
+    const first = await messages.create({
+      conversationId: conversation.id,
+      workspaceId: workspace.id,
+      role: "user",
+      content: "first",
+    });
+    const second = await messages.create({
+      conversationId: conversation.id,
+      workspaceId: workspace.id,
+      role: "assistant",
+      content: "second",
+    });
+    const third = await messages.create({
+      conversationId: conversation.id,
+      workspaceId: workspace.id,
+      role: "assistant",
+      content: "third",
+    });
+    const fourth = await messages.create({
+      conversationId: conversation.id,
+      workspaceId: workspace.id,
+      role: "user",
+      content: "fourth",
+    });
+    await setMessageTime(first.id, "2026-06-01T00:00:00.000Z");
+    await setMessageTime(second.id, "2026-06-01T00:00:01.000Z");
+    await setMessageTime(third.id, "2026-06-01T00:00:02.000Z");
+    await setMessageTime(fourth.id, "2026-06-01T00:00:03.000Z");
+
+    const firstPage = await messages.listSinceByConversationId(workspace.id, conversation.id, {
+      sinceCreatedAt: new Date("2026-06-01T00:00:00.000Z"),
+      sinceId: first.id,
+      limit: 1,
+    });
+    const firstPageCursor = decodeCursorWithKeys(firstPage.latestCursor!, ["createdAt", "id"]).keys;
+
+    const secondPage = await messages.listSinceByConversationId(workspace.id, conversation.id, {
+      sinceCreatedAt: new Date(firstPageCursor.createdAt),
+      sinceId: firstPageCursor.id,
+      limit: 10,
+    });
+    const secondPageCursor = decodeCursorWithKeys(secondPage.latestCursor!, ["createdAt", "id"]).keys;
+
+    const drained = await messages.listSinceByConversationId(workspace.id, conversation.id, {
+      sinceCreatedAt: new Date(secondPageCursor.createdAt),
+      sinceId: secondPageCursor.id,
+      limit: 10,
+    });
+
+    expect(firstPage.messages.map((message) => message.id)).toEqual([second.id]);
+    expect(firstPageCursor.id).toBe(second.id);
+    expect(secondPage.messages.map((message) => message.id)).toEqual([third.id, fourth.id]);
+    expect(secondPageCursor.id).toBe(fourth.id);
+    expect(drained.messages).toEqual([]);
+    expect(decodeCursorWithKeys(drained.latestCursor!, ["createdAt", "id"]).keys.id).toBe(fourth.id);
+  });
+
   it("returns empty and keeps the newest cursor when no messages are newer", async () => {
     const { workspace, conversation } = await seedConversation();
     const latest = await messages.create({

@@ -248,6 +248,11 @@ export class MessageRepository implements MessageRepositoryPort {
     conversationId: string,
     input: { sinceCreatedAt?: Date; sinceId?: string; limit: number },
   ): Promise<{ messages: MessageRecord[]; latestCursor: string | null }> {
+    // Tail cursor is (created_at, id). Safe because messages within a conversation are inserted
+    // one-per-operation via clock_timestamp() and are causally sequential, so created_at is unique
+    // per conversation and the strict (created_at,id) comparison never skips a row. INVARIANT: do
+    // not batch-insert multiple messages to one conversation in a single statement/microsecond
+    // without switching the cursor to a monotonic sequence.
     const latestRow = await this.database.queryOptional<MessageRow>(
       `SELECT id, conversation_id, workspace_id, role, content, source, metadata_json, skill_name, skill_outcome, skill_status, created_at
        FROM messages

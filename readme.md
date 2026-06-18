@@ -368,6 +368,7 @@ The limit is scoped by account and workspace for browser sessions. Workspace API
 - [TypeScript SDK getting started](./docs/typescript-sdk-getting-started.md)
 - [TypeScript SDK basic usage](./docs/typescript-sdk-basic-usage.md)
 - [Assistant execution model](./docs/assistant-execution-model.md)
+- [Human takeover](./docs/human-takeover.md)
 - [Assistant turn spine](./docs/architecture/assistant-turn-spine.md)
 - [Conversational directives](./docs/architecture/conversational-directives.md)
 - [Observability](./docs/oss-saas-observability.md)

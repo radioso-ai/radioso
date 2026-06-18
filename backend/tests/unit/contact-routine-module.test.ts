@@ -7,6 +7,7 @@ import { createContactRoutineApplicationModule } from "../../src/app/composition
 import {
   contactRoutineDefinition,
   CONTACT_SEND_ACTION_TYPE,
+  HANDOFF_NOTIFY_ACTION_TYPE,
   CONTACT_INTENT_SKILL_NAME,
   CONTACT_INTENT_NAME,
 } from "../../src/modules/chat/services/routines/contactRoutine.js";
@@ -40,8 +41,14 @@ describe("contact routine application module", () => {
       eligible: expect.any(Function),
       explicitClaim: expect.any(Function),
     });
-    expect(registry.actionHandlerRegistrations.map((r) => r.type)).toEqual([CONTACT_SEND_ACTION_TYPE]);
+    expect(registry.actionHandlerRegistrations.map((r) => r.type)).toEqual([
+      CONTACT_SEND_ACTION_TYPE,
+      HANDOFF_NOTIFY_ACTION_TYPE,
+    ]);
     expect(registry.actionHandlerRegistrations[0]?.requiredCapabilities).toEqual([
+      capabilityNames.humanContact.request,
+    ]);
+    expect(registry.actionHandlerRegistrations[1]?.requiredCapabilities).toEqual([
       capabilityNames.humanContact.request,
     ]);
     expect(registry.publicChatActionAdvertiserRegistrations).toHaveLength(1);

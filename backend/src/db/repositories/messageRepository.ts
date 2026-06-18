@@ -58,6 +58,9 @@ export interface MessageRepositoryPort {
     workspaceId: string;
     role: MessageRole;
     content: string;
+    source?: MessageSource;
+    operatorAccountId?: string;
+    operatorDisplayName?: string;
     inputMetadata?: UserMessageInputMetadata;
     metadata?: Record<string, unknown>;
     skillName?: string;
@@ -296,12 +299,26 @@ export class MessageRepository implements MessageRepositoryPort {
     workspaceId: string;
     role: MessageRole;
     content: string;
+    source?: MessageSource;
+    operatorAccountId?: string;
+    operatorDisplayName?: string;
     inputMetadata?: UserMessageInputMetadata;
     metadata?: Record<string, unknown>;
     skillName?: string;
     skillOutcome?: string;
     skillStatus?: string;
   }): Promise<MessageRecord> {
+    const metadata = {
+      ...(input.metadata ?? input.inputMetadata ?? {}),
+      ...(input.operatorAccountId || input.operatorDisplayName
+        ? {
+            humanAgent: {
+              accountId: input.operatorAccountId,
+              displayName: input.operatorDisplayName,
+            },
+          }
+        : {}),
+    };
     const [row] = await this.database.query<MessageRow>(
       `INSERT INTO messages (id, conversation_id, workspace_id, role, content, source, metadata_json, skill_name, skill_outcome, skill_status, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, clock_timestamp())
@@ -312,8 +329,8 @@ export class MessageRepository implements MessageRepositoryPort {
         input.workspaceId,
         input.role,
         input.content,
-        deriveMessageSourceFromRole(input.role),
-        JSON.stringify(input.metadata ?? input.inputMetadata ?? {}),
+        input.source ?? deriveMessageSourceFromRole(input.role),
+        JSON.stringify(metadata),
         input.skillName ?? null,
         input.skillOutcome ?? null,
         input.skillStatus ?? null,

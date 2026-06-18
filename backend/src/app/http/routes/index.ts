@@ -4,6 +4,7 @@ import type { AppDependencies } from "../../server/types.js";
 import { createAccountRoutes } from "./accountRoutes.js";
 import { createAccountUserRoutes } from "./accountUserRoutes.js";
 import { createAuthRoutes } from "./authRoutes.js";
+import { createConversationOwnershipRoutes } from "./conversationOwnershipRoutes.js";
 import { createAssistantRoutes } from "./assistantRoutes.js";
 import { createAgentRoutes } from "./agentRoutes.js";
 import { createAgentExternalSkillsRoutes } from "./agentExternalSkillsRoutes.js";
@@ -61,6 +62,7 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   router.use("/api/v1/agents", createEmailSkillRoutes(dependencies));
   router.use("/api/v1/agents", createWebhookSkillRoutes(dependencies));
   router.use("/api/v1/assistant", createAssistantRoutes(dependencies));
+  router.use("/api/v1/conversations", createConversationOwnershipRoutes(dependencies));
   router.use("/api/v1/history", createHistoryRoutes(dependencies));
   router.use("/api/v1/observability", createObservabilityRoutes(dependencies));
   router.use("/api/v1/retrieval", createRetrievalRoutes(dependencies));

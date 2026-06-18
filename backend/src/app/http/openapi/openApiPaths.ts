@@ -21,6 +21,7 @@ import { registerCustomerEmailPaths } from "./paths/customerEmailPaths.js";
 import { registerWebhookSkillsPaths } from "./paths/webhookSkillsPaths.js";
 import { registerDocumentsPaths } from "./paths/documentsPaths.js";
 import { registerHistoryPaths } from "./paths/historyPaths.js";
+import { registerConversationOwnershipPaths } from "./paths/conversationOwnershipPaths.js";
 import { registerConnectorsPaths } from "./paths/connectorsPaths.js";
 import { registerQualityPaths } from "./paths/qualityPaths.js";
 import { registerEvalPaths } from "./paths/evalPaths.js";
@@ -49,6 +50,7 @@ export const registerOpenApiPaths = (
   registerAssistantAuthenticatedChatPaths(registry, schemas, security);
   registerAssistantFeedbackPaths(registry, schemas, security);
   registerHistoryPaths(registry, schemas, security);
+  registerConversationOwnershipPaths(registry, schemas, security);
   registerConnectorsPaths(registry, schemas, security);
   registerQualityPaths(registry, schemas, security);
   registerEvalPaths(registry, schemas, security);

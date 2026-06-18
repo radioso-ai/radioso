@@ -30,4 +30,5 @@ export type {
 export type {
   PendingDecisionCreateInput,
   PendingDecisionOption,
+  PendingDecisionRecord,
 } from "../../db/repositories/pendingDecisionRepository.js";

@@ -56,7 +56,7 @@ export interface ResolveApprovalDecisionResult {
   resumed: boolean;
 }
 
-type PendingDecisionReader = Pick<PendingDecisionRepository, "loadByHandle" | "resolveInTransaction">;
+type PendingDecisionReader = Pick<PendingDecisionRepository, "loadByHandle" | "resolveInTransaction" | "listPending">;
 
 const mapDomainError = (error: ApprovalDecisionDomainError): ApprovalDecisionServiceError =>
   new ApprovalDecisionServiceError(error.reason);
@@ -66,6 +66,10 @@ export class ApprovalDecisionService {
     private readonly pendingDecisions: PendingDecisionReader,
     private readonly resumeRunner: ResumeRunner,
   ) {}
+
+  async listPending(workspaceId: string): Promise<PendingDecisionRecord[]> {
+    return this.pendingDecisions.listPending({ workspaceId });
+  }
 
   async resolve(input: ResolveApprovalDecisionInput): Promise<ResolveApprovalDecisionResult> {
     const record = await this.pendingDecisions.loadByHandle(input.handle);

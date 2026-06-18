@@ -37,6 +37,53 @@ export const registerDecisionPaths = (
   schemas: OpenApiSchemas,
   security: OpenApiSecurity,
 ) => {
+  const PendingApprovalDecisionOptionSchema = registry.register(
+    "PendingApprovalDecisionOption",
+    z.object({
+      id: z.string(),
+      label: z.string(),
+      description: z.string().optional(),
+    }),
+  );
+  const PendingApprovalDecisionSchema = registry.register(
+    "PendingApprovalDecision",
+    z.object({
+      handle: z.string(),
+      conversationId: z.string(),
+      agentId: z.string(),
+      routineId: z.string(),
+      stepId: z.string(),
+      reason: z.string().nullable(),
+      options: z.array(PendingApprovalDecisionOptionSchema),
+      contentHash: z.string(),
+      deadline: z.string().datetime().nullable(),
+      createdAt: z.string().datetime(),
+    }),
+  );
+  const PendingApprovalDecisionListResponseSchema = registry.register(
+    "PendingApprovalDecisionListResponse",
+    z.object({
+      decisions: z.array(PendingApprovalDecisionSchema),
+    }),
+  );
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/decisions",
+    tags: ["Decisions"],
+    summary: "List pending human approval decisions",
+    operationId: "listPendingDecisions",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    responses: {
+      200: {
+        description: "Pending approval decisions for the workspace",
+        content: json(PendingApprovalDecisionListResponseSchema),
+      },
+      401: errorResponse("Authentication required", schemas),
+      403: errorResponse("Caller is not authorized to list decisions", schemas),
+    },
+  });
+
   registry.registerPath({
     method: "post",
     path: "/api/v1/agents/{agentId}/decisions/{handle}/resolve",

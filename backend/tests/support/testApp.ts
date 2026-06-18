@@ -1076,6 +1076,7 @@ export const createTestDependencies = (overrides: {
   const retrievalDefaultsProvider = createSystemRetrievalDefaultsProvider();
   const approvalDecisionService = new ApprovalDecisionService(
     {
+      listPending: async () => [],
       loadByHandle: async () => null,
       resolveInTransaction: async () => null,
     },

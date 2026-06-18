@@ -139,6 +139,45 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     resume: vi.fn(async () => ({ conversationId, resumed: true })),
   });
 
+  it("lists only this workspace's pending decisions newest first through the service", async () => {
+    const workspaceId = randomUUID();
+    const otherWorkspaceId = randomUUID();
+    const service = new ApprovalDecisionService(repository, okRunner());
+    const older = await repository.create(decisionInput({
+      workspaceId,
+      conversationId: randomUUID(),
+      handle: "older_pending",
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const newer = await repository.create(decisionInput({
+      workspaceId,
+      conversationId: randomUUID(),
+      handle: "newer_pending",
+    }));
+    const resolved = await repository.create(decisionInput({
+      workspaceId,
+      conversationId: randomUUID(),
+      handle: "resolved_decision",
+    }));
+    await repository.create(decisionInput({
+      workspaceId: otherWorkspaceId,
+      conversationId: randomUUID(),
+      handle: "other_workspace",
+    }));
+    await repository.resolve({
+      handle: resolved.handle,
+      outcome: "approved",
+      decision: { optionId: "approve" },
+      decidedBy: operatorId,
+      contentHash: resolved.contentHash,
+    });
+
+    await expect(service.listPending(workspaceId)).resolves.toMatchObject([
+      { id: newer.id, handle: newer.handle, status: "pending" },
+      { id: older.id, handle: older.handle, status: "pending" },
+    ]);
+  });
+
   it("approves once: resumes inside the resolve transaction and flips the row exactly once", async () => {
     const input = decisionInput();
     await repository.create(input);

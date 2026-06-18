@@ -25,6 +25,39 @@ The key point is that generated clients should drift only inside one local chang
 
 ## Approval decisions
 
+Human approval gates can be listed for the signed-in workspace:
+
+```http
+GET /api/v1/decisions
+```
+
+The response contains pending decisions only, newest first:
+
+```json
+{
+  "decisions": [
+    {
+      "handle": "decision-handle",
+      "conversationId": "conversation-id",
+      "agentId": "agent-id",
+      "routineId": "routine-id",
+      "stepId": "approval-step-id",
+      "reason": "Needs operator review",
+      "options": [
+        { "id": "approve", "label": "Approve" },
+        { "id": "reject", "label": "Reject", "description": "Send back for edits" }
+      ],
+      "contentHash": "proposal-content-hash",
+      "deadline": null,
+      "createdAt": "2026-06-01T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+The `handle`, `agentId`, `contentHash`, and selected option id are used to resolve
+the decision.
+
 Human approval gates are resolved through an authenticated dashboard command:
 
 ```http

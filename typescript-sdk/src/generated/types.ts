@@ -1906,6 +1906,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List pending human approval decisions */
+        get: operations["listPendingDecisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agentId}/decisions/{handle}/resolve": {
         parameters: {
             query?: never;
@@ -4900,6 +4917,28 @@ export interface components {
                 agentId: string | null;
             };
             buckets: components["schemas"]["UsageTrendBucket"][];
+        };
+        PendingApprovalDecisionOption: {
+            id: string;
+            label: string;
+            description?: string;
+        };
+        PendingApprovalDecision: {
+            handle: string;
+            conversationId: string;
+            agentId: string;
+            routineId: string;
+            stepId: string;
+            reason: string | null;
+            options: components["schemas"]["PendingApprovalDecisionOption"][];
+            contentHash: string;
+            /** Format: date-time */
+            deadline: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        PendingApprovalDecisionListResponse: {
+            decisions: components["schemas"]["PendingApprovalDecision"][];
         };
         AssistantChatSseStream: string;
         ConnectorNotFoundResponse: {
@@ -12549,6 +12588,44 @@ export interface operations {
             };
             /** @description Conversation ownership changed */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listPendingDecisions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pending approval decisions for the workspace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingApprovalDecisionListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller is not authorized to list decisions */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

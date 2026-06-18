@@ -151,4 +151,30 @@ describeIfDatabase("customer email connection repository (postgres)", () => {
     expect(await repository.remove(workspaceId, created.id)).toBe(true);
     expect(await repository.findById(workspaceId, created.id)).toBeNull();
   });
+
+  it("cannot read, mutate, or delete a non-email integration connection by id", async () => {
+    // A different provider (e.g. Slack) owns a row on the shared spine in the same workspace.
+    const foreignId = randomUUID();
+    await client.query(
+      `INSERT INTO integration_connections
+         (id, workspace_id, oauth_connection_id, provider, display_name, status, config)
+       VALUES ($1, $2, $3, 'slack', 'Workspace Slack', 'authorized', '{}'::jsonb)`,
+      [foreignId, workspaceId, oauthConnectionId],
+    );
+
+    // Same workspace + a valid UUID, but the customer-email repository must not see it...
+    expect(await repository.findById(workspaceId, foreignId)).toBeNull();
+    expect(
+      await repository.update(workspaceId, foreignId, { displayName: "hijacked", status: "disabled" }),
+    ).toBeNull();
+    expect(await repository.remove(workspaceId, foreignId)).toBe(false);
+    expect((await repository.listByWorkspace(workspaceId)).some((c) => c.id === foreignId)).toBe(false);
+
+    // ...and the foreign row must remain untouched.
+    const remaining = await client.query<{ display_name: string; status: string }>(
+      `SELECT display_name, status FROM integration_connections WHERE id = $1`,
+      [foreignId],
+    );
+    expect(remaining.rows[0]).toMatchObject({ display_name: "Workspace Slack", status: "authorized" });
+  });
 });

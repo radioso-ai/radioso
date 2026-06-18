@@ -50,6 +50,12 @@ export interface UpdateCustomerEmailConnectionInput {
   lastErrorCode?: string | null;
 }
 
+// The integration_connections spine is shared across providers (e.g. Slack).
+// Customer-email owns ONLY these provider rows; every id-based read/mutate/delete
+// path scopes to this set so the email API cannot touch another provider's
+// connection by id. `create()` only ever stores these values.
+const EMAIL_INTEGRATION_PROVIDERS = ["customer_email_google", "customer_email_microsoft"] as const;
+
 const customerEmailProviderToIntegrationProvider = (provider: string): string => {
   if (provider === "google_mail") return "customer_email_google";
   if (provider === "microsoft_graph_mail") return "customer_email_microsoft";
@@ -63,7 +69,7 @@ const integrationProviderToCustomerEmailProvider = (provider: string): string =>
 };
 
 const isCustomerEmailIntegrationProvider = (provider: string): boolean =>
-  provider.startsWith("customer_email_") || provider.endsWith("_mail");
+  (EMAIL_INTEGRATION_PROVIDERS as readonly string[]).includes(provider);
 
 const configString = (config: Record<string, unknown>, key: string): string | null => {
   const value = config[key];
@@ -127,7 +133,11 @@ export class CustomerEmailConnectionRepository implements CustomerEmailConnectio
   }
 
   async findById(workspaceId: string, id: string): Promise<CustomerEmailConnectionRecord | null> {
-    const record = await this.integrationConnections.findById(workspaceId, id);
+    const record = await this.integrationConnections.findById(
+      workspaceId,
+      id,
+      EMAIL_INTEGRATION_PROVIDERS,
+    );
     return record ? mapRecord(record) : null;
   }
 
@@ -148,14 +158,19 @@ export class CustomerEmailConnectionRepository implements CustomerEmailConnectio
     if ("senderName" in input) config.senderName = input.senderName ?? null;
     if ("replyToEmail" in input) config.replyToEmail = input.replyToEmail ?? null;
 
-    const updated = await this.integrationConnections.update(workspaceId, id, {
-      ...("displayName" in input ? { displayName: input.displayName } : {}),
-      ...("status" in input ? { status: input.status } : {}),
-      ...("lastHealthStatus" in input ? { lastHealthStatus: input.lastHealthStatus ?? null } : {}),
-      ...("lastHealthCheckedAt" in input ? { lastHealthCheckedAt: input.lastHealthCheckedAt ?? null } : {}),
-      ...("lastErrorCode" in input ? { lastErrorCode: input.lastErrorCode ?? null } : {}),
-      ...(Object.keys(config).length > 0 ? { config } : {}),
-    });
+    const updated = await this.integrationConnections.update(
+      workspaceId,
+      id,
+      {
+        ...("displayName" in input ? { displayName: input.displayName } : {}),
+        ...("status" in input ? { status: input.status } : {}),
+        ...("lastHealthStatus" in input ? { lastHealthStatus: input.lastHealthStatus ?? null } : {}),
+        ...("lastHealthCheckedAt" in input ? { lastHealthCheckedAt: input.lastHealthCheckedAt ?? null } : {}),
+        ...("lastErrorCode" in input ? { lastErrorCode: input.lastErrorCode ?? null } : {}),
+        ...(Object.keys(config).length > 0 ? { config } : {}),
+      },
+      EMAIL_INTEGRATION_PROVIDERS,
+    );
     return updated ? mapRecord(updated) : null;
   }
 
@@ -181,6 +196,6 @@ export class CustomerEmailConnectionRepository implements CustomerEmailConnectio
   }
 
   async remove(workspaceId: string, id: string): Promise<boolean> {
-    return this.integrationConnections.remove(workspaceId, id);
+    return this.integrationConnections.remove(workspaceId, id, EMAIL_INTEGRATION_PROVIDERS);
   }
 }

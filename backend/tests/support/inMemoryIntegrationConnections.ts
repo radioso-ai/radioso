@@ -38,9 +38,19 @@ export class InMemoryIntegrationConnectionRepository implements IntegrationConne
     return clone(record);
   }
 
-  async findById(workspaceId: string, id: string): Promise<IntegrationConnectionRecord | null> {
+  async findById(
+    workspaceId: string,
+    id: string,
+    providers?: readonly string[],
+  ): Promise<IntegrationConnectionRecord | null> {
     const record = this.rows.get(id);
-    return record && record.workspaceId === workspaceId ? clone(record) : null;
+    if (!record || record.workspaceId !== workspaceId) {
+      return null;
+    }
+    if (providers && providers.length > 0 && !providers.includes(record.provider)) {
+      return null;
+    }
+    return clone(record);
   }
 
   async listByWorkspace(workspaceId: string): Promise<IntegrationConnectionRecord[]> {
@@ -59,9 +69,13 @@ export class InMemoryIntegrationConnectionRepository implements IntegrationConne
     workspaceId: string,
     id: string,
     input: UpdateIntegrationConnectionInput,
+    providers?: readonly string[],
   ): Promise<IntegrationConnectionRecord | null> {
     const record = this.rows.get(id);
     if (!record || record.workspaceId !== workspaceId) {
+      return null;
+    }
+    if (providers && providers.length > 0 && !providers.includes(record.provider)) {
       return null;
     }
     if (input.displayName !== undefined) record.displayName = input.displayName;
@@ -74,9 +88,12 @@ export class InMemoryIntegrationConnectionRepository implements IntegrationConne
     return clone(record);
   }
 
-  async remove(workspaceId: string, id: string): Promise<boolean> {
+  async remove(workspaceId: string, id: string, providers?: readonly string[]): Promise<boolean> {
     const record = this.rows.get(id);
     if (!record || record.workspaceId !== workspaceId) {
+      return false;
+    }
+    if (providers && providers.length > 0 && !providers.includes(record.provider)) {
       return false;
     }
     this.rows.delete(id);

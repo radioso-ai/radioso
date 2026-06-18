@@ -46,16 +46,35 @@ const mapRecord = (row: IntegrationConnectionRow): IntegrationConnectionRecord =
 
 export interface IntegrationConnectionRepositoryPort {
   create(input: CreateIntegrationConnectionInput): Promise<IntegrationConnectionRecord>;
-  findById(workspaceId: string, id: string): Promise<IntegrationConnectionRecord | null>;
+  // `providers`, when supplied, scopes the id-based read/mutate paths to rows of
+  // those providers. Callers that own a subset of the shared spine (e.g. customer
+  // email) pass their provider set so they cannot read/mutate/delete another
+  // provider's connection by id. The constraint is enforced in the SQL WHERE clause.
+  findById(
+    workspaceId: string,
+    id: string,
+    providers?: readonly string[],
+  ): Promise<IntegrationConnectionRecord | null>;
   listByWorkspace(workspaceId: string): Promise<IntegrationConnectionRecord[]>;
   listByWorkspaceProvider(workspaceId: string, provider: string): Promise<IntegrationConnectionRecord[]>;
   update(
     workspaceId: string,
     id: string,
     input: UpdateIntegrationConnectionInput,
+    providers?: readonly string[],
   ): Promise<IntegrationConnectionRecord | null>;
-  remove(workspaceId: string, id: string): Promise<boolean>;
+  remove(workspaceId: string, id: string, providers?: readonly string[]): Promise<boolean>;
 }
+
+// Builds an optional `AND provider = ANY(...)` clause, appending the array param
+// and returning the SQL fragment referencing its positional index.
+const providerScopeClause = (params: unknown[], providers?: readonly string[]): string => {
+  if (!providers || providers.length === 0) {
+    return "";
+  }
+  params.push([...providers]);
+  return ` AND provider = ANY($${params.length}::text[])`;
+};
 
 export class IntegrationConnectionRepository implements IntegrationConnectionRepositoryPort {
   constructor(private readonly database: DatabaseExecutor) {}
@@ -83,10 +102,16 @@ export class IntegrationConnectionRepository implements IntegrationConnectionRep
     return mapRecord(row);
   }
 
-  async findById(workspaceId: string, id: string): Promise<IntegrationConnectionRecord | null> {
+  async findById(
+    workspaceId: string,
+    id: string,
+    providers?: readonly string[],
+  ): Promise<IntegrationConnectionRecord | null> {
+    const params: unknown[] = [workspaceId, id];
+    const scope = providerScopeClause(params, providers);
     const [row] = await this.database.query<IntegrationConnectionRow>(
-      `SELECT ${COLUMNS} FROM integration_connections WHERE workspace_id = $1 AND id = $2`,
-      [workspaceId, id],
+      `SELECT ${COLUMNS} FROM integration_connections WHERE workspace_id = $1 AND id = $2${scope}`,
+      params,
     );
     return row ? mapRecord(row) : null;
   }
@@ -117,6 +142,7 @@ export class IntegrationConnectionRepository implements IntegrationConnectionRep
     workspaceId: string,
     id: string,
     input: UpdateIntegrationConnectionInput,
+    providers?: readonly string[],
   ): Promise<IntegrationConnectionRecord | null> {
     const assignments: string[] = [];
     const params: unknown[] = [workspaceId, id];
@@ -136,23 +162,26 @@ export class IntegrationConnectionRepository implements IntegrationConnectionRep
     }
 
     if (assignments.length === 0) {
-      return this.findById(workspaceId, id);
+      return this.findById(workspaceId, id, providers);
     }
 
+    const scope = providerScopeClause(params, providers);
     const [row] = await this.database.query<IntegrationConnectionRow>(
       `UPDATE integration_connections
        SET ${assignments.join(", ")}, updated_at = NOW()
-       WHERE workspace_id = $1 AND id = $2
+       WHERE workspace_id = $1 AND id = $2${scope}
        RETURNING ${COLUMNS}`,
       params,
     );
     return row ? mapRecord(row) : null;
   }
 
-  async remove(workspaceId: string, id: string): Promise<boolean> {
+  async remove(workspaceId: string, id: string, providers?: readonly string[]): Promise<boolean> {
+    const params: unknown[] = [workspaceId, id];
+    const scope = providerScopeClause(params, providers);
     const affected = await this.database.execute(
-      `DELETE FROM integration_connections WHERE workspace_id = $1 AND id = $2`,
-      [workspaceId, id],
+      `DELETE FROM integration_connections WHERE workspace_id = $1 AND id = $2${scope}`,
+      params,
     );
     return affected > 0;
   }

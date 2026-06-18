@@ -95,12 +95,22 @@ describe("anonymous chat bootstrap integration", () => {
     expect(followUp.status).toBe(200);
     expect(followUp.body.conversationId).toEqual(expect.any(String));
 
+    // A human takes ownership of the conversation. The PUBLIC history surface must never
+    // expose ownership (it would reveal the operator's identity to the visitor).
+    await repositories.conversationOwnershipRepository.requestHandoff({
+      conversationId: followUp.body.conversationId,
+      // The in-memory read keys by conversationId; workspace is immaterial to this assertion.
+      workspaceId: "workspace-under-test",
+      reason: "routine_handoff",
+    });
+
     const history = await request(app)
       .get(`/api/v1/public/chat/${chatToken}/history/${followUp.body.conversationId}`)
       .set("x-radioso-public-session", publicSession.publicSessionToken)
       .set("Cookie", anonCookie!);
 
     expect(history.status).toBe(200);
+    expect(history.body).not.toHaveProperty("ownership");
     expect(history.body.messageCount).toBe(3);
     expect(history.body.userMessageCount).toBe(1);
     expect(history.body.assistantMessageCount).toBe(2);

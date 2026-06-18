@@ -70,7 +70,9 @@ class InMemoryContactHistoryProvider implements ContactHistoryProviderPort {
 }
 
 describe("chat history service ownership read surface", () => {
-  it("includes ownership in conversation detail when the conversation is human-owned", async () => {
+  const detailInput = { limit: 50, offset: 0 };
+
+  it("includes ownership in detail when human-owned and includeOwnership is set (dashboard)", async () => {
     const { conversationRepository, conversationOwnershipRepository, service } = createService();
     const conversation = await conversationRepository.create("workspace-1");
     await conversationOwnershipRepository.requestHandoff({
@@ -85,7 +87,9 @@ describe("chat history service ownership read surface", () => {
       displayName: "Operator One",
     });
 
-    const detail = await service.getConversation("workspace-1", conversation.id);
+    const detail = await service.getConversation("workspace-1", conversation.id, detailInput, {
+      includeOwnership: true,
+    });
 
     expect(detail.ownership).toMatchObject({
       conversationId: conversation.id,
@@ -96,11 +100,56 @@ describe("chat history service ownership read surface", () => {
     expect(typeof detail.ownership?.takenOverAt).toBe("string");
   });
 
+  it("omits ownership from detail when includeOwnership is unset, even if human-owned (public surface)", async () => {
+    const { conversationRepository, conversationOwnershipRepository, service } = createService();
+    const conversation = await conversationRepository.create("workspace-1");
+    await conversationOwnershipRepository.requestHandoff({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      reason: "routine_handoff",
+    });
+
+    const detail = await service.getConversation("workspace-1", conversation.id, detailInput);
+
+    expect(detail.ownership).toBeUndefined();
+  });
+
   it("omits ownership from detail when the conversation is AI-owned (no row)", async () => {
     const { conversationRepository, service } = createService();
     const conversation = await conversationRepository.create("workspace-1");
 
-    const detail = await service.getConversation("workspace-1", conversation.id);
+    const detail = await service.getConversation("workspace-1", conversation.id, detailInput, {
+      includeOwnership: true,
+    });
+
+    expect(detail.ownership).toBeUndefined();
+  });
+
+  it("omits ownership after hand-back leaves an ai_owned row", async () => {
+    const { conversationRepository, conversationOwnershipRepository, service } = createService();
+    const conversation = await conversationRepository.create("workspace-1");
+    await conversationOwnershipRepository.requestHandoff({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      reason: "routine_handoff",
+    });
+    const claimed = await conversationOwnershipRepository.takeOver({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      accountId: "operator-1",
+      displayName: "Operator One",
+    });
+    if (!claimed.ok) {
+      throw new Error("expected takeover to succeed");
+    }
+    await conversationOwnershipRepository.handBack({
+      conversationId: conversation.id,
+      expectedVersion: claimed.record.version,
+    });
+
+    const detail = await service.getConversation("workspace-1", conversation.id, detailInput, {
+      includeOwnership: true,
+    });
 
     expect(detail.ownership).toBeUndefined();
   });

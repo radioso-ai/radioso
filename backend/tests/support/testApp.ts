@@ -928,6 +928,7 @@ export const createTestDependencies = (overrides: {
     new InMemoryHistoryItemsRepository(conversationRepository, auditEventRepository),
     new NoopContactHistoryProvider(),
     overrides.answerFeedbackHistoryProvider,
+    conversationOwnershipRepository,
   );
   const publicChatActionAdvertisers = [
     ...(overrides.publicChatActionAdvertiser ? [overrides.publicChatActionAdvertiser] : []),

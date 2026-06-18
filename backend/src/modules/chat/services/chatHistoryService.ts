@@ -705,7 +705,11 @@ export class ChatHistoryService {
       conversations: conversations.map((conversation) => {
         const summary = buildChatConversationSummary(conversation, messageSummaries.get(conversation.id));
         const ownership = ownershipByConversationId.get(conversation.id);
-        return ownership ? { ...summary, ownership: toChatConversationOwnership(ownership) } : summary;
+        // Only human-owned conversations carry ownership; an ai_owned row (e.g. after a
+        // hand-back) reads the same as no row — absent means AI-owned.
+        return ownership?.state === "human_owned"
+          ? { ...summary, ownership: toChatConversationOwnership(ownership) }
+          : summary;
       }),
       total,
       nextCursor,
@@ -827,7 +831,10 @@ export class ChatHistoryService {
     workspaceId: string,
     conversationId: string,
     input: { limit: number; offset?: number; cursor?: string } = { limit: 50, offset: 0 },
-    options: { includeAnswerFeedback?: boolean } = {},
+    // includeOwnership is OFF by default: ownership exposes the operator's identity and is
+    // a DASHBOARD-only concern. The public/embed visitor surface shares this method and must
+    // never receive it.
+    options: { includeAnswerFeedback?: boolean; includeOwnership?: boolean } = {},
   ): Promise<ChatConversationDetail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
 
@@ -838,7 +845,7 @@ export class ChatHistoryService {
     const [{ messages, total, nextCursor, hasMore }, messageSummaries, ownershipRecord] = await Promise.all([
       this.messageRepository.listWindowByConversationId(workspaceId, conversation.id, input),
       this.messageRepository.summarizeByConversationIds(workspaceId, [conversation.id]),
-      this.conversationOwnership.load(conversation.id),
+      options.includeOwnership ? this.conversationOwnership.load(conversation.id) : Promise.resolve(null),
     ]);
     const assistantMessageIds = messages
       .filter((message) => message.role === "assistant")
@@ -885,7 +892,9 @@ export class ChatHistoryService {
         answerFeedbackEntries: message.role === "assistant" ? feedbackByAssistantMessageId.get(message.id) : undefined,
         debug: message.role === "assistant" ? debugByAssistantMessageId.get(message.id) : undefined,
       })),
-      ...(ownershipRecord ? { ownership: toChatConversationOwnership(ownershipRecord) } : {}),
+      ...(ownershipRecord?.state === "human_owned"
+        ? { ownership: toChatConversationOwnership(ownershipRecord) }
+        : {}),
     };
   }
 

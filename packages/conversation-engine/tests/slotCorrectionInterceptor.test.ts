@@ -84,6 +84,18 @@ describe("completed-instance slot-correction interceptor", () => {
     expect(JSON.stringify(result!.trace)).not.toContain("new@example.com");
   });
 
+  it("does not patch state when confirmation generation fails", async () => {
+    const { input, save } = buildInput({
+      detect: vi.fn(async () => ({ slots: mutableEmailSlot, slotKey: "email", rawValue: "new@example.com" })),
+      confirm: vi.fn(async () => {
+        throw new Error("confirmation_failed");
+      }),
+    });
+
+    await expect(new DefaultConversationEngine().attemptRoutine(input)).rejects.toThrow("confirmation_failed");
+    expect(save).not.toHaveBeenCalled();
+  });
+
   it("falls through (no patch) when no correction is detected", async () => {
     const { input, save } = buildInput({ detect: vi.fn(async () => null) });
     const result = await new DefaultConversationEngine().attemptRoutine(input);

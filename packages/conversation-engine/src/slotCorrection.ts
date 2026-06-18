@@ -23,7 +23,21 @@ export type SlotCorrectionResult =
 // domain. Deliberately permissive — the source of truth for deliverability is elsewhere.
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
 // ISO calendar date (YYYY-MM-DD). Protocol syntax, not a keyword list.
-const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/u;
+const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/u;
+
+const isIsoCalendarDate = (value: string): boolean => {
+  const match = ISO_DATE_PATTERN.exec(value);
+  if (!match) {
+    return false;
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day;
+};
 
 /**
  * Coerce/validate a raw string value against a declared slot type. Boolean accepts only the
@@ -42,9 +56,7 @@ const coerceValue = (type: RoutineSlotType, raw: string): { ok: true; value: str
     case "email":
       return EMAIL_PATTERN.test(trimmed) ? { ok: true, value: trimmed } : { ok: false };
     case "date":
-      return ISO_DATE_PATTERN.test(trimmed) && !Number.isNaN(Date.parse(trimmed))
-        ? { ok: true, value: trimmed }
-        : { ok: false };
+      return isIsoCalendarDate(trimmed) ? { ok: true, value: trimmed } : { ok: false };
     case "number": {
       const parsed = Number(trimmed);
       return Number.isFinite(parsed) ? { ok: true, value: parsed } : { ok: false };

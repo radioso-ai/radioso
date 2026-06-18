@@ -519,16 +519,16 @@ export class DefaultConversationEngine implements ConversationEngine {
       }
       return null;
     }
-    await input.routineStore.save({
-      ...completedState,
-      variables: { ...completedState.variables, [verdict.key]: verdict.value },
-      status: "completed",
-    });
     const answer = await input.routineSlotCorrection.confirm({
       turn: baseTurn,
       routineId: completedState.routineId,
       slotKey: verdict.key,
       value: verdict.value,
+    });
+    await input.routineStore.save({
+      ...completedState,
+      variables: { ...completedState.variables, [verdict.key]: verdict.value },
+      status: "completed",
     });
     return this.buildSlotCorrectionTurn(input, completedState.routineId, answer, {
       status: "applied",

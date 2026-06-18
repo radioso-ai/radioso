@@ -51,6 +51,8 @@ describe("verifySlotCorrection", () => {
       .toEqual({ ok: false, reason: "invalid_value" });
     expect(verifySlotCorrection({ slots, slotKey: "when", rawValue: "June 18" }))
       .toEqual({ ok: false, reason: "invalid_value" });
+    expect(verifySlotCorrection({ slots, slotKey: "when", rawValue: "2026-02-31" }))
+      .toEqual({ ok: false, reason: "invalid_value" });
     expect(verifySlotCorrection({ slots, slotKey: "note", rawValue: "   " }))
       .toEqual({ ok: false, reason: "invalid_value" });
   });

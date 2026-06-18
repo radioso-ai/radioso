@@ -54,7 +54,7 @@ export interface UpdateCustomerEmailConnectionInput {
 // Customer-email owns ONLY these provider rows; every id-based read/mutate/delete
 // path scopes to this set so the email API cannot touch another provider's
 // connection by id. `create()` only ever stores these values.
-const EMAIL_INTEGRATION_PROVIDERS = ["customer_email_google", "customer_email_microsoft"] as const;
+export const EMAIL_INTEGRATION_PROVIDERS = ["customer_email_google", "customer_email_microsoft"] as const;
 
 const customerEmailProviderToIntegrationProvider = (provider: string): string => {
   if (provider === "google_mail") return "customer_email_google";

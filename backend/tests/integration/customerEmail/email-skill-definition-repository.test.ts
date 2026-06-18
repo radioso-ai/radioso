@@ -205,4 +205,32 @@ describeIfDatabase("email skill definition repository (postgres)", () => {
       ),
     ).rejects.toMatchObject({ code: "23505" });
   });
+
+  it("rejects a customer_email skill targeting a non-email integration connection (db trigger isolation)", async () => {
+    // A different provider (Slack) owns a row on the shared integration_connections spine.
+    const slackConnectionId = randomUUID();
+    await client.query(
+      `INSERT INTO integration_connections
+         (id, workspace_id, oauth_connection_id, provider, display_name, status, config)
+       VALUES ($1, $2, $3, 'slack', 'Workspace Slack', 'authorized', '{}'::jsonb)`,
+      [slackConnectionId, workspaceId, oauthConnectionId],
+    );
+
+    // The target-enforcement trigger must reject a customer_email skill bound to it.
+    await expect(
+      client.query(
+        `INSERT INTO agent_skills (id, agent_id, workspace_id, skill_name, kind, target_type, target_id, config)
+         VALUES ($1, $2, $3, 'slack_hijack', 'customer_email', 'customer_email_connection', $4, '{}'::jsonb)`,
+        [randomUUID(), agentId, workspaceId, slackConnectionId],
+      ),
+    ).rejects.toMatchObject({ code: "23503" });
+
+    // ...and the delete-block trigger must not treat the Slack row as email-owned.
+    await expect(
+      client.query(`DELETE FROM integration_connections WHERE workspace_id = $1 AND id = $2`, [
+        workspaceId,
+        slackConnectionId,
+      ]),
+    ).resolves.toBeDefined();
+  });
 });

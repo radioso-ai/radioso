@@ -1,8 +1,9 @@
-import type {
-  CreateCustomerEmailConnectionInput,
-  CustomerEmailConnectionRecord,
-  CustomerEmailConnectionRepositoryPort,
-  UpdateCustomerEmailConnectionInput,
+import {
+  EMAIL_INTEGRATION_PROVIDERS,
+  type CreateCustomerEmailConnectionInput,
+  type CustomerEmailConnectionRecord,
+  type CustomerEmailConnectionRepositoryPort,
+  type UpdateCustomerEmailConnectionInput,
 } from "../../src/db/repositories/customerEmailConnectionRepository.js";
 import { InMemoryIntegrationConnectionRepository } from "./inMemoryIntegrationConnections.js";
 import type { IntegrationConnectionRecord } from "../../src/modules/integrationConnections/public.js";
@@ -32,7 +33,7 @@ const configString = (config: Record<string, unknown>, key: string): string | nu
 };
 
 const isCustomerEmailProvider = (provider: string): boolean =>
-  provider.startsWith("customer_email_") || provider.endsWith("_mail");
+  (EMAIL_INTEGRATION_PROVIDERS as readonly string[]).includes(provider);
 
 const mapFromIntegration = (record: IntegrationConnectionRecord): CustomerEmailConnectionRecord => ({
   id: record.id,
@@ -79,7 +80,7 @@ export class InMemoryCustomerEmailConnectionRepository implements CustomerEmailC
   }
 
   async findById(workspaceId: string, id: string): Promise<CustomerEmailConnectionRecord | null> {
-    const record = await this.integrationConnections.findById(workspaceId, id);
+    const record = await this.integrationConnections.findById(workspaceId, id, EMAIL_INTEGRATION_PROVIDERS);
     return record ? clone(mapFromIntegration(record)) : null;
   }
 
@@ -99,19 +100,24 @@ export class InMemoryCustomerEmailConnectionRepository implements CustomerEmailC
     if (input.senderEmail !== undefined) config.senderEmail = input.senderEmail;
     if (input.senderName !== undefined) config.senderName = input.senderName;
     if (input.replyToEmail !== undefined) config.replyToEmail = input.replyToEmail;
-    const record = await this.integrationConnections.update(workspaceId, id, {
-      ...("displayName" in input ? { displayName: input.displayName } : {}),
-      ...("status" in input ? { status: input.status } : {}),
-      ...("lastHealthStatus" in input ? { lastHealthStatus: input.lastHealthStatus } : {}),
-      ...("lastHealthCheckedAt" in input ? { lastHealthCheckedAt: input.lastHealthCheckedAt } : {}),
-      ...("lastErrorCode" in input ? { lastErrorCode: input.lastErrorCode } : {}),
-      ...(Object.keys(config).length > 0 ? { config } : {}),
-    });
+    const record = await this.integrationConnections.update(
+      workspaceId,
+      id,
+      {
+        ...("displayName" in input ? { displayName: input.displayName } : {}),
+        ...("status" in input ? { status: input.status } : {}),
+        ...("lastHealthStatus" in input ? { lastHealthStatus: input.lastHealthStatus } : {}),
+        ...("lastHealthCheckedAt" in input ? { lastHealthCheckedAt: input.lastHealthCheckedAt } : {}),
+        ...("lastErrorCode" in input ? { lastErrorCode: input.lastErrorCode } : {}),
+        ...(Object.keys(config).length > 0 ? { config } : {}),
+      },
+      EMAIL_INTEGRATION_PROVIDERS,
+    );
     return record ? clone(mapFromIntegration(record)) : null;
   }
 
   async countSkillReferences(workspaceId: string, id: string): Promise<number> {
-    const record = await this.integrationConnections.findById(workspaceId, id);
+    const record = await this.integrationConnections.findById(workspaceId, id, EMAIL_INTEGRATION_PROVIDERS);
     if (!record) {
       return 0;
     }
@@ -119,6 +125,6 @@ export class InMemoryCustomerEmailConnectionRepository implements CustomerEmailC
   }
 
   async remove(workspaceId: string, id: string): Promise<boolean> {
-    return this.integrationConnections.remove(workspaceId, id);
+    return this.integrationConnections.remove(workspaceId, id, EMAIL_INTEGRATION_PROVIDERS);
   }
 }

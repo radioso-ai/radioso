@@ -59,7 +59,7 @@ CREATE FUNCTION public.block_agent_skill_customer_email_connection_delete() RETU
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  IF OLD.provider NOT LIKE 'customer_email_%' AND OLD.provider NOT LIKE '%\_mail' ESCAPE '\' THEN
+  IF OLD.provider NOT IN ('customer_email_google', 'customer_email_microsoft') THEN
     RETURN OLD;
   END IF;
 
@@ -215,7 +215,7 @@ BEGIN
     FROM integration_connections
     WHERE id = target_uuid
       AND workspace_id = NEW.workspace_id
-      AND (provider LIKE 'customer_email_%' OR provider LIKE '%\_mail' ESCAPE '\')
+      AND provider IN ('customer_email_google', 'customer_email_microsoft')
     FOR KEY SHARE;
     IF target_exists IS NOT TRUE THEN
       RAISE EXCEPTION 'customer_email skill % references unknown customer email connection %', NEW.id, NEW.target_id

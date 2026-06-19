@@ -58,6 +58,7 @@ describe("Slack admin REST contract", () => {
     expect(connected.status).toBe(200);
     expect(connected.body).toEqual({
       status: "connected",
+      installationId: expect.any(String),
       teamName: "Test Slack",
     });
     expectNoSecrets(connected.body);
@@ -79,6 +80,7 @@ describe("Slack admin REST contract", () => {
     expect(connectedWithBinding.status).toBe(200);
     expect(connectedWithBinding.body).toEqual({
       status: "connected",
+      installationId: expect.any(String),
       teamName: "Test Slack",
       answeringAgentId,
     });

@@ -110,6 +110,8 @@ import {
 import { InMemoryEmailSkillDefinitionRepository } from "./inMemoryEmailSkillDefinitions.js";
 import { InMemoryEmailSkillActivityRepository } from "./inMemoryEmailSkillActivity.js";
 import { InMemoryWebhookSkillDefinitionRepository } from "./inMemoryWebhookSkillDefinitions.js";
+import { InMemorySlackSkillDefinitionRepository } from "./inMemorySlackSkillDefinitions.js";
+import { SlackSkillDefinitionService } from "../../src/modules/slackSkills/public.js";
 import {
   DefaultWebhookDestinationAdapter,
   WebhookDestinationService,
@@ -824,6 +826,7 @@ export const createTestDependencies = (overrides: {
   const emailSkillDefinitionRepository = new InMemoryEmailSkillDefinitionRepository();
   const emailSkillActivityRepository = new InMemoryEmailSkillActivityRepository();
   const webhookSkillDefinitionRepository = new InMemoryWebhookSkillDefinitionRepository();
+  const slackSkillDefinitionRepository = new InMemorySlackSkillDefinitionRepository();
   customerEmailConnectionRepository.setReferenceChecker((connectionId) =>
     emailSkillDefinitionRepository.countByConnection("", connectionId),
   );
@@ -889,6 +892,10 @@ export const createTestDependencies = (overrides: {
   const webhookSkillDefinitionService = new WebhookSkillDefinitionService({
     repository: webhookSkillDefinitionRepository,
     destinations: webhookDestinations,
+  });
+  const slackSkillDefinitionService = new SlackSkillDefinitionService({
+    repository: slackSkillDefinitionRepository,
+    installations: slackInstallationRepository,
   });
   const accessGrantService = new AccessGrantService({
     repository: accessGrantRepository,
@@ -1156,6 +1163,7 @@ export const createTestDependencies = (overrides: {
     customerEmailConnectionService,
     emailSkillDefinitionService,
     webhookSkillDefinitionService,
+    slackSkillDefinitionService,
     emailSkillActivityRepository,
     mcpConnectionService,
     externalSkillDefinitionService,

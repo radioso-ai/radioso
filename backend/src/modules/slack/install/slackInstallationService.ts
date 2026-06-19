@@ -97,6 +97,7 @@ export interface SaveSlackInstallationResult {
 
 export interface SlackInstallationStatus {
   status: "connected" | "needs_reauth" | "disabled" | "not_configured";
+  installationId?: string;
   teamName?: string;
   answeringAgentId?: string;
 }
@@ -169,6 +170,7 @@ export class SlackInstallationService {
         : connection.status === "error"
           ? "needs_reauth"
           : connection.status,
+      installationId: installation.id,
       ...(installation.teamName ? { teamName: installation.teamName } : {}),
       ...(binding?.answeringAgentId ? { answeringAgentId: binding.answeringAgentId } : {}),
     };

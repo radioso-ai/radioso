@@ -20,6 +20,7 @@ import { registerOauthConnectionPaths } from "./paths/oauthConnectionPaths.js";
 import { registerCustomerEmailPaths } from "./paths/customerEmailPaths.js";
 import { registerSlackPaths } from "./paths/slackPaths.js";
 import { registerWebhookSkillsPaths } from "./paths/webhookSkillsPaths.js";
+import { registerSlackSkillsPaths } from "./paths/slackSkillsPaths.js";
 import { registerDocumentsPaths } from "./paths/documentsPaths.js";
 import { registerHistoryPaths } from "./paths/historyPaths.js";
 import { registerConnectorsPaths } from "./paths/connectorsPaths.js";
@@ -46,6 +47,7 @@ export const registerOpenApiPaths = (
   registerCustomerEmailPaths(registry, schemas, security);
   registerSlackPaths(registry, schemas, security);
   registerWebhookSkillsPaths(registry, schemas, security);
+  registerSlackSkillsPaths(registry, schemas, security);
   registerRetrievalAnswerPaths(registry, schemas, security);
   registerDocumentsPaths(registry, schemas, security);
   registerAssistantAuthenticatedChatPaths(registry, schemas, security);

@@ -84,12 +84,26 @@ export type CustomerEmailActivityFixture = {
 };
 export type SlackInstallStatusFixture = {
   status: "connected" | "needs_reauth" | "disabled" | "not_configured";
+  installationId?: string;
   teamName?: string;
   answeringAgentId?: string;
 };
 export type SlackBindingFixture = {
   answeringAgentId: string | null;
   escalationChannelId: string | null;
+};
+export type SlackSkillFixture = {
+  id: string;
+  workspaceId: string;
+  agentId: string;
+  installationId: string;
+  skillName: string;
+  boundInputs: Record<string, unknown>;
+  exposedInputs: Record<string, { slotBinding?: string; required?: boolean }>;
+  enabled: boolean;
+  outcomes: Array<"enqueued" | "missing_input" | "failed">;
+  createdAt: string;
+  updatedAt: string;
 };
 export type RoutineSkillCatalogFixture = SkillAuthoringDescriptor[];
 export type WebhookDestinationMutationFixture = {
@@ -510,6 +524,7 @@ export const installDashboardApiMocks = async (
     emailActivity?: CustomerEmailActivityFixture[];
     slackStatus?: SlackInstallStatusFixture;
     slackBinding?: SlackBindingFixture;
+    slackSkills?: SlackSkillFixture[];
     slackRequests?: Array<{ method: string; path: string; body?: unknown }>;
     routineSkillCatalog?: RoutineSkillCatalogFixture;
   } = {},
@@ -554,6 +569,8 @@ export const installDashboardApiMocks = async (
   const emailActivity = options.emailActivity ?? [];
   let slackStatus = options.slackStatus ?? { status: "not_configured" as const };
   let slackBinding = options.slackBinding ?? { answeringAgentId: null, escalationChannelId: null };
+  let slackSkills = options.slackSkills ?? [];
+  let nextSlackSkillIndex = slackSkills.length + 1;
   const routineSkillCatalog = options.routineSkillCatalog ?? [];
   let webhookDestinations = options.webhookDestinations ?? [];
   let nextWebhookDestinationIndex = webhookDestinations.length + 1;
@@ -767,6 +784,7 @@ export const installDashboardApiMocks = async (
       options.slackRequests?.push({ method: request.method(), path });
       slackStatus = {
         status: "connected",
+        installationId: "99999999-9999-4999-8999-000000000003",
         teamName: "Radioso Test",
         answeringAgentId: defaultAgentId,
       };
@@ -808,8 +826,62 @@ export const installDashboardApiMocks = async (
       options.slackRequests?.push({ method: request.method(), path });
       slackStatus = { status: "not_configured" };
       slackBinding = { answeringAgentId: null, escalationChannelId: null };
+      slackSkills = [];
       await route.fulfill({ status: 204 });
       return;
+    }
+
+    if (path === `/agents/${defaultAgentId}/slack-skills`) {
+      if (request.method() === "GET") {
+        await json(route, { skills: slackSkills });
+        return;
+      }
+
+      if (request.method() === "POST") {
+        const body = request.postDataJSON() as Omit<SlackSkillFixture, "id" | "workspaceId" | "agentId" | "outcomes" | "createdAt" | "updatedAt">;
+        options.slackRequests?.push({ method: request.method(), path, body });
+        const skill: SlackSkillFixture = {
+          id: `77777777-7777-4777-8777-${String(nextSlackSkillIndex).padStart(12, "0")}`,
+          workspaceId,
+          agentId: defaultAgentId,
+          skillName: body.skillName,
+          installationId: body.installationId,
+          boundInputs: body.boundInputs ?? {},
+          exposedInputs: body.exposedInputs ?? {},
+          enabled: body.enabled ?? true,
+          outcomes: ["enqueued", "missing_input", "failed"],
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        };
+        nextSlackSkillIndex += 1;
+        slackSkills = [...slackSkills, skill];
+        await json(route, { skill }, 201);
+        return;
+      }
+    }
+
+    if (path.startsWith(`/agents/${defaultAgentId}/slack-skills/`)) {
+      const skillId = path.replace(`/agents/${defaultAgentId}/slack-skills/`, "");
+      const skill = slackSkills.find((item) => item.id === skillId);
+      if (!skill) {
+        await json(route, { error: { message: "Slack skill not found" } }, 404);
+        return;
+      }
+
+      if (request.method() === "PATCH") {
+        const body = request.postDataJSON() as Partial<SlackSkillFixture>;
+        options.slackRequests?.push({ method: request.method(), path, body });
+        slackSkills = slackSkills.map((item) => item.id === skillId ? { ...item, ...body, updatedAt: nowIso } : item);
+        await json(route, { skill: slackSkills.find((item) => item.id === skillId) });
+        return;
+      }
+
+      if (request.method() === "DELETE") {
+        options.slackRequests?.push({ method: request.method(), path });
+        slackSkills = slackSkills.filter((item) => item.id !== skillId);
+        await route.fulfill({ status: 204 });
+        return;
+      }
     }
 
     if (request.method() === "POST" && path === `/agents/${defaultAgentId}/anonymous-chat-token/rotate`) {

@@ -10,6 +10,7 @@ import { AssistantBehaviorSection } from '@/components/dashboard/settings/assist
 import { AssistantDirectivesSection } from '@/components/dashboard/settings/assistant-directives-section'
 import { AssistantExternalSkillsSection } from '@/components/dashboard/settings/assistant-external-skills-section'
 import { AssistantEmailSkillsSection } from '@/components/dashboard/settings/assistant-email-skills-section'
+import { AssistantSlackSkillsSection } from '@/components/dashboard/settings/assistant-slack-skills-section'
 import { AssistantIdentityAppearanceSection } from '@/components/dashboard/settings/assistant-identity-appearance-section'
 import { AssistantPreviewRail } from '@/components/dashboard/settings/assistant-preview-rail'
 import { AssistantRetrievalSkillSettingsSection } from '@/components/dashboard/settings/assistant-retrieval-skill-settings-section'
@@ -1127,6 +1128,7 @@ export function WorkspaceAssistantChannelsTab({
           <section id="assistant-skills" className="space-y-6 scroll-mt-24">
             {agentId ? <AssistantExternalSkillsSection agentId={agentId} /> : null}
             {agentId ? <AssistantEmailSkillsSection agentId={agentId} workspaceId={activeWorkspaceId} /> : null}
+            {agentId ? <AssistantSlackSkillsSection agentId={agentId} workspaceId={activeWorkspaceId} /> : null}
             <SettingsCard
               id="contact-requests"
               icon={<UserRound className="h-5 w-5 text-primary" />}

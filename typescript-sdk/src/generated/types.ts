@@ -1332,6 +1332,75 @@ export interface paths {
         patch: operations["updateAgentEmailSkill"];
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/install/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Slack OAuth installation */
+        post: operations["startAgentSlackInstall"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/install/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Slack installation status */
+        get: operations["getAgentSlackInstallStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/binding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Slack answering binding */
+        get: operations["getAgentSlackBinding"];
+        /** Set Slack answering binding */
+        put: operations["setAgentSlackBinding"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/installation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Disconnect Slack installation */
+        delete: operations["disconnectAgentSlackInstallation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agentId}/webhook-skills": {
         parameters: {
             query?: never;
@@ -1367,6 +1436,43 @@ export interface paths {
         head?: never;
         /** Update an agent webhook skill */
         patch: operations["updateAgentWebhookSkill"];
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/slack-skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List agent Slack skills */
+        get: operations["listAgentSlackSkills"];
+        put?: never;
+        /** Create an agent Slack skill */
+        post: operations["createAgentSlackSkill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/slack-skills/{skillId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an agent Slack skill */
+        get: operations["getAgentSlackSkill"];
+        put?: never;
+        post?: never;
+        /** Delete an agent Slack skill */
+        delete: operations["deleteAgentSlackSkill"];
+        options?: never;
+        head?: never;
+        /** Update an agent Slack skill */
+        patch: operations["updateAgentSlackSkill"];
         trace?: never;
     };
     "/api/v1/retrieval/answer": {
@@ -10062,6 +10168,267 @@ export interface operations {
             };
         };
     };
+    startAgentSlackInstall: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Slack authorization started */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uri */
+                        authorizationUrl: string;
+                        /** Format: uuid */
+                        connectionId: string;
+                        /** @enum {string} */
+                        status: "pending";
+                    };
+                };
+            };
+            /** @description Invalid request or Slack OAuth is not configured */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentSlackInstallStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Slack installation status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "connected" | "needs_reauth" | "disabled" | "not_configured";
+                        /** Format: uuid */
+                        installationId?: string;
+                        teamName?: string;
+                        /** Format: uuid */
+                        answeringAgentId?: string;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentSlackBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Slack binding */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        answeringAgentId: string | null;
+                        escalationChannelId: string | null;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    setAgentSlackBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    answeringAgentId: string;
+                    escalationChannelId?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Slack binding */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        answeringAgentId: string | null;
+                        escalationChannelId: string | null;
+                    };
+                };
+            };
+            /** @description Invalid binding request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Slack installation not configured */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    disconnectAgentSlackInstallation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Disconnected */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listAgentWebhookSkills: {
         parameters: {
             query?: never;
@@ -10473,6 +10840,511 @@ export interface operations {
                 };
             };
             /** @description Agent or webhook skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentSlackSkills: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Slack skill definitions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skills: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            installationId: string;
+                            skillName: string;
+                            boundInputs: {
+                                channelId?: unknown;
+                                text?: unknown;
+                                threadTs?: unknown;
+                            };
+                            exposedInputs: {
+                                channelId?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                text?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                threadTs?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("enqueued" | "missing_input" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAgentSlackSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    skillName: string;
+                    /** Format: uuid */
+                    installationId: string;
+                    /** @default {} */
+                    boundInputs?: {
+                        channelId?: unknown;
+                        text?: unknown;
+                        threadTs?: unknown;
+                    };
+                    /** @default {} */
+                    exposedInputs?: {
+                        channelId?: {
+                            description?: string;
+                            slotBinding?: string;
+                            /** @default true */
+                            required?: boolean;
+                        };
+                        text?: {
+                            description?: string;
+                            slotBinding?: string;
+                            /** @default true */
+                            required?: boolean;
+                        };
+                        threadTs?: {
+                            description?: string;
+                            slotBinding?: string;
+                            /** @default true */
+                            required?: boolean;
+                        };
+                    };
+                    /** @default true */
+                    enabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Slack skill definition */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            installationId: string;
+                            skillName: string;
+                            boundInputs: {
+                                channelId?: unknown;
+                                text?: unknown;
+                                threadTs?: unknown;
+                            };
+                            exposedInputs: {
+                                channelId?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                text?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                threadTs?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("enqueued" | "missing_input" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid Slack skill definition */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or Slack installation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Slack skill name already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentSlackSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Slack skill definition */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            installationId: string;
+                            skillName: string;
+                            boundInputs: {
+                                channelId?: unknown;
+                                text?: unknown;
+                                threadTs?: unknown;
+                            };
+                            exposedInputs: {
+                                channelId?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                text?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                threadTs?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("enqueued" | "missing_input" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or Slack skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAgentSlackSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or Slack skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAgentSlackSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    boundInputs?: {
+                        channelId?: unknown;
+                        text?: unknown;
+                        threadTs?: unknown;
+                    };
+                    exposedInputs?: {
+                        channelId?: {
+                            description?: string;
+                            slotBinding?: string;
+                            /** @default true */
+                            required?: boolean;
+                        };
+                        text?: {
+                            description?: string;
+                            slotBinding?: string;
+                            /** @default true */
+                            required?: boolean;
+                        };
+                        threadTs?: {
+                            description?: string;
+                            slotBinding?: string;
+                            /** @default true */
+                            required?: boolean;
+                        };
+                    };
+                    enabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Slack skill definition */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            installationId: string;
+                            skillName: string;
+                            boundInputs: {
+                                channelId?: unknown;
+                                text?: unknown;
+                                threadTs?: unknown;
+                            };
+                            exposedInputs: {
+                                channelId?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                text?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                threadTs?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("enqueued" | "missing_input" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid Slack skill definition */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or Slack skill not found */
             404: {
                 headers: {
                     [name: string]: unknown;

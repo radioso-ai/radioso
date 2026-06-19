@@ -16,6 +16,7 @@ const SlackInstallStartResponseSchema = z.object({
 
 const SlackInstallStatusSchema = z.object({
   status: z.enum(["connected", "needs_reauth", "disabled", "not_configured"]),
+  installationId: z.string().uuid().optional(),
   teamName: z.string().optional(),
   answeringAgentId: z.string().uuid().optional(),
 });

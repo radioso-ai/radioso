@@ -19977,6 +19977,10 @@
                         "not_configured"
                       ]
                     },
+                    "installationId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
                     "teamName": {
                       "type": "string"
                     },
@@ -21086,6 +21090,1028 @@
           },
           "404": {
             "description": "Agent or webhook skill not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/slack-skills": {
+      "get": {
+        "tags": [
+          "Slack Skills"
+        ],
+        "summary": "List agent Slack skills",
+        "operationId": "listAgentSlackSkills",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Slack skill definitions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "skills": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "workspaceId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "agentId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "installationId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "skillName": {
+                            "type": "string"
+                          },
+                          "boundInputs": {
+                            "type": "object",
+                            "properties": {
+                              "channelId": {},
+                              "text": {},
+                              "threadTs": {}
+                            }
+                          },
+                          "exposedInputs": {
+                            "type": "object",
+                            "properties": {
+                              "channelId": {
+                                "type": "object",
+                                "properties": {
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "slotBinding": {
+                                    "type": "string"
+                                  },
+                                  "required": {
+                                    "type": "boolean",
+                                    "default": true
+                                  }
+                                }
+                              },
+                              "text": {
+                                "type": "object",
+                                "properties": {
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "slotBinding": {
+                                    "type": "string"
+                                  },
+                                  "required": {
+                                    "type": "boolean",
+                                    "default": true
+                                  }
+                                }
+                              },
+                              "threadTs": {
+                                "type": "object",
+                                "properties": {
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "slotBinding": {
+                                    "type": "string"
+                                  },
+                                  "required": {
+                                    "type": "boolean",
+                                    "default": true
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "outcomes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "enqueued",
+                                "missing_input",
+                                "failed"
+                              ]
+                            }
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "workspaceId",
+                          "agentId",
+                          "installationId",
+                          "skillName",
+                          "boundInputs",
+                          "exposedInputs",
+                          "enabled",
+                          "outcomes",
+                          "createdAt",
+                          "updatedAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "skills"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent read permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Slack Skills"
+        ],
+        "summary": "Create an agent Slack skill",
+        "operationId": "createAgentSlackSkill",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "skillName": {
+                    "type": "string"
+                  },
+                  "installationId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "boundInputs": {
+                    "type": "object",
+                    "properties": {
+                      "channelId": {},
+                      "text": {},
+                      "threadTs": {}
+                    },
+                    "default": {}
+                  },
+                  "exposedInputs": {
+                    "type": "object",
+                    "properties": {
+                      "channelId": {
+                        "type": "object",
+                        "properties": {
+                          "description": {
+                            "type": "string"
+                          },
+                          "slotBinding": {
+                            "type": "string"
+                          },
+                          "required": {
+                            "type": "boolean",
+                            "default": true
+                          }
+                        }
+                      },
+                      "text": {
+                        "type": "object",
+                        "properties": {
+                          "description": {
+                            "type": "string"
+                          },
+                          "slotBinding": {
+                            "type": "string"
+                          },
+                          "required": {
+                            "type": "boolean",
+                            "default": true
+                          }
+                        }
+                      },
+                      "threadTs": {
+                        "type": "object",
+                        "properties": {
+                          "description": {
+                            "type": "string"
+                          },
+                          "slotBinding": {
+                            "type": "string"
+                          },
+                          "required": {
+                            "type": "boolean",
+                            "default": true
+                          }
+                        }
+                      }
+                    },
+                    "default": {}
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "default": true
+                  }
+                },
+                "required": [
+                  "skillName",
+                  "installationId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Slack skill definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "skill": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "workspaceId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "agentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "installationId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "skillName": {
+                          "type": "string"
+                        },
+                        "boundInputs": {
+                          "type": "object",
+                          "properties": {
+                            "channelId": {},
+                            "text": {},
+                            "threadTs": {}
+                          }
+                        },
+                        "exposedInputs": {
+                          "type": "object",
+                          "properties": {
+                            "channelId": {
+                              "type": "object",
+                              "properties": {
+                                "description": {
+                                  "type": "string"
+                                },
+                                "slotBinding": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean",
+                                  "default": true
+                                }
+                              }
+                            },
+                            "text": {
+                              "type": "object",
+                              "properties": {
+                                "description": {
+                                  "type": "string"
+                                },
+                                "slotBinding": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean",
+                                  "default": true
+                                }
+                              }
+                            },
+                            "threadTs": {
+                              "type": "object",
+                              "properties": {
+                                "description": {
+                                  "type": "string"
+                                },
+                                "slotBinding": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean",
+                                  "default": true
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "outcomes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "enqueued",
+                              "missing_input",
+                              "failed"
+                            ]
+                          }
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "workspaceId",
+                        "agentId",
+                        "installationId",
+                        "skillName",
+                        "boundInputs",
+                        "exposedInputs",
+                        "enabled",
+                        "outcomes",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "skill"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Slack skill definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent manage permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or Slack installation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Slack skill name already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/slack-skills/{skillId}": {
+      "get": {
+        "tags": [
+          "Slack Skills"
+        ],
+        "summary": "Get an agent Slack skill",
+        "operationId": "getAgentSlackSkill",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "skillId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Slack skill definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "skill": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "workspaceId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "agentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "installationId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "skillName": {
+                          "type": "string"
+                        },
+                        "boundInputs": {
+                          "type": "object",
+                          "properties": {
+                            "channelId": {},
+                            "text": {},
+                            "threadTs": {}
+                          }
+                        },
+                        "exposedInputs": {
+                          "type": "object",
+                          "properties": {
+                            "channelId": {
+                              "type": "object",
+                              "properties": {
+                                "description": {
+                                  "type": "string"
+                                },
+                                "slotBinding": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean",
+                                  "default": true
+                                }
+                              }
+                            },
+                            "text": {
+                              "type": "object",
+                              "properties": {
+                                "description": {
+                                  "type": "string"
+                                },
+                                "slotBinding": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean",
+                                  "default": true
+                                }
+                              }
+                            },
+                            "threadTs": {
+                              "type": "object",
+                              "properties": {
+                                "description": {
+                                  "type": "string"
+                                },
+                                "slotBinding": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean",
+                                  "default": true
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "outcomes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "enqueued",
+                              "missing_input",
+                              "failed"
+                            ]
+                          }
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "workspaceId",
+                        "agentId",
+                        "installationId",
+                        "skillName",
+                        "boundInputs",
+                        "exposedInputs",
+                        "enabled",
+                        "outcomes",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "skill"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent read permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or Slack skill not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Slack Skills"
+        ],
+        "summary": "Update an agent Slack skill",
+        "operationId": "updateAgentSlackSkill",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "skillId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "boundInputs": {
+                    "type": "object",
+                    "properties": {
+                      "channelId": {},
+                      "text": {},
+                      "threadTs": {}
+                    }
+                  },
+                  "exposedInputs": {
+                    "type": "object",
+                    "properties": {
+                      "channelId": {
+                        "type": "object",
+                        "properties": {
+                          "description": {
+                            "type": "string"
+                          },
+                          "slotBinding": {
+                            "type": "string"
+                          },
+                          "required": {
+                            "type": "boolean",
+                            "default": true
+                          }
+                        }
+                      },
+                      "text": {
+                        "type": "object",
+                        "properties": {
+                          "description": {
+                            "type": "string"
+                          },
+                          "slotBinding": {
+                            "type": "string"
+                          },
+                          "required": {
+                            "type": "boolean",
+                            "default": true
+                          }
+                        }
+                      },
+                      "threadTs": {
+                        "type": "object",
+                        "properties": {
+                          "description": {
+                            "type": "string"
+                          },
+                          "slotBinding": {
+                            "type": "string"
+                          },
+                          "required": {
+                            "type": "boolean",
+                            "default": true
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Slack skill definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "skill": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "workspaceId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "agentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "installationId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "skillName": {
+                          "type": "string"
+                        },
+                        "boundInputs": {
+                          "type": "object",
+                          "properties": {
+                            "channelId": {},
+                            "text": {},
+                            "threadTs": {}
+                          }
+                        },
+                        "exposedInputs": {
+                          "type": "object",
+                          "properties": {
+                            "channelId": {
+                              "type": "object",
+                              "properties": {
+                                "description": {
+                                  "type": "string"
+                                },
+                                "slotBinding": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean",
+                                  "default": true
+                                }
+                              }
+                            },
+                            "text": {
+                              "type": "object",
+                              "properties": {
+                                "description": {
+                                  "type": "string"
+                                },
+                                "slotBinding": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean",
+                                  "default": true
+                                }
+                              }
+                            },
+                            "threadTs": {
+                              "type": "object",
+                              "properties": {
+                                "description": {
+                                  "type": "string"
+                                },
+                                "slotBinding": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean",
+                                  "default": true
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "outcomes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "enqueued",
+                              "missing_input",
+                              "failed"
+                            ]
+                          }
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "workspaceId",
+                        "agentId",
+                        "installationId",
+                        "skillName",
+                        "boundInputs",
+                        "exposedInputs",
+                        "enabled",
+                        "outcomes",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "skill"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Slack skill definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent manage permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or Slack skill not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Slack Skills"
+        ],
+        "summary": "Delete an agent Slack skill",
+        "operationId": "deleteAgentSlackSkill",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "skillId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent manage permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or Slack skill not found",
             "content": {
               "application/json": {
                 "schema": {

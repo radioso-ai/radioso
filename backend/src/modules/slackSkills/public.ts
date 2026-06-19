@@ -2,9 +2,13 @@ export {
   slackBoundInputsSchema,
   slackExposedInputSchema,
   slackExposedInputsSchema,
+  slackSkillDefinitionCreateSchema,
+  slackSkillDefinitionUpdateSchema,
   slackSkillInputKeys,
   slackSkillOutcomes,
+  type SlackSkillDefinitionCreateInput,
   type SlackSkillDefinitionSummary,
+  type SlackSkillDefinitionUpdateInput,
   type SlackSkillInputKey,
   type SlackSkillOutcome,
 } from "./domain.js";
@@ -13,6 +17,10 @@ export {
   type CreateSlackSkillDefinitionInput,
   type SlackSkillDefinitionRepositoryPort,
 } from "./repository.js";
+export {
+  SlackSkillDefinitionService,
+  type SlackSkillDefinitionServiceOptions,
+} from "./service.js";
 export {
   SlackRoutineSkillResolver,
   slackRoutineSkillDefinition,

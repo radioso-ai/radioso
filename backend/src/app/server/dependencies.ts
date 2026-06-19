@@ -79,6 +79,7 @@ import {
   customerEmailOauthProviderIds,
 } from "../../modules/customerEmail/public.js";
 import { WebhookSkillDefinitionService } from "../../modules/webhookSkills/public.js";
+import { SlackSkillDefinitionService } from "../../modules/slackSkills/public.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -202,6 +203,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const webhookSkillDefinitionService = new WebhookSkillDefinitionService({
     repository: repositories.webhookSkillDefinitionRepository,
     destinations: webhookDestinations,
+  });
+  const slackSkillDefinitionService = new SlackSkillDefinitionService({
+    repository: repositories.slackSkillDefinitionRepository,
+    installations: repositories.slackInstallationRepository,
   });
   // Build the registry first (no resolver yet) so we can compute supported embedding
   // models; embedding stays env-default and doesn't need the workspace-aware resolver.
@@ -514,6 +519,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     customerEmailConnectionService,
     emailSkillDefinitionService,
     webhookSkillDefinitionService,
+    slackSkillDefinitionService,
     emailSkillActivityRepository: repositories.emailSkillActivityRepository,
     mcpConnectionService,
     externalSkillDefinitionService,

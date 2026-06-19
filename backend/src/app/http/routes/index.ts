@@ -22,6 +22,7 @@ import { createCustomerEmailConnectionRoutes } from "./customerEmailConnectionRo
 import { createSlackConnectionRoutes } from "./slackConnectionRoutes.js";
 import { createEmailSkillRoutes } from "./emailSkillRoutes.js";
 import { createWebhookSkillRoutes } from "./webhookSkillRoutes.js";
+import { createSlackSkillRoutes } from "./slackSkillRoutes.js";
 import { createEmailSkillActivityRoutes } from "./emailSkillActivityRoutes.js";
 import { createRetrievalRoutes } from "./retrievalRoutes.js";
 import { createConnectorRoutes } from "../../../modules/connectors/http/connectorRoutes.js";
@@ -62,6 +63,7 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   router.use("/api/v1/agents", createAgentExternalSkillsRoutes(dependencies));
   router.use("/api/v1/agents", createEmailSkillRoutes(dependencies));
   router.use("/api/v1/agents", createWebhookSkillRoutes(dependencies));
+  router.use("/api/v1/agents", createSlackSkillRoutes(dependencies));
   router.use("/api/v1/assistant", createAssistantRoutes(dependencies));
   router.use("/api/v1/history", createHistoryRoutes(dependencies));
   router.use("/api/v1/observability", createObservabilityRoutes(dependencies));

@@ -142,7 +142,7 @@ Related docs:
 ## Agent Skill Definitions (shared spine)
 
 External MCP skills (`externalSkills`), customer email skills (`customerEmail`),
-and webhook skills (`webhookSkills`) share one persistence spine: `agent_skills`
+webhook skills (`webhookSkills`), and Slack skills (`slackSkills`) share one persistence spine: `agent_skills`
 holds the common columns, a single `@mention` namespace per agent enforced
 **across kinds**, generic `target_type` / `target_id` references, and a JSON
 `config` object. Database triggers enforce the current target references for MCP
@@ -158,7 +158,7 @@ Public surfaces and key files:
 
 - `backend/src/modules/agentSkills/public.ts` (spine vocabulary + shared type)
 - `backend/src/modules/integrationOauth/public.ts` (OAuth lifecycle)
-- `backend/src/db/repositories/externalSkillDefinitionRepository.ts`, `emailSkillDefinitionRepository.ts`, `webhookSkillDefinitionRepository.ts`
+- `backend/src/db/repositories/externalSkillDefinitionRepository.ts`, `emailSkillDefinitionRepository.ts`, `webhookSkillDefinitionRepository.ts`, and `backend/src/modules/slackSkills/repository.ts`
 - `backend/src/db/migrations/099_agent_skills_spine.sql`, `100_email_skills_into_spine.sql`, `101_agent_skills_generic_targets.sql`
 
 Focused checks (real Postgres via `INTEGRATION_DATABASE_URL`):

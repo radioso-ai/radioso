@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 
 import type { Database } from "../../shared/infra/database.js";
-import type { SlackSkillDefinitionSummary } from "./domain.js";
+import type {
+  SlackSkillDefinitionCreateInput,
+  SlackSkillDefinitionSummary,
+  SlackSkillDefinitionUpdateInput,
+} from "./domain.js";
 
 interface SlackSkillDefinitionRow {
   id: string;
@@ -48,8 +52,16 @@ export interface CreateSlackSkillDefinitionInput {
 
 export interface SlackSkillDefinitionRepositoryPort {
   create(input: CreateSlackSkillDefinitionInput): Promise<SlackSkillDefinitionSummary>;
+  findById(workspaceId: string, agentId: string, id: string): Promise<SlackSkillDefinitionSummary | null>;
   findEnabledByName(workspaceId: string, agentId: string, skillName: string): Promise<SlackSkillDefinitionSummary | null>;
   listByAgent(workspaceId: string, agentId: string): Promise<SlackSkillDefinitionSummary[]>;
+  update(
+    workspaceId: string,
+    agentId: string,
+    id: string,
+    input: SlackSkillDefinitionUpdateInput,
+  ): Promise<SlackSkillDefinitionSummary | null>;
+  remove(workspaceId: string, agentId: string, id: string): Promise<boolean>;
 }
 
 export class SlackSkillDefinitionRepository implements SlackSkillDefinitionRepositoryPort {
@@ -91,11 +103,55 @@ export class SlackSkillDefinitionRepository implements SlackSkillDefinitionRepos
     return row ? mapRecord(row) : null;
   }
 
+  async findById(workspaceId: string, agentId: string, id: string): Promise<SlackSkillDefinitionSummary | null> {
+    const [row] = await this.database.query<SlackSkillDefinitionRow>(
+      `${SELECT_BASE} AND s.workspace_id = $1 AND s.agent_id = $2 AND s.id = $3`,
+      [workspaceId, agentId, id],
+    );
+    return row ? mapRecord(row) : null;
+  }
+
   async listByAgent(workspaceId: string, agentId: string): Promise<SlackSkillDefinitionSummary[]> {
     const rows = await this.database.query<SlackSkillDefinitionRow>(
       `${SELECT_BASE} AND s.workspace_id = $1 AND s.agent_id = $2 ORDER BY s.skill_name ASC`,
       [workspaceId, agentId],
     );
     return rows.map(mapRecord);
+  }
+
+  async update(
+    workspaceId: string,
+    agentId: string,
+    id: string,
+    input: SlackSkillDefinitionUpdateInput,
+  ): Promise<SlackSkillDefinitionSummary | null> {
+    const config = {
+      ...("boundInputs" in input ? { boundInputs: input.boundInputs ?? {} } : {}),
+      ...("exposedInputs" in input ? { exposedInputs: input.exposedInputs ?? {} } : {}),
+    };
+    const [row] = await this.database.query<SlackSkillDefinitionRow>(
+      `UPDATE agent_skills SET
+         enabled = COALESCE($4, enabled),
+         config = config || COALESCE($5::jsonb, '{}'::jsonb),
+         updated_at = NOW()
+       WHERE workspace_id = $1 AND agent_id = $2 AND id = $3 AND kind = 'slack'
+       RETURNING id, workspace_id, agent_id, target_id, skill_name, config, enabled, created_at, updated_at`,
+      [
+        workspaceId,
+        agentId,
+        id,
+        "enabled" in input ? input.enabled ?? null : null,
+        Object.keys(config).length > 0 ? JSON.stringify(config) : null,
+      ],
+    );
+    return row ? mapRecord(row) : null;
+  }
+
+  async remove(workspaceId: string, agentId: string, id: string): Promise<boolean> {
+    const affected = await this.database.execute(
+      `DELETE FROM agent_skills WHERE workspace_id = $1 AND agent_id = $2 AND id = $3 AND kind = 'slack'`,
+      [workspaceId, agentId, id],
+    );
+    return affected > 0;
   }
 }

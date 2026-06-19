@@ -6,6 +6,7 @@ import { MessageSquare, RefreshCw, Trash2 } from 'lucide-react'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -30,6 +31,7 @@ const needsReauth = (status: SlackInstallStatusResponse | null) => status?.statu
 export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChannelCardProps) {
   const [status, setStatus] = useState<SlackInstallStatusResponse | null>(null)
   const [binding, setBinding] = useState<SlackBinding | null>(null)
+  const [escalationChannelDraft, setEscalationChannelDraft] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [busyAction, setBusyAction] = useState<'install' | 'binding' | 'disconnect' | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -61,15 +63,18 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
       if (nextStatus.status === 'connected') {
         const nextBinding = await slackApi.getBinding(workspaceId, agentId)
         setBinding(nextBinding)
+        setEscalationChannelDraft(nextBinding.escalationChannelId ?? '')
         if (nextBinding.answeringAgentId !== agentId) {
           const updated = await slackApi.updateBinding(workspaceId, agentId, {
             answeringAgentId: agentId,
             escalationChannelId: nextBinding.escalationChannelId,
           })
           setBinding(updated)
+          setEscalationChannelDraft(updated.escalationChannelId ?? '')
         }
       } else {
         setBinding(null)
+        setEscalationChannelDraft('')
       }
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to load Slack channel.'))
@@ -107,8 +112,28 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
         escalationChannelId: binding?.escalationChannelId ?? null,
       })
       setBinding(updated)
+      setEscalationChannelDraft(updated.escalationChannelId ?? '')
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to update Slack binding.'))
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  const updateEscalationChannel = async () => {
+    if (!workspaceId || !agentId) return
+    setBusyAction('binding')
+    setError(null)
+    try {
+      const trimmedChannel = escalationChannelDraft.trim()
+      const updated = await slackApi.updateBinding(workspaceId, agentId, {
+        answeringAgentId: agentId,
+        escalationChannelId: trimmedChannel || null,
+      })
+      setBinding(updated)
+      setEscalationChannelDraft(updated.escalationChannelId ?? '')
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to update Slack escalation channel.'))
     } finally {
       setBusyAction(null)
     }
@@ -122,6 +147,7 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
       await slackApi.disconnect(workspaceId, agentId)
       setStatus({ status: 'not_configured' })
       setBinding(null)
+      setEscalationChannelDraft('')
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to disconnect Slack.'))
     } finally {
@@ -197,6 +223,32 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
                   {agentId ? <SelectItem value={agentId}>{resolvedAgentName}</SelectItem> : null}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="max-w-md space-y-2">
+              <Label htmlFor="slack-escalation-channel" className="text-foreground">Escalation channel</Label>
+              <div className="flex flex-wrap gap-2">
+                <Input
+                  id="slack-escalation-channel"
+                  value={escalationChannelDraft}
+                  onChange={(event) => setEscalationChannelDraft(event.target.value)}
+                  placeholder="C1234567890 or #support"
+                  disabled={busyAction === 'binding'}
+                  className="min-w-0 flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={updateEscalationChannel}
+                  disabled={busyAction === 'binding'}
+                >
+                  {busyAction === 'binding' ? <Spinner className="mr-2 h-4 w-4" /> : null}
+                  Save
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                The agent posts there when it has no grounded answer.
+              </p>
             </div>
           </div>
         ) : null}

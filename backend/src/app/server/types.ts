@@ -39,6 +39,7 @@ import type { OauthConnectionService } from "../../modules/integrationOauth/publ
 import type { SlackInstallationService } from "../../modules/slack/public.js";
 import type { CustomerEmailConnectionService, CustomerEmailOAuthService, EmailSkillDefinitionService } from "../../modules/customerEmail/public.js";
 import type { WebhookSkillDefinitionService } from "../../modules/webhookSkills/public.js";
+import type { SlackSkillDefinitionService } from "../../modules/slackSkills/public.js";
 import type { ChunkRepositoryPort } from "../../modules/documents/contracts/index.js";
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
 import type { AccountRepositoryPort } from "../../modules/auth/services/authService.js";
@@ -110,6 +111,7 @@ export interface AppDependencies {
   customerEmailConnectionService: CustomerEmailConnectionService;
   emailSkillDefinitionService: EmailSkillDefinitionService;
   webhookSkillDefinitionService: WebhookSkillDefinitionService;
+  slackSkillDefinitionService: SlackSkillDefinitionService;
   emailSkillActivityRepository: EmailSkillActivityRepositoryPort;
   mcpConnectionService: McpConnectionService;
   externalSkillDefinitionService: ExternalSkillDefinitionService;

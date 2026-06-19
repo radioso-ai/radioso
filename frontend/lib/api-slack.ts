@@ -10,6 +10,7 @@ export type SlackInstallStartResponse = {
 
 export type SlackInstallStatusResponse = {
   status: SlackInstallStatus
+  installationId?: string
   teamName?: string
   answeringAgentId?: string
 }

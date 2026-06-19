@@ -302,6 +302,11 @@ export interface ConversationDrawerProps {
    */
   onAfterClose?: () => void
   /**
+   * Optional callback fired after operator actions mutate conversation ownership
+   * or pending approvals. Use this to sync parent inbox lists.
+   */
+  onOperatorChanged?: () => Promise<void> | void
+  /**
    * Builds a dashboard link to a routine version for the diagnostics routine
    * band. Supplied by call sites that own the route state; omitted where routine
    * deep-links don't apply.
@@ -314,6 +319,7 @@ export function ConversationDrawer({
   onSelectedItemChange,
   anchorMessageId,
   onAfterClose,
+  onOperatorChanged,
   buildRoutineHref,
 }: ConversationDrawerProps) {
   const selectedChatConversationId = selectedItem?.kind === 'chat' ? selectedItem.id : null
@@ -432,8 +438,9 @@ export function ConversationDrawer({
     await Promise.all([
       refetchDetail(),
       loadPendingDecisions(),
+      onOperatorChanged?.(),
     ])
-  }, [loadPendingDecisions, refetchDetail])
+  }, [loadPendingDecisions, onOperatorChanged, refetchDetail])
 
   const renderedConversationMessages = effectiveConversationMessages
 

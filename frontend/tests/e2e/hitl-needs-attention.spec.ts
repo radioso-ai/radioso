@@ -11,6 +11,20 @@ import {
 
 test("operator can use activity tabs to open a pending approval", async ({ page }) => {
   const conversationId = "conversation-hitl-inbox";
+  const humanConversationId = "conversation-human-owned-inbox";
+  const aiConversationId = "conversation-ai-owned-inbox";
+  const humanOwnership = {
+    conversationId: humanConversationId,
+    workspaceId,
+    state: "human_owned" as const,
+    ownerAccountId: null,
+    ownerDisplayName: null,
+    reason: "requested_handoff",
+    version: 2,
+    takenOverAt: null,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
   const historyList = {
     conversations: [
       {
@@ -27,8 +41,37 @@ test("operator can use activity tabs to open a pending approval", async ({ page 
         assistantMessageCount: 1,
         preview: "Please send the booking update",
       },
+      {
+        id: humanConversationId,
+        agentId: defaultAgentId,
+        agentName: "Marta",
+        sourceChannel: "authenticated_chat",
+        sourceOrigin: null,
+        anonymousSessionId: null,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        messageCount: 1,
+        userMessageCount: 1,
+        assistantMessageCount: 0,
+        preview: "A guest needs manual follow-up",
+        ownership: humanOwnership,
+      },
+      {
+        id: aiConversationId,
+        agentId: defaultAgentId,
+        agentName: "Marta",
+        sourceChannel: "authenticated_chat",
+        sourceOrigin: null,
+        anonymousSessionId: null,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        messageCount: 1,
+        userMessageCount: 1,
+        assistantMessageCount: 0,
+        preview: "The AI can keep handling this",
+      },
     ],
-    total: 1,
+    total: 3,
     nextCursor: null,
     hasMore: false,
   };
@@ -77,6 +120,33 @@ test("operator can use activity tabs to open a pending approval", async ({ page 
       },
     ],
   };
+  const humanConversationDetail = {
+    conversationId: humanConversationId,
+    workspaceId,
+    agentId: defaultAgentId,
+    sourceChannel: "authenticated_chat",
+    sourceOrigin: null,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    messageCount: 1,
+    userMessageCount: 1,
+    assistantMessageCount: 0,
+    messagesTotal: 1,
+    messageWindowOffset: 0,
+    messageWindowLimit: 50,
+    hasOlderMessages: false,
+    nextCursor: null,
+    ownership: humanOwnership,
+    messages: [
+      {
+        id: "customer-message-human-owned",
+        role: "user" as const,
+        source: "customer" as const,
+        content: "A guest needs manual follow-up",
+        createdAt: nowIso,
+      },
+    ],
+  };
   const pendingDecision = {
     handle: "decision-inbox-1",
     conversationId,
@@ -97,6 +167,9 @@ test("operator can use activity tabs to open a pending approval", async ({ page 
   await installDashboardApiMocks(page, {
     historyList,
     conversationDetail,
+    conversationDetails: {
+      [humanConversationId]: humanConversationDetail,
+    },
     pendingDecisions: [pendingDecision],
   });
 
@@ -122,11 +195,21 @@ test("operator can use activity tabs to open a pending approval", async ({ page 
   await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/activity\\?tab=needs-attention`));
   await expect(page.getByRole("heading", { name: "Pending approvals" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Approve sending the booking update" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Awaiting / handled by a human" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "A guest needs manual follow-up" })).toBeVisible();
+  await expect(page.getByText("Awaiting a human")).toBeVisible();
+  await expect(page.getByText("The AI can keep handling this")).toHaveCount(0);
 
   await page.getByRole("button", { name: "Approve sending the booking update" }).click();
   await expect(page.getByRole("heading", { name: "Conversation details" })).toBeAttached();
   await expect(page.getByLabel("Conversation details").getByText("Approve sending the booking update")).toBeVisible();
   await expect(page.getByRole("button", { name: "Approve" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Close details panel" }).click();
+  await page.getByRole("button", { name: "A guest needs manual follow-up" }).click();
+  await expect(page.getByRole("heading", { name: "Conversation details" })).toBeAttached();
+  await expect(page.getByLabel("Conversation details").getByText("A guest needs manual follow-up")).toBeVisible();
+  await expect(page.getByText("Waiting for a human")).toBeVisible();
 
   await page.getByRole("button", { name: "Close details panel" }).click();
   await page.getByRole("link", { name: "Quality" }).click();

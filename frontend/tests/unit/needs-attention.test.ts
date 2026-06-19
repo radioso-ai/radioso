@@ -36,14 +36,23 @@ const conversation = (
 })
 
 describe('needs attention helpers', () => {
-  it('keeps only conversations with ownership', () => {
+  it('keeps only conversations with human ownership', () => {
     const humanOwned = conversation({
       id: 'conversation-human-owned',
       ownership: ownership({ conversationId: 'conversation-human-owned' }),
     })
-    const aiOwned = conversation({ id: 'conversation-ai-owned' })
+    const unowned = conversation({ id: 'conversation-unowned' })
+    const aiOwned = conversation({
+      id: 'conversation-ai-owned',
+      ownership: ownership({
+        conversationId: 'conversation-ai-owned',
+        state: 'ai_owned',
+        ownerAccountId: null,
+        ownerDisplayName: null,
+      }),
+    })
 
-    expect(selectHumanOwnedConversations([humanOwned, aiOwned])).toEqual([humanOwned])
+    expect(selectHumanOwnedConversations([humanOwned, unowned, aiOwned])).toEqual([humanOwned])
   })
 
   it('labels unassigned human ownership as awaiting a human', () => {

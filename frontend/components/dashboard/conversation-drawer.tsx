@@ -307,6 +307,12 @@ export interface ConversationDrawerProps {
    */
   onOperatorChanged?: () => Promise<void> | void
   /**
+   * Optional pending approvals supplied by a parent that already owns the inbox
+   * refresh. When present, the drawer derives its conversation-scoped approvals
+   * from this list instead of issuing its own pending-decision fetch.
+   */
+  pendingDecisions?: PendingApprovalDecision[]
+  /**
    * Builds a dashboard link to a routine version for the diagnostics routine
    * band. Supplied by call sites that own the route state; omitted where routine
    * deep-links don't apply.
@@ -320,6 +326,7 @@ export function ConversationDrawer({
   anchorMessageId,
   onAfterClose,
   onOperatorChanged,
+  pendingDecisions,
   buildRoutineHref,
 }: ConversationDrawerProps) {
   const selectedChatConversationId = selectedItem?.kind === 'chat' ? selectedItem.id : null
@@ -378,6 +385,10 @@ export function ConversationDrawer({
   const [pendingDecisionError, setPendingDecisionError] = useState<string | null>(null)
 
   const loadPendingDecisions = useCallback(async () => {
+    if (pendingDecisions) {
+      return
+    }
+
     if (!selectedChatConversationId) {
       setPendingDecisionState({ conversationId: null, decisions: [] })
       setPendingDecisionError(null)
@@ -395,9 +406,13 @@ export function ConversationDrawer({
       setPendingDecisionState({ conversationId: selectedChatConversationId, decisions: [] })
       setPendingDecisionError('Failed to refresh approval requests.')
     }
-  }, [selectedChatConversationId])
+  }, [pendingDecisions, selectedChatConversationId])
 
   useEffect(() => {
+    if (pendingDecisions) {
+      return
+    }
+
     if (!selectedChatConversationId) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronously clears conversation-scoped approvals when the chat drawer closes.
       setPendingDecisionState({ conversationId: null, decisions: [] })
@@ -432,15 +447,23 @@ export function ConversationDrawer({
     return () => {
       isActive = false
     }
-  }, [selectedChatConversationId])
+  }, [pendingDecisions, selectedChatConversationId])
 
   const handleOperatorChanged = useCallback(async () => {
+    if (pendingDecisions) {
+      await Promise.all([
+        refetchDetail(),
+        onOperatorChanged?.(),
+      ])
+      return
+    }
+
     await Promise.all([
       refetchDetail(),
       loadPendingDecisions(),
       onOperatorChanged?.(),
     ])
-  }, [loadPendingDecisions, onOperatorChanged, refetchDetail])
+  }, [loadPendingDecisions, onOperatorChanged, pendingDecisions, refetchDetail])
 
   const renderedConversationMessages = effectiveConversationMessages
 
@@ -451,9 +474,11 @@ export function ConversationDrawer({
   const actionBarOwnership = conversationTail.hasPolled && tailOwnershipIsCurrent
     ? conversationTail.ownership
     : conversationDetail?.ownership
-  const activePendingDecisions = pendingDecisionState.conversationId === selectedChatConversationId
-    ? pendingDecisionState.decisions.filter((decision) => decision.conversationId === selectedChatConversationId)
-    : []
+  const activePendingDecisions = pendingDecisions
+    ? pendingDecisions.filter((decision) => decision.conversationId === selectedChatConversationId)
+    : pendingDecisionState.conversationId === selectedChatConversationId
+      ? pendingDecisionState.decisions.filter((decision) => decision.conversationId === selectedChatConversationId)
+      : []
 
   // Mark which turns a routine drove so the conversation thread can band the
   // routine's span (start chip, paused/ended marker). The signal lives on each

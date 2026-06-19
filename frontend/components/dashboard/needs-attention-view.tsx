@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { ConversationDrawer } from './conversation-drawer'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
@@ -11,7 +11,7 @@ import { chatApi } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { hitlApi } from '@/lib/api-hitl'
 import type { ChatConversationSummary, PendingApprovalDecision } from '@/lib/api-types'
-import type { DashboardRouteState } from '@/lib/dashboard-routes'
+import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import {
   type HumanOwnedConversationSummary,
   ownershipLabel,
@@ -124,7 +124,7 @@ function SectionHeader({
   )
 }
 
-export function NeedsAttentionView({ routeState }: NeedsAttentionViewProps) {
+export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionViewProps) {
   const [decisions, setDecisions] = useState<PendingApprovalDecision[]>([])
   const [humanOwnedConversations, setHumanOwnedConversations] = useState<HumanOwnedConversationSummary[]>([])
   const [selectedItem, setSelectedItem] = useState<SelectedHistoryItem>(null)
@@ -132,91 +132,65 @@ export function NeedsAttentionView({ routeState }: NeedsAttentionViewProps) {
   const [isLoadingConversations, setIsLoadingConversations] = useState(true)
   const [approvalError, setApprovalError] = useState<string | null>(null)
   const [conversationError, setConversationError] = useState<string | null>(null)
-
-  const loadPendingDecisions = useCallback(async () => {
-    try {
-      setApprovalError(null)
-      const response = await hitlApi.listPendingDecisions()
-      setDecisions(response.decisions)
-    } catch (caught) {
-      setApprovalError(caught instanceof Error ? caught.message : 'Failed to load pending approvals.')
-    } finally {
-      setIsLoadingApprovals(false)
-    }
-  }, [])
-
-  const loadHumanOwnedConversations = useCallback(async () => {
-    try {
-      setConversationError(null)
-      const response = await chatApi.listChatHistory({
-        limit: HUMAN_OWNED_CONVERSATION_PAGE_SIZE,
-        offset: 0,
-      })
-      setHumanOwnedConversations(selectHumanOwnedConversations(response.conversations))
-    } catch (caught) {
-      setConversationError(getApiErrorMessage(caught, 'Failed to load human-owned conversations.'))
-      setHumanOwnedConversations([])
-    } finally {
-      setIsLoadingConversations(false)
-    }
-  }, [])
+  const isMountedRef = useRef(false)
+  const inboxRequestIdRef = useRef(0)
 
   const refreshInbox = useCallback(async () => {
-    await Promise.all([
-      loadPendingDecisions(),
-      loadHumanOwnedConversations(),
+    const requestId = inboxRequestIdRef.current + 1
+    inboxRequestIdRef.current = requestId
+
+    const [approvalsResult, conversationsResult] = await Promise.allSettled([
+      hitlApi.listPendingDecisions(),
+      chatApi.listChatHistory({
+        limit: HUMAN_OWNED_CONVERSATION_PAGE_SIZE,
+        offset: 0,
+      }),
     ])
-  }, [loadHumanOwnedConversations, loadPendingDecisions])
+
+    if (!isMountedRef.current || requestId !== inboxRequestIdRef.current) {
+      return
+    }
+
+    if (approvalsResult.status === 'fulfilled') {
+      setDecisions(approvalsResult.value.decisions)
+      setApprovalError(null)
+    } else {
+      setApprovalError(
+        approvalsResult.reason instanceof Error
+          ? approvalsResult.reason.message
+          : 'Failed to load pending approvals.',
+      )
+    }
+
+    if (conversationsResult.status === 'fulfilled') {
+      setHumanOwnedConversations(selectHumanOwnedConversations(conversationsResult.value.conversations))
+      setConversationError(null)
+    } else {
+      setHumanOwnedConversations([])
+      setConversationError(getApiErrorMessage(conversationsResult.reason, 'Failed to load human-owned conversations.'))
+    }
+
+    setIsLoadingApprovals(false)
+    setIsLoadingConversations(false)
+  }, [])
 
   useEffect(() => {
-    let cancelled = false
+    isMountedRef.current = true
 
-    const load = async () => {
-      const [approvalsResult, conversationsResult] = await Promise.allSettled([
-        hitlApi.listPendingDecisions(),
-        chatApi.listChatHistory({
-          limit: HUMAN_OWNED_CONVERSATION_PAGE_SIZE,
-          offset: 0,
-        }),
-      ])
-
-      if (cancelled) {
-        return
-      }
-
-      if (approvalsResult.status === 'fulfilled') {
-        setDecisions(approvalsResult.value.decisions)
-      } else {
-        setApprovalError(
-          approvalsResult.reason instanceof Error
-            ? approvalsResult.reason.message
-            : 'Failed to load pending approvals.',
-        )
-      }
-
-      if (conversationsResult.status === 'fulfilled') {
-        setHumanOwnedConversations(selectHumanOwnedConversations(conversationsResult.value.conversations))
-      } else {
-        setHumanOwnedConversations([])
-        setConversationError(getApiErrorMessage(conversationsResult.reason, 'Failed to load human-owned conversations.'))
-      }
-
-      setIsLoadingApprovals(false)
-      setIsLoadingConversations(false)
+    const loadInitialInbox = async () => {
+      await refreshInbox()
     }
 
-    void load()
+    void loadInitialInbox()
     return () => {
-      cancelled = true
+      isMountedRef.current = false
+      inboxRequestIdRef.current += 1
     }
-  }, [])
+  }, [refreshInbox])
 
   const handleSelectedItemChange = useCallback((next: SelectedHistoryItem) => {
     setSelectedItem(next)
-    if (!next) {
-      void refreshInbox()
-    }
-  }, [refreshInbox])
+  }, [])
 
   const handleDrawerClosed = useCallback(() => {
     setSelectedItem(null)
@@ -230,6 +204,19 @@ export function NeedsAttentionView({ routeState }: NeedsAttentionViewProps) {
   const handleSelectHumanOwnedConversation = (conversation: ChatConversationSummary) => {
     setSelectedItem({ kind: 'chat', id: conversation.id })
   }
+
+  const buildRoutineHref = useCallback(
+    (agentId: string, routineId: string) =>
+      buildDashboardHref(accountId, {
+        ...routeState,
+        section: 'agents',
+        agentId,
+        agentRoutineId: routineId,
+        agentTab: undefined,
+        anchor: undefined,
+      }),
+    [accountId, routeState],
+  )
 
   const needsAttentionCount = decisions.length + humanOwnedConversations.length
   const isLoading = isLoadingApprovals || isLoadingConversations
@@ -350,6 +337,8 @@ export function NeedsAttentionView({ routeState }: NeedsAttentionViewProps) {
         anchorMessageId={routeState.historyMessageId}
         onAfterClose={handleDrawerClosed}
         onOperatorChanged={refreshInbox}
+        pendingDecisions={decisions}
+        buildRoutineHref={buildRoutineHref}
       />
     </>
   )

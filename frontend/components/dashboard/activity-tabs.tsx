@@ -17,49 +17,64 @@ interface ActivityTabsProps {
 const tabClassName =
   'inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap text-foreground transition-[color,box-shadow,background-color] hover:text-primary focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-ring dark:hover:text-secondary'
 
-function tabHref(
+type ActivitySurfaceTab = ActivityTab | 'quality'
+
+export function buildActivityTabHref(
   accountId: string,
-  workspaceState: Pick<DashboardRouteState, 'workspaceId' | 'workspacePublicRouteKey'>,
-  activityTab: ActivityTab,
+  routeState: DashboardRouteState,
+  activeTab: ActivitySurfaceTab,
+  targetTab: ActivitySurfaceTab,
 ) {
+  const workspaceState = {
+    workspaceId: routeState.workspaceId,
+    workspacePublicRouteKey: routeState.workspacePublicRouteKey,
+  }
+
+  if (targetTab === activeTab) {
+    return buildDashboardHref(accountId, {
+      ...routeState,
+      section: targetTab === 'quality' ? 'quality' : 'activity',
+      activityTab: targetTab === 'quality' ? undefined : targetTab,
+    })
+  }
+
+  if (targetTab === 'quality') {
+    return buildDashboardHref(accountId, {
+      section: 'quality',
+      ...workspaceState,
+    })
+  }
+
   return buildDashboardHref(accountId, {
     section: 'activity',
     ...workspaceState,
-    activityTab,
+    activityTab: targetTab,
   })
 }
 
 export function ActivityTabs({ accountId, routeState }: ActivityTabsProps) {
-  const activeTab =
+  const activeTab: ActivitySurfaceTab =
     routeState.section === 'quality'
       ? 'quality'
       : routeState.activityTab === 'needs-attention'
         ? 'needs-attention'
         : 'all'
 
-  const workspaceState = {
-    workspaceId: routeState.workspaceId,
-    workspacePublicRouteKey: routeState.workspacePublicRouteKey,
-  }
-
   const tabs = [
     {
       id: 'needs-attention',
       label: 'Needs attention',
-      href: tabHref(accountId, workspaceState, 'needs-attention'),
+      href: buildActivityTabHref(accountId, routeState, activeTab, 'needs-attention'),
     },
     {
       id: 'all',
       label: 'All activity',
-      href: tabHref(accountId, workspaceState, 'all'),
+      href: buildActivityTabHref(accountId, routeState, activeTab, 'all'),
     },
     {
       id: 'quality',
       label: 'Quality',
-      href: buildDashboardHref(accountId, {
-        section: 'quality',
-        ...workspaceState,
-      }),
+      href: buildActivityTabHref(accountId, routeState, activeTab, 'quality'),
     },
   ] as const
 

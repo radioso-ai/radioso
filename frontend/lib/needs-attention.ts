@@ -7,7 +7,9 @@ export type HumanOwnedConversationSummary = ChatConversationSummary & {
 export const selectHumanOwnedConversations = (
   summaries: ChatConversationSummary[],
 ): HumanOwnedConversationSummary[] =>
-  summaries.filter((summary): summary is HumanOwnedConversationSummary => Boolean(summary.ownership))
+  summaries.filter(
+    (summary): summary is HumanOwnedConversationSummary => summary.ownership?.state === 'human_owned',
+  )
 
 export const ownershipLabel = (ownership: ConversationOwnership): string => {
   if (ownership.ownerAccountId === null) {

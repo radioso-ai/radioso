@@ -36,6 +36,7 @@ export type {
   SkillAuthoringOutcome,
 } from './api-routine-skill-catalog'
 export { qualityApi } from './api-quality'
+export { getHitlApiErrorStatus, hitlApi, isHitlApiStatusError } from './api-hitl'
 export type {
   FeedbackValue,
   ListLowQualityTurnsOptions,

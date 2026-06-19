@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg, { type PoolClient, type QueryResultRow } from "pg";
 
 import { OauthConnectionRepository } from "../../../src/db/repositories/oauthConnectionRepository.js";
+import { ActionRequestRepository } from "../../../src/db/repositories/actionRequestRepository.js";
 import { IntegrationConnectionRepository } from "../../../src/modules/integrationConnections/public.js";
 import {
   SlackChannelBindingRepository,
@@ -42,6 +43,14 @@ const clientBackedDatabase = (client: PoolClient): Database =>
     pool: {} as Database["pool"],
     async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
       return (await client.query<T>(text, params)).rows;
+    },
+    async queryOptional<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T | null> {
+      return (await client.query<T>(text, params)).rows[0] ?? null;
+    },
+    async queryOne<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T> {
+      const row = (await client.query<T>(text, params)).rows[0];
+      if (!row) throw new Error("Expected query to return one row");
+      return row;
     },
     async execute(text: string, params: unknown[] = []): Promise<number> {
       return (await client.query(text, params)).rowCount ?? 0;
@@ -81,6 +90,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
     await client.query(await readFile(path.join(testMigrationsPath, "095_integration_oauth_connections.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "105_integration_connections.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "107_slack_keystone.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "072_routine_action_requests.sql"), "utf8"));
     await client.query(`INSERT INTO workspaces (id) VALUES ($1)`, [workspaceId]);
     await client.query(`INSERT INTO agents (id, workspace_id, name) VALUES ($1, $2, 'Slack Agent')`, [agentId, workspaceId]);
   });
@@ -134,7 +144,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
             query: input.query,
           });
           if (input.conversationId) {
-            return { conversationId: input.conversationId, answer: `reply:${input.query}` };
+            return { conversationId: input.conversationId, answer: `reply:${input.query}`, outcome: "answered" };
           }
           const [row] = await database.query<{ id: string }>(
             `INSERT INTO conversations (id, workspace_id, agent_id, source_channel)
@@ -142,7 +152,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
              RETURNING id`,
             [randomUUID(), input.workspaceId, agentId, input.sourceChannel ?? null],
           );
-          return { conversationId: row.id, answer: `reply:${input.query}` };
+          return { conversationId: row.id, answer: `reply:${input.query}`, outcome: "answered" };
         },
       },
       clientFactory: () => ({
@@ -198,5 +208,110 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
     const links = await database.query(`SELECT id FROM slack_conversation_links WHERE slack_key = 'dm:TDM:UUSER'`);
     expect(links).toHaveLength(1);
     expect(posts.at(-1)).toEqual({ channel: "DUSER", text: "reply:follow up" });
+  });
+
+  it("enqueues a gap escalation from a typed no_context outcome and skips grounded turns", async () => {
+    const oauthConnections = new OauthConnectionRepository(database);
+    const integrationConnections = new IntegrationConnectionRepository(database);
+    const installations = new SlackInstallationRepository(database);
+    const bindings = new SlackChannelBindingRepository(database);
+    const installationService = new SlackInstallationService({
+      oauthConnections,
+      integrationConnections,
+      installations,
+      bindings,
+      encryptionKey,
+    });
+    const saved = await installationService.saveInstallation({
+      workspaceId,
+      teamId: "TGAP",
+      teamName: "Gap Team",
+      botUserId: "UBOT",
+      botAccessToken: "xoxb-gap-token",
+      grantedScopes: ["chat:write", "im:read"],
+      answeringAgentId: agentId,
+      escalationChannelId: "CSUPPORT",
+    });
+
+    let nextOutcome: "answered" | "no_context" = "no_context";
+    const handler = new SlackMessageHandler({
+      logger: {
+        info: () => undefined,
+        warn: () => undefined,
+        error: () => undefined,
+      },
+      installations,
+      bindings,
+      installationService,
+      persistence: new PostgresSlackPersistence(database),
+      slackPostOutbox: new ActionRequestRepository(database),
+      chat: {
+        answer: async (input) => {
+          const [row] = await database.query<{ id: string }>(
+            `INSERT INTO conversations (id, workspace_id, agent_id, source_channel)
+             VALUES ($1, $2, $3, $4)
+             RETURNING id`,
+            [randomUUID(), input.workspaceId, agentId, input.sourceChannel ?? null],
+          );
+          return {
+            conversationId: row.id,
+            answer: nextOutcome === "no_context" ? "Generated refusal" : "Grounded answer",
+            outcome: nextOutcome,
+          };
+        },
+      },
+      clientFactory: () => ({
+        postMessage: async (input) => ({ channel: input.channel, ts: "1720000000.000200" }),
+      }),
+    });
+
+    await database.query(
+      `INSERT INTO slack_inbound_events (event_id, team_id, status) VALUES ('EvGap', 'TGAP', 'received')`,
+    );
+    await handler.handleMessageIm({
+      eventId: "EvGap",
+      teamId: "TGAP",
+      event: {
+        type: "message",
+        channel_type: "im",
+        channel: "DGAP",
+        user: "UGAP",
+        text: "missing thing",
+      },
+    });
+
+    const gapRows = await database.query<{ type: string; payload: { kind: string; installationId: string; channelId: string } }>(
+      `SELECT type, payload FROM routine_action_requests WHERE idempotency_key LIKE 'slack:gap_escalation:EvGap:%'`,
+    );
+    expect(gapRows).toHaveLength(1);
+    expect(gapRows[0]).toMatchObject({
+      type: "slack.post",
+      payload: {
+        kind: "gap_escalation",
+        installationId: saved.installation.id,
+        channelId: "CSUPPORT",
+      },
+    });
+
+    nextOutcome = "answered";
+    await database.query(
+      `INSERT INTO slack_inbound_events (event_id, team_id, status) VALUES ('EvGrounded', 'TGAP', 'received')`,
+    );
+    await handler.handleMessageIm({
+      eventId: "EvGrounded",
+      teamId: "TGAP",
+      event: {
+        type: "message",
+        channel_type: "im",
+        channel: "DGAP",
+        user: "UOTHER",
+        text: "covered thing",
+      },
+    });
+
+    const groundedRows = await database.query(
+      `SELECT id FROM routine_action_requests WHERE idempotency_key LIKE 'slack:gap_escalation:EvGrounded:%'`,
+    );
+    expect(groundedRows).toHaveLength(0);
   });
 });

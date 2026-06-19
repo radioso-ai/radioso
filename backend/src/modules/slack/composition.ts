@@ -1,6 +1,11 @@
 import type { Env } from "../../app/config/env.js";
 import type { ApplicationModule } from "../../app/composition/applicationModule.js";
 import { buildSlackOauthProviderDefinition } from "./oauth/slackProvider.js";
+import {
+  SLACK_POST_ACTION_TYPE,
+  SlackPostActionCredentialResolver,
+  SlackPostActionHandler,
+} from "./outbox/slackPostAction.js";
 
 type SlackOauthEnv = Pick<Env, "SLACK_OAUTH_CLIENT_ID" | "SLACK_OAUTH_CLIENT_SECRET">;
 
@@ -15,5 +20,16 @@ export const createSlackApplicationModule = (env?: Partial<SlackOauthEnv>): Appl
     if (provider) {
       context.registerOauthProvider(provider);
     }
+    context.registerActionHandler({
+      type: SLACK_POST_ACTION_TYPE,
+      handler: ({ database, env: runtimeEnv, logger }) =>
+        new SlackPostActionHandler({
+          credentials: new SlackPostActionCredentialResolver({
+            database,
+            encryptionKey: runtimeEnv.CONNECTOR_ENCRYPTION_KEY,
+          }),
+          logger,
+        }),
+    });
   },
 });

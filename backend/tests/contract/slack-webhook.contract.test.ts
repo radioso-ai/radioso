@@ -56,6 +56,7 @@ const createApp = (input: {
     signingSecret,
     now: () => nowMs,
     installations: {
+      findById: async () => installation,
       findByTeamId: async () => installation,
       findByWorkspaceId: async () => installation,
       upsert: async () => installation,

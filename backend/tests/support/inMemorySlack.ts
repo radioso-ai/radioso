@@ -24,6 +24,11 @@ const cloneBinding = (record: SlackChannelBindingRecord): SlackChannelBindingRec
 export class InMemorySlackInstallationRepository implements SlackInstallationRepositoryPort {
   readonly rows = new Map<string, SlackInstallationRecord>();
 
+  async findById(installationId: string): Promise<SlackInstallationRecord | null> {
+    const record = this.rows.get(installationId);
+    return record ? cloneInstallation(record) : null;
+  }
+
   async findByTeamId(teamId: string): Promise<SlackInstallationRecord | null> {
     const record = [...this.rows.values()].find((row) => row.teamId === teamId);
     return record ? cloneInstallation(record) : null;

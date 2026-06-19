@@ -6,6 +6,7 @@ import type {
 } from "@radioso/connector-api";
 
 import { OauthConnectionRepository } from "../../../../db/repositories/oauthConnectionRepository.js";
+import { ActionRequestRepository } from "../../../../db/repositories/actionRequestRepository.js";
 import { IntegrationConnectionRepository } from "../../../integrationConnections/public.js";
 import {
   SlackChannelBindingRepository,
@@ -50,6 +51,7 @@ export class SlackPlugin implements ConnectorPlugin {
     const installations = new SlackInstallationRepository(context.db);
     const bindings = new SlackChannelBindingRepository(context.db);
     const persistence = new PostgresSlackPersistence(context.db);
+    const slackPostOutbox = new ActionRequestRepository(db);
     const installationService = new SlackInstallationService({
       oauthConnections,
       integrationConnections,
@@ -64,6 +66,7 @@ export class SlackPlugin implements ConnectorPlugin {
       bindings,
       installationService,
       persistence,
+      slackPostOutbox,
       clientFactory: this.options.clientFactory as ((options: { botToken: string }) => Pick<SlackWebApiClient, "postMessage">) | undefined,
     });
 

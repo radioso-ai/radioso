@@ -55,6 +55,7 @@ export interface UpsertSlackBindingInput {
 }
 
 export interface SlackInstallationRepositoryPort {
+  findById(installationId: string): Promise<SlackInstallationRecord | null>;
   findByTeamId(teamId: string): Promise<SlackInstallationRecord | null>;
   findByWorkspaceId(workspaceId: string): Promise<SlackInstallationRecord | null>;
   upsert(input: UpsertSlackInstallationInput): Promise<SlackInstallationRecord>;
@@ -329,6 +330,14 @@ const mapInstallation = (row: SlackInstallationRow): SlackInstallationRecord => 
 
 export class SlackInstallationRepository implements SlackInstallationRepositoryPort {
   constructor(private readonly database: { query<T extends QueryResultRow>(text: string, params?: unknown[]): Promise<T[]> }) {}
+
+  async findById(installationId: string): Promise<SlackInstallationRecord | null> {
+    const [row] = await this.database.query<SlackInstallationRow>(
+      `SELECT ${installationColumns} FROM slack_installations WHERE id = $1`,
+      [installationId],
+    );
+    return row ? mapInstallation(row) : null;
+  }
 
   async findByTeamId(teamId: string): Promise<SlackInstallationRecord | null> {
     const [row] = await this.database.query<SlackInstallationRow>(

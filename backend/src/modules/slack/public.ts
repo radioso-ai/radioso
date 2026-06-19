@@ -24,6 +24,16 @@ export {
   type SlackAppManifest,
 } from "./manifest/slackManifest.js";
 export {
+  SLACK_POST_ACTION_TYPE,
+  SlackPostActionCredentialResolver,
+  SlackPostActionHandler,
+  enqueueSlackPostAction,
+  slackPostIdempotencyKey,
+  type SlackPostCredentialResolver,
+  type SlackPostOutboxPort,
+  type SlackPostPayload,
+} from "./outbox/slackPostAction.js";
+export {
   SlackChannelBindingRepository,
   SlackInstallationRepository,
   SlackInstallationService,

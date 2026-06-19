@@ -245,6 +245,26 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  IF NEW.kind = 'slack' THEN
+    IF NEW.target_type IS DISTINCT FROM 'slack_installation' OR NEW.target_id IS NULL THEN
+      RAISE EXCEPTION 'slack skill % must target a Slack installation', NEW.id
+        USING ERRCODE = '23503',
+              CONSTRAINT = 'agent_skills_slack_target_fk';
+    END IF;
+    target_uuid := agent_skill_target_uuid(NEW.target_id, 'slack_installation');
+    SELECT TRUE INTO target_exists
+    FROM slack_installations
+    WHERE id = target_uuid
+      AND workspace_id = NEW.workspace_id
+    FOR KEY SHARE;
+    IF target_exists IS NOT TRUE THEN
+      RAISE EXCEPTION 'slack skill % references unknown Slack installation %', NEW.id, NEW.target_id
+        USING ERRCODE = '23503',
+              CONSTRAINT = 'agent_skills_slack_target_fk';
+    END IF;
+    RETURN NEW;
+  END IF;
+
   RETURN NEW;
 END;
 $$;
@@ -443,7 +463,8 @@ CREATE TABLE public.agent_skills (
     target_type text,
     target_id text,
     config jsonb DEFAULT '{}'::jsonb NOT NULL,
-    CONSTRAINT agent_skills_config_target_check CHECK (((jsonb_typeof(config) = 'object'::text) AND ((target_type IS NULL) OR (NULLIF(btrim(target_type), ''::text) IS NOT NULL)) AND ((target_id IS NULL) OR (NULLIF(btrim(target_id), ''::text) IS NOT NULL))))
+    CONSTRAINT agent_skills_config_target_check CHECK (((jsonb_typeof(config) = 'object'::text) AND ((target_type IS NULL) OR (NULLIF(btrim(target_type), ''::text) IS NOT NULL)) AND ((target_id IS NULL) OR (NULLIF(btrim(target_id), ''::text) IS NOT NULL)))),
+    CONSTRAINT agent_skills_kind_check CHECK ((kind = ANY (ARRAY['external_mcp'::text, 'customer_email'::text, 'webhook'::text, 'slack'::text])))
 );
 
 

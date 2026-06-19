@@ -24,6 +24,7 @@ export interface ConnectorChatPort {
   }): Promise<{
     conversationId: string;
     answer: string;
+    outcome: "answered" | "no_context";
   }>;
 }
 

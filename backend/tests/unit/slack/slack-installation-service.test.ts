@@ -137,6 +137,10 @@ class InMemoryIntegrationConnections implements IntegrationConnectionRepositoryP
 class InMemorySlackInstallations implements SlackInstallationRepositoryPort {
   readonly rows = new Map<string, Awaited<ReturnType<SlackInstallationRepositoryPort["upsert"]>>>();
 
+  async findById(installationId: string) {
+    return this.rows.get(installationId) ?? null;
+  }
+
   async findByTeamId(teamId: string) {
     return [...this.rows.values()].find((record) => record.teamId === teamId) ?? null;
   }

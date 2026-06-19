@@ -11,6 +11,9 @@ import {
   type SlackInstallationRecord,
   type SlackInstallationRepositoryPort,
   type SlackInstallationService,
+  enqueueSlackPostAction,
+  slackPostIdempotencyKey,
+  type SlackPostOutboxPort,
 } from "../../../slack/public.js";
 import type { SlackPersistencePort } from "./slackPersistence.js";
 
@@ -41,6 +44,7 @@ export interface SlackMessageHandlerOptions {
   bindings: SlackBindingRepositoryPort;
   installationService: Pick<SlackInstallationService, "resolveBotTokenForInstallation">;
   persistence: SlackPersistencePort;
+  slackPostOutbox?: SlackPostOutboxPort;
   clientFactory?: SlackWebApiClientFactory;
 }
 
@@ -99,6 +103,14 @@ export class SlackMessageHandler {
       slackKey,
       conversationId: response.conversationId,
     });
+    await this.enqueueGapEscalationIfNeeded({
+      envelope: input,
+      installation,
+      escalationChannelId: binding.escalationChannelId,
+      query,
+      conversationId: response.conversationId,
+      outcome: response.outcome,
+    });
 
     const botToken = await this.options.installationService.resolveBotTokenForInstallation(installation);
     if (!botToken) {
@@ -118,6 +130,43 @@ export class SlackMessageHandler {
     this.options.logger.info(
       { workspaceId: installation.workspaceId, installationId: installation.id, eventId: input.eventId },
       "Slack reply delivered",
+    );
+  }
+
+  private async enqueueGapEscalationIfNeeded(input: {
+    envelope: SlackInboundEventEnvelope;
+    installation: SlackInstallationRecord;
+    escalationChannelId: string | null;
+    query: string;
+    conversationId: string;
+    outcome: "answered" | "no_context";
+  }): Promise<void> {
+    if (input.outcome !== "no_context" || !input.escalationChannelId || !this.options.slackPostOutbox) {
+      return;
+    }
+    await enqueueSlackPostAction(this.options.slackPostOutbox, {
+      workspaceId: input.installation.workspaceId,
+      conversationId: input.conversationId,
+      idempotencyKey: slackPostIdempotencyKey({
+        kind: "gap_escalation",
+        sourceId: `${input.envelope.eventId}:${input.conversationId}`,
+      }),
+      payload: {
+        installationId: input.installation.id,
+        channelId: input.escalationChannelId,
+        text: `Slack question needs human follow-up:\n\n${input.query}\n\nConversation: ${input.conversationId}`,
+        conversationRef: input.conversationId,
+        kind: "gap_escalation",
+      },
+    });
+    this.options.logger.info(
+      {
+        workspaceId: input.installation.workspaceId,
+        installationId: input.installation.id,
+        eventId: input.envelope.eventId,
+        conversationId: input.conversationId,
+      },
+      "Slack gap escalation enqueued",
     );
   }
 

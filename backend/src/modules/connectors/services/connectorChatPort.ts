@@ -14,6 +14,7 @@ export const createConnectorChatPort = (chatService: ChatAnswerPort): ConnectorC
     return {
       conversationId: response.conversationId,
       answer: response.answer,
+      outcome: response.skillOutcome === "no_context" ? "no_context" : "answered",
     };
   },
 });

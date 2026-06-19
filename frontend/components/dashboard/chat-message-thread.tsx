@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
 import { Check, CircleCheckBig, Copy, PauseCircle, ThumbsDown, ThumbsUp, Workflow } from 'lucide-react'
@@ -34,6 +35,8 @@ import type {
   SkillDisplayMetadata,
   SkillStreamPayload,
 } from '@/lib/api'
+
+type MessageSource = 'customer' | 'ai_agent' | 'human_agent' | 'human_agent_on_behalf_of_ai_agent' | 'system'
 
 const dayFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
@@ -109,6 +112,7 @@ const removeUndefinedProperties = (record: Record<string, unknown>) =>
 export interface ChatThreadMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
+  source?: MessageSource
   content: string
   createdAt: string
   inputMetadata?: ChatUserInputMetadata
@@ -587,6 +591,12 @@ export function ChatMessageThread({
   const suggestionThemeVars = theme ? getThemedSuggestionButtonStyle(theme) : undefined
 
   const renderMessage = (message: ChatThreadMessage, index: number) => {
+        const sourceBadgeLabel =
+          message.source === 'human_agent' || message.source === 'human_agent_on_behalf_of_ai_agent'
+            ? 'Human agent'
+            : message.source === 'system'
+              ? 'System'
+              : null
         const currentDay = dayFormatter.format(new Date(message.createdAt))
         const previousDay =
           index > 0 ? dayFormatter.format(new Date(messages[index - 1].createdAt)) : null
@@ -678,6 +688,15 @@ export function ChatMessageThread({
                           )}
                           theme={theme}
                         />
+                      ) : null}
+                      {sourceBadgeLabel ? (
+                        <Badge
+                          variant="secondary"
+                          className="w-fit px-2 py-0 text-[11px] font-medium"
+                          aria-label={`Message source: ${sourceBadgeLabel}`}
+                        >
+                          {sourceBadgeLabel}
+                        </Badge>
                       ) : null}
                       <div
                         {...getSelectableMessageProps(message.id)}

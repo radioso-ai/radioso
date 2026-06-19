@@ -398,6 +398,7 @@ export type ConversationOwnership = ApiSchemas['ConversationOwnership']
 export type ChatConversationMessage = ApiSchemas['ChatConversationMessage']
 export type ChatConversationTail = ApiSchemas['ChatConversationTail']
 export type PendingApprovalDecisionListResponse = ApiSchemas['PendingApprovalDecisionListResponse']
+export type PendingApprovalDecision = ApiSchemas['PendingApprovalDecision']
 export type ResolveDecisionRequest =
   operations['resolveDecision']['requestBody']['content']['application/json']
 export type ResolveDecisionResponse =

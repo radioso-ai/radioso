@@ -410,6 +410,11 @@ export function useHistoryDetailState({
   const [selectedStageId, setSelectedStageId] = useState<string | undefined>(undefined)
   const [selectedSpineStageId, setSelectedSpineStageId] = useState<string | undefined>(undefined)
   const [showGraph, setShowGraph] = useState(false)
+  const [detailRefreshIndex, setDetailRefreshIndex] = useState(0)
+
+  const refetchDetail = useCallback(() => {
+    setDetailRefreshIndex((current) => current + 1)
+  }, [])
 
   useEffect(() => {
     if (!selectedItem) {
@@ -517,7 +522,7 @@ export function useHistoryDetailState({
     return () => {
       isActive = false
     }
-  }, [anchorMessageId, onItemNotFound, selectedItem, setSelectedItem])
+  }, [anchorMessageId, detailRefreshIndex, onItemNotFound, selectedItem, setSelectedItem])
 
   const assistantMessages = useMemo(
     () => conversationDetail?.messages.filter((message) => message.role === 'assistant') ?? [],
@@ -687,6 +692,7 @@ export function useHistoryDetailState({
     setSelectedSpineStageId,
     showGraph,
     setShowGraph,
+    refetchDetail,
     handleSelectThreadMessage,
     loadOlderMessages,
   }

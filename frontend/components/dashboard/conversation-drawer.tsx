@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Bug, Check, Copy, Search, Workflow, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -18,6 +18,7 @@ import { ActivityTraceDetail } from './activity-trace-detail'
 import { ActivityTraceGraph } from './activity-trace-graph'
 import { TurnFlowOverlay } from './turn-flow-overlay'
 import { ChatMessageThread } from './chat-message-thread'
+import { OperatorActionBar } from './operator-action-bar'
 import { HistoryDocumentDialog } from '@/components/dashboard/history/history-document-dialog'
 import { MetadataBadges } from '@/components/dashboard/shared/metadata-badges'
 import {
@@ -29,8 +30,12 @@ import {
   type ChatConversationTurn,
   type ContactHistoryDetail,
   type DocumentSearchResponse,
+  type PendingApprovalDecision,
   type TurnTraceEnvelope,
 } from '@/lib/api'
+import { hitlApi } from '@/lib/api-hitl'
+import { mergeTailMessages } from '@/lib/conversation-tail'
+import { useConversationTail } from '@/hooks/use-conversation-tail'
 import { formatConversationSource } from '@/lib/history-source'
 import {
   type DiagnosticPresentation,
@@ -333,6 +338,7 @@ export function ConversationDrawer({
     setSelectedStageId,
     showGraph,
     setShowGraph,
+    refetchDetail,
     handleSelectThreadMessage,
     loadOlderMessages,
   } = useHistoryDetailState({
@@ -352,6 +358,72 @@ export function ConversationDrawer({
   } = useHistoryDocumentDialogState()
 
   const [flowOpen, setFlowOpen] = useState(false)
+  const [pendingDecisions, setPendingDecisions] = useState<PendingApprovalDecision[]>([])
+
+  const selectedChatConversationId = selectedItem?.kind === 'chat' ? selectedItem.id : null
+  const isChatDrawerOpen = selectedChatConversationId !== null && conversationDetail?.conversationId === selectedChatConversationId
+  const conversationTail = useConversationTail({
+    conversationId: selectedChatConversationId ?? '',
+    enabled: isChatDrawerOpen,
+    intervalMs: 1000,
+  })
+
+  const loadPendingDecisions = useCallback(async () => {
+    if (!selectedChatConversationId) {
+      setPendingDecisions([])
+      return
+    }
+
+    const response = await hitlApi.listPendingDecisions()
+    setPendingDecisions(
+      response.decisions.filter((decision) => decision.conversationId === selectedChatConversationId),
+    )
+  }, [selectedChatConversationId])
+
+  useEffect(() => {
+    if (!selectedChatConversationId) {
+      return
+    }
+
+    let isActive = true
+
+    const load = async () => {
+      try {
+        const response = await hitlApi.listPendingDecisions()
+        if (!isActive) {
+          return
+        }
+        setPendingDecisions(
+          response.decisions.filter((decision) => decision.conversationId === selectedChatConversationId),
+        )
+      } catch {
+        if (isActive) {
+          setPendingDecisions([])
+        }
+      }
+    }
+
+    void load()
+
+    return () => {
+      isActive = false
+    }
+  }, [selectedChatConversationId])
+
+  const handleOperatorChanged = useCallback(() => {
+    refetchDetail()
+    void loadPendingDecisions()
+  }, [loadPendingDecisions, refetchDetail])
+
+  const renderedConversationMessages = useMemo(
+    () =>
+      conversationDetail
+        ? mergeTailMessages(conversationDetail.messages, conversationTail.messages)
+        : [],
+    [conversationDetail, conversationTail.messages],
+  )
+
+  const actionBarOwnership = conversationTail.ownership ?? conversationDetail?.ownership
 
   // Mark which turns a routine drove so the conversation thread can band the
   // routine's span (start chip, paused/ended marker). The signal lives on each
@@ -512,7 +584,7 @@ export function ConversationDrawer({
                     </div>
                   ) : null}
                   <ChatMessageThread
-                    messages={conversationDetail.messages.map((message) =>
+                    messages={renderedConversationMessages.map((message) =>
                       // History messages already have a persisted DB id; the
                       // ChatMessageThread component derives `assistantMessageId`
                       // from `persistedAssistantMessageId`, which is only set
@@ -531,6 +603,14 @@ export function ConversationDrawer({
                     skillCatalog={skillCatalog}
                     routineMarkers={namedRoutineMarkers}
                   />
+                  {selectedItem.kind === 'chat' ? (
+                    <OperatorActionBar
+                      conversationId={selectedItem.id}
+                      ownership={actionBarOwnership}
+                      pendingDecisions={pendingDecisions}
+                      onChanged={handleOperatorChanged}
+                    />
+                  ) : null}
                 </div>
 
                 {showGraph ? (

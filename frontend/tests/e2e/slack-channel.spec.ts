@@ -68,6 +68,25 @@ test("Slack channel connects, confirms binding, and disconnects", async ({ page 
   await expect(page.getByRole("button", { name: "Add to Slack" })).toBeVisible();
 });
 
+test("Slack self-host setup shows generated manifest and env checklist before connect", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    slackStatus: { status: "not_configured" },
+    slackBinding: { answeringAgentId: null, escalationChannelId: null },
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels#slack-channel`);
+
+  await page.getByRole("button", { name: "Self-host setup" }).click();
+  await expect(page.getByText("public HTTPS URL")).toBeVisible();
+  await expect(page.getByText("https://self-host.example.com/api/v1/oauth/callback/slack")).toBeVisible();
+  await expect(page.getByText("https://self-host.example.com/api/connectors/slack/events")).toBeVisible();
+  await expect(page.getByText("SLACK_OAUTH_CLIENT_ID")).toBeVisible();
+  await expect(page.getByText("SLACK_OAUTH_CLIENT_SECRET")).toBeVisible();
+  await expect(page.getByText("SLACK_SIGNING_SECRET")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Copy manifest" })).toBeVisible();
+});
+
 test("Slack routine skill authoring creates and disables a skill", async ({ page }) => {
   const slackRequests: Array<{ method: string; path: string; body?: unknown }> = [];
 

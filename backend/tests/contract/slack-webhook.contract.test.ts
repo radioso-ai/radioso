@@ -36,6 +36,7 @@ const createApp = (input: {
     });
   });
   const handleMessageIm = vi.fn(input.handle ?? (async () => undefined));
+  const handleAppMention = vi.fn(input.handle ?? (async () => undefined));
   const markInboundEventStatus = vi.fn(async () => undefined);
   const installation: SlackInstallationRecord = {
     id: "installation-1",
@@ -68,10 +69,11 @@ const createApp = (input: {
     },
     messageHandler: {
       handleMessageIm,
+      handleAppMention,
       isBotLoop: (_installation, event) => input.botLoop === true || Boolean(event.bot_id) || event.user === installation.botUserId,
     },
   }));
-  return { app, handleMessageIm, markInboundEventStatus };
+  return { app, handleMessageIm, handleAppMention, markInboundEventStatus };
 };
 
 const messagePayload = (eventId = "Ev1", overrides: Record<string, unknown> = {}) => ({
@@ -86,6 +88,21 @@ const messagePayload = (eventId = "Ev1", overrides: Record<string, unknown> = {}
     user: "UUSER",
     text: "Question",
     ts: "1718800000.000100",
+    ...overrides,
+  },
+});
+
+const appMentionPayload = (eventId = "EvMention", overrides: Record<string, unknown> = {}) => ({
+  token: "ignored",
+  type: "event_callback",
+  team_id: "TTEST",
+  event_id: eventId,
+  event: {
+    type: "app_mention",
+    channel: "C123",
+    user: "UUSER",
+    text: "<@UBOT> Question",
+    ts: "1718800000.000200",
     ...overrides,
   },
 });
@@ -164,5 +181,40 @@ describe("Slack inbound webhook contract", () => {
     expect(response.text).toBe("OK");
     await vi.waitFor(() => expect(handleMessageIm).toHaveBeenCalledTimes(1));
     release();
+  });
+
+  it("dispatches app_mention events and ignores ordinary channel messages", async () => {
+    const mention = createApp();
+    const mentionBody = JSON.stringify(appMentionPayload("EvMention"));
+    const mentionResponse = await request(mention.app)
+      .post("/api/connectors/slack/events")
+      .set(createSignedHeaders(mentionBody))
+      .type("application/json")
+      .send(mentionBody);
+    expect(mentionResponse.status).toBe(200);
+    await vi.waitFor(() => expect(mention.handleAppMention).toHaveBeenCalledWith({
+      eventId: "EvMention",
+      teamId: "TTEST",
+      event: expect.objectContaining({
+        type: "app_mention",
+        channel: "C123",
+        user: "UUSER",
+        text: "<@UBOT> Question",
+        ts: "1718800000.000200",
+      }),
+    }));
+    expect(mention.handleMessageIm).not.toHaveBeenCalled();
+
+    const channelMessage = createApp();
+    const channelBody = JSON.stringify(messagePayload("EvChannel", { channel_type: "channel", channel: "C123" }));
+    const channelResponse = await request(channelMessage.app)
+      .post("/api/connectors/slack/events")
+      .set(createSignedHeaders(channelBody))
+      .type("application/json")
+      .send(channelBody);
+    expect(channelResponse.status).toBe(200);
+    expect(channelMessage.handleMessageIm).not.toHaveBeenCalled();
+    expect(channelMessage.handleAppMention).not.toHaveBeenCalled();
+    expect(channelMessage.markInboundEventStatus).toHaveBeenCalledWith("EvChannel", "skipped");
   });
 });

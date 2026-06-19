@@ -5,7 +5,7 @@ import { Router, type Request } from "express";
 import type { ConnectorLogger } from "@radioso/connector-api";
 
 import type { SlackInstallationRepositoryPort } from "../../../slack/public.js";
-import type { SlackMessageHandler, SlackMessageImEvent } from "./slackMessageHandler.js";
+import type { SlackAppMentionEvent, SlackMessageHandler, SlackMessageImEvent } from "./slackMessageHandler.js";
 import type { SlackPersistencePort } from "./slackPersistence.js";
 
 interface SlackWebhookRouterOptions {
@@ -13,7 +13,7 @@ interface SlackWebhookRouterOptions {
   signingSecret: string;
   installations: SlackInstallationRepositoryPort;
   persistence: Pick<SlackPersistencePort, "createInboundEvent" | "markInboundEventStatus">;
-  messageHandler: Pick<SlackMessageHandler, "handleMessageIm" | "isBotLoop">;
+  messageHandler: Pick<SlackMessageHandler, "handleAppMention" | "handleMessageIm" | "isBotLoop">;
   now?: () => number;
 }
 
@@ -49,6 +49,28 @@ const parseMessageImEvent = (event: unknown): SlackMessageImEvent | null => {
     user,
     text,
     ...(readString(event.ts) ? { ts: readString(event.ts)! } : {}),
+    ...(readString(event.bot_id) ? { bot_id: readString(event.bot_id)! } : {}),
+  };
+};
+
+const parseAppMentionEvent = (event: unknown): SlackAppMentionEvent | null => {
+  if (!isObject(event) || event.type !== "app_mention") {
+    return null;
+  }
+  const channel = readString(event.channel);
+  const user = readString(event.user);
+  const text = typeof event.text === "string" ? event.text : null;
+  const ts = readString(event.ts);
+  if (!channel || !user || text === null || !ts) {
+    return null;
+  }
+  return {
+    type: "app_mention",
+    channel,
+    user,
+    text,
+    ts,
+    ...(readString(event.thread_ts) ? { thread_ts: readString(event.thread_ts)! } : {}),
     ...(readString(event.bot_id) ? { bot_id: readString(event.bot_id)! } : {}),
   };
 };
@@ -127,7 +149,9 @@ export const createSlackWebhookRouter = (options: SlackWebhookRouterOptions): Ro
         return;
       }
 
-      const event = parseMessageImEvent(payload.event);
+      const messageImEvent = parseMessageImEvent(payload.event);
+      const appMentionEvent = parseAppMentionEvent(payload.event);
+      const event = messageImEvent ?? appMentionEvent;
       if (!event) {
         await options.persistence.markInboundEventStatus(eventId, "skipped");
         res.sendStatus(200);
@@ -142,7 +166,10 @@ export const createSlackWebhookRouter = (options: SlackWebhookRouterOptions): Ro
       }
 
       queueMicrotask(() => {
-        void options.messageHandler.handleMessageIm({ eventId, teamId, event }).catch((error) => {
+        const processing = messageImEvent
+          ? options.messageHandler.handleMessageIm({ eventId, teamId, event: messageImEvent })
+          : options.messageHandler.handleAppMention({ eventId, teamId, event: appMentionEvent! });
+        void processing.catch((error) => {
           options.logger.error(
             { teamId, eventId, err: error instanceof Error ? error.message : String(error) },
             "Slack inbound event processing failed",

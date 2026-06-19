@@ -124,7 +124,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
     });
     expect(saved.binding?.answeringAgentId).toBe(agentId);
 
-    const posts: Array<{ channel: string; text: string }> = [];
+    const posts: Array<{ channel: string; text: string; threadTs?: string }> = [];
     const chatInputs: Array<{ conversationId?: string; sourceChannel?: string | null; query: string }> = [];
     const handler = new SlackMessageHandler({
       logger: {
@@ -157,7 +157,11 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       },
       clientFactory: () => ({
         postMessage: async (input) => {
-          posts.push({ channel: input.channel, text: input.text });
+          posts.push({
+            channel: input.channel,
+            text: input.text,
+            ...(input.threadTs ? { threadTs: input.threadTs } : {}),
+          });
           return { channel: input.channel, ts: "1720000000.000100" };
         },
       }),
@@ -208,6 +212,146 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
     const links = await database.query(`SELECT id FROM slack_conversation_links WHERE slack_key = 'dm:TDM:UUSER'`);
     expect(links).toHaveLength(1);
     expect(posts.at(-1)).toEqual({ channel: "DUSER", text: "reply:follow up" });
+  });
+
+  it("maps a channel mention thread to one conversation and escalates no-context mention turns", async () => {
+    const oauthConnections = new OauthConnectionRepository(database);
+    const integrationConnections = new IntegrationConnectionRepository(database);
+    const installations = new SlackInstallationRepository(database);
+    const bindings = new SlackChannelBindingRepository(database);
+    const installationService = new SlackInstallationService({
+      oauthConnections,
+      integrationConnections,
+      installations,
+      bindings,
+      encryptionKey,
+    });
+    const saved = await installationService.saveInstallation({
+      workspaceId,
+      teamId: "TMENTION",
+      teamName: "Mention Team",
+      botUserId: "UBOT",
+      botAccessToken: "xoxb-mention-token",
+      grantedScopes: ["app_mentions:read", "chat:write", "im:read", "im:write"],
+      answeringAgentId: agentId,
+      escalationChannelId: "CSUPPORT",
+    });
+
+    const posts: Array<{ channel: string; text: string; threadTs?: string }> = [];
+    const chatInputs: Array<{ conversationId?: string; sourceChannel?: string | null; query: string }> = [];
+    let nextOutcome: "answered" | "no_context" = "answered";
+    const handler = new SlackMessageHandler({
+      logger: {
+        info: () => undefined,
+        warn: () => undefined,
+        error: () => undefined,
+      },
+      installations,
+      bindings,
+      installationService,
+      persistence: new PostgresSlackPersistence(database),
+      slackPostOutbox: new ActionRequestRepository(database),
+      chat: {
+        answer: async (input) => {
+          chatInputs.push({
+            ...(input.conversationId ? { conversationId: input.conversationId } : {}),
+            sourceChannel: input.sourceChannel,
+            query: input.query,
+          });
+          if (input.conversationId) {
+            return {
+              conversationId: input.conversationId,
+              answer: `mention:${input.query}`,
+              outcome: nextOutcome,
+            };
+          }
+          const [row] = await database.query<{ id: string }>(
+            `INSERT INTO conversations (id, workspace_id, agent_id, source_channel)
+             VALUES ($1, $2, $3, $4)
+             RETURNING id`,
+            [randomUUID(), input.workspaceId, agentId, input.sourceChannel ?? null],
+          );
+          return { conversationId: row.id, answer: `mention:${input.query}`, outcome: nextOutcome };
+        },
+      },
+      clientFactory: () => ({
+        postMessage: async (input) => {
+          posts.push({
+            channel: input.channel,
+            text: input.text,
+            ...(input.threadTs ? { threadTs: input.threadTs } : {}),
+          });
+          return { channel: input.channel, ts: "1720000000.000300" };
+        },
+      }),
+    });
+
+    await database.query(
+      `INSERT INTO slack_inbound_events (event_id, team_id, status) VALUES ('EvMentionOne', 'TMENTION', 'received')`,
+    );
+    await handler.handleAppMention({
+      eventId: "EvMentionOne",
+      teamId: "TMENTION",
+      event: {
+        type: "app_mention",
+        channel: "CCHANNEL",
+        user: "UUSER",
+        text: "<@UBOT> first mention",
+        ts: "1700000000.000100",
+      },
+    });
+
+    const [link] = await database.query<{ conversation_id: string }>(
+      `SELECT conversation_id FROM slack_conversation_links WHERE slack_key = 'mention:TMENTION:CCHANNEL:1700000000.000100'`,
+    );
+    expect(link?.conversation_id).toBeTruthy();
+    expect(posts.at(-1)).toEqual({
+      channel: "CCHANNEL",
+      text: "mention:<@UBOT> first mention",
+      threadTs: "1700000000.000100",
+    });
+
+    nextOutcome = "no_context";
+    await database.query(
+      `INSERT INTO slack_inbound_events (event_id, team_id, status) VALUES ('EvMentionTwo', 'TMENTION', 'received')`,
+    );
+    await handler.handleAppMention({
+      eventId: "EvMentionTwo",
+      teamId: "TMENTION",
+      event: {
+        type: "app_mention",
+        channel: "CCHANNEL",
+        user: "UUSER",
+        text: "<@UBOT> missing follow up",
+        thread_ts: "1700000000.000100",
+        ts: "1700000001.000100",
+      },
+    });
+
+    expect(chatInputs[1]).toMatchObject({
+      conversationId: link.conversation_id,
+      sourceChannel: "slack",
+      query: "<@UBOT> missing follow up",
+    });
+    const links = await database.query(
+      `SELECT id FROM slack_conversation_links WHERE slack_key = 'mention:TMENTION:CCHANNEL:1700000000.000100'`,
+    );
+    expect(links).toHaveLength(1);
+    expect(posts.at(-1)).toEqual({
+      channel: "CCHANNEL",
+      text: "mention:<@UBOT> missing follow up",
+      threadTs: "1700000000.000100",
+    });
+
+    const gapRows = await database.query<{ payload: { kind: string; installationId: string; channelId: string } }>(
+      `SELECT payload FROM routine_action_requests WHERE idempotency_key LIKE 'slack:gap_escalation:EvMentionTwo:%'`,
+    );
+    expect(gapRows).toHaveLength(1);
+    expect(gapRows[0]?.payload).toMatchObject({
+      kind: "gap_escalation",
+      installationId: saved.installation.id,
+      channelId: "CSUPPORT",
+    });
   });
 
   it("enqueues a gap escalation from a typed no_context outcome and skips grounded turns", async () => {

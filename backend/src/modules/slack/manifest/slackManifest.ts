@@ -3,6 +3,7 @@ export const slackBotScopes = [
   "chat:write",
   "im:history",
   "im:read",
+  "im:write",
 ] as const;
 
 export const requiredSlackEnvVars = [

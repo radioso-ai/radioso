@@ -18,10 +18,47 @@ const expectNoSecrets = (body: unknown) => {
   const serialized = JSON.stringify(body);
   expect(serialized).not.toContain("xoxb-test-slack-token");
   expect(serialized).not.toContain("test-slack-secret");
-  expect(serialized).not.toContain("SLACK_SIGNING_SECRET");
+  expect(serialized).not.toContain("test-signing-secret");
 };
 
 describe("Slack admin REST contract", () => {
+  it("returns the self-host Slack manifest with env checklist and no secrets", async () => {
+    const { app } = createTestApp({
+      envOverrides: {
+        APP_BASE_URL: "https://self-host.example.com/",
+        SLACK_OAUTH_CLIENT_ID: "test-slack-client",
+        SLACK_OAUTH_CLIENT_SECRET: "test-slack-secret",
+        SLACK_SIGNING_SECRET: "test-signing-secret",
+      },
+    });
+    const session = await issueTestSession(app, "slack-manifest@example.com");
+    const headers = adminSessionHeaders(session);
+    const agentId = randomUUID();
+    const base = `/api/v1/workspaces/${session.workspaceId}/agents/${agentId}/slack`;
+
+    const response = await request(app).get(`${base}/manifest`).set(headers);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      manifest: {
+        oauth_config: {
+          redirect_urls: ["https://self-host.example.com/api/v1/oauth/callback/slack"],
+          scopes: {
+            bot: expect.arrayContaining(["app_mentions:read", "chat:write", "im:history", "im:read", "im:write"]),
+          },
+        },
+        settings: {
+          event_subscriptions: {
+            request_url: "https://self-host.example.com/api/connectors/slack/events",
+            bot_events: ["app_mention", "message.im"],
+          },
+        },
+      },
+      requiredEnvVars: ["SLACK_OAUTH_CLIENT_ID", "SLACK_OAUTH_CLIENT_SECRET", "SLACK_SIGNING_SECRET"],
+    });
+    expectNoSecrets(response.body);
+  });
+
   it("starts install, reports status, manages binding, and disconnects without returning secrets", async () => {
     const { app } = createTestApp({
       envOverrides: {

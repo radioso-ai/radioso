@@ -1366,6 +1366,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/manifest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get self-host Slack app manifest */
+        get: operations["getAgentSlackManifest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/binding": {
         parameters: {
             query?: never;
@@ -10251,6 +10268,79 @@ export interface operations {
                         teamName?: string;
                         /** Format: uuid */
                         answeringAgentId?: string;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentSlackManifest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Generated Slack app manifest */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        manifest: {
+                            display_information: {
+                                name: string;
+                            };
+                            features: {
+                                bot_user: {
+                                    display_name: string;
+                                    always_online: boolean;
+                                };
+                            };
+                            oauth_config: {
+                                redirect_urls: string[];
+                                scopes: {
+                                    bot: string[];
+                                };
+                            };
+                            settings: {
+                                event_subscriptions: {
+                                    /** Format: uri */
+                                    request_url: string;
+                                    bot_events: string[];
+                                };
+                                interactivity: {
+                                    is_enabled: boolean;
+                                };
+                                org_deploy_enabled: boolean;
+                                socket_mode_enabled: boolean;
+                                token_rotation_enabled: boolean;
+                            };
+                        };
+                        requiredEnvVars: ("SLACK_OAUTH_CLIENT_ID" | "SLACK_OAUTH_CLIENT_SECRET" | "SLACK_SIGNING_SECRET")[];
                     };
                 };
             };

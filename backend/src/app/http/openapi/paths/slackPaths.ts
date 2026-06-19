@@ -31,6 +31,39 @@ const SlackBindingUpdateSchema = z.object({
   escalationChannelId: z.string().nullable().optional(),
 });
 
+const SlackManifestResponseSchema = z.object({
+  manifest: z.object({
+    display_information: z.object({
+      name: z.string(),
+    }),
+    features: z.object({
+      bot_user: z.object({
+        display_name: z.string(),
+        always_online: z.boolean(),
+      }),
+    }),
+    oauth_config: z.object({
+      redirect_urls: z.array(z.string().url()),
+      scopes: z.object({
+        bot: z.array(z.string()),
+      }),
+    }),
+    settings: z.object({
+      event_subscriptions: z.object({
+        request_url: z.string().url(),
+        bot_events: z.array(z.string()),
+      }),
+      interactivity: z.object({
+        is_enabled: z.boolean(),
+      }),
+      org_deploy_enabled: z.boolean(),
+      socket_mode_enabled: z.boolean(),
+      token_rotation_enabled: z.boolean(),
+    }),
+  }),
+  requiredEnvVars: z.array(z.enum(["SLACK_OAUTH_CLIENT_ID", "SLACK_OAUTH_CLIENT_SECRET", "SLACK_SIGNING_SECRET"])),
+});
+
 const TAGS = ["Slack"];
 
 export const registerSlackPaths = (
@@ -68,6 +101,21 @@ export const registerSlackPaths = (
     request: { params: SlackAgentParams },
     responses: {
       200: { description: "Slack installation status", content: json(SlackInstallStatusSchema) },
+      401: errorResponse("Authentication required"),
+      403: errorResponse("Agent read permission required"),
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/manifest",
+    tags: TAGS,
+    summary: "Get self-host Slack app manifest",
+    operationId: "getAgentSlackManifest",
+    security: sec,
+    request: { params: SlackAgentParams },
+    responses: {
+      200: { description: "Generated Slack app manifest", content: json(SlackManifestResponseSchema) },
       401: errorResponse("Authentication required"),
       403: errorResponse("Agent read permission required"),
     },

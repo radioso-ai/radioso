@@ -27,10 +27,20 @@ export interface SlackMessageImEvent {
   bot_id?: string;
 }
 
+export interface SlackAppMentionEvent {
+  type: "app_mention";
+  channel: string;
+  user: string;
+  text: string;
+  ts: string;
+  thread_ts?: string;
+  bot_id?: string;
+}
+
 export interface SlackInboundEventEnvelope {
   eventId: string;
   teamId: string;
-  event: SlackMessageImEvent;
+  event: SlackMessageImEvent | SlackAppMentionEvent;
 }
 
 export type SlackWebApiClientFactory = (
@@ -49,6 +59,8 @@ export interface SlackMessageHandlerOptions {
 }
 
 const dmSlackKey = (teamId: string, userId: string): string => `dm:${teamId}:${userId}`;
+const mentionSlackKey = (teamId: string, channelId: string, threadTs: string): string =>
+  `mention:${teamId}:${channelId}:${threadTs}`;
 
 export class SlackMessageHandler {
   private readonly clientFactory: SlackWebApiClientFactory;
@@ -58,37 +70,65 @@ export class SlackMessageHandler {
   }
 
   async handleMessageIm(input: SlackInboundEventEnvelope): Promise<void> {
-    const installation = await this.options.installations.findByTeamId(input.teamId);
-    if (!installation) {
+    if (input.event.type !== "message") {
       await this.options.persistence.markInboundEventStatus(input.eventId, "skipped");
-      this.options.logger.info({ teamId: input.teamId, eventId: input.eventId }, "Slack inbound skipped without installation");
+      return;
+    }
+    await this.handleSlackTurn({
+      envelope: input as SlackInboundEventEnvelope & { event: SlackMessageImEvent },
+      getSlackKey: (installation) => dmSlackKey(installation.teamId, input.event.user),
+      getReplyThreadTs: () => undefined,
+    });
+  }
+
+  async handleAppMention(input: SlackInboundEventEnvelope & { event: SlackAppMentionEvent }): Promise<void> {
+    await this.handleSlackTurn({
+      envelope: input,
+      getSlackKey: (installation) => {
+        const threadTs = input.event.thread_ts ?? input.event.ts;
+        return mentionSlackKey(installation.teamId, input.event.channel, threadTs);
+      },
+      getReplyThreadTs: () => input.event.thread_ts ?? input.event.ts,
+    });
+  }
+
+  private async handleSlackTurn(input: {
+    envelope: SlackInboundEventEnvelope & { event: SlackMessageImEvent | SlackAppMentionEvent };
+    getSlackKey: (installation: SlackInstallationRecord) => string;
+    getReplyThreadTs: () => string | undefined;
+  }): Promise<void> {
+    const { envelope } = input;
+    const installation = await this.options.installations.findByTeamId(envelope.teamId);
+    if (!installation) {
+      await this.options.persistence.markInboundEventStatus(envelope.eventId, "skipped");
+      this.options.logger.info({ teamId: envelope.teamId, eventId: envelope.eventId }, "Slack inbound skipped without installation");
       return;
     }
 
     const binding = await this.options.bindings.findByInstallationId(installation.id);
     if (!binding?.answeringAgentId) {
-      await this.options.persistence.markInboundEventStatus(input.eventId, "skipped");
+      await this.options.persistence.markInboundEventStatus(envelope.eventId, "skipped");
       this.options.logger.info(
-        { workspaceId: installation.workspaceId, installationId: installation.id, eventId: input.eventId },
+        { workspaceId: installation.workspaceId, installationId: installation.id, eventId: envelope.eventId },
         "Slack inbound skipped without answering agent binding",
       );
       return;
     }
 
-    const query = input.event.text.trim();
+    const query = envelope.event.text.trim();
     if (!query) {
-      await this.options.persistence.markInboundEventStatus(input.eventId, "skipped");
+      await this.options.persistence.markInboundEventStatus(envelope.eventId, "skipped");
       return;
     }
 
-    const slackKey = dmSlackKey(input.teamId, input.event.user);
+    const slackKey = input.getSlackKey(installation);
     const existingLink = await this.options.persistence.findConversationLink({
       workspaceId: installation.workspaceId,
       slackKey,
     });
 
     this.options.logger.info(
-      { workspaceId: installation.workspaceId, installationId: installation.id, eventId: input.eventId },
+      { workspaceId: installation.workspaceId, installationId: installation.id, eventId: envelope.eventId },
       "Slack turn dispatch started",
     );
     const response = await this.options.chat.answer({
@@ -104,7 +144,7 @@ export class SlackMessageHandler {
       conversationId: response.conversationId,
     });
     await this.enqueueGapEscalationIfNeeded({
-      envelope: input,
+      envelope,
       installation,
       escalationChannelId: binding.escalationChannelId,
       query,
@@ -114,21 +154,22 @@ export class SlackMessageHandler {
 
     const botToken = await this.options.installationService.resolveBotTokenForInstallation(installation);
     if (!botToken) {
-      await this.options.persistence.markInboundEventStatus(input.eventId, "skipped");
+      await this.options.persistence.markInboundEventStatus(envelope.eventId, "skipped");
       this.options.logger.warn(
-        { workspaceId: installation.workspaceId, installationId: installation.id, eventId: input.eventId },
+        { workspaceId: installation.workspaceId, installationId: installation.id, eventId: envelope.eventId },
         "Slack reply skipped without bot token",
       );
       return;
     }
 
     await this.clientFactory({ botToken }).postMessage({
-      channel: input.event.channel,
+      channel: envelope.event.channel,
       text: response.answer,
+      threadTs: input.getReplyThreadTs(),
     });
-    await this.options.persistence.markInboundEventStatus(input.eventId, "processed");
+    await this.options.persistence.markInboundEventStatus(envelope.eventId, "processed");
     this.options.logger.info(
-      { workspaceId: installation.workspaceId, installationId: installation.id, eventId: input.eventId },
+      { workspaceId: installation.workspaceId, installationId: installation.id, eventId: envelope.eventId },
       "Slack reply delivered",
     );
   }

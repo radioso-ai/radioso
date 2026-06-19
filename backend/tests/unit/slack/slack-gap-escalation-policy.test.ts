@@ -142,4 +142,93 @@ describe("Slack gap escalation policy", () => {
 
     expect(outbox.enqueue).not.toHaveBeenCalled();
   });
+
+  it("handles app mentions in the originating thread and reuses a thread-scoped conversation", async () => {
+    const persistence = basePersistence();
+    vi.mocked(persistence.findConversationLink).mockResolvedValueOnce(null).mockResolvedValueOnce({
+      id: "77777777-7777-7777-7777-777777777777",
+      workspaceId: installation.workspaceId,
+      installationId: installation.id,
+      slackKey: "mention:T1:CCHANNEL:1700000000.000100",
+      conversationId: "44444444-4444-4444-4444-444444444444",
+    });
+    const chat: ConnectorChatPort = {
+      answer: vi.fn(async (input) => ({
+        conversationId: input.conversationId ?? "44444444-4444-4444-4444-444444444444",
+        answer: "Mention reply",
+        outcome: "answered" as const,
+      })),
+    };
+    const installations: SlackInstallationRepositoryPort = {
+      findById: vi.fn(async () => installation),
+      findByTeamId: vi.fn(async () => installation),
+      findByWorkspaceId: vi.fn(async () => installation),
+      upsert: vi.fn(),
+      removeByWorkspaceId: vi.fn(),
+    };
+    const bindings: SlackBindingRepositoryPort = {
+      findByInstallationId: vi.fn(async () => ({
+        id: "55555555-5555-5555-5555-555555555555",
+        installationId: installation.id,
+        workspaceId: installation.workspaceId,
+        answeringAgentId: "66666666-6666-6666-6666-666666666666",
+        escalationChannelId: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })),
+      upsert: vi.fn(),
+      removeByInstallationId: vi.fn(),
+    };
+    const installationService: Pick<SlackInstallationService, "resolveBotTokenForInstallation"> = {
+      resolveBotTokenForInstallation: vi.fn(async () => "xoxb-token"),
+    };
+    const posted = vi.fn();
+    const handler = new SlackMessageHandler({
+      logger,
+      chat,
+      installations,
+      bindings,
+      installationService,
+      persistence,
+      clientFactory: () => ({ postMessage: posted }),
+    });
+    const mentionEvent = {
+      eventId: "EvMentionOne",
+      teamId: "T1",
+      event: {
+        type: "app_mention" as const,
+        channel: "CCHANNEL",
+        user: "U1",
+        text: "<@UBOT> please help",
+        ts: "1700000000.000100",
+      },
+    };
+
+    await handler.handleAppMention(mentionEvent);
+    await handler.handleAppMention({
+      ...mentionEvent,
+      eventId: "EvMentionTwo",
+      event: {
+        ...mentionEvent.event,
+        text: "<@UBOT> follow up",
+        thread_ts: "1700000000.000100",
+        ts: "1700000001.000100",
+      },
+    });
+
+    expect(persistence.upsertConversationLink).toHaveBeenCalledWith(expect.objectContaining({
+      slackKey: "mention:T1:CCHANNEL:1700000000.000100",
+      conversationId: "44444444-4444-4444-4444-444444444444",
+    }));
+    expect(chat.answer).toHaveBeenLastCalledWith(expect.objectContaining({
+      conversationId: "44444444-4444-4444-4444-444444444444",
+      query: "<@UBOT> follow up",
+      sourceChannel: "slack",
+    }));
+    expect(posted).toHaveBeenCalledWith(expect.objectContaining({
+      channel: "CCHANNEL",
+      text: "Mention reply",
+      threadTs: "1700000000.000100",
+    }));
+  });
 });

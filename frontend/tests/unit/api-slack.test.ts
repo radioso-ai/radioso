@@ -78,4 +78,26 @@ describe('slackApi', () => {
     }))
     expect(new Headers(requestInit.headers).get('Content-Type')).toBe('application/json')
   })
+
+  it('fetches the self-host Slack manifest through the agent Slack endpoint', async () => {
+    vi.stubGlobal('window', { localStorage: createLocalStorage() })
+    const fetchMock = vi.fn().mockResolvedValue(createJsonResponse({
+      manifest: {
+        oauth_config: {
+          redirect_urls: ['https://self-host.example.com/api/v1/oauth/callback/slack'],
+        },
+      },
+      requiredEnvVars: ['SLACK_OAUTH_CLIENT_ID', 'SLACK_OAUTH_CLIENT_SECRET', 'SLACK_SIGNING_SECRET'],
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(slackApi.getManifest('workspace-1', 'agent-1')).resolves.toMatchObject({
+      requiredEnvVars: ['SLACK_OAUTH_CLIENT_ID', 'SLACK_OAUTH_CLIENT_SECRET', 'SLACK_SIGNING_SECRET'],
+    })
+
+    const [requestUrl, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(requestUrl).toBe('/backend/api/v1/workspaces/workspace-1/agents/agent-1/slack/manifest')
+    expect(requestInit.method).toBe('GET')
+    expect(new Headers(requestInit.headers).get('Authorization')).toBe('Bearer workspace-token')
+  })
 })

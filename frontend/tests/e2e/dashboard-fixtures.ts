@@ -92,6 +92,11 @@ export type SlackBindingFixture = {
   answeringAgentId: string | null;
   escalationChannelId: string | null;
 };
+
+export type SlackManifestFixture = {
+  manifest: Record<string, unknown>;
+  requiredEnvVars: string[];
+};
 export type SlackSkillFixture = {
   id: string;
   workspaceId: string;
@@ -524,6 +529,7 @@ export const installDashboardApiMocks = async (
     emailActivity?: CustomerEmailActivityFixture[];
     slackStatus?: SlackInstallStatusFixture;
     slackBinding?: SlackBindingFixture;
+    slackManifest?: SlackManifestFixture;
     slackSkills?: SlackSkillFixture[];
     slackRequests?: Array<{ method: string; path: string; body?: unknown }>;
     routineSkillCatalog?: RoutineSkillCatalogFixture;
@@ -569,6 +575,24 @@ export const installDashboardApiMocks = async (
   const emailActivity = options.emailActivity ?? [];
   let slackStatus = options.slackStatus ?? { status: "not_configured" as const };
   let slackBinding = options.slackBinding ?? { answeringAgentId: null, escalationChannelId: null };
+  const slackManifest = options.slackManifest ?? {
+    manifest: {
+      display_information: { name: "Radioso" },
+      oauth_config: {
+        redirect_urls: ["https://self-host.example.com/api/v1/oauth/callback/slack"],
+        scopes: {
+          bot: ["app_mentions:read", "chat:write", "im:history", "im:read", "im:write"],
+        },
+      },
+      settings: {
+        event_subscriptions: {
+          request_url: "https://self-host.example.com/api/connectors/slack/events",
+          bot_events: ["app_mention", "message.im"],
+        },
+      },
+    },
+    requiredEnvVars: ["SLACK_OAUTH_CLIENT_ID", "SLACK_OAUTH_CLIENT_SECRET", "SLACK_SIGNING_SECRET"],
+  };
   let slackSkills = options.slackSkills ?? [];
   let nextSlackSkillIndex = slackSkills.length + 1;
   const routineSkillCatalog = options.routineSkillCatalog ?? [];
@@ -797,6 +821,11 @@ export const installDashboardApiMocks = async (
         connectionId: "99999999-9999-4999-8999-000000000002",
         status: "pending",
       });
+      return;
+    }
+
+    if (path === `/workspaces/${workspaceId}/agents/${defaultAgentId}/slack/manifest` && request.method() === "GET") {
+      await json(route, slackManifest);
       return;
     }
 

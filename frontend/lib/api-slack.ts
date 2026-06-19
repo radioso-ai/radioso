@@ -25,6 +25,11 @@ export type SlackBindingUpdate = {
   escalationChannelId?: string | null
 }
 
+export type SlackManifestResponse = {
+  manifest: Record<string, unknown>
+  requiredEnvVars: string[]
+}
+
 const agentSlackPath = (workspaceId: string, agentId: string, suffix: string) =>
   `/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/slack/${suffix}`
 
@@ -48,6 +53,14 @@ export const slackApi = {
   async getBinding(workspaceId: string, agentId: string): Promise<SlackBinding> {
     return request<SlackBinding>(
       agentSlackPath(workspaceId, agentId, 'binding'),
+      { method: 'GET' },
+      { withApiToken: true },
+    )
+  },
+
+  async getManifest(workspaceId: string, agentId: string): Promise<SlackManifestResponse> {
+    return request<SlackManifestResponse>(
+      agentSlackPath(workspaceId, agentId, 'manifest'),
       { method: 'GET' },
       { withApiToken: true },
     )

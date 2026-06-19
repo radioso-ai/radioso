@@ -2,7 +2,8 @@ import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
-import { badRequest } from "../../../shared/domain/errors.js";
+import { badRequest, serviceUnavailable } from "../../../shared/domain/errors.js";
+import { buildSlackManifest, requiredSlackEnvVars } from "../../../modules/slack/public.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
 import { validateBody } from "../middleware/validate.js";
@@ -73,6 +74,27 @@ export const createSlackConnectionRoutes = (dependencies: SlackConnectionRouteDe
         const workspaceId = parseUuid(req.params.workspaceId, "workspaceId");
         parseUuid(req.params.agentId, "agentId");
         res.status(200).json(await dependencies.slackInstallationService.getStatus(workspaceId));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/workspaces/:workspaceId/agents/:agentId/slack/manifest",
+    workspaceSession,
+    agentsRead,
+    async (req, res, next) => {
+      try {
+        parseUuid(req.params.workspaceId, "workspaceId");
+        parseUuid(req.params.agentId, "agentId");
+        if (!dependencies.env.APP_BASE_URL) {
+          throw serviceUnavailable("APP_BASE_URL must be set to generate a Slack app manifest");
+        }
+        res.status(200).json({
+          manifest: buildSlackManifest(dependencies.env.APP_BASE_URL),
+          requiredEnvVars: [...requiredSlackEnvVars],
+        });
       } catch (error) {
         next(error);
       }

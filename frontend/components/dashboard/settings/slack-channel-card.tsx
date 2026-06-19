@@ -1,11 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { MessageSquare, RefreshCw, Trash2 } from 'lucide-react'
+import { ChevronDown, Copy, MessageSquare, RefreshCw, Trash2 } from 'lucide-react'
 
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -17,7 +18,7 @@ import {
 } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { getApiErrorMessage } from '@/lib/api-error'
-import { slackApi, type SlackBinding, type SlackInstallStatusResponse } from '@/lib/api-slack'
+import { slackApi, type SlackBinding, type SlackInstallStatusResponse, type SlackManifestResponse } from '@/lib/api-slack'
 
 type SlackChannelCardProps = {
   workspaceId: string | null | undefined
@@ -35,6 +36,13 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
   const [isLoading, setIsLoading] = useState(true)
   const [busyAction, setBusyAction] = useState<'install' | 'binding' | 'disconnect' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [selfHostOpen, setSelfHostOpen] = useState(false)
+  const [manifestState, setManifestState] = useState<{
+    data: SlackManifestResponse | null
+    isLoading: boolean
+    error: string | null
+    copied: boolean
+  }>({ data: null, isLoading: false, error: null, copied: false })
 
   const canUseSlack = Boolean(workspaceId && agentId)
   const resolvedAgentName = agentName.trim() || 'This agent'
@@ -100,6 +108,35 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
       setError(getApiErrorMessage(err, 'Failed to start Slack authorization.'))
       setBusyAction(null)
     }
+  }
+
+  const loadManifest = async () => {
+    if (!workspaceId || !agentId || manifestState.data || manifestState.isLoading) return
+    setManifestState((current) => ({ ...current, isLoading: true, error: null, copied: false }))
+    try {
+      const data = await slackApi.getManifest(workspaceId, agentId)
+      setManifestState({ data, isLoading: false, error: null, copied: false })
+    } catch (err) {
+      setManifestState({
+        data: null,
+        isLoading: false,
+        error: getApiErrorMessage(err, 'Failed to load Slack manifest.'),
+        copied: false,
+      })
+    }
+  }
+
+  const toggleSelfHost = (open: boolean) => {
+    setSelfHostOpen(open)
+    if (open) {
+      void loadManifest()
+    }
+  }
+
+  const copyManifest = async () => {
+    if (!manifestState.data) return
+    await navigator.clipboard.writeText(JSON.stringify(manifestState.data.manifest, null, 2))
+    setManifestState((current) => ({ ...current, copied: true }))
   }
 
   const updateAnsweringAgent = async (nextAgentId: string) => {
@@ -176,17 +213,68 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
         ) : null}
 
         {!isLoading && !isConnected(status) ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/50 p-4">
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-foreground">
-                {needsReauth(status) ? 'Slack needs to be reconnected.' : 'Connect Slack to this agent.'}
-              </p>
-              <p className="text-xs text-muted-foreground">No tokens or secrets are entered in Radioso.</p>
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/50 p-4">
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">
+                  {needsReauth(status) ? 'Slack needs to be reconnected.' : 'Connect Slack to this agent.'}
+                </p>
+                <p className="text-xs text-muted-foreground">No tokens or secrets are entered in Radioso.</p>
+              </div>
+              <Button type="button" onClick={startInstall} disabled={!canUseSlack || busyAction === 'install'}>
+                {busyAction === 'install' ? <Spinner className="mr-2 h-4 w-4" /> : <MessageSquare className="mr-2 h-4 w-4" />}
+                {needsReauth(status) ? 'Reconnect Slack' : 'Add to Slack'}
+              </Button>
             </div>
-            <Button type="button" onClick={startInstall} disabled={!canUseSlack || busyAction === 'install'}>
-              {busyAction === 'install' ? <Spinner className="mr-2 h-4 w-4" /> : <MessageSquare className="mr-2 h-4 w-4" />}
-              {needsReauth(status) ? 'Reconnect Slack' : 'Add to Slack'}
-            </Button>
+
+            <Collapsible open={selfHostOpen} onOpenChange={toggleSelfHost} className="rounded-xl border border-border bg-background">
+              <CollapsibleTrigger asChild>
+                <Button type="button" variant="ghost" className="flex w-full justify-between px-4 py-3 text-left">
+                  <span className="text-sm font-medium">Self-host setup</span>
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="space-y-4 border-t border-border p-4">
+                  <p className="text-xs text-muted-foreground">
+                    Your Radioso backend must be reachable from Slack at a public HTTPS URL for OAuth callbacks and events.
+                  </p>
+                  {manifestState.isLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Spinner className="h-4 w-4" />
+                      Loading manifest...
+                    </div>
+                  ) : null}
+                  {manifestState.data ? (
+                    <>
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <Label className="text-foreground">Slack app manifest</Label>
+                          <Button type="button" variant="outline" size="sm" onClick={copyManifest}>
+                            <Copy className="mr-2 h-4 w-4" />
+                            {manifestState.copied ? 'Copied' : 'Copy manifest'}
+                          </Button>
+                        </div>
+                        <pre className="max-h-80 overflow-auto rounded-md bg-muted p-3 text-xs text-foreground">
+                          {JSON.stringify(manifestState.data.manifest, null, 2)}
+                        </pre>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-foreground">Required env vars</Label>
+                        <ul className="space-y-1 text-xs text-muted-foreground">
+                          {manifestState.data.requiredEnvVars.map((envVar) => (
+                            <li key={envVar}>
+                              <code className="rounded bg-muted px-1.5 py-0.5 text-foreground">{envVar}</code>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </>
+                  ) : null}
+                  {manifestState.error ? <p className="text-sm text-destructive">{manifestState.error}</p> : null}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
           </div>
         ) : null}
 

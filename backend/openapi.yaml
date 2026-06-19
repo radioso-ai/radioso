@@ -13008,6 +13008,141 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/manifest:
+    get:
+      tags: *a48
+      summary: Get self-host Slack app manifest
+      operationId: getAgentSlackManifest
+      security: *a49
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      responses:
+        "200":
+          description: Generated Slack app manifest
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  manifest:
+                    type: object
+                    properties:
+                      display_information:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                        required:
+                          - name
+                      features:
+                        type: object
+                        properties:
+                          bot_user:
+                            type: object
+                            properties:
+                              display_name:
+                                type: string
+                              always_online:
+                                type: boolean
+                            required:
+                              - display_name
+                              - always_online
+                        required:
+                          - bot_user
+                      oauth_config:
+                        type: object
+                        properties:
+                          redirect_urls:
+                            type: array
+                            items:
+                              type: string
+                              format: uri
+                          scopes:
+                            type: object
+                            properties:
+                              bot:
+                                type: array
+                                items:
+                                  type: string
+                            required:
+                              - bot
+                        required:
+                          - redirect_urls
+                          - scopes
+                      settings:
+                        type: object
+                        properties:
+                          event_subscriptions:
+                            type: object
+                            properties:
+                              request_url:
+                                type: string
+                                format: uri
+                              bot_events:
+                                type: array
+                                items:
+                                  type: string
+                            required:
+                              - request_url
+                              - bot_events
+                          interactivity:
+                            type: object
+                            properties:
+                              is_enabled:
+                                type: boolean
+                            required:
+                              - is_enabled
+                          org_deploy_enabled:
+                            type: boolean
+                          socket_mode_enabled:
+                            type: boolean
+                          token_rotation_enabled:
+                            type: boolean
+                        required:
+                          - event_subscriptions
+                          - interactivity
+                          - org_deploy_enabled
+                          - socket_mode_enabled
+                          - token_rotation_enabled
+                    required:
+                      - display_information
+                      - features
+                      - oauth_config
+                      - settings
+                  requiredEnvVars:
+                    type: array
+                    items:
+                      type: string
+                      enum:
+                        - SLACK_OAUTH_CLIENT_ID
+                        - SLACK_OAUTH_CLIENT_SECRET
+                        - SLACK_SIGNING_SECRET
+                required:
+                  - manifest
+                  - requiredEnvVars
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Agent read permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/binding:
     get:
       tags: *a48

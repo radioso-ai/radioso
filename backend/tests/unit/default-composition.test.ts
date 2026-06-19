@@ -149,8 +149,8 @@ describe("default application composition", () => {
         tokenEndpoint: "https://slack.com/api/oauth.v2.access",
         clientId: "slack-client",
         clientSecret: "slack-secret",
-        defaultScopes: ["app_mentions:read", "chat:write", "im:history", "im:read"],
-        allowedScopes: ["app_mentions:read", "chat:write", "im:history", "im:read"],
+        defaultScopes: ["app_mentions:read", "chat:write", "im:history", "im:read", "im:write"],
+        allowedScopes: ["app_mentions:read", "chat:write", "im:history", "im:read", "im:write"],
       }),
     ]);
   });

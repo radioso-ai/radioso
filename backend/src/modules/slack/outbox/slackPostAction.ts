@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { ActionHandler, ActionHandlerContext } from "../../chat/services/actions/actionDispatcher.js";
+import type { ActionHandler, ActionHandlerContext } from "../../chat/contracts/index.js";
 import {
   SlackInstallationRepository,
   SlackInstallationService,

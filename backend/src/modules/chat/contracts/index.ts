@@ -16,6 +16,10 @@ export { ASSISTANT_TURN_OUTCOME } from "../services/assistantTurnOutcomeTypes.js
 export { appendDirectiveSteeringStage } from "../services/directiveTracePresenter.js";
 export type { TurnTraceEnvelope } from "../services/turnTraceEnvelope.js";
 export type { ChatStreamEvent } from "./streamEvents.js";
+export type {
+  ActionHandler,
+  ActionHandlerContext,
+} from "../services/actions/actionDispatcher.js";
 export { CitationAnchorSanitizer } from "../services/citationAnchorSanitizer.js";
 export type {
   ContactHistoryDetail,

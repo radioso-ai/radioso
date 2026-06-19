@@ -10,6 +10,8 @@ import { AccountSubNav, KnowledgeSubNav, SettingsSubNav } from './area-subnavs'
 import { AgentView } from './agent-view'
 import { AccountView } from './account-view'
 import { ChatHistoryView } from './chat-history-view'
+import { ActivityTabs } from './activity-tabs'
+import { NeedsAttentionView } from './needs-attention-view'
 import { KnowledgeView } from './knowledge-view'
 import { SettingsView } from './settings-view'
 import { QualityView } from './quality-view'
@@ -204,9 +206,19 @@ export function DashboardShell({
               <div className="flex min-w-0 flex-1 flex-col">{areaContent}</div>
             </div>
           ) : currentView === 'activity' ? (
-            <ChatHistoryView accountId={accountId} onboarding={onboarding} routeState={routeState} />
+            <>
+              <ActivityTabs accountId={accountId} routeState={routeState} />
+              {routeState.activityTab === 'needs-attention' ? (
+                <NeedsAttentionView accountId={accountId} routeState={routeState} />
+              ) : (
+                <ChatHistoryView accountId={accountId} onboarding={onboarding} routeState={routeState} />
+              )}
+            </>
           ) : currentView === 'quality' ? (
-            <QualityView accountId={accountId} routeState={routeState} />
+            <>
+              <ActivityTabs accountId={accountId} routeState={routeState} />
+              <QualityView accountId={accountId} routeState={routeState} />
+            </>
           ) : currentView === 'eval' ? (
             <EvalView accountId={accountId} routeState={routeState} />
           ) : null}

@@ -1,6 +1,7 @@
 export type DashboardSection = 'agents' | 'knowledge' | 'activity' | 'quality' | 'eval' | 'settings' | 'account'
 export type AgentTab = 'chat' | 'behavior' | 'channels'
 export type KnowledgeTab = 'documents' | 'sources' | 'ingestion'
+export type ActivityTab = 'needs-attention' | 'all'
 export type SettingsTab = 'workspace' | 'providers'
 export type AccountTab = 'members' | 'usage'
 export type HistoryFilter = 'all' | 'chat' | 'search' | 'contact'
@@ -54,6 +55,7 @@ export interface DashboardRouteState {
   documentId?: string
   documentsPage?: number
   documentSourceFilter?: string
+  activityTab?: ActivityTab
   historyFilter?: HistoryFilter
   historyPage?: number
   historyItemKind?: HistoryItemKind
@@ -85,6 +87,7 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'documentId',
   'documentsPage',
   'documentSourceFilter',
+  'activityTab',
   'historyFilter',
   'historyPage',
   'historyItemKind',
@@ -106,6 +109,7 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
 const DEFAULT_SECTION: DashboardSection = 'agents'
 const DEFAULT_AGENT_TAB: AgentTab = 'chat'
 const DEFAULT_KNOWLEDGE_TAB: KnowledgeTab = 'documents'
+const DEFAULT_ACTIVITY_TAB: ActivityTab = 'all'
 const DEFAULT_HISTORY_FILTER: HistoryFilter = 'all'
 const DEFAULT_SETTINGS_TAB: SettingsTab = 'workspace'
 const DEFAULT_ACCOUNT_TAB: AccountTab = 'members'
@@ -122,6 +126,14 @@ const parsePositiveInt = (value: string | null): number | undefined => {
 
 const parseHistoryFilter = (value: string | null): HistoryFilter | undefined => {
   if (value === 'all' || value === 'chat' || value === 'search' || value === 'contact') {
+    return value
+  }
+
+  return undefined
+}
+
+const parseActivityTab = (value: string | null): ActivityTab | undefined => {
+  if (value === 'needs-attention' || value === 'all') {
     return value
   }
 
@@ -312,6 +324,9 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
   }
 
   if (state.section === 'activity') {
+    if (state.activityTab && state.activityTab !== DEFAULT_ACTIVITY_TAB) {
+      normalized.activityTab = state.activityTab
+    }
     if (state.historyFilter && state.historyFilter !== DEFAULT_HISTORY_FILTER) {
       normalized.historyFilter = state.historyFilter
     }
@@ -432,6 +447,9 @@ const buildQueryString = (normalized: DashboardRouteState) => {
   }
 
   if (normalized.section === 'activity') {
+    if (normalized.activityTab) {
+      searchParams.set('tab', normalized.activityTab)
+    }
     if (normalized.historyFilter) {
       searchParams.set('filter', normalized.historyFilter)
     }
@@ -624,6 +642,7 @@ export const parseDashboardRoute = (
     return normalizeState({
       section: 'activity',
       workspaceId,
+      activityTab: parseActivityTab(searchParams?.get('tab') ?? null),
       historyFilter: parseHistoryFilter(searchParams?.get('filter') ?? null),
       historyPage: parsePositiveInt(searchParams?.get('page') ?? null),
       historyItemKind: parseHistoryItemKind(searchParams?.get('itemKind') ?? null),
@@ -690,6 +709,7 @@ export const parseDashboardRoute = (
     return normalizeState({
       section: 'activity',
       workspaceId,
+      activityTab: parseActivityTab(searchParams?.get('tab') ?? null),
       historyFilter: parseHistoryFilter(searchParams?.get('filter') ?? null),
       historyPage: parsePositiveInt(searchParams?.get('page') ?? null),
       historyItemKind: parseHistoryItemKind(searchParams?.get('itemKind') ?? null),
@@ -800,6 +820,7 @@ export const retargetDashboardRouteToWorkspace = (
   if (state.section === 'activity') {
     return normalizeState({
       section: 'activity',
+      activityTab: state.activityTab,
       historyFilter: state.historyFilter,
       ...workspaceState,
     })

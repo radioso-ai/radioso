@@ -82,6 +82,52 @@ describe('dashboard route state', () => {
     })
   })
 
+  it('round-trips activity tab state while preserving activity deep links', () => {
+    expect(buildDashboardHref('account-1', {
+      section: 'activity',
+      workspacePublicRouteKey: 'support-abc123',
+      activityTab: 'needs-attention',
+    })).toBe('/w/support-abc123/activity?tab=needs-attention')
+
+    expect(buildDashboardHref('account-1', {
+      section: 'activity',
+      workspacePublicRouteKey: 'support-abc123',
+      activityTab: 'all',
+    })).toBe('/w/support-abc123/activity')
+
+    const parsed = parseDashboardRoute(['activity'], new URLSearchParams({
+      tab: 'needs-attention',
+      filter: 'chat',
+      itemKind: 'chat',
+      itemId: 'conversation-1',
+      itemMessageId: 'message-1',
+    }))
+
+    expect(parsed).toEqual({
+      section: 'activity',
+      activityTab: 'needs-attention',
+      historyFilter: 'chat',
+      historyItemKind: 'chat',
+      historyItemId: 'conversation-1',
+      historyMessageId: 'message-1',
+    })
+
+    expect(buildDashboardHref('account-1', {
+      ...parsed!,
+      workspacePublicRouteKey: 'support-abc123',
+    })).toBe('/w/support-abc123/activity?tab=needs-attention&filter=chat&itemKind=chat&itemId=conversation-1&itemMessageId=message-1')
+  })
+
+  it('ignores activity tab query state outside the activity section', () => {
+    expect(parseDashboardRoute(['quality'], new URLSearchParams({
+      tab: 'needs-attention',
+      feedback: 'down',
+    }))).toEqual({
+      section: 'quality',
+      qualityFeedback: ['down'],
+    })
+  })
+
   it('drops invalid section-specific parameters during parsing', () => {
     const params = new URLSearchParams({
       workspace: 'workspace-3',

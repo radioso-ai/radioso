@@ -34,8 +34,7 @@ import type { PendingDecisionCreateInput, PendingDecisionRecord, PendingDecision
 import type { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
 import type { DatabaseExecutor } from "../../../shared/infra/database.js";
 import type { AgentService } from "../../agents/public.js";
-import { buildPendingDecisionTransition } from "../../approvals/decisionProposal.js";
-import type { ResumeRunner } from "../../approvals/public.js";
+import { buildPendingDecisionTransition, type ResumeRunner } from "../../approvals/public.js";
 import type { ChatGateway, ChatGatewayInput } from "../contracts/chatGateway.js";
 import type { ChatStreamEvent } from "../contracts/streamEvents.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";

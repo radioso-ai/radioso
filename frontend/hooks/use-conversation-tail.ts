@@ -19,6 +19,7 @@ interface ConversationTailState {
   cursor: string | null
   error: unknown
   isPolling: boolean
+  hasPolled: boolean
 }
 
 export const useConversationTail = ({
@@ -31,6 +32,7 @@ export const useConversationTail = ({
   const [ownership, setOwnership] = useState<ConversationOwnership | undefined>()
   const [cursor, setCursor] = useState<string | null>(initialCursor ?? null)
   const [error, setError] = useState<unknown>(null)
+  const [hasPolled, setHasPolled] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -46,6 +48,7 @@ export const useConversationTail = ({
       setOwnership(undefined)
       setCursor(initialCursor ?? null)
       setError(null)
+      setHasPolled(false)
     })
 
     if (!enabled) {
@@ -69,6 +72,7 @@ export const useConversationTail = ({
         setOwnership(tail.ownership)
         setCursor(tail.cursor)
         setError(null)
+        setHasPolled(true)
         currentCursor = tail.cursor ?? undefined
       } catch (caught) {
         if (cancelled) {
@@ -93,5 +97,12 @@ export const useConversationTail = ({
     }
   }, [conversationId, enabled, initialCursor, intervalMs])
 
-  return { messages: enabled ? messages : [], ownership: enabled ? ownership : undefined, cursor, error, isPolling: enabled }
+  return {
+    messages: enabled ? messages : [],
+    ownership: enabled ? ownership : undefined,
+    cursor,
+    error,
+    isPolling: enabled,
+    hasPolled: enabled ? hasPolled : false,
+  }
 }

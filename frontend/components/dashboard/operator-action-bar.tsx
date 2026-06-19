@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { SendHorizonal } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -15,7 +15,7 @@ interface OperatorActionBarProps {
   conversationId: string
   ownership?: ConversationOwnership
   pendingDecisions: PendingApprovalDecision[]
-  onChanged: () => void
+  onChanged: () => Promise<void> | void
 }
 
 const statusText = (status: ReturnType<typeof deriveOperatorActions>['status'], ownerLabel: string | null) => {
@@ -42,27 +42,34 @@ export function OperatorActionBar({
   const [message, setMessage] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busyAction, setBusyAction] = useState<string | null>(null)
+  const inFlightRef = useRef(false)
 
   const isBusy = busyAction !== null
   const trimmedMessage = message.trim()
   const hasVersion = actions.version !== null
 
   const runAction = async (actionId: string, callback: () => Promise<void>) => {
+    if (inFlightRef.current) {
+      return
+    }
+
+    inFlightRef.current = true
     setBusyAction(actionId)
     setError(null)
 
     try {
       await callback()
-      onChanged()
+      await onChanged()
     } catch (caught) {
       if (isHitlApiStatusError(caught, 409)) {
         setError('This conversation changed - refreshing.')
-        onChanged()
+        await onChanged()
         return
       }
 
       setError(genericError)
     } finally {
+      inFlightRef.current = false
       setBusyAction(null)
     }
   }
@@ -109,7 +116,6 @@ export function OperatorActionBar({
       } catch (caught) {
         if (isHitlApiStatusError(caught, 422)) {
           setError('That option is no longer valid - refreshing.')
-          onChanged()
           return
         }
 
@@ -130,7 +136,7 @@ export function OperatorActionBar({
                 type="button"
                 size="sm"
                 variant="outline"
-                disabled={isBusy || !hasVersion}
+                disabled={isBusy}
                 onClick={() => void handleTakeOver()}
               >
                 Take over
@@ -141,7 +147,7 @@ export function OperatorActionBar({
                 type="button"
                 size="sm"
                 variant="outline"
-                disabled={isBusy}
+                disabled={isBusy || !hasVersion}
                 onClick={() => void handleHandBack()}
               >
                 Hand back to AI
@@ -180,7 +186,7 @@ export function OperatorActionBar({
             <Separator />
             <div className="space-y-2">
               {pendingDecisions.map((decision) => (
-                <Card key={decision.handle} className="gap-3 rounded-lg py-3 shadow-none">
+                <Card key={`${decision.agentId}:${decision.handle}`} className="gap-3 rounded-lg py-3 shadow-none">
                   <CardContent className="space-y-3 px-3">
                     <p className="text-sm text-foreground">
                       {decision.reason ?? 'Approval requested'}

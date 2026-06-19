@@ -148,3 +148,174 @@ test("operator can take over, reply, and resolve a pending decision", async ({ p
   await page.getByRole("button", { name: "Approve" }).click();
   await expect(page.getByText("Approve sending the booking update")).toHaveCount(0);
 });
+
+test("operator can take over an AI-owned conversation without an ownership version", async ({ page }) => {
+  const conversationId = "conversation-hitl-no-ownership";
+  const requestLog: string[] = [];
+  const historyList = {
+    conversations: [
+      {
+        id: conversationId,
+        agentId: null,
+        agentName: null,
+        sourceChannel: null,
+        sourceOrigin: null,
+        anonymousSessionId: null,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        messageCount: 1,
+        userMessageCount: 1,
+        assistantMessageCount: 0,
+        preview: "Can a human check this?",
+      },
+    ],
+    total: 1,
+    nextCursor: null,
+    hasMore: false,
+  };
+  const conversationDetail = {
+    conversationId,
+    workspaceId,
+    agentId: null,
+    sourceChannel: null,
+    sourceOrigin: null,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    messageCount: 1,
+    userMessageCount: 1,
+    assistantMessageCount: 0,
+    messagesTotal: 1,
+    messageWindowOffset: 0,
+    messageWindowLimit: 50,
+    hasOlderMessages: false,
+    nextCursor: null,
+    messages: [
+      {
+        id: "customer-message-no-ownership",
+        role: "user" as const,
+        source: "customer" as const,
+        content: "Can a human check this?",
+        createdAt: nowIso,
+      },
+    ],
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList,
+    conversationDetail,
+    conversationTailResponses: [{ messages: [], cursor: "tail-1" }],
+    requestLog,
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.getByRole("button", { name: /Can a human check this/ }).click();
+
+  const takeOverButton = page.getByRole("button", { name: "Take over" });
+  await expect(takeOverButton).toBeEnabled();
+
+  await takeOverButton.click();
+  await expect(page.getByText("Handled by Test Operator")).toBeVisible();
+  expect(requestLog).toContain(`POST /conversations/${conversationId}/takeover`);
+});
+
+test("pending approval cards are isolated when switching conversations", async ({ page }) => {
+  const firstConversationId = "conversation-hitl-decision";
+  const secondConversationId = "conversation-hitl-empty";
+  const historyList = {
+    conversations: [
+      {
+        id: firstConversationId,
+        agentId: null,
+        agentName: null,
+        sourceChannel: null,
+        sourceOrigin: null,
+        anonymousSessionId: null,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        messageCount: 1,
+        userMessageCount: 1,
+        assistantMessageCount: 0,
+        preview: "First conversation needs approval",
+      },
+      {
+        id: secondConversationId,
+        agentId: null,
+        agentName: null,
+        sourceChannel: null,
+        sourceOrigin: null,
+        anonymousSessionId: null,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        messageCount: 1,
+        userMessageCount: 1,
+        assistantMessageCount: 0,
+        preview: "Second conversation has no approval",
+      },
+    ],
+    total: 2,
+    nextCursor: null,
+    hasMore: false,
+  };
+  const buildConversationDetail = (conversationId: string, content: string) => ({
+    conversationId,
+    workspaceId,
+    agentId: null,
+    sourceChannel: null,
+    sourceOrigin: null,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    messageCount: 1,
+    userMessageCount: 1,
+    assistantMessageCount: 0,
+    messagesTotal: 1,
+    messageWindowOffset: 0,
+    messageWindowLimit: 50,
+    hasOlderMessages: false,
+    nextCursor: null,
+    messages: [
+      {
+        id: `${conversationId}-message-1`,
+        role: "user" as const,
+        source: "customer" as const,
+        content,
+        createdAt: nowIso,
+      },
+    ],
+  });
+  const pendingDecision = {
+    handle: "shared-handle",
+    conversationId: firstConversationId,
+    agentId: "agent-1",
+    routineId: "routine-1",
+    stepId: "step-1",
+    reason: "Only the first conversation should show this approval",
+    options: [
+      { id: "approve", label: "Approve" },
+      { id: "reject", label: "Reject" },
+    ],
+    contentHash: "hash-1",
+    deadline: null,
+    createdAt: nowIso,
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList,
+    conversationDetails: {
+      [firstConversationId]: buildConversationDetail(firstConversationId, "First conversation needs approval"),
+      [secondConversationId]: buildConversationDetail(secondConversationId, "Second conversation message body"),
+    },
+    pendingDecisions: [pendingDecision],
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.getByRole("button", { name: /First conversation needs approval/ }).click();
+  await expect(page.getByText("Only the first conversation should show this approval")).toBeVisible();
+
+  await page.getByRole("button", { name: "Close details panel" }).click();
+  await expect(page.getByText("Only the first conversation should show this approval")).toHaveCount(0);
+  await page.getByRole("button", { name: /Second conversation has no approval/ }).click();
+  await expect(page.getByText("Second conversation message body")).toBeVisible();
+  await expect(page.getByText("Only the first conversation should show this approval")).toHaveCount(0);
+});

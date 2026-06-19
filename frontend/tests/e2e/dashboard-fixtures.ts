@@ -479,6 +479,7 @@ export const installDashboardApiMocks = async (
     searchHistory?: unknown;
     documentSources?: unknown;
     conversationDetail?: unknown;
+    conversationDetails?: Record<string, unknown>;
     pendingDecisions?: ApiSchemas["PendingApprovalDecision"][];
     conversationTailResponses?: ApiSchemas["ChatConversationTail"][];
     takeOverConversationResponse?: ApiSchemas["ConversationOwnershipResponse"];
@@ -588,6 +589,15 @@ export const installDashboardApiMocks = async (
   };
   const searchHistory = options.searchHistory ?? emptySearchHistory;
   let conversationDetail = options.conversationDetail;
+  const conversationDetails = new Map<string, unknown>(Object.entries(options.conversationDetails ?? {}));
+  if (
+    conversationDetail &&
+    typeof conversationDetail === "object" &&
+    "conversationId" in conversationDetail &&
+    typeof conversationDetail.conversationId === "string"
+  ) {
+    conversationDetails.set(conversationDetail.conversationId, conversationDetail);
+  }
   let pendingDecisions = options.pendingDecisions ?? [];
   const conversationTailResponses = [...(options.conversationTailResponses ?? [])];
   let humanReplyCreated = false;
@@ -739,6 +749,8 @@ export const installDashboardApiMocks = async (
     }
 
     if (request.method() === "GET" && path.startsWith("/history/chat/") && path.endsWith("/tail")) {
+      const conversationId = path.replace("/history/chat/", "").replace("/tail", "");
+      const activeConversationDetail = conversationDetails.get(conversationId) ?? conversationDetail;
       const tailResponse =
         !humanReplyCreated && conversationTailResponses.length > 1
           ? conversationTailResponses[0]
@@ -746,9 +758,18 @@ export const installDashboardApiMocks = async (
       await json(route, tailResponse ?? {
         messages: [],
         cursor: null,
-        ownership: (conversationDetail as { ownership?: unknown } | undefined)?.ownership,
+        ownership: (activeConversationDetail as { ownership?: unknown } | undefined)?.ownership,
       });
       return;
+    }
+
+    if (request.method() === "GET" && path.startsWith("/history/chat/")) {
+      const conversationId = path.replace("/history/chat/", "");
+      const activeConversationDetail = conversationDetails.get(conversationId) ?? conversationDetail;
+      if (activeConversationDetail) {
+        await json(route, activeConversationDetail);
+        return;
+      }
     }
 
     if (request.method() === "GET" && path.startsWith("/history/chat/") && conversationDetail) {
@@ -779,6 +800,20 @@ export const installDashboardApiMocks = async (
       if (conversationDetail && typeof conversationDetail === "object") {
         conversationDetail = {
           ...conversationDetail,
+          ownership: response.ownership,
+        };
+      }
+      const conversationId = path.replace("/conversations/", "").replace("/takeover", "");
+      const activeConversationDetail = conversationDetails.get(conversationId);
+      if (activeConversationDetail && typeof activeConversationDetail === "object") {
+        conversationDetails.set(conversationId, {
+          ...activeConversationDetail,
+          ownership: response.ownership,
+        });
+      }
+      if (conversationTailResponses[0] && conversationTailResponses[0].messages.length === 0) {
+        conversationTailResponses[0] = {
+          ...conversationTailResponses[0],
           ownership: response.ownership,
         };
       }

@@ -39,8 +39,8 @@ for the `handoff.notify` payload and queue semantics.
 
 ## Operator API
 
-There is no frontend operator console in this cut. Operators use authenticated
-API endpoints under `/api/v1/conversations`.
+Operators can act from the dashboard operator console (see [Operator console](#operator-console))
+or directly through authenticated API endpoints under `/api/v1/conversations`.
 
 All endpoints require a bearer workspace session with the
 `workspace.conversation.takeover` permission. Every action records a
@@ -112,13 +112,81 @@ Body:
 
 After hand-back, the next visitor message follows the normal assistant path.
 
-## Approval resume compatibility
+## Approvals
 
-The HITL approval decision-resume endpoint is not built yet.
+A routine can pause at an approval gate before a step with side effects. When a
+turn reaches that gate, the routine suspends, the assistant replies that the step
+needs review, and Radioso records a pending decision. The conversation is not
+handed over; it simply waits for an operator to decide. See
+[Authoring routines](./authoring-routines.md) for how to author the gate.
 
-When it is added, a resume that can emit a message must defer while the
-conversation is `human_owned`. The AI must never speak into a human-owned
-thread. Only a host-marked side-effect-only resume may proceed.
+### List pending approvals
 
-Use the reusable `canResume()` helper exported from
-`backend/src/modules/handoff/public.ts` for this check.
+`GET /api/v1/decisions`
+
+Returns the workspace's open approval decisions, newest first. Each entry carries
+what an operator needs to decide and to submit a resolve: `handle`,
+`conversationId`, `agentId`, `routineId`, `stepId`, `reason`, `options`,
+`contentHash`, `deadline`, and `createdAt`. Requires the
+`workspace.conversation.takeover` permission.
+
+### Resolve an approval
+
+`POST /api/v1/agents/{agentId}/decisions/{handle}/resolve`
+
+Body:
+
+```json
+{
+  "optionId": "approve",
+  "contentHash": "sha256:...",
+  "payload": null
+}
+```
+
+`optionId` must be one of the pending decision's options. `contentHash` must match
+the value from the pending decision; a stale hash returns `409`. The decision flip,
+the routine resume, and the resumed turn commit in one transaction, so a crash
+before commit leaves the decision pending and a retry resolves cleanly. Approving
+resumes the routine and lets the gated action run; rejecting takes the rejection
+branch. A gated side effect runs as an idempotent outbox action, never inline.
+
+Operators are notified of a new pending approval through the contact-delivery
+transport with an `approval.request` action, mirroring `handoff.notify`.
+
+## Live updates
+
+Both surfaces can poll forward for new messages instead of refetching the whole
+transcript.
+
+- Operator: `GET /api/v1/history/chat/{conversationId}/tail?cursor=...`
+- Visitor: `GET /api/v1/public/chat/{token}/tail/{conversationId}?cursor=...`
+
+Each call returns messages created after the cursor plus an advanced cursor. With
+no cursor it returns an empty list and the current newest cursor, so a client can
+establish a baseline cheaply and then poll. Messages include `source`, so a visitor
+sees a human reply distinctly. The operator tail also includes `ownership`; the
+visitor tail never does.
+
+## Operator console
+
+The dashboard surfaces this work under **Activity**, which has three tabs:
+
+- **Needs attention** — the operator inbox. It lists pending approvals and
+  conversations that are human-owned (awaiting a human, or already taken over).
+  Opening a row shows the conversation with an action bar.
+- **All activity** — the full conversation history.
+- **Quality** — the answer-quality triage view.
+
+The conversation view shows message attribution (a badge for human-agent and
+system messages) and an operator action bar: take over, reply, hand back, and
+approve or reject a pending decision. While the view is open it polls the tail
+endpoint, so new visitor messages and the operator's own replies appear without a
+manual refresh.
+
+## Approval resume and human ownership
+
+A resume that can emit a message must defer while the conversation is
+`human_owned`. The AI must never speak into a human-owned thread. Only a
+host-marked side-effect-only resume may proceed. Use the reusable `canResume()`
+helper exported from `backend/src/modules/handoff/public.ts` for this check.

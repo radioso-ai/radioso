@@ -33,7 +33,7 @@ import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositor
 import type { PendingDecisionCreateInput } from "../../../db/repositories/pendingDecisionRepository.js";
 import type { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
 import type { AgentService } from "../../agents/public.js";
-import { buildPendingDecisionTransition } from "../../approvals/decisionProposal.js";
+import { buildPendingDecisionTransition } from "../../approvals/public.js";
 import type { ChatGateway, ChatGatewayInput } from "../contracts/chatGateway.js";
 import type { ChatStreamEvent } from "../contracts/streamEvents.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";

@@ -9,7 +9,7 @@ import { useNeedsAttentionActivity } from '@/hooks/use-needs-attention-activity'
 import { chatApi } from '@/lib/api'
 import { hitlApi } from '@/lib/api-hitl'
 import type { PendingApprovalDecision } from '@/lib/api-types'
-import { inboxSignature, type HumanOwnedConversationSummary } from '@/lib/needs-attention'
+import { inboxItemKeys, type HumanOwnedConversationSummary } from '@/lib/needs-attention'
 
 const asDecisions = (decisions: unknown[]) => decisions as unknown as PendingApprovalDecision[]
 const asConversations = (conversations: unknown[]) =>
@@ -27,6 +27,7 @@ const chatApiMock = vi.mocked(chatApi)
 const hitlApiMock = vi.mocked(hitlApi)
 
 const INTERVAL = 15000
+const BACKGROUND_INTERVAL = 30000
 
 const conversationSummary = (overrides: Record<string, unknown> = {}) => ({
   id: 'conversation-1',
@@ -83,29 +84,34 @@ const mockInbox = (decisions: unknown[], conversations: unknown[]) => {
 
 let container: HTMLDivElement
 let root: Root
-const observed = { current: false }
+const observed = { current: 0 }
 
 function Probe({
-  baselineSignature,
+  baselineKeys,
   enabled,
   onChange,
 }: {
-  baselineSignature: string | null
+  baselineKeys: readonly string[] | null
   enabled: boolean
-  onChange: (hasNewActivity: boolean) => void
+  onChange: (newItemCount: number) => void
 }) {
-  const hasNewActivity = useNeedsAttentionActivity({ baselineSignature, enabled, intervalMs: INTERVAL })
+  const newItemCount = useNeedsAttentionActivity({
+    baselineKeys,
+    enabled,
+    intervalMs: INTERVAL,
+    backgroundIntervalMs: BACKGROUND_INTERVAL,
+  })
   useEffect(() => {
-    onChange(hasNewActivity)
-  }, [hasNewActivity, onChange])
+    onChange(newItemCount)
+  }, [newItemCount, onChange])
   return null
 }
 
-const renderProbe = (baselineSignature: string | null, enabled = true) => {
+const renderProbe = (baselineKeys: readonly string[] | null, enabled = true) => {
   act(() => {
     root.render(
       <Probe
-        baselineSignature={baselineSignature}
+        baselineKeys={baselineKeys}
         enabled={enabled}
         onChange={(value) => {
           observed.current = value
@@ -148,7 +154,7 @@ beforeEach(() => {
   vi.useFakeTimers()
   vi.clearAllMocks()
   setVisibility('visible')
-  observed.current = false
+  observed.current = 0
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -163,27 +169,33 @@ afterEach(() => {
 })
 
 describe('useNeedsAttentionActivity', () => {
-  it('reports no new activity when the latest poll matches the displayed state', async () => {
+  it('reports zero new items when the latest poll matches the displayed state', async () => {
     const decisions = [decisionSummary()]
     const conversations = [conversationSummary()]
     mockInbox(decisions, conversations)
 
-    renderProbe(inboxSignature(asDecisions(decisions), asConversations(conversations)))
+    renderProbe(inboxItemKeys(asDecisions(decisions), asConversations(conversations)))
     await advanceOnePoll()
 
-    expect(observed.current).toBe(false)
+    expect(observed.current).toBe(0)
   })
 
-  it('reports new activity when a fresh approval appears after the baseline', async () => {
+  it('counts fresh approvals that appear after the baseline', async () => {
     const conversations = [conversationSummary()]
-    const baselineDecisions = [decisionSummary({ handle: 'decision-1' })]
-    const baseline = inboxSignature(asDecisions(baselineDecisions), asConversations(conversations))
+    const baseline = inboxItemKeys(asDecisions([decisionSummary({ handle: 'decision-1' })]), asConversations(conversations))
 
-    mockInbox([decisionSummary({ handle: 'decision-1' }), decisionSummary({ handle: 'decision-2' })], conversations)
+    mockInbox(
+      [
+        decisionSummary({ handle: 'decision-1' }),
+        decisionSummary({ handle: 'decision-2' }),
+        decisionSummary({ handle: 'decision-3' }),
+      ],
+      conversations,
+    )
     renderProbe(baseline)
     await advanceOnePoll()
 
-    expect(observed.current).toBe(true)
+    expect(observed.current).toBe(2)
   })
 
   it('does not poll when disabled', async () => {
@@ -192,22 +204,29 @@ describe('useNeedsAttentionActivity', () => {
     await advanceOnePoll()
 
     expect(hitlApiMock.listPendingDecisions).not.toHaveBeenCalled()
-    expect(observed.current).toBe(false)
+    expect(observed.current).toBe(0)
   })
 
-  it('stops polling while the document is hidden', async () => {
+  it('keeps polling on a slower cadence while the document is hidden', async () => {
     mockInbox([decisionSummary()], [conversationSummary()])
-    renderProbe(inboxSignature(asDecisions([decisionSummary()]), asConversations([conversationSummary()])))
+    renderProbe(inboxItemKeys(asDecisions([decisionSummary()]), asConversations([conversationSummary()])))
 
     becomeHidden()
-    await advanceOnePoll()
 
+    // The foreground interval elapses with no poll — the background cadence is slower.
+    await advanceOnePoll()
     expect(hitlApiMock.listPendingDecisions).not.toHaveBeenCalled()
+
+    // Reaching the background interval triggers a poll.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(BACKGROUND_INTERVAL - INTERVAL)
+    })
+    expect(hitlApiMock.listPendingDecisions).toHaveBeenCalledTimes(1)
   })
 
   it('polls immediately when the document becomes visible again', async () => {
     const conversations = [conversationSummary()]
-    const baseline = inboxSignature(asDecisions([decisionSummary({ handle: 'decision-1' })]), asConversations(conversations))
+    const baseline = inboxItemKeys(asDecisions([decisionSummary({ handle: 'decision-1' })]), asConversations(conversations))
     mockInbox([decisionSummary({ handle: 'decision-1' }), decisionSummary({ handle: 'decision-2' })], conversations)
 
     renderProbe(baseline)
@@ -218,6 +237,6 @@ describe('useNeedsAttentionActivity', () => {
     await becomeVisible()
 
     expect(hitlApiMock.listPendingDecisions).toHaveBeenCalledTimes(1)
-    expect(observed.current).toBe(true)
+    expect(observed.current).toBe(1)
   })
 })

@@ -15,21 +15,41 @@ export const selectHumanOwnedConversations = (
   )
 
 /**
- * Builds an order-independent fingerprint of the inbox contents. The indicator poll compares this
- * against the displayed state to decide whether new activity has arrived: a changed signature means
- * an approval was created or resolved, or a human-owned conversation gained a message or changed
- * ownership. It deliberately captures only identity + freshness markers, not full payloads.
+ * Builds an order-independent key per inbox item. The indicator poll diffs the latest keys against
+ * the displayed state to detect new activity: a key changes when an approval is created, or a
+ * human-owned conversation gains a message or changes ownership. Keys capture only identity +
+ * freshness markers (never payloads), and approval vs conversation keys are namespaced so they
+ * can't collide.
  */
-export const inboxSignature = (
+export const inboxItemKeys = (
   decisions: PendingApprovalDecision[],
   conversations: HumanOwnedConversationSummary[],
-): string => {
-  const approvalKeys = decisions.map((decision) => `${decision.agentId}:${decision.handle}`).sort()
-  const conversationKeys = conversations
-    .map((conversation) => `${conversation.id}:${conversation.updatedAt}:${conversation.ownership.version}`)
-    .sort()
+): string[] => {
+  const approvalKeys = decisions.map((decision) => `approval:${decision.agentId}:${decision.handle}`)
+  const conversationKeys = conversations.map(
+    (conversation) => `conversation:${conversation.id}:${conversation.updatedAt}:${conversation.ownership.version}`,
+  )
 
-  return JSON.stringify({ approvals: approvalKeys, conversations: conversationKeys })
+  return [...approvalKeys, ...conversationKeys].sort()
+}
+
+/**
+ * Counts how many of the latest inbox keys are not present in the operator's displayed state — i.e.
+ * the number of newly-arrived or freshly-updated items since the last refresh. Removals (an approval
+ * resolved elsewhere, a conversation handed back to the AI) are not counted as new activity.
+ */
+export const countNewInboxItems = (
+  baselineKeys: readonly string[],
+  latestKeys: readonly string[],
+): number => {
+  const baseline = new Set(baselineKeys)
+  let count = 0
+  for (const key of latestKeys) {
+    if (!baseline.has(key)) {
+      count += 1
+    }
+  }
+  return count
 }
 
 export const ownershipLabel = (ownership: ConversationOwnership): string => {

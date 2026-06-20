@@ -6,33 +6,38 @@ import { chatApi } from '@/lib/api'
 import { hitlApi } from '@/lib/api-hitl'
 import {
   HUMAN_OWNED_CONVERSATION_PAGE_SIZE,
-  inboxSignature,
+  countNewInboxItems,
+  inboxItemKeys,
   selectHumanOwnedConversations,
 } from '@/lib/needs-attention'
 
 interface UseNeedsAttentionActivityInput {
-  /** Fingerprint of the inbox state currently shown to the operator (see `inboxSignature`). */
-  baselineSignature: string | null
+  /** Per-item keys of the inbox state currently shown to the operator (see `inboxItemKeys`). */
+  baselineKeys: readonly string[] | null
   enabled?: boolean
+  /** Poll cadence while the tab is in the foreground. */
   intervalMs?: number
+  /** Slower poll cadence while the tab is backgrounded (document hidden). */
+  backgroundIntervalMs?: number
 }
 
 /**
- * Quietly polls the inbox endpoints in the background and reports whether the latest snapshot
- * differs from what the operator is currently looking at. It never replaces the displayed list —
- * the view surfaces a manual refresh affordance when this returns `true`, so the operator is never
- * interrupted mid-read. When the view refreshes, `baselineSignature` updates and the flag clears.
+ * Quietly polls the inbox endpoints in the background and returns how many items are new since the
+ * operator last refreshed. It never replaces the displayed list — the view surfaces a manual refresh
+ * affordance (with this count) so the operator is never interrupted mid-read. When the view
+ * refreshes, `baselineKeys` updates and the count drops back to zero.
  *
- * Polling only runs while the document is visible: a backgrounded browser tab stops fetching, and
- * returning to the foreground polls immediately (then resumes the interval) so a stale tab catches
+ * Polling continues while backgrounded, but at the slower `backgroundIntervalMs` cadence; returning
+ * to the foreground polls immediately (then resumes the foreground interval) so a stale tab catches
  * up the moment the operator looks at it again.
  */
 export const useNeedsAttentionActivity = ({
-  baselineSignature,
+  baselineKeys,
   enabled = true,
   intervalMs = 15000,
-}: UseNeedsAttentionActivityInput): boolean => {
-  const [latestSignature, setLatestSignature] = useState<string | null>(null)
+  backgroundIntervalMs = 30000,
+}: UseNeedsAttentionActivityInput): number => {
+  const [latestKeys, setLatestKeys] = useState<string[] | null>(null)
 
   useEffect(() => {
     if (!enabled) {
@@ -45,6 +50,8 @@ export const useNeedsAttentionActivity = ({
     const isDocumentVisible = () =>
       typeof document === 'undefined' || document.visibilityState !== 'hidden'
 
+    const nextDelay = () => (isDocumentVisible() ? intervalMs : backgroundIntervalMs)
+
     const clearPending = () => {
       if (timeoutId) {
         clearTimeout(timeoutId)
@@ -54,11 +61,10 @@ export const useNeedsAttentionActivity = ({
 
     const scheduleNextPoll = () => {
       clearPending()
-      // Don't keep a timer alive while backgrounded; visibilitychange restarts polling.
-      if (cancelled || !isDocumentVisible()) {
+      if (cancelled) {
         return
       }
-      timeoutId = setTimeout(poll, intervalMs)
+      timeoutId = setTimeout(poll, nextDelay())
     }
 
     const poll = async () => {
@@ -71,14 +77,14 @@ export const useNeedsAttentionActivity = ({
           return
         }
 
-        setLatestSignature(
-          inboxSignature(
+        setLatestKeys(
+          inboxItemKeys(
             approvalsResult.decisions,
             selectHumanOwnedConversations(conversationsResult.conversations),
           ),
         )
       } catch {
-        // The indicator is best-effort; a failed poll just leaves the previous signature in place.
+        // The indicator is best-effort; a failed poll just leaves the previous keys in place.
       }
 
       scheduleNextPoll()
@@ -89,11 +95,12 @@ export const useNeedsAttentionActivity = ({
         return
       }
       if (isDocumentVisible()) {
-        // Back in the foreground: catch up immediately, then resume the interval.
+        // Back in the foreground: catch up immediately, then resume the foreground interval.
         clearPending()
         void poll()
       } else {
-        clearPending()
+        // Backgrounded: keep polling, but reschedule at the slower cadence.
+        scheduleNextPoll()
       }
     }
 
@@ -111,11 +118,11 @@ export const useNeedsAttentionActivity = ({
         document.removeEventListener('visibilitychange', handleVisibilityChange)
       }
     }
-  }, [enabled, intervalMs])
+  }, [enabled, intervalMs, backgroundIntervalMs])
 
-  if (!enabled || latestSignature === null || baselineSignature === null) {
-    return false
+  if (!enabled || latestKeys === null || baselineKeys === null) {
+    return 0
   }
 
-  return latestSignature !== baselineSignature
+  return countNewInboxItems(baselineKeys, latestKeys)
 }

@@ -17,7 +17,7 @@ import type { ChatConversationSummary, PendingApprovalDecision } from '@/lib/api
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import {
   HUMAN_OWNED_CONVERSATION_PAGE_SIZE,
-  inboxSignature,
+  inboxItemKeys,
   type HumanOwnedConversationSummary,
   ownershipLabel,
   selectHumanOwnedConversations,
@@ -227,15 +227,16 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
 
   // While the initial load is in flight the displayed state isn't meaningful, so withhold the
   // baseline (null) to keep the activity indicator from firing before the inbox has settled.
-  const baselineSignature = useMemo(
-    () => (isLoading ? null : inboxSignature(decisions, humanOwnedConversations)),
+  const baselineKeys = useMemo(
+    () => (isLoading ? null : inboxItemKeys(decisions, humanOwnedConversations)),
     [decisions, humanOwnedConversations, isLoading],
   )
-  const hasNewActivity = useNeedsAttentionActivity({
-    baselineSignature,
+  const newItemCount = useNeedsAttentionActivity({
+    baselineKeys,
     // Pause the background poll while a conversation is open; closing it already triggers a refresh.
     enabled: selectedItem === null,
   })
+  const hasNewActivity = newItemCount > 0
 
   const handleRefresh = useCallback(() => {
     void refreshInbox()
@@ -262,12 +263,8 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
             onClick={handleRefresh}
             disabled={isLoading}
           >
-            {hasNewActivity ? (
-              <span className="inline-block h-2 w-2 rounded-full bg-primary-foreground" aria-hidden />
-            ) : (
-              <RefreshCw className="h-4 w-4" aria-hidden />
-            )}
-            {hasNewActivity ? 'New activity · Refresh' : 'Refresh'}
+            <RefreshCw className="h-4 w-4" aria-hidden />
+            {hasNewActivity ? `Refresh (${newItemCount})` : 'Refresh'}
           </Button>
         }
       >

@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import type { ChatConversationSummary, ConversationOwnership, PendingApprovalDecision } from '@/lib/api-types'
 import {
-  inboxSignature,
+  countNewInboxItems,
+  inboxItemKeys,
   ownershipLabel,
   selectHumanOwnedConversations,
   type HumanOwnedConversationSummary,
@@ -100,57 +101,74 @@ const humanOwned = (
   ...overrides,
 })
 
-describe('inboxSignature', () => {
+describe('inboxItemKeys', () => {
   it('is stable regardless of item order', () => {
     const a = decision({ handle: 'a', agentId: 'agent-1' })
     const b = decision({ handle: 'b', agentId: 'agent-2' })
     const c1 = humanOwned({ id: 'c-1' })
     const c2 = humanOwned({ id: 'c-2' })
 
-    expect(inboxSignature([a, b], [c1, c2])).toBe(inboxSignature([b, a], [c2, c1]))
-  })
-
-  it('changes when a new pending approval arrives', () => {
-    const before = inboxSignature([decision({ handle: 'a' })], [])
-    const after = inboxSignature([decision({ handle: 'a' }), decision({ handle: 'b' })], [])
-
-    expect(after).not.toBe(before)
-  })
-
-  it('changes when an approval is resolved away', () => {
-    const before = inboxSignature([decision({ handle: 'a' }), decision({ handle: 'b' })], [])
-    const after = inboxSignature([decision({ handle: 'a' })], [])
-
-    expect(after).not.toBe(before)
+    expect(inboxItemKeys([a, b], [c1, c2])).toEqual(inboxItemKeys([b, a], [c2, c1]))
   })
 
   it('distinguishes identical handles across different agents', () => {
-    const sameAgent = inboxSignature([decision({ handle: 'a', agentId: 'agent-1' })], [])
-    const otherAgent = inboxSignature([decision({ handle: 'a', agentId: 'agent-2' })], [])
+    const sameAgent = inboxItemKeys([decision({ handle: 'a', agentId: 'agent-1' })], [])
+    const otherAgent = inboxItemKeys([decision({ handle: 'a', agentId: 'agent-2' })], [])
 
-    expect(otherAgent).not.toBe(sameAgent)
+    expect(otherAgent).not.toEqual(sameAgent)
   })
 
-  it('changes when a human-owned conversation receives new activity', () => {
-    const before = inboxSignature([], [humanOwned({ id: 'c-1', updatedAt: '2026-06-19T10:00:00.000Z' })])
-    const after = inboxSignature([], [humanOwned({ id: 'c-1', updatedAt: '2026-06-19T10:05:00.000Z' })])
+  it('changes the key when a human-owned conversation receives new activity', () => {
+    const before = inboxItemKeys([], [humanOwned({ id: 'c-1', updatedAt: '2026-06-19T10:00:00.000Z' })])
+    const after = inboxItemKeys([], [humanOwned({ id: 'c-1', updatedAt: '2026-06-19T10:05:00.000Z' })])
 
-    expect(after).not.toBe(before)
+    expect(after).not.toEqual(before)
   })
 
-  it('changes when ownership transitions on an existing conversation', () => {
-    const before = inboxSignature([], [humanOwned({ id: 'c-1', ownership: ownership({ version: 1 }) })])
-    const after = inboxSignature([], [humanOwned({ id: 'c-1', ownership: ownership({ version: 2 }) })])
+  it('changes the key when ownership transitions on an existing conversation', () => {
+    const before = inboxItemKeys([], [humanOwned({ id: 'c-1', ownership: ownership({ version: 1 }) })])
+    const after = inboxItemKeys([], [humanOwned({ id: 'c-1', ownership: ownership({ version: 2 }) })])
 
-    expect(after).not.toBe(before)
+    expect(after).not.toEqual(before)
   })
 
-  it('is identical for unchanged inbox state', () => {
-    const decisions = [decision({ handle: 'a' })]
-    const conversations = [humanOwned({ id: 'c-1' })]
+  it('namespaces approval and conversation keys so they cannot collide', () => {
+    const keys = inboxItemKeys([decision({ handle: 'x' })], [humanOwned({ id: 'c-1' })])
 
-    expect(inboxSignature(decisions, conversations)).toBe(
-      inboxSignature([decision({ handle: 'a' })], [humanOwned({ id: 'c-1' })]),
+    expect(keys.some((key) => key.startsWith('approval:'))).toBe(true)
+    expect(keys.some((key) => key.startsWith('conversation:'))).toBe(true)
+  })
+})
+
+describe('countNewInboxItems', () => {
+  it('counts approvals and conversations that arrived after the baseline', () => {
+    const baseline = inboxItemKeys([decision({ handle: 'a' })], [humanOwned({ id: 'c-1' })])
+    const latest = inboxItemKeys(
+      [decision({ handle: 'a' }), decision({ handle: 'b' })],
+      [humanOwned({ id: 'c-1' }), humanOwned({ id: 'c-2' })],
     )
+
+    expect(countNewInboxItems(baseline, latest)).toBe(2)
+  })
+
+  it('counts an updated conversation as one new item', () => {
+    const baseline = inboxItemKeys([], [humanOwned({ id: 'c-1', updatedAt: '2026-06-19T10:00:00.000Z' })])
+    const latest = inboxItemKeys([], [humanOwned({ id: 'c-1', updatedAt: '2026-06-19T10:05:00.000Z' })])
+
+    expect(countNewInboxItems(baseline, latest)).toBe(1)
+  })
+
+  it('does not count removals such as a resolved approval', () => {
+    const baseline = inboxItemKeys([decision({ handle: 'a' }), decision({ handle: 'b' })], [])
+    const latest = inboxItemKeys([decision({ handle: 'a' })], [])
+
+    expect(countNewInboxItems(baseline, latest)).toBe(0)
+  })
+
+  it('returns zero for an unchanged inbox', () => {
+    const baseline = inboxItemKeys([decision({ handle: 'a' })], [humanOwned({ id: 'c-1' })])
+    const latest = inboxItemKeys([decision({ handle: 'a' })], [humanOwned({ id: 'c-1' })])
+
+    expect(countNewInboxItems(baseline, latest)).toBe(0)
   })
 })

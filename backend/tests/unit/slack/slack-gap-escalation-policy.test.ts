@@ -75,6 +75,7 @@ const makeHandler = (input: {
   const posted = vi.fn();
   const outbox = input.outbox ?? { enqueue: vi.fn(async () => ({ id: "action-1", duplicate: false })) };
   return {
+    chat,
     outbox,
     posted,
     handler: new SlackMessageHandler({
@@ -104,13 +105,18 @@ const event = {
 
 describe("Slack gap escalation policy", () => {
   it("enqueues slack.post for typed no_context outcome without parsing answer text", async () => {
-    const { handler, outbox } = makeHandler({
+    const { chat, handler, outbox } = makeHandler({
       outcome: "no_context",
       answer: "Here is a totally confident answer that should not matter.",
     });
 
     await handler.handleMessageIm(event);
 
+    expect(chat.answer).toHaveBeenCalledWith(expect.objectContaining({
+      agentId: "66666666-6666-6666-6666-666666666666",
+      workspaceId: installation.workspaceId,
+      sourceChannel: "slack",
+    }));
     expect(outbox.enqueue).toHaveBeenCalledWith(expect.objectContaining({
       type: "slack.post",
       idempotencyKey: "slack:gap_escalation:EvGap:44444444-4444-4444-4444-444444444444",

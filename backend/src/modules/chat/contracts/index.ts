@@ -39,6 +39,7 @@ export type {
 export interface ChatAnswerPort {
   answer(input: {
     workspaceId: string;
+    agentId?: string | null;
     accountId?: string;
     conversationId?: string;
     query: string;

@@ -133,6 +133,7 @@ export class SlackMessageHandler {
     );
     const response = await this.options.chat.answer({
       workspaceId: installation.workspaceId,
+      agentId: binding.answeringAgentId,
       conversationId: existingLink?.conversationId,
       query,
       sourceChannel: "slack",

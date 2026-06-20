@@ -151,6 +151,7 @@ export class IntegrationConnectionRepository implements IntegrationConnectionRep
       assignments.push(`${column} = $${params.length}`);
     };
 
+    if ("oauthConnectionId" in input) addAssignment("oauth_connection_id", input.oauthConnectionId);
     if ("displayName" in input) addAssignment("display_name", input.displayName);
     if ("status" in input) addAssignment("status", input.status);
     if ("lastHealthStatus" in input) addAssignment("last_health_status", input.lastHealthStatus ?? null);

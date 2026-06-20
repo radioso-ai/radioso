@@ -26,6 +26,7 @@ class InMemoryOauthConnections implements Pick<OauthConnectionRepositoryPort, "c
   readonly rows = new Map<string, OauthConnectionRecord>();
   readonly created: CreateOauthConnectionInput[] = [];
   readonly tokenWrites: Array<{ workspaceId: string; id: string; credentialCiphertext: string; grantedScopes?: string[]; providerAccountId?: string | null }> = [];
+  readonly removed: Array<{ workspaceId: string; id: string }> = [];
 
   async create(input: CreateOauthConnectionInput): Promise<OauthConnectionRecord> {
     this.created.push(input);
@@ -73,6 +74,14 @@ class InMemoryOauthConnections implements Pick<OauthConnectionRepositoryPort, "c
     existing.providerAccountId = providerAccountId ?? existing.providerAccountId;
     existing.updatedAt = new Date();
     return { ...existing };
+  }
+
+  async remove(workspaceId: string, id: string): Promise<boolean> {
+    this.removed.push({ workspaceId, id });
+    const existing = this.rows.get(id);
+    if (!existing || existing.workspaceId !== workspaceId) return false;
+    this.rows.delete(id);
+    return true;
   }
 }
 
@@ -277,6 +286,48 @@ describe("SlackInstallationService", () => {
     expect(decryptOauthTokens(oauthConnections.tokenWrites.at(-1)!.credentialCiphertext, encryptionKey)).toMatchObject({
       accessToken: "xoxb-new",
     });
+  });
+
+  it("reinstalls from an OAuth callback by moving the installation to the authorized callback connection", async () => {
+    const { service, oauthConnections, integrationConnections } = createService();
+    const first = await service.saveInstallation({
+      workspaceId: "workspace-1",
+      teamId: "T123",
+      teamName: "Acme",
+      botUserId: "U_BOT",
+      botAccessToken: "xoxb-old",
+      grantedScopes: ["chat:write"],
+      answeringAgentId: "agent-1",
+    });
+    const callbackOauthConnection = await oauthConnections.create({
+      workspaceId: "workspace-1",
+      provider: "slack",
+      providerAccountId: "T123",
+      displayName: "Slack",
+      status: "pending",
+      grantedScopes: ["chat:write", "im:read"],
+    });
+
+    const updated = await service.saveInstallation({
+      workspaceId: "workspace-1",
+      oauthConnectionId: callbackOauthConnection.id,
+      teamId: "T123",
+      teamName: "Acme renamed",
+      botUserId: "U_BOT_2",
+      botAccessToken: "xoxb-new",
+      grantedScopes: ["chat:write", "im:read"],
+      answeringAgentId: "agent-2",
+    });
+
+    expect(updated.connection.id).toBe(first.connection.id);
+    expect(updated.connection.oauthConnectionId).toBe(callbackOauthConnection.id);
+    expect(oauthConnections.tokenWrites.at(-1)).toMatchObject({ id: callbackOauthConnection.id });
+    expect(integrationConnections.updates.at(-1)).toMatchObject({
+      oauthConnectionId: callbackOauthConnection.id,
+      displayName: "Acme renamed",
+      status: "authorized",
+    });
+    expect(oauthConnections.removed).toEqual([{ workspaceId: "workspace-1", id: first.oauthConnection.id }]);
   });
 
   it("rejects reinstalling the same Slack team into another workspace before mutating credentials", async () => {

@@ -80,7 +80,7 @@ export class SlackPlugin implements ConnectorPlugin {
     });
 
     context.http.mount(
-      "/events",
+      "/",
       createSlackWebhookRouter({
         logger: context.logger,
         signingSecret: this.options.signingSecret,

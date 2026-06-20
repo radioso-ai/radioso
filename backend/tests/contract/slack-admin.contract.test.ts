@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
@@ -70,6 +68,9 @@ describe("Slack admin REST contract", () => {
     const session = await issueTestSession(app, "slack-admin@example.com");
     const headers = adminSessionHeaders(session);
     const base = `/api/v1/workspaces/${session.workspaceId}/slack`;
+    const agentList = await request(app).get("/api/v1/agents").set(headers);
+    expect(agentList.status).toBe(200);
+    const answeringAgentId = agentList.body.agents[0].id as string;
 
     const initialStatus = await request(app).get(`${base}/install/status`).set(headers);
     expect(initialStatus.status).toBe(200);
@@ -102,7 +103,6 @@ describe("Slack admin REST contract", () => {
     expect(emptyBinding.status).toBe(200);
     expect(emptyBinding.body).toEqual({ answeringAgentId: null, escalationChannelId: null });
 
-    const answeringAgentId = randomUUID();
     const updatedBinding = await request(app)
       .put(`${base}/binding`)
       .set(headers)

@@ -5,6 +5,7 @@ export const createConnectorChatPort = (chatService: ChatAnswerPort): ConnectorC
   answer: async (input) => {
     const response = await chatService.answer({
       workspaceId: input.workspaceId,
+      agentId: input.agentId,
       conversationId: input.conversationId,
       query: input.query,
       stream: false,

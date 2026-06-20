@@ -10,7 +10,7 @@ import { validateBody } from "../middleware/validate.js";
 
 type SlackConnectionRouteDependencies = Pick<
   AppDependencies,
-  "env" | "authService" | "accountAccessService" | "workspaceSessionService" | "oauthConnectionService" | "slackInstallationService"
+  "env" | "authService" | "accountAccessService" | "workspaceSessionService" | "oauthConnectionService" | "slackInstallationService" | "agentService"
 >;
 
 const uuidSchema = z.string().uuid();
@@ -120,6 +120,7 @@ export const createSlackConnectionRoutes = (dependencies: SlackConnectionRouteDe
     async (req, res, next) => {
       try {
         const workspaceId = parseUuid(req.params.workspaceId, "workspaceId");
+        await dependencies.agentService.get(workspaceId, req.body.answeringAgentId);
         const binding = await dependencies.slackInstallationService.setBinding({
           workspaceId,
           answeringAgentId: req.body.answeringAgentId,

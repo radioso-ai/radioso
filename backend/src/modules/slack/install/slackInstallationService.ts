@@ -69,7 +69,9 @@ export interface SlackBindingRepositoryPort {
 }
 
 export interface SlackInstallationServiceOptions {
-  oauthConnections: Pick<OauthConnectionRepositoryPort, "create" | "findById" | "setOauthTokens">;
+  oauthConnections: Pick<OauthConnectionRepositoryPort, "create" | "findById" | "setOauthTokens"> & {
+    remove?: OauthConnectionRepositoryPort["remove"];
+  };
   integrationConnections: Pick<IntegrationConnectionRepositoryPort, "create" | "findById" | "update" | "remove">;
   installations: SlackInstallationRepositoryPort;
   bindings: SlackBindingRepositoryPort;
@@ -122,13 +124,17 @@ export class SlackInstallationService {
       throw conflict("Slack team is already installed in another workspace");
     }
 
-    const oauthConnectionId = existingInstallation
-      ? await this.oauthConnectionIdForInstallation(existingInstallation)
+    const existingConnection = existingInstallation
+      ? await this.integrationConnectionForInstallation(existingInstallation)
+      : null;
+    const previousOauthConnectionId = existingConnection?.oauthConnectionId ?? null;
+    const oauthConnectionId = existingConnection
+      ? input.oauthConnectionId ?? existingConnection.oauthConnectionId
       : input.oauthConnectionId ?? (await this.createOauthConnection(input.workspaceId, displayName, input.teamId)).id;
 
     const oauthConnection = await this.writeOauthTokens(input, oauthConnectionId, key, displayName);
-    const connection = existingInstallation
-      ? await this.refreshIntegrationConnection(existingInstallation, displayName)
+    const connection = existingConnection
+      ? await this.refreshIntegrationConnection(existingConnection, displayName, oauthConnection.id)
       : await this.options.integrationConnections.create({
           workspaceId: input.workspaceId,
           oauthConnectionId: oauthConnection.id,
@@ -137,6 +143,9 @@ export class SlackInstallationService {
           status: "authorized",
           config: {},
         });
+    if (previousOauthConnectionId && previousOauthConnectionId !== oauthConnection.id) {
+      await this.options.oauthConnections.remove?.(input.workspaceId, previousOauthConnectionId);
+    }
 
     const installation = await this.options.installations.upsert({
       connectionId: connection.id,
@@ -232,7 +241,9 @@ export class SlackInstallationService {
     return decryptOauthTokens(oauthConnection.credentialCiphertext, key).accessToken;
   }
 
-  private async oauthConnectionIdForInstallation(installation: SlackInstallationRecord): Promise<string> {
+  private async integrationConnectionForInstallation(
+    installation: SlackInstallationRecord,
+  ): Promise<IntegrationConnectionRecord> {
     const connection = await this.options.integrationConnections.findById(
       installation.workspaceId,
       installation.connectionId,
@@ -241,7 +252,7 @@ export class SlackInstallationService {
     if (!connection) {
       throw new Error("Slack installation connection was not found");
     }
-    return connection.oauthConnectionId;
+    return connection;
   }
 
   private async createOauthConnection(
@@ -281,13 +292,15 @@ export class SlackInstallationService {
   }
 
   private async refreshIntegrationConnection(
-    installation: SlackInstallationRecord,
+    connection: IntegrationConnectionRecord,
     displayName: string,
+    oauthConnectionId: string,
   ): Promise<IntegrationConnectionRecord> {
     const updated = await this.options.integrationConnections.update(
-      installation.workspaceId,
-      installation.connectionId,
+      connection.workspaceId,
+      connection.id,
       {
+        oauthConnectionId,
         displayName,
         status: "authorized",
         lastHealthStatus: "ok",

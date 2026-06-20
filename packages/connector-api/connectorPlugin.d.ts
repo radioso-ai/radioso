@@ -18,6 +18,7 @@ export interface ConnectorDatabasePort {
 export interface ConnectorChatPort {
   answer(input: {
     workspaceId: string;
+    agentId?: string;
     conversationId?: string;
     query: string;
     sourceChannel?: string | null;

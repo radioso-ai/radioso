@@ -117,23 +117,15 @@ function InboxRow({
       <DashboardTableCell className="w-40 text-sm text-muted-foreground">
         {formatApprovalCreatedAt(item.timestamp)}
       </DashboardTableCell>
-      <DashboardTableCell className="w-44">
+      <DashboardTableCell className="w-32">
         {item.assistantMessageId ? (
-          // Quality signals clear by triage. Approvals/handoffs resolve from the
-          // conversation drawer instead, so their action cell stays empty.
-          <div className="flex justify-end gap-2">
+          // Quality signals clear with a single Dismiss (sets the turn's triage state so
+          // it drops out of the inbox). Approvals/handoffs clear from the conversation
+          // drawer instead, so their action cell stays empty.
+          <div className="flex justify-end">
             <Button
               type="button"
               variant="outline"
-              size="sm"
-              disabled={isTriaging}
-              onClick={() => onTriage(item, 'resolved')}
-            >
-              Resolve
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
               size="sm"
               disabled={isTriaging}
               onClick={() => onTriage(item, 'dismissed')}
@@ -357,7 +349,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
                 <DashboardTableHeader>Item</DashboardTableHeader>
                 <DashboardTableHeader className="w-48">Detail</DashboardTableHeader>
                 <DashboardTableHeader className="w-40">Updated</DashboardTableHeader>
-                <DashboardTableHeader className="w-44">
+                <DashboardTableHeader className="w-32">
                   <span className="sr-only">Actions</span>
                 </DashboardTableHeader>
               </DashboardTableHead>

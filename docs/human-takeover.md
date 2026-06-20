@@ -193,9 +193,10 @@ The dashboard surfaces this work under **Activity**, which has three tabs:
   below. Quality signals are capped so they never crowd out critical work, and a
   signal whose conversation is already escalated is shown once, as the escalation.
   Opening a row shows the conversation with an action bar. A quality row can be
-  cleared in place with **Resolve** or **Dismiss** (it sets the turn's triage
-  state, so the row drops out of the inbox); approvals and handoffs clear by
-  resolving or handing back from the conversation drawer.
+  cleared in place with **Dismiss** (it sets the turn's triage state, so the row
+  drops out of the inbox); the full resolved/acknowledged/dismissed triage
+  workflow stays in the Quality tab. Approvals and handoffs clear by resolving or
+  handing back from the conversation drawer.
 - **All activity** — the full conversation history.
 - **Quality** — the full, paginated answer-quality backlog and per-turn triage
   (negative feedback, slow responses, and skill failures, in addition to the

@@ -1,3 +1,9 @@
+---
+title: "OSS And SaaS Observability"
+description: "Vendor-neutral observability strategy separating telemetry, analytics, and error reporting via internal contracts with OSS defaults and optional SaaS exporters."
+last_updated: 2026-06-06
+---
+
 # OSS And SaaS Observability
 
 This note defines a vendor-neutral observability strategy for Radioso that works for both open source deployments and Radioso-operated SaaS.

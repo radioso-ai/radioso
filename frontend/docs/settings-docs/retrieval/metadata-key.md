@@ -1,3 +1,9 @@
+---
+title: "Metadata Key"
+description: "Reference for specifying the metadata field a retrieval filter rule should inspect."
+last_updated: 2026-04-02
+---
+
 # Metadata Key
 
 ## Summary

@@ -1,3 +1,9 @@
+---
+title: "Trigger Mode"
+description: "Choice between always-on metadata rules and rules that activate only for matching conversation turns."
+last_updated: 2026-04-23
+---
+
 # Trigger Mode
 
 ## Summary

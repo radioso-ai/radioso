@@ -1,3 +1,9 @@
+---
+title: "Metadata Rules"
+description: "Per-agent retrieval rules that boost or filter document candidates using structured metadata fields like source and date range."
+last_updated: 2026-06-09
+---
+
 # Metadata Rules
 
 ## Summary

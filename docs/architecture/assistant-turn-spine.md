@@ -1,3 +1,9 @@
+---
+title: "Assistant Turn Spine"
+description: "Core structure of the assistant conversation loop covering phases of gathering, selecting, dispatching skills, composing replies, and routing."
+last_updated: 2026-06-13
+---
+
 # Assistant Turn Spine
 
 The assistant turn is a loop that gathers context, dispatches capabilities, and

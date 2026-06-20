@@ -1,3 +1,9 @@
+---
+title: "Webhook Skills"
+description: "API and contract for defining agent webhook skills that routines can call to deliver payloads to workspace destinations."
+last_updated: 2026-06-17
+---
+
 # Webhook Skills
 
 Webhook skills let an agent's routines call a configured workspace webhook

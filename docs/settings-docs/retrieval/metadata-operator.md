@@ -1,3 +1,9 @@
+---
+title: "Metadata Rule Operator"
+description: "Explanation of comparison operators (equality, containment, threshold) for filtering chunks by metadata field."
+last_updated: 2026-04-02
+---
+
 # Operator
 
 ## Summary

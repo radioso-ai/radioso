@@ -1,3 +1,9 @@
+---
+title: "Metadata Rule Value"
+description: "Reference for entering the comparison value a metadata filter rule should test against."
+last_updated: 2026-04-02
+---
+
 # Value
 
 ## Summary

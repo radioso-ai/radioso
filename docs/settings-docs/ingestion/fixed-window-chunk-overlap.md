@@ -1,3 +1,9 @@
+---
+title: "Chunk Overlap"
+description: "Chunking setting to reuse parts of previous chunks across boundaries for context preservation and retrieval continuity."
+last_updated: 2026-04-02
+---
+
 # Chunk Overlap
 
 ## Summary

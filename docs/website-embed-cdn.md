@@ -1,3 +1,9 @@
+---
+title: "Website embed assets on Cloud CDN"
+description: "Architecture for caching embed launcher and config on Cloud CDN to avoid cold-starting the frontend on every page view."
+last_updated: 2026-06-06
+---
+
 # Website embed assets on Cloud CDN
 
 ## What this is

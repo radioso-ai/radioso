@@ -1,3 +1,9 @@
+---
+title: "Performance Benchmarking"
+description: "Repo-owned benchmark harness with profiles for API smoke tests, ingestion, chat traffic, and baseline comparison."
+last_updated: 2026-04-14
+---
+
 # Performance Benchmarking
 
 Radioso now ships a repo-owned benchmark harness under `scripts/performance/`.

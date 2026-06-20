@@ -1,3 +1,9 @@
+---
+title: "Usage Event Taxonomy"
+description: "Specification of how model inference and embedding operations are tracked and recorded in usage events with surface names and operation lineage."
+last_updated: 2026-06-11
+---
+
 # Usage Event Taxonomy
 
 Usage events are internal cost and reliability records. They are not customer

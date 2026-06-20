@@ -1,3 +1,9 @@
+---
+title: "Radioso Skills RFC"
+description: "RFC defining workspace skills as product-facing units of work with consistent discovery, execution, and diagnostic contracts."
+last_updated: 2026-06-11
+---
+
 # Radioso Skills RFC
 
 Status: Draft  

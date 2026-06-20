@@ -1,3 +1,9 @@
+---
+title: "Maximum Chunk Size"
+description: "Workspace setting for limiting maximum semantic chunk size to improve retrieval precision and downstream cost."
+last_updated: 2026-05-17
+---
+
 # Maximum Chunk Size
 
 ## Summary

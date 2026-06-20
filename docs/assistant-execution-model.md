@@ -1,3 +1,9 @@
+---
+title: "Assistant Execution Model"
+description: "Design principle that live chat stays in the request path while background work like exports is deferred asynchronously."
+last_updated: 2026-05-16
+---
+
 # Assistant Execution Model
 
 Radioso uses two knowledge-agent execution classes on purpose, even though only the interactive path is shipped for the covered workflows in this feature.

@@ -1,3 +1,9 @@
+---
+title: "Query Rewrite"
+description: "How query rewrite converts conversational user messages into optimized semantic and lexical search queries for better recall."
+last_updated: 2026-06-09
+---
+
 # Query Rewrite
 
 ## Summary

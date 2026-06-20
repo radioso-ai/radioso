@@ -1,3 +1,9 @@
+---
+title: "Similarity Threshold"
+description: "Retrieval setting for minimum semantic similarity score to keep candidates in the pool, balancing precision and recall."
+last_updated: 2026-04-02
+---
+
 # Similarity Threshold
 
 ## Summary

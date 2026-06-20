@@ -1,3 +1,9 @@
+---
+title: "Metadata Rule Value Type"
+description: "Metadata rule setting specifying whether values are text, number, date, or boolean to determine valid comparison operators."
+last_updated: 2026-04-02
+---
+
 # Value Type
 
 ## Summary

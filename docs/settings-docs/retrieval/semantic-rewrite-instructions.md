@@ -1,3 +1,9 @@
+---
+title: "Semantic Rewrite Instructions"
+description: "Guidance for rewriting queries while preserving user intent, resolving vague references, and avoiding harmful drift."
+last_updated: 2026-06-09
+---
+
 # Semantic Rewrite Instructions
 
 ## Summary

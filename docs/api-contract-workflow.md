@@ -1,3 +1,9 @@
+---
+title: "API Contract Workflow"
+description: "Workflow for synchronizing OpenAPI contracts across backend, SDK, and MCP when API routes and schemas change."
+last_updated: 2026-05-14
+---
+
 # API Contract Workflow
 
 Radioso uses the backend OpenAPI document as the source contract for generated client surfaces.

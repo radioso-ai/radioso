@@ -1,3 +1,9 @@
+---
+title: "Minimum Chunk Size"
+description: "Chunking setting that prevents semantic chunking from creating tiny unusable text segments."
+last_updated: 2026-05-17
+---
+
 # Minimum Chunk Size
 
 ## Summary

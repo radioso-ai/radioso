@@ -1,3 +1,9 @@
+---
+title: "Trigger Instruction"
+description: "Operator-facing description of the question pattern that should activate a trigger-based metadata rule."
+last_updated: 2026-05-04
+---
+
 # Trigger Instruction
 
 ## Summary

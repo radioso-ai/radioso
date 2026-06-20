@@ -1,3 +1,9 @@
+---
+title: "Docs"
+description: "Guide to documentation sources for operators, SDK users, and contributors with links to key starting points and architecture materials."
+last_updated: 2026-06-18
+---
+
 # Docs
 
 This directory holds source material for operators, SDK users, and internal contributors. Some of it is published directly. Some of it supports the docs portal or settings UI.

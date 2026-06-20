@@ -1,3 +1,9 @@
+---
+title: "Reprocess Existing Documents"
+description: "How to requeue documents to apply updated ingestion settings to already-indexed content."
+last_updated: 2026-05-17
+---
+
 # Reprocess Existing Documents
 
 ## Summary

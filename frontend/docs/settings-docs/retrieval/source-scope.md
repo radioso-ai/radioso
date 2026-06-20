@@ -1,3 +1,9 @@
+---
+title: "Source Scope"
+description: "Per-agent setting limiting which workspace sources are eligible for grounded retrieval."
+last_updated: 2026-06-05
+---
+
 # Source Scope
 
 ## Summary

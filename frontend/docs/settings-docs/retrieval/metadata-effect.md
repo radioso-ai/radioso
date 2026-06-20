@@ -1,3 +1,9 @@
+---
+title: "Metadata Rule Effect"
+description: "Retrieval setting determining whether metadata rules boost matches softly or filter non-matches strictly."
+last_updated: 2026-04-02
+---
+
 # Effect
 
 ## Summary

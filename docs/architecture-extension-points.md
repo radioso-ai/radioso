@@ -1,3 +1,9 @@
+---
+title: "Architecture Extension Points"
+description: "How to design pluggable product behavior and module boundaries using extension categories, capability policy, and public surfaces."
+last_updated: 2026-05-27
+---
+
 # Architecture Extension Points
 
 Radioso keeps default product behavior in the core application and lets optional behavior enter through explicit extension points. The goal is to make future additions predictable without putting deployment-specific decisions in routes, frontend components, or product services.

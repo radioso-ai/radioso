@@ -1,3 +1,9 @@
+---
+title: "Conversational Routines"
+description: "The engine-level design of multi-turn flows with slots, steps, guards, terminals, activation ranking, and runtime slot extraction mechanics."
+last_updated: 2026-06-19
+---
+
 # Conversational Routines
 
 A Routine is a multi-step flow the assistant can run across several turns. It

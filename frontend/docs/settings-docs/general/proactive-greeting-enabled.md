@@ -1,3 +1,9 @@
+---
+title: "Proactive Greeting Enabled"
+description: "Toggle for opening fresh conversations with an assistant-first greeting before the user sends a message."
+last_updated: 2026-04-15
+---
+
 # Proactive Greeting Enabled
 
 ## Summary

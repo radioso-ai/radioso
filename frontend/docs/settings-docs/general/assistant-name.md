@@ -1,3 +1,9 @@
+---
+title: "Assistant Name"
+description: "Optional display name the assistant uses when it introduces itself in a new conversation."
+last_updated: 2026-04-15
+---
+
 # Assistant Name
 
 ## Summary

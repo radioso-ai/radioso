@@ -1,3 +1,9 @@
+---
+title: "MCP Client Setup"
+description: "Setup guide covering three MCP deployment modes, Cursor integration, Claude connectors, and authentication flows."
+last_updated: 2026-05-21
+---
+
 # MCP Client Setup
 
 ## Deployment Modes

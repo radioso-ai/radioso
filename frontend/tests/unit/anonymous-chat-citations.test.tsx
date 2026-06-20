@@ -19,7 +19,9 @@ vi.mock('@/lib/api', () => ({
     createSession: vi.fn(),
     getConversationDetail: vi.fn(),
     listConversations: vi.fn(),
+    streamConversationEvents: vi.fn(),
     streamMessage: vi.fn(),
+    tailConversation: vi.fn(),
   },
   readStoredAnonymousSessionId: vi.fn(() => null),
   readStoredEffectivePublicChatToken: vi.fn(() => null),
@@ -143,10 +145,15 @@ describe('anonymous chat citations', () => {
     publicChatApiMock.listConversations.mockResolvedValue(baseConversationList)
     publicChatApiMock.bootstrapConversation.mockResolvedValue(undefined)
     publicChatApiMock.getConversationDetail.mockReset()
+    publicChatApiMock.streamConversationEvents.mockImplementation(
+      () => new Promise<void>(() => {}),
+    )
     publicChatApiMock.streamMessage.mockReset()
+    publicChatApiMock.tailConversation.mockResolvedValue({ messages: [], cursor: null })
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     if (mounted) {
       act(() => {
         mounted?.root.unmount()
@@ -184,6 +191,82 @@ describe('anonymous chat citations', () => {
     })
   })
 
+  it('does not recover the previous assistant message when HITL suppresses AI output', async () => {
+    publicChatApiMock.streamMessage.mockImplementation(async (_token, _data, handlers) => {
+      const completion = {
+        conversationId: 'conversation-1',
+        assistantMessageId: '',
+        answer: '',
+        citations: [],
+        answerSegments: [],
+        suggestions: [],
+        ownership: {
+          state: 'human_owned' as const,
+          suppressed: true,
+        },
+      }
+
+      handlers.onConversation?.({ conversationId: completion.conversationId })
+      handlers.onDone?.(completion)
+      return completion
+    })
+
+    let latestMessages: ChatMessage[] = []
+    mounted = renderProvider({
+      sendMessage: 'yes',
+      onMessages: (messages) => {
+        latestMessages = messages
+      },
+    })
+
+    await waitFor(() => {
+      expect(publicChatApiMock.streamMessage).toHaveBeenCalledTimes(1)
+      expect(latestMessages.map((message) => message.content)).toEqual(['yes'])
+    })
+
+    expect(publicChatApiMock.getConversationDetail).not.toHaveBeenCalled()
+    expect(latestMessages.some((message) => message.role === 'assistant')).toBe(false)
+  })
+
+  it('renders the localized waiting message when HITL suppresses AI output', async () => {
+    publicChatApiMock.streamMessage.mockImplementation(async (_token, _data, handlers) => {
+      const completion = {
+        conversationId: 'conversation-1',
+        assistantMessageId: '',
+        answer: 'Un compañero se está uniendo, por favor espera.',
+        citations: [],
+        answerSegments: [],
+        suggestions: [],
+        ownership: {
+          state: 'human_owned' as const,
+          suppressed: true,
+        },
+      }
+
+      handlers.onConversation?.({ conversationId: completion.conversationId })
+      handlers.onDone?.(completion)
+      return completion
+    })
+
+    let latestMessages: ChatMessage[] = []
+    mounted = renderProvider({
+      sendMessage: 'gracias',
+      onMessages: (messages) => {
+        latestMessages = messages
+      },
+    })
+
+    await waitFor(() => {
+      expect(publicChatApiMock.streamMessage).toHaveBeenCalledTimes(1)
+      expect(latestMessages.map((message) => message.content)).toEqual([
+        'gracias',
+        'Un compañero se está uniendo, por favor espera.',
+      ])
+    })
+
+    expect(publicChatApiMock.getConversationDetail).not.toHaveBeenCalled()
+  })
+
   it('preserves citation artifacts from restored public chat history', async () => {
     publicChatApiMock.listConversations.mockResolvedValue({
       ...baseConversationList,
@@ -205,6 +288,7 @@ describe('anonymous chat citations', () => {
       messageWindowLimit: 10,
       hasOlderMessages: false,
       nextCursor: null,
+      tailCursor: 'assistant-1-cursor',
       messages: [
         {
           id: 'assistant-1',
@@ -231,6 +315,99 @@ describe('anonymous chat citations', () => {
       expect(assistant?.answerSegments).toEqual(citedAnswer.answerSegments)
     })
   })
+
+  it('streams active public conversation notifications for human replies', async () => {
+    let streamHandler: ((event: { type: 'ready' | 'message.created'; conversationId: string; messageId?: string; createdAt?: string }) => void) | null = null
+    publicChatApiMock.listConversations.mockResolvedValue({
+      ...baseConversationList,
+      conversations: [{ id: 'conversation-1', title: 'Policy', updatedAt: '2026-06-01T10:00:00.000Z' }],
+    })
+    publicChatApiMock.getConversationDetail.mockResolvedValue({
+      conversationId: 'conversation-1',
+      workspaceId: 'workspace-1',
+      agentId: null,
+      sourceChannel: 'website_embed',
+      sourceOrigin: 'https://site.example',
+      createdAt: '2026-06-01T10:00:00.000Z',
+      updatedAt: '2026-06-01T10:00:00.000Z',
+      messageCount: 2,
+      userMessageCount: 1,
+      assistantMessageCount: 1,
+      messagesTotal: 2,
+      messageWindowOffset: 0,
+      messageWindowLimit: 10,
+      hasOlderMessages: false,
+      nextCursor: null,
+      tailCursor: 'assistant-1-cursor',
+      messages: [
+        {
+          id: 'user-1',
+          role: 'user',
+          source: 'customer',
+          content: 'Can a person help?',
+          createdAt: '2026-06-01T10:00:00.000Z',
+        },
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          source: 'ai_agent',
+          content: 'I can connect you.',
+          createdAt: '2026-06-01T10:00:01.000Z',
+          suggestions: [],
+        },
+      ],
+    })
+    publicChatApiMock.tailConversation
+      .mockResolvedValueOnce({ messages: [], cursor: 'assistant-1-cursor' })
+      .mockResolvedValueOnce({
+        cursor: 'cursor-2',
+        messages: [
+          {
+            id: 'human-1',
+            role: 'assistant',
+            source: 'human_agent',
+            content: 'Human reply',
+            createdAt: '2026-06-01T10:00:05.000Z',
+          },
+        ],
+      })
+    publicChatApiMock.streamConversationEvents.mockImplementation(async (_token, _conversationId, handlers) => {
+      streamHandler = handlers.onEvent ?? null
+      handlers.onEvent?.({ type: 'ready', conversationId: 'conversation-1' })
+      await new Promise<void>(() => {})
+    })
+
+    let latestMessages: ChatMessage[] = []
+    mounted = renderProvider({
+      onMessages: (messages) => {
+        latestMessages = messages
+      },
+    })
+
+    await waitFor(() => {
+      expect(publicChatApiMock.tailConversation).toHaveBeenCalledWith('public-chat-token', 'conversation-1', {
+        limit: 25,
+        cursor: 'assistant-1-cursor',
+      })
+    })
+
+    await act(async () => {
+      streamHandler?.({
+        type: 'message.created',
+        conversationId: 'conversation-1',
+        messageId: 'human-1',
+        createdAt: '2026-06-01T10:00:05.000Z',
+      })
+    })
+
+    await waitFor(() => {
+      expect(latestMessages.map((message) => message.content)).toContain('Human reply')
+    })
+    expect(publicChatApiMock.tailConversation).toHaveBeenLastCalledWith('public-chat-token', 'conversation-1', {
+      limit: 25,
+      cursor: 'assistant-1-cursor',
+    })
+  }, 10_000)
 
   it('preserves citation artifacts from public bootstrap greetings', async () => {
     publicChatApiMock.listConversations.mockResolvedValue({

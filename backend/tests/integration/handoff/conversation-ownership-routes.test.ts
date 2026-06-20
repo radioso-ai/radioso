@@ -71,10 +71,15 @@ describe("conversation ownership routes", () => {
       }),
     }));
 
+    const publishedConversationEvents: unknown[] = [];
+    const unsubscribeConversationEvents = dependencies.publicConversationEventBus.subscribe(conversation.id, (event) => {
+      publishedConversationEvents.push(event);
+    });
     const reply = await request(app)
       .post(`/api/v1/conversations/${conversation.id}/reply`)
       .set(adminSessionHeaders(member))
       .send({ message: "Dana here. I can take this from here.", expectedVersion: 1 });
+    unsubscribeConversationEvents();
 
     expect(reply.status).toBe(201);
     expect(reply.body.message).toMatchObject({
@@ -91,6 +96,15 @@ describe("conversation ownership routes", () => {
       },
     });
     expect(complete).not.toHaveBeenCalled();
+    expect(publishedConversationEvents).toEqual([
+      {
+        type: "message.created",
+        conversationId: conversation.id,
+        workspaceId: member.workspaceId,
+        messageId: reply.body.message.id,
+        createdAt: reply.body.message.createdAt,
+      },
+    ]);
     expect(repositories.auditEventRepository.items).toContainEqual(expect.objectContaining({
       eventType: "hitl.ownership",
       metadata: expect.objectContaining({

@@ -15,6 +15,7 @@ import {
   type ApplicationModule,
 } from "../composition/index.js";
 import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../modules/agents/public.js";
+import { InMemoryPublicConversationEventBus } from "../../modules/chat/composition.js";
 import { RoutineDefinitionService, RoutineDraftAssistService } from "../../modules/routines/public.js";
 import { createDirectiveCoherenceChecker, scopeTag } from "@radioso/conversation-defaults";
 import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloudCdnEmbedConfigCacheInvalidator.js";
@@ -105,6 +106,7 @@ const createConversationModelGateway = (pipeline: ModelInferencePipeline): Conve
 
 export const buildDependencies = (env: Env = getEnv(), options: BuildDependenciesOptions = {}): AppDependencies => {
   const logger = buildLogger();
+  const publicConversationEventBus = new InMemoryPublicConversationEventBus();
   const composition = createDefaultApplicationComposition({
     logger,
     env,
@@ -262,6 +264,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     access.accessGrantService,
   );
   const chat = buildChatServices({
+    accountAccessService: access.accountAccessService,
     agentService,
     auditEventRepository: infrastructure.auditEventRepository,
     auditService: infrastructure.auditService,
@@ -281,6 +284,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     telemetryService: infrastructure.telemetryService,
     webhookDestinations,
     productAnalyticsService: infrastructure.productAnalyticsService,
+    publicConversationEventBus,
     routineDefinitionRepository: repositories.routineDefinitionRepository,
     customerEmailConnectionRepository: repositories.customerEmailConnectionRepository,
     emailSkillDefinitionRepository: repositories.emailSkillDefinitionRepository,
@@ -467,6 +471,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     usageLimitPolicy: infrastructure.usageLimitPolicy,
     organizationCreationGuard,
     publicChatActionAdvertiser: chat.publicChatActionAdvertiser,
+    publicConversationEventBus,
     contactHistoryProvider: chat.contactHistoryProvider,
     applicationRouteMounts: composition.routeMounts,
     applicationModules: composition.lifecycle,
@@ -511,6 +516,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentDeletionService: documents.documentDeletionService,
     documentStorage: documents.documentStorage,
     chatService: chat.chatService,
+    approvalDecisionService: chat.approvalDecisionService,
     workbenchReplayRunner: chat.workbenchReplayRunner,
     chatBootstrapService: chat.chatBootstrapService,
     chatHistoryService: chat.chatHistoryService,

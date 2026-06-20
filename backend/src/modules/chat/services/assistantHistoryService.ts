@@ -29,7 +29,22 @@ export class AssistantHistoryService {
     conversationId: string,
     input: { limit: number; offset?: number; cursor?: string },
   ) {
-    return this.chatHistoryService.getConversation(workspaceId, conversationId, input, { includeAnswerFeedback: true });
+    // Dashboard surface: include ownership (operator-only). The public visitor path calls
+    // chatHistoryService.getConversation directly and never sets this.
+    return this.chatHistoryService.getConversation(workspaceId, conversationId, input, {
+      includeAnswerFeedback: true,
+      includeOwnership: true,
+    });
+  }
+
+  tailConversation(
+    workspaceId: string,
+    conversationId: string,
+    input: { limit: number; cursor?: string },
+  ) {
+    return this.chatHistoryService.tailConversation(workspaceId, conversationId, input, {
+      includeOwnership: true,
+    });
   }
 
   getContactRequest(

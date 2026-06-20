@@ -9,6 +9,8 @@ import {
   ContactSendActionHandler,
   FetchContactWebhookHttpClient,
   HandoffNotifyActionHandler,
+  ApprovalRequestActionHandler,
+  APPROVAL_REQUEST_ACTION_TYPE,
   WorkspaceOwnerContactRecipientResolver,
   type PublicChatActionAdvertiserPort,
   type PublicChatIntakeAction,
@@ -107,6 +109,26 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
           new AccountMembershipRepository(database),
         );
         return new HandoffNotifyActionHandler(
+          mailService,
+          new ConfiguredContactDeliveryResolver(
+            new ConversationRepository(database),
+            new AgentRepository(database),
+            ownerFallback,
+          ),
+          logger,
+          new FetchContactWebhookHttpClient(assertPublicWebsiteUrl),
+        );
+      },
+    });
+    context.registerActionHandler({
+      type: APPROVAL_REQUEST_ACTION_TYPE,
+      requiredCapabilities: [capabilityNames.humanContact.request],
+      handler: ({ database, logger, mailService, assertPublicWebsiteUrl }) => {
+        const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
+          new WorkspaceRepository(database),
+          new AccountMembershipRepository(database),
+        );
+        return new ApprovalRequestActionHandler(
           mailService,
           new ConfiguredContactDeliveryResolver(
             new ConversationRepository(database),

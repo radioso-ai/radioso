@@ -10,6 +10,7 @@ import type { ConversationRoutineStore, RoutineState } from "@radioso/conversati
 import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
 import { AccessGrantService, DefaultOriginMatcher } from "../../src/modules/accessGrants/public.js";
 import { AccountInvitationService } from "../../src/modules/account/services/accountInvitationService.js";
+import { ApprovalDecisionService } from "../../src/modules/approvals/public.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { EmailVerificationService } from "../../src/modules/auth/services/emailVerificationService.js";
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
@@ -138,6 +139,7 @@ import {
   NoopPublicChatActionAdvertiser,
   type PublicChatActionAdvertiserPort,
 } from "../../src/modules/chat/services/publicChatActionAdvertiser.js";
+import { InMemoryPublicConversationEventBus } from "../../src/modules/chat/composition.js";
 import { NoopContactHistoryProvider } from "../../src/modules/chat/services/contactHistoryProvider.js";
 import type { AnswerFeedbackHistoryProviderPort } from "../../src/modules/chat/services/answerFeedbackHistoryProvider.js";
 import {
@@ -927,6 +929,7 @@ export const createTestDependencies = (overrides: {
     new InMemoryHistoryItemsRepository(conversationRepository, auditEventRepository),
     new NoopContactHistoryProvider(),
     overrides.answerFeedbackHistoryProvider,
+    conversationOwnershipRepository,
   );
   const publicChatActionAdvertisers = [
     ...(overrides.publicChatActionAdvertiser ? [overrides.publicChatActionAdvertiser] : []),
@@ -1057,6 +1060,7 @@ export const createTestDependencies = (overrides: {
     { logger },
   );
   const assistantHistoryService = new AssistantHistoryService(chatHistoryService);
+  const publicConversationEventBus = new InMemoryPublicConversationEventBus();
   const retrievalSearchService = new RetrievalSearchService(retrievalPipeline);
   const retrievalAnswerService = new RetrievalAnswerService({
     retrievalPipeline,
@@ -1072,6 +1076,21 @@ export const createTestDependencies = (overrides: {
     publicChatBaseUrl: env.PUBLIC_CHAT_BASE_URL,
   });
   const retrievalDefaultsProvider = createSystemRetrievalDefaultsProvider();
+  const approvalDecisionService = new ApprovalDecisionService(
+    {
+      listPending: async () => [],
+      loadByHandle: async () => null,
+      resolveInTransaction: async () => null,
+    },
+    {
+      resume: async () => {
+        throw new Error("approval_resume_not_configured");
+      },
+    },
+    {
+      resolveWorkspaceRole: (caller) => accountAccessService.resolveWorkspaceRole(caller),
+    },
+  );
   const dependencies: AppDependencies = {
     env,
     logger,
@@ -1083,6 +1102,7 @@ export const createTestDependencies = (overrides: {
     usageLimitPolicy,
     organizationCreationGuard,
     publicChatActionAdvertiser,
+    publicConversationEventBus,
     contactHistoryProvider: new NoopContactHistoryProvider(),
     applicationRouteMounts: overrides.applicationRouteMounts ?? [],
     applicationModules: new ApplicationModuleCoordinator({
@@ -1167,6 +1187,7 @@ export const createTestDependencies = (overrides: {
     documentDeletionService,
     documentStorage,
     chatService,
+    approvalDecisionService,
     workbenchReplayRunner: workbenchReplayRunner as any,
     actionDispatchWorker,
     chatBootstrapService,

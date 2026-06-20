@@ -25,6 +25,10 @@ export type ParsedProseDoc = {
   trigger: string | null
   variables: ChipDocVariable[]
   paragraphs: ProseParagraph[]
+  // True only when the text opened with our fenced frontmatter carrying a recognized
+  // routine key (name/trigger/vars). This is the signal that the paste is a whole routine
+  // and may replace the document — a bare leading `---` (e.g. a markdown doc) is not.
+  hadFrontmatter: boolean
 }
 
 // The chip fields the token serializer reads. Both a ProseSegment chip and a live
@@ -335,6 +339,7 @@ export const parseProseDoc = (
   const lines = text.replace(/\r\n/g, '\n').split('\n')
   let name: string | null = null
   let trigger: string | null = null
+  let hadFrontmatter = false
   const declaredTypes = new Map<string, RoutineSlotType>()
 
   let bodyStart = 0
@@ -346,9 +351,10 @@ export const parseProseDoc = (
       if (sep !== -1) {
         const key = line.slice(0, sep).trim()
         const value = line.slice(sep + 1).trim()
-        if (key === 'name') name = value
-        else if (key === 'trigger') trigger = value
+        if (key === 'name') { name = value; hadFrontmatter = true }
+        else if (key === 'trigger') { trigger = value; hadFrontmatter = true }
         else if (key === 'vars') {
+          hadFrontmatter = true
           for (const declaration of splitList(value)) {
             const [varKey, varType] = declaration.split(':').map((part) => part.trim())
             if (varKey && varType && (SLOT_TYPES as readonly string[]).includes(varType)) {
@@ -388,5 +394,5 @@ export const parseProseDoc = (
     type: declaredTypes.get(id) ?? 'text',
   }))
 
-  return { name, trigger, variables, paragraphs }
+  return { name, trigger, variables, paragraphs, hadFrontmatter }
 }

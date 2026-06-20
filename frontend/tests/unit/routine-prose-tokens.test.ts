@@ -200,4 +200,16 @@ describe('routine prose token grammar', () => {
     expect(looksLikeRoutineProse('Finish and -> handoff')).toBe(true)
     expect(looksLikeRoutineProse('Just some pasted sentence with no tokens.')).toBe(false)
   })
+
+  // The paste handler replaces the whole document only when `hadFrontmatter` is set, so a
+  // foreign doc that merely opens with `---` is inserted, not destructive.
+  it('reports hadFrontmatter only for our fenced routine frontmatter', () => {
+    expect(parseProseDoc('---\nname: Greeter\ntrigger: hi\n---\nAsk @x.', () => false).hadFrontmatter).toBe(true)
+    expect(parseProseDoc('---\nvars: amount:number\n---\nCheck @amount.', () => false).hadFrontmatter).toBe(true)
+    // A markdown doc with unrelated frontmatter and an @mention still parses (it looks like
+    // prose) but must NOT be treated as a whole-routine replace.
+    expect(parseProseDoc('---\ntitle: Notes\ntags: x\n---\nPing @world about it.', () => false).hadFrontmatter).toBe(false)
+    // A bare fragment with a token but no fence is an insert, never a replace.
+    expect(parseProseDoc('Ask for @email then -> handoff', () => false).hadFrontmatter).toBe(false)
+  })
 })

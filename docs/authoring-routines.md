@@ -286,9 +286,11 @@ immutable version that the chat runtime can run.
 ## Copy a routine to text
 
 You can copy a routine out of the **Prose** view and paste it back later without
-losing its chips. Select the prose and copy; Radioso puts the whole routine on
-the clipboard as plain text, including the name and trigger. Paste it into a
-note, a document, or a message — anywhere you keep text.
+losing its chips. Select the whole routine (Select All) and copy; Radioso puts
+the whole routine on the clipboard as plain text, including the name and trigger.
+Paste it into a note, a document, or a message — anywhere you keep text.
+(Copying only part of the prose copies that selection as ordinary text, the way
+any editor does.)
 
 In practice the text is the routine written with simple markers instead of
 chips:
@@ -299,8 +301,7 @@ chips:
 - a decided-in-code check is `[if amount >= 100]`
 
 To restore the routine, paste the text back into the prose editor. The markers
-become chips again, and the name and trigger fill in from the text. Copy in the
-prose editor always copies the whole routine, since the routine is its unit.
+become chips again, and the name and trigger fill in from the text.
 
 The text carries names, not internal ids. Pasting into the same agent resolves
 every skill cleanly. Pasting into a different agent that does not have a referenced

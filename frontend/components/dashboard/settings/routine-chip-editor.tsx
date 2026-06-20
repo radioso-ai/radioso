@@ -782,11 +782,24 @@ function $readProseParagraphs(): ProseParagraph[] {
 const escapeHtml = (value: string): string =>
   value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
-// Make the routine copy/paste losslessly through an external file. Copy serializes the
-// whole routine (frontmatter + chip tokens) onto the clipboard's text flavours — copy in
-// this editor always copies the whole routine, since that's its unit. Paste detects that
-// grammar and rebuilds the chips, lifting the frontmatter back into the name/trigger
-// fields and recreating any variables the pasted text referenced.
+// True when the author has the entire routine selected. The routine is the unit we export,
+// so copy only takes over the clipboard for a whole-document selection; a partial selection
+// falls through to Lexical's native clipboard, which round-trips losslessly in-app and
+// copies an ordinary text snippet to other apps. (Chips contribute the same text on both
+// sides of the comparison, so an empty-bodied routine compares as a full selection too.)
+function $selectionSpansDocument(): boolean {
+  const selection = $getSelection()
+  if (!$isRangeSelection(selection) || selection.isCollapsed()) return false
+  const root = $getRoot()
+  return root.getTextContentSize() === 0 || selection.getTextContent() === root.getTextContent()
+}
+
+// Make the routine copy/paste losslessly through an external file. Copying the whole
+// routine serializes its frontmatter + chip tokens onto the clipboard's text flavours;
+// paste detects that grammar and rebuilds the chips, lifting the frontmatter back into the
+// name/trigger fields and recreating any variables the pasted text referenced. Cut is left
+// to Lexical's native handler on purpose: cutting is an in-editor move (lossless via the
+// native clipboard flavour), whereas exporting a routine as portable text is the copy path.
 function ClipboardRoundTripPlugin({
   name,
   trigger,
@@ -805,16 +818,20 @@ function ClipboardRoundTripPlugin({
   const [editor] = useLexicalComposerContext()
   const skillCatalog = useContext(RoutineSkillCatalogContext)
 
-  // Commands register once; read the latest props through a ref so copy emits the current
-  // header/variables and paste resolves against the current skill catalog. The ref is
-  // synced after each render (not during) so the handlers always see fresh values.
-  const stateRef = useRef({ name, trigger, variables, skillNames: new Set<string>() })
+  // Commands register once (deps are just [editor]); the handlers read everything mutable —
+  // header, variables, skill catalog, and the paste callbacks — through this ref so they
+  // always see fresh values without re-registering on every render. The ref is synced after
+  // each render (not during).
+  const stateRef = useRef({ name, trigger, variables, skillNames: new Set<string>(), onCreateVariable, onSetVariableType, onPasteFrontmatter })
   useEffect(() => {
     stateRef.current = {
       name,
       trigger,
       variables,
       skillNames: new Set(skillCatalog.skills.map((skill) => skill.skillName)),
+      onCreateVariable,
+      onSetVariableType,
+      onPasteFrontmatter,
     }
   })
 
@@ -824,8 +841,12 @@ function ClipboardRoundTripPlugin({
       (event: ClipboardEvent | null) => {
         const clipboardData = event?.clipboardData
         if (!clipboardData) return false
+        const state = editor.getEditorState()
+        // Only the whole routine is exported as tokens; a partial selection is a snippet —
+        // let Lexical's native copy handle it so in-editor fidelity is preserved.
+        if (!state.read($selectionSpansDocument)) return false
         const { name: currentName, trigger: currentTrigger, variables: currentVariables } = stateRef.current
-        const paragraphs = editor.getEditorState().read($readProseParagraphs)
+        const paragraphs = state.read($readProseParagraphs)
         const text = serializeProseDoc({ name: currentName, trigger: currentTrigger, variables: currentVariables, paragraphs })
         event.preventDefault()
         clipboardData.setData('text/plain', text)
@@ -844,22 +865,24 @@ function ClipboardRoundTripPlugin({
         if (!text || !looksLikeRoutineProse(text)) return false
         event.preventDefault()
 
-        const { variables: currentVariables, skillNames } = stateRef.current
+        const { variables: currentVariables, skillNames, onCreateVariable, onSetVariableType, onPasteFrontmatter } = stateRef.current
         const parsed = parseProseDoc(text, (candidate) => skillNames.has(candidate))
 
         for (const variable of parsed.variables) {
-          if (!currentVariables.some((existing) => existing.id === variable.id)) {
-            onCreateVariable({ id: variable.id, name: variable.name })
-          }
+          // A variable already in the doc keeps its current type and description — paste
+          // adds what's missing rather than clobbering the author's local definitions.
+          if (currentVariables.some((existing) => existing.id === variable.id)) continue
+          onCreateVariable({ id: variable.id, name: variable.name })
           if (variable.type !== 'text') onSetVariableType(variable.id, variable.type)
         }
         if (onPasteFrontmatter && (parsed.name !== null || parsed.trigger !== null)) {
           onPasteFrontmatter({ name: parsed.name, trigger: parsed.trigger })
         }
 
-        // A pasted whole document (it carries frontmatter) replaces the routine; a bare
-        // fragment is inserted at the caret.
-        const replaceWholeDoc = text.trim().startsWith('---')
+        // A pasted whole routine (our frontmatter was actually parsed) replaces the
+        // document; anything else — including a foreign doc that merely opens with `---` —
+        // is inserted at the caret rather than wiping the current routine.
+        const replaceWholeDoc = parsed.hadFrontmatter
         editor.update(() => {
           const nodes = parsed.paragraphs.map($proseParagraphToNode)
           if (replaceWholeDoc) {
@@ -881,7 +904,7 @@ function ClipboardRoundTripPlugin({
       unregisterCopy()
       unregisterPaste()
     }
-  }, [editor, onCreateVariable, onSetVariableType, onPasteFrontmatter])
+  }, [editor])
 
   return null
 }

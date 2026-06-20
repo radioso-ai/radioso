@@ -58,3 +58,37 @@ test("routine prose survives a copy to an external file and back", async ({ page
   await expect(editor).toContainText("@guest_name");
   await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Greeter");
 });
+
+// A pasted document replaces the routine only when it carries our routine frontmatter. A
+// foreign markdown doc that merely opens with `---` and happens to contain an @mention must
+// be inserted, never wipe the routine the author is editing.
+test("pasting a foreign document that opens with --- does not wipe the routine", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {});
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await expect(page.getByRole("heading", { name: "Routines", level: 1 })).toBeVisible();
+
+  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Greeter");
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+  await editor.pressSequentially("Keep this routine intact.");
+
+  // A markdown note with YAML frontmatter (not ours) plus an @mention — looks like prose,
+  // but is not a routine.
+  await page.evaluate(() =>
+    navigator.clipboard.writeText("---\ntitle: Notes\ntags: x\n---\nPing @world about the launch."),
+  );
+  await editor.click();
+  await page.keyboard.press("End");
+  await page.keyboard.press("ControlOrMeta+v");
+
+  // The original line is still there (the routine was not replaced); the foreign text was
+  // inserted at the caret, and its @mention became a variable chip.
+  await expect(editor).toContainText("Keep this routine intact.");
+  await expect(editor).toContainText("@world");
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Greeter");
+});

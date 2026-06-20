@@ -43,13 +43,12 @@ export const createSlackConnectionRoutes = (dependencies: SlackConnectionRouteDe
   );
 
   router.post(
-    "/workspaces/:workspaceId/agents/:agentId/slack/install/start",
+    "/workspaces/:workspaceId/slack/install/start",
     workspaceSession,
     agentsManage,
     async (req, res, next) => {
       try {
         const workspaceId = parseUuid(req.params.workspaceId, "workspaceId");
-        parseUuid(req.params.agentId, "agentId");
         const started = await dependencies.oauthConnectionService.create(workspaceId, {
           provider: "slack",
           displayName: "Slack",
@@ -66,13 +65,12 @@ export const createSlackConnectionRoutes = (dependencies: SlackConnectionRouteDe
   );
 
   router.get(
-    "/workspaces/:workspaceId/agents/:agentId/slack/install/status",
+    "/workspaces/:workspaceId/slack/install/status",
     workspaceSession,
     agentsRead,
     async (req, res, next) => {
       try {
         const workspaceId = parseUuid(req.params.workspaceId, "workspaceId");
-        parseUuid(req.params.agentId, "agentId");
         res.status(200).json(await dependencies.slackInstallationService.getStatus(workspaceId));
       } catch (error) {
         next(error);
@@ -81,13 +79,12 @@ export const createSlackConnectionRoutes = (dependencies: SlackConnectionRouteDe
   );
 
   router.get(
-    "/workspaces/:workspaceId/agents/:agentId/slack/manifest",
+    "/workspaces/:workspaceId/slack/manifest",
     workspaceSession,
     agentsRead,
     async (req, res, next) => {
       try {
         parseUuid(req.params.workspaceId, "workspaceId");
-        parseUuid(req.params.agentId, "agentId");
         if (!dependencies.env.APP_BASE_URL) {
           throw serviceUnavailable("APP_BASE_URL must be set to generate a Slack app manifest");
         }
@@ -102,13 +99,12 @@ export const createSlackConnectionRoutes = (dependencies: SlackConnectionRouteDe
   );
 
   router.get(
-    "/workspaces/:workspaceId/agents/:agentId/slack/binding",
+    "/workspaces/:workspaceId/slack/binding",
     workspaceSession,
     agentsRead,
     async (req, res, next) => {
       try {
         const workspaceId = parseUuid(req.params.workspaceId, "workspaceId");
-        parseUuid(req.params.agentId, "agentId");
         res.status(200).json(presentBinding(await dependencies.slackInstallationService.getBinding(workspaceId)));
       } catch (error) {
         next(error);
@@ -117,14 +113,13 @@ export const createSlackConnectionRoutes = (dependencies: SlackConnectionRouteDe
   );
 
   router.put(
-    "/workspaces/:workspaceId/agents/:agentId/slack/binding",
+    "/workspaces/:workspaceId/slack/binding",
     workspaceSession,
     agentsManage,
     validateBody(bindingUpdateSchema),
     async (req, res, next) => {
       try {
         const workspaceId = parseUuid(req.params.workspaceId, "workspaceId");
-        parseUuid(req.params.agentId, "agentId");
         const binding = await dependencies.slackInstallationService.setBinding({
           workspaceId,
           answeringAgentId: req.body.answeringAgentId,
@@ -138,13 +133,12 @@ export const createSlackConnectionRoutes = (dependencies: SlackConnectionRouteDe
   );
 
   router.delete(
-    "/workspaces/:workspaceId/agents/:agentId/slack/installation",
+    "/workspaces/:workspaceId/slack/installation",
     workspaceSession,
     agentsManage,
     async (req, res, next) => {
       try {
         const workspaceId = parseUuid(req.params.workspaceId, "workspaceId");
-        parseUuid(req.params.agentId, "agentId");
         await dependencies.slackInstallationService.disconnect(workspaceId);
         res.status(204).send();
       } catch (error) {

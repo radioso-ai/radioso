@@ -27,7 +27,7 @@ describe("Slack skills contract", () => {
     const agentList = await request(app).get("/api/v1/agents").set(headers);
     expect(agentList.status).toBe(200);
     const agentId = agentList.body.agents[0].id as string;
-    const slackBase = `/api/v1/workspaces/${session.workspaceId}/agents/${agentId}/slack`;
+    const slackBase = `/api/v1/workspaces/${session.workspaceId}/slack`;
 
     const started = await request(app).post(`${slackBase}/install/start`).set(headers).send({});
     expect(started.status).toBe(200);

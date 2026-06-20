@@ -35,7 +35,7 @@ test("Slack channel connects, confirms binding, and disconnects", async ({ page 
   await expect.poll(() =>
     slackRequests.some((request) =>
       request.method === "PUT" &&
-      request.path === `/workspaces/${workspaceId}/agents/${defaultAgentId}/slack/binding` &&
+      request.path === `/workspaces/${workspaceId}/slack/binding` &&
       JSON.stringify(request.body) === JSON.stringify({
         answeringAgentId: defaultAgentId,
         escalationChannelId: "#support",
@@ -46,7 +46,7 @@ test("Slack channel connects, confirms binding, and disconnects", async ({ page 
   await expect.poll(() =>
     slackRequests.some((request) =>
       request.method === "POST" &&
-      request.path === `/workspaces/${workspaceId}/agents/${defaultAgentId}/slack/install/start`,
+      request.path === `/workspaces/${workspaceId}/slack/install/start`,
     ),
   ).toBe(true);
 
@@ -56,7 +56,7 @@ test("Slack channel connects, confirms binding, and disconnects", async ({ page 
   await expect.poll(() =>
     slackRequests.some((request) =>
       request.method === "PUT" &&
-      request.path === `/workspaces/${workspaceId}/agents/${defaultAgentId}/slack/binding` &&
+      request.path === `/workspaces/${workspaceId}/slack/binding` &&
       JSON.stringify(request.body) === JSON.stringify({
         answeringAgentId: defaultAgentId,
         escalationChannelId: "#support",

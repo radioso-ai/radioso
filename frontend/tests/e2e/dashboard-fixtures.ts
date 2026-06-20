@@ -799,12 +799,12 @@ export const installDashboardApiMocks = async (
       return;
     }
 
-    if (path === `/workspaces/${workspaceId}/agents/${defaultAgentId}/slack/install/status` && request.method() === "GET") {
+    if (path === `/workspaces/${workspaceId}/slack/install/status` && request.method() === "GET") {
       await json(route, slackStatus);
       return;
     }
 
-    if (path === `/workspaces/${workspaceId}/agents/${defaultAgentId}/slack/install/start` && request.method() === "POST") {
+    if (path === `/workspaces/${workspaceId}/slack/install/start` && request.method() === "POST") {
       options.slackRequests?.push({ method: request.method(), path });
       slackStatus = {
         status: "connected",
@@ -824,12 +824,12 @@ export const installDashboardApiMocks = async (
       return;
     }
 
-    if (path === `/workspaces/${workspaceId}/agents/${defaultAgentId}/slack/manifest` && request.method() === "GET") {
+    if (path === `/workspaces/${workspaceId}/slack/manifest` && request.method() === "GET") {
       await json(route, slackManifest);
       return;
     }
 
-    if (path === `/workspaces/${workspaceId}/agents/${defaultAgentId}/slack/binding`) {
+    if (path === `/workspaces/${workspaceId}/slack/binding`) {
       if (request.method() === "GET") {
         await json(route, slackBinding);
         return;
@@ -851,7 +851,7 @@ export const installDashboardApiMocks = async (
       }
     }
 
-    if (path === `/workspaces/${workspaceId}/agents/${defaultAgentId}/slack/installation` && request.method() === "DELETE") {
+    if (path === `/workspaces/${workspaceId}/slack/installation` && request.method() === "DELETE") {
       options.slackRequests?.push({ method: request.method(), path });
       slackStatus = { status: "not_configured" };
       slackBinding = { answeringAgentId: null, escalationChannelId: null };

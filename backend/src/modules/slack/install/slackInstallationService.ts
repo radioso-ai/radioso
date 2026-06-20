@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { QueryResultRow } from "pg";
 
-import { notFound } from "../../../shared/domain/errors.js";
+import { conflict, notFound } from "../../../shared/domain/errors.js";
 import type {
   CreateOauthConnectionInput,
   OauthConnectionRecord,
@@ -118,6 +118,9 @@ export class SlackInstallationService {
     const key = this.requireEncryptionKey();
     const existingInstallation = await this.options.installations.findByTeamId(input.teamId);
     const displayName = displayNameForTeam(input.teamName, input.teamId);
+    if (existingInstallation && existingInstallation.workspaceId !== input.workspaceId) {
+      throw conflict("Slack team is already installed in another workspace");
+    }
 
     const oauthConnectionId = existingInstallation
       ? await this.oauthConnectionIdForInstallation(existingInstallation)

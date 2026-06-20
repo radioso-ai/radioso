@@ -83,4 +83,30 @@ describe("SlackPostActionHandler", () => {
       },
     })).rejects.toThrow("rate_limited");
   });
+
+  it("rejects payloads whose installation belongs to another workspace", async () => {
+    const postMessage = vi.fn(async () => ({ channel: "CSUPPORT", ts: "1.2" }));
+    const handler = new SlackPostActionHandler({
+      credentials: {
+        findInstallationById: vi.fn(async () => ({
+          ...installation,
+          workspaceId: "55555555-5555-4555-8555-555555555555",
+        })),
+        resolveBotTokenForInstallation: vi.fn(async () => "xoxb-token"),
+      },
+      clientFactory: () => ({ postMessage }),
+    });
+
+    await expect(handler.handle({
+      context,
+      payload: {
+        installationId: installation.id,
+        channelId: "CSUPPORT",
+        text: "Customer question",
+        conversationRef: context.conversationId,
+        kind: "gap_escalation",
+      },
+    })).rejects.toThrow("slack_installation_workspace_mismatch");
+    expect(postMessage).not.toHaveBeenCalled();
+  });
 });

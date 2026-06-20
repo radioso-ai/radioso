@@ -51,6 +51,15 @@ export class SlackPlugin implements ConnectorPlugin {
     const installations = new SlackInstallationRepository(context.db);
     const bindings = new SlackChannelBindingRepository(context.db);
     const persistence = new PostgresSlackPersistence(context.db);
+    const staleFailures = await persistence.markStaleInboundEventsFailed({
+      olderThan: new Date(Date.now() - 10 * 60 * 1000),
+    });
+    if (staleFailures > 0) {
+      context.logger.warn(
+        { event: "slack_inbound", staleFailures },
+        "Marked stale Slack inbound events failed during connector startup",
+      );
+    }
     const slackPostOutbox = new ActionRequestRepository(db);
     const installationService = new SlackInstallationService({
       oauthConnections,

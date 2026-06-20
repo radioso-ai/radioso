@@ -15,10 +15,10 @@ follow-up to that human channel.
 
 Relevant endpoints:
 
-- `POST /api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/install/start`
-- `GET /api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/install/status`
-- `GET /api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/binding`
-- `PUT /api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/binding`
+- `POST /api/v1/workspaces/{workspaceId}/slack/install/start`
+- `GET /api/v1/workspaces/{workspaceId}/slack/install/status`
+- `GET /api/v1/workspaces/{workspaceId}/slack/binding`
+- `PUT /api/v1/workspaces/{workspaceId}/slack/binding`
 - `POST /api/connectors/slack/events`
 
 ## Self-Host
@@ -27,7 +27,7 @@ Relevant endpoints:
 2. Open **Self-host setup** in the Slack channel card.
 3. Copy the generated manifest from:
 
-   `GET /api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/manifest`
+   `GET /api/v1/workspaces/{workspaceId}/slack/manifest`
 
 4. Create a Slack app from the manifest.
 5. Set the three Slack app env vars:

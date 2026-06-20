@@ -57,5 +57,5 @@ CREATE TABLE IF NOT EXISTS slack_inbound_events (
   team_id TEXT NOT NULL,
   received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   status TEXT NOT NULL DEFAULT 'received'
-    CHECK (status IN ('received', 'processed', 'skipped'))
+    CHECK (status IN ('received', 'processed', 'skipped', 'failed'))
 );

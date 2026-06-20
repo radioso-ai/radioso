@@ -1649,7 +1649,7 @@ CREATE TABLE public.slack_inbound_events (
     team_id text NOT NULL,
     received_at timestamp with time zone DEFAULT now() NOT NULL,
     status text DEFAULT 'received'::text NOT NULL,
-    CONSTRAINT slack_inbound_events_status_check CHECK ((status = ANY (ARRAY['received'::text, 'processed'::text, 'skipped'::text])))
+    CONSTRAINT slack_inbound_events_status_check CHECK ((status = ANY (ARRAY['received'::text, 'processed'::text, 'skipped'::text, 'failed'::text])))
 );
 
 

@@ -37,10 +37,10 @@ Slack tokens or app secrets.
 
 The setup uses these API surfaces:
 
-- `POST /api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/install/start`
-- `GET /api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/install/status`
-- `GET /api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/binding`
-- `PUT /api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/binding`
+- `POST /api/v1/workspaces/{workspaceId}/slack/install/start`
+- `GET /api/v1/workspaces/{workspaceId}/slack/install/status`
+- `GET /api/v1/workspaces/{workspaceId}/slack/binding`
+- `PUT /api/v1/workspaces/{workspaceId}/slack/binding`
 
 ## Self-Host Setup
 
@@ -60,7 +60,7 @@ operator supplies their own Slack app secrets through environment variables.
 
 The manifest is available from:
 
-`GET /api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/manifest`
+`GET /api/v1/workspaces/{workspaceId}/slack/manifest`
 
 It fills:
 

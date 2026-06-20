@@ -11,8 +11,8 @@ No Slack token or secret is entered when creating a skill.
 Connect Slack from the agent Slack channel settings. The status response includes
 the connected installation id:
 
-- `POST /api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/install/start`
-- `GET /api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/install/status`
+- `POST /api/v1/workspaces/{workspaceId}/slack/install/start`
+- `GET /api/v1/workspaces/{workspaceId}/slack/install/status`
 
 The same Slack card can also set `escalationChannelId` on the binding. When set,
 the agent posts there when a Slack question has no grounded answer.

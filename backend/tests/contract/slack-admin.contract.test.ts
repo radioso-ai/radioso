@@ -33,8 +33,7 @@ describe("Slack admin REST contract", () => {
     });
     const session = await issueTestSession(app, "slack-manifest@example.com");
     const headers = adminSessionHeaders(session);
-    const agentId = randomUUID();
-    const base = `/api/v1/workspaces/${session.workspaceId}/agents/${agentId}/slack`;
+    const base = `/api/v1/workspaces/${session.workspaceId}/slack`;
 
     const response = await request(app).get(`${base}/manifest`).set(headers);
 
@@ -70,8 +69,7 @@ describe("Slack admin REST contract", () => {
     });
     const session = await issueTestSession(app, "slack-admin@example.com");
     const headers = adminSessionHeaders(session);
-    const agentId = randomUUID();
-    const base = `/api/v1/workspaces/${session.workspaceId}/agents/${agentId}/slack`;
+    const base = `/api/v1/workspaces/${session.workspaceId}/slack`;
 
     const initialStatus = await request(app).get(`${base}/install/status`).set(headers);
     expect(initialStatus.status).toBe(200);

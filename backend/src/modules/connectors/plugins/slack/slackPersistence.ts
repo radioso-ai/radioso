@@ -12,7 +12,8 @@ export interface SlackConversationLinkRecord {
 
 export interface SlackPersistencePort {
   createInboundEvent(input: { eventId: string; teamId: string }): Promise<boolean>;
-  markInboundEventStatus(eventId: string, status: "processed" | "skipped"): Promise<void>;
+  markInboundEventStatus(eventId: string, status: "processed" | "skipped" | "failed"): Promise<void>;
+  markStaleInboundEventsFailed(input: { olderThan: Date }): Promise<number>;
   findConversationLink(input: { workspaceId: string; slackKey: string }): Promise<SlackConversationLinkRecord | null>;
   upsertConversationLink(input: {
     workspaceId: string;
@@ -52,11 +53,22 @@ export class PostgresSlackPersistence implements SlackPersistencePort {
     return rows.length > 0;
   }
 
-  async markInboundEventStatus(eventId: string, status: "processed" | "skipped"): Promise<void> {
+  async markInboundEventStatus(eventId: string, status: "processed" | "skipped" | "failed"): Promise<void> {
     await this.db.query(
       `UPDATE slack_inbound_events SET status = $2 WHERE event_id = $1`,
       [eventId, status],
     );
+  }
+
+  async markStaleInboundEventsFailed(input: { olderThan: Date }): Promise<number> {
+    const rows = await this.db.query<{ event_id: string }>(
+      `UPDATE slack_inbound_events
+       SET status = 'failed'
+       WHERE status = 'received' AND received_at < $1
+       RETURNING event_id`,
+      [input.olderThan],
+    );
+    return rows.length;
   }
 
   async findConversationLink(input: {

@@ -12891,12 +12891,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/install/start:
+  /api/v1/workspaces/{workspaceId}/slack/install/start:
     post:
       tags: &a48
         - Slack
       summary: Start Slack OAuth installation
-      operationId: startAgentSlackInstall
+      operationId: startWorkspaceSlackInstall
       security: &a49
         - bearerAuth: []
       parameters:
@@ -12905,12 +12905,6 @@ paths:
             format: uuid
           required: true
           name: workspaceId
-          in: path
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: agentId
           in: path
       responses:
         "200":
@@ -12952,11 +12946,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/install/status:
+  /api/v1/workspaces/{workspaceId}/slack/install/status:
     get:
       tags: *a48
       summary: Get Slack installation status
-      operationId: getAgentSlackInstallStatus
+      operationId: getWorkspaceSlackInstallStatus
       security: *a49
       parameters:
         - schema:
@@ -12964,12 +12958,6 @@ paths:
             format: uuid
           required: true
           name: workspaceId
-          in: path
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: agentId
           in: path
       responses:
         "200":
@@ -13008,11 +12996,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/manifest:
+  /api/v1/workspaces/{workspaceId}/slack/manifest:
     get:
       tags: *a48
       summary: Get self-host Slack app manifest
-      operationId: getAgentSlackManifest
+      operationId: getWorkspaceSlackManifest
       security: *a49
       parameters:
         - schema:
@@ -13020,12 +13008,6 @@ paths:
             format: uuid
           required: true
           name: workspaceId
-          in: path
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: agentId
           in: path
       responses:
         "200":
@@ -13143,11 +13125,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/binding:
+  /api/v1/workspaces/{workspaceId}/slack/binding:
     get:
       tags: *a48
       summary: Get Slack answering binding
-      operationId: getAgentSlackBinding
+      operationId: getWorkspaceSlackBinding
       security: *a49
       parameters:
         - schema:
@@ -13155,12 +13137,6 @@ paths:
             format: uuid
           required: true
           name: workspaceId
-          in: path
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: agentId
           in: path
       responses:
         "200":
@@ -13197,7 +13173,7 @@ paths:
     put:
       tags: *a48
       summary: Set Slack answering binding
-      operationId: setAgentSlackBinding
+      operationId: setWorkspaceSlackBinding
       security: *a49
       parameters:
         - schema:
@@ -13205,12 +13181,6 @@ paths:
             format: uuid
           required: true
           name: workspaceId
-          in: path
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: agentId
           in: path
       requestBody:
         required: true
@@ -13272,11 +13242,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/installation:
+  /api/v1/workspaces/{workspaceId}/slack/installation:
     delete:
       tags: *a48
       summary: Disconnect Slack installation
-      operationId: disconnectAgentSlackInstallation
+      operationId: disconnectWorkspaceSlackInstallation
       security: *a49
       parameters:
         - schema:
@@ -13284,12 +13254,6 @@ paths:
             format: uuid
           required: true
           name: workspaceId
-          in: path
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: agentId
           in: path
       responses:
         "204":

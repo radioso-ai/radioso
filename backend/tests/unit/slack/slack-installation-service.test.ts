@@ -279,6 +279,42 @@ describe("SlackInstallationService", () => {
     });
   });
 
+  it("rejects reinstalling the same Slack team into another workspace before mutating credentials", async () => {
+    const { service, oauthConnections, integrationConnections, installations } = createService();
+    const first = await service.saveInstallation({
+      workspaceId: "workspace-1",
+      teamId: "T123",
+      teamName: "Acme",
+      botUserId: "U_BOT",
+      botAccessToken: "xoxb-old",
+      grantedScopes: ["chat:write"],
+      answeringAgentId: "agent-1",
+    });
+
+    await expect(service.saveInstallation({
+      workspaceId: "workspace-2",
+      teamId: "T123",
+      teamName: "Acme",
+      botUserId: "U_BOT_2",
+      botAccessToken: "xoxb-new",
+      grantedScopes: ["chat:write", "im:read"],
+      answeringAgentId: "agent-2",
+    })).rejects.toMatchObject({
+      statusCode: 409,
+      code: "conflict",
+    });
+
+    expect(oauthConnections.created).toHaveLength(1);
+    expect(oauthConnections.tokenWrites).toHaveLength(1);
+    expect(integrationConnections.updates).toHaveLength(0);
+    expect(await installations.findByTeamId("T123")).toMatchObject({
+      id: first.installation.id,
+      workspaceId: "workspace-1",
+      connectionId: first.connection.id,
+      botUserId: "U_BOT",
+    });
+  });
+
   it("requires CONNECTOR_ENCRYPTION_KEY before storing Slack credentials", async () => {
     const { oauthConnections, integrationConnections, installations, bindings } = createService();
     const service = new SlackInstallationService({

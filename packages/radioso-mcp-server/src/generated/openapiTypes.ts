@@ -1332,7 +1332,7 @@ export interface paths {
         patch: operations["updateAgentEmailSkill"];
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/install/start": {
+    "/api/v1/workspaces/{workspaceId}/slack/install/start": {
         parameters: {
             query?: never;
             header?: never;
@@ -1342,14 +1342,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Start Slack OAuth installation */
-        post: operations["startAgentSlackInstall"];
+        post: operations["startWorkspaceSlackInstall"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/install/status": {
+    "/api/v1/workspaces/{workspaceId}/slack/install/status": {
         parameters: {
             query?: never;
             header?: never;
@@ -1357,7 +1357,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get Slack installation status */
-        get: operations["getAgentSlackInstallStatus"];
+        get: operations["getWorkspaceSlackInstallStatus"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1366,7 +1366,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/manifest": {
+    "/api/v1/workspaces/{workspaceId}/slack/manifest": {
         parameters: {
             query?: never;
             header?: never;
@@ -1374,7 +1374,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get self-host Slack app manifest */
-        get: operations["getAgentSlackManifest"];
+        get: operations["getWorkspaceSlackManifest"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1383,7 +1383,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/binding": {
+    "/api/v1/workspaces/{workspaceId}/slack/binding": {
         parameters: {
             query?: never;
             header?: never;
@@ -1391,9 +1391,9 @@ export interface paths {
             cookie?: never;
         };
         /** Get Slack answering binding */
-        get: operations["getAgentSlackBinding"];
+        get: operations["getWorkspaceSlackBinding"];
         /** Set Slack answering binding */
-        put: operations["setAgentSlackBinding"];
+        put: operations["setWorkspaceSlackBinding"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1401,7 +1401,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/installation": {
+    "/api/v1/workspaces/{workspaceId}/slack/installation": {
         parameters: {
             query?: never;
             header?: never;
@@ -1412,7 +1412,7 @@ export interface paths {
         put?: never;
         post?: never;
         /** Disconnect Slack installation */
-        delete: operations["disconnectAgentSlackInstallation"];
+        delete: operations["disconnectWorkspaceSlackInstallation"];
         options?: never;
         head?: never;
         patch?: never;
@@ -10185,13 +10185,12 @@ export interface operations {
             };
         };
     };
-    startAgentSlackInstall: {
+    startWorkspaceSlackInstall: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 workspaceId: string;
-                agentId: string;
             };
             cookie?: never;
         };
@@ -10242,13 +10241,12 @@ export interface operations {
             };
         };
     };
-    getAgentSlackInstallStatus: {
+    getWorkspaceSlackInstallStatus: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 workspaceId: string;
-                agentId: string;
             };
             cookie?: never;
         };
@@ -10291,13 +10289,12 @@ export interface operations {
             };
         };
     };
-    getAgentSlackManifest: {
+    getWorkspaceSlackManifest: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 workspaceId: string;
-                agentId: string;
             };
             cookie?: never;
         };
@@ -10364,13 +10361,12 @@ export interface operations {
             };
         };
     };
-    getAgentSlackBinding: {
+    getWorkspaceSlackBinding: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 workspaceId: string;
-                agentId: string;
             };
             cookie?: never;
         };
@@ -10409,13 +10405,12 @@ export interface operations {
             };
         };
     };
-    setAgentSlackBinding: {
+    setWorkspaceSlackBinding: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 workspaceId: string;
-                agentId: string;
             };
             cookie?: never;
         };
@@ -10480,13 +10475,12 @@ export interface operations {
             };
         };
     };
-    disconnectAgentSlackInstallation: {
+    disconnectWorkspaceSlackInstallation: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 workspaceId: string;
-                agentId: string;
             };
             cookie?: never;
         };

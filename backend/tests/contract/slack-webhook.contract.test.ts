@@ -23,6 +23,7 @@ const createApp = (input: {
   botUserId?: string;
   botLoop?: boolean;
   handle?: () => Promise<void>;
+  processingRetryDelaysMs?: readonly number[];
 } = {}) => {
   const app = express();
   app.use((req, _res, next) => {
@@ -56,6 +57,7 @@ const createApp = (input: {
     },
     signingSecret,
     now: () => nowMs,
+    processingRetryDelaysMs: input.processingRetryDelaysMs,
     installations: {
       findById: async () => installation,
       findByTeamId: async () => installation,
@@ -181,6 +183,48 @@ describe("Slack inbound webhook contract", () => {
     expect(response.text).toBe("OK");
     await vi.waitFor(() => expect(handleMessageIm).toHaveBeenCalledTimes(1));
     release();
+  });
+
+  it("marks async processing failures so accepted events do not remain received forever", async () => {
+    const { app, handleMessageIm, markInboundEventStatus } = createApp({
+      processingRetryDelaysMs: [],
+      handle: async () => {
+        throw new Error("chat_unavailable");
+      },
+    });
+    const body = JSON.stringify(messagePayload("EvFailure"));
+    const response = await request(app)
+      .post("/api/connectors/slack/events")
+      .set(createSignedHeaders(body))
+      .type("application/json")
+      .send(body);
+
+    expect(response.status).toBe(200);
+    await vi.waitFor(() => expect(handleMessageIm).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(markInboundEventStatus).toHaveBeenCalledWith("EvFailure", "failed"));
+  });
+
+  it("retries async processing failures before marking an event failed", async () => {
+    let attempts = 0;
+    const { app, handleMessageIm, markInboundEventStatus } = createApp({
+      processingRetryDelaysMs: [0],
+      handle: async () => {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new Error("temporary_chat_unavailable");
+        }
+      },
+    });
+    const body = JSON.stringify(messagePayload("EvRetry"));
+    const response = await request(app)
+      .post("/api/connectors/slack/events")
+      .set(createSignedHeaders(body))
+      .type("application/json")
+      .send(body);
+
+    expect(response.status).toBe(200);
+    await vi.waitFor(() => expect(handleMessageIm).toHaveBeenCalledTimes(2));
+    expect(markInboundEventStatus).not.toHaveBeenCalledWith("EvRetry", "failed");
   });
 
   it("dispatches app_mention events and ignores ordinary channel messages", async () => {

@@ -33,7 +33,7 @@ describe('slackApi', () => {
     vi.unstubAllGlobals()
   })
 
-  it('starts Slack installation through the agent Slack endpoint', async () => {
+  it('starts Slack installation through the workspace Slack endpoint', async () => {
     vi.stubGlobal('window', { localStorage: createLocalStorage() })
     const fetchMock = vi.fn().mockResolvedValue(createJsonResponse({
       authorizationUrl: 'https://slack.com/oauth/v2/authorize',
@@ -47,7 +47,7 @@ describe('slackApi', () => {
     })
 
     const [requestUrl, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(requestUrl).toBe('/backend/api/v1/workspaces/workspace-1/agents/agent-1/slack/install/start')
+    expect(requestUrl).toBe('/backend/api/v1/workspaces/workspace-1/slack/install/start')
     expect(requestInit.method).toBe('POST')
     expect(requestInit.credentials).toBe('omit')
     expect(new Headers(requestInit.headers).get('Authorization')).toBe('Bearer workspace-token')
@@ -70,7 +70,7 @@ describe('slackApi', () => {
     })
 
     const [requestUrl, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(requestUrl).toBe('/backend/api/v1/workspaces/workspace-1/agents/agent-1/slack/binding')
+    expect(requestUrl).toBe('/backend/api/v1/workspaces/workspace-1/slack/binding')
     expect(requestInit.method).toBe('PUT')
     expect(requestInit.body).toBe(JSON.stringify({
       answeringAgentId: 'agent-1',
@@ -79,7 +79,7 @@ describe('slackApi', () => {
     expect(new Headers(requestInit.headers).get('Content-Type')).toBe('application/json')
   })
 
-  it('fetches the self-host Slack manifest through the agent Slack endpoint', async () => {
+  it('fetches the self-host Slack manifest through the workspace Slack endpoint', async () => {
     vi.stubGlobal('window', { localStorage: createLocalStorage() })
     const fetchMock = vi.fn().mockResolvedValue(createJsonResponse({
       manifest: {
@@ -96,7 +96,7 @@ describe('slackApi', () => {
     })
 
     const [requestUrl, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(requestUrl).toBe('/backend/api/v1/workspaces/workspace-1/agents/agent-1/slack/manifest')
+    expect(requestUrl).toBe('/backend/api/v1/workspaces/workspace-1/slack/manifest')
     expect(requestInit.method).toBe('GET')
     expect(new Headers(requestInit.headers).get('Authorization')).toBe('Bearer workspace-token')
   })

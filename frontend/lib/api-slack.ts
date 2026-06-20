@@ -30,53 +30,53 @@ export type SlackManifestResponse = {
   requiredEnvVars: string[]
 }
 
-const agentSlackPath = (workspaceId: string, agentId: string, suffix: string) =>
-  `/workspaces/${encodeURIComponent(workspaceId)}/agents/${encodeURIComponent(agentId)}/slack/${suffix}`
+const workspaceSlackPath = (workspaceId: string, suffix: string) =>
+  `/workspaces/${encodeURIComponent(workspaceId)}/slack/${suffix}`
 
 export const slackApi = {
-  async startInstall(workspaceId: string, agentId: string): Promise<SlackInstallStartResponse> {
+  async startInstall(workspaceId: string, _agentId: string): Promise<SlackInstallStartResponse> {
     return request<SlackInstallStartResponse>(
-      agentSlackPath(workspaceId, agentId, 'install/start'),
+      workspaceSlackPath(workspaceId, 'install/start'),
       { method: 'POST' },
       { withApiToken: true },
     )
   },
 
-  async getInstallStatus(workspaceId: string, agentId: string): Promise<SlackInstallStatusResponse> {
+  async getInstallStatus(workspaceId: string, _agentId: string): Promise<SlackInstallStatusResponse> {
     return request<SlackInstallStatusResponse>(
-      agentSlackPath(workspaceId, agentId, 'install/status'),
+      workspaceSlackPath(workspaceId, 'install/status'),
       { method: 'GET' },
       { withApiToken: true },
     )
   },
 
-  async getBinding(workspaceId: string, agentId: string): Promise<SlackBinding> {
+  async getBinding(workspaceId: string, _agentId: string): Promise<SlackBinding> {
     return request<SlackBinding>(
-      agentSlackPath(workspaceId, agentId, 'binding'),
+      workspaceSlackPath(workspaceId, 'binding'),
       { method: 'GET' },
       { withApiToken: true },
     )
   },
 
-  async getManifest(workspaceId: string, agentId: string): Promise<SlackManifestResponse> {
+  async getManifest(workspaceId: string, _agentId: string): Promise<SlackManifestResponse> {
     return request<SlackManifestResponse>(
-      agentSlackPath(workspaceId, agentId, 'manifest'),
+      workspaceSlackPath(workspaceId, 'manifest'),
       { method: 'GET' },
       { withApiToken: true },
     )
   },
 
-  async updateBinding(workspaceId: string, agentId: string, input: SlackBindingUpdate): Promise<SlackBinding> {
+  async updateBinding(workspaceId: string, _agentId: string, input: SlackBindingUpdate): Promise<SlackBinding> {
     return request<SlackBinding>(
-      agentSlackPath(workspaceId, agentId, 'binding'),
+      workspaceSlackPath(workspaceId, 'binding'),
       { method: 'PUT', body: JSON.stringify(input) },
       { withApiToken: true },
     )
   },
 
-  async disconnect(workspaceId: string, agentId: string): Promise<void> {
+  async disconnect(workspaceId: string, _agentId: string): Promise<void> {
     await request<void>(
-      agentSlackPath(workspaceId, agentId, 'installation'),
+      workspaceSlackPath(workspaceId, 'installation'),
       { method: 'DELETE' },
       { withApiToken: true },
     )

@@ -86,6 +86,9 @@ export class SlackPostActionHandler implements ActionHandler {
     if (!installation) {
       throw new Error("slack_installation_not_found");
     }
+    if (!input.context.workspaceId || installation.workspaceId !== input.context.workspaceId) {
+      throw new Error("slack_installation_workspace_mismatch");
+    }
     const botToken = await this.options.credentials.resolveBotTokenForInstallation(installation);
     if (!botToken) {
       throw new Error("slack_bot_token_not_found");

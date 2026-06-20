@@ -3,9 +3,8 @@ import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 
 import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
 
-const SlackAgentParams = z.object({
+const SlackWorkspaceParams = z.object({
   workspaceId: z.string().uuid(),
-  agentId: z.string().uuid(),
 });
 
 const SlackInstallStartResponseSchema = z.object({
@@ -77,12 +76,12 @@ export const registerSlackPaths = (
 
   registry.registerPath({
     method: "post",
-    path: "/api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/install/start",
+    path: "/api/v1/workspaces/{workspaceId}/slack/install/start",
     tags: TAGS,
     summary: "Start Slack OAuth installation",
-    operationId: "startAgentSlackInstall",
+    operationId: "startWorkspaceSlackInstall",
     security: sec,
-    request: { params: SlackAgentParams },
+    request: { params: SlackWorkspaceParams },
     responses: {
       200: { description: "Slack authorization started", content: json(SlackInstallStartResponseSchema) },
       400: errorResponse("Invalid request or Slack OAuth is not configured"),
@@ -93,12 +92,12 @@ export const registerSlackPaths = (
 
   registry.registerPath({
     method: "get",
-    path: "/api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/install/status",
+    path: "/api/v1/workspaces/{workspaceId}/slack/install/status",
     tags: TAGS,
     summary: "Get Slack installation status",
-    operationId: "getAgentSlackInstallStatus",
+    operationId: "getWorkspaceSlackInstallStatus",
     security: sec,
-    request: { params: SlackAgentParams },
+    request: { params: SlackWorkspaceParams },
     responses: {
       200: { description: "Slack installation status", content: json(SlackInstallStatusSchema) },
       401: errorResponse("Authentication required"),
@@ -108,12 +107,12 @@ export const registerSlackPaths = (
 
   registry.registerPath({
     method: "get",
-    path: "/api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/manifest",
+    path: "/api/v1/workspaces/{workspaceId}/slack/manifest",
     tags: TAGS,
     summary: "Get self-host Slack app manifest",
-    operationId: "getAgentSlackManifest",
+    operationId: "getWorkspaceSlackManifest",
     security: sec,
-    request: { params: SlackAgentParams },
+    request: { params: SlackWorkspaceParams },
     responses: {
       200: { description: "Generated Slack app manifest", content: json(SlackManifestResponseSchema) },
       401: errorResponse("Authentication required"),
@@ -123,12 +122,12 @@ export const registerSlackPaths = (
 
   registry.registerPath({
     method: "get",
-    path: "/api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/binding",
+    path: "/api/v1/workspaces/{workspaceId}/slack/binding",
     tags: TAGS,
     summary: "Get Slack answering binding",
-    operationId: "getAgentSlackBinding",
+    operationId: "getWorkspaceSlackBinding",
     security: sec,
-    request: { params: SlackAgentParams },
+    request: { params: SlackWorkspaceParams },
     responses: {
       200: { description: "Slack binding", content: json(SlackBindingSchema) },
       401: errorResponse("Authentication required"),
@@ -138,13 +137,13 @@ export const registerSlackPaths = (
 
   registry.registerPath({
     method: "put",
-    path: "/api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/binding",
+    path: "/api/v1/workspaces/{workspaceId}/slack/binding",
     tags: TAGS,
     summary: "Set Slack answering binding",
-    operationId: "setAgentSlackBinding",
+    operationId: "setWorkspaceSlackBinding",
     security: sec,
     request: {
-      params: SlackAgentParams,
+      params: SlackWorkspaceParams,
       body: { required: true, content: json(SlackBindingUpdateSchema) },
     },
     responses: {
@@ -158,12 +157,12 @@ export const registerSlackPaths = (
 
   registry.registerPath({
     method: "delete",
-    path: "/api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/installation",
+    path: "/api/v1/workspaces/{workspaceId}/slack/installation",
     tags: TAGS,
     summary: "Disconnect Slack installation",
-    operationId: "disconnectAgentSlackInstallation",
+    operationId: "disconnectWorkspaceSlackInstallation",
     security: sec,
-    request: { params: SlackAgentParams },
+    request: { params: SlackWorkspaceParams },
     responses: {
       204: { description: "Disconnected" },
       401: errorResponse("Authentication required"),

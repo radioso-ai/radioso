@@ -31,6 +31,7 @@ const logger: ConnectorLogger = {
 const basePersistence = (): SlackPersistencePort => ({
   createInboundEvent: vi.fn(),
   markInboundEventStatus: vi.fn(),
+  markStaleInboundEventsFailed: vi.fn(async () => 0),
   findConversationLink: vi.fn(async () => null),
   upsertConversationLink: vi.fn(),
 });

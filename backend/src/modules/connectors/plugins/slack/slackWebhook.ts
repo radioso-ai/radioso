@@ -15,6 +15,7 @@ interface SlackWebhookRouterOptions {
   persistence: Pick<SlackPersistencePort, "createInboundEvent" | "markInboundEventStatus">;
   messageHandler: Pick<SlackMessageHandler, "handleAppMention" | "handleMessageIm" | "isBotLoop">;
   now?: () => number;
+  processingRetryDelaysMs?: readonly number[];
 }
 
 interface WebhookRequest extends Request {
@@ -22,6 +23,7 @@ interface WebhookRequest extends Request {
 }
 
 const REPLAY_WINDOW_SECONDS = 5 * 60;
+const DEFAULT_PROCESSING_RETRY_DELAYS_MS = [1_000, 5_000, 30_000] as const;
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
@@ -109,6 +111,7 @@ export const isValidSlackSignature = (input: {
 
 export const createSlackWebhookRouter = (options: SlackWebhookRouterOptions): Router => {
   const router = Router();
+  const processingRetryDelaysMs = options.processingRetryDelaysMs ?? DEFAULT_PROCESSING_RETRY_DELAYS_MS;
 
   router.post("/events", async (req: WebhookRequest, res, next) => {
     try {
@@ -165,17 +168,44 @@ export const createSlackWebhookRouter = (options: SlackWebhookRouterOptions): Ro
         return;
       }
 
-      queueMicrotask(() => {
+      const processInbound = (attempt: number): void => {
         const processing = messageImEvent
           ? options.messageHandler.handleMessageIm({ eventId, teamId, event: messageImEvent })
           : options.messageHandler.handleAppMention({ eventId, teamId, event: appMentionEvent! });
         void processing.catch((error) => {
+          const retryDelayMs = processingRetryDelaysMs[attempt];
+          if (retryDelayMs !== undefined) {
+            options.logger.warn(
+              {
+                teamId,
+                eventId,
+                attempt: attempt + 1,
+                retryDelayMs,
+                err: error instanceof Error ? error.message : String(error),
+              },
+              "Slack inbound event processing failed; retry scheduled",
+            );
+            setTimeout(() => processInbound(attempt + 1), retryDelayMs);
+            return;
+          }
           options.logger.error(
-            { teamId, eventId, err: error instanceof Error ? error.message : String(error) },
+            { teamId, eventId, attempt: attempt + 1, err: error instanceof Error ? error.message : String(error) },
             "Slack inbound event processing failed",
           );
+          void options.persistence.markInboundEventStatus(eventId, "failed").catch((statusError) => {
+            options.logger.error(
+              {
+                teamId,
+                eventId,
+                err: statusError instanceof Error ? statusError.message : String(statusError),
+              },
+              "Slack inbound event failure status update failed",
+            );
+          });
         });
-      });
+      };
+
+      queueMicrotask(() => processInbound(0));
 
       res.sendStatus(200);
     } catch (error) {

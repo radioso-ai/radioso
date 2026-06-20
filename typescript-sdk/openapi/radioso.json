@@ -19831,13 +19831,13 @@
         }
       }
     },
-    "/api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/install/start": {
+    "/api/v1/workspaces/{workspaceId}/slack/install/start": {
       "post": {
         "tags": [
           "Slack"
         ],
         "summary": "Start Slack OAuth installation",
-        "operationId": "startAgentSlackInstall",
+        "operationId": "startWorkspaceSlackInstall",
         "security": [
           {
             "bearerAuth": []
@@ -19851,15 +19851,6 @@
             },
             "required": true,
             "name": "workspaceId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "agentId",
             "in": "path"
           }
         ],
@@ -19928,13 +19919,13 @@
         }
       }
     },
-    "/api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/install/status": {
+    "/api/v1/workspaces/{workspaceId}/slack/install/status": {
       "get": {
         "tags": [
           "Slack"
         ],
         "summary": "Get Slack installation status",
-        "operationId": "getAgentSlackInstallStatus",
+        "operationId": "getWorkspaceSlackInstallStatus",
         "security": [
           {
             "bearerAuth": []
@@ -19948,15 +19939,6 @@
             },
             "required": true,
             "name": "workspaceId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "agentId",
             "in": "path"
           }
         ],
@@ -20019,13 +20001,13 @@
         }
       }
     },
-    "/api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/manifest": {
+    "/api/v1/workspaces/{workspaceId}/slack/manifest": {
       "get": {
         "tags": [
           "Slack"
         ],
         "summary": "Get self-host Slack app manifest",
-        "operationId": "getAgentSlackManifest",
+        "operationId": "getWorkspaceSlackManifest",
         "security": [
           {
             "bearerAuth": []
@@ -20039,15 +20021,6 @@
             },
             "required": true,
             "name": "workspaceId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "agentId",
             "in": "path"
           }
         ],
@@ -20228,13 +20201,13 @@
         }
       }
     },
-    "/api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/binding": {
+    "/api/v1/workspaces/{workspaceId}/slack/binding": {
       "get": {
         "tags": [
           "Slack"
         ],
         "summary": "Get Slack answering binding",
-        "operationId": "getAgentSlackBinding",
+        "operationId": "getWorkspaceSlackBinding",
         "security": [
           {
             "bearerAuth": []
@@ -20248,15 +20221,6 @@
             },
             "required": true,
             "name": "workspaceId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "agentId",
             "in": "path"
           }
         ],
@@ -20317,7 +20281,7 @@
           "Slack"
         ],
         "summary": "Set Slack answering binding",
-        "operationId": "setAgentSlackBinding",
+        "operationId": "setWorkspaceSlackBinding",
         "security": [
           {
             "bearerAuth": []
@@ -20331,15 +20295,6 @@
             },
             "required": true,
             "name": "workspaceId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "agentId",
             "in": "path"
           }
         ],
@@ -20441,13 +20396,13 @@
         }
       }
     },
-    "/api/v1/workspaces/{workspaceId}/agents/{agentId}/slack/installation": {
+    "/api/v1/workspaces/{workspaceId}/slack/installation": {
       "delete": {
         "tags": [
           "Slack"
         ],
         "summary": "Disconnect Slack installation",
-        "operationId": "disconnectAgentSlackInstallation",
+        "operationId": "disconnectWorkspaceSlackInstallation",
         "security": [
           {
             "bearerAuth": []
@@ -20461,15 +20416,6 @@
             },
             "required": true,
             "name": "workspaceId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "agentId",
             "in": "path"
           }
         ],

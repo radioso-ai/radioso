@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
-description: "How to create and edit routines in the dashboard using the prose and form editors, bind skill inputs/outputs, and manage lifecycle."
-last_updated: 2026-06-19
+description: "How to create and edit routines in the dashboard using the prose and form editors, bind skill inputs/outputs, copy a routine to text, and manage lifecycle."
+last_updated: 2026-06-20
 ---
 
 # Authoring Routines
@@ -163,8 +163,16 @@ agent's skills and flags a name the agent does not have. The step branches on th
 skill's outcome. See [External Skills via MCP](./external-skills.md) for how to
 connect a server and define external skills.
 
-A branch with a condition chip is decided by a reliable calculation. A branch
-with only prose is decided by the model. The chip colour tells you which.
+Every branch line shows how it is decided. A branch with a condition chip - or a
+capped loop back to an earlier step - is marked **Rule**: an exact comparison
+that behaves the same every time. A branch with only prose is marked **AI
+decides**: the model reads the description and uses judgment, which is what you
+want for fuzzy cases like "the customer seems unsure." The marker is derived from
+the chips on the line, not from the words, so it reads the same in any language.
+
+In practice: use a **Rule** for invariants - amounts, dates, whether a required
+value is present. Use **AI decides** when the fork depends on meaning rather than
+an exact value.
 
 ## Bind a skill's inputs and outputs
 
@@ -274,6 +282,30 @@ such as:
 
 Use **Save draft** to keep work in progress. Use **Publish** to create an
 immutable version that the chat runtime can run.
+
+## Copy a routine to text
+
+You can copy a routine out of the **Prose** view and paste it back later without
+losing its chips. Select the prose and copy; Radioso puts the whole routine on
+the clipboard as plain text, including the name and trigger. Paste it into a
+note, a document, or a message — anywhere you keep text.
+
+In practice the text is the routine written with simple markers instead of
+chips:
+
+- a variable or skill is `@name`
+- a step title is a line starting with `# `
+- an end is `-> end`, a handoff is `-> handoff`, and a jump is `-> step:<id>`
+- a decided-in-code check is `[if amount >= 100]`
+
+To restore the routine, paste the text back into the prose editor. The markers
+become chips again, and the name and trigger fill in from the text. Copy in the
+prose editor always copies the whole routine, since the routine is its unit.
+
+The text carries names, not internal ids. Pasting into the same agent resolves
+every skill cleanly. Pasting into a different agent that does not have a referenced
+skill leaves that step's skill marked **unknown skill**, the same as typing a
+skill the agent lacks — point it at a skill the agent has, then validate.
 
 ## Form view
 

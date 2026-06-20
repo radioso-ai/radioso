@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useContext, useEffect, useMemo, useState, type JSX } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
 import { AtSign, BadgeCheck, Bold, CornerUpRight, Database, Flag, Heading1, Italic } from 'lucide-react'
 
@@ -22,8 +22,12 @@ import {
   $getSelection,
   $isElementNode,
   $isRangeSelection,
+  COMMAND_PRIORITY_NORMAL,
+  COPY_COMMAND,
   FORMAT_TEXT_COMMAND,
+  PASTE_COMMAND,
   type EditorState,
+  type LexicalNode,
   type TextNode,
 } from 'lexical'
 
@@ -67,9 +71,11 @@ import {
   slugifyVariableKey,
   type ChipDocVariable,
   type ProseParagraph,
+  type ProseSegment,
   type RoutineDocBlock,
   type RoutineFieldGuardValue,
 } from '@/lib/routine-prose'
+import { looksLikeRoutineProse, parseProseDoc, serializeProseDoc } from '@/lib/routine-prose-tokens'
 
 export type RoutineEditorVariable = { id: string; name: string }
 
@@ -709,30 +715,215 @@ function $serializeBlocks(): RoutineDocBlock[] {
   }))
 }
 
-// Build the editor's initial document from loaded prose paragraphs (a variable becomes a
-// chip, condition/handoff chips carry their metadata, everything else is literal text).
+// One prose paragraph → a Lexical block (a variable becomes a chip, condition/handoff/step
+// chips carry their metadata, everything else is literal text). Shared by the initial load
+// and a clipboard paste.
+function $proseParagraphToNode(paragraph: ProseParagraph): LexicalNode {
+  const node = paragraph.headingLevel === 1 ? $createHeadingNode('h1') : $createParagraphNode()
+  for (const segment of paragraph.segments) {
+    if (segment.kind === 'text') {
+      node.append($createTextNode(segment.text))
+    } else if (segment.chipKind === 'condition' && segment.op) {
+      node.append($createConditionChipNode(segment.refId, segment.op, segment.label, segment.value ?? null, segment.values ?? null, segment.unit ?? null))
+    } else if (segment.chipKind === 'step') {
+      node.append($createStepChipNode(segment.refId, segment.label, segment.counterLimit ?? null))
+    } else {
+      node.append($createChipNode(segment.chipKind, segment.refId, segment.label, {
+        inputBindings: segment.inputBindings,
+        outputAssignments: segment.outputAssignments,
+        mode: segment.mode,
+      }))
+    }
+  }
+  return node
+}
+
+// Build the editor's initial document from loaded prose paragraphs.
 function $initializeFromParagraphs(paragraphs: ProseParagraph[]): void {
   const root = $getRoot()
   if (root.getChildrenSize() > 0) return
-  for (const paragraph of paragraphs) {
-    const node = paragraph.headingLevel === 1 ? $createHeadingNode('h1') : $createParagraphNode()
-    for (const segment of paragraph.segments) {
-      if (segment.kind === 'text') {
-        node.append($createTextNode(segment.text))
-      } else if (segment.chipKind === 'condition' && segment.op) {
-        node.append($createConditionChipNode(segment.refId, segment.op, segment.label, segment.value ?? null, segment.values ?? null, segment.unit ?? null))
-      } else if (segment.chipKind === 'step') {
-        node.append($createStepChipNode(segment.refId, segment.label, segment.counterLimit ?? null))
-      } else {
-        node.append($createChipNode(segment.chipKind, segment.refId, segment.label, {
-          inputBindings: segment.inputBindings,
-          outputAssignments: segment.outputAssignments,
-          mode: segment.mode,
-        }))
+  for (const paragraph of paragraphs) root.append($proseParagraphToNode(paragraph))
+}
+
+// Read the live tree into ordered prose paragraphs (text + inline chips), preserving where
+// each chip sits — the shape the token serializer turns into portable clipboard text.
+function $readProseParagraphs(): ProseParagraph[] {
+  return $getRoot().getChildren().map((block) => {
+    const segments: ProseSegment[] = []
+    if ($isElementNode(block)) {
+      for (const child of block.getChildren()) {
+        if ($isChipNode(child)) {
+          segments.push({
+            kind: 'chip',
+            chipKind: child.getChipKind(),
+            refId: child.getRefId(),
+            label: child.getRefId(),
+            op: child.getChipOp() ?? undefined,
+            value: child.getChipValue(),
+            values: child.getChipValues(),
+            unit: child.getChipUnit() ?? undefined,
+            counterLimit: child.getChipCounterLimit(),
+            inputBindings: child.getInputBindings(),
+            outputAssignments: child.getOutputAssignments(),
+            mode: child.getMode() ?? undefined,
+          })
+        } else {
+          segments.push({ kind: 'text', text: child.getTextContent() })
+        }
       }
     }
-    root.append(node)
-  }
+    return {
+      ...($isHeadingNode(block) ? { headingLevel: 1 as const } : {}),
+      segments,
+    }
+  })
+}
+
+const escapeHtml = (value: string): string =>
+  value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+// Make the routine copy/paste losslessly through an external file. Copy serializes the
+// whole routine (frontmatter + chip tokens) onto the clipboard's text flavours — copy in
+// this editor always copies the whole routine, since that's its unit. Paste detects that
+// grammar and rebuilds the chips, lifting the frontmatter back into the name/trigger
+// fields and recreating any variables the pasted text referenced.
+function ClipboardRoundTripPlugin({
+  name,
+  trigger,
+  variables,
+  onCreateVariable,
+  onSetVariableType,
+  onPasteFrontmatter,
+}: {
+  name: string
+  trigger: string
+  variables: ChipDocVariable[]
+  onCreateVariable: (variable: RoutineEditorVariable) => void
+  onSetVariableType: (refId: string, type: RoutineSlotType) => void
+  onPasteFrontmatter?: (frontmatter: { name: string | null; trigger: string | null }) => void
+}) {
+  const [editor] = useLexicalComposerContext()
+  const skillCatalog = useContext(RoutineSkillCatalogContext)
+
+  // Commands register once; read the latest props through a ref so copy emits the current
+  // header/variables and paste resolves against the current skill catalog. The ref is
+  // synced after each render (not during) so the handlers always see fresh values.
+  const stateRef = useRef({ name, trigger, variables, skillNames: new Set<string>() })
+  useEffect(() => {
+    stateRef.current = {
+      name,
+      trigger,
+      variables,
+      skillNames: new Set(skillCatalog.skills.map((skill) => skill.skillName)),
+    }
+  })
+
+  useEffect(() => {
+    const unregisterCopy = editor.registerCommand(
+      COPY_COMMAND,
+      (event: ClipboardEvent | null) => {
+        const clipboardData = event?.clipboardData
+        if (!clipboardData) return false
+        const { name: currentName, trigger: currentTrigger, variables: currentVariables } = stateRef.current
+        const paragraphs = editor.getEditorState().read($readProseParagraphs)
+        const text = serializeProseDoc({ name: currentName, trigger: currentTrigger, variables: currentVariables, paragraphs })
+        event.preventDefault()
+        clipboardData.setData('text/plain', text)
+        clipboardData.setData('text/html', `<pre>${escapeHtml(text)}</pre>`)
+        return true
+      },
+      COMMAND_PRIORITY_NORMAL,
+    )
+
+    const unregisterPaste = editor.registerCommand(
+      PASTE_COMMAND,
+      (event: ClipboardEvent) => {
+        const clipboardData = event.clipboardData
+        if (!clipboardData) return false
+        const text = clipboardData.getData('text/plain')
+        if (!text || !looksLikeRoutineProse(text)) return false
+        event.preventDefault()
+
+        const { variables: currentVariables, skillNames } = stateRef.current
+        const parsed = parseProseDoc(text, (candidate) => skillNames.has(candidate))
+
+        for (const variable of parsed.variables) {
+          if (!currentVariables.some((existing) => existing.id === variable.id)) {
+            onCreateVariable({ id: variable.id, name: variable.name })
+          }
+          if (variable.type !== 'text') onSetVariableType(variable.id, variable.type)
+        }
+        if (onPasteFrontmatter && (parsed.name !== null || parsed.trigger !== null)) {
+          onPasteFrontmatter({ name: parsed.name, trigger: parsed.trigger })
+        }
+
+        // A pasted whole document (it carries frontmatter) replaces the routine; a bare
+        // fragment is inserted at the caret.
+        const replaceWholeDoc = text.trim().startsWith('---')
+        editor.update(() => {
+          const nodes = parsed.paragraphs.map($proseParagraphToNode)
+          if (replaceWholeDoc) {
+            const root = $getRoot()
+            root.clear()
+            for (const node of nodes) root.append(node)
+            root.selectEnd()
+          } else {
+            const selection = $getSelection()
+            if ($isRangeSelection(selection)) selection.insertNodes(nodes)
+          }
+        })
+        return true
+      },
+      COMMAND_PRIORITY_NORMAL,
+    )
+
+    return () => {
+      unregisterCopy()
+      unregisterPaste()
+    }
+  }, [editor, onCreateVariable, onSetVariableType, onPasteFrontmatter])
+
+  return null
+}
+
+// How a branch line is decided, derived structurally from its chips — never from the
+// words (Radioso is multilingual). A line with no target chip isn't a branch. A branch
+// with a condition chip, or a counter-bounded jump, is decided in code ('rule'); any other
+// branch is decided by the AI from its prose ('ai').
+function $branchDecisionKind(block: LexicalNode): 'rule' | 'ai' | null {
+  if ($isHeadingNode(block) || !$isElementNode(block)) return null
+  const chips = block.getChildren().filter($isChipNode)
+  const hasTarget = chips.some((chip) => {
+    const kind = chip.getChipKind()
+    return kind === 'end' || kind === 'handoff' || kind === 'step'
+  })
+  if (!hasTarget) return null
+  const deterministic = chips.some(
+    (chip) => chip.getChipKind() === 'condition' || (chip.getChipKind() === 'step' && chip.getChipCounterLimit() != null),
+  )
+  return deterministic ? 'rule' : 'ai'
+}
+
+// Tag each branch line with its decision kind so the surface can badge "Rule" vs "AI
+// decides" — so the author sees which forks are exact and which are the AI's judgment.
+// The tag is a data attribute the stylesheet renders; it carries no editor state.
+function BranchDecisionDecorationPlugin() {
+  const [editor] = useLexicalComposerContext()
+  useEffect(() => {
+    const apply = () =>
+      editor.getEditorState().read(() => {
+        for (const block of $getRoot().getChildren()) {
+          const element = editor.getElementByKey(block.getKey())
+          if (!element) continue
+          const kind = $branchDecisionKind(block)
+          if (kind) element.setAttribute('data-routine-branch', kind)
+          else element.removeAttribute('data-routine-branch')
+        }
+      })
+    apply()
+    return editor.registerUpdateListener(apply)
+  }, [editor])
+  return null
 }
 
 function OnDocChangePlugin({ onDocChange }: { onDocChange: (blocks: RoutineDocBlock[]) => void }) {
@@ -749,16 +940,24 @@ export function RoutineChipEditor({
   variables,
   reservedRefKinds,
   initialContent,
+  name = '',
+  trigger = '',
   onCreateVariable,
   onDocChange,
   onSetVariableType,
+  onPasteFrontmatter,
 }: {
   variables: ChipDocVariable[]
   reservedRefKinds: Record<string, RoutineChipKind>
   initialContent?: ProseParagraph[]
+  // The header fields live outside the editor; the editor takes them so a copy includes
+  // the routine's frontmatter and a paste can lift it back out.
+  name?: string
+  trigger?: string
   onCreateVariable: (variable: RoutineEditorVariable) => void
   onDocChange: (blocks: RoutineDocBlock[]) => void
   onSetVariableType: (refId: string, type: RoutineSlotType) => void
+  onPasteFrontmatter?: (frontmatter: { name: string | null; trigger: string | null }) => void
 }): JSX.Element {
   const variablesContext = useMemo(
     () => ({
@@ -784,7 +983,7 @@ export function RoutineChipEditor({
       }}
     >
       <RoutineVariablesProvider value={variablesContext}>
-        <div className="rounded-md border border-input bg-transparent focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
+        <div className="routine-prose-surface rounded-md border border-input bg-transparent focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
           <EditorToolbar variables={variables} onSetVariableType={onSetVariableType} />
           <div className="relative">
             <RichTextPlugin
@@ -804,7 +1003,16 @@ export function RoutineChipEditor({
           </div>
           <HistoryPlugin />
           <OnDocChangePlugin onDocChange={onDocChange} />
+          <BranchDecisionDecorationPlugin />
           <ChipTypeaheadPlugin variables={variables} reservedRefKinds={reservedRefKinds} onCreateVariable={onCreateVariable} />
+          <ClipboardRoundTripPlugin
+            name={name}
+            trigger={trigger}
+            variables={variables}
+            onCreateVariable={onCreateVariable}
+            onSetVariableType={onSetVariableType}
+            onPasteFrontmatter={onPasteFrontmatter}
+          />
         </div>
       </RoutineVariablesProvider>
     </LexicalComposer>

@@ -1,0 +1,203 @@
+import { describe, expect, it } from 'vitest'
+
+import { looksLikeRoutineProse, parseProseDoc, serializeProseDoc } from '@/lib/routine-prose-tokens'
+import type { ChipDocVariable, ProseParagraph } from '@/lib/routine-prose'
+
+// A round-trip projects through text and back. The token grammar carries a variable's
+// key + type but not its display description, so reconstructed variables key off the id;
+// we compare the functional shape (kinds, refs, ops, targets, bindings), not labels.
+const roundTrip = (
+  input: { name: string; trigger: string; variables: ChipDocVariable[]; paragraphs: ProseParagraph[] },
+  skills: string[] = [],
+) => {
+  const text = serializeProseDoc(input)
+  const parsed = parseProseDoc(text, (name) => skills.includes(name))
+  return { text, parsed }
+}
+
+const chipShape = (paragraphs: ProseParagraph[]) =>
+  paragraphs.map((paragraph) => ({
+    heading: paragraph.headingLevel === 1,
+    segments: paragraph.segments.map((segment) =>
+      segment.kind === 'text'
+        ? { kind: 'text', text: segment.text }
+        : {
+            kind: 'chip',
+            chipKind: segment.chipKind,
+            refId: segment.refId,
+            op: segment.op ?? null,
+            value: segment.value ?? null,
+            values: segment.values ?? null,
+            unit: segment.unit ?? null,
+            counterLimit: segment.counterLimit ?? null,
+            inputBindings: segment.inputBindings ?? {},
+            outputAssignments: segment.outputAssignments ?? {},
+            // 'typed' is the default mode and isn't emitted, so it round-trips as absent.
+            mode: segment.mode && segment.mode !== 'typed' ? segment.mode : undefined,
+          },
+    ),
+  }))
+
+describe('routine prose token grammar', () => {
+  it('round-trips the screenshot routine: headings, variables, end and handoff', () => {
+    const input = {
+      name: 'Greeter',
+      trigger: 'When the user says "thanks, cap"',
+      variables: [{ id: 'name', name: 'name', type: 'text' as const }],
+      paragraphs: [
+        { headingLevel: 1 as const, segments: [{ kind: 'text' as const, text: 'Step 1. Acknowledgement' }] },
+        {
+          segments: [
+            { kind: 'text' as const, text: 'Ask the person for their name and record as ' },
+            { kind: 'chip' as const, chipKind: 'variable' as const, refId: 'name', label: '@name' },
+            { kind: 'text' as const, text: '.' },
+          ],
+        },
+        { headingLevel: 1 as const, segments: [{ kind: 'text' as const, text: 'Step 3. Search' }] },
+        {
+          segments: [
+            { kind: 'text' as const, text: 'If there is context, answer and end. ' },
+            { kind: 'chip' as const, chipKind: 'end' as const, refId: 'done', label: 'end' },
+          ],
+        },
+        {
+          segments: [
+            { kind: 'text' as const, text: 'If no context, someone will be in touch soon and ' },
+            { kind: 'chip' as const, chipKind: 'handoff' as const, refId: 'handoff', label: 'handoff' },
+          ],
+        },
+      ],
+    }
+    const { text, parsed } = roundTrip(input)
+
+    expect(text).toContain('name: Greeter')
+    expect(text).toContain('# Step 1. Acknowledgement')
+    expect(text).toContain('record as @name.')
+    expect(text).toContain('end. -> end')
+    expect(text).toContain('soon and -> handoff')
+
+    expect(parsed.name).toBe('Greeter')
+    expect(parsed.trigger).toBe('When the user says "thanks, cap"')
+    expect(parsed.variables).toEqual([{ id: 'name', name: 'name', type: 'text' }])
+    expect(chipShape(parsed.paragraphs)).toEqual(chipShape(input.paragraphs))
+  })
+
+  it('round-trips field-guard conditions across operator shapes', () => {
+    const input = {
+      name: 'eligibility',
+      trigger: 'when checking eligibility',
+      variables: [
+        { id: 'amount', name: 'amount', type: 'number' as const },
+        { id: 'tier', name: 'tier', type: 'text' as const },
+        { id: 'signup', name: 'signup', type: 'date' as const },
+        { id: 'vip', name: 'vip', type: 'boolean' as const },
+      ],
+      paragraphs: [
+        { segments: [
+          { kind: 'chip' as const, chipKind: 'condition' as const, refId: 'amount', op: 'gte' as const, value: 100, label: 'amount >= 100' },
+          { kind: 'chip' as const, chipKind: 'end' as const, refId: 'done', label: 'end' },
+        ] },
+        { segments: [
+          { kind: 'chip' as const, chipKind: 'condition' as const, refId: 'tier', op: 'in' as const, values: ['gold', 'platinum'], label: 'tier in gold, platinum' },
+          { kind: 'chip' as const, chipKind: 'end' as const, refId: 'done', label: 'end' },
+        ] },
+        { segments: [
+          { kind: 'chip' as const, chipKind: 'condition' as const, refId: 'signup', op: 'older_than' as const, value: 6, unit: 'months' as const, label: 'signup older than 6 months' },
+          { kind: 'chip' as const, chipKind: 'handoff' as const, refId: 'handoff', label: 'handoff' },
+        ] },
+        { segments: [
+          { kind: 'chip' as const, chipKind: 'condition' as const, refId: 'vip', op: 'is_true' as const, label: 'vip is true' },
+          { kind: 'chip' as const, chipKind: 'end' as const, refId: 'done', label: 'end' },
+        ] },
+      ],
+    }
+    const { text, parsed } = roundTrip(input)
+
+    expect(text).toContain('vars: amount:number, signup:date, vip:boolean')
+    expect(text).toContain('[if amount >= 100]')
+    expect(text).toContain('[if tier in gold, platinum]')
+    expect(text).toContain('[if signup older than 6 months]')
+    expect(text).toContain('[if vip is true]')
+
+    expect(chipShape(parsed.paragraphs)).toEqual(chipShape(input.paragraphs))
+    expect(parsed.variables).toContainEqual({ id: 'amount', name: 'amount', type: 'number' })
+    expect(parsed.variables).toContainEqual({ id: 'signup', name: 'signup', type: 'date' })
+    expect(parsed.variables).toContainEqual({ id: 'vip', name: 'vip', type: 'boolean' })
+  })
+
+  it('round-trips a capped backward jump', () => {
+    const input = {
+      name: 'retry',
+      trigger: 'retry flow',
+      variables: [],
+      paragraphs: [
+        { headingLevel: 1 as const, segments: [{ kind: 'text' as const, text: 'Lookup' }] },
+        { segments: [
+          { kind: 'text' as const, text: 'Try again. ' },
+          { kind: 'chip' as const, chipKind: 'step' as const, refId: 'lookup', label: 'Lookup', counterLimit: 2 },
+        ] },
+      ],
+    }
+    const { text, parsed } = roundTrip(input)
+    expect(text).toContain('-> step:lookup (max 2)')
+    expect(chipShape(parsed.paragraphs)).toEqual(chipShape(input.paragraphs))
+  })
+
+  it('round-trips a skill chip with typed input/output bindings', () => {
+    const input = {
+      name: 'order',
+      trigger: 'order support',
+      variables: [{ id: 'email', name: 'email', type: 'email' as const }],
+      paragraphs: [
+        { segments: [
+          { kind: 'text' as const, text: 'Look it up. ' },
+          {
+            kind: 'chip' as const,
+            chipKind: 'skill' as const,
+            refId: 'order_lookup',
+            label: 'order_lookup',
+            inputBindings: { email: { kind: 'variableRef' as const, ref: 'email' }, includeHistory: { kind: 'literal' as const, value: true } },
+            outputAssignments: { status: 'order_status' },
+            mode: 'typed' as const,
+          },
+        ] },
+      ],
+    }
+    const { text, parsed } = roundTrip(input, ['order_lookup'])
+    expect(text).toContain('@order_lookup[in email=@email, includeHistory=true; out status=@order_status]')
+    expect(chipShape(parsed.paragraphs)).toEqual(chipShape(input.paragraphs))
+  })
+
+  it('keeps an unbound skill a clean mention and resolves it via the catalog', () => {
+    const input = {
+      name: 'search',
+      trigger: 'search',
+      variables: [],
+      paragraphs: [
+        { headingLevel: 1 as const, segments: [{ kind: 'text' as const, text: 'Search' }] },
+        { segments: [{ kind: 'chip' as const, chipKind: 'skill' as const, refId: 'retrieval_context', label: 'retrieval_context' }] },
+      ],
+    }
+    const { text, parsed } = roundTrip(input, ['retrieval_context'])
+    expect(text).toContain('@retrieval_context')
+    expect(text).not.toContain('[')
+    expect(parsed.paragraphs[1]!.segments[0]).toMatchObject({ kind: 'chip', chipKind: 'skill', refId: 'retrieval_context' })
+  })
+
+  it('treats an unknown @mention as a variable when it is not a known skill', () => {
+    const parsed = parseProseDoc('Hello @customer_name.', () => false)
+    expect(parsed.paragraphs[0]!.segments).toEqual([
+      { kind: 'text', text: 'Hello ' },
+      { kind: 'chip', chipKind: 'variable', refId: 'customer_name', label: '@customer_name' },
+      { kind: 'text', text: '.' },
+    ])
+    expect(parsed.variables).toEqual([{ id: 'customer_name', name: 'customer_name', type: 'text' }])
+  })
+
+  it('detects routine prose vs ordinary text', () => {
+    expect(looksLikeRoutineProse('---\nname: x\ntrigger: y\n---\nHi.')).toBe(true)
+    expect(looksLikeRoutineProse('Ask for @email then continue.')).toBe(true)
+    expect(looksLikeRoutineProse('Finish and -> handoff')).toBe(true)
+    expect(looksLikeRoutineProse('Just some pasted sentence with no tokens.')).toBe(false)
+  })
+})

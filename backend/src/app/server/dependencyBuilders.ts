@@ -752,6 +752,7 @@ export const buildWorkspaceServices = (input: {
 
 
 export const buildChatServices = (input: {
+  accountAccessService: AccountAccessService;
   agentService: AgentService;
   auditEventRepository: AuditEventRepository;
   auditService: AuditService;
@@ -1157,6 +1158,7 @@ export const buildChatServices = (input: {
           }),
           new RoutineStepRenderer(modelGateway, {
             promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
+            terminalHandoffInstruction: loadPromptTemplate("chat/routine-step-terminal-handoff.md"),
             responseLanguage,
           }),
           new RoutineSkillExecutorDispatcher(
@@ -1323,6 +1325,9 @@ export const buildChatServices = (input: {
   const approvalDecisionService = new ApprovalDecisionService(
     new PendingDecisionRepository(input.database),
     chatService.asApprovalResumeRunner(),
+    {
+      resolveWorkspaceRole: (caller) => input.accountAccessService.resolveWorkspaceRole(caller),
+    },
   );
 
   return {

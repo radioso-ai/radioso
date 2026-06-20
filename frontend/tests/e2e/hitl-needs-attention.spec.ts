@@ -159,6 +159,7 @@ test("operator can use activity tabs to open a pending approval", async ({ page 
       { id: "reject", label: "Reject" },
     ],
     contentHash: "hash-1",
+    canResolve: true,
     deadline: null,
     createdAt: nowIso,
   };
@@ -193,6 +194,7 @@ test("operator can use activity tabs to open a pending approval", async ({ page 
 
   await page.getByRole("link", { name: "Needs attention" }).click();
   await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/activity\\?tab=needs-attention`));
+  await expect(page.getByRole("button", { name: "Refresh" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Pending approvals" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Approve sending the booking update" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Awaiting / handled by a human" })).toBeVisible();

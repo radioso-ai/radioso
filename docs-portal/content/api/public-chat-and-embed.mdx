@@ -15,6 +15,7 @@ GET  /api/v1/public/chat/{token}
 POST /api/v1/public/chat/{token}
 GET  /api/v1/public/chat/{token}/history/{conversationId}
 GET  /api/v1/public/chat/{token}/tail/{conversationId}
+GET  /api/v1/public/chat/{token}/events/{conversationId}
 GET  /api/v1/public/chat/{token}/embed-config
 GET  /api/v1/public/chat/{token}/assistant-logo
 ```
@@ -157,7 +158,9 @@ Use `GET /api/v1/public/chat/{token}` to list conversations for the current anon
 
 Use `GET /api/v1/public/chat/{token}/history/{conversationId}` to fetch one conversation from that same anonymous session.
 
-Use `GET /api/v1/public/chat/{token}/tail/{conversationId}` to poll for messages created after a cursor. Omit `cursor` once to establish a baseline; the response contains no messages and returns the current newest cursor. Then send that cursor on later polls to receive new visitor, AI, or human-agent messages. Public tail responses do not include operator ownership metadata.
+Use `GET /api/v1/public/chat/{token}/tail/{conversationId}` to read messages created after a cursor. A conversation detail response includes `tailCursor`; send that cursor to receive only later visitor, AI, or human-agent messages. If `cursor` is omitted, tail returns the newest bounded page and a cursor for the newest returned message. Public tail responses do not include operator ownership metadata.
+
+Use `GET /api/v1/public/chat/{token}/events/{conversationId}` to open a server-sent event stream for the same anonymous session. The stream emits `ready` after subscription and `message.created` when a new message is available. Browser clients that store the public session in local storage should consume this stream with `fetch`, not native `EventSource`, so they can send `x-radioso-public-session`.
 
 ## Common failure modes
 

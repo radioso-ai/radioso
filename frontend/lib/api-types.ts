@@ -389,6 +389,7 @@ export interface ChatStreamCompletion {
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   suggestions?: ChatSuggestion[]
+  ownership?: ChatResponse['ownership']
   debug?: ChatResponse['debug']
   skill?: SkillStreamPayload
 }
@@ -397,8 +398,17 @@ export type ChatConversationSummary = ApiSchemas['ChatConversationSummary']
 export type ConversationOwnership = ApiSchemas['ConversationOwnership']
 export type ChatConversationMessage = ApiSchemas['ChatConversationMessage']
 export type ChatConversationTail = ApiSchemas['ChatConversationTail']
-export type PendingApprovalDecisionListResponse = ApiSchemas['PendingApprovalDecisionListResponse']
-export type PendingApprovalDecision = ApiSchemas['PendingApprovalDecision']
+export type PublicChatConversationTail = ApiSchemas['PublicChatConversationTail']
+
+export type PublicChatConversationEvent =
+  | { type: 'ready'; conversationId: string }
+  | { type: 'message.created'; conversationId: string; messageId: string; createdAt: string }
+export type PendingApprovalDecision = ApiSchemas['PendingApprovalDecision'] & {
+  canResolve: boolean
+}
+export type PendingApprovalDecisionListResponse = Omit<ApiSchemas['PendingApprovalDecisionListResponse'], 'decisions'> & {
+  decisions: PendingApprovalDecision[]
+}
 export type ResolveDecisionRequest =
   operations['resolveDecision']['requestBody']['content']['application/json']
 export type ResolveDecisionResponse =
@@ -419,6 +429,7 @@ export type ChatConversationTurn = ApiSchemas['ChatConversationMessage'] & {
 }
 export type ChatConversationDetail = Omit<ApiSchemas['ChatConversationDetail'], 'messages'> & {
   messages: ChatConversationTurn[]
+  tailCursor: string | null
 }
 
 export interface ContactHistorySummary {

@@ -5,6 +5,7 @@ import type {
 import type { DatabaseExecutor } from "../../shared/infra/database.js";
 import {
   ApprovalDecisionDomainError,
+  satisfiesDeciderScope,
   resolveDecisionDomain,
   type DecisionCaller,
   type ResolvedApprovalDecision,
@@ -49,6 +50,10 @@ export interface ResolveApprovalDecisionInput {
   caller: DecisionCaller;
 }
 
+export interface ApprovalDecisionRoleResolver {
+  resolveWorkspaceRole(input: DecisionCaller): Promise<DecisionCaller["workspaceRole"]>;
+}
+
 export interface ResolveApprovalDecisionResult {
   status: "resolved";
   decision: ResolvedApprovalDecision["outcome"];
@@ -65,10 +70,18 @@ export class ApprovalDecisionService {
   constructor(
     private readonly pendingDecisions: PendingDecisionReader,
     private readonly resumeRunner: ResumeRunner,
+    private readonly roleResolver?: ApprovalDecisionRoleResolver,
   ) {}
 
   async listPending(workspaceId: string): Promise<PendingDecisionRecord[]> {
     return this.pendingDecisions.listPending({ workspaceId });
+  }
+
+  async canResolve(record: PendingDecisionRecord, caller: DecisionCaller): Promise<boolean> {
+    return satisfiesDeciderScope({
+      record,
+      caller: await this.resolveCaller(caller),
+    });
   }
 
   async resolve(input: ResolveApprovalDecisionInput): Promise<ResolveApprovalDecisionResult> {
@@ -87,7 +100,7 @@ export class ApprovalDecisionService {
         optionId: input.optionId,
         payload: input.payload,
         contentHash: input.contentHash,
-        caller: input.caller,
+        caller: await this.resolveCaller(input.caller),
       });
     } catch (error) {
       if (error instanceof ApprovalDecisionDomainError) {
@@ -122,6 +135,16 @@ export class ApprovalDecisionService {
       decision: resolved.outcome,
       conversationId: resume.conversationId,
       resumed: resume.resumed,
+    };
+  }
+
+  private async resolveCaller(caller: DecisionCaller): Promise<DecisionCaller> {
+    if (caller.workspaceRole !== undefined || !this.roleResolver) {
+      return caller;
+    }
+    return {
+      ...caller,
+      workspaceRole: await this.roleResolver.resolveWorkspaceRole(caller),
     };
   }
 }

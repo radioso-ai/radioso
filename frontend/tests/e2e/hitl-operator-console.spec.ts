@@ -99,6 +99,7 @@ test("operator can take over, reply, and resolve a pending decision", async ({ p
       { id: "reject", label: "Reject" },
     ],
     contentHash: "hash-1",
+    canResolve: true,
     deadline: null,
     createdAt: nowIso,
   };
@@ -295,6 +296,7 @@ test("pending approval cards are isolated when switching conversations", async (
       { id: "reject", label: "Reject" },
     ],
     contentHash: "hash-1",
+    canResolve: true,
     deadline: null,
     createdAt: nowIso,
   };

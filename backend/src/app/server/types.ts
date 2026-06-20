@@ -5,6 +5,7 @@ import type {
   ChatBootstrapService,
   ChatHistoryService,
   ChatService,
+  PublicConversationEventBus,
   WorkbenchReplayRunner,
 } from "../../modules/chat/composition.js";
 import type {
@@ -93,6 +94,7 @@ export interface AppDependencies {
   usageLimitPolicy: UsageLimitPolicy;
   organizationCreationGuard: OrganizationCreationGuard;
   publicChatActionAdvertiser: PublicChatActionAdvertiserPort;
+  publicConversationEventBus: PublicConversationEventBus;
   contactHistoryProvider: ContactHistoryProviderPort;
   applicationRouteMounts: ApplicationRouteMount[];
   applicationModules: ApplicationModuleCoordinator;

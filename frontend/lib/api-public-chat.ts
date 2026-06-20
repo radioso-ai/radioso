@@ -8,10 +8,12 @@ import {
   storePublicSessionResumeToken,
   storePublicSessionToken,
 } from './api-client'
-import { streamChatEvents } from './api-chat-stream'
+import { parseSseEvent, streamChatEvents } from './api-chat-stream'
 import { buildQueryString } from './api-query'
 import type {
   ChatConversationDetail,
+  PublicChatConversationTail,
+  PublicChatConversationEvent,
   ChatHistoryListResponse,
   ChatResponse,
   ChatStreamHandlers,
@@ -149,6 +151,7 @@ export const publicChatApi = {
         citations: payload.citations,
         answerSegments: payload.answerSegments,
         suggestions: payload.suggestions,
+        ownership: payload.ownership,
         debug: payload.debug,
       })
       return payload
@@ -236,6 +239,107 @@ export const publicChatApi = {
 
     persistAnonymousSessionHeader(token, response)
     return response.json() as Promise<ChatConversationDetail>
+  },
+
+  async tailConversation(
+    token: string,
+    conversationId: string,
+    input?: { limit?: number; cursor?: string | null },
+  ): Promise<PublicChatConversationTail> {
+    const query = buildQueryString({
+      limit: input?.limit,
+      cursor: input?.cursor ?? undefined,
+    })
+    const response = await fetch(`${API_BASE}/public/chat/${token}/tail/${conversationId}${query ? `?${query}` : ''}`, {
+      method: 'GET',
+      cache: 'no-store',
+      credentials: 'include',
+      headers: attachAnonymousSessionHeader(token, {
+        'X-Forwarded-Prefix': '/backend',
+      }),
+    })
+
+    if (!response.ok) {
+      throw await buildError(response)
+    }
+
+    persistAnonymousSessionHeader(token, response)
+    return response.json() as Promise<PublicChatConversationTail>
+  },
+
+  async streamConversationEvents(
+    token: string,
+    conversationId: string,
+    handlers: { onEvent?: (event: PublicChatConversationEvent) => void } = {},
+    options: { signal?: AbortSignal } = {},
+  ): Promise<void> {
+    const response = await fetch(`${API_BASE}/public/chat/${token}/events/${conversationId}`, {
+      method: 'GET',
+      cache: 'no-store',
+      credentials: 'include',
+      signal: options.signal,
+      headers: attachAnonymousSessionHeader(token, {
+        Accept: 'text/event-stream',
+        'X-Forwarded-Prefix': '/backend',
+      }),
+    })
+
+    if (!response.ok) {
+      throw await buildError(response)
+    }
+
+    persistAnonymousSessionHeader(token, response)
+
+    if (!response.body) {
+      throw new Error('Conversation event stream body was unavailable.')
+    }
+
+    const contentType = response.headers.get('content-type') ?? ''
+    if (!contentType.includes('text/event-stream')) {
+      throw new Error('Conversation event stream response was not an event stream.')
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    const flushEvent = (rawEvent: string) => {
+      if (!rawEvent.trim()) {
+        return
+      }
+      const { eventName, data } = parseSseEvent(rawEvent)
+      if (!data) {
+        return
+      }
+      const payload = JSON.parse(data) as Omit<PublicChatConversationEvent, 'type'>
+      if (eventName === 'ready' || eventName === 'message.created') {
+        handlers.onEvent?.({ ...payload, type: eventName } as PublicChatConversationEvent)
+      }
+    }
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done })
+
+        let delimiterIndex = buffer.indexOf('\n\n')
+        while (delimiterIndex !== -1) {
+          flushEvent(buffer.slice(0, delimiterIndex))
+          buffer = buffer.slice(delimiterIndex + 2)
+          delimiterIndex = buffer.indexOf('\n\n')
+        }
+
+        if (done) {
+          break
+        }
+      }
+
+      if (buffer.trim()) {
+        flushEvent(buffer)
+      }
+    } finally {
+      reader.releaseLock()
+    }
   },
 
 }

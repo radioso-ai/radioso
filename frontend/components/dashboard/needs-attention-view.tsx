@@ -1,18 +1,23 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { RefreshCw } from 'lucide-react'
 
 import { ConversationDrawer } from './conversation-drawer'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { DashboardTable, DashboardTableBody, DashboardTableCell, DashboardTableHead, DashboardTableHeader, DashboardTableRow } from '@/components/dashboard/shared/dashboard-table'
 import type { SelectedHistoryItem } from '@/components/dashboard/history/history-list'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useNeedsAttentionActivity } from '@/hooks/use-needs-attention-activity'
 import { chatApi } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { hitlApi } from '@/lib/api-hitl'
 import type { ChatConversationSummary, PendingApprovalDecision } from '@/lib/api-types'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import {
+  HUMAN_OWNED_CONVERSATION_PAGE_SIZE,
+  inboxSignature,
   type HumanOwnedConversationSummary,
   ownershipLabel,
   selectHumanOwnedConversations,
@@ -24,7 +29,6 @@ interface NeedsAttentionViewProps {
 }
 
 const relativeTimeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
-const HUMAN_OWNED_CONVERSATION_PAGE_SIZE = 50
 
 export const formatApprovalCreatedAt = (createdAt: string, now = new Date()): string => {
   const created = new Date(createdAt)
@@ -220,6 +224,22 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
 
   const needsAttentionCount = decisions.length + humanOwnedConversations.length
   const isLoading = isLoadingApprovals || isLoadingConversations
+
+  // While the initial load is in flight the displayed state isn't meaningful, so withhold the
+  // baseline (null) to keep the activity indicator from firing before the inbox has settled.
+  const baselineSignature = useMemo(
+    () => (isLoading ? null : inboxSignature(decisions, humanOwnedConversations)),
+    [decisions, humanOwnedConversations, isLoading],
+  )
+  const hasNewActivity = useNeedsAttentionActivity({
+    baselineSignature,
+    // Pause the background poll while a conversation is open; closing it already triggers a refresh.
+    enabled: selectedItem === null,
+  })
+
+  const handleRefresh = useCallback(() => {
+    void refreshInbox()
+  }, [refreshInbox])
   const showEmptyState =
     !isLoading &&
     !approvalError &&
@@ -234,6 +254,22 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       <DashboardPage
         title="Needs attention"
         description={`${needsAttentionCount} item${needsAttentionCount === 1 ? '' : 's'} needing operator attention`}
+        actions={
+          <Button
+            type="button"
+            variant={hasNewActivity ? 'default' : 'outline'}
+            size="sm"
+            onClick={handleRefresh}
+            disabled={isLoading}
+          >
+            {hasNewActivity ? (
+              <span className="inline-block h-2 w-2 rounded-full bg-primary-foreground" aria-hidden />
+            ) : (
+              <RefreshCw className="h-4 w-4" aria-hidden />
+            )}
+            {hasNewActivity ? 'New activity · Refresh' : 'Refresh'}
+          </Button>
+        }
       >
         <div className="space-y-8">
           {showApprovalsSection ? (

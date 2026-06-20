@@ -139,6 +139,7 @@ import {
   NoopPublicChatActionAdvertiser,
   type PublicChatActionAdvertiserPort,
 } from "../../src/modules/chat/services/publicChatActionAdvertiser.js";
+import { InMemoryPublicConversationEventBus } from "../../src/modules/chat/composition.js";
 import { NoopContactHistoryProvider } from "../../src/modules/chat/services/contactHistoryProvider.js";
 import type { AnswerFeedbackHistoryProviderPort } from "../../src/modules/chat/services/answerFeedbackHistoryProvider.js";
 import {
@@ -1059,6 +1060,7 @@ export const createTestDependencies = (overrides: {
     { logger },
   );
   const assistantHistoryService = new AssistantHistoryService(chatHistoryService);
+  const publicConversationEventBus = new InMemoryPublicConversationEventBus();
   const retrievalSearchService = new RetrievalSearchService(retrievalPipeline);
   const retrievalAnswerService = new RetrievalAnswerService({
     retrievalPipeline,
@@ -1085,6 +1087,9 @@ export const createTestDependencies = (overrides: {
         throw new Error("approval_resume_not_configured");
       },
     },
+    {
+      resolveWorkspaceRole: (caller) => accountAccessService.resolveWorkspaceRole(caller),
+    },
   );
   const dependencies: AppDependencies = {
     env,
@@ -1097,6 +1102,7 @@ export const createTestDependencies = (overrides: {
     usageLimitPolicy,
     organizationCreationGuard,
     publicChatActionAdvertiser,
+    publicConversationEventBus,
     contactHistoryProvider: new NoopContactHistoryProvider(),
     applicationRouteMounts: overrides.applicationRouteMounts ?? [],
     applicationModules: new ApplicationModuleCoordinator({

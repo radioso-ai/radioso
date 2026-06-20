@@ -3507,7 +3507,12 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
       : null;
 
     if (!input.sinceCreatedAt || !input.sinceId) {
-      return { messages: [], latestCursor };
+      const newest = messages.slice(-input.limit);
+      const lastReturned = newest.at(-1);
+      return {
+        messages: newest,
+        latestCursor: lastReturned ? this.cursorFor(lastReturned) : latestCursor,
+      };
     }
 
     const newer = messages

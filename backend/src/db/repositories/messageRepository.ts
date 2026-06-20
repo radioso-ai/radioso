@@ -271,7 +271,27 @@ export class MessageRepository implements MessageRepositoryPort {
       : null;
 
     if (!input.sinceCreatedAt || !input.sinceId) {
-      return { messages: [], latestCursor: newestCursor };
+      const rows = await this.database.query<MessageRow>(
+        `SELECT id, conversation_id, workspace_id, role, content, source, metadata_json, skill_name, skill_outcome, skill_status, created_at
+         FROM messages
+         WHERE workspace_id = $1
+           AND conversation_id = $2
+         ORDER BY created_at DESC, id DESC
+         LIMIT $3`,
+        [workspaceId, conversationId, input.limit],
+      );
+      const messages = rows.map(mapMessageRow).reverse();
+      const lastReturned = messages.at(-1);
+
+      return {
+        messages,
+        latestCursor: lastReturned
+          ? encodeCursor({
+              createdAt: lastReturned.createdAt.toISOString(),
+              id: lastReturned.id,
+            })
+          : newestCursor,
+      };
     }
 
     const rows = await this.database.query<MessageRow>(

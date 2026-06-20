@@ -198,7 +198,7 @@ export function OperatorActionBar({
                           type="button"
                           size="sm"
                           variant="secondary"
-                          disabled={isBusy}
+                          disabled={isBusy || !decision.canResolve}
                           onClick={() => void handleResolveDecision(decision, option.id)}
                         >
                           {option.label}

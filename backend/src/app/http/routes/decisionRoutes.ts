@@ -62,7 +62,12 @@ export const createDecisionRoutes = (dependencies: DecisionRouteDependencies): R
     validateBody(resolveDecisionBodySchema),
     async (req, res, next) => {
       try {
-        const { accountId, workspaceId } = res.locals as { accountId: string; workspaceId: string };
+        const { accountId, userId, workspaceId, authPrincipal } = res.locals as {
+          accountId: string;
+          userId?: string;
+          workspaceId: string;
+          authPrincipal?: { type: string; role?: "admin" | "member" | "public"; userId?: string };
+        };
         const params = parseParams(req.params);
         const body = req.body as z.infer<typeof resolveDecisionBodySchema>;
         const result = await dependencies.approvalDecisionService.resolve({
@@ -71,7 +76,7 @@ export const createDecisionRoutes = (dependencies: DecisionRouteDependencies): R
           optionId: body.optionId,
           payload: body.payload,
           contentHash: body.contentHash,
-          caller: { accountId, workspaceId },
+          caller: { accountId, userId, workspaceId, principal: authPrincipal },
         });
 
         res.status(200).json(result);

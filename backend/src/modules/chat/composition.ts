@@ -128,6 +128,11 @@ export {
   type ContactHistoryProviderPort,
 } from "./services/contactHistoryProvider.js";
 export {
+  InMemoryPublicConversationEventBus,
+  type PublicConversationEvent,
+  type PublicConversationEventBus,
+} from "./services/publicConversationEventBus.js";
+export {
   NoopAnswerFeedbackHistoryProvider,
   type AnswerFeedbackHistoryProviderPort,
   type ChatAnswerFeedbackEntry,

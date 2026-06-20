@@ -100,4 +100,27 @@ describe("approval decision domain", () => {
       caller: { accountId: "account_1", workspaceId: "workspace_1" },
     })).toBe(false);
   });
+
+  it("supports workspace role deciders using effective role rank", () => {
+    const pending = record({
+      deciderScope: { kind: "workspace_role", role: "admin" },
+    });
+
+    expect(satisfiesDeciderScope({
+      record: pending,
+      caller: { accountId: "account_1", workspaceId: "workspace_1", workspaceRole: "owner" },
+    })).toBe(true);
+    expect(satisfiesDeciderScope({
+      record: pending,
+      caller: { accountId: "account_1", workspaceId: "workspace_1", workspaceRole: "admin" },
+    })).toBe(true);
+    expect(satisfiesDeciderScope({
+      record: pending,
+      caller: { accountId: "account_1", workspaceId: "workspace_1", workspaceRole: "member" },
+    })).toBe(false);
+    expect(satisfiesDeciderScope({
+      record: pending,
+      caller: { accountId: "account_1", workspaceId: "workspace_1" },
+    })).toBe(false);
+  });
 });

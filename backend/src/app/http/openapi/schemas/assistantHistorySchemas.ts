@@ -467,6 +467,9 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       messageWindowLimit: z.number().int().min(1),
       hasOlderMessages: z.boolean(),
       nextCursor: z.string().nullable(),
+      tailCursor: z.string().nullable().openapi({
+        description: "Cursor for subsequent tail requests. It marks the newest message included when this detail response was produced.",
+      }),
       messages: z.array(ChatConversationMessageSchema),
       ownership: ConversationOwnershipSchema.optional(),
     }),

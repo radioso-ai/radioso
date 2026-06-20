@@ -156,15 +156,17 @@ transport with an `approval.request` action, mirroring `handoff.notify`.
 
 ## Live updates
 
-Both surfaces can poll forward for new messages instead of refetching the whole
-transcript.
+Both surfaces can read forward for new messages instead of refetching the whole
+transcript. The public visitor surface can also subscribe to push notifications.
 
 - Operator: `GET /api/v1/history/chat/{conversationId}/tail?cursor=...`
 - Visitor: `GET /api/v1/public/chat/{token}/tail/{conversationId}?cursor=...`
+- Visitor push: `GET /api/v1/public/chat/{token}/events/{conversationId}`
 
-Each call returns messages created after the cursor plus an advanced cursor. With
-no cursor it returns an empty list and the current newest cursor, so a client can
-establish a baseline cheaply and then poll. Messages include `source`, so a visitor
+Each tail call returns messages created after the cursor plus an advanced cursor.
+Conversation detail responses include `tailCursor`, which clients should use for
+follow-up tail calls. With no cursor, tail returns the newest bounded page and a
+cursor for the newest returned message. Messages include `source`, so a visitor
 sees a human reply distinctly. The operator tail also includes `ownership`; the
 visitor tail never does.
 
@@ -180,7 +182,7 @@ The dashboard surfaces this work under **Activity**, which has three tabs:
 
 The conversation view shows message attribution (a badge for human-agent and
 system messages) and an operator action bar: take over, reply, hand back, and
-approve or reject a pending decision. While the view is open it polls the tail
+approve or reject a pending decision. While the view is open it reads the tail
 endpoint, so new visitor messages and the operator's own replies appear without a
 manual refresh.
 

@@ -160,6 +160,7 @@ export interface ChatConversationDetail {
   messageWindowLimit: number;
   hasOlderMessages: boolean;
   nextCursor: string | null;
+  tailCursor: string | null;
   messages: ChatConversationTurn[];
   ownership?: ChatConversationOwnership;
 }
@@ -849,10 +850,13 @@ export class ChatHistoryService {
       throw notFound("Conversation not found");
     }
 
-    const [{ messages, total, nextCursor, hasMore }, messageSummaries, ownershipRecord] = await Promise.all([
+    const [{ messages, total, nextCursor, hasMore }, messageSummaries, ownershipRecord, tailBaseline] = await Promise.all([
       this.messageRepository.listWindowByConversationId(workspaceId, conversation.id, input),
       this.messageRepository.summarizeByConversationIds(workspaceId, [conversation.id]),
       options.includeOwnership ? this.conversationOwnership.load(conversation.id) : Promise.resolve(null),
+      this.messageRepository.listSinceByConversationId(workspaceId, conversation.id, {
+        limit: 1,
+      }),
     ]);
     const assistantMessageIds = messages
       .filter((message) => message.role === "assistant")
@@ -886,6 +890,7 @@ export class ChatHistoryService {
       messageWindowLimit: input.limit,
       hasOlderMessages: hasMore,
       nextCursor,
+      tailCursor: tailBaseline.latestCursor,
       messages: messages.map((message) => ({
         id: message.id,
         role: message.role,

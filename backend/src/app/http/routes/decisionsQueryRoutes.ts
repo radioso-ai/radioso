@@ -10,7 +10,7 @@ type DecisionsQueryRouteDependencies = WorkspaceSessionDependencies & Pick<
   "accountAccessService" | "approvalDecisionService"
 >;
 
-const presentPendingDecision = (record: PendingDecisionRecord) => ({
+const presentPendingDecision = (record: PendingDecisionRecord, canResolve: boolean) => ({
   handle: record.handle,
   conversationId: record.conversationId,
   agentId: record.agentId,
@@ -23,6 +23,7 @@ const presentPendingDecision = (record: PendingDecisionRecord) => ({
     ...(option.description !== undefined ? { description: option.description } : {}),
   })),
   contentHash: record.contentHash,
+  canResolve,
   deadline: record.deadline ? record.deadline.toISOString() : null,
   createdAt: record.createdAt.toISOString(),
 });
@@ -34,9 +35,22 @@ export const createDecisionsQueryRoutes = (dependencies: DecisionsQueryRouteDepe
 
   router.get("/", workspaceSession, decisionPermission, async (_req, res, next) => {
     try {
-      const { workspaceId } = res.locals as { workspaceId: string };
+      const { accountId, userId, workspaceId, authPrincipal } = res.locals as {
+        accountId: string;
+        userId?: string;
+        workspaceId: string;
+        authPrincipal?: { type: string; role?: "admin" | "member" | "public"; userId?: string };
+      };
       const decisions = await dependencies.approvalDecisionService.listPending(workspaceId);
-      res.status(200).json({ decisions: decisions.map(presentPendingDecision) });
+      const presented = await Promise.all(decisions.map(async (decision) =>
+        presentPendingDecision(decision, await dependencies.approvalDecisionService.canResolve(decision, {
+          accountId,
+          userId,
+          workspaceId,
+          principal: authPrincipal,
+        }))
+      ));
+      res.status(200).json({ decisions: presented });
     } catch (error) {
       next(error);
     }

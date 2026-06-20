@@ -7218,6 +7218,11 @@ components:
           type:
             - string
             - "null"
+        tailCursor:
+          type:
+            - string
+            - "null"
+          description: Cursor for subsequent tail requests. It marks the newest message included when this detail response was produced.
         messages:
           type: array
           items:
@@ -7240,6 +7245,7 @@ components:
         - messageWindowLimit
         - hasOlderMessages
         - nextCursor
+        - tailCursor
         - messages
     ChatConversationTail:
       type: object
@@ -7813,6 +7819,8 @@ components:
             $ref: "#/components/schemas/PendingApprovalDecisionOption"
         contentHash:
           type: string
+        canResolve:
+          type: boolean
         deadline:
           type:
             - string
@@ -7830,6 +7838,7 @@ components:
         - reason
         - options
         - contentHash
+        - canResolve
         - deadline
         - createdAt
     PendingApprovalDecisionListResponse:
@@ -16416,4 +16425,44 @@ paths:
         Anonymous session continuity is maintained by an HttpOnly cookie set by the server.
 
         The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
+  /api/v1/public/chat/{token}/events/{conversationId}:
+    get:
+      tags:
+        - Assistant
+      summary: Stream public conversation notifications for the current anonymous session
+      operationId: streamPublicChatConversationEvents
+      security:
+        - anonymousSessionCookie: []
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: token
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: conversationId
+          in: path
+      responses:
+        "200":
+          description: Server-sent public conversation notifications. Events include ready and message.created.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 webhooks: {}

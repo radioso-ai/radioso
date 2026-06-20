@@ -76,7 +76,7 @@ Use `GET /api/v1/history/chat/{conversationId}` to retrieve one conversation and
 
 That second route is the one to use when you need to inspect how a specific answer was produced.
 
-Use `GET /api/v1/history/chat/{conversationId}/tail` to poll for messages created after a cursor. The cursor is the newest message the client has already seen. If `cursor` is omitted, Radioso returns no messages and a baseline cursor for the current newest message. Use the full conversation route for the initial transcript, then use the tail route for near real-time updates. Dashboard tail responses can include `ownership` when the conversation is currently human-owned.
+Use `GET /api/v1/history/chat/{conversationId}/tail` to read messages created after a cursor. The cursor is the newest message the client has already seen. Conversation detail responses include `tailCursor`; use it for follow-up tail calls after loading the transcript. If `cursor` is omitted, Radioso returns the newest bounded page and a cursor for the newest returned message. Dashboard tail responses can include `ownership` when the conversation is currently human-owned.
 
 ## Common failure modes
 

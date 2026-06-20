@@ -154,6 +154,29 @@ describe("chat history service ownership read surface", () => {
     expect(detail.ownership).toBeUndefined();
   });
 
+  it("returns a tail cursor for the newest message in the detail snapshot", async () => {
+    const { conversationRepository, messageRepository, service } = createService();
+    const conversation = await conversationRepository.create("workspace-1");
+    const first = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "first",
+    });
+    const latest = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "latest",
+    });
+
+    const detail = await service.getConversation("workspace-1", conversation.id, { limit: 1 });
+
+    expect(detail.messages.map((message) => message.id)).toEqual([latest.id]);
+    expect(detail.tailCursor).toBe(messageRepository.cursorFor(latest));
+    expect(detail.tailCursor).not.toBe(messageRepository.cursorFor(first));
+  });
+
   it("includes ownership per row in the conversation list, omitting AI-owned ones", async () => {
     const { conversationRepository, conversationOwnershipRepository, service } = createService();
     const human = await conversationRepository.create("workspace-1");

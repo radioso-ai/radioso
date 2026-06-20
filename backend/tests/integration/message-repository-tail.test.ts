@@ -132,7 +132,7 @@ describeIfDatabase("MessageRepository forward tail cursor", () => {
     await database.execute("UPDATE messages SET created_at = $2::timestamptz WHERE id = $1", [id, createdAt]);
   };
 
-  it("returns no messages and the newest cursor when no cursor is supplied", async () => {
+  it("returns the newest bounded messages and newest cursor when no cursor is supplied", async () => {
     const { workspace, conversation } = await seedConversation();
     const first = await messages.create({
       conversationId: conversation.id,
@@ -151,12 +151,35 @@ describeIfDatabase("MessageRepository forward tail cursor", () => {
 
     const page = await messages.listSinceByConversationId(workspace.id, conversation.id, { limit: 10 });
 
-    expect(page.messages).toEqual([]);
+    expect(page.messages.map((message) => message.id)).toEqual([first.id, second.id]);
     expect(page.latestCursor).toBeTruthy();
     expect(decodeCursorWithKeys(page.latestCursor!, ["createdAt", "id"]).keys).toEqual({
       createdAt: "2026-06-01T00:00:01.000Z",
       id: second.id,
     });
+  });
+
+  it("limits no-cursor tails to the newest page", async () => {
+    const { workspace, conversation } = await seedConversation();
+    const first = await messages.create({
+      conversationId: conversation.id,
+      workspaceId: workspace.id,
+      role: "user",
+      content: "first",
+    });
+    const second = await messages.create({
+      conversationId: conversation.id,
+      workspaceId: workspace.id,
+      role: "assistant",
+      content: "second",
+    });
+    await setMessageTime(first.id, "2026-06-01T00:00:00.000Z");
+    await setMessageTime(second.id, "2026-06-01T00:00:01.000Z");
+
+    const page = await messages.listSinceByConversationId(workspace.id, conversation.id, { limit: 1 });
+
+    expect(page.messages.map((message) => message.id)).toEqual([second.id]);
+    expect(decodeCursorWithKeys(page.latestCursor!, ["createdAt", "id"]).keys.id).toBe(second.id);
   });
 
   it("returns only messages strictly after the cursor in deterministic forward order", async () => {

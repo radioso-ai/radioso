@@ -20,6 +20,13 @@ export class ApprovalDecisionDomainError extends Error {
 export interface DecisionCaller {
   accountId: string;
   workspaceId: string;
+  userId?: string | null;
+  principal?: {
+    type: string;
+    role?: "admin" | "member" | "public";
+    userId?: string;
+  } | null;
+  workspaceRole?: "owner" | "admin" | "member" | null;
 }
 
 export interface ResolvedApprovalDecision {
@@ -61,6 +68,19 @@ const accountIdsFromScope = (scope: Record<string, unknown>): string[] | null =>
   return accountIds.length > 0 ? accountIds : null;
 };
 
+const roleRank: Record<NonNullable<DecisionCaller["workspaceRole"]>, number> = {
+  member: 1,
+  admin: 2,
+  owner: 3,
+};
+
+const requiredWorkspaceRole = (scope: Record<string, unknown>): DecisionCaller["workspaceRole"] => {
+  if (scope.role === "owner" || scope.role === "admin" || scope.role === "member") {
+    return scope.role;
+  }
+  return null;
+};
+
 export const satisfiesDeciderScope = (input: {
   record: PendingDecisionRecord;
   caller: DecisionCaller;
@@ -71,6 +91,11 @@ export const satisfiesDeciderScope = (input: {
 
   const { deciderScope } = input.record;
   const kind = deciderScope.kind;
+  if (kind === "workspace_role") {
+    const requiredRole = requiredWorkspaceRole(deciderScope);
+    const callerRole = input.caller.workspaceRole;
+    return Boolean(requiredRole && callerRole && roleRank[callerRole] >= roleRank[requiredRole]);
+  }
   if (kind !== undefined && kind !== "workspace_member") {
     return false;
   }

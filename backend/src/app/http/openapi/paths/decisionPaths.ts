@@ -56,6 +56,7 @@ export const registerDecisionPaths = (
       reason: z.string().nullable(),
       options: z.array(PendingApprovalDecisionOptionSchema),
       contentHash: z.string(),
+      canResolve: z.boolean(),
       deadline: z.string().datetime().nullable(),
       createdAt: z.string().datetime(),
     }),

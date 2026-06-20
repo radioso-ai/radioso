@@ -143,7 +143,11 @@ describe("anonymous chat bootstrap integration", () => {
 
     expect(baseline.status).toBe(200);
     expect(baseline.body).not.toHaveProperty("ownership");
-    expect(baseline.body.messages).toEqual([]);
+    expect(baseline.body.messages.length).toBeGreaterThan(0);
+    expect(baseline.body.messages).toContainEqual(expect.objectContaining({
+      role: "user",
+      content: "Can you help me?",
+    }));
     expect(typeof baseline.body.cursor).toBe("string");
 
     const humanReply = await repositories.messageRepository.create({

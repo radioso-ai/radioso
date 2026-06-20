@@ -1,3 +1,9 @@
+---
+title: "Warmth"
+description: "Setting to control answer tone on a spectrum from terse and direct to conversational and guided."
+last_updated: 2026-06-09
+---
+
 # Warmth
 
 ## Summary

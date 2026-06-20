@@ -1,3 +1,9 @@
+---
+title: "Conversational Directives"
+description: "Rules that shape how the assistant behaves per turn by matching conditions and injecting steering instructions without executing actions."
+last_updated: 2026-05-29
+---
+
 # Conversational Directives
 
 A Directive is an authored rule that shapes how the assistant behaves on a

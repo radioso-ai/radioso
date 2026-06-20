@@ -1,3 +1,9 @@
+---
+title: "Chunking Strategy"
+description: "Overview of chunking methods (fixed window, semantic, recursive text) and when to use each for document splitting before retrieval."
+last_updated: 2026-05-17
+---
+
 # Chunking Strategy
 
 ## Summary

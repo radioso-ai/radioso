@@ -1,3 +1,9 @@
+---
+title: "Authoring Routines"
+description: "How to create and edit routines in the dashboard using the prose and form editors, bind skill inputs/outputs, and manage lifecycle."
+last_updated: 2026-06-19
+---
+
 # Authoring Routines
 
 A routine is a multi-step flow your agent runs across turns. It can collect

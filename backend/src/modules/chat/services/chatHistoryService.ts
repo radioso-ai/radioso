@@ -142,7 +142,20 @@ export interface ChatConversationTurn {
   suggestions?: ChatSuggestion[];
   answerFeedbackEntries?: ChatAnswerFeedbackEntry[];
   debug?: ChatConversationTurnDebug;
+  /**
+   * Display name of the human operator who authored this turn (a takeover reply),
+   * so the visitor can see who is answering. Only the name is exposed — never the
+   * operator's account id.
+   */
+  operatorDisplayName?: string;
 }
+
+/** Reads the operator's display name from a human-agent reply's stored metadata. */
+const operatorDisplayNameFrom = (message: MessageRecord): string | undefined => {
+  const humanAgent = (message.metadata as { humanAgent?: { displayName?: unknown } } | undefined)?.humanAgent;
+  const displayName = humanAgent?.displayName;
+  return typeof displayName === "string" && displayName.trim().length > 0 ? displayName : undefined;
+};
 
 export interface ChatConversationDetail {
   conversationId: string;
@@ -903,6 +916,7 @@ export class ChatHistoryService {
         suggestions: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.suggestions : undefined,
         answerFeedbackEntries: message.role === "assistant" ? feedbackByAssistantMessageId.get(message.id) : undefined,
         debug: message.role === "assistant" ? debugByAssistantMessageId.get(message.id) : undefined,
+        operatorDisplayName: operatorDisplayNameFrom(message),
       })),
       ...(ownershipRecord?.state === "human_owned"
         ? { ownership: toChatConversationOwnership(ownershipRecord) }
@@ -949,6 +963,7 @@ export class ChatHistoryService {
       content: message.content,
       createdAt: toIsoString(message.createdAt),
       inputMetadata: message.inputMetadata,
+      operatorDisplayName: operatorDisplayNameFrom(message),
     };
   }
 

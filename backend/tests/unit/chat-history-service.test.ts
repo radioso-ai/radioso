@@ -306,6 +306,39 @@ describe("chat history service ownership read surface", () => {
     ]);
     expect(tail.cursor).toBe(messageRepository.cursorFor(humanReply));
   });
+
+  it("exposes the operator display name on a human-agent reply so the visitor can see who answered", async () => {
+    const { conversationRepository, messageRepository, service } = createService();
+    const conversation = await conversationRepository.create("workspace-1");
+    const baseline = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "baseline",
+    });
+    const humanReply = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      source: "human_agent",
+      content: "I can help with that.",
+      operatorAccountId: "operator-1",
+      operatorDisplayName: "Joe",
+    });
+
+    const tail = await service.tailConversation("workspace-1", conversation.id, {
+      cursor: messageRepository.cursorFor(baseline),
+      limit: 10,
+    });
+
+    expect(tail.messages).toEqual([
+      expect.objectContaining({
+        id: humanReply.id,
+        source: "human_agent",
+        operatorDisplayName: "Joe",
+      }),
+    ]);
+  });
 });
 
 describe("chat history service", () => {

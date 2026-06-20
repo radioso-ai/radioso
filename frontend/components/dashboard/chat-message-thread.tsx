@@ -124,6 +124,8 @@ export interface ChatThreadMessage {
   persistedAssistantMessageId?: string
   status?: 'streaming' | 'done' | 'complete' | 'error'
   skill?: SkillStreamPayload
+  /** Display name of the human operator who authored a takeover reply. */
+  operatorDisplayName?: string
 }
 
 const SKILL_ACCENT_FALLBACK = '#0f172a'
@@ -593,7 +595,7 @@ export function ChatMessageThread({
   const renderMessage = (message: ChatThreadMessage, index: number) => {
         const sourceBadgeLabel =
           message.source === 'human_agent' || message.source === 'human_agent_on_behalf_of_ai_agent'
-            ? 'Human agent'
+            ? `👤 ${message.operatorDisplayName?.trim() || 'A teammate'}`
             : message.source === 'system'
               ? 'System'
               : null

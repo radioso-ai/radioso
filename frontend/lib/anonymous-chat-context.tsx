@@ -102,6 +102,10 @@ export interface ChatMessage {
   persistedAssistantMessageId?: string
   status: 'complete' | 'streaming' | 'error'
   skill?: SkillStreamPayload
+  /** Message provenance, so the visitor can tell a human operator reply from the AI. */
+  source?: ChatConversationDetail['messages'][number]['source']
+  /** Display name of the human operator who sent this reply (takeover). */
+  operatorDisplayName?: string
 }
 
 interface AnonymousChatContextValue {
@@ -222,6 +226,8 @@ const toChatMessagesFromTurns = (
       activityTrace: message.debug?.activityTrace,
       persistedAssistantMessageId: message.role === 'assistant' ? message.id : undefined,
       status: 'complete' as const,
+      source: message.source,
+      operatorDisplayName: message.operatorDisplayName,
     }))
 
 const toChatMessages = (

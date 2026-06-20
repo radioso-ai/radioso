@@ -10429,6 +10429,9 @@
           },
           "debug": {
             "$ref": "#/components/schemas/ChatConversationMessageDebug"
+          },
+          "operatorDisplayName": {
+            "type": "string"
           }
         },
         "required": [

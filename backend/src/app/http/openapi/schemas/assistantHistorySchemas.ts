@@ -407,6 +407,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       suggestions: z.array(ChatSuggestionSchema).optional(),
       answerFeedbackEntries: z.array(AnswerFeedbackEntrySchema).optional(),
       debug: ChatConversationMessageDebugSchema.optional(),
+      operatorDisplayName: z.string().optional(),
     }),
   );
 

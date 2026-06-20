@@ -7076,6 +7076,8 @@ components:
             $ref: "#/components/schemas/AnswerFeedbackEntry"
         debug:
           $ref: "#/components/schemas/ChatConversationMessageDebug"
+        operatorDisplayName:
+          type: string
       required:
         - id
         - role

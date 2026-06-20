@@ -109,6 +109,7 @@ test("operator can take over, reply, and resolve a pending decision", async ({ p
     source: "human_agent" as const,
     content: "A human operator is checking your booking now.",
     createdAt: "2026-04-26T12:01:00.000Z",
+    operatorDisplayName: "Test Operator",
   };
 
   await seedDashboardStorage(page);
@@ -130,7 +131,7 @@ test("operator can take over, reply, and resolve a pending decision", async ({ p
     ],
   });
 
-  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.goto(`/w/${workspaceKey}/activity?tab=all`);
   await page.getByRole("button", { name: /I need help with my booking/ }).click();
 
   await expect(page.getByText("AI is handling this")).toBeVisible();
@@ -144,7 +145,7 @@ test("operator can take over, reply, and resolve a pending decision", async ({ p
   await page.getByRole("button", { name: "Send reply" }).click();
 
   await expect(page.getByText("A human operator is checking your booking now.")).toBeVisible();
-  await expect(page.getByText("Human agent")).toBeVisible();
+  await expect(page.getByText("👤 Test Operator")).toBeVisible();
 
   await page.getByRole("button", { name: "Approve" }).click();
   await expect(page.getByText("Approve sending the booking update")).toHaveCount(0);
@@ -209,7 +210,7 @@ test("operator can take over an AI-owned conversation without an ownership versi
     requestLog,
   });
 
-  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.goto(`/w/${workspaceKey}/activity?tab=all`);
   await page.getByRole("button", { name: /Can a human check this/ }).click();
 
   const takeOverButton = page.getByRole("button", { name: "Take over" });
@@ -311,7 +312,7 @@ test("pending approval cards are isolated when switching conversations", async (
     pendingDecisions: [pendingDecision],
   });
 
-  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.goto(`/w/${workspaceKey}/activity?tab=all`);
   await page.getByRole("button", { name: /First conversation needs approval/ }).click();
   await expect(page.getByText("Only the first conversation should show this approval")).toBeVisible();
 

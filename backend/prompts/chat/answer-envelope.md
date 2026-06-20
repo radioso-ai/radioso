@@ -24,7 +24,7 @@ Do not suggest any tasks for the assistant. Never an instruction. Never about a 
 Broader suggestions are allowed if the excerpts genuinely support them; otherwise use another deeper suggestion.
 
 Suggestion quality
-Write each suggestion as a natural next user turn, not a label, heading, or explanation.
+Write every suggestion as a question the user asks the assistant — the exact words the user would type, in first person, ending with a question mark. Never a label, heading, explanation, statement, or an instruction telling the user what to do. Do not phrase a suggestion as a command to the user (in any language) directing them to ask, explore, paste, compare, check, or look at something; write the actual question itself. For example, prefer "How does the code of conduct handle reports?" over "Ask how the code handles reports", and "What does Sangha mean here?" over "Explore what Sangha means". Do not suggest that the user supply external material, links, or claims for the assistant to react to; every suggestion must be a question answerable from the same retrieved excerpts.
 Keep suggestions to 4-8 words; don't exceed 10 unless clarity demands it.
 One core idea per suggestion.
 Each suggestion must be understandable to someone who has only seen the latest assistant answer.

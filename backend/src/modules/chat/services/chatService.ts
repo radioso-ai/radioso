@@ -229,6 +229,12 @@ export interface SuspendedRoutineReader {
   loadSuspended(input: { sessionId: string }): Promise<RoutineState | null>;
 }
 
+// A teammate has engaged the thread once any message was authored by a human
+// operator (a direct reply, or one sent on behalf of the AI).
+const isHumanAgentMessage = (message: { source?: string }): boolean =>
+  message.source === "human_agent" ||
+  message.source === "human_agent_on_behalf_of_ai_agent";
+
 const suppressedHumanOwnedResponse = (
   session: PreparedSession,
   waitingMessage = "",
@@ -1091,6 +1097,12 @@ export class ChatService {
     session: PreparedSession,
   ): Promise<string> {
     if (!this.handoffWaitingMessageGenerator) {
+      return "";
+    }
+    // Only announce that a teammate is "joining" before one has actually replied.
+    // Once a human operator has spoken in the thread they have already joined, so
+    // further suppressed turns stay silent and let the operator handle them.
+    if (session.history.some(isHumanAgentMessage)) {
       return "";
     }
     try {

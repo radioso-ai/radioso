@@ -44,6 +44,7 @@ describe("openapi contract", () => {
     expect(paths["/api/v1/public/chat/{token}"]?.get).not.toHaveProperty("security");
     expect(paths["/api/v1/public/chat/{token}/history/{conversationId}"]?.get).not.toHaveProperty("security");
     expect(paths["/api/v1/public/chat/{token}/tail/{conversationId}"]?.get).not.toHaveProperty("security");
+    expect(paths["/api/v1/public/chat/{token}/events/{conversationId}"]?.get).not.toHaveProperty("security");
   });
 
   it("advertises bearer auth separately from the session cookie scheme", () => {

@@ -55,6 +55,7 @@ import {
   ChatHistoryService,
   ChatService,
   type ChatRoutineProvider,
+  type PublicConversationEventBus,
   ChainedPublicChatActionAdvertiser,
   buildChatTurnRuntime,
   createRouteScopedDirectiveSteering,
@@ -777,6 +778,7 @@ export const buildChatServices = (input: {
   emailSkillActivityRepository: EmailSkillActivityRepository;
   webhookSkillDefinitionRepository: WebhookSkillDefinitionRepository;
   mailService: ReturnType<typeof buildInfrastructure>["mailService"];
+  publicConversationEventBus: PublicConversationEventBus;
   usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
   retrievalPipeline: RetrievalPipelinePort;
   usageLimitPolicy: ReturnType<typeof buildInfrastructure>["usageLimitPolicy"];
@@ -1327,6 +1329,12 @@ export const buildChatServices = (input: {
     chatService.asApprovalResumeRunner(),
     {
       resolveWorkspaceRole: (caller) => input.accountAccessService.resolveWorkspaceRole(caller),
+    },
+    {
+      publishMessageCreated: (event) => input.publicConversationEventBus.publish({
+        type: "message.created",
+        ...event,
+      }),
     },
   );
 

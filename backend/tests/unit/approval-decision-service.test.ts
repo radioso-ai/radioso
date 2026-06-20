@@ -40,7 +40,7 @@ const createRepository = (record: PendingDecisionRecord) => ({
   loadByHandle: vi.fn(async (handle: string) => handle === record.handle ? record : null),
   resolveInTransaction: vi.fn(async (_input, callback) => {
     const resume = await callback(record, {} as never);
-    return { conversationId: resume.conversationId, resumed: resume.resumed };
+    return resume;
   }),
 }) as unknown as Pick<PendingDecisionRepository, "loadByHandle" | "resolveInTransaction" | "listPending">;
 
@@ -79,5 +79,42 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
       accountId: "account_1",
       workspaceId: pending.workspaceId,
     })).resolves.toBe(false);
+  });
+
+  it("publishes the resumed assistant message after the decision transaction resolves", async () => {
+    const pending = decision();
+    const repository = createRepository(pending);
+    const resumeRunner: ResumeRunner = {
+      resume: vi.fn(async () => ({
+        conversationId: pending.conversationId,
+        resumed: true,
+        assistantMessageId: "assistant_message_1",
+      })),
+    };
+    const publishMessageCreated = vi.fn();
+    const service = new ApprovalDecisionService(
+      repository,
+      resumeRunner,
+      { resolveWorkspaceRole: vi.fn(async () => "admin" as const) },
+      { publishMessageCreated },
+    );
+
+    await service.resolve({
+      agentId: pending.agentId,
+      handle: pending.handle,
+      optionId: "approve",
+      contentHash: pending.contentHash,
+      caller: { accountId: "account_1", workspaceId: pending.workspaceId },
+    });
+
+    expect(vi.mocked(repository.resolveInTransaction).mock.invocationCallOrder[0]).toBeLessThan(
+      publishMessageCreated.mock.invocationCallOrder[0]!,
+    );
+    expect(publishMessageCreated).toHaveBeenCalledWith({
+      workspaceId: pending.workspaceId,
+      conversationId: pending.conversationId,
+      messageId: "assistant_message_1",
+      createdAt: expect.any(String),
+    });
   });
 });

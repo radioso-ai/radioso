@@ -694,7 +694,7 @@ export class ChatService {
     payload?: unknown;
     decidedBy: string;
     executor: DatabaseExecutor;
-  }): Promise<{ conversationId: string; resumed: boolean }> {
+  }): Promise<{ conversationId: string; resumed: boolean; assistantMessageId?: string }> {
     if (!this.routineProvider || !this.suspendedRoutineReader) {
       throw new Error("approval_resume_routine_provider_missing");
     }
@@ -742,7 +742,7 @@ export class ChatService {
       : { kind: "clear", sessionId: input.record.sessionId };
     const presentation = this.chatAnswerPresenter.presentNonRetrievalAnswer(result.response.answer);
 
-    await this.chatTurnLifecycle.completeAssistantTurn({
+    const completed = await this.chatTurnLifecycle.completeAssistantTurn({
       workspaceId: input.record.workspaceId,
       accountId: input.decidedBy,
       session,
@@ -772,6 +772,7 @@ export class ChatService {
     return {
       conversationId: input.record.conversationId,
       resumed: result.resumed,
+      assistantMessageId: completed.assistantMessageId,
     };
   }
 

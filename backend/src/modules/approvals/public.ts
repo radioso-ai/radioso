@@ -22,6 +22,7 @@ export type {
   ResolvedApprovalDecision,
 } from "./domain.js";
 export type {
+  ApprovalDecisionConversationEventPublisher,
   ApprovalDecisionServiceFailureReason,
   ResolveApprovalDecisionInput,
   ResolveApprovalDecisionResult,

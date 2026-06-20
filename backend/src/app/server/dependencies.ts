@@ -284,6 +284,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     telemetryService: infrastructure.telemetryService,
     webhookDestinations,
     productAnalyticsService: infrastructure.productAnalyticsService,
+    publicConversationEventBus,
     routineDefinitionRepository: repositories.routineDefinitionRepository,
     customerEmailConnectionRepository: repositories.customerEmailConnectionRepository,
     emailSkillDefinitionRepository: repositories.emailSkillDefinitionRepository,

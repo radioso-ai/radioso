@@ -16431,8 +16431,6 @@ paths:
         - Assistant
       summary: Stream public conversation notifications for the current anonymous session
       operationId: streamPublicChatConversationEvents
-      security:
-        - anonymousSessionCookie: []
       parameters:
         - schema:
             type: string
@@ -16465,4 +16463,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+      description: |-
+        Anonymous session continuity is maintained by an HttpOnly cookie set by the server.
+
+        The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
 webhooks: {}

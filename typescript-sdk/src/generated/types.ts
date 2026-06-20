@@ -2162,7 +2162,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Stream public conversation notifications for the current anonymous session */
+        /**
+         * Stream public conversation notifications for the current anonymous session
+         * @description Anonymous session continuity is maintained by an HttpOnly cookie set by the server.
+         *
+         *     The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
+         */
         get: operations["streamPublicChatConversationEvents"];
         put?: never;
         post?: never;

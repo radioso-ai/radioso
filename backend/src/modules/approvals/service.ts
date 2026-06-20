@@ -38,7 +38,16 @@ export interface ResumeRunner {
     payload?: unknown;
     decidedBy: string;
     executor: DatabaseExecutor;
-  }): Promise<{ conversationId: string; resumed: boolean }>;
+  }): Promise<{ conversationId: string; resumed: boolean; assistantMessageId?: string }>;
+}
+
+export interface ApprovalDecisionConversationEventPublisher {
+  publishMessageCreated(input: {
+    workspaceId: string;
+    conversationId: string;
+    messageId: string;
+    createdAt: string;
+  }): void;
 }
 
 export interface ResolveApprovalDecisionInput {
@@ -71,6 +80,7 @@ export class ApprovalDecisionService {
     private readonly pendingDecisions: PendingDecisionReader,
     private readonly resumeRunner: ResumeRunner,
     private readonly roleResolver?: ApprovalDecisionRoleResolver,
+    private readonly conversationEvents?: ApprovalDecisionConversationEventPublisher,
   ) {}
 
   async listPending(workspaceId: string): Promise<PendingDecisionRecord[]> {
@@ -128,6 +138,15 @@ export class ApprovalDecisionService {
 
     if (!resume) {
       throw new ApprovalDecisionServiceError("concurrent_resolution");
+    }
+
+    if (resume.resumed && resume.assistantMessageId) {
+      this.conversationEvents?.publishMessageCreated({
+        workspaceId: record.workspaceId,
+        conversationId: resume.conversationId,
+        messageId: resume.assistantMessageId,
+        createdAt: new Date().toISOString(),
+      });
     }
 
     return {

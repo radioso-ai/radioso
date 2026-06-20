@@ -1,3 +1,9 @@
+---
+title: "Agent Context Workflow"
+description: "Workflow and template for agents starting feature work, using the code map and context sources to avoid full-repo reads."
+last_updated: 2026-05-26
+---
+
 # Agent Context Workflow
 
 This workflow keeps new feature work from starting with a full-repo read. It is

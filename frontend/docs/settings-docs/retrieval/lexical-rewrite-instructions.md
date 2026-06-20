@@ -1,3 +1,9 @@
+---
+title: "Lexical Rewrite Instructions"
+description: "Guidance for rewriting queries to include exact terms, abbreviations, and formal jargon the corpus likely uses."
+last_updated: 2026-06-09
+---
+
 # Lexical Rewrite Instructions
 
 ## Summary

@@ -1,3 +1,9 @@
+---
+title: "Radioso TypeScript SDK: Basic Usage"
+description: "SDK tutorial covering documents, settings, skills, agents, chat, streaming, history, and error handling patterns."
+last_updated: 2026-06-09
+---
+
 # Radioso TypeScript SDK: Basic Usage
 
 This guide covers the main things you are likely to do first with the SDK.

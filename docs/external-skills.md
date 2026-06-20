@@ -1,3 +1,9 @@
+---
+title: "External Skills via MCP"
+description: "Configuration of external MCP server connections and named skill definitions for agent routines with encrypted credential storage."
+last_updated: 2026-06-17
+---
+
 # External Skills via MCP
 
 External skills let an agent's routines call tools on an external MCP server. You

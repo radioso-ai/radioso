@@ -1,3 +1,9 @@
+---
+title: "Conversation Mode"
+description: "Assistant behavior setting controlling how broadly answers expand: factual, guided, or exploratory."
+last_updated: 2026-06-13
+---
+
 # Conversation Mode
 
 ## Summary

@@ -1,3 +1,9 @@
+---
+title: "Documentation Improvement Plan"
+description: "Identifies weak areas in docs and docs-portal and prioritizes rewrites for architecture, operators, and practical user guides grounded in code."
+last_updated: 2026-05-04
+---
+
 # Documentation Improvement Plan
 
 This plan focuses on the weakest documentation in `/docs` and `/docs-portal` as of 2026-04-23.

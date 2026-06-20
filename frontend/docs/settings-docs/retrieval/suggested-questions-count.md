@@ -1,3 +1,9 @@
+---
+title: "Suggested Question Count"
+description: "Hard cap on how many follow-up question chips the assistant may show after an answer."
+last_updated: 2026-04-27
+---
+
 # Suggested Question Count
 
 ## Summary

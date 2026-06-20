@@ -89,13 +89,13 @@ describe('dashboard route state', () => {
       section: 'activity',
       workspacePublicRouteKey: 'support-abc123',
       activityTab: 'needs-attention',
-    })).toBe('/w/support-abc123/activity?tab=needs-attention')
+    })).toBe('/w/support-abc123/activity')
 
     expect(buildDashboardHref('account-1', {
       section: 'activity',
       workspacePublicRouteKey: 'support-abc123',
       activityTab: 'all',
-    })).toBe('/w/support-abc123/activity')
+    })).toBe('/w/support-abc123/activity?tab=all')
 
     const parsed = parseDashboardRoute(['activity'], new URLSearchParams({
       tab: 'needs-attention',
@@ -107,7 +107,7 @@ describe('dashboard route state', () => {
 
     expect(parsed).toEqual({
       section: 'activity',
-      activityTab: 'needs-attention',
+      // 'needs-attention' is the default tab, so it normalizes out of the parsed state.
       historyFilter: 'chat',
       historyItemKind: 'chat',
       historyItemId: 'conversation-1',
@@ -117,7 +117,7 @@ describe('dashboard route state', () => {
     expect(buildDashboardHref('account-1', {
       ...parsed!,
       workspacePublicRouteKey: 'support-abc123',
-    })).toBe('/w/support-abc123/activity?tab=needs-attention&filter=chat&itemKind=chat&itemId=conversation-1&itemMessageId=message-1')
+    })).toBe('/w/support-abc123/activity?filter=chat&itemKind=chat&itemId=conversation-1&itemMessageId=message-1')
   })
 
   it('builds activity tab hrefs without discarding active surface filters', () => {
@@ -131,7 +131,7 @@ describe('dashboard route state', () => {
     }
 
     expect(buildActivityTabHref('account-1', filteredActivity, 'all', 'all')).toBe(
-      '/w/support-abc123/activity?filter=chat&itemKind=chat&itemId=conversation-1',
+      '/w/support-abc123/activity?tab=all&filter=chat&itemKind=chat&itemId=conversation-1',
     )
     expect(buildActivityTabHref('account-1', filteredActivity, 'all', 'quality')).toBe('/w/support-abc123/quality')
 
@@ -145,7 +145,7 @@ describe('dashboard route state', () => {
     expect(buildActivityTabHref('account-1', filteredQuality, 'quality', 'quality')).toBe(
       '/w/support-abc123/quality?feedback=down&triage=open',
     )
-    expect(buildActivityTabHref('account-1', filteredQuality, 'quality', 'all')).toBe('/w/support-abc123/activity')
+    expect(buildActivityTabHref('account-1', filteredQuality, 'quality', 'all')).toBe('/w/support-abc123/activity?tab=all')
   })
 
   it('ignores activity tab query state outside the activity section', () => {

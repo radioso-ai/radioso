@@ -32,6 +32,8 @@ export interface InboxItem {
   /** Secondary descriptor: the agent, or the human owner for a handoff. */
   detail: string
   timestamp: string
+  /** Present only for quality signals — the turn to triage so the row can be cleared. */
+  assistantMessageId?: string
 }
 
 /** Maps a grounding-gap skill outcome to its escalation type (enum values, not prose). */
@@ -103,6 +105,7 @@ export const buildInboxItems = (input: {
       title: turn.question || 'Low-quality answer',
       detail: turn.agentName ?? '',
       timestamp: turn.createdAt,
+      assistantMessageId: turn.assistantMessageId,
     }
   })
 

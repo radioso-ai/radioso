@@ -56,9 +56,9 @@ export function ActivityTabs({ accountId, routeState }: ActivityTabsProps) {
   const activeTab: ActivitySurfaceTab =
     routeState.section === 'quality'
       ? 'quality'
-      : routeState.activityTab === 'needs-attention'
-        ? 'needs-attention'
-        : 'all'
+      : routeState.activityTab === 'all'
+        ? 'all'
+        : 'needs-attention'
 
   const tabs = [
     {
@@ -78,28 +78,28 @@ export function ActivityTabs({ accountId, routeState }: ActivityTabsProps) {
     },
   ] as const
 
+  // Rendered into each Activity view's page-header actions slot (right side), matching
+  // the segmented-control convention used elsewhere in the dashboard.
   return (
     <nav
       aria-label="Activity views"
-      className="border-b border-border bg-background px-6 pt-3"
+      className="bg-muted text-muted-foreground inline-flex h-9 w-fit items-center justify-center rounded-lg p-[3px]"
     >
-      <div className="bg-muted text-muted-foreground inline-flex h-9 w-fit items-center justify-center rounded-lg p-[3px]">
-        {tabs.map((tab) => (
-          <Link
-            key={tab.id}
-            href={tab.href}
-            aria-current={activeTab === tab.id ? 'page' : undefined}
-            className={cn(
-              tabClassName,
-              activeTab === tab.id
-                ? 'bg-background text-foreground shadow-sm dark:border-input dark:bg-input/30 dark:text-foreground'
-                : 'dark:text-muted-foreground',
-            )}
-          >
-            {tab.label}
-          </Link>
-        ))}
-      </div>
+      {tabs.map((tab) => (
+        <Link
+          key={tab.id}
+          href={tab.href}
+          aria-current={activeTab === tab.id ? 'page' : undefined}
+          className={cn(
+            tabClassName,
+            activeTab === tab.id
+              ? 'bg-background text-foreground shadow-sm dark:border-input dark:bg-input/30 dark:text-foreground'
+              : 'dark:text-muted-foreground',
+          )}
+        >
+          {tab.label}
+        </Link>
+      ))}
     </nav>
   )
 }

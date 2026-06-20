@@ -177,8 +177,10 @@ Each tail call returns messages created after the cursor plus an advanced cursor
 Conversation detail responses include `tailCursor`, which clients should use for
 follow-up tail calls. With no cursor, tail returns the newest bounded page and a
 cursor for the newest returned message. Messages include `source`, so a visitor
-sees a human reply distinctly. The operator tail also includes `ownership`; the
-visitor tail never does.
+sees a human reply distinctly, plus `operatorDisplayName` on a human-agent reply
+so the visitor can see who is answering (rendered as "👤 <name>"); only the name
+is exposed, never the operator's account id. The operator tail also includes
+`ownership`; the visitor tail never does.
 
 ## Operator console
 
@@ -190,7 +192,10 @@ The dashboard surfaces this work under **Activity**, which has three tabs:
   signals (a **Degraded** or **No context** answer the AI already handled) follow
   below. Quality signals are capped so they never crowd out critical work, and a
   signal whose conversation is already escalated is shown once, as the escalation.
-  Opening a row shows the conversation with an action bar.
+  Opening a row shows the conversation with an action bar. A quality row can be
+  cleared in place with **Resolve** or **Dismiss** (it sets the turn's triage
+  state, so the row drops out of the inbox); approvals and handoffs clear by
+  resolving or handing back from the conversation drawer.
 - **All activity** — the full conversation history.
 - **Quality** — the full, paginated answer-quality backlog and per-turn triage
   (negative feedback, slow responses, and skill failures, in addition to the

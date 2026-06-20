@@ -175,6 +175,10 @@ describe('buildInboxItems', () => {
     expect(byConversation['c-handoff']).toMatchObject({ type: 'handoff', severity: 'critical' })
     expect(byConversation['c-deg']).toMatchObject({ type: 'degraded', severity: 'lower' })
     expect(byConversation['c-noctx']).toMatchObject({ type: 'no_context', severity: 'lower' })
+    // Quality rows carry the turn id so they can be triaged from the inbox; criticals do not.
+    expect(byConversation['c-noctx'].assistantMessageId).toBe('m-noctx')
+    expect(byConversation['c-approval'].assistantMessageId).toBeUndefined()
+    expect(byConversation['c-handoff'].assistantMessageId).toBeUndefined()
   })
 
   it('orders critical escalations above lower-concern quality signals', () => {

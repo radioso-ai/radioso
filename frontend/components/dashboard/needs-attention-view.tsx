@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 
+import { ActivityTabs } from './activity-tabs'
 import { ConversationDrawer } from './conversation-drawer'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { DashboardTable, DashboardTableBody, DashboardTableCell, DashboardTableHead, DashboardTableHeader, DashboardTableRow } from '@/components/dashboard/shared/dashboard-table'
@@ -10,7 +11,7 @@ import type { SelectedHistoryItem } from '@/components/dashboard/history/history
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useNeedsAttentionActivity } from '@/hooks/use-needs-attention-activity'
-import { chatApi, qualityApi, skillsApi, type LowQualityTurn, type PendingApprovalDecision } from '@/lib/api'
+import { chatApi, qualityApi, skillsApi, type LowQualityTurn, type PendingApprovalDecision, type QualityTriageState } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { hitlApi } from '@/lib/api-hitl'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
@@ -88,9 +89,13 @@ function EscalationBadge({ type }: { type: EscalationType }) {
 function InboxRow({
   item,
   onSelect,
+  onTriage,
+  isTriaging,
 }: {
   item: InboxItem
   onSelect: (item: InboxItem) => void
+  onTriage: (item: InboxItem, state: QualityTriageState) => void
+  isTriaging: boolean
 }) {
   return (
     <DashboardTableRow>
@@ -111,6 +116,32 @@ function InboxRow({
       </DashboardTableCell>
       <DashboardTableCell className="w-40 text-sm text-muted-foreground">
         {formatApprovalCreatedAt(item.timestamp)}
+      </DashboardTableCell>
+      <DashboardTableCell className="w-44">
+        {item.assistantMessageId ? (
+          // Quality signals clear by triage. Approvals/handoffs resolve from the
+          // conversation drawer instead, so their action cell stays empty.
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isTriaging}
+              onClick={() => onTriage(item, 'resolved')}
+            >
+              Resolve
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={isTriaging}
+              onClick={() => onTriage(item, 'dismissed')}
+            >
+              Dismiss
+            </Button>
+          </div>
+        ) : null}
       </DashboardTableCell>
     </DashboardTableRow>
   )
@@ -211,6 +242,33 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     setSelectedItem({ kind: 'chat', id: item.conversationId })
   }, [])
 
+  const [triagingMessageIds, setTriagingMessageIds] = useState<ReadonlySet<string>>(new Set())
+
+  const handleTriage = useCallback(async (item: InboxItem, state: QualityTriageState) => {
+    const messageId = item.assistantMessageId
+    if (!messageId) {
+      return
+    }
+    setTriagingMessageIds((prev) => new Set(prev).add(messageId))
+    // Optimistically drop the row; restore from the server on failure.
+    setQualityTurns((prev) => prev.filter((turn) => turn.assistantMessageId !== messageId))
+    try {
+      await qualityApi.setTriageState(messageId, { state })
+    } catch {
+      if (isMountedRef.current) {
+        void refreshInbox()
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setTriagingMessageIds((prev) => {
+          const next = new Set(prev)
+          next.delete(messageId)
+          return next
+        })
+      }
+    }
+  }, [refreshInbox])
+
   const buildRoutineHref = useCallback(
     (agentId: string, routineId: string) =>
       buildDashboardHref(accountId, {
@@ -255,16 +313,19 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         title="Needs attention"
         description={`${needsAttentionCount} item${needsAttentionCount === 1 ? '' : 's'} needing operator attention`}
         actions={
-          <Button
-            type="button"
-            variant={hasNewActivity ? 'default' : 'outline'}
-            size="sm"
-            onClick={handleRefresh}
-            disabled={isLoading}
-          >
-            <RefreshCw className="h-4 w-4" aria-hidden />
-            {hasNewActivity ? `Refresh (${newItemCount})` : 'Refresh'}
-          </Button>
+          <>
+            <Button
+              type="button"
+              variant={hasNewActivity ? 'default' : 'outline'}
+              size="sm"
+              onClick={handleRefresh}
+              disabled={isLoading}
+            >
+              <RefreshCw className="h-4 w-4" aria-hidden />
+              {hasNewActivity ? `Refresh (${newItemCount})` : 'Refresh'}
+            </Button>
+            <ActivityTabs accountId={accountId} routeState={routeState} />
+          </>
         }
       >
         <div className="space-y-4">
@@ -290,16 +351,25 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
               Nothing needs attention.
             </div>
           ) : items.length > 0 ? (
-            <DashboardTable aria-label="Needs attention" minWidth="min-w-[760px]">
+            <DashboardTable aria-label="Needs attention" minWidth="min-w-[900px]">
               <DashboardTableHead>
                 <DashboardTableHeader className="w-32">Type</DashboardTableHeader>
                 <DashboardTableHeader>Item</DashboardTableHeader>
                 <DashboardTableHeader className="w-48">Detail</DashboardTableHeader>
                 <DashboardTableHeader className="w-40">Updated</DashboardTableHeader>
+                <DashboardTableHeader className="w-44">
+                  <span className="sr-only">Actions</span>
+                </DashboardTableHeader>
               </DashboardTableHead>
               <DashboardTableBody>
                 {items.map((item) => (
-                  <InboxRow key={item.key} item={item} onSelect={handleSelectItem} />
+                  <InboxRow
+                    key={item.key}
+                    item={item}
+                    onSelect={handleSelectItem}
+                    onTriage={handleTriage}
+                    isTriaging={item.assistantMessageId ? triagingMessageIds.has(item.assistantMessageId) : false}
+                  />
                 ))}
               </DashboardTableBody>
             </DashboardTable>

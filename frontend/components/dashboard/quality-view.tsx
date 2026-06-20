@@ -28,6 +28,7 @@ import { LogoSpinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
 import { ConversationDrawer } from './conversation-drawer'
 import type { SelectedHistoryItem } from '@/components/dashboard/history/history-list'
+import { ActivityTabs } from '@/components/dashboard/activity-tabs'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import {
   ActiveFilterPills,
@@ -1054,7 +1055,12 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       title="Quality review"
       description="Triage the answers that need attention — negative feedback, grounding gaps, and slow responses — then open the conversation to act."
       titleAccessory={<MessageSquareWarning className="h-4 w-4 text-muted-foreground" />}
-      actions={filterButton}
+      actions={
+        <>
+          {filterButton}
+          <ActivityTabs accountId={accountId} routeState={routeState} />
+        </>
+      }
       headerContent={headerPills}
     >
       {error ? (

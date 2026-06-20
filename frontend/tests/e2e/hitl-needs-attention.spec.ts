@@ -221,13 +221,27 @@ test("operator can use activity tabs to open a pending approval", async ({ page 
     });
   });
 
-  await page.goto(`/w/${workspaceKey}/activity`);
-  await expect(page.getByRole("link", { name: "All activity" })).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("table", { name: "Activity" })).toBeVisible();
+  // Registered after the list route so it wins (Playwright matches last-registered first)
+  // for the triage sub-path.
+  await page.route("**/backend/api/v1/quality/turns/*/triage**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ state: "dismissed", reason: null, updatedAt: "2026-06-19T12:00:00.000Z" }),
+    });
+  });
 
-  await page.getByRole("link", { name: "Needs attention" }).click();
-  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/activity\\?tab=needs-attention`));
+  // Activity defaults to the Needs attention inbox.
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await expect(page.getByRole("link", { name: "Needs attention" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("button", { name: "Refresh" })).toBeVisible();
+
+  // The tab selector sits in the page header actions; All activity is one click away.
+  await page.getByRole("link", { name: "All activity" }).click();
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/activity\\?tab=all`));
+  await expect(page.getByRole("table", { name: "Activity" })).toBeVisible();
+  await page.getByRole("link", { name: "Needs attention" }).click();
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/activity$`));
 
   // One unified inbox table with an escalation-type column.
   const inbox = page.getByRole("table", { name: "Needs attention" });
@@ -247,6 +261,12 @@ test("operator can use activity tabs to open a pending approval", async ({ page 
   expect(typeBadges[typeBadges.length - 1]).toBe("No context");
 
   await expect(page.getByText("The AI can keep handling this")).toHaveCount(0);
+
+  // Triage clears a quality row from the inbox (criticals resolve from the drawer instead).
+  const qualityRow = inbox.locator("tr", { hasText: "Do you sell gift cards?" });
+  await qualityRow.getByRole("button", { name: "Dismiss" }).click();
+  await expect(page.getByRole("button", { name: "Do you sell gift cards?" })).toHaveCount(0);
+  await expect(inbox.getByText("No context", { exact: true })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Approve sending the booking update" }).click();
   await expect(page.getByRole("heading", { name: "Conversation details" })).toBeAttached();

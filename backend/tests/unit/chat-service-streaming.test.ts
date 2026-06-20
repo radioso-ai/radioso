@@ -115,6 +115,7 @@ const makeChatService = (
     },
   },
   conversationOwnershipReader?: ChatServiceOptions["conversationOwnershipReader"],
+  handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"],
 ): ChatService =>
   new ChatService({
     conversationRepository,
@@ -140,6 +141,7 @@ const makeChatService = (
     routineProvider: routine?.routineProvider,
     suspendedRoutineReader: routine?.suspendedRoutineReader,
     conversationOwnershipReader,
+    handoffWaitingMessageGenerator,
     actionOutbox: routine?.actionOutbox,
     assistantTurnPersistence: routine?.assistantTurnPersistence,
   });
@@ -561,6 +563,139 @@ describe("chat service streaming", () => {
     expect(messages[0]?.content).toBe("hello");
   });
 
+  it("returns the localized waiting message on a human-owned turn when a generator is wired", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const existingConversation = await conversationRepository.create("workspace-1", null);
+    const { usageLimitPolicy, reservation } = createUsageLimitPolicy();
+    const retrievalPipeline = {
+      interpret: vi.fn(),
+      runInterpreted: vi.fn(),
+      runWithoutRetrieval: vi.fn(),
+    };
+    const chatGateway: ChatGateway = {
+      answer: vi.fn(async () => "Normal answer."),
+      streamAnswer: vi.fn(async function* () {
+        yield "Normal answer.";
+      }),
+    };
+    const conversationOwnershipReader: NonNullable<ChatServiceOptions["conversationOwnershipReader"]> = {
+      load: vi.fn(async () => humanOwnedRecord(existingConversation.id)),
+    };
+    const handoffWaitingMessageGenerator: NonNullable<
+      ChatServiceOptions["handoffWaitingMessageGenerator"]
+    > = {
+      generate: vi.fn(async () => "Un compañero se está uniendo, por favor espera."),
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(retrievalPipeline as never),
+      chatGateway,
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined,
+      undefined,
+      usageLimitPolicy,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      createConversationEngine(),
+      undefined,
+      undefined,
+      conversationOwnershipReader,
+      handoffWaitingMessageGenerator,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      conversationId: existingConversation.id,
+      query: "gracias",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("Un compañero se está uniendo, por favor espera.");
+    expect(response.ownership).toEqual({ state: "human_owned", suppressed: true });
+    expect(handoffWaitingMessageGenerator.generate).toHaveBeenCalledOnce();
+    expect(reservation.release).toHaveBeenCalledOnce();
+    expect(reservation.commit).not.toHaveBeenCalled();
+    expect(chatGateway.answer).not.toHaveBeenCalled();
+    const messages = await messageRepository.listByConversationId("workspace-1", existingConversation.id);
+    expect(messages.map((message) => message.role)).toEqual(["user"]);
+  });
+
+  it("does not repeat the waiting message once a human teammate has already replied", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const existingConversation = await conversationRepository.create("workspace-1", null);
+    // The operator has already taken over and replied — the teammate has joined.
+    await messageRepository.create({
+      conversationId: existingConversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "Hi, I can help with that.",
+      source: "human_agent",
+    });
+    const { usageLimitPolicy, reservation } = createUsageLimitPolicy();
+    const retrievalPipeline = {
+      interpret: vi.fn(),
+      runInterpreted: vi.fn(),
+      runWithoutRetrieval: vi.fn(),
+    };
+    const chatGateway: ChatGateway = {
+      answer: vi.fn(async () => "Normal answer."),
+      streamAnswer: vi.fn(async function* () {
+        yield "Normal answer.";
+      }),
+    };
+    const conversationOwnershipReader: NonNullable<ChatServiceOptions["conversationOwnershipReader"]> = {
+      load: vi.fn(async () => humanOwnedRecord(existingConversation.id)),
+    };
+    const handoffWaitingMessageGenerator: NonNullable<
+      ChatServiceOptions["handoffWaitingMessageGenerator"]
+    > = {
+      generate: vi.fn(async () => "A teammate is joining, please wait."),
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(retrievalPipeline as never),
+      chatGateway,
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined,
+      undefined,
+      usageLimitPolicy,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      createConversationEngine(),
+      undefined,
+      undefined,
+      conversationOwnershipReader,
+      handoffWaitingMessageGenerator,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      conversationId: existingConversation.id,
+      query: "thank you",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("");
+    expect(response.ownership).toEqual({ state: "human_owned", suppressed: true });
+    expect(handoffWaitingMessageGenerator.generate).not.toHaveBeenCalled();
+    expect(chatGateway.answer).not.toHaveBeenCalled();
+    expect(reservation.commit).not.toHaveBeenCalled();
+  });
+
   it("emits only a terminal ownership ack for streamed visitor turns while the conversation is human-owned", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
@@ -662,6 +797,209 @@ describe("chat service streaming", () => {
     expect(actionOutbox.enqueue).not.toHaveBeenCalled();
     const messages = await messageRepository.listByConversationId("workspace-1", existingConversation.id);
     expect(messages.map((message) => message.role)).toEqual(["user"]);
+  });
+
+  it("streams the localized waiting message on a human-owned turn when a generator is wired", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const existingConversation = await conversationRepository.create("workspace-1", null);
+    const { usageLimitPolicy, reservation } = createUsageLimitPolicy();
+    const retrievalPipeline = {
+      interpret: vi.fn(),
+      runInterpreted: vi.fn(),
+      runWithoutRetrieval: vi.fn(),
+    };
+    const chatGateway: ChatGateway = {
+      answer: vi.fn(async () => "Normal answer."),
+      streamAnswer: vi.fn(async function* () {
+        yield "Normal answer.";
+      }),
+    };
+    const conversationOwnershipReader: NonNullable<ChatServiceOptions["conversationOwnershipReader"]> = {
+      load: vi.fn(async () => humanOwnedRecord(existingConversation.id)),
+    };
+    const handoffWaitingMessageGenerator: NonNullable<
+      ChatServiceOptions["handoffWaitingMessageGenerator"]
+    > = {
+      generate: vi.fn(async () => "Un compañero se está uniendo, por favor espera."),
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(retrievalPipeline as never),
+      chatGateway,
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined,
+      undefined,
+      usageLimitPolicy,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      createConversationEngine(),
+      undefined,
+      undefined,
+      conversationOwnershipReader,
+      handoffWaitingMessageGenerator,
+    );
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      conversationId: existingConversation.id,
+      query: "gracias",
+      stream: true,
+    })) {
+      events.push(event);
+    }
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: "done",
+      answer: "Un compañero se está uniendo, por favor espera.",
+      ownership: { state: "human_owned", suppressed: true },
+    });
+    expect(handoffWaitingMessageGenerator.generate).toHaveBeenCalledOnce();
+    expect(chatGateway.streamAnswer).not.toHaveBeenCalled();
+    expect(reservation.commit).not.toHaveBeenCalled();
+  });
+
+  it("does not stream a waiting message once a human teammate has already replied", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const existingConversation = await conversationRepository.create("workspace-1", null);
+    await messageRepository.create({
+      conversationId: existingConversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "Hi, I can help with that.",
+      source: "human_agent",
+    });
+    const { usageLimitPolicy } = createUsageLimitPolicy();
+    const retrievalPipeline = {
+      interpret: vi.fn(),
+      runInterpreted: vi.fn(),
+      runWithoutRetrieval: vi.fn(),
+    };
+    const chatGateway: ChatGateway = {
+      answer: vi.fn(async () => "Normal answer."),
+      streamAnswer: vi.fn(async function* () {
+        yield "Normal answer.";
+      }),
+    };
+    const conversationOwnershipReader: NonNullable<ChatServiceOptions["conversationOwnershipReader"]> = {
+      load: vi.fn(async () => humanOwnedRecord(existingConversation.id)),
+    };
+    const handoffWaitingMessageGenerator: NonNullable<
+      ChatServiceOptions["handoffWaitingMessageGenerator"]
+    > = {
+      generate: vi.fn(async () => "A teammate is joining, please wait."),
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(retrievalPipeline as never),
+      chatGateway,
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined,
+      undefined,
+      usageLimitPolicy,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      createConversationEngine(),
+      undefined,
+      undefined,
+      conversationOwnershipReader,
+      handoffWaitingMessageGenerator,
+    );
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      conversationId: existingConversation.id,
+      query: "thank you",
+      stream: true,
+    })) {
+      events.push(event);
+    }
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: "done",
+      answer: "",
+      ownership: { state: "human_owned", suppressed: true },
+    });
+    expect(handoffWaitingMessageGenerator.generate).not.toHaveBeenCalled();
+  });
+
+  it("falls back to an empty suppressed answer when waiting-message generation fails", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const existingConversation = await conversationRepository.create("workspace-1", null);
+    const { usageLimitPolicy, reservation } = createUsageLimitPolicy();
+    const retrievalPipeline = {
+      interpret: vi.fn(),
+      runInterpreted: vi.fn(),
+      runWithoutRetrieval: vi.fn(),
+    };
+    const chatGateway: ChatGateway = {
+      answer: vi.fn(async () => "Normal answer."),
+      streamAnswer: vi.fn(async function* () {
+        yield "Normal answer.";
+      }),
+    };
+    const conversationOwnershipReader: NonNullable<ChatServiceOptions["conversationOwnershipReader"]> = {
+      load: vi.fn(async () => humanOwnedRecord(existingConversation.id)),
+    };
+    const handoffWaitingMessageGenerator: NonNullable<
+      ChatServiceOptions["handoffWaitingMessageGenerator"]
+    > = {
+      generate: vi.fn(async () => {
+        throw new Error("generation failed");
+      }),
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(retrievalPipeline as never),
+      chatGateway,
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined,
+      undefined,
+      usageLimitPolicy,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      createConversationEngine(),
+      undefined,
+      undefined,
+      conversationOwnershipReader,
+      handoffWaitingMessageGenerator,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      conversationId: existingConversation.id,
+      query: "gracias",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("");
+    expect(response.ownership).toEqual({ state: "human_owned", suppressed: true });
+    expect(handoffWaitingMessageGenerator.generate).toHaveBeenCalledOnce();
+    expect(reservation.commit).not.toHaveBeenCalled();
   });
 
   it("preserves the normal answer path when no ownership row exists", async () => {

@@ -3288,12 +3288,25 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
 
 export class InMemoryConversationOwnershipRepository implements Pick<
   ConversationOwnershipRepository,
-  "load" | "requestHandoff" | "takeOver" | "transfer" | "handBack"
+  "load" | "loadByConversationIds" | "requestHandoff" | "takeOver" | "transfer" | "handBack"
 > {
   readonly items = new Map<string, ConversationOwnershipRecord>();
 
   async load(conversationId: string): Promise<ConversationOwnershipRecord | null> {
     return this.items.get(conversationId) ?? null;
+  }
+
+  async loadByConversationIds(
+    conversationIds: string[],
+  ): Promise<Map<string, ConversationOwnershipRecord>> {
+    const result = new Map<string, ConversationOwnershipRecord>();
+    for (const conversationId of conversationIds) {
+      const record = this.items.get(conversationId);
+      if (record) {
+        result.set(conversationId, record);
+      }
+    }
+    return result;
   }
 
   async requestHandoff(input: ConversationOwnershipRequestHandoffInput): Promise<ConversationOwnershipRecord> {
@@ -3423,6 +3436,13 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
   readonly items = new Map<string, MessageRecord[]>();
   private nextCreatedAtMs = Date.now();
 
+  cursorFor(message: MessageRecord): string {
+    return encodeCursor({
+      createdAt: message.createdAt.toISOString(),
+      id: message.id,
+    });
+  }
+
   async listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]> {
     return [...(this.items.get(conversationId) ?? [])].filter((message) => message.workspaceId === workspaceId);
   }
@@ -3464,6 +3484,52 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
           })
         : null,
       hasMore,
+    };
+  }
+
+  async listSinceByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    input: { sinceCreatedAt?: Date; sinceId?: string; limit: number },
+  ): Promise<{ messages: MessageRecord[]; latestCursor: string | null }> {
+    const messages = [...(this.items.get(conversationId) ?? [])]
+      .filter((message) => message.workspaceId === workspaceId)
+      .sort((left, right) => {
+        const timeDiff = left.createdAt.getTime() - right.createdAt.getTime();
+        return timeDiff !== 0 ? timeDiff : left.id.localeCompare(right.id);
+      });
+    const latest = messages.at(-1);
+    const latestCursor = latest
+      ? encodeCursor({
+          createdAt: latest.createdAt.toISOString(),
+          id: latest.id,
+        })
+      : null;
+
+    if (!input.sinceCreatedAt || !input.sinceId) {
+      const newest = messages.slice(-input.limit);
+      const lastReturned = newest.at(-1);
+      return {
+        messages: newest,
+        latestCursor: lastReturned ? this.cursorFor(lastReturned) : latestCursor,
+      };
+    }
+
+    const newer = messages
+      .filter((message) =>
+        message.createdAt.getTime() > input.sinceCreatedAt!.getTime() ||
+        (message.createdAt.getTime() === input.sinceCreatedAt!.getTime() && message.id > input.sinceId!)
+      )
+      .slice(0, input.limit);
+
+    return {
+      messages: newer,
+      latestCursor: newer.at(-1)
+        ? encodeCursor({
+            createdAt: newer.at(-1)!.createdAt.toISOString(),
+            id: newer.at(-1)!.id,
+          })
+        : latestCursor,
     };
   }
 

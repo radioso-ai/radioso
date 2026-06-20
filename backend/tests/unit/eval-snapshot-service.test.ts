@@ -146,6 +146,10 @@ class StubMessageRepository implements MessageRepositoryPort {
     throw new Error("not implemented");
   }
 
+  async listSinceByConversationId(): Promise<{ messages: MessageRecord[]; latestCursor: string | null }> {
+    throw new Error("not implemented");
+  }
+
   async summarizeByConversationIds(): Promise<Map<string, { messageCount: number; userMessageCount: number; assistantMessageCount: number; preview: string | null }>> {
     throw new Error("not implemented");
   }

@@ -1,5 +1,5 @@
 import { presentChatPayload } from "./chatPresenter.js";
-import type { ChatConversationDetail } from "../../../modules/chat/services/chatHistoryService.js";
+import type { ChatConversationDetail, ChatConversationTail } from "../../../modules/chat/services/chatHistoryService.js";
 import {
   CitationAnchorSanitizer,
   type AnswerSegment,
@@ -196,6 +196,35 @@ export const stripPublicConversationCitationArtifacts = (
     };
   }),
 });
+
+export const stripPublicConversationTailCitationArtifacts = (
+  tail: ChatConversationTail,
+  exposeCitations: boolean,
+): Omit<ChatConversationTail, "ownership"> => {
+  const { ownership: _ownership, ...publicTail } = tail;
+  return {
+    ...publicTail,
+    messages: tail.messages.map((message) => {
+      const {
+        citations,
+        answerSegments,
+        suggestions,
+        answerFeedbackEntries: _answerFeedbackEntries,
+        debug: _debug,
+        ...publicMessage
+      } = message;
+
+      return {
+        ...publicMessage,
+        ...(exposeCitations && Array.isArray(citations)
+          ? { citations: (citations as ChatCitation[]).map(toPublicCitation) }
+          : {}),
+        ...(answerSegments ? { answerSegments: stripPublicAnswerSegmentCitations(answerSegments, exposeCitations) } : {}),
+        ...(suggestions ? { suggestions: suggestions.map(stripPublicSuggestionCitation) } : {}),
+      };
+    }),
+  };
+};
 
 export async function* stripPublicStreamCitationArtifacts(
   events: AsyncIterable<ChatStreamEvent>,

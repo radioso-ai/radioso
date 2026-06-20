@@ -156,6 +156,38 @@ describe("routine defaults", () => {
     expect(vi.mocked(gw.complete).mock.calls[0]?.[0].systemPrompt).toContain("Ask the user for their email address.");
   });
 
+  it("tells handoff terminal replies not to ask whether handoff should happen", async () => {
+    const gw = gateway("I’m bringing in a teammate.");
+    await new RoutineStepRenderer(gw).render({
+      step: {
+        id: "handoff",
+        kind: "terminal",
+        action: "Bringing in a teammate.",
+        metadata: { terminalKind: "handoff" },
+      },
+      steering: [{ action: "Bringing in a teammate.", source: "routine", lifespan: "response" }],
+      turn,
+    });
+
+    const systemPrompt = vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt;
+    expect(systemPrompt).toContain("This handoff has already been selected");
+    expect(systemPrompt).toContain("Do not ask whether the user wants to be connected");
+    expect(systemPrompt).toContain("do not present the handoff as optional");
+  });
+
+  it("does not add handoff terminal rules to ordinary routine replies", async () => {
+    const gw = gateway("ok");
+    await new RoutineStepRenderer(gw).render({
+      step: currentStep,
+      steering: [{ action: "Ask the user for their email address.", source: "routine", lifespan: "response" }],
+      turn,
+    });
+
+    const systemPrompt = vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt;
+    expect(systemPrompt).not.toContain("This handoff has already been selected");
+    expect(systemPrompt).not.toContain("Do not ask whether the user wants to be connected");
+  });
+
   it("passes staged retrieval context as untrusted message data, not system instructions", async () => {
     const gw = gateway("ok");
     await new RoutineStepRenderer(gw).render({

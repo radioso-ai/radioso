@@ -94,6 +94,71 @@ describe("chat presenter", () => {
     expect(donePayload).toContain("\"kind\":\"deeper\"");
   });
 
+  it("forwards the ownership ack on a streamed human-owned (suppressed) done event", async () => {
+    const { response, writes } = createMockResponse();
+    const suppressedDone: ChatStreamEvent = {
+      type: "done",
+      conversationId: "conversation-1",
+      assistantMessageId: "",
+      route: { type: "direct", reason: "social_only" },
+      answer: "",
+      citations: [],
+      answerSegments: [],
+      suggestions: [],
+      activitySummary: {
+        status: "skipped",
+        outcome: "human_owned_suppressed",
+        retrievalSkipped: true,
+      },
+      activityTrace: {
+        traceId: "trace-suppressed",
+        startedAt: new Date().toISOString(),
+        stages: [],
+        links: [],
+      },
+      ownership: { state: "human_owned", suppressed: true },
+    };
+
+    await sendChatSse(response as never, (async function* () {
+      yield suppressedDone;
+    })());
+
+    const donePayload = writes.find((entry) => entry.startsWith("data: {") && entry.includes("\"answer\":\"\""));
+    expect(donePayload).toContain("\"ownership\":{\"state\":\"human_owned\",\"suppressed\":true}");
+  });
+
+  it("omits ownership from a normal streamed done event", async () => {
+    const { response, writes } = createMockResponse();
+    const normalDone: ChatStreamEvent = {
+      type: "done",
+      conversationId: "conversation-1",
+      assistantMessageId: "assistant-message-1",
+      route: { type: "direct", reason: "social_only" },
+      answer: "Answer",
+      citations: [],
+      answerSegments: [{ text: "Answer" }],
+      suggestions: [],
+      activitySummary: {
+        status: "skipped",
+        outcome: "non_retrieval_response",
+        retrievalSkipped: true,
+      },
+      activityTrace: {
+        traceId: "trace-normal",
+        startedAt: new Date().toISOString(),
+        stages: [],
+        links: [],
+      },
+    };
+
+    await sendChatSse(response as never, (async function* () {
+      yield normalDone;
+    })());
+
+    const donePayload = writes.find((entry) => entry.startsWith("data: {") && entry.includes("\"answer\":\"Answer\""));
+    expect(donePayload).not.toContain("\"ownership\"");
+  });
+
   it("surfaces the turn-trace envelope under debug only when debug is included", async () => {
     const turnTrace = {
       version: 1,

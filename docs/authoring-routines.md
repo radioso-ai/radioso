@@ -135,6 +135,9 @@ A line with no target chip is a step:
 
 - A plain line is a chat step.
 - A line that contains a skill chip is a tool step that calls that skill.
+- An approval step pauses the routine until an authorized workspace member
+  resolves it. The routine stores a pending decision, replies that it is awaiting
+  review, and does not run the gated step until the decision is approved.
 
 A line that carries a **Handoff** or **End** chip is a branch from the current
 step. The branch's guard - what decides whether it is taken - comes from the
@@ -226,6 +229,23 @@ The Form view infers the stored guard from the row:
 A `default` branch has two roles. If it is the only branch, it is the normal next
 path. If it sits after conditioned branches, it is the last path when the others
 do not match.
+
+### Approval gates
+
+Use an approval step before a step with side effects, such as sending a webhook
+or issuing a refund. An approval step has options, normally approve and reject.
+Each option must have a branch that checks the stored decision id, for example
+`refund_decision.id is approve`.
+
+When a conversation reaches the approval step, the routine is suspended. The
+assistant replies with the approval-step message, and Radioso creates a pending
+decision for the workspace. A dashboard operator resolves that decision through
+the authenticated decision endpoint. Approving resumes the routine and enqueues
+the gated action. Rejecting follows the rejection branch and does not enqueue the
+gated action.
+
+The key point is that the side effect is still dispatched by the routine action
+outbox. The approval endpoint only records the decision and resumes the routine.
 
 A branch can jump to any step, not only the next one. A forward jump can skip
 steps when a condition makes them unnecessary. A backward jump, including a jump

@@ -203,7 +203,7 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
     requestLog,
   });
 
-  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.goto(`/w/${workspaceKey}/activity?tab=all`);
 
   await expect(page.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
   await expect(page.getByRole("table", { name: "Activity" })).toBeVisible();
@@ -405,7 +405,7 @@ test("turn flow shows offered clarification decisions and candidates", async ({ 
     conversationDetail,
   });
 
-  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.goto(`/w/${workspaceKey}/activity?tab=all`);
   await page.getByRole("button", { name: /Tell me about yoga/ }).click();
   await expect(page).toHaveURL(/itemKind=chat/);
 
@@ -459,7 +459,7 @@ test("activity filtered pages request one offset-backed page", async ({ page }) 
     searchHistory,
   });
 
-  await page.goto(`/w/${workspaceKey}/activity?filter=chat&page=3`);
+  await page.goto(`/w/${workspaceKey}/activity?tab=all&filter=chat&page=3`);
   await expect(page.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
 
   expect(requestLog).toContain("GET /history/chat?limit=50&offset=100");
@@ -467,7 +467,7 @@ test("activity filtered pages request one offset-backed page", async ({ page }) 
   expect(requestLog).not.toContain("GET /history?limit=50&offset=100");
 
   requestLog.length = 0;
-  await page.goto(`/w/${workspaceKey}/activity?filter=search&page=2`);
+  await page.goto(`/w/${workspaceKey}/activity?tab=all&filter=search&page=2`);
   await expect(page.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
 
   expect(requestLog).toContain("GET /history/search?limit=50&offset=50");

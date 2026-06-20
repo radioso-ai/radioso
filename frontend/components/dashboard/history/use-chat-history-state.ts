@@ -1,12 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import {
   chatApi,
   documentsApi,
   type ChatConversationDetail,
+  type ChatConversationMessage,
   type ChatConversationSummary,
   type ChatConversationTurn,
   type ContactHistoryDetailResponse,
@@ -20,6 +21,7 @@ import { getApiErrorMessage } from '@/lib/api-error'
 import { getPrimaryLeaf } from '@/lib/turn-trace'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { editionController } from '@/lib/edition-controller'
+import { mergeTailMessages } from '@/lib/conversation-tail'
 import type { CitationOpenResult } from '@/components/dashboard/chat-citations'
 import type { HistoryFilter, HistoryListItem, SelectedHistoryItem } from './history-list'
 
@@ -394,11 +396,13 @@ export function useHistoryDetailState({
   setSelectedItem,
   onItemNotFound,
   anchorMessageId,
+  additionalConversationMessages = [],
 }: {
   selectedItem: SelectedHistoryItem
   setSelectedItem: (item: SelectedHistoryItem) => void
   onItemNotFound?: () => void
   anchorMessageId?: string | null
+  additionalConversationMessages?: ChatConversationMessage[]
 }) {
   const [conversationDetail, setConversationDetail] = useState<ChatConversationDetail | null>(null)
   const [searchDetail, setSearchDetail] = useState<DocumentSearchResponse | null>(null)
@@ -410,10 +414,14 @@ export function useHistoryDetailState({
   const [selectedStageId, setSelectedStageId] = useState<string | undefined>(undefined)
   const [selectedSpineStageId, setSelectedSpineStageId] = useState<string | undefined>(undefined)
   const [showGraph, setShowGraph] = useState(false)
+  const detailRequestIdRef = useRef(0)
 
-  useEffect(() => {
+  const loadDetail = useCallback(async () => {
+    const requestId = detailRequestIdRef.current + 1
+    detailRequestIdRef.current = requestId
+    const isActive = () => detailRequestIdRef.current === requestId
+
     if (!selectedItem) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Closing the drawer clears its detail state.
       setConversationDetail(null)
       setSearchDetail(null)
       setContactDetail(null)
@@ -425,108 +433,116 @@ export function useHistoryDetailState({
       return
     }
 
-    let isActive = true
+    setIsDetailLoading(true)
+    setDetailError(null)
+    setConversationDetail(null)
+    setSearchDetail(null)
+    setContactDetail(null)
 
-    const loadDetail = async () => {
-      setIsDetailLoading(true)
-      setDetailError(null)
-      setConversationDetail(null)
-      setSearchDetail(null)
-      setContactDetail(null)
-
-      try {
-        if (selectedItem.kind === 'chat') {
-          const detail = await chatApi.getHistoryConversation(selectedItem.id, {
-            limit: MESSAGE_WINDOW_SIZE,
-          })
-          if (!isActive) {
-            return
-          }
-          setConversationDetail(detail)
-          const anchoredMessage = anchorMessageId
-            ? detail.messages.find((message) => message.id === anchorMessageId && message.role === 'assistant') ?? null
-            : null
-          const traceBearingMessage =
-            anchoredMessage ??
-            [...detail.messages]
-              .reverse()
-              .find((message) => message.role === 'assistant' && message.debug) ?? null
-          setSelectedThreadMessageId(traceBearingMessage?.id ?? null)
-          setSelectedAssistantMessageId(traceBearingMessage?.id ?? null)
-          const trace = traceBearingMessage?.debug?.activityTrace
-          setSelectedStageId(trace?.stages[0]?.stageId)
-          setShowGraph(false)
+    try {
+      if (selectedItem.kind === 'chat') {
+        const detail = await chatApi.getHistoryConversation(selectedItem.id, {
+          limit: MESSAGE_WINDOW_SIZE,
+        })
+        if (!isActive()) {
           return
         }
-
-        if (selectedItem.kind === 'contact') {
-          const detail = await chatApi.getContactHistory(selectedItem.id, {
-            limit: MESSAGE_WINDOW_SIZE,
-          })
-          if (!isActive) {
-            return
-          }
-          setContactDetail(detail)
-          setConversationDetail(detail.conversation)
-          const selectedAssistant =
-            detail.contact.assistantMessageId
-              ? detail.conversation.messages.find((message) => message.id === detail.contact.assistantMessageId) ?? null
-              : [...detail.conversation.messages].reverse().find((message) => message.role === 'assistant') ?? null
-          setSelectedThreadMessageId(selectedAssistant?.id ?? null)
-          setSelectedAssistantMessageId(selectedAssistant?.role === 'assistant' ? selectedAssistant.id : null)
-          const trace = detail.contact.activityTrace ?? (selectedAssistant?.role === 'assistant' ? selectedAssistant.debug?.activityTrace : undefined)
-          setSelectedStageId(trace?.stages[0]?.stageId)
-          setShowGraph(false)
-          return
-        }
-
-        const detail = await chatApi.getSearchHistory(selectedItem.id)
-        if (!isActive) {
-          return
-        }
-        setSearchDetail(detail)
-        setSelectedStageId(detail.activityTrace?.stages[0]?.stageId)
+        setConversationDetail(detail)
+        const anchoredMessage = anchorMessageId
+          ? detail.messages.find((message) => message.id === anchorMessageId && message.role === 'assistant') ?? null
+          : null
+        const traceBearingMessage =
+          anchoredMessage ??
+          [...detail.messages]
+            .reverse()
+            .find((message) => message.role === 'assistant' && message.debug) ?? null
+        setSelectedThreadMessageId(traceBearingMessage?.id ?? null)
+        setSelectedAssistantMessageId(traceBearingMessage?.id ?? null)
+        const trace = traceBearingMessage?.debug?.activityTrace
+        setSelectedStageId(trace?.stages[0]?.stageId)
         setShowGraph(false)
-      } catch (error) {
-        if (!isActive) {
+        return
+      }
+
+      if (selectedItem.kind === 'contact') {
+        const detail = await chatApi.getContactHistory(selectedItem.id, {
+          limit: MESSAGE_WINDOW_SIZE,
+        })
+        if (!isActive()) {
           return
         }
-        setDetailError(
-          getApiErrorMessage(
-            error,
-            selectedItem.kind === 'chat'
-              ? 'Failed to load conversation details.'
-              : selectedItem.kind === 'contact'
-                ? 'Failed to load contact request details.'
-              : 'Failed to load search details.',
-          ),
-        )
-        if (isNotFoundError(error)) {
-          setSelectedItem(null)
-          onItemNotFound?.()
-        }
-      } finally {
-        if (isActive) {
-          setIsDetailLoading(false)
-        }
+        setContactDetail(detail)
+        setConversationDetail(detail.conversation)
+        const selectedAssistant =
+          detail.contact.assistantMessageId
+            ? detail.conversation.messages.find((message) => message.id === detail.contact.assistantMessageId) ?? null
+            : [...detail.conversation.messages].reverse().find((message) => message.role === 'assistant') ?? null
+        setSelectedThreadMessageId(selectedAssistant?.id ?? null)
+        setSelectedAssistantMessageId(selectedAssistant?.role === 'assistant' ? selectedAssistant.id : null)
+        const trace = detail.contact.activityTrace ?? (selectedAssistant?.role === 'assistant' ? selectedAssistant.debug?.activityTrace : undefined)
+        setSelectedStageId(trace?.stages[0]?.stageId)
+        setShowGraph(false)
+        return
       }
-    }
 
-    void loadDetail()
-
-    return () => {
-      isActive = false
+      const detail = await chatApi.getSearchHistory(selectedItem.id)
+      if (!isActive()) {
+        return
+      }
+      setSearchDetail(detail)
+      setSelectedStageId(detail.activityTrace?.stages[0]?.stageId)
+      setShowGraph(false)
+    } catch (error) {
+      if (!isActive()) {
+        return
+      }
+      setDetailError(
+        getApiErrorMessage(
+          error,
+          selectedItem.kind === 'chat'
+            ? 'Failed to load conversation details.'
+            : selectedItem.kind === 'contact'
+              ? 'Failed to load contact request details.'
+            : 'Failed to load search details.',
+        ),
+      )
+      if (isNotFoundError(error)) {
+        setSelectedItem(null)
+        onItemNotFound?.()
+      }
+    } finally {
+      if (isActive()) {
+        setIsDetailLoading(false)
+      }
     }
   }, [anchorMessageId, onItemNotFound, selectedItem, setSelectedItem])
 
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Detail view fetches the current drawer item after selection changes.
+    void loadDetail()
+    return () => {
+      detailRequestIdRef.current += 1
+    }
+  }, [loadDetail])
+
+  const refetchDetail = useCallback(() => loadDetail(), [loadDetail])
+
+  const effectiveConversationMessages = useMemo<ChatConversationTurn[]>(
+    () =>
+      conversationDetail
+        ? (mergeTailMessages(conversationDetail.messages, additionalConversationMessages) as ChatConversationTurn[])
+        : [],
+    [additionalConversationMessages, conversationDetail],
+  )
+
   const assistantMessages = useMemo(
-    () => conversationDetail?.messages.filter((message) => message.role === 'assistant') ?? [],
-    [conversationDetail],
+    () => effectiveConversationMessages.filter((message) => message.role === 'assistant'),
+    [effectiveConversationMessages],
   )
 
   const selectedThreadMessage = useMemo(
-    () => conversationDetail?.messages.find((message) => message.id === selectedThreadMessageId) ?? null,
-    [conversationDetail, selectedThreadMessageId],
+    () => effectiveConversationMessages.find((message) => message.id === selectedThreadMessageId) ?? null,
+    [effectiveConversationMessages, selectedThreadMessageId],
   )
 
   const selectedAssistantMessage = useMemo(
@@ -538,7 +554,7 @@ export function useHistoryDetailState({
   )
 
   const selectedDiagnosticsAssistantMessage = useMemo(() => {
-    if (!conversationDetail || !selectedThreadMessage) {
+    if (!selectedThreadMessage) {
       return selectedAssistantMessage
     }
 
@@ -546,17 +562,17 @@ export function useHistoryDetailState({
       return selectedThreadMessage
     }
 
-    const messageIndex = conversationDetail.messages.findIndex((message) => message.id === selectedThreadMessage.id)
+    const messageIndex = effectiveConversationMessages.findIndex((message) => message.id === selectedThreadMessage.id)
     if (messageIndex < 0) {
       return null
     }
 
     return (
-      conversationDetail.messages
+      effectiveConversationMessages
         .slice(messageIndex + 1)
         .find((message) => message.role === 'assistant') ?? null
     )
-  }, [conversationDetail, selectedThreadMessage, selectedAssistantMessage])
+  }, [effectiveConversationMessages, selectedThreadMessage, selectedAssistantMessage])
 
   const selectedDiagnosticsDebug =
     selectedDiagnosticsAssistantMessage?.role === 'assistant' ? selectedDiagnosticsAssistantMessage.debug : undefined
@@ -602,18 +618,18 @@ export function useHistoryDetailState({
         return
       }
 
-      const messageIndex = conversationDetail.messages.findIndex((message) => message.id === messageId)
+      const messageIndex = effectiveConversationMessages.findIndex((message) => message.id === messageId)
       if (messageIndex < 0) {
         return
       }
 
-      const clickedMessage = conversationDetail.messages[messageIndex]
+      const clickedMessage = effectiveConversationMessages[messageIndex]
       setSelectedThreadMessageId(clickedMessage.id)
 
       const targetAssistant =
         clickedMessage.role === 'assistant'
           ? clickedMessage
-          : conversationDetail.messages
+          : effectiveConversationMessages
               .slice(messageIndex + 1)
               .find((message) => message.role === 'assistant')
 
@@ -624,7 +640,7 @@ export function useHistoryDetailState({
       setSelectedAssistantMessageId(targetAssistant.id)
       setSelectedStageId(targetAssistant.debug?.activityTrace?.stages[0]?.stageId)
     },
-    [conversationDetail],
+    [conversationDetail, effectiveConversationMessages],
   )
 
   const loadOlderMessages = useCallback(async () => {
@@ -669,6 +685,7 @@ export function useHistoryDetailState({
 
   return {
     conversationDetail,
+    effectiveConversationMessages,
     searchDetail,
     contactDetail,
     isDetailLoading,
@@ -687,6 +704,7 @@ export function useHistoryDetailState({
     setSelectedSpineStageId,
     showGraph,
     setShowGraph,
+    refetchDetail,
     handleSelectThreadMessage,
     loadOlderMessages,
   }

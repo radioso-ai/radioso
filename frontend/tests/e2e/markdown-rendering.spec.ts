@@ -190,7 +190,7 @@ test("chat history renders fenced code blocks in assistant messages", async ({
     conversationDetail,
   });
 
-  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.goto(`/w/${workspaceKey}/activity?tab=all`);
   await page.getByRole("button", { name: /Show me a code sample/ }).click();
   await expect(page).toHaveURL(/itemKind=chat/);
 

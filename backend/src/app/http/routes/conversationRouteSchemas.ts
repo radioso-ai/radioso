@@ -28,3 +28,8 @@ export const conversationWindowQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).optional(),
   cursor: z.string().min(1).optional(),
 });
+
+export const conversationTailQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: z.string().min(1).optional(),
+});

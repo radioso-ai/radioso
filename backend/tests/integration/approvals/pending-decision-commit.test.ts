@@ -120,6 +120,12 @@ describeIfDatabase("pending decision assistant-turn commit fence", () => {
         state: routineState(sessionId),
       },
       pendingDecisionTransition: decision,
+      actions: [
+        {
+          type: "approval.request",
+          payload: { handle: decision.handle, conversationId: conversation.id, workspaceId: workspace.id },
+        },
+      ],
       assistantMessage: {
         id: assistantMessageId,
         conversationId: conversation.id,
@@ -177,6 +183,14 @@ describeIfDatabase("pending decision assistant-turn commit fence", () => {
       id: assistantMessageId,
       content: "I need approval before continuing.",
     });
+
+    // The approval.request notification is enqueued in the same commit as the decision.
+    const actionRow = await database.queryOne<{ type: string; payload: { handle?: string } }>(
+      `SELECT type, payload FROM routine_action_requests WHERE conversation_id = $1`,
+      [conversation.id],
+    );
+    expect(actionRow.type).toBe("approval.request");
+    expect(actionRow.payload.handle).toBe(decision.handle);
   });
 
   it("rolls back routine state and pending decision when the assistant message insert fails", async () => {
@@ -199,6 +213,12 @@ describeIfDatabase("pending decision assistant-turn commit fence", () => {
         state: routineState(sessionId),
       },
       pendingDecisionTransition: decision,
+      actions: [
+        {
+          type: "approval.request",
+          payload: { handle: decision.handle, conversationId: conversation.id, workspaceId: workspace.id },
+        },
+      ],
       assistantMessage: {
         id: duplicateMessageId,
         conversationId: conversation.id,
@@ -221,6 +241,13 @@ describeIfDatabase("pending decision assistant-turn commit fence", () => {
     expect(routineStateCount.count).toBe("0");
 
     await expect(pendingDecisions.loadByHandle(decision.handle)).resolves.toBeNull();
+
+    // The notification must roll back with the decision — it can never outlive a lost gate.
+    const actionCount = await database.queryOne<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM routine_action_requests WHERE conversation_id = $1`,
+      [conversation.id],
+    );
+    expect(actionCount.count).toBe("0");
 
     const messageCount = await database.queryOne<{ count: string }>(
       `SELECT COUNT(*)::text AS count FROM messages WHERE id = $1`,

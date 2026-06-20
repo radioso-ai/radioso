@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import type { PoolClient, QueryResultRow } from "pg";
 import type { RoutineState } from "@radioso/conversation-contract";
 
 import { DEFAULT_ROUTINE_STATE_TTL_MS } from "../../../db/repositories/routineStateRepository.js";
@@ -8,7 +7,7 @@ import type { MessageRecord } from "../../../db/repositories/messageRepository.j
 import type { PendingDecisionCreateInput } from "../../../db/repositories/pendingDecisionRepository.js";
 import { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
 import { stringifyJsonb } from "../../../shared/infra/jsonb.js";
-import type { Database, DatabaseExecutor } from "../../../shared/infra/database.js";
+import { databaseExecutorFromClient, type Database, type DatabaseExecutor } from "../../../shared/infra/database.js";
 import {
   actionIdempotencyKey,
   type AssistantTurnPersistencePort,
@@ -47,14 +46,14 @@ const mapMessage = (row: MessageRow): MessageRecord => ({
 });
 
 const enqueueActions = async (
-  client: PoolClient,
+  executor: DatabaseExecutor,
   input: CompleteAssistantTurnInput,
 ): Promise<void> => {
   if (!input.actions?.length) {
     return;
   }
   for (const action of input.actions) {
-    await client.query(
+    await executor.execute(
       `INSERT INTO routine_action_requests (type, payload, workspace_id, account_id, conversation_id, idempotency_key)
        VALUES ($1, $2::jsonb, $3, $4, $5, $6)
        ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING`,
@@ -71,12 +70,12 @@ const enqueueActions = async (
 };
 
 const saveRoutineState = async (
-  client: PoolClient,
+  executor: DatabaseExecutor,
   state: RoutineState,
   ttlMs: number,
 ): Promise<void> => {
   const expiresAt = state.status === "suspended" ? null : new Date(Date.now() + ttlMs).toISOString();
-  await client.query(
+  await executor.execute(
     `INSERT INTO routine_states (session_id, routine_id, path, variables, attempts, status, expires_at, updated_at)
      VALUES ($1, $2, $3::text[], $4::jsonb, $5::jsonb, $6, $7, now())
      ON CONFLICT (session_id) DO UPDATE SET
@@ -100,7 +99,7 @@ const saveRoutineState = async (
 };
 
 const applyRoutineStateTransition = async (
-  client: PoolClient,
+  executor: DatabaseExecutor,
   transition: CapturedRoutineTransition | null | undefined,
   ttlMs: number,
 ): Promise<void> => {
@@ -108,17 +107,17 @@ const applyRoutineStateTransition = async (
     return;
   }
   if (transition.kind === "save") {
-    await saveRoutineState(client, transition.state, ttlMs);
+    await saveRoutineState(executor, transition.state, ttlMs);
     return;
   }
-  await client.query(`DELETE FROM routine_states WHERE session_id = $1`, [transition.sessionId]);
+  await executor.execute(`DELETE FROM routine_states WHERE session_id = $1`, [transition.sessionId]);
 };
 
 const savePendingDecision = async (
-  client: PoolClient,
+  executor: DatabaseExecutor,
   input: PendingDecisionCreateInput,
 ): Promise<void> => {
-  await client.query(
+  await executor.execute(
     `INSERT INTO pending_decisions (
         handle,
         conversation_id,
@@ -152,10 +151,10 @@ const savePendingDecision = async (
 };
 
 const saveClarificationState = async (
-  client: PoolClient,
+  executor: DatabaseExecutor,
   pending: Extract<CapturedClarificationTransition, { kind: "save" }>["pending"],
 ): Promise<void> => {
-  await client.query(
+  await executor.execute(
     `INSERT INTO clarification_states (session_id, source, original_query, mode, candidates, asked_event_id, status, expires_at, updated_at)
      VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, now())
      ON CONFLICT (session_id) DO UPDATE SET
@@ -181,17 +180,17 @@ const saveClarificationState = async (
 };
 
 const applyClarificationTransition = async (
-  client: PoolClient,
+  executor: DatabaseExecutor,
   transition: CapturedClarificationTransition | null | undefined,
 ): Promise<void> => {
   if (!transition) {
     return;
   }
   if (transition.kind === "save") {
-    await saveClarificationState(client, transition.pending);
+    await saveClarificationState(executor, transition.pending);
     return;
   }
-  await client.query(
+  await executor.execute(
     `UPDATE clarification_states
         SET status = $2, original_query = NULL, updated_at = now()
       WHERE session_id = $1`,
@@ -199,18 +198,11 @@ const applyClarificationTransition = async (
   );
 };
 
-const executorFromClient = (client: PoolClient): Pick<DatabaseExecutor, "queryOptional"> => ({
-  async queryOptional<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T | null> {
-    const result = await client.query<T>(text, params);
-    return result.rows[0] ?? null;
-  },
-});
-
 const insertAuditEvent = async (
-  client: PoolClient,
+  executor: DatabaseExecutor,
   event: CompleteAssistantTurnInput["auditEvent"],
 ): Promise<void> => {
-  await client.query(
+  await executor.execute(
     `INSERT INTO audit_events (id, account_id, workspace_id, event_type, event_status, metadata_json)
      VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
     [
@@ -232,11 +224,11 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
   ) {}
 
   async completeAssistantTurn(input: CompleteAssistantTurnInput): Promise<MessageRecord> {
-    return this.database.withTransaction(async (client) => {
-      await enqueueActions(client, input);
-      await applyRoutineStateTransition(client, input.routineStateTransition, this.routineStateTtlMs);
+    const run = async (executor: DatabaseExecutor): Promise<MessageRecord> => {
+      await enqueueActions(executor, input);
+      await applyRoutineStateTransition(executor, input.routineStateTransition, this.routineStateTtlMs);
       if (input.pendingDecisionTransition) {
-        await savePendingDecision(client, input.pendingDecisionTransition);
+        await savePendingDecision(executor, input.pendingDecisionTransition);
       }
       if (input.ownershipHandoff) {
         await this.conversationOwnershipRepository.requestHandoff(
@@ -245,13 +237,13 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
             workspaceId: input.workspaceId,
             reason: input.ownershipHandoff.reason,
           },
-          executorFromClient(client),
+          executor,
         );
       }
-      await applyClarificationTransition(client, input.clarificationTransition);
+      await applyClarificationTransition(executor, input.clarificationTransition);
 
       const messageId = input.assistantMessage.id ?? randomUUID();
-      const messageResult = await client.query<MessageRow>(
+      const message = await executor.queryOne<MessageRow>(
         `INSERT INTO messages (id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status, created_at)
          VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, clock_timestamp())
          RETURNING id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status, created_at`,
@@ -268,17 +260,26 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
         ],
       );
 
-      await client.query(
+      await executor.execute(
         `UPDATE conversations SET updated_at = now() WHERE id = $1 AND workspace_id = $2`,
         [input.conversationId, input.workspaceId],
       );
 
-      await insertAuditEvent(client, input.auditEvent);
+      await insertAuditEvent(executor, input.auditEvent);
       if (input.ownershipAuditEvent) {
-        await insertAuditEvent(client, input.ownershipAuditEvent);
+        await insertAuditEvent(executor, input.ownershipAuditEvent);
+      }
+      if (input.additionalAuditEvent) {
+        await insertAuditEvent(executor, input.additionalAuditEvent);
       }
 
-      return mapMessage(messageResult.rows[0]!);
-    });
+      return mapMessage(message);
+    };
+
+    if (input.executor) {
+      return run(input.executor);
+    }
+
+    return this.database.withTransaction(async (client) => run(databaseExecutorFromClient(client)));
   }
 }

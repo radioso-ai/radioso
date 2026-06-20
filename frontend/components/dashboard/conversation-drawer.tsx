@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Bug, Check, Copy, Search, Workflow, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -18,6 +18,7 @@ import { ActivityTraceDetail } from './activity-trace-detail'
 import { ActivityTraceGraph } from './activity-trace-graph'
 import { TurnFlowOverlay } from './turn-flow-overlay'
 import { ChatMessageThread } from './chat-message-thread'
+import { OperatorActionBar } from './operator-action-bar'
 import { HistoryDocumentDialog } from '@/components/dashboard/history/history-document-dialog'
 import { MetadataBadges } from '@/components/dashboard/shared/metadata-badges'
 import {
@@ -29,8 +30,11 @@ import {
   type ChatConversationTurn,
   type ContactHistoryDetail,
   type DocumentSearchResponse,
+  type PendingApprovalDecision,
   type TurnTraceEnvelope,
 } from '@/lib/api'
+import { hitlApi } from '@/lib/api-hitl'
+import { useConversationTail } from '@/hooks/use-conversation-tail'
 import { formatConversationSource } from '@/lib/history-source'
 import {
   type DiagnosticPresentation,
@@ -298,6 +302,17 @@ export interface ConversationDrawerProps {
    */
   onAfterClose?: () => void
   /**
+   * Optional callback fired after operator actions mutate conversation ownership
+   * or pending approvals. Use this to sync parent inbox lists.
+   */
+  onOperatorChanged?: () => Promise<void> | void
+  /**
+   * Optional pending approvals supplied by a parent that already owns the inbox
+   * refresh. When present, the drawer derives its conversation-scoped approvals
+   * from this list instead of issuing its own pending-decision fetch.
+   */
+  pendingDecisions?: PendingApprovalDecision[]
+  /**
    * Builds a dashboard link to a routine version for the diagnostics routine
    * band. Supplied by call sites that own the route state; omitted where routine
    * deep-links don't apply.
@@ -310,12 +325,20 @@ export function ConversationDrawer({
   onSelectedItemChange,
   anchorMessageId,
   onAfterClose,
+  onOperatorChanged,
+  pendingDecisions,
   buildRoutineHref,
 }: ConversationDrawerProps) {
+  const selectedChatConversationId = selectedItem?.kind === 'chat' ? selectedItem.id : null
   const skillCatalog = useSkillCatalog(selectedItem?.id ?? null)
   const handleItemNotFound = useCallback(() => {
     onAfterClose?.()
   }, [onAfterClose])
+  const conversationTail = useConversationTail({
+    conversationId: selectedChatConversationId ?? '',
+    enabled: selectedChatConversationId !== null,
+    intervalMs: 1000,
+  })
 
   const {
     conversationDetail,
@@ -333,13 +356,16 @@ export function ConversationDrawer({
     setSelectedStageId,
     showGraph,
     setShowGraph,
+    refetchDetail,
     handleSelectThreadMessage,
     loadOlderMessages,
+    effectiveConversationMessages,
   } = useHistoryDetailState({
     selectedItem,
     setSelectedItem: onSelectedItemChange,
     onItemNotFound: handleItemNotFound,
     anchorMessageId,
+    additionalConversationMessages: conversationTail.messages,
   })
 
   const {
@@ -352,15 +378,116 @@ export function ConversationDrawer({
   } = useHistoryDocumentDialogState()
 
   const [flowOpen, setFlowOpen] = useState(false)
+  const [pendingDecisionState, setPendingDecisionState] = useState<{
+    conversationId: string | null
+    decisions: PendingApprovalDecision[]
+  }>({ conversationId: null, decisions: [] })
+  const [pendingDecisionError, setPendingDecisionError] = useState<string | null>(null)
+
+  const loadPendingDecisions = useCallback(async () => {
+    if (pendingDecisions) {
+      return
+    }
+
+    if (!selectedChatConversationId) {
+      setPendingDecisionState({ conversationId: null, decisions: [] })
+      setPendingDecisionError(null)
+      return
+    }
+
+    try {
+      const response = await hitlApi.listPendingDecisions()
+      setPendingDecisionState({
+        conversationId: selectedChatConversationId,
+        decisions: response.decisions.filter((decision) => decision.conversationId === selectedChatConversationId),
+      })
+      setPendingDecisionError(null)
+    } catch {
+      setPendingDecisionState({ conversationId: selectedChatConversationId, decisions: [] })
+      setPendingDecisionError('Failed to refresh approval requests.')
+    }
+  }, [pendingDecisions, selectedChatConversationId])
+
+  useEffect(() => {
+    if (pendingDecisions) {
+      return
+    }
+
+    if (!selectedChatConversationId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronously clears conversation-scoped approvals when the chat drawer closes.
+      setPendingDecisionState({ conversationId: null, decisions: [] })
+      setPendingDecisionError(null)
+      return
+    }
+
+    let isActive = true
+    setPendingDecisionState({ conversationId: selectedChatConversationId, decisions: [] })
+    setPendingDecisionError(null)
+
+    const load = async () => {
+      try {
+        const response = await hitlApi.listPendingDecisions()
+        if (!isActive) {
+          return
+        }
+        setPendingDecisionState({
+          conversationId: selectedChatConversationId,
+          decisions: response.decisions.filter((decision) => decision.conversationId === selectedChatConversationId),
+        })
+      } catch {
+        if (isActive) {
+          setPendingDecisionState({ conversationId: selectedChatConversationId, decisions: [] })
+          setPendingDecisionError('Failed to load approval requests.')
+        }
+      }
+    }
+
+    void load()
+
+    return () => {
+      isActive = false
+    }
+  }, [pendingDecisions, selectedChatConversationId])
+
+  const handleOperatorChanged = useCallback(async () => {
+    if (pendingDecisions) {
+      await Promise.all([
+        refetchDetail(),
+        onOperatorChanged?.(),
+      ])
+      return
+    }
+
+    await Promise.all([
+      refetchDetail(),
+      loadPendingDecisions(),
+      onOperatorChanged?.(),
+    ])
+  }, [loadPendingDecisions, onOperatorChanged, pendingDecisions, refetchDetail])
+
+  const renderedConversationMessages = effectiveConversationMessages
+
+  const tailOwnershipIsCurrent =
+    !conversationDetail?.ownership ||
+    !conversationTail.ownership ||
+    conversationTail.ownership.version >= conversationDetail.ownership.version
+  const actionBarOwnership = conversationTail.hasPolled && tailOwnershipIsCurrent
+    ? conversationTail.ownership
+    : conversationDetail?.ownership
+  const activePendingDecisions = pendingDecisions
+    ? pendingDecisions.filter((decision) => decision.conversationId === selectedChatConversationId)
+    : pendingDecisionState.conversationId === selectedChatConversationId
+      ? pendingDecisionState.decisions.filter((decision) => decision.conversationId === selectedChatConversationId)
+      : []
 
   // Mark which turns a routine drove so the conversation thread can band the
   // routine's span (start chip, paused/ended marker). The signal lives on each
   // assistant turn's spine trace, which history always carries for diagnostics.
   const routineMarkers = useMemo(
     () =>
-      conversationDetail
+      renderedConversationMessages.length > 0
         ? computeRoutineThreadMarkers(
-            conversationDetail.messages.map((message) => ({
+            renderedConversationMessages.map((message) => ({
               role: message.role,
               routine:
                 message.role === 'assistant'
@@ -369,7 +496,7 @@ export function ConversationDrawer({
             })),
           )
         : undefined,
-    [conversationDetail],
+    [renderedConversationMessages],
   )
 
   // The trace carries only the routine id; join its readable name from the
@@ -475,7 +602,11 @@ export function ConversationDrawer({
                     {showGraph ? 'Close' : 'Debug'}
                   </Button>
                 ) : null}
-                <DrawerClose className="shrink-0 rounded-md p-1 text-muted-foreground hover:text-foreground">
+                <DrawerClose
+                  aria-label="Close details panel"
+                  className="shrink-0 rounded-md p-1 text-muted-foreground hover:text-foreground"
+                >
+                  <span className="sr-only">Close details panel</span>
                   <X className="h-4 w-4" />
                 </DrawerClose>
               </div>
@@ -512,7 +643,7 @@ export function ConversationDrawer({
                     </div>
                   ) : null}
                   <ChatMessageThread
-                    messages={conversationDetail.messages.map((message) =>
+                    messages={renderedConversationMessages.map((message) =>
                       // History messages already have a persisted DB id; the
                       // ChatMessageThread component derives `assistantMessageId`
                       // from `persistedAssistantMessageId`, which is only set
@@ -531,6 +662,21 @@ export function ConversationDrawer({
                     skillCatalog={skillCatalog}
                     routineMarkers={namedRoutineMarkers}
                   />
+                  {selectedItem.kind === 'chat' ? (
+                    <>
+                      <OperatorActionBar
+                        conversationId={selectedItem.id}
+                        ownership={actionBarOwnership}
+                        pendingDecisions={activePendingDecisions}
+                        onChanged={handleOperatorChanged}
+                      />
+                      {pendingDecisionError ? (
+                        <p className="px-4 pb-4 text-sm text-destructive" role="status">
+                          {pendingDecisionError}
+                        </p>
+                      ) : null}
+                    </>
+                  ) : null}
                 </div>
 
                 {showGraph ? (
@@ -627,7 +773,7 @@ export function ConversationDrawer({
               // Pass the drawer's already-authorized conversation messages so the
               // overlay can show user/history/answer text without the trace
               // envelope embedding raw content.
-              messages={conversationDetail?.messages}
+              messages={renderedConversationMessages}
               assistantMessageId={selectedDiagnosticsAssistantMessage?.id}
             />
           ) : null}

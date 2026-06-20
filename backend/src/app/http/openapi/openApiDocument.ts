@@ -50,6 +50,8 @@ export const createOpenApiDocument = (
   const publicChatPaths = [
     "/api/v1/public/chat/{token}",
     "/api/v1/public/chat/{token}/history/{conversationId}",
+    "/api/v1/public/chat/{token}/tail/{conversationId}",
+    "/api/v1/public/chat/{token}/events/{conversationId}",
   ] as const;
 
   const paths = document.paths ?? {};

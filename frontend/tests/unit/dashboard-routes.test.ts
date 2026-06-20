@@ -5,9 +5,11 @@ import {
   buildAccountRoute,
   buildDashboardHref,
   buildLegacyDashboardHref,
+  type DashboardRouteState,
   parseDashboardRoute,
   retargetDashboardRouteToWorkspace,
 } from '@/lib/dashboard-routes'
+import { buildActivityTabHref } from '@/components/dashboard/activity-tabs'
 import { agentSectionFromRoute, agentSectionRoute } from '@/lib/dashboard-areas'
 
 describe('dashboard route state', () => {
@@ -79,6 +81,80 @@ describe('dashboard route state', () => {
       historyFilter: 'contact',
       historyItemKind: 'contact',
       historyItemId: 'request-77',
+    })
+  })
+
+  it('round-trips activity tab state while preserving activity deep links', () => {
+    expect(buildDashboardHref('account-1', {
+      section: 'activity',
+      workspacePublicRouteKey: 'support-abc123',
+      activityTab: 'needs-attention',
+    })).toBe('/w/support-abc123/activity')
+
+    expect(buildDashboardHref('account-1', {
+      section: 'activity',
+      workspacePublicRouteKey: 'support-abc123',
+      activityTab: 'all',
+    })).toBe('/w/support-abc123/activity?tab=all')
+
+    const parsed = parseDashboardRoute(['activity'], new URLSearchParams({
+      tab: 'needs-attention',
+      filter: 'chat',
+      itemKind: 'chat',
+      itemId: 'conversation-1',
+      itemMessageId: 'message-1',
+    }))
+
+    expect(parsed).toEqual({
+      section: 'activity',
+      // 'needs-attention' is the default tab, so it normalizes out of the parsed state.
+      historyFilter: 'chat',
+      historyItemKind: 'chat',
+      historyItemId: 'conversation-1',
+      historyMessageId: 'message-1',
+    })
+
+    expect(buildDashboardHref('account-1', {
+      ...parsed!,
+      workspacePublicRouteKey: 'support-abc123',
+    })).toBe('/w/support-abc123/activity?filter=chat&itemKind=chat&itemId=conversation-1&itemMessageId=message-1')
+  })
+
+  it('builds activity tab hrefs without discarding active surface filters', () => {
+    const filteredActivity: DashboardRouteState = {
+      section: 'activity',
+      workspacePublicRouteKey: 'support-abc123',
+      activityTab: 'all',
+      historyFilter: 'chat',
+      historyItemKind: 'chat',
+      historyItemId: 'conversation-1',
+    }
+
+    expect(buildActivityTabHref('account-1', filteredActivity, 'all', 'all')).toBe(
+      '/w/support-abc123/activity?tab=all&filter=chat&itemKind=chat&itemId=conversation-1',
+    )
+    expect(buildActivityTabHref('account-1', filteredActivity, 'all', 'quality')).toBe('/w/support-abc123/quality')
+
+    const filteredQuality: DashboardRouteState = {
+      section: 'quality',
+      workspacePublicRouteKey: 'support-abc123',
+      qualityFeedback: ['down'],
+      qualityTriageStates: ['open'],
+    }
+
+    expect(buildActivityTabHref('account-1', filteredQuality, 'quality', 'quality')).toBe(
+      '/w/support-abc123/quality?feedback=down&triage=open',
+    )
+    expect(buildActivityTabHref('account-1', filteredQuality, 'quality', 'all')).toBe('/w/support-abc123/activity?tab=all')
+  })
+
+  it('ignores activity tab query state outside the activity section', () => {
+    expect(parseDashboardRoute(['quality'], new URLSearchParams({
+      tab: 'needs-attention',
+      feedback: 'down',
+    }))).toEqual({
+      section: 'quality',
+      qualityFeedback: ['down'],
     })
   })
 

@@ -229,6 +229,24 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
+  // Declared before the conversation summary/detail schemas so both can carry it. Absent on
+  // the response means the conversation is AI-owned (the ownership table is lazy: no row).
+  const ConversationOwnershipSchema = registry.register(
+    "ConversationOwnership",
+    z.object({
+      conversationId: z.string().uuid(),
+      workspaceId: z.string().uuid(),
+      state: z.enum(["ai_owned", "human_owned"]),
+      ownerAccountId: z.string().uuid().nullable(),
+      ownerDisplayName: z.string().nullable(),
+      reason: z.string().nullable(),
+      version: z.number().int().nonnegative(),
+      takenOverAt: z.string().datetime().nullable(),
+      createdAt: z.string().datetime(),
+      updatedAt: z.string().datetime(),
+    }),
+  );
+
   const ChatConversationSummarySchema = registry.register(
     "ChatConversationSummary",
     z.object({
@@ -244,6 +262,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       userMessageCount: z.number().int().min(0),
       assistantMessageCount: z.number().int().min(0),
       preview: z.string().nullable(),
+      ownership: ConversationOwnershipSchema.optional(),
     }),
   );
 
@@ -388,22 +407,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       suggestions: z.array(ChatSuggestionSchema).optional(),
       answerFeedbackEntries: z.array(AnswerFeedbackEntrySchema).optional(),
       debug: ChatConversationMessageDebugSchema.optional(),
-    }),
-  );
-
-  const ConversationOwnershipSchema = registry.register(
-    "ConversationOwnership",
-    z.object({
-      conversationId: z.string().uuid(),
-      workspaceId: z.string().uuid(),
-      state: z.enum(["ai_owned", "human_owned"]),
-      ownerAccountId: z.string().uuid().nullable(),
-      ownerDisplayName: z.string().nullable(),
-      reason: z.string().nullable(),
-      version: z.number().int().nonnegative(),
-      takenOverAt: z.string().datetime().nullable(),
-      createdAt: z.string().datetime(),
-      updatedAt: z.string().datetime(),
+      operatorDisplayName: z.string().optional(),
     }),
   );
 
@@ -464,7 +468,28 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       messageWindowLimit: z.number().int().min(1),
       hasOlderMessages: z.boolean(),
       nextCursor: z.string().nullable(),
+      tailCursor: z.string().nullable().openapi({
+        description: "Cursor for subsequent tail requests. It marks the newest message included when this detail response was produced.",
+      }),
       messages: z.array(ChatConversationMessageSchema),
+      ownership: ConversationOwnershipSchema.optional(),
+    }),
+  );
+
+  const ChatConversationTailSchema = registry.register(
+    "ChatConversationTail",
+    z.object({
+      messages: z.array(ChatConversationMessageSchema),
+      cursor: z.string().nullable(),
+      ownership: ConversationOwnershipSchema.optional(),
+    }),
+  );
+
+  const PublicChatConversationTailSchema = registry.register(
+    "PublicChatConversationTail",
+    z.object({
+      messages: z.array(ChatConversationMessageSchema),
+      cursor: z.string().nullable(),
     }),
   );
 
@@ -544,6 +569,8 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     ClearAnswerFeedbackResponseSchema,
     ChatConversationMessageSchema,
     ChatConversationDetailSchema,
+    ChatConversationTailSchema,
+    PublicChatConversationTailSchema,
     PublicConversationSummarySchema,
     PublicConversationListResponseSchema,
     RateLimitExceededSchema,

@@ -6,6 +6,7 @@ import { AccessGrantRepository } from "../../db/repositories/accessGrantReposito
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
 import { RoutineDefinitionRepository } from "../../db/repositories/routineDefinitionRepository.js";
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
+import { PendingDecisionRepository } from "../../db/repositories/pendingDecisionRepository.js";
 import { ClarificationStateRepository } from "../../db/repositories/clarificationStateRepository.js";
 import { createConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
 import type { AgentSkillSettingsRegistry, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
@@ -29,12 +30,14 @@ import { WorkspaceGrantRepository } from "../../db/repositories/workspaceGrantRe
 import { WorkspaceRepository } from "../../db/repositories/workspaceRepository.js";
 import { WorkspaceTokenRepository } from "../../db/repositories/workspaceTokenRepository.js";
 import { LlmResponseLanguageDetector } from "../../shared/services/responseLanguageDetector.js";
+import { LlmHandoffWaitingMessageGenerator } from "../../shared/services/handoffWaitingMessageGenerator.js";
 import { PostgresAssistantTurnPersistence } from "../../modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { registeredCapabilityNames } from "../../shared/domain/capabilityPolicy.js";
 import { AccountAccessService, AccountInvitationService } from "../../modules/account/public.js";
 import { AccessGrantService, DefaultOriginMatcher } from "../../modules/accessGrants/public.js";
 import { AgentService } from "../../modules/agents/public.js";
 import { AuditService } from "../../modules/audit/composition.js";
+import { ApprovalDecisionService } from "../../modules/approvals/public.js";
 import type { AuditPort } from "../../modules/audit/contracts/index.js";
 import { AuthService } from "../../modules/auth/services/authService.js";
 import { EmailVerificationService } from "../../modules/auth/services/emailVerificationService.js";
@@ -53,6 +56,7 @@ import {
   ChatHistoryService,
   ChatService,
   type ChatRoutineProvider,
+  type PublicConversationEventBus,
   ChainedPublicChatActionAdvertiser,
   buildChatTurnRuntime,
   createRouteScopedDirectiveSteering,
@@ -750,6 +754,7 @@ export const buildWorkspaceServices = (input: {
 
 
 export const buildChatServices = (input: {
+  accountAccessService: AccountAccessService;
   agentService: AgentService;
   auditEventRepository: AuditEventRepository;
   auditService: AuditService;
@@ -774,6 +779,7 @@ export const buildChatServices = (input: {
   emailSkillActivityRepository: EmailSkillActivityRepository;
   webhookSkillDefinitionRepository: WebhookSkillDefinitionRepository;
   mailService: ReturnType<typeof buildInfrastructure>["mailService"];
+  publicConversationEventBus: PublicConversationEventBus;
   usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
   retrievalPipeline: RetrievalPipelinePort;
   usageLimitPolicy: ReturnType<typeof buildInfrastructure>["usageLimitPolicy"];
@@ -1155,6 +1161,7 @@ export const buildChatServices = (input: {
           }),
           new RoutineStepRenderer(modelGateway, {
             promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
+            terminalHandoffInstruction: loadPromptTemplate("chat/routine-step-terminal-handoff.md"),
             responseLanguage,
           }),
           new RoutineSkillExecutorDispatcher(
@@ -1210,6 +1217,9 @@ export const buildChatServices = (input: {
   const responseLanguageDetector = new LlmResponseLanguageDetector(
     input.llmRegistry.createRewriteInferencePipeline(input.usageEventRecorder),
   );
+  const handoffWaitingMessageGenerator = new LlmHandoffWaitingMessageGenerator(
+    input.llmRegistry.createRewriteInferencePipeline(input.usageEventRecorder),
+  );
   const routineStateRepository = new RoutineStateRepository(input.database);
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
@@ -1236,6 +1246,7 @@ export const buildChatServices = (input: {
     selectionStrategy: input.composition.selectionStrategy,
     turnRouter,
     responseLanguageDetector,
+    handoffWaitingMessageGenerator,
     // The reusable conversation engine is the chat turn spine in every
     // environment. ChatService keeps an engine-less path for tests, but
     // composition always wires it.
@@ -1300,6 +1311,7 @@ export const buildChatServices = (input: {
     input.historyItemsRepository,
     contactHistoryProvider,
     answerFeedbackHistoryProvider,
+    input.conversationOwnershipRepository,
   );
   const retrievalAnswerService = new RetrievalAnswerService({
     retrievalPipeline: input.retrievalPipeline,
@@ -1317,6 +1329,19 @@ export const buildChatServices = (input: {
     conversationEngine,
     turnRouter,
   });
+  const approvalDecisionService = new ApprovalDecisionService(
+    new PendingDecisionRepository(input.database),
+    chatService.asApprovalResumeRunner(),
+    {
+      resolveWorkspaceRole: (caller) => input.accountAccessService.resolveWorkspaceRole(caller),
+    },
+    {
+      publishMessageCreated: (event) => input.publicConversationEventBus.publish({
+        type: "message.created",
+        ...event,
+      }),
+    },
+  );
 
   return {
     abuseControlService,
@@ -1332,6 +1357,7 @@ export const buildChatServices = (input: {
     contactHistoryProvider,
     retrievalAnswerService,
     actionDispatchWorker,
+    approvalDecisionService,
   };
 };
 

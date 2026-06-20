@@ -186,6 +186,34 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const applyCompletion = useCallback(
     (accountId: string, agentId: string | undefined, assistantMessageId: string, completion: ChatStreamCompletion) => {
+      // After a handoff the conversation is human-owned and the backend suppresses the
+      // AI turn. It returns a localized "a teammate is joining, please wait" line in
+      // `answer`; show that. If generation fell back to empty, drop the placeholder
+      // rather than committing an empty assistant bubble — a human operator now replies.
+      if (completion.ownership?.state === 'human_owned' && completion.ownership.suppressed) {
+        const waitingMessage = completion.answer?.trim() ?? ''
+        updateSession(accountId, agentId, (session) => ({
+          ...session,
+          conversationId: completion.conversationId ?? session.conversationId,
+          bootstrapGreetingId: completion.conversationId ? undefined : session.bootstrapGreetingId,
+          isLoading: false,
+          messages: waitingMessage
+            ? session.messages.map((message) =>
+                message.id === assistantMessageId
+                  ? {
+                      ...message,
+                      content: waitingMessage,
+                      citations: [],
+                      answerSegments: undefined,
+                      suggestions: undefined,
+                      status: 'complete' as const,
+                    }
+                  : message,
+              )
+            : session.messages.filter((message) => message.id !== assistantMessageId),
+        }))
+        return
+      }
       updateSession(accountId, agentId, (session) => ({
         ...session,
         conversationId: completion.conversationId ?? session.conversationId,
@@ -339,6 +367,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             citations: completion.citations,
             answerSegments: completion.answerSegments,
             suggestions: completion.suggestions,
+            ownership: completion.ownership,
             debug: completion.debug,
           })
         }

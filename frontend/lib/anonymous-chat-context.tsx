@@ -102,6 +102,10 @@ export interface ChatMessage {
   persistedAssistantMessageId?: string
   status: 'complete' | 'streaming' | 'error'
   skill?: SkillStreamPayload
+  /** Message provenance, so the visitor can tell a human operator reply from the AI. */
+  source?: ChatConversationDetail['messages'][number]['source']
+  /** Display name of the human operator who sent this reply (takeover). */
+  operatorDisplayName?: string
 }
 
 interface AnonymousChatContextValue {
@@ -199,11 +203,11 @@ const toPublicAnswerSegments = (answerSegments?: AnswerSegment[]) =>
     ...(segment.citationIndices ? { citationIndices: segment.citationIndices } : {}),
   }))
 
-const toChatMessages = (
-  detail: ChatConversationDetail,
+const toChatMessagesFromTurns = (
+  messages: ChatConversationDetail['messages'],
   anonymousSessionId?: string | null,
 ): ChatMessage[] =>
-  detail.messages
+  messages
     .filter((message): message is typeof message & { role: 'user' | 'assistant' } => message.role !== 'system')
     .map((message) => ({
       id: message.id,
@@ -222,7 +226,18 @@ const toChatMessages = (
       activityTrace: message.debug?.activityTrace,
       persistedAssistantMessageId: message.role === 'assistant' ? message.id : undefined,
       status: 'complete' as const,
+      source: message.source,
+      operatorDisplayName: message.operatorDisplayName,
     }))
+
+const toChatMessages = (
+  detail: ChatConversationDetail,
+  anonymousSessionId?: string | null,
+): ChatMessage[] => toChatMessagesFromTurns(detail.messages, anonymousSessionId)
+
+const isHumanAgentReply = (message: ChatConversationDetail['messages'][number]) =>
+  message.role === 'assistant' &&
+  (message.source === 'human_agent' || message.source === 'human_agent_on_behalf_of_ai_agent')
 
 const clearMessageSuggestions = (messages: ChatMessage[]): ChatMessage[] =>
   messages.map((message) =>
@@ -264,6 +279,7 @@ const getLatestAssistantMessage = (
 
 const INITIAL_MESSAGE_WINDOW_SIZE = 10
 const MESSAGE_WINDOW_SIZE = 50
+export const PUBLIC_CHAT_EVENT_RECONNECT_DELAY_MS = 2_500
 const isValidLocaleHint = (value: string | null | undefined): value is string => {
   if (!value) {
     return false
@@ -333,6 +349,7 @@ export function AnonymousChatProvider({
   const [nextMessageCursor, setNextMessageCursor] = useState<string | null>(null)
   const [rateLimitError, setRateLimitError] = useState<string | null>(null)
   const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null)
+  const tailCursorRef = useRef<string | null>(null)
 
   const createPublicLaunchSession = useCallback(
     async (input?: { resetSession?: boolean }) => {
@@ -403,6 +420,7 @@ export function AnonymousChatProvider({
     setBootstrapGreetingId(undefined)
     setHasOlderMessages(false)
     setNextMessageCursor(null)
+    tailCursorRef.current = null
     setRateLimitError(null)
     setRetryAfterSeconds(null)
 
@@ -472,6 +490,7 @@ export function AnonymousChatProvider({
       setMessages(toChatMessages(detail, readStoredAnonymousSessionId(detailToken)))
       setHasOlderMessages(detail.hasOlderMessages)
       setNextMessageCursor(detail.nextCursor)
+      tailCursorRef.current = detail.tailCursor
     } catch (error) {
       const structuredError = getErrorResponse(error)
       if (structuredError?.code === 'not_found') {
@@ -498,6 +517,148 @@ export function AnonymousChatProvider({
     }
   }, [consumeSessionHandoff, hydrateConversation, token])
 
+  const appendHumanReplies = useCallback((humanReplies: ChatConversationDetail['messages'], activeToken: string) => {
+    if (humanReplies.length === 0) {
+      return
+    }
+
+    const nextMessages = toChatMessagesFromTurns(humanReplies, readStoredAnonymousSessionId(activeToken))
+    setMessages((current) => {
+      const seenIds = new Set(current.flatMap((message) => [
+        message.id,
+        message.persistedAssistantMessageId,
+      ]).filter((value): value is string => Boolean(value)))
+      const unseen = nextMessages.filter((message) => !seenIds.has(message.id))
+      return unseen.length > 0 ? [...clearMessageSuggestions(current), ...unseen] : current
+    })
+  }, [])
+
+  const syncConversationSnapshot = useCallback(async (activeConversationId: string) => {
+    let detailToken = publicChatTokenRef.current
+    const detail = await withPublicSessionRetry((activeToken) => {
+      detailToken = activeToken
+      return publicChatApi.getConversationDetail(activeToken, activeConversationId, {
+        limit: MESSAGE_WINDOW_SIZE,
+      })
+    })
+    tailCursorRef.current = detail.tailCursor
+    appendHumanReplies(detail.messages.filter(isHumanAgentReply), detailToken)
+  }, [appendHumanReplies, withPublicSessionRetry])
+
+  const refreshConversationTail = useCallback(async (activeConversationId: string) => {
+    let tailToken = publicChatTokenRef.current
+    const tail = await withPublicSessionRetry((activeToken) => {
+      tailToken = activeToken
+      return publicChatApi.tailConversation(activeToken, activeConversationId, {
+        limit: 25,
+        cursor: tailCursorRef.current,
+      })
+    })
+
+    tailCursorRef.current = tail.cursor
+    appendHumanReplies(tail.messages.filter(isHumanAgentReply), tailToken)
+  }, [appendHumanReplies, withPublicSessionRetry])
+
+  useEffect(() => {
+    if (!conversationId || isHydrating || isUnavailable) {
+      tailCursorRef.current = null
+      return
+    }
+
+    let cancelled = false
+    let refreshChain = Promise.resolve()
+    let streamController: AbortController | null = null
+    let reconnectTimer: ReturnType<typeof window.setTimeout> | null = null
+
+    const handleStreamFailure = (error: unknown) => {
+      if (cancelled) {
+        return
+      }
+      if (getErrorResponse(error)?.code === 'not_found') {
+        setIsUnavailable(true)
+        return
+      }
+      reconnectTimer = window.setTimeout(connect, PUBLIC_CHAT_EVENT_RECONNECT_DELAY_MS)
+    }
+    const handleRefreshFailure = (error: unknown) => {
+      if (!cancelled && getErrorResponse(error)?.code === 'not_found') {
+        setIsUnavailable(true)
+      }
+    }
+
+    const refreshFromTail = (includeSnapshot: boolean) => {
+      refreshChain = refreshChain
+        .then(async () => {
+          if (cancelled) {
+            return
+          }
+          if (includeSnapshot && tailCursorRef.current === null) {
+            await syncConversationSnapshot(conversationId)
+          }
+          if (!cancelled) {
+            await refreshConversationTail(conversationId)
+          }
+        })
+        .catch(handleRefreshFailure)
+    }
+
+    function connect() {
+      if (cancelled) {
+        return
+      }
+      streamController = new AbortController()
+      void withPublicSessionRetry((activeToken) =>
+        publicChatApi.streamConversationEvents(
+          activeToken,
+          conversationId,
+          {
+            onEvent: (event) => {
+              if (event.conversationId !== conversationId) {
+                return
+              }
+              if (event.type === 'ready') {
+                refreshFromTail(true)
+                return
+              }
+              if (event.type === 'message.created') {
+                refreshFromTail(false)
+              }
+            },
+          },
+          { signal: streamController?.signal },
+        ),
+      )
+        .then(() => {
+          if (!cancelled) {
+            reconnectTimer = window.setTimeout(connect, PUBLIC_CHAT_EVENT_RECONNECT_DELAY_MS)
+          }
+        })
+        .catch((error) => {
+          if (streamController?.signal.aborted) {
+            return
+          }
+          handleStreamFailure(error)
+        })
+    }
+
+    connect()
+
+    return () => {
+      cancelled = true
+      streamController?.abort()
+      if (reconnectTimer) {
+        window.clearTimeout(reconnectTimer)
+      }
+    }
+  }, [
+    conversationId,
+    isHydrating,
+    isUnavailable,
+    refreshConversationTail,
+    syncConversationSnapshot,
+    withPublicSessionRetry,
+  ])
+
   const applyCompletion = useCallback(
     (assistantMessageId: string, completion: ChatStreamCompletion) => {
       if (completion.conversationId) {
@@ -505,6 +666,29 @@ export function AnonymousChatProvider({
         setBootstrapGreetingId(undefined)
       }
       setIsLoading(false)
+      if (completion.ownership?.state === 'human_owned' && completion.ownership.suppressed) {
+        // Human-owned turn: the backend suppressed the AI and returns a localized
+        // "a teammate is joining, please wait" line in `answer`. Show it; if it fell
+        // back to empty, drop the placeholder rather than render an empty bubble.
+        const waitingMessage = completion.answer?.trim() ?? ''
+        setMessages((prev) =>
+          waitingMessage
+            ? prev.map((message) =>
+                message.id === assistantMessageId
+                  ? {
+                      ...message,
+                      content: waitingMessage,
+                      citations: [],
+                      answerSegments: [],
+                      suggestions: [],
+                      status: 'complete' as const,
+                    }
+                  : message,
+              )
+            : prev.filter((message) => message.id !== assistantMessageId),
+        )
+        return
+      }
       setMessages((prev) =>
         prev.map((message) =>
           message.id === assistantMessageId
@@ -687,6 +871,37 @@ export function AnonymousChatProvider({
         })
 
         const nextConversationId = completion.conversationId ?? conversationId
+        const suppressedByHumanOwnership =
+          completion.ownership?.state === 'human_owned' && completion.ownership.suppressed
+
+        if (suppressedByHumanOwnership) {
+          if (!didComplete) {
+            applyCompletion(assistantMessageId, {
+              conversationId: nextConversationId,
+              answer: completion.answer,
+              citations: completion.citations,
+              answerSegments: completion.answerSegments,
+              suggestions: completion.suggestions,
+              ownership: completion.ownership,
+              debug: completion.debug,
+            })
+          }
+          onAnalyticsEvent?.({
+            event: 'chat.completed',
+            subjectType: 'conversation',
+            subjectId: nextConversationId,
+            properties: {
+              inputMethod,
+              citationCount: 0,
+              hasAnswer: false,
+              ownershipSuppressed: true,
+              recovered: false,
+              suggestionCount: 0,
+            },
+          })
+          return
+        }
+
         const needsRecovery = !completion.answer?.trim()
 
         if (needsRecovery) {

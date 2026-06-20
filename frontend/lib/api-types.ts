@@ -1,4 +1,4 @@
-import type { components } from '../../typescript-sdk/src/generated/types'
+import type { components, operations } from '../../typescript-sdk/src/generated/types'
 import { API_BASE } from './api-client'
 import {
   readRetrievalSkillSettingsOverride,
@@ -389,17 +389,47 @@ export interface ChatStreamCompletion {
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   suggestions?: ChatSuggestion[]
+  ownership?: ChatResponse['ownership']
   debug?: ChatResponse['debug']
   skill?: SkillStreamPayload
 }
 
 export type ChatConversationSummary = ApiSchemas['ChatConversationSummary']
+export type ConversationOwnership = ApiSchemas['ConversationOwnership']
+export type ChatConversationMessage = ApiSchemas['ChatConversationMessage']
+export type ChatConversationTail = ApiSchemas['ChatConversationTail']
+export type PublicChatConversationTail = ApiSchemas['PublicChatConversationTail']
+
+export type PublicChatConversationEvent =
+  | { type: 'ready'; conversationId: string }
+  | { type: 'message.created'; conversationId: string; messageId: string; createdAt: string }
+export type PendingApprovalDecision = ApiSchemas['PendingApprovalDecision'] & {
+  canResolve: boolean
+}
+export type PendingApprovalDecisionListResponse = Omit<ApiSchemas['PendingApprovalDecisionListResponse'], 'decisions'> & {
+  decisions: PendingApprovalDecision[]
+}
+export type ResolveDecisionRequest =
+  operations['resolveDecision']['requestBody']['content']['application/json']
+export type ResolveDecisionResponse =
+  operations['resolveDecision']['responses'][200]['content']['application/json']
+export type TakeOverConversationRequest =
+  operations['takeOverConversation']['requestBody']['content']['application/json']
+export type HumanReplyRequest =
+  operations['replyToConversation']['requestBody']['content']['application/json']
+export type HumanReplyMessageResponse = ApiSchemas['HumanReplyMessageResponse']
+export type TransferConversationOwnershipRequest =
+  operations['transferConversationOwnership']['requestBody']['content']['application/json']
+export type HandBackConversationRequest =
+  operations['handBackConversation']['requestBody']['content']['application/json']
+export type ConversationOwnershipResponse = ApiSchemas['ConversationOwnershipResponse']
 export type ChatConversationTurnDebug = ApiSchemas['ChatConversationMessageDebug']
 export type ChatConversationTurn = ApiSchemas['ChatConversationMessage'] & {
   answerFeedbackEntries?: AnswerFeedbackEntry[]
 }
 export type ChatConversationDetail = Omit<ApiSchemas['ChatConversationDetail'], 'messages'> & {
   messages: ChatConversationTurn[]
+  tailCursor: string | null
 }
 
 export interface ContactHistorySummary {

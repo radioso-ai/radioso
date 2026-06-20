@@ -20,6 +20,10 @@ const manifest = [
     exportName: "DEFAULT_ROUTINE_STEP_REPLY_PROMPT",
   },
   {
+    source: "routine-step-terminal-handoff.md",
+    exportName: "DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_PROMPT",
+  },
+  {
     source: "routine-next-step.md",
     exportName: "DEFAULT_ROUTINE_NEXT_STEP_PROMPT",
   },

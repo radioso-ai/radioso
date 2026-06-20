@@ -162,6 +162,56 @@ export const registerHistoryPaths = (
 
   registry.registerPath({
     method: "get",
+    path: "/api/v1/history/chat/{conversationId}/tail",
+    tags: ["History"],
+    summary: "Poll new messages for a saved assistant conversation",
+    operationId: "tailHistoryConversation",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.conversationParamsSchema,
+      query: z.object({
+        limit: z.number().int().min(1).max(100).optional(),
+        cursor: z.string().min(1).optional(),
+      }),
+    },
+    responses: {
+      200: {
+        description: "New conversation messages after the supplied tail cursor",
+        content: {
+          "application/json": {
+            schema: schemas.ChatConversationTailSchema,
+          },
+        },
+      },
+      400: {
+        description: "Request validation failed",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Conversation not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
     path: "/api/v1/history/{conversationId}",
     tags: ["History"],
     summary: "Get a saved assistant conversation and its debug metadata",

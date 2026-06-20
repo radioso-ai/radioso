@@ -1783,6 +1783,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/history/chat/{conversationId}/tail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Poll new messages for a saved assistant conversation */
+        get: operations["tailHistoryConversation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/history/{conversationId}": {
         parameters: {
             query?: never;
@@ -1883,6 +1900,40 @@ export interface paths {
         put?: never;
         /** Return a human-owned conversation to AI ownership */
         post: operations["handBackConversation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List pending human approval decisions */
+        get: operations["listPendingDecisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/decisions/{handle}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve a pending human approval decision */
+        post: operations["resolveDecision"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2074,6 +2125,50 @@ export interface paths {
          *     The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
          */
         get: operations["getPublicChatHistoryConversation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/chat/{token}/tail/{conversationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Poll new public conversation messages for the current anonymous session
+         * @description Anonymous session continuity is maintained by an HttpOnly cookie set by the server.
+         *
+         *     The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
+         */
+        get: operations["tailPublicChatHistoryConversation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/chat/{token}/events/{conversationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream public conversation notifications for the current anonymous session
+         * @description Anonymous session continuity is maintained by an HttpOnly cookie set by the server.
+         *
+         *     The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
+         */
+        get: operations["streamPublicChatConversationEvents"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4432,6 +4527,25 @@ export interface components {
                 };
             };
         };
+        ConversationOwnership: {
+            /** Format: uuid */
+            conversationId: string;
+            /** Format: uuid */
+            workspaceId: string;
+            /** @enum {string} */
+            state: "ai_owned" | "human_owned";
+            /** Format: uuid */
+            ownerAccountId: string | null;
+            ownerDisplayName: string | null;
+            reason: string | null;
+            version: number;
+            /** Format: date-time */
+            takenOverAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
         ChatConversationSummary: {
             /** Format: uuid */
             id: string;
@@ -4449,6 +4563,7 @@ export interface components {
             userMessageCount: number;
             assistantMessageCount: number;
             preview: string | null;
+            ownership?: components["schemas"]["ConversationOwnership"];
         };
         ChatHistoryListResponse: {
             workspaceName?: string;
@@ -4588,25 +4703,6 @@ export interface components {
             answerFeedbackEntries?: components["schemas"]["AnswerFeedbackEntry"][];
             debug?: components["schemas"]["ChatConversationMessageDebug"];
         };
-        ConversationOwnership: {
-            /** Format: uuid */
-            conversationId: string;
-            /** Format: uuid */
-            workspaceId: string;
-            /** @enum {string} */
-            state: "ai_owned" | "human_owned";
-            /** Format: uuid */
-            ownerAccountId: string | null;
-            ownerDisplayName: string | null;
-            reason: string | null;
-            version: number;
-            /** Format: date-time */
-            takenOverAt: string | null;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-        };
         ConversationOwnershipResponse: {
             ownership: components["schemas"]["ConversationOwnership"];
         };
@@ -4665,7 +4761,19 @@ export interface components {
             messageWindowLimit: number;
             hasOlderMessages: boolean;
             nextCursor: string | null;
+            /** @description Cursor for subsequent tail requests. It marks the newest message included when this detail response was produced. */
+            tailCursor: string | null;
             messages: components["schemas"]["ChatConversationMessage"][];
+            ownership?: components["schemas"]["ConversationOwnership"];
+        };
+        ChatConversationTail: {
+            messages: components["schemas"]["ChatConversationMessage"][];
+            cursor: string | null;
+            ownership?: components["schemas"]["ConversationOwnership"];
+        };
+        PublicChatConversationTail: {
+            messages: components["schemas"]["ChatConversationMessage"][];
+            cursor: string | null;
         };
         PublicConversationSummary: {
             /** Format: uuid */
@@ -4833,6 +4941,29 @@ export interface components {
                 agentId: string | null;
             };
             buckets: components["schemas"]["UsageTrendBucket"][];
+        };
+        PendingApprovalDecisionOption: {
+            id: string;
+            label: string;
+            description?: string;
+        };
+        PendingApprovalDecision: {
+            handle: string;
+            conversationId: string;
+            agentId: string;
+            routineId: string;
+            stepId: string;
+            reason: string | null;
+            options: components["schemas"]["PendingApprovalDecisionOption"][];
+            contentHash: string;
+            canResolve: boolean;
+            /** Format: date-time */
+            deadline: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        PendingApprovalDecisionListResponse: {
+            decisions: components["schemas"]["PendingApprovalDecision"][];
         };
         AssistantChatSseStream: string;
         ConnectorNotFoundResponse: {
@@ -12040,6 +12171,58 @@ export interface operations {
             };
         };
     };
+    tailHistoryConversation: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description New conversation messages after the supplied tail cursor */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatConversationTail"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getLegacyHistoryConversation: {
         parameters: {
             query?: {
@@ -12430,6 +12613,136 @@ export interface operations {
             };
             /** @description Conversation ownership changed */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listPendingDecisions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pending approval decisions for the workspace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingApprovalDecisionListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller is not authorized to list decisions */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resolveDecision: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    optionId: string;
+                    payload?: unknown;
+                    contentHash: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Decision resolved and routine resume attempted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "resolved";
+                        /** @enum {string} */
+                        decision: "approved" | "rejected";
+                        conversationId: string;
+                        resumed: boolean;
+                    };
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller is not an authorized decider */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Decision not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Decision already resolved, stale, or resolved concurrently */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Decision option is invalid */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13131,6 +13444,91 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatConversationDetail"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tailPublicChatHistoryConversation: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                token: string;
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description New public conversation messages after the supplied tail cursor */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicChatConversationTail"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    streamPublicChatConversationEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server-sent public conversation notifications. Events include ready and message.created. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
                 };
             };
             /** @description Request validation failed */

@@ -81,6 +81,7 @@ export interface OpenApiSchemaCatalog {
   ChatConversationDetailSchema: z.ZodTypeAny;
   ChatConversationMessageDebugSchema: z.ZodTypeAny;
   ChatConversationMessageSchema: z.ZodTypeAny;
+  ChatConversationTailSchema: z.ZodTypeAny;
   ClearAnswerFeedbackResponseSchema: z.ZodTypeAny;
   ChatConversationSummarySchema: z.ZodTypeAny;
   ChatHistoryListResponseSchema: z.ZodTypeAny;
@@ -168,6 +169,7 @@ export interface OpenApiSchemaCatalog {
   PublicChatRequestSchema: z.ZodTypeAny;
   PublicChatSessionRequestSchema: z.ZodTypeAny;
   PublicChatSessionResponseSchema: z.ZodTypeAny;
+  PublicChatConversationTailSchema: z.ZodTypeAny;
   PublicConversationListResponseSchema: z.ZodTypeAny;
   publicConversationParamsSchema: z.AnyZodObject;
   PublicConversationSummarySchema: z.ZodTypeAny;

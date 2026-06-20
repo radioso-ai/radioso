@@ -1,8 +1,10 @@
 import { notFound } from "../../../shared/domain/errors.js";
+import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js";
 import type { AuditEventRecord, AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
 import type {
   ConversationRepositoryPort,
 } from "../../../db/repositories/conversationRepository.js";
+import type { ConversationOwnershipRecord } from "../../../db/repositories/conversationOwnershipRepository.js";
 import type {
   MessageRecord,
   MessageRepositoryPort,
@@ -45,6 +47,50 @@ import {
   type ChatAnswerFeedbackEntry,
 } from "./answerFeedbackHistoryProvider.js";
 
+// Read-surface projection of conversation ownership (Date fields as ISO strings). Mirrors
+// the OpenAPI ConversationOwnership schema and the write surface's ownership envelope.
+export interface ChatConversationOwnership {
+  conversationId: string;
+  workspaceId: string;
+  state: ConversationOwnershipRecord["state"];
+  ownerAccountId: string | null;
+  ownerDisplayName: string | null;
+  reason: string | null;
+  version: number;
+  takenOverAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Narrow read port the history service needs — single load for detail, batch for lists
+// (no N+1). A missing entry means AI-owned (the ownership table is lazy).
+export interface ConversationOwnershipHistoryReader {
+  load(conversationId: string): Promise<ConversationOwnershipRecord | null>;
+  loadByConversationIds(conversationIds: string[]): Promise<Map<string, ConversationOwnershipRecord>>;
+}
+
+class NoopConversationOwnershipReader implements ConversationOwnershipHistoryReader {
+  async load(): Promise<ConversationOwnershipRecord | null> {
+    return null;
+  }
+  async loadByConversationIds(): Promise<Map<string, ConversationOwnershipRecord>> {
+    return new Map();
+  }
+}
+
+const toChatConversationOwnership = (record: ConversationOwnershipRecord): ChatConversationOwnership => ({
+  conversationId: record.conversationId,
+  workspaceId: record.workspaceId,
+  state: record.state,
+  ownerAccountId: record.ownerAccountId,
+  ownerDisplayName: record.ownerDisplayName,
+  reason: record.reason,
+  version: record.version,
+  takenOverAt: record.takenOverAt ? toIsoString(record.takenOverAt) : null,
+  createdAt: toIsoString(record.createdAt),
+  updatedAt: toIsoString(record.updatedAt),
+});
+
 export interface ChatConversationSummary {
   id: string;
   agentId: string | null;
@@ -58,6 +104,7 @@ export interface ChatConversationSummary {
   userMessageCount: number;
   assistantMessageCount: number;
   preview: string | null;
+  ownership?: ChatConversationOwnership;
 }
 
 export interface ChatConversationTurnDebug {
@@ -95,7 +142,20 @@ export interface ChatConversationTurn {
   suggestions?: ChatSuggestion[];
   answerFeedbackEntries?: ChatAnswerFeedbackEntry[];
   debug?: ChatConversationTurnDebug;
+  /**
+   * Display name of the human operator who authored this turn (a takeover reply),
+   * so the visitor can see who is answering. Only the name is exposed — never the
+   * operator's account id.
+   */
+  operatorDisplayName?: string;
 }
+
+/** Reads the operator's display name from a human-agent reply's stored metadata. */
+const operatorDisplayNameFrom = (message: MessageRecord): string | undefined => {
+  const humanAgent = (message.metadata as { humanAgent?: { displayName?: unknown } } | undefined)?.humanAgent;
+  const displayName = humanAgent?.displayName;
+  return typeof displayName === "string" && displayName.trim().length > 0 ? displayName : undefined;
+};
 
 export interface ChatConversationDetail {
   conversationId: string;
@@ -113,7 +173,15 @@ export interface ChatConversationDetail {
   messageWindowLimit: number;
   hasOlderMessages: boolean;
   nextCursor: string | null;
+  tailCursor: string | null;
   messages: ChatConversationTurn[];
+  ownership?: ChatConversationOwnership;
+}
+
+export interface ChatConversationTail {
+  messages: ChatConversationTurn[];
+  cursor: string | null;
+  ownership?: ChatConversationOwnership;
 }
 
 export interface ChatConversationPage {
@@ -636,6 +704,8 @@ export class ChatHistoryService {
     private readonly contactHistoryProvider: ContactHistoryProviderPort = new NoopContactHistoryProvider(),
     private readonly answerFeedbackHistoryProvider: AnswerFeedbackHistoryProviderPort =
       new NoopAnswerFeedbackHistoryProvider(),
+    private readonly conversationOwnership: ConversationOwnershipHistoryReader =
+      new NoopConversationOwnershipReader(),
   ) {}
 
   async listConversations(
@@ -646,13 +716,22 @@ export class ChatHistoryService {
       workspaceId,
       input,
     );
-    const messageSummaries = await this.messageRepository.summarizeByConversationIds(
-      workspaceId,
-      conversations.map((conversation) => conversation.id),
-    );
+    const conversationIds = conversations.map((conversation) => conversation.id);
+    const [messageSummaries, ownershipByConversationId] = await Promise.all([
+      this.messageRepository.summarizeByConversationIds(workspaceId, conversationIds),
+      this.conversationOwnership.loadByConversationIds(conversationIds),
+    ]);
 
     return {
-      conversations: conversations.map((conversation) => buildChatConversationSummary(conversation, messageSummaries.get(conversation.id))),
+      conversations: conversations.map((conversation) => {
+        const summary = buildChatConversationSummary(conversation, messageSummaries.get(conversation.id));
+        const ownership = ownershipByConversationId.get(conversation.id);
+        // Only human-owned conversations carry ownership; an ai_owned row (e.g. after a
+        // hand-back) reads the same as no row — absent means AI-owned.
+        return ownership?.state === "human_owned"
+          ? { ...summary, ownership: toChatConversationOwnership(ownership) }
+          : summary;
+      }),
       total,
       nextCursor,
       hasMore,
@@ -773,7 +852,10 @@ export class ChatHistoryService {
     workspaceId: string,
     conversationId: string,
     input: { limit: number; offset?: number; cursor?: string } = { limit: 50, offset: 0 },
-    options: { includeAnswerFeedback?: boolean } = {},
+    // includeOwnership is OFF by default: ownership exposes the operator's identity and is
+    // a DASHBOARD-only concern. The public/embed visitor surface shares this method and must
+    // never receive it.
+    options: { includeAnswerFeedback?: boolean; includeOwnership?: boolean } = {},
   ): Promise<ChatConversationDetail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
 
@@ -781,9 +863,13 @@ export class ChatHistoryService {
       throw notFound("Conversation not found");
     }
 
-    const [{ messages, total, nextCursor, hasMore }, messageSummaries] = await Promise.all([
+    const [{ messages, total, nextCursor, hasMore }, messageSummaries, ownershipRecord, tailBaseline] = await Promise.all([
       this.messageRepository.listWindowByConversationId(workspaceId, conversation.id, input),
       this.messageRepository.summarizeByConversationIds(workspaceId, [conversation.id]),
+      options.includeOwnership ? this.conversationOwnership.load(conversation.id) : Promise.resolve(null),
+      this.messageRepository.listSinceByConversationId(workspaceId, conversation.id, {
+        limit: 1,
+      }),
     ]);
     const assistantMessageIds = messages
       .filter((message) => message.role === "assistant")
@@ -817,6 +903,7 @@ export class ChatHistoryService {
       messageWindowLimit: input.limit,
       hasOlderMessages: hasMore,
       nextCursor,
+      tailCursor: tailBaseline.latestCursor,
       messages: messages.map((message) => ({
         id: message.id,
         role: message.role,
@@ -829,7 +916,54 @@ export class ChatHistoryService {
         suggestions: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.suggestions : undefined,
         answerFeedbackEntries: message.role === "assistant" ? feedbackByAssistantMessageId.get(message.id) : undefined,
         debug: message.role === "assistant" ? debugByAssistantMessageId.get(message.id) : undefined,
+        operatorDisplayName: operatorDisplayNameFrom(message),
       })),
+      ...(ownershipRecord?.state === "human_owned"
+        ? { ownership: toChatConversationOwnership(ownershipRecord) }
+        : {}),
+    };
+  }
+
+  async tailConversation(
+    workspaceId: string,
+    conversationId: string,
+    input: { cursor?: string; limit: number },
+    options: { includeOwnership?: boolean } = {},
+  ): Promise<ChatConversationTail> {
+    const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
+
+    if (!conversation) {
+      throw notFound("Conversation not found");
+    }
+
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
+    const [{ messages, latestCursor }, ownershipRecord] = await Promise.all([
+      this.messageRepository.listSinceByConversationId(workspaceId, conversation.id, {
+        sinceCreatedAt: cursor ? new Date(cursor.keys.createdAt) : undefined,
+        sinceId: cursor?.keys.id,
+        limit: input.limit,
+      }),
+      options.includeOwnership ? this.conversationOwnership.load(conversation.id) : Promise.resolve(null),
+    ]);
+
+    return {
+      messages: messages.map((message) => this.toLightweightConversationTurn(message)),
+      cursor: latestCursor,
+      ...(ownershipRecord?.state === "human_owned"
+        ? { ownership: toChatConversationOwnership(ownershipRecord) }
+        : {}),
+    };
+  }
+
+  private toLightweightConversationTurn(message: MessageRecord): ChatConversationTurn {
+    return {
+      id: message.id,
+      role: message.role,
+      source: message.source ?? deriveMessageSourceFromRole(message.role),
+      content: message.content,
+      createdAt: toIsoString(message.createdAt),
+      inputMetadata: message.inputMetadata,
+      operatorDisplayName: operatorDisplayNameFrom(message),
     };
   }
 

@@ -13,6 +13,8 @@ mechanics to the user: do not say "routine", "step", "slot", "instruction", or
 refer to a "next step" or an internal process. Just say the next thing the step
 instruction asks for, in plain conversational language.
 
+{{terminal_behavior_instruction}}
+
 {{response_language_instruction}}
 
 Stay strictly within your scope above. Follow only the step instruction(s). If the user
@@ -30,6 +32,11 @@ Step instruction(s):
 {{instructions}}
 
 Write only the message to the user — no preamble, labels, or quotation marks.`;
+
+export const DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_PROMPT = `This handoff has already been selected by the routine.
+Do not ask whether the user wants to be connected, do not ask for their preference,
+and do not present the handoff as optional.
+Tell the user the handoff is happening, following the step instruction.`;
 
 export const DEFAULT_ROUTINE_NEXT_STEP_PROMPT = `You are guiding a user through a structured, multi-step routine. Decide what should
 happen next, based on what the user just said.

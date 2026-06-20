@@ -22,7 +22,6 @@ import {
   BookOpen,
   Settings,
   FlaskConical,
-  ShieldAlert,
 } from 'lucide-react'
 import {
   buildDashboardHref,
@@ -44,7 +43,6 @@ const navItems = [
   { id: 'agents' as const, label: 'Agents', icon: Bot },
   { id: 'knowledge' as const, label: 'Knowledge Base', icon: BookOpen },
   { id: 'activity' as const, label: 'Activity', icon: Activity },
-  { id: 'quality' as const, label: 'Quality', icon: ShieldAlert },
   { id: 'eval' as const, label: 'Eval', icon: FlaskConical },
   { id: 'settings' as const, label: 'Settings', icon: Settings },
 ]
@@ -81,9 +79,14 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
           <SidebarGroupContent>
             <WorkspaceSwitcher accountId={accountId} currentView={currentView} routeState={routeState} />
             <SidebarMenu>
-              {navItems.map((item) => (
-                <SidebarMenuItem key={item.id}>
-                  <SidebarMenuButton asChild isActive={currentView === item.id} tooltip={item.label}>
+              {navItems.map((item) => {
+                const isActive = item.id === 'activity'
+                  ? currentView === 'activity' || currentView === 'quality'
+                  : currentView === item.id
+
+                return (
+                  <SidebarMenuItem key={item.id}>
+                  <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
                     <Link
                       href={buildDashboardHref(accountId, {
                         section: item.id,
@@ -96,7 +99,8 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
-              ))}
+                )
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

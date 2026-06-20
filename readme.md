@@ -215,6 +215,8 @@ Persisted assistant answers can receive thumbs up or thumbs down feedback in the
 
 Operators can review assistant-answer quality with `GET /api/v1/quality/turns`. Admins and owners can update an answer's triage state with `PUT /api/v1/quality/turns/<assistant-message-id>/triage`, using one of `open`, `acknowledged`, `resolved`, or `dismissed`.
 
+Operators can also take over a conversation, reply as a named human, and resolve routine approval gates. The dashboard surfaces this under **Activity → Needs attention**, which lists pending approvals and human-owned conversations. See [Human takeover](./docs/human-takeover.md) for the ownership model, the approval queue (`GET /api/v1/decisions`) and resolve endpoint, and the tail endpoints that stream new messages to both operators and visitors.
+
 **Debug output.** Assistant, retrieval, and search responses are lean by default. Add `includeDebug: true` to supported request bodies when an authenticated operator or integration needs diagnostic metadata. Debug responses place routing, retrieval summaries, activity traces, and full evidence under a `debug` field instead of mixing them into the normal user-facing payload. This is a breaking response-shape change for SDK and direct REST consumers that previously read diagnostics from top-level fields. Update TypeScript SDK clients to `@radioso/typescript-sdk` 0.2.0 or later and read diagnostic data from `response.debug`.
 
 ### TypeScript SDK

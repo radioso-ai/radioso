@@ -13,7 +13,7 @@ import type {
   ActivityTrace,
 } from './api-types'
 
-const parseSseEvent = (rawEvent: string) => {
+export const parseSseEvent = (rawEvent: string) => {
   const normalized = rawEvent.replaceAll('\r', '')
   const lines = normalized.split('\n')
   let eventName = 'message'
@@ -58,6 +58,7 @@ export const streamChatEvents = async (
   let activitySummary: ActivitySummary | undefined
   let activityTrace: ActivityTrace | undefined
   let route: ChatResponse['route'] | undefined
+  let ownership: ChatResponse['ownership'] | undefined
 
   const flushEvent = (rawEvent: string) => {
     if (!rawEvent.trim()) {
@@ -109,6 +110,7 @@ export const streamChatEvents = async (
       activitySummary = completionPayload.debug?.activitySummary
       activityTrace = completionPayload.debug?.activityTrace
       route = completionPayload.debug?.route
+      ownership = completionPayload.ownership
       handlers.onDone?.({
         conversationId,
         assistantMessageId,
@@ -118,6 +120,7 @@ export const streamChatEvents = async (
         citations,
         answerSegments,
         suggestions,
+        ownership,
         debug: completionPayload.debug,
         skill: completionPayload.skill,
       })
@@ -180,6 +183,7 @@ export const streamChatEvents = async (
     citations,
     answerSegments,
     suggestions,
+    ownership,
     ...(activitySummary ? { activitySummary } : {}),
     ...(activityTrace ? { activityTrace } : {}),
   }

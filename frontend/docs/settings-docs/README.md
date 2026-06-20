@@ -1,3 +1,9 @@
+---
+title: "Settings Docs"
+description: "Index and structure for the workspace control copy files that power the frontend dashboard ingestion and retrieval settings UI."
+last_updated: 2026-05-22
+---
+
 # Settings Docs
 
 This directory is the source of truth for workspace settings copy used by the frontend settings UI.

@@ -1,3 +1,9 @@
+---
+title: "Human Takeover"
+description: "Operator API and contract for taking over conversations and suppressing AI while handling manual responses."
+last_updated: 2026-06-18
+---
+
 # Human Takeover
 
 Human takeover lets an operator own a conversation while the AI stays silent.

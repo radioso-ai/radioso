@@ -1,3 +1,9 @@
+---
+title: "Chunk Size"
+description: "Tuning guide for fixed-window chunk sizes balancing context coverage against retrieval precision."
+last_updated: 2026-04-02
+---
+
 # Chunk Size
 
 ## Summary

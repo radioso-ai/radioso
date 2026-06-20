@@ -1,3 +1,9 @@
+---
+title: "Greeting Language Fallback"
+description: "Fallback language for automatic new-chat greetings when the client does not supply a locale hint."
+last_updated: 2026-05-06
+---
+
 # Greeting Language Fallback
 
 ## Summary

@@ -1,3 +1,9 @@
+---
+title: "Rerank Top K"
+description: "Retrieval setting controlling how many reranked candidates proceed to context assembly and answer composition."
+last_updated: 2026-04-02
+---
+
 # Rerank Top K
 
 ## Summary

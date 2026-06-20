@@ -1,3 +1,9 @@
+---
+title: "Reranking"
+description: "Retrieval setting to enable model-based reranking of the candidate pool for improved answer grounding after semantic search."
+last_updated: 2026-04-02
+---
+
 # Reranking
 
 ## Summary

@@ -925,6 +925,7 @@ function RoutineEditorScreen({
               source={proseSource}
               header={draftHeader}
               onDraftChange={setProseDraft}
+              onHeaderChange={setDraftHeader}
             />
           ) : null}
 

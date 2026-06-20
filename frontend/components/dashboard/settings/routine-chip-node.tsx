@@ -376,10 +376,10 @@ export class ChipNode extends DecoratorNode<JSX.Element> {
     writable.__mode = next.mode ?? 'typed'
   }
 
-  // What a serialized line contributes. A variable becomes the {{slot.x}} wire form; all
-  // other chips are structural and contribute no readable text — the line's prose carries
-  // the instruction, while the chip's metadata (a skill's name, a branch target, a
-  // condition's comparison) is captured separately by the compiler.
+  // What a serialized line contributes to `$serializeBlocks` (the compile path): a variable
+  // becomes the {{slot.x}} wire form; all other chips are structural and contribute no
+  // readable text — their metadata is captured separately. Clipboard copy does NOT go
+  // through here; it serializes the tree to canonical tokens in the editor's copy handler.
   getTextContent(): string {
     if (this.__chipKind === 'variable') return `{{slot.${this.__refId}}}`
     return ''

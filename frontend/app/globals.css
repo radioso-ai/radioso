@@ -194,6 +194,24 @@
   .settings-surface [data-slot='button'][data-variant='ghost'] {
     @apply text-foreground hover:bg-accent hover:text-secondary-foreground dark:text-foreground dark:hover:bg-accent dark:hover:text-secondary-foreground;
   }
+
+  /* Routine prose: badge each branch line with who decides it — an exact rule, or the
+     AI's judgment — so the distinction is visible, not inferred. Driven by the
+     data-routine-branch attribute the editor sets from the line's chips. */
+  .routine-prose-surface [data-routine-branch]::before {
+    @apply mr-1.5 inline-flex items-center rounded border px-1 text-[10px] font-medium uppercase tracking-wide align-middle;
+  }
+  .routine-prose-surface [data-routine-branch='rule']::before {
+    content: 'Rule';
+    @apply border-indigo-300 bg-indigo-100 text-indigo-800 dark:border-indigo-400/40 dark:bg-indigo-400/15 dark:text-indigo-200;
+  }
+  .routine-prose-surface [data-routine-branch='ai'] {
+    @apply rounded bg-violet-50/70 dark:bg-violet-400/10;
+  }
+  .routine-prose-surface [data-routine-branch='ai']::before {
+    content: '✦ AI decides';
+    @apply border-violet-300 bg-violet-100 text-violet-800 dark:border-violet-400/40 dark:bg-violet-400/15 dark:text-violet-200;
+  }
 }
 
 .radioso-suggestion-hover-highlight:hover {

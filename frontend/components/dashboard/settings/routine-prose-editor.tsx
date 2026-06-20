@@ -113,9 +113,15 @@ export function RoutineProseEditor({
           <RoutineChipEditor
             variables={variables}
             reservedRefKinds={reservedRefKinds}
+            name={name}
+            trigger={trigger}
             onCreateVariable={addVariable}
             onDocChange={setBlocks}
             onSetVariableType={setVariableType}
+            onPasteFrontmatter={({ name: pastedName, trigger: pastedTrigger }) => {
+              if (pastedName !== null) setName(pastedName)
+              if (pastedTrigger !== null) setTrigger(pastedTrigger)
+            }}
           />
           <p className="text-xs text-muted-foreground">
             Type <kbd className="rounded border border-border px-1">@</kbd> or use the toolbar to insert a variable. Click a chip to set its type.

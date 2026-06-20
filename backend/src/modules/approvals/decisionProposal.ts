@@ -56,6 +56,7 @@ export const buildPendingDecisionTransition = (
     id: option.id,
     label: option.label,
     ...(option.description === undefined ? {} : { description: option.description }),
+    ...(option.payload === undefined ? {} : { payload: option.payload }),
   }));
 
   return {

@@ -8,6 +8,7 @@ import { includeDebugQuerySchema, presentDocumentSearchResponse } from "../prese
 import {
   collectionPageQuerySchema,
   conversationParamsSchema,
+  conversationTailQuerySchema,
   historyContactParamsSchema,
   conversationWindowQuerySchema,
   historySearchParamsSchema,
@@ -147,6 +148,30 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
         parsedQuery.data,
       );
       res.status(200).json(conversation);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/chat/:conversationId/tail", workspaceSession, historyRead, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const parsedParams = conversationParamsSchema.safeParse(req.params);
+      if (!parsedParams.success) {
+        next(badRequest("Invalid request params", parsedParams.error.flatten()));
+        return;
+      }
+      const parsedQuery = conversationTailQuerySchema.safeParse(req.query);
+      if (!parsedQuery.success) {
+        next(badRequest("Invalid request query", parsedQuery.error.flatten()));
+        return;
+      }
+      const tail = await dependencies.assistantHistoryService.tailConversation(
+        workspaceId,
+        parsedParams.data.conversationId,
+        parsedQuery.data,
+      );
+      res.status(200).json(tail);
     } catch (error) {
       next(error);
     }

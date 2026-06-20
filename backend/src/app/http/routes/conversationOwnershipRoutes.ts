@@ -15,6 +15,7 @@ type ConversationOwnershipRouteDependencies = WorkspaceSessionDependencies & Pic
   | "conversationOwnershipRepository"
   | "conversationRepository"
   | "messageRepository"
+  | "publicConversationEventBus"
   | "userRepository"
   | "workspaceRepository"
 >;
@@ -176,6 +177,13 @@ export const createConversationOwnershipRoutes = (
           messageId: message.id,
           messageLength: body.message.length,
         },
+      });
+      dependencies.publicConversationEventBus.publish({
+        type: "message.created",
+        conversationId,
+        workspaceId,
+        messageId: message.id,
+        createdAt: message.createdAt instanceof Date ? message.createdAt.toISOString() : message.createdAt,
       });
 
       res.status(201).json({ message });

@@ -95,12 +95,22 @@ describe("anonymous chat bootstrap integration", () => {
     expect(followUp.status).toBe(200);
     expect(followUp.body.conversationId).toEqual(expect.any(String));
 
+    // A human takes ownership of the conversation. The PUBLIC history surface must never
+    // expose ownership (it would reveal the operator's identity to the visitor).
+    await repositories.conversationOwnershipRepository.requestHandoff({
+      conversationId: followUp.body.conversationId,
+      // The in-memory read keys by conversationId; workspace is immaterial to this assertion.
+      workspaceId: "workspace-under-test",
+      reason: "routine_handoff",
+    });
+
     const history = await request(app)
       .get(`/api/v1/public/chat/${chatToken}/history/${followUp.body.conversationId}`)
       .set("x-radioso-public-session", publicSession.publicSessionToken)
       .set("Cookie", anonCookie!);
 
     expect(history.status).toBe(200);
+    expect(history.body).not.toHaveProperty("ownership");
     expect(history.body.messageCount).toBe(3);
     expect(history.body.userMessageCount).toBe(1);
     expect(history.body.assistantMessageCount).toBe(2);
@@ -125,6 +135,97 @@ describe("anonymous chat bootstrap integration", () => {
       role: "user",
       content: "Can you help me?",
     });
+
+    const baseline = await request(app)
+      .get(`/api/v1/public/chat/${chatToken}/tail/${followUp.body.conversationId}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
+      .set("Cookie", anonCookie!);
+
+    expect(baseline.status).toBe(200);
+    expect(baseline.body).not.toHaveProperty("ownership");
+    expect(baseline.body.messages.length).toBeGreaterThan(0);
+    expect(baseline.body.messages).toContainEqual(expect.objectContaining({
+      role: "user",
+      content: "Can you help me?",
+    }));
+    expect(typeof baseline.body.cursor).toBe("string");
+
+    const humanReply = await repositories.messageRepository.create({
+      conversationId: followUp.body.conversationId,
+      workspaceId,
+      role: "assistant",
+      source: "human_agent",
+      content: "A human operator can help from here.",
+    });
+
+    const tail = await request(app)
+      .get(`/api/v1/public/chat/${chatToken}/tail/${followUp.body.conversationId}`)
+      .query({ cursor: baseline.body.cursor })
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
+      .set("Cookie", anonCookie!);
+
+    expect(tail.status).toBe(200);
+    expect(tail.body).not.toHaveProperty("ownership");
+    expect(tail.body.cursor).toEqual(repositories.messageRepository.cursorFor(humanReply));
+    expect(tail.body.messages).toEqual([
+      expect.objectContaining({
+        id: humanReply.id,
+        role: "assistant",
+        source: "human_agent",
+        content: "A human operator can help from here.",
+      }),
+    ]);
+  });
+
+  it("returns 404 when a public session tails another session's conversation", async () => {
+    const gateway: ChatGateway = {
+      async answer() {
+        return "Public answer.";
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const { app } = createTestApp({ chatGateway: gateway });
+    const session = await issueTestSession(app, "anon-chat-tail-scope@example.com");
+    const headers = adminSessionHeaders(session);
+
+    const settings = await request(app)
+      .put("/api/v1/settings/general")
+      .set(headers)
+      .send({
+        anonymousChatEnabled: true,
+        assistantName: "Marta",
+        proactiveGreetingEnabled: false,
+      });
+    expect(settings.status).toBe(200);
+    const chatToken = String(settings.body.anonymousChatUrl).split("/chat/")[1];
+    const publicSessionA = await createPublicSession(app, chatToken);
+    const publicSessionB = await createPublicSession(app, chatToken);
+
+    const conversationB = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSessionB.publicSessionToken)
+      .send({ message: "Session B message", stream: false });
+    expect(conversationB.status).toBe(200);
+    expect(conversationB.body.conversationId).toEqual(expect.any(String));
+    const cookieB = findAnonymousCookie(conversationB.headers["set-cookie"]);
+    expect(cookieB).toBeDefined();
+
+    const sessionAStart = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSessionA.publicSessionToken)
+      .send({ message: "Session A message", stream: false });
+    expect(sessionAStart.status).toBe(200);
+    const cookieA = findAnonymousCookie(sessionAStart.headers["set-cookie"]);
+    expect(cookieA).toBeDefined();
+
+    const tailOtherSession = await request(app)
+      .get(`/api/v1/public/chat/${chatToken}/tail/${conversationB.body.conversationId}`)
+      .set("x-radioso-public-session", publicSessionA.publicSessionToken)
+      .set("Cookie", cookieA!);
+
+    expect(tailOtherSession.status).toBe(404);
   });
 
   it("returns typed deeper and broader suggestions for public exploratory chat", async () => {

@@ -8,6 +8,7 @@ import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { PendingDecisionCreateInput } from "../../../db/repositories/pendingDecisionRepository.js";
+import type { DatabaseExecutor } from "../../../shared/infra/database.js";
 import type {
   ConversationOwnershipReason,
   ConversationOwnershipRequestHandoffInput,
@@ -147,6 +148,8 @@ export interface AssistantTurnPersistencePort {
     auditEvent: AuditEventInput;
     ownershipHandoff?: OwnershipHandoffInput | null;
     ownershipAuditEvent?: AuditEventInput | null;
+    additionalAuditEvent?: AuditEventInput | null;
+    executor?: DatabaseExecutor;
   }): Promise<MessageRecord>;
 }
 
@@ -438,6 +441,8 @@ export class ChatTurnLifecycle {
     pendingDecisionTransition?: PendingDecisionCreateInput | null;
     ownershipHandoff?: OwnershipHandoffInput | null;
     suspended?: boolean;
+    additionalAuditEvent?: AuditEventInput | null;
+    executor?: DatabaseExecutor;
     commitClarificationState?: () => Promise<void>;
     clarificationTransition?: CapturedClarificationTransition | null;
   }): Promise<CompletedAssistantTurn> {
@@ -483,6 +488,8 @@ export class ChatTurnLifecycle {
         auditEvent,
         ownershipHandoff: input.ownershipHandoff,
         ownershipAuditEvent,
+        additionalAuditEvent: input.additionalAuditEvent,
+        executor: input.executor,
       });
       this.auditService.logRecorded?.(auditEvent);
       if (!suspended) {
@@ -517,6 +524,9 @@ export class ChatTurnLifecycle {
       }
       if (ownershipAuditEvent) {
         await this.auditService.record(ownershipAuditEvent);
+      }
+      if (input.additionalAuditEvent) {
+        await this.auditService.record(input.additionalAuditEvent);
       }
     }
 

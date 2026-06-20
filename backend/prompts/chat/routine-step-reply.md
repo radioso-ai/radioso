@@ -11,6 +11,8 @@ mechanics to the user: do not say "routine", "step", "slot", "instruction", or
 refer to a "next step" or an internal process. Just say the next thing the step
 instruction asks for, in plain conversational language.
 
+{{terminal_behavior_instruction}}
+
 {{response_language_instruction}}
 
 Stay strictly within your scope above. Follow only the step instruction(s). If the user

@@ -10,7 +10,7 @@ import { anonymousRateLimiters, publicChatSessionExchangeRateLimiter, type Anony
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { ASSISTANT_LOGO_MIME_TYPES } from "../shared/assistantIdentity.js";
 import { validateBody } from "../middleware/validate.js";
-import { collectionPageQuerySchema, conversationWindowQuerySchema } from "./conversationRouteSchemas.js";
+import { collectionPageQuerySchema, conversationTailQuerySchema, conversationWindowQuerySchema } from "./conversationRouteSchemas.js";
 import { isAllowedWebsiteEmbedOrigin } from "../../../shared/domain/websiteEmbed.js";
 import { getWebsiteEmbedSurfaceSettings } from "../../../modules/agents/public.js";
 import {
@@ -30,6 +30,7 @@ import {
   presentPublicChatSession,
   stripPublicChatCitationArtifacts,
   stripPublicConversationCitationArtifacts,
+  stripPublicConversationTailCitationArtifacts,
   stripPublicStreamCitationArtifacts,
   websiteEmbedLaunchAllowedAuditEvent,
   websiteEmbedLaunchDeniedAuditEvent,
@@ -47,6 +48,7 @@ type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & Pick<
   | "assistantChatService"
   | "auditService"
   | "publicChatActionAdvertiser"
+  | "publicConversationEventBus"
   | "chatHistoryService"
   | "conversationRepository"
   | "documentStorage"
@@ -642,6 +644,113 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         }),
         ...page,
       });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // GET /api/v1/public/chat/:token/tail/:conversationId — poll new messages for this anonymous session
+  router.get("/:token/tail/:conversationId", sessionMiddleware, requirePublicChatPermission(dependencies, "public_chat.history.read.own"), async (req, res, next) => {
+    try {
+      const { agentId, anonymousSessionId, citationDisplayEnabled } = res.locals as { agentId: string; anonymousSessionId: string; citationDisplayEnabled: boolean };
+      const parsedParams = publicConversationParamsSchema.safeParse(req.params);
+      if (!parsedParams.success) {
+        next(badRequest("Invalid request params", parsedParams.error.flatten()));
+        return;
+      }
+      const parsedQuery = conversationTailQuerySchema.safeParse(req.query);
+      if (!parsedQuery.success) {
+        next(badRequest("Invalid request query", parsedQuery.error.flatten()));
+        return;
+      }
+      const { conversationId } = parsedParams.data;
+
+      const conversation = await dependencies.conversationRepository.findByIdAndAnonymousSession(
+        conversationId,
+        res.locals.workspaceId as string,
+        anonymousSessionId,
+        agentId,
+      );
+      if (!conversation) {
+        res.status(404).json({ error: { code: "not_found", message: "Conversation not found" } });
+        return;
+      }
+
+      const tail = await dependencies.chatHistoryService.tailConversation(
+        conversation.workspaceId,
+        conversationId,
+        parsedQuery.data,
+      );
+      res.status(200).json(stripPublicConversationTailCitationArtifacts(tail, citationDisplayEnabled));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // GET /api/v1/public/chat/:token/events/:conversationId — push notifications for this anonymous session
+  router.get("/:token/events/:conversationId", sessionMiddleware, requirePublicChatPermission(dependencies, "public_chat.history.read.own"), async (req, res, next) => {
+    try {
+      const { agentId, anonymousSessionId } = res.locals as { agentId: string; anonymousSessionId: string };
+      const parsedParams = publicConversationParamsSchema.safeParse(req.params);
+      if (!parsedParams.success) {
+        next(badRequest("Invalid request params", parsedParams.error.flatten()));
+        return;
+      }
+      const { conversationId } = parsedParams.data;
+      const workspaceId = res.locals.workspaceId as string;
+
+      const conversation = await dependencies.conversationRepository.findByIdAndAnonymousSession(
+        conversationId,
+        workspaceId,
+        anonymousSessionId,
+        agentId,
+      );
+      if (!conversation) {
+        res.status(404).json({ error: { code: "not_found", message: "Conversation not found" } });
+        return;
+      }
+
+      let closed = false;
+      const writeEvent = (eventName: string, payload: unknown) => {
+        if (closed || res.writableEnded) {
+          return;
+        }
+        res.write(`event: ${eventName}\n`);
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      };
+
+      res.status(200);
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache, no-transform");
+      res.setHeader("Connection", "keep-alive");
+      res.setHeader("X-Accel-Buffering", "no");
+      res.flushHeaders();
+      const unsubscribe = dependencies.publicConversationEventBus.subscribe(conversationId, (event) => {
+        if (event.workspaceId !== workspaceId) {
+          return;
+        }
+        writeEvent(event.type, {
+          conversationId: event.conversationId,
+          messageId: event.messageId,
+          createdAt: event.createdAt,
+        });
+      });
+      writeEvent("ready", { conversationId });
+      const heartbeat = setInterval(() => {
+        if (!closed && !res.writableEnded) {
+          res.write(": heartbeat\n\n");
+        }
+      }, 25_000);
+      const cleanup = () => {
+        if (closed) {
+          return;
+        }
+        closed = true;
+        clearInterval(heartbeat);
+        unsubscribe();
+      };
+      req.on("close", cleanup);
+      res.on("close", cleanup);
     } catch (error) {
       next(error);
     }

@@ -39,6 +39,7 @@ export const STREAMING_API_PATH = '/api/chat/stream'
 export const PUBLIC_CHAT_STREAMING_API_PATH = '/api/public/chat'
 
 export interface ErrorResponse {
+  status?: number
   error: {
     code: string
     message: string
@@ -63,7 +64,7 @@ export const buildError = async (response: Response): Promise<ErrorResponse> => 
       payload.error &&
       typeof payload.error === "object"
     ) {
-      return payload as ErrorResponse;
+      return { ...(payload as ErrorResponse), status: response.status };
     }
 
     if (
@@ -75,6 +76,7 @@ export const buildError = async (response: Response): Promise<ErrorResponse> => 
       typeof payload.message === "string"
     ) {
       return {
+        status: response.status,
         error: {
           code: payload.code,
           message: payload.message,
@@ -87,6 +89,7 @@ export const buildError = async (response: Response): Promise<ErrorResponse> => 
     }
 
     return {
+      status: response.status,
       error: {
         code: "HTTP_ERROR",
         message: `Request failed with status ${response.status}`,
@@ -94,6 +97,7 @@ export const buildError = async (response: Response): Promise<ErrorResponse> => 
     };
   } catch {
     return {
+      status: response.status,
       error: {
         code: "HTTP_ERROR",
         message: `Request failed with status ${response.status}`,

@@ -184,11 +184,17 @@ visitor tail never does.
 
 The dashboard surfaces this work under **Activity**, which has three tabs:
 
-- **Needs attention** — the operator inbox. It lists pending approvals and
-  conversations that are human-owned (awaiting a human, or already taken over).
+- **Needs attention** — the operator inbox. One categorized table with an
+  escalation-type column. Critical escalations (an **Approval** to decide, a
+  **Handoff** awaiting or held by a human) sort to the top; lower-concern quality
+  signals (a **Degraded** or **No context** answer the AI already handled) follow
+  below. Quality signals are capped so they never crowd out critical work, and a
+  signal whose conversation is already escalated is shown once, as the escalation.
   Opening a row shows the conversation with an action bar.
 - **All activity** — the full conversation history.
-- **Quality** — the answer-quality triage view.
+- **Quality** — the full, paginated answer-quality backlog and per-turn triage
+  (negative feedback, slow responses, and skill failures, in addition to the
+  grounding gaps summarized in the inbox).
 
 The conversation view shows message attribution (a badge for human-agent and
 system messages) and an operator action bar: take over, reply, hand back, and

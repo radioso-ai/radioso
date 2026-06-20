@@ -10,22 +10,36 @@ import type { SelectedHistoryItem } from '@/components/dashboard/history/history
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useNeedsAttentionActivity } from '@/hooks/use-needs-attention-activity'
-import { chatApi } from '@/lib/api'
+import { chatApi, qualityApi, skillsApi, type LowQualityTurn, type PendingApprovalDecision } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { hitlApi } from '@/lib/api-hitl'
-import type { ChatConversationSummary, PendingApprovalDecision } from '@/lib/api-types'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
+import { ACTIVE_TRIAGE_STATES, groundingGapActions } from '@/lib/quality-signals'
+import { cn } from '@/lib/utils'
 import {
+  buildInboxItems,
   HUMAN_OWNED_CONVERSATION_PAGE_SIZE,
   inboxItemKeys,
+  type EscalationType,
   type HumanOwnedConversationSummary,
-  ownershipLabel,
+  type InboxItem,
   selectHumanOwnedConversations,
 } from '@/lib/needs-attention'
 
 interface NeedsAttentionViewProps {
   accountId: string
   routeState: DashboardRouteState
+}
+
+// Cap the lower-concern quality signals pulled into the live inbox so they never crowd out
+// critical escalations. The Quality view remains the full, paginated backlog.
+const QUALITY_INBOX_LIMIT = 25
+
+const ESCALATION_META: Record<EscalationType, { label: string; className: string }> = {
+  approval: { label: 'Approval', className: 'border-destructive/40 bg-destructive/10 text-destructive' },
+  handoff: { label: 'Handoff', className: 'border-destructive/40 bg-destructive/10 text-destructive' },
+  degraded: { label: 'Degraded', className: 'border-amber-400/40 bg-amber-100/50 text-amber-700 dark:text-amber-300' },
+  no_context: { label: 'No context', className: 'border-amber-400/40 bg-amber-100/50 text-amber-700 dark:text-amber-300' },
 }
 
 const relativeTimeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
@@ -57,83 +71,57 @@ export const formatApprovalCreatedAt = (createdAt: string, now = new Date()): st
   return relativeTimeFormatter.format(Math.round(diffHours / 24), 'day')
 }
 
-function PendingApprovalRow({
-  decision,
-  onSelect,
-}: {
-  decision: PendingApprovalDecision
-  onSelect: (decision: PendingApprovalDecision) => void
-}) {
+function EscalationBadge({ type }: { type: EscalationType }) {
+  const meta = ESCALATION_META[type]
   return (
-    <DashboardTableRow>
-      <DashboardTableCell>
-        <button
-          type="button"
-          onClick={() => onSelect(decision)}
-          className="block max-w-full text-left text-sm font-medium leading-5 text-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-        >
-          <span className="block truncate">{decision.reason}</span>
-        </button>
-      </DashboardTableCell>
-      <DashboardTableCell className="w-48 text-sm text-muted-foreground">
-        <span className="block truncate">{decision.agentId}</span>
-      </DashboardTableCell>
-      <DashboardTableCell className="w-40 text-sm text-muted-foreground">
-        {formatApprovalCreatedAt(decision.createdAt)}
-      </DashboardTableCell>
-    </DashboardTableRow>
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium',
+        meta.className,
+      )}
+    >
+      {meta.label}
+    </span>
   )
 }
 
-function HumanOwnedConversationRow({
-  conversation,
+function InboxRow({
+  item,
   onSelect,
 }: {
-  conversation: HumanOwnedConversationSummary
-  onSelect: (conversation: ChatConversationSummary) => void
+  item: InboxItem
+  onSelect: (item: InboxItem) => void
 }) {
   return (
     <DashboardTableRow>
+      <DashboardTableCell className="w-32">
+        <EscalationBadge type={item.type} />
+      </DashboardTableCell>
       <DashboardTableCell>
         <button
           type="button"
-          onClick={() => onSelect(conversation)}
+          onClick={() => onSelect(item)}
           className="block max-w-full text-left text-sm font-medium leading-5 text-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >
-          <span className="block truncate">{conversation.preview || 'Untitled conversation'}</span>
+          <span className="block truncate">{item.title}</span>
         </button>
       </DashboardTableCell>
       <DashboardTableCell className="w-48 text-sm text-muted-foreground">
-        <span className="block truncate">{ownershipLabel(conversation.ownership)}</span>
+        <span className="block truncate">{item.detail}</span>
       </DashboardTableCell>
       <DashboardTableCell className="w-40 text-sm text-muted-foreground">
-        {formatApprovalCreatedAt(conversation.updatedAt)}
+        {formatApprovalCreatedAt(item.timestamp)}
       </DashboardTableCell>
     </DashboardTableRow>
-  )
-}
-
-function SectionHeader({
-  title,
-  description,
-}: {
-  title: string
-  description: string
-}) {
-  return (
-    <div>
-      <h2 className="text-sm font-medium text-foreground">{title}</h2>
-      <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-    </div>
   )
 }
 
 export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionViewProps) {
   const [decisions, setDecisions] = useState<PendingApprovalDecision[]>([])
   const [humanOwnedConversations, setHumanOwnedConversations] = useState<HumanOwnedConversationSummary[]>([])
+  const [qualityTurns, setQualityTurns] = useState<LowQualityTurn[]>([])
   const [selectedItem, setSelectedItem] = useState<SelectedHistoryItem>(null)
-  const [isLoadingApprovals, setIsLoadingApprovals] = useState(true)
-  const [isLoadingConversations, setIsLoadingConversations] = useState(true)
+  const [isLoading, setIsLoading] = useState(true)
   const [approvalError, setApprovalError] = useState<string | null>(null)
   const [conversationError, setConversationError] = useState<string | null>(null)
   const isMountedRef = useRef(false)
@@ -143,12 +131,29 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     const requestId = inboxRequestIdRef.current + 1
     inboxRequestIdRef.current = requestId
 
-    const [approvalsResult, conversationsResult] = await Promise.allSettled([
+    // Quality signals are lower concern and best-effort: a failure here never blocks the
+    // inbox or surfaces an error, it just omits the quality rows.
+    const loadQualityTurns = async (): Promise<LowQualityTurn[]> => {
+      const { skills } = await skillsApi.list()
+      const actions = groundingGapActions(skills)
+      if (actions.length === 0) {
+        return []
+      }
+      const page = await qualityApi.listTurns({
+        actions,
+        triageStates: [...ACTIVE_TRIAGE_STATES],
+        limit: QUALITY_INBOX_LIMIT,
+      })
+      return page.items
+    }
+
+    const [approvalsResult, conversationsResult, qualityResult] = await Promise.allSettled([
       hitlApi.listPendingDecisions(),
       chatApi.listChatHistory({
         limit: HUMAN_OWNED_CONVERSATION_PAGE_SIZE,
         offset: 0,
       }),
+      loadQualityTurns(),
     ])
 
     if (!isMountedRef.current || requestId !== inboxRequestIdRef.current) {
@@ -174,8 +179,9 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       setConversationError(getApiErrorMessage(conversationsResult.reason, 'Failed to load human-owned conversations.'))
     }
 
-    setIsLoadingApprovals(false)
-    setIsLoadingConversations(false)
+    setQualityTurns(qualityResult.status === 'fulfilled' ? qualityResult.value : [])
+
+    setIsLoading(false)
   }, [])
 
   useEffect(() => {
@@ -201,13 +207,9 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     void refreshInbox()
   }, [refreshInbox])
 
-  const handleSelectDecision = (decision: PendingApprovalDecision) => {
-    setSelectedItem({ kind: 'chat', id: decision.conversationId })
-  }
-
-  const handleSelectHumanOwnedConversation = (conversation: ChatConversationSummary) => {
-    setSelectedItem({ kind: 'chat', id: conversation.id })
-  }
+  const handleSelectItem = useCallback((item: InboxItem) => {
+    setSelectedItem({ kind: 'chat', id: item.conversationId })
+  }, [])
 
   const buildRoutineHref = useCallback(
     (agentId: string, routineId: string) =>
@@ -222,11 +224,14 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     [accountId, routeState],
   )
 
-  const needsAttentionCount = decisions.length + humanOwnedConversations.length
-  const isLoading = isLoadingApprovals || isLoadingConversations
+  const items = useMemo(
+    () => buildInboxItems({ decisions, conversations: humanOwnedConversations, qualityTurns }),
+    [decisions, humanOwnedConversations, qualityTurns],
+  )
+  const needsAttentionCount = items.length
 
-  // While the initial load is in flight the displayed state isn't meaningful, so withhold the
-  // baseline (null) to keep the activity indicator from firing before the inbox has settled.
+  // The activity indicator tracks critical escalations only; lower-concern quality signals
+  // refresh on manual refresh / drawer close so they never spam the "new activity" badge.
   const baselineKeys = useMemo(
     () => (isLoading ? null : inboxItemKeys(decisions, humanOwnedConversations)),
     [decisions, humanOwnedConversations, isLoading],
@@ -241,14 +246,8 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const handleRefresh = useCallback(() => {
     void refreshInbox()
   }, [refreshInbox])
-  const showEmptyState =
-    !isLoading &&
-    !approvalError &&
-    !conversationError &&
-    decisions.length === 0 &&
-    humanOwnedConversations.length === 0
-  const showApprovalsSection = isLoadingApprovals || approvalError || decisions.length > 0
-  const showHumanOwnedSection = isLoadingConversations || conversationError || humanOwnedConversations.length > 0
+
+  const showEmptyState = !isLoading && !approvalError && !conversationError && items.length === 0
 
   return (
     <>
@@ -268,98 +267,42 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
           </Button>
         }
       >
-        <div className="space-y-8">
-          {showApprovalsSection ? (
-            <section className="space-y-3">
-              <SectionHeader
-                title="Pending approvals"
-                description={`${decisions.length} pending approval${decisions.length === 1 ? '' : 's'}`}
-              />
-
-              {approvalError ? (
-                <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
-                  {approvalError}
-                </div>
-              ) : null}
-
-              {isLoadingApprovals ? (
-                <div className="space-y-3">
-                  <Skeleton className="h-12 w-full" />
-                  <Skeleton className="h-12 w-full" />
-                  <Skeleton className="h-12 w-full" />
-                </div>
-              ) : decisions.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
-                  No approvals are waiting.
-                </div>
-              ) : (
-                <DashboardTable aria-label="Pending approvals" minWidth="min-w-[720px]">
-                  <DashboardTableHead>
-                    <DashboardTableHeader>Reason</DashboardTableHeader>
-                    <DashboardTableHeader className="w-48">Agent</DashboardTableHeader>
-                    <DashboardTableHeader className="w-40">Created</DashboardTableHeader>
-                  </DashboardTableHead>
-                  <DashboardTableBody>
-                    {decisions.map((decision) => (
-                      <PendingApprovalRow
-                        key={`${decision.agentId}-${decision.handle}`}
-                        decision={decision}
-                        onSelect={handleSelectDecision}
-                      />
-                    ))}
-                  </DashboardTableBody>
-                </DashboardTable>
-              )}
-            </section>
+        <div className="space-y-4">
+          {approvalError ? (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+              {approvalError}
+            </div>
+          ) : null}
+          {conversationError ? (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+              {conversationError}
+            </div>
           ) : null}
 
-          {showHumanOwnedSection ? (
-            <section className="space-y-3">
-              <SectionHeader
-                title="Awaiting / handled by a human"
-                description={`${humanOwnedConversations.length} human-owned conversation${humanOwnedConversations.length === 1 ? '' : 's'}`}
-              />
-
-              {conversationError ? (
-                <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
-                  {conversationError}
-                </div>
-              ) : null}
-
-              {isLoadingConversations ? (
-                <div className="space-y-3">
-                  <Skeleton className="h-12 w-full" />
-                  <Skeleton className="h-12 w-full" />
-                </div>
-              ) : humanOwnedConversations.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
-                  No human-owned conversations need attention.
-                </div>
-              ) : (
-                <DashboardTable aria-label="Awaiting / handled by a human" minWidth="min-w-[640px]">
-                  <DashboardTableHead>
-                    <DashboardTableHeader>Conversation</DashboardTableHeader>
-                    <DashboardTableHeader className="w-48">Owner</DashboardTableHeader>
-                    <DashboardTableHeader className="w-40">Updated</DashboardTableHeader>
-                  </DashboardTableHead>
-                  <DashboardTableBody>
-                    {humanOwnedConversations.map((conversation) => (
-                      <HumanOwnedConversationRow
-                        key={conversation.id}
-                        conversation={conversation}
-                        onSelect={handleSelectHumanOwnedConversation}
-                      />
-                    ))}
-                  </DashboardTableBody>
-                </DashboardTable>
-              )}
-            </section>
-          ) : null}
-
-          {showEmptyState ? (
+          {isLoading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+            </div>
+          ) : showEmptyState ? (
             <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
               Nothing needs attention.
             </div>
+          ) : items.length > 0 ? (
+            <DashboardTable aria-label="Needs attention" minWidth="min-w-[760px]">
+              <DashboardTableHead>
+                <DashboardTableHeader className="w-32">Type</DashboardTableHeader>
+                <DashboardTableHeader>Item</DashboardTableHeader>
+                <DashboardTableHeader className="w-48">Detail</DashboardTableHeader>
+                <DashboardTableHeader className="w-40">Updated</DashboardTableHeader>
+              </DashboardTableHead>
+              <DashboardTableBody>
+                {items.map((item) => (
+                  <InboxRow key={item.key} item={item} onSelect={handleSelectItem} />
+                ))}
+              </DashboardTableBody>
+            </DashboardTable>
           ) : null}
         </div>
       </DashboardPage>

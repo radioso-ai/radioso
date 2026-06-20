@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ChatConversationSummary, ConversationOwnership, PendingApprovalDecision } from '@/lib/api-types'
+import type { ChatConversationSummary, ConversationOwnership, LowQualityTurn, PendingApprovalDecision } from '@/lib/api'
 import {
+  buildInboxItems,
   countNewInboxItems,
   inboxItemKeys,
   ownershipLabel,
@@ -137,6 +138,80 @@ describe('inboxItemKeys', () => {
 
     expect(keys.some((key) => key.startsWith('approval:'))).toBe(true)
     expect(keys.some((key) => key.startsWith('conversation:'))).toBe(true)
+  })
+})
+
+const qualityTurn = (overrides: Partial<LowQualityTurn> = {}): LowQualityTurn => ({
+  assistantMessageId: 'message-1',
+  conversationId: 'conversation-q1',
+  agentId: 'agent-1',
+  agentName: 'Marta',
+  channel: 'authenticated_chat',
+  question: 'What is your refund policy?',
+  answerPreview: 'I could not find that in the documents.',
+  skillName: 'retrieval.answer',
+  skillOutcome: 'no_context',
+  skillStatus: 'completed',
+  totalLatencyMs: 1200,
+  createdAt: '2026-06-19T10:00:00.000Z',
+  feedback: { upCount: 0, downCount: 0, comments: [] },
+  triage: { state: 'open', reason: null, updatedAt: null },
+  ...overrides,
+})
+
+describe('buildInboxItems', () => {
+  it('tags each source with its escalation type and severity', () => {
+    const items = buildInboxItems({
+      decisions: [decision({ handle: 'd1', conversationId: 'c-approval' })],
+      conversations: [humanOwned({ id: 'c-handoff' })],
+      qualityTurns: [
+        qualityTurn({ assistantMessageId: 'm-deg', conversationId: 'c-deg', skillOutcome: 'grounded_degraded' }),
+        qualityTurn({ assistantMessageId: 'm-noctx', conversationId: 'c-noctx', skillOutcome: 'no_context' }),
+      ],
+    })
+
+    const byConversation = Object.fromEntries(items.map((item) => [item.conversationId, item]))
+    expect(byConversation['c-approval']).toMatchObject({ type: 'approval', severity: 'critical' })
+    expect(byConversation['c-handoff']).toMatchObject({ type: 'handoff', severity: 'critical' })
+    expect(byConversation['c-deg']).toMatchObject({ type: 'degraded', severity: 'lower' })
+    expect(byConversation['c-noctx']).toMatchObject({ type: 'no_context', severity: 'lower' })
+  })
+
+  it('orders critical escalations above lower-concern quality signals', () => {
+    const items = buildInboxItems({
+      decisions: [decision({ handle: 'd1', conversationId: 'c-approval' })],
+      conversations: [humanOwned({ id: 'c-handoff' })],
+      qualityTurns: [qualityTurn({ conversationId: 'c-quality' })],
+    })
+
+    const severities = items.map((item) => item.severity)
+    expect(severities).toEqual(['critical', 'critical', 'lower'])
+  })
+
+  it('drops a quality signal whose conversation is already escalated (critical wins)', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [humanOwned({ id: 'c-shared' })],
+      // Same conversation as the handoff — e.g. a no-context that triggered the handoff.
+      qualityTurns: [qualityTurn({ conversationId: 'c-shared' })],
+    })
+
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({ conversationId: 'c-shared', type: 'handoff' })
+  })
+
+  it('collapses multiple low-quality turns in one conversation to its most recent', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [
+        qualityTurn({ assistantMessageId: 'older', conversationId: 'c-1', createdAt: '2026-06-19T09:00:00.000Z' }),
+        qualityTurn({ assistantMessageId: 'newer', conversationId: 'c-1', createdAt: '2026-06-19T11:00:00.000Z' }),
+      ],
+    })
+
+    expect(items).toHaveLength(1)
+    expect(items[0]?.key).toBe('quality:newer')
   })
 })
 

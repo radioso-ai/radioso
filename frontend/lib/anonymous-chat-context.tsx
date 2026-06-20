@@ -661,7 +661,26 @@ export function AnonymousChatProvider({
       }
       setIsLoading(false)
       if (completion.ownership?.state === 'human_owned' && completion.ownership.suppressed) {
-        setMessages((prev) => prev.filter((message) => message.id !== assistantMessageId))
+        // Human-owned turn: the backend suppressed the AI and returns a localized
+        // "a teammate is joining, please wait" line in `answer`. Show it; if it fell
+        // back to empty, drop the placeholder rather than render an empty bubble.
+        const waitingMessage = completion.answer?.trim() ?? ''
+        setMessages((prev) =>
+          waitingMessage
+            ? prev.map((message) =>
+                message.id === assistantMessageId
+                  ? {
+                      ...message,
+                      content: waitingMessage,
+                      citations: [],
+                      answerSegments: [],
+                      suggestions: [],
+                      status: 'complete' as const,
+                    }
+                  : message,
+              )
+            : prev.filter((message) => message.id !== assistantMessageId),
+        )
         return
       }
       setMessages((prev) =>

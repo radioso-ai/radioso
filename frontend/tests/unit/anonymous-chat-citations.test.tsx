@@ -228,6 +228,45 @@ describe('anonymous chat citations', () => {
     expect(latestMessages.some((message) => message.role === 'assistant')).toBe(false)
   })
 
+  it('renders the localized waiting message when HITL suppresses AI output', async () => {
+    publicChatApiMock.streamMessage.mockImplementation(async (_token, _data, handlers) => {
+      const completion = {
+        conversationId: 'conversation-1',
+        assistantMessageId: '',
+        answer: 'Un compañero se está uniendo, por favor espera.',
+        citations: [],
+        answerSegments: [],
+        suggestions: [],
+        ownership: {
+          state: 'human_owned' as const,
+          suppressed: true,
+        },
+      }
+
+      handlers.onConversation?.({ conversationId: completion.conversationId })
+      handlers.onDone?.(completion)
+      return completion
+    })
+
+    let latestMessages: ChatMessage[] = []
+    mounted = renderProvider({
+      sendMessage: 'gracias',
+      onMessages: (messages) => {
+        latestMessages = messages
+      },
+    })
+
+    await waitFor(() => {
+      expect(publicChatApiMock.streamMessage).toHaveBeenCalledTimes(1)
+      expect(latestMessages.map((message) => message.content)).toEqual([
+        'gracias',
+        'Un compañero se está uniendo, por favor espera.',
+      ])
+    })
+
+    expect(publicChatApiMock.getConversationDetail).not.toHaveBeenCalled()
+  })
+
   it('preserves citation artifacts from restored public chat history', async () => {
     publicChatApiMock.listConversations.mockResolvedValue({
       ...baseConversationList,

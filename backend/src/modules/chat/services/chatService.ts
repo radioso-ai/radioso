@@ -106,6 +106,7 @@ import {
 } from "./conversationContractMappers.js";
 import type { TurnRouter, TurnRouting } from "./turnRouter.js";
 import type { ResponseLanguageDetector } from "../../../shared/services/responseLanguageDetector.js";
+import type { HandoffWaitingMessageGenerator } from "../../../shared/services/handoffWaitingMessageGenerator.js";
 import {
   isHumanOwned,
   type ConversationOwnershipReader,
@@ -228,7 +229,10 @@ export interface SuspendedRoutineReader {
   loadSuspended(input: { sessionId: string }): Promise<RoutineState | null>;
 }
 
-const suppressedHumanOwnedResponse = (session: PreparedSession): ChatResponse => {
+const suppressedHumanOwnedResponse = (
+  session: PreparedSession,
+  waitingMessage = "",
+): ChatResponse => {
   const now = new Date().toISOString();
   return {
     conversationId: session.conversation.id,
@@ -239,7 +243,7 @@ const suppressedHumanOwnedResponse = (session: PreparedSession): ChatResponse =>
       type: "direct",
       reason: "social_only",
     },
-    answer: "",
+    answer: waitingMessage,
     citations: [],
     answerSegments: [],
     suggestions: [],
@@ -382,6 +386,8 @@ export interface ChatServiceOptions {
   routineProvider?: ChatRoutineProvider;
   /** Optional shared per-turn language detector for routine, direct, and retrieval replies. */
   responseLanguageDetector?: ResponseLanguageDetector;
+  /** Optional: produces the localized "a teammate is joining" line for human-owned turns. */
+  handoffWaitingMessageGenerator?: HandoffWaitingMessageGenerator;
   clarifier?: ConversationClarifier;
   clarifierFactory?: (input: { session: PreparedSession; accountId?: string }) => ConversationClarifier;
   clarificationStore?: ConversationClarificationStore & Partial<RecentClarificationReader>;
@@ -418,6 +424,7 @@ export class ChatService {
   private readonly retrievalSenseClarificationPolicy: ClarificationPolicy;
   private readonly turnRouter: TurnRouter;
   private readonly responseLanguageDetector?: ResponseLanguageDetector;
+  private readonly handoffWaitingMessageGenerator?: HandoffWaitingMessageGenerator;
 
   constructor(options: ChatServiceOptions) {
     const {
@@ -447,6 +454,7 @@ export class ChatService {
       conversationOwnershipReader,
       routineProvider,
       responseLanguageDetector,
+      handoffWaitingMessageGenerator,
       clarifier,
       clarifierFactory,
       clarificationStore,
@@ -462,6 +470,7 @@ export class ChatService {
     this.conversationOwnershipReader = conversationOwnershipReader;
     this.routineProvider = routineProvider;
     this.responseLanguageDetector = responseLanguageDetector;
+    this.handoffWaitingMessageGenerator = handoffWaitingMessageGenerator;
     this.clarifier = clarifier;
     this.clarifierFactory = clarifierFactory;
     this.clarificationStore = clarificationStore;
@@ -1068,6 +1077,45 @@ export class ChatService {
     }).catch(() => undefined);
   }
 
+  /**
+   * Builds the localized "a teammate is joining, please wait" line shown on a
+   * human-owned (suppressed) turn. Generation is best-effort: on any failure this
+   * returns "" and the caller renders nothing rather than failing the turn.
+   */
+  private async generateHandoffWaitingMessage(
+    input: {
+      workspaceId: string;
+      accountId?: string;
+      query: string;
+    },
+    session: PreparedSession,
+  ): Promise<string> {
+    if (!this.handoffWaitingMessageGenerator) {
+      return "";
+    }
+    try {
+      const message = await this.handoffWaitingMessageGenerator.generate({
+        query: input.query,
+        history: session.history,
+        workspaceContext: { workspaceId: input.workspaceId },
+        usageContext: {
+          accountId: input.accountId,
+          workspaceId: input.workspaceId,
+          conversationId: session.conversation.id,
+          messageId: session.userMessage.id,
+          surface: "assistant",
+          operation: "handoff_waiting_message",
+          attemptKey: "handoff_waiting",
+        },
+      });
+      setTraceAttributes({ "chat.handoff.waiting_message_generated": message.length > 0 });
+      return message;
+    } catch {
+      setTraceAttributes({ "chat.handoff.waiting_message_generated": false });
+      return "";
+    }
+  }
+
   private withResponseLanguage(session: PreparedSession, responseLanguage: string | undefined): PreparedSession {
     return {
       ...session,
@@ -1178,7 +1226,8 @@ export class ChatService {
       const ownership = await this.conversationOwnershipReader?.load(session.conversation.id) ?? null;
       if (isHumanOwned(ownership)) {
         await usageReservation.release();
-        return suppressedHumanOwnedResponse(session);
+        const waitingMessage = await this.generateHandoffWaitingMessage(input, session);
+        return suppressedHumanOwnedResponse(session, waitingMessage);
       }
 
       const responseLanguagePromise = this.detectResponseLanguage(input, session);
@@ -1375,7 +1424,8 @@ export class ChatService {
       const ownership = await this.conversationOwnershipReader?.load(session.conversation.id) ?? null;
       if (isHumanOwned(ownership)) {
         await releaseUsageReservation();
-        yield { type: "done", ...suppressedHumanOwnedResponse(session) };
+        const waitingMessage = await this.generateHandoffWaitingMessage(input, session);
+        yield { type: "done", ...suppressedHumanOwnedResponse(session, waitingMessage) };
         return;
       }
 

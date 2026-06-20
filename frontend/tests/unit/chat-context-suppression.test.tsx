@@ -107,14 +107,14 @@ describe('workspace chat HITL suppression', () => {
     vi.clearAllMocks()
   })
 
-  it('drops the placeholder bubble instead of rendering an empty assistant message when HITL suppresses AI output', async () => {
+  const mockSuppressedCompletion = (answer: string) => {
     chatApiMock.streamChatResponse.mockImplementation(async (_data, handlers) => {
       const completion = {
         conversationId: 'conversation-1',
         agentId: undefined,
         agentName: undefined,
         assistantMessageId: '',
-        answer: '',
+        answer,
         citations: [],
         answerSegments: [],
         suggestions: [],
@@ -128,6 +128,33 @@ describe('workspace chat HITL suppression', () => {
       handlers.onDone?.(completion)
       return completion
     })
+  }
+
+  it('renders the localized waiting message when HITL suppresses AI output', async () => {
+    mockSuppressedCompletion('Un compañero se está uniendo, por favor espera.')
+
+    let latestMessages: ChatMessage[] = []
+    mounted = renderProvider({
+      sendMessage: 'thank you',
+      onMessages: (messages) => {
+        latestMessages = messages
+      },
+    })
+
+    await waitFor(() => {
+      expect(chatApiMock.streamChatResponse).toHaveBeenCalledTimes(1)
+      expect(latestMessages.map((message) => message.content)).toEqual([
+        'thank you',
+        'Un compañero se está uniendo, por favor espera.',
+      ])
+    })
+
+    const assistant = latestMessages.find((message) => message.role === 'assistant')
+    expect(assistant?.status).toBe('complete')
+  })
+
+  it('drops the placeholder bubble when the suppressed turn has no waiting message', async () => {
+    mockSuppressedCompletion('')
 
     let latestMessages: ChatMessage[] = []
     mounted = renderProvider({

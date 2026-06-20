@@ -30,6 +30,7 @@ import { WorkspaceGrantRepository } from "../../db/repositories/workspaceGrantRe
 import { WorkspaceRepository } from "../../db/repositories/workspaceRepository.js";
 import { WorkspaceTokenRepository } from "../../db/repositories/workspaceTokenRepository.js";
 import { LlmResponseLanguageDetector } from "../../shared/services/responseLanguageDetector.js";
+import { LlmHandoffWaitingMessageGenerator } from "../../shared/services/handoffWaitingMessageGenerator.js";
 import { PostgresAssistantTurnPersistence } from "../../modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { registeredCapabilityNames } from "../../shared/domain/capabilityPolicy.js";
 import { AccountAccessService, AccountInvitationService } from "../../modules/account/public.js";
@@ -1216,6 +1217,9 @@ export const buildChatServices = (input: {
   const responseLanguageDetector = new LlmResponseLanguageDetector(
     input.llmRegistry.createRewriteInferencePipeline(input.usageEventRecorder),
   );
+  const handoffWaitingMessageGenerator = new LlmHandoffWaitingMessageGenerator(
+    input.llmRegistry.createRewriteInferencePipeline(input.usageEventRecorder),
+  );
   const routineStateRepository = new RoutineStateRepository(input.database);
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
@@ -1242,6 +1246,7 @@ export const buildChatServices = (input: {
     selectionStrategy: input.composition.selectionStrategy,
     turnRouter,
     responseLanguageDetector,
+    handoffWaitingMessageGenerator,
     // The reusable conversation engine is the chat turn spine in every
     // environment. ChatService keeps an engine-less path for tests, but
     // composition always wires it.

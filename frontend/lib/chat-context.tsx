@@ -186,6 +186,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const applyCompletion = useCallback(
     (accountId: string, agentId: string | undefined, assistantMessageId: string, completion: ChatStreamCompletion) => {
+      // After a handoff the conversation is human-owned and the backend suppresses the
+      // AI turn (empty answer). Drop the placeholder bubble rather than committing it as
+      // an empty assistant message; a human operator now owns the reply.
+      if (completion.ownership?.state === 'human_owned' && completion.ownership.suppressed) {
+        updateSession(accountId, agentId, (session) => ({
+          ...session,
+          conversationId: completion.conversationId ?? session.conversationId,
+          bootstrapGreetingId: completion.conversationId ? undefined : session.bootstrapGreetingId,
+          isLoading: false,
+          messages: session.messages.filter((message) => message.id !== assistantMessageId),
+        }))
+        return
+      }
       updateSession(accountId, agentId, (session) => ({
         ...session,
         conversationId: completion.conversationId ?? session.conversationId,

@@ -121,6 +121,25 @@ const advanceOnePoll = async () => {
   })
 }
 
+const setVisibility = (state: 'visible' | 'hidden') => {
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state })
+}
+
+const becomeHidden = () => {
+  act(() => {
+    setVisibility('hidden')
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+}
+
+const becomeVisible = async () => {
+  setVisibility('visible')
+  await act(async () => {
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(0)
+  })
+}
+
 beforeAll(() => {
   ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 })
@@ -128,6 +147,7 @@ beforeAll(() => {
 beforeEach(() => {
   vi.useFakeTimers()
   vi.clearAllMocks()
+  setVisibility('visible')
   observed.current = false
   container = document.createElement('div')
   document.body.appendChild(container)
@@ -173,5 +193,31 @@ describe('useNeedsAttentionActivity', () => {
 
     expect(hitlApiMock.listPendingDecisions).not.toHaveBeenCalled()
     expect(observed.current).toBe(false)
+  })
+
+  it('stops polling while the document is hidden', async () => {
+    mockInbox([decisionSummary()], [conversationSummary()])
+    renderProbe(inboxSignature(asDecisions([decisionSummary()]), asConversations([conversationSummary()])))
+
+    becomeHidden()
+    await advanceOnePoll()
+
+    expect(hitlApiMock.listPendingDecisions).not.toHaveBeenCalled()
+  })
+
+  it('polls immediately when the document becomes visible again', async () => {
+    const conversations = [conversationSummary()]
+    const baseline = inboxSignature(asDecisions([decisionSummary({ handle: 'decision-1' })]), asConversations(conversations))
+    mockInbox([decisionSummary({ handle: 'decision-1' }), decisionSummary({ handle: 'decision-2' })], conversations)
+
+    renderProbe(baseline)
+    becomeHidden()
+    await advanceOnePoll()
+    expect(hitlApiMock.listPendingDecisions).not.toHaveBeenCalled()
+
+    await becomeVisible()
+
+    expect(hitlApiMock.listPendingDecisions).toHaveBeenCalledTimes(1)
+    expect(observed.current).toBe(true)
   })
 })

@@ -808,7 +808,7 @@ describeIfDatabase("persistence integration", () => {
       passwordHash: "hash",
     });
     const workspace = await workspaceRepository.create(account.id, "Analytics Workspace");
-    const auditRepository = new AuditEventRepository(database);
+    const auditRepository = new AuditEventRepository(database.kysely);
     const auditService = new AuditService(createLogger("silent"), auditRepository);
     const analyticsService = new ProductAnalyticsService({
       enabled: true,

@@ -224,7 +224,7 @@ export const buildInfrastructure = (input: {
     queryTimeoutMs: env.DB_QUERY_TIMEOUT_MS,
     applicationName: `radioso-${env.NODE_ENV}`,
   });
-  const auditEventRepository = new AuditEventRepository(database);
+  const auditEventRepository = new AuditEventRepository(database.kysely);
   const auditService = new AuditService(logger, auditEventRepository);
   const telemetryService = new TelemetryService({
     enabled: env.OBSERVABILITY_ENABLED,

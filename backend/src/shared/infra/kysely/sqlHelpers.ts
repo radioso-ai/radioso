@@ -28,6 +28,27 @@ import type { Db } from "./types.js";
 export const toJsonb = (value: unknown): RawBuilder<JsonValue> => sql`${JSON.stringify(value)}::jsonb`;
 
 /**
+ * jsonb `->> key` — extract a top-level key as text (NULL if absent). Use as a comparison
+ * operand, e.g. `.where(jsonbKeyText(eb.ref("metadata_json"), "conversationId"), "=", id)`.
+ */
+export const jsonbKeyText = (column: Expression<unknown>, key: string): RawBuilder<string | null> =>
+  sql`${column} ->> ${key}`;
+
+/**
+ * `jsonb_set(coalesce(<column>, '{}'), '{<path>}', <value>, true)` — set/replace a nested
+ * key, creating missing parents. `path` is a trusted key sequence; `value` is `toJsonb(...)`.
+ */
+export const jsonbSet = (
+  column: Expression<unknown>,
+  path: readonly string[],
+  value: Expression<unknown>,
+): RawBuilder<JsonValue> =>
+  sql`jsonb_set(coalesce(${column}, '{}'::jsonb), ${sql.lit(`{${path.join(",")}}`)}, ${value}, true)`;
+
+/** `<expression>::text` — cast to text (e.g. to compare a uuid column against an arbitrary string). */
+export const castText = (expr: Expression<unknown>): RawBuilder<string> => sql`${expr}::text`;
+
+/**
  * jsonb `||` concatenation (shallow merge), e.g. `config || '{...}'::jsonb`. Right-hand keys
  * win, matching the raw `config = config || EXCLUDED.config` merge pattern. Pass `toJsonb(obj)`
  * for the right operand and `eb.ref("col")` for the existing column.

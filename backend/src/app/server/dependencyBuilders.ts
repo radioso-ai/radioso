@@ -314,7 +314,7 @@ export const buildRepositories = (
   passwordResetTokenRepository: new PasswordResetTokenRepository(database),
   retrievalSettingsRepository: new RetrievalSettingsRepository(database),
   routineDefinitionRepository: new RoutineDefinitionRepository(database),
-  sessionRepository: new SessionRepository(database),
+  sessionRepository: new SessionRepository(database.kysely),
   userRepository: new UserRepository(database),
   websiteCrawlJobRepository: new WebsiteCrawlJobRepository(database),
   workspaceGrantRepository: new WorkspaceGrantRepository(database),

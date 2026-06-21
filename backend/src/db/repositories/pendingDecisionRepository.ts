@@ -4,8 +4,11 @@ import {
   type DatabaseExecutor,
 } from "../../shared/infra/database.js";
 
-export type PendingDecisionStatus = "pending" | "approved" | "rejected" | "cancelled";
-export type PendingDecisionOutcome = "approved" | "rejected";
+// A gate is `pending` until an operator picks a choice, then `resolved` (the routine
+// branches on the chosen option id, so the status is bookkeeping, not the decision), or
+// `cancelled` if the conversation ends the gate without a choice. The legacy `approved`/
+// `rejected` values predate multi-way gates and are retained only so historical rows read.
+export type PendingDecisionStatus = "pending" | "resolved" | "approved" | "rejected" | "cancelled";
 
 export interface PendingDecisionOption {
   id: string;
@@ -53,7 +56,7 @@ export interface PendingDecisionCreateInput {
 
 export interface PendingDecisionResolveInput {
   handle: string;
-  outcome: PendingDecisionOutcome;
+  status: PendingDecisionStatus;
   decision: unknown;
   decidedBy: string | null;
   contentHash: string;
@@ -223,7 +226,7 @@ export class PendingDecisionRepository {
         RETURNING ${pendingDecisionColumns}`,
       [
         input.handle,
-        input.outcome,
+        input.status,
         JSON.stringify(input.decision),
         input.decidedBy,
         input.contentHash,

@@ -33,6 +33,7 @@ import type { CustomerEmailSkillDefinition, CustomerEmailSkillOutcome } from '@/
 import {
   buildCompletionExportPayloadPreview,
   createApprovalOptionForm,
+  createDefaultApprovalOptions,
   createSlotForm,
   createStepForm,
   createTerminalForm,
@@ -380,9 +381,9 @@ export function RoutineFormEditor({
                 steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? {
                   ...item,
                   kind: value as RoutineStepKind,
-                  // Seed an approval step with a first option + a default decision name so the
-                  // sub-editor is usable and savable without the author hunting for jargon.
-                  ...(value === 'approval' && item.options.length === 0 ? { options: [createApprovalOptionForm(0)] } : {}),
+                  // Seed an approval step with Approve + Decline + a default decision name so the
+                  // sub-editor is a usable, savable decision without the author hunting for jargon.
+                  ...(value === 'approval' && item.options.length === 0 ? { options: createDefaultApprovalOptions() } : {}),
                   ...(value === 'approval' && !item.captureKey.trim() ? { captureKey: 'decision' } : {}),
                 } : item),
               }))}>

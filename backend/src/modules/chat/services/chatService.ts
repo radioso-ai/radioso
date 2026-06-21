@@ -30,7 +30,7 @@ import type { ConversationRepositoryPort } from "../../../db/repositories/conver
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
-import type { PendingDecisionCreateInput, PendingDecisionRecord, PendingDecisionOutcome } from "../../../db/repositories/pendingDecisionRepository.js";
+import type { PendingDecisionCreateInput, PendingDecisionRecord } from "../../../db/repositories/pendingDecisionRepository.js";
 import type { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
 import type { DatabaseExecutor } from "../../../shared/infra/database.js";
 import type { AgentService } from "../../agents/public.js";
@@ -705,7 +705,6 @@ export class ChatService {
   async resumeAwaitingDecisionTurn(input: {
     record: PendingDecisionRecord;
     optionId: string;
-    outcome: PendingDecisionOutcome;
     payload?: unknown;
     decidedBy: string;
     executor: DatabaseExecutor;
@@ -778,7 +777,7 @@ export class ChatService {
           agentId: input.record.agentId,
           routineId: input.record.routineId,
           stepId: input.record.stepId,
-          outcome: input.outcome,
+          optionId: input.optionId,
         },
       },
       executor: input.executor,

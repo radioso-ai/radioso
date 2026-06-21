@@ -43,7 +43,6 @@ const toHttpError = (error: ApprovalDecisionServiceError): AppError => {
     case "stale_proposal":
       return new AppError(409, "stale_proposal", "Decision proposal is stale");
     case "invalid_option":
-    case "unknown_outcome":
       return new AppError(422, "invalid_option", "Decision option is invalid");
     case "concurrent_resolution":
       return new AppError(409, "concurrent_resolution", "Decision was resolved concurrently");

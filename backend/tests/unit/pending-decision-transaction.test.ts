@@ -54,7 +54,7 @@ describe("PendingDecisionRepository transaction helper", () => {
 
     const result = await repository.resolveInTransaction({
       handle: "pd_1",
-      outcome: "approved",
+      status: "resolved",
       decision: { optionId: "approve" },
       decidedBy: null,
       contentHash: "hash_1",
@@ -87,7 +87,7 @@ describe("PendingDecisionRepository transaction helper", () => {
 
     const result = await repository.resolveInTransaction({
       handle: "pd_1",
-      outcome: "approved",
+      status: "resolved",
       decision: { optionId: "approve" },
       decidedBy: null,
       contentHash: "stale",

@@ -27,7 +27,9 @@ const resolveDecisionRequestSchema = z.object({
 
 const resolveDecisionResponseSchema = z.object({
   status: z.literal("resolved"),
-  decision: z.enum(["approved", "rejected"]),
+  // The option id the operator chose (what the routine branched on). A gate can have any
+  // author-named choices, so this is the option id rather than a binary approve/reject.
+  optionId: z.string(),
   conversationId: z.string(),
   resumed: z.boolean(),
 });

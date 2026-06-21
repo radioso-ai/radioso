@@ -4702,6 +4702,7 @@ export interface components {
             suggestions?: components["schemas"]["ChatSuggestion"][];
             answerFeedbackEntries?: components["schemas"]["AnswerFeedbackEntry"][];
             debug?: components["schemas"]["ChatConversationMessageDebug"];
+            operatorDisplayName?: string;
         };
         ConversationOwnershipResponse: {
             ownership: components["schemas"]["ConversationOwnership"];

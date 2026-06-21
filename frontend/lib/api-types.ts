@@ -52,7 +52,8 @@ export type DirectiveDraftDirective = ApiSchemas['DirectiveDraftDirective']
 
 export type RoutineDefinitionStatus = ApiSchemas['RoutineDefinition']['status']
 export type RoutineSlotType = 'text' | 'number' | 'boolean' | 'email' | 'date'
-export type RoutineStepKind = 'chat' | 'tool' | 'action'
+export type RoutineStepKind = 'chat' | 'tool' | 'action' | 'approval'
+export type ApprovalOption = NonNullable<ApiSchemas['RoutineDefinition']['steps'][number]['options']>[number]
 export type RoutineGuardKind = 'llm' | 'default' | 'slot_filled' | 'outcome' | 'counter' | 'field'
 export type RoutineReentryMode = 'once_per_conversation' | 'always' | 'semantic'
 export type RoutineFieldGuardOp =

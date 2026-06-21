@@ -225,6 +225,92 @@ describe('routine form transforms', () => {
     expect(formToRoutineDraft(form).steps[0]?.metadata).toEqual({ outlineLabel: 'Ask for email' })
   })
 
+  it('round-trips an approval gate with per-option branch targets', () => {
+    const approvalRoutine: RoutineDefinition = {
+      ...routine,
+      slots: [],
+      steps: [
+        {
+          stableStepId: 'review',
+          kind: 'approval',
+          instruction: 'Approve or deny the refund.',
+          toolRef: null,
+          captureKey: 'refund_decision',
+          options: [
+            { id: 'approve', label: 'Approve', description: 'Issue the refund' },
+            { id: 'deny', label: 'Deny' },
+          ],
+          ordinal: 0,
+          metadata: {},
+        },
+        {
+          stableStepId: 'issue',
+          kind: 'chat',
+          instruction: 'Issue the refund.',
+          toolRef: null,
+          ordinal: 1,
+          metadata: {},
+        },
+      ],
+      transitions: [
+        {
+          fromStep: 'review',
+          toRef: 'issue',
+          guardKind: 'field',
+          guardText: null,
+          outcomeStatus: null,
+          counterLimit: null,
+          fieldRef: 'refund_decision.id',
+          fieldOp: 'equals',
+          fieldValue: 'approve',
+          fieldValues: null,
+          fieldUnit: null,
+          ordinal: 0,
+        },
+        {
+          fromStep: 'review',
+          toRef: 'complete',
+          guardKind: 'field',
+          guardText: null,
+          outcomeStatus: null,
+          counterLimit: null,
+          fieldRef: 'refund_decision.id',
+          fieldOp: 'equals',
+          fieldValue: 'deny',
+          fieldValues: null,
+          fieldUnit: null,
+          ordinal: 1,
+        },
+        {
+          fromStep: 'issue',
+          toRef: 'complete',
+          guardKind: 'default',
+          guardText: null,
+          outcomeStatus: null,
+          counterLimit: null,
+          ordinal: 2,
+        },
+      ],
+    } as unknown as RoutineDefinition
+
+    const form = routineToForm(approvalRoutine)
+
+    // The synthesized field guards are recovered as per-option targets, not generic edges.
+    expect(form.steps[0]).toMatchObject({
+      kind: 'approval',
+      captureKey: 'refund_decision',
+      transitions: [],
+      options: [
+        { id: 'approve', label: 'Approve', description: 'Issue the refund', target: 'issue' },
+        { id: 'deny', label: 'Deny', description: '', target: 'complete' },
+      ],
+    })
+
+    const draft = formToRoutineDraft(form)
+    expect(draft.steps).toEqual(approvalRoutine.steps)
+    expect(draft.transitions).toEqual(approvalRoutine.transitions)
+  })
+
   it('omits disabled completion export from new drafts', () => {
     const form = createEmptyRoutineForm()
 

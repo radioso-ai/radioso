@@ -1,4 +1,5 @@
 import type { RoutineDefinitionDraft, RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineReentryMode, RoutineSlotType, RoutineTransition } from './api-types'
+import { approvalOptionTargets, approvalOptionTransitions } from './routine-approval'
 
 export const ROUTINE_SLOT_TYPES: RoutineSlotType[] = ['text', 'number', 'boolean', 'email', 'date']
 export const ROUTINE_FIELD_GUARD_UNITS: RoutineFieldGuardUnit[] = ['days', 'weeks', 'months', 'years']
@@ -96,6 +97,15 @@ export type ChipDocVariable = { id: string; name: string; type: RoutineSlotType 
 // it contains. A block carrying a target chip (handoff) is a branch; otherwise it's a
 // step. (Branch-vs-step is keyed on chip presence, never on the English words.) A branch
 // carrying a condition chip is decided in code; otherwise the prose is an AI-decided guard.
+// One option of an approval gate, as carried on an `approval` chip: its id/label/optional
+// description plus the step or terminal the routine branches to when a human picks it.
+export type ApprovalDocOption = {
+  id: string
+  label: string
+  description?: string | null
+  target: string
+}
+
 export type RoutineDocChip = {
   kind: string
   refId: string
@@ -109,6 +119,10 @@ export type RoutineDocChip = {
   inputBindings?: Record<string, RoutineInputBinding>
   outputAssignments?: Record<string, string>
   mode?: RoutineStepMode
+  // For an `approval` chip: the slot the decision is captured under and the options the
+  // human chooses between (each routing to its own target).
+  captureKey?: string | null
+  options?: ApprovalDocOption[]
 }
 // A block carrying `headingLevel` is an h1 step title (its text names the step and pins a
 // stable id); following non-heading blocks are that step's body. Untitled blocks keep the
@@ -195,6 +209,10 @@ export function draftFromChipDoc(input: {
   const transitions: RoutineDefinitionDraft['transitions'] = []
   let needHandoffTerminal = false
   let lastStepId: string | null = null
+  // True when the last step already defines all of its own outgoing edges (an approval
+  // gate routes only through its option branches), so the chain shouldn't add a default
+  // edge into or out of it.
+  let lastStepRoutes = false
   let ordinal = 0
   // The titled step (started by an h1 heading) currently accreting body prose. Untitled
   // authoring leaves this null and keeps the original one-line-one-step behavior.
@@ -251,13 +269,56 @@ export function draftFromChipDoc(input: {
   }
 
   for (const block of blocks) {
+    // An approval chip is a whole gate: an `approval` step plus one deterministic
+    // field-guard edge per option (routing lives on the chip, not in following branch
+    // paragraphs). It defines all its own outgoing edges, so the chain skips it.
+    const approvalChip = block.chips.find((chip) => chip.kind === 'approval')
+    if (approvalChip) {
+      flushTitledBody()
+      titledStep = null
+      // An approval gate is always a single (untitled) step: its routing rides on the chip,
+      // not on a heading, so it round-trips as one paragraph.
+      const id = `step_${steps.length + 1}`
+      const captureKey = approvalChip.captureKey ?? ''
+      const options = approvalChip.options ?? []
+      steps.push({
+        stableStepId: id,
+        kind: 'approval',
+        // Every step needs a non-empty instruction (backend requirement); fall back to the
+        // capture key when the approval chip carries no prose.
+        instruction: block.text.trim() || captureKey || 'Make a decision',
+        toolRef: null,
+        actionType: null,
+        captureKey: captureKey || null,
+        options: options.map((option) => ({
+          id: option.id,
+          label: option.label,
+          ...(option.description ? { description: option.description } : {}),
+        })),
+        ordinal: steps.length,
+        metadata: {},
+      })
+      if (lastStepId && !lastStepRoutes) {
+        transitions.push({ fromStep: lastStepId, toRef: id, guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, ordinal: ordinal++ })
+      }
+      const branches = options
+        .filter((option) => option.target)
+        .map((option) => ({ optionId: option.id, target: option.target }))
+      for (const branch of branches) {
+        if (branch.target === HANDOFF_TERMINAL_ID) needHandoffTerminal = true
+      }
+      transitions.push(...approvalOptionTransitions(id, captureKey, branches, () => ordinal++))
+      lastStepId = id
+      lastStepRoutes = true
+      continue
+    }
     const handoffChip = block.chips.find((chip) => chip.kind === 'handoff')
     const endChip = block.chips.find((chip) => chip.kind === 'end')
     const stepChip = block.chips.find((chip) => chip.kind === 'step')
     if (handoffChip || endChip || stepChip) {
       // A branch from the step we're currently in. A `step` chip jumps to a named step;
       // otherwise the target is a terminal (handoff escalates, end completes).
-      if (lastStepId) {
+      if (lastStepId && !lastStepRoutes) {
         if (stepChip) {
           branchFrom(lastStepId, stepChip.refId, block)
         } else {
@@ -283,10 +344,11 @@ export function draftFromChipDoc(input: {
         metadata: { outlineLabel: title },
       }
       steps.push(step)
-      if (lastStepId) {
+      if (lastStepId && !lastStepRoutes) {
         transitions.push({ fromStep: lastStepId, toRef: id, guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, ordinal: ordinal++ })
       }
       lastStepId = id
+      lastStepRoutes = false
       titledStep = { step, body: [] }
       continue
     }
@@ -332,7 +394,7 @@ export function draftFromChipDoc(input: {
           }
         : {},
     })
-    if (lastStepId) {
+    if (lastStepId && !lastStepRoutes) {
       transitions.push({
         fromStep: lastStepId,
         toRef: id,
@@ -344,10 +406,11 @@ export function draftFromChipDoc(input: {
       })
     }
     lastStepId = id
+    lastStepRoutes = false
   }
 
   flushTitledBody()
-  if (lastStepId) {
+  if (lastStepId && !lastStepRoutes) {
     transitions.push({
       fromStep: lastStepId,
       toRef: DONE_TERMINAL_ID,
@@ -383,7 +446,7 @@ export function draftFromChipDoc(input: {
 // One inline piece of a loaded prose paragraph: literal text or a chip. This is the
 // richer shape draftFromChipDoc's flat {text, chips} can't carry — it preserves where
 // each chip sits inline — so the editor can rebuild the Lexical document on load.
-export type ProseChipKind = 'variable' | 'skill' | 'handoff' | 'step' | 'condition' | 'end'
+export type ProseChipKind = 'variable' | 'skill' | 'handoff' | 'step' | 'condition' | 'end' | 'approval'
 export type ProseSegment =
   | { kind: 'text'; text: string }
   | {
@@ -400,6 +463,9 @@ export type ProseSegment =
       inputBindings?: Record<string, RoutineInputBinding>
       outputAssignments?: Record<string, string>
       mode?: RoutineStepMode
+      // For an `approval` chip: the capture slot and the options (each with its target).
+      captureKey?: string | null
+      options?: ApprovalDocOption[]
     }
 // A paragraph is a step title (headingLevel 1) or ordinary prose/branch content. The
 // title pins the step's stable id + label; the following non-heading paragraphs are its
@@ -463,7 +529,7 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
   if (routine.completionExport?.enabled) return null
 
   const steps = [...routine.steps].sort((left, right) => left.ordinal - right.ordinal)
-  if (steps.some((step) => step.kind !== 'chat' && step.kind !== 'tool')) return null
+  if (steps.some((step) => step.kind !== 'chat' && step.kind !== 'tool' && step.kind !== 'approval')) return null
   if (steps.some((step) => step.kind === 'tool' && !step.toolRef)) return null
 
   const completeTerminals = routine.terminals.filter((terminal) => terminal.kind === 'complete')
@@ -513,10 +579,55 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
   }
   const titleByStepId = new Map(steps.map((step) => [step.stableStepId, titleOf(step)] as const))
 
+  // Map an approval option's branch target (a step/terminal id) to the id the chip carries:
+  // the complete/handoff terminals collapse to their prose constants; a step target must be
+  // titled (so it round-trips by name) or the routine edits in Form.
+  const approvalDocTarget = (target: string): string | null => {
+    if (target === completeId) return DONE_TERMINAL_ID
+    if (handoffId && target === handoffId) return HANDOFF_TERMINAL_ID
+    if (stepIds.has(target)) return titleByStepId.get(target) ? target : null
+    return null
+  }
+
   const paragraphs: ProseParagraph[] = []
   for (let index = 0; index < steps.length; index++) {
     const step = steps[index]!
     const title = titleOf(step)
+    if (step.kind === 'approval') {
+      // An approval gate is a single untitled paragraph carrying the approval chip; its
+      // routing (one field guard per option) is recovered onto the chip's option targets.
+      if (title) return null
+      const captureKey = step.captureKey ?? ''
+      const stepOutgoing = [...(outgoing.get(step.stableStepId) ?? [])].sort((left, right) => left.ordinal - right.ordinal)
+      const decisionRef = `${captureKey}.id`
+      const declaredOptionIds = new Set((step.options ?? []).map((option) => option.id))
+      // Every edge must be a decision field guard on `<captureKey>.id` to a declared option.
+      const cleanEdges = stepOutgoing.every((edge) =>
+        edge.guardKind === 'field'
+        && edge.fieldRef === decisionRef
+        && edge.fieldOp === 'equals'
+        && typeof edge.fieldValue === 'string'
+        && declaredOptionIds.has(edge.fieldValue))
+      if (!captureKey || !cleanEdges) return null
+      const optionTargets = approvalOptionTargets(stepOutgoing)
+      const docOptions: ApprovalDocOption[] = []
+      for (const option of step.options ?? []) {
+        const target = optionTargets.get(option.id)
+        if (!target) return null
+        const docTarget = approvalDocTarget(target)
+        if (docTarget === null) return null
+        docOptions.push({
+          id: option.id,
+          label: option.label,
+          ...(option.description ? { description: option.description } : {}),
+          target: docTarget,
+        })
+      }
+      const segments = parseInstructionSegments(step.instruction ?? '', nameByRef)
+      segments.push({ kind: 'chip', chipKind: 'approval', refId: captureKey, label: 'approval', captureKey, options: docOptions })
+      paragraphs.push({ segments })
+      continue
+    }
     if (title) {
       // A titled step: an h1 heading (its stable name) plus an optional body paragraph —
       // the instruction when it isn't just the title echoed back. A tool step's skill chip

@@ -306,7 +306,7 @@ export const buildRepositories = (
   conversationOwnershipRepository: new ConversationOwnershipRepository(database),
   documentProcessingJobRepository: new DocumentProcessingJobRepository(database.kysely),
   documentRepository: new DocumentRepository(database),
-  documentSourceRepository: new DocumentSourceRepository(database),
+  documentSourceRepository: new DocumentSourceRepository(database.kysely),
   emailVerificationTokenRepository: new EmailVerificationTokenRepository(database.kysely),
   historyItemsRepository: new HistoryItemsRepository(database),
   ingestionSettingsRepository: new IngestionSettingsRepository(database.kysely),

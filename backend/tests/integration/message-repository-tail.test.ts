@@ -106,7 +106,7 @@ describeIfDatabase("MessageRepository forward tail cursor", () => {
     database = createClientBackedDatabase(client);
     await runAllTestMigrations(database);
     accounts = new AccountRepository(database.kysely);
-    workspaces = new WorkspaceRepository(database);
+    workspaces = new WorkspaceRepository(database.kysely);
     conversations = new ConversationRepository(database.kysely);
     messages = new MessageRepository(database.kysely);
   });

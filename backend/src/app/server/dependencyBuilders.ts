@@ -318,7 +318,7 @@ export const buildRepositories = (
   userRepository: new UserRepository(database.kysely),
   websiteCrawlJobRepository: new WebsiteCrawlJobRepository(database.kysely),
   workspaceGrantRepository: new WorkspaceGrantRepository(database.kysely),
-  workspaceRepository: new WorkspaceRepository(database),
+  workspaceRepository: new WorkspaceRepository(database.kysely),
   workspaceTokenRepository: new WorkspaceTokenRepository(database.kysely),
   abuseControlRepository: new AbuseControlRepository(database.kysely),
   accountInvitationRepository: new AccountInvitationRepository(database.kysely),

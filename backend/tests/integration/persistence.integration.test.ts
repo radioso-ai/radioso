@@ -93,7 +93,7 @@ describeIfDatabase("persistence integration", () => {
 
   beforeAll(async () => {
     database = new Database(integrationDatabaseUrl!);
-    workspaceRepository = new WorkspaceRepository(database);
+    workspaceRepository = new WorkspaceRepository(database.kysely);
     await runAllTestMigrations(database);
   });
 

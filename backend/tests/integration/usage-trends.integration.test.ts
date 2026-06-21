@@ -41,7 +41,7 @@ describeIfDatabase("usage trends integration", () => {
   beforeAll(async () => {
     database = new Database(integrationDatabaseUrl!);
     accountRepository = new AccountRepository(database.kysely);
-    workspaceRepository = new WorkspaceRepository(database);
+    workspaceRepository = new WorkspaceRepository(database.kysely);
     agentRepository = new AgentRepository(database);
     await runAllTestMigrations(database);
   });

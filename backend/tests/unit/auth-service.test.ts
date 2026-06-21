@@ -652,6 +652,38 @@ describe("AuthService rollback", () => {
     expect(await accountRepository.findById("account-1")).toBeNull();
   });
 
+  it("rolls back the loser of a concurrent first sign-in when the unique email insert fails", async () => {
+    // Two simultaneous first-time federated callbacks for the same new email
+    // both miss findByEmail and both provision. In Postgres the second user
+    // insert violates the users.email UNIQUE constraint (users_email_key); this
+    // proves provisionFederatedAccount funnels that failure into the account
+    // rollback path, so the race cannot leave a duplicate/orphan account.
+    const accountRepository = new TrackingAccountRepository();
+    const userRepository = new InMemoryUserRepository();
+    userRepository.create = async () => {
+      throw Object.assign(new Error("duplicate key value violates unique constraint \"users_email_key\""), {
+        code: "23505",
+      });
+    };
+    const { authService } = createAuthService({
+      accountRepository,
+      userRepository,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+
+    await expect(
+      authService.federatedLogin({
+        provider: "google",
+        subject: "google-sub-race",
+        email: "race@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toMatchObject({ code: "23505" });
+
+    expect(accountRepository.deletedIds).toEqual(["account-1"]);
+    expect(await accountRepository.findById("account-1")).toBeNull();
+  });
+
   it("rejects login until the user email is verified", async () => {
     const { authService, userRepository } = createAuthService({
       sessionRepository: new WorkingSessionRepository(),

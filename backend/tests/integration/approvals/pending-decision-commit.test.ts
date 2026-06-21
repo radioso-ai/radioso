@@ -97,7 +97,7 @@ describeIfDatabase("pending decision assistant-turn commit fence", () => {
     await runAllTestMigrations(database);
     accounts = new AccountRepository(database.kysely);
     workspaces = new WorkspaceRepository(database);
-    conversations = new ConversationRepository(database);
+    conversations = new ConversationRepository(database.kysely);
     pendingDecisions = new PendingDecisionRepository(database);
     persistence = new PostgresAssistantTurnPersistence(database, 60_000);
   });

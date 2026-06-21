@@ -58,8 +58,8 @@ describeIfDatabase("message source integration", () => {
 
     const accountRepository = new AccountRepository(database.kysely);
     const workspaceRepository = new WorkspaceRepository(database);
-    const conversationRepository = new ConversationRepository(database);
-    const messageRepository = new MessageRepository(database);
+    const conversationRepository = new ConversationRepository(database.kysely);
+    const messageRepository = new MessageRepository(database.kysely);
 
     const account = await accountRepository.create({
       email: `message-source-${randomUUID()}@example.com`,

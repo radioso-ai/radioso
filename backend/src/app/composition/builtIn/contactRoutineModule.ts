@@ -89,7 +89,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
         return new ContactSendActionHandler(
           mailService,
           new ConfiguredContactDeliveryResolver(
-            new ConversationRepository(database),
+            new ConversationRepository(database.kysely),
             new AgentRepository(database),
             ownerFallback,
           ),
@@ -111,7 +111,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
         return new HandoffNotifyActionHandler(
           mailService,
           new ConfiguredContactDeliveryResolver(
-            new ConversationRepository(database),
+            new ConversationRepository(database.kysely),
             new AgentRepository(database),
             ownerFallback,
           ),
@@ -131,7 +131,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
         return new ApprovalRequestActionHandler(
           mailService,
           new ConfiguredContactDeliveryResolver(
-            new ConversationRepository(database),
+            new ConversationRepository(database.kysely),
             new AgentRepository(database),
             ownerFallback,
           ),

@@ -36,6 +36,13 @@ export const toJsonb = (value: unknown): RawBuilder<JsonValue> => sql`${JSON.str
 export const currentTimestamp = (): RawBuilder<Date> => sql`now()`;
 
 /**
+ * `clock_timestamp()` — the wall clock read fresh on each call (unlike `now()`, which is
+ * fixed for the whole transaction). Used where rows inserted within one transaction must
+ * get strictly increasing timestamps (e.g. message ordering). Do not substitute `now()`.
+ */
+export const clockTimestamp = (): RawBuilder<Date> => sql`clock_timestamp()`;
+
+/**
  * `SET LOCAL <name> = <value>` — a session setting scoped to the current transaction.
  * Must run inside a transaction (e.g. `db.transaction().execute(...)`) on the same
  * connection as the statements it affects, mirroring how the migration runner and the

@@ -269,7 +269,7 @@ describeIfDatabase("persistence integration", () => {
 
   it("enforces a single open skill intake state for concurrent starts in one conversation", async () => {
     const accountRepository = new AccountRepository(database.kysely);
-    const conversationRepository = new ConversationRepository(database);
+    const conversationRepository = new ConversationRepository(database.kysely);
     const account = await accountRepository.create({
       name: "Concurrent Intake Organization",
       email: `concurrent-intake-${randomUUID()}@example.com`,
@@ -318,7 +318,7 @@ describeIfDatabase("persistence integration", () => {
 
   it("paginates conversations without skipping rows when updated_at ties", async () => {
     const accountRepository = new AccountRepository(database.kysely);
-    const conversationRepository = new ConversationRepository(database);
+    const conversationRepository = new ConversationRepository(database.kysely);
 
     const account = await accountRepository.create({
       name: "Conversation Cursor Organization",

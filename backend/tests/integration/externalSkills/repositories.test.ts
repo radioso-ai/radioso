@@ -90,7 +90,7 @@ describeIfDatabase("external skills repositories (postgres)", () => {
 
     const database = clientBackedDatabase(client);
     connections = new McpConnectionRepository(database.kysely);
-    skills = new ExternalSkillDefinitionRepository(database);
+    skills = new ExternalSkillDefinitionRepository(database.kysely);
   });
 
   afterAll(async () => {

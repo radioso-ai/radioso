@@ -112,7 +112,7 @@ describeIfDatabase("external skills services (postgres)", () => {
       encryptionKey,
       encryptionKeyId: "k1",
     });
-    skills = new ExternalSkillDefinitionService(new ExternalSkillDefinitionRepository(database), connections);
+    skills = new ExternalSkillDefinitionService(new ExternalSkillDefinitionRepository(database.kysely), connections);
   });
 
   afterAll(async () => {

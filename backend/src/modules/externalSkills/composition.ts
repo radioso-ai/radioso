@@ -112,7 +112,7 @@ export const buildExternalSkillsDeps = (
   assertPublicUrl?: (url: string) => void | Promise<void>,
   options: LiveMcpConnectionLookupOptions = {},
 ): McpSkillExecutorDeps => ({
-  skills: new ExternalSkillDefinitionRepository(database),
+  skills: new ExternalSkillDefinitionRepository(database.kysely),
   connections: new LiveMcpConnectionLookup(new McpConnectionRepository(database.kysely), encryptionKey, {
     ...options,
     assertPublicUrl,

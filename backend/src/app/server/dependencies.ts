@@ -148,7 +148,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     ),
   });
   const mcpConnectionRepository = new McpConnectionRepository(infrastructure.database.kysely);
-  const externalSkillDefinitionRepository = new ExternalSkillDefinitionRepository(infrastructure.database);
+  const externalSkillDefinitionRepository = new ExternalSkillDefinitionRepository(infrastructure.database.kysely);
   const mcpConnectionService = new McpConnectionService({
     repository: mcpConnectionRepository,
     toolServiceFactory: createMcpToolServiceFactory(assertPublicWebsiteUrl),

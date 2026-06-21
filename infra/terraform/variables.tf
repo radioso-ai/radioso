@@ -135,7 +135,7 @@ variable "frontend_max_instances" {
 }
 
 variable "frontend_cdn_domain" {
-  description = "Domain to serve the frontend behind an external HTTPS load balancer with Cloud CDN for the website-embed assets (e.g. \"radioso.dev\"). Leave empty to keep serving Cloud Run directly with no load balancer or CDN."
+  description = "Domain to serve the frontend behind an external HTTPS load balancer with Cloud CDN for the website-embed assets (e.g. \"radioso.ai\"). Leave empty to keep serving Cloud Run directly with no load balancer or CDN."
   type        = string
   default     = ""
 }

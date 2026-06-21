@@ -224,13 +224,13 @@ describe('backend proxy route', () => {
     const response = await OPTIONS(new Request('https://frontend.example.com/api/public/chat/token-1', {
       method: 'OPTIONS',
       headers: {
-        Origin: 'https://radioso.dev',
+        Origin: 'https://radioso.ai',
         'Access-Control-Request-Method': 'POST',
       },
     }))
 
     expect(response.status).toBe(204)
-    expect(response.headers.get('access-control-allow-origin')).toBe('https://radioso.dev')
+    expect(response.headers.get('access-control-allow-origin')).toBe('https://radioso.ai')
     expect(response.headers.get('access-control-allow-methods')).toBe('OPTIONS, POST')
     expect(response.headers.get('access-control-allow-headers')).toBe('Content-Type, X-Radioso-Public-Session')
     expect(response.headers.get('vary')).toBe('Origin')
@@ -245,7 +245,7 @@ describe('backend proxy route', () => {
           headers: {
             'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache',
-            'Access-Control-Allow-Origin': 'https://radioso.dev',
+            'Access-Control-Allow-Origin': 'https://radioso.ai',
           },
         }),
       )
@@ -254,7 +254,7 @@ describe('backend proxy route', () => {
           status: 503,
           headers: {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': 'https://radioso.dev',
+            'Access-Control-Allow-Origin': 'https://radioso.ai',
           },
         }),
       )
@@ -274,7 +274,7 @@ describe('backend proxy route', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Origin: 'https://radioso.dev',
+        Origin: 'https://radioso.ai',
         'X-Radioso-Public-Session': 'session-token',
       },
       body: JSON.stringify({ message: 'Hello', stream: true }),
@@ -286,7 +286,7 @@ describe('backend proxy route', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Origin: 'https://radioso.dev',
+        Origin: 'https://radioso.ai',
         'X-Radioso-Public-Session': 'session-token',
       },
       body: JSON.stringify({ message: 'Hello', stream: false }),
@@ -311,15 +311,15 @@ describe('backend proxy route', () => {
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({
-          Origin: 'https://radioso.dev',
+          Origin: 'https://radioso.ai',
           'X-Radioso-Public-Session': 'session-token',
         }),
       }),
     )
-    expect(allowed.headers.get('access-control-allow-origin')).toBe('https://radioso.dev')
+    expect(allowed.headers.get('access-control-allow-origin')).toBe('https://radioso.ai')
     expect(allowed.headers.get('access-control-allow-headers')).toBe('Content-Type, X-Radioso-Public-Session')
     expect(upstreamError.status).toBe(503)
-    expect(upstreamError.headers.get('access-control-allow-origin')).toBe('https://radioso.dev')
+    expect(upstreamError.headers.get('access-control-allow-origin')).toBe('https://radioso.ai')
     expect(denied.status).toBe(404)
     expect(denied.headers.get('access-control-allow-origin')).toBeNull()
     expect(denied.headers.get('vary')).toBe('Origin')
@@ -333,7 +333,7 @@ describe('backend proxy route', () => {
         status: 200,
         headers: {
           'Content-Type': 'text/event-stream',
-          'Access-Control-Allow-Origin': 'https://platform.radioso.dev',
+          'Access-Control-Allow-Origin': 'https://app.radioso.ai',
         },
       }),
     )
@@ -345,8 +345,8 @@ describe('backend proxy route', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Origin: 'https://platform.radioso.dev',
-        Host: 'platform.radioso.dev',
+        Origin: 'https://app.radioso.ai',
+        Host: 'app.radioso.ai',
         'X-Forwarded-Proto': 'https, http',
         'X-Radioso-Public-Session': 'session-token',
       },
@@ -357,8 +357,8 @@ describe('backend proxy route', () => {
 
     const upstreamInit = fetchMock.mock.calls[0][1] as RequestInit & { headers: Record<string, string> }
     expect(upstreamInit.headers).toMatchObject({
-      Origin: 'https://platform.radioso.dev',
-      'X-Forwarded-Host': 'platform.radioso.dev',
+      Origin: 'https://app.radioso.ai',
+      'X-Forwarded-Host': 'app.radioso.ai',
       'X-Forwarded-Proto': 'https',
       'X-Radioso-Public-Session': 'session-token',
     })

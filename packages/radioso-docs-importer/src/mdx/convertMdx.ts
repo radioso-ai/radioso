@@ -18,7 +18,7 @@ export interface ConvertedMdxDocument {
 export interface ConvertMdxOptions {
   /** Stable slug used as a title fallback, e.g. `quickstarts/run-locally`. */
   slug: string;
-  /** Absolute base for the public docs site, e.g. `https://docs.radioso.dev`. */
+  /** Absolute base for the public docs site, e.g. `https://docs.radioso.ai`. */
   citationBase: string;
 }
 

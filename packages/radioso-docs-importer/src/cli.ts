@@ -32,7 +32,7 @@ function repoRoot(): string {
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const root = repoRoot();
-  const citationBase = (process.env.CITATION_BASE_URL ?? "https://docs.radioso.dev").replace(/\/+$/, "");
+  const citationBase = (process.env.CITATION_BASE_URL ?? "https://docs.radioso.ai").replace(/\/+$/, "");
   const repoSourceBase = (process.env.REPO_SOURCE_BASE_URL ?? "https://github.com/radioso-ai/radioso/blob/main").replace(
     /\/+$/,
     "",

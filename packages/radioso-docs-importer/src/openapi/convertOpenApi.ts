@@ -12,7 +12,7 @@ export interface OpenApiDocument {
 }
 
 export interface ConvertOpenApiOptions {
-  /** Absolute base for the public docs site, e.g. `https://docs.radioso.dev`. */
+  /** Absolute base for the public docs site, e.g. `https://docs.radioso.ai`. */
   citationBase: string;
 }
 

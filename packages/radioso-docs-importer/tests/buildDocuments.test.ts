@@ -57,26 +57,26 @@ Run it.
       contentDir,
       openApiPath,
       repoRoot: root,
-      citationBase: "https://docs.radioso.dev/",
+      citationBase: "https://docs.radioso.ai/",
       repoSourceBase: "https://github.com/radioso-ai/radioso/blob/main/",
       includeMdx: true,
       includeApi: true,
       includeReadme: true,
     });
 
-    expect(new Set(documents.map((document) => document.source.url))).toEqual(new Set(["https://docs.radioso.dev"]));
+    expect(new Set(documents.map((document) => document.source.url))).toEqual(new Set(["https://docs.radioso.ai"]));
 
     const mdx = documents.find((document) => document.externalDocumentId === `${MDX_SECTION}:quickstart`);
     expect(mdx?.metadata).toEqual({
       section: MDX_SECTION,
       slug: "quickstart",
-      url: "https://docs.radioso.dev/quickstart",
+      url: "https://docs.radioso.ai/quickstart",
     });
 
     const api = documents.find((document) => document.externalDocumentId === `${API_SECTION}:Documents`);
     expect(api?.metadata.section).toBe(API_SECTION);
     expect(api?.metadata.tag).toBe("Documents");
-    expect(api?.metadata.url).toContain("https://docs.radioso.dev/api-reference#tag/Documents");
+    expect(api?.metadata.url).toContain("https://docs.radioso.ai/api-reference#tag/Documents");
 
     const readme = documents.find((document) => document.externalDocumentId === `${README_SECTION}:README.md`);
     expect(readme?.metadata).toEqual({

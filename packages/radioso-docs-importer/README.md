@@ -38,9 +38,9 @@ the old per-page sources, then removes those empty legacy sources.
 pnpm --filter @radioso/docs-importer run import -- --dry-run
 
 # Upload to a target workspace:
-RADIOSO_BASE_URL=https://platform.radioso.dev \
+RADIOSO_BASE_URL=https://app.radioso.ai \
 RADIOSO_API_TOKEN=<workspace-token> \
-CITATION_BASE_URL=https://docs.radioso.dev \
+CITATION_BASE_URL=https://docs.radioso.ai \
 REPO_SOURCE_BASE_URL=https://github.com/radioso-ai/radioso/blob/main \
 pnpm --filter @radioso/docs-importer run import -- --prune
 ```
@@ -53,10 +53,10 @@ pnpm --filter @radioso/docs-importer run import -- --prune
 
 ### Environment
 
-- `RADIOSO_BASE_URL` — target instance (e.g. `https://platform.radioso.dev`).
+- `RADIOSO_BASE_URL` — target instance (e.g. `https://app.radioso.ai`).
 - `RADIOSO_API_TOKEN` — workspace token for the destination workspace.
 - `CITATION_BASE_URL` — public docs base for the common website source and docs
-  citation URLs (default `https://docs.radioso.dev`).
+  citation URLs (default `https://docs.radioso.ai`).
 - `REPO_SOURCE_BASE_URL` — GitHub blob base for README citation URLs (default
   `https://github.com/radioso-ai/radioso/blob/main`).
 

@@ -20,7 +20,7 @@ describe("buildReadmeDocuments", () => {
 
     const documents = await buildReadmeDocuments({
       repoRoot: root,
-      commonSourceUrl: "https://docs.radioso.dev",
+      commonSourceUrl: "https://docs.radioso.ai",
       repoSourceBase: "https://github.com/radioso-ai/radioso/blob/main",
     });
 
@@ -35,7 +35,7 @@ describe("buildReadmeDocuments", () => {
       "packages/sdk/readme.md",
     ]);
     expect(documents[0]?.content).toBe("Intro line\n\n# Root Title\n\nBody.");
-    expect(documents[0]?.source).toEqual({ kind: "website", url: "https://docs.radioso.dev" });
+    expect(documents[0]?.source).toEqual({ kind: "website", url: "https://docs.radioso.ai" });
     expect(documents[0]?.metadata).toEqual({
       section: README_SECTION,
       path: "README.md",

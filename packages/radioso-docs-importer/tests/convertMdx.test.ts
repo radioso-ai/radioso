@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { convertMdxDocument } from "../src/mdx/convertMdx.ts";
 
-const CITATION_BASE = "https://docs.radioso.dev";
+const CITATION_BASE = "https://docs.radioso.ai";
 
 function convert(source: string, slug = "quickstarts/run-locally") {
   return convertMdxDocument(source, { slug, citationBase: CITATION_BASE });
@@ -63,7 +63,7 @@ title: T
 `);
     expect(result.markdown).toContain("Evaluate locally");
     expect(result.markdown).toContain("Bring up the full stack with Docker.");
-    expect(result.markdown).toContain("https://docs.radioso.dev/quickstarts/run-locally");
+    expect(result.markdown).toContain("https://docs.radioso.ai/quickstarts/run-locally");
     expect(result.markdown).not.toContain("<Cards");
   });
 
@@ -74,7 +74,7 @@ title: T
 
 See the [retrieval guide](/guides/retrieval-tuning) for details.
 `);
-    expect(result.markdown).toContain("https://docs.radioso.dev/guides/retrieval-tuning");
+    expect(result.markdown).toContain("https://docs.radioso.ai/guides/retrieval-tuning");
   });
 
   it("leaves absolute and anchor links untouched", () => {

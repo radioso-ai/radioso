@@ -21,7 +21,7 @@ import {
 } from '@/lib/embed-widget'
 import type { AgentBrandingSettings } from '@/lib/api'
 
-const POWERED_BY_URL = 'https://radioso.dev'
+const POWERED_BY_URL = 'https://radioso.ai'
 const POWERED_BY_LABEL = 'Radioso'
 
 const DEFAULT_ASSISTANT_AVATAR_URL = '/radioso-icon.svg'

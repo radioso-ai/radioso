@@ -46,7 +46,7 @@ const SPEC = {
   },
 };
 
-const CITATION_BASE = "https://docs.radioso.dev";
+const CITATION_BASE = "https://docs.radioso.ai";
 
 function convert() {
   return convertOpenApiToDocuments(SPEC, { citationBase: CITATION_BASE });
@@ -89,7 +89,7 @@ describe("convertOpenApiToDocuments", () => {
 
   it("builds an absolute citation URL into the api-reference page", () => {
     const documentsDoc = convert().find((doc) => doc.tag === "Documents");
-    expect(documentsDoc?.sourceUrl).toContain("https://docs.radioso.dev/api-reference");
+    expect(documentsDoc?.sourceUrl).toContain("https://docs.radioso.ai/api-reference");
     expect(documentsDoc?.sourceUrl).toContain("Documents");
   });
 

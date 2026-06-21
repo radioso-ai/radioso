@@ -1,3 +1,9 @@
+---
+title: "Radioso TypeScript SDK: Getting Started"
+description: "Installation and client setup guide for the Radioso TypeScript SDK with workspace API token authentication and a first request example."
+last_updated: 2026-06-09
+---
+
 # Radioso TypeScript SDK: Getting Started
 
 This guide shows how to install the SDK, configure a client, and make your first request.

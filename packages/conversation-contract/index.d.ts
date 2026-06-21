@@ -635,6 +635,8 @@ export interface RoutineSlotSchema {
   type: RoutineSlotType;
   required: boolean;
   description?: string;
+  /** When true, the captured value may be corrected after the routine completes. */
+  mutable?: boolean;
 }
 
 export interface Routine {
@@ -750,6 +752,61 @@ export interface ConversationRoutineStore {
 
 export interface SuspendedRoutineReader {
   loadSuspended(input: { sessionId: string }): Promise<RoutineState | null>;
+}
+
+/**
+ * A detected post-completion slot correction (issue #746): the routine's declared slot
+ * schema plus the slot the visitor wants to change and the proposed raw value. The host
+ * resolves the routine (it owns the catalog) and runs model-driven, multilingual detection;
+ * the engine then deterministically verifies via `verifySlotCorrection` before persisting.
+ */
+export interface RoutineSlotCorrectionCandidate {
+  slots: RoutineSlotSchema[];
+  slotKey: string;
+  rawValue: string;
+}
+
+/**
+ * Structured decision for a completed routine whose reentry mode is `semantic` (issue #746):
+ * - `suppress`: leave the completed routine suppressed (the safe default for any non-semantic
+ *   routine the gate is asked about, and for an unrelated message).
+ * - `resume_existing`: re-open the same instance, keeping its captured variables.
+ * - `start_new`: run the routine again from scratch, discarding the prior captured variables.
+ */
+export type RoutineReentryDecision =
+  | { kind: "suppress" }
+  | { kind: "resume_existing" }
+  | { kind: "start_new" };
+
+/**
+ * Host port that decides whether a completed `semantic`-reentry routine should re-activate.
+ * The host owns routine resolution + the model-driven decision; it returns `suppress` (no
+ * model call) for any routine that is not in semantic mode, so the gate is inert unless an
+ * author opted into it.
+ */
+export interface ConversationRoutineReentryGate {
+  decide(input: { turn: TurnContext; completedState: RoutineState }): Promise<RoutineReentryDecision>;
+}
+
+/**
+ * Host port for correcting a value captured by a routine that already completed, without
+ * rerunning it. `detect` returns null when the latest message is not a correction (or the
+ * completed routine has no mutable slots). `confirm` produces the user-facing reply — copy
+ * comes from the model, never hard-coded in the engine.
+ */
+export interface ConversationRoutineSlotCorrection {
+  detect(input: { turn: TurnContext; completedState: RoutineState }): Promise<RoutineSlotCorrectionCandidate | null>;
+  confirm(input: {
+    turn: TurnContext;
+    routineId: string;
+    slotKey: string;
+    value: string | number | boolean;
+  }): Promise<string>;
+  /**
+   * Reply when a detected correction's new value fails the slot's declared type — asks the
+   * visitor for a valid value. Copy comes from the model; the engine persists nothing.
+   */
+  rejectInvalid(input: { turn: TurnContext; routineId: string; slotKey: string }): Promise<string>;
 }
 
 export interface RoutineDecisionInput {
@@ -899,6 +956,8 @@ export interface ProcessTurnInput {
   routineStore?: ConversationRoutineStore;
   routineRunner?: ConversationRoutineRunner;
   routineActivator?: ConversationRoutineActivator;
+  routineReentryGate?: ConversationRoutineReentryGate;
+  routineSlotCorrection?: ConversationRoutineSlotCorrection;
   clarifier?: ConversationClarifier;
   clarificationStore?: ConversationClarificationStore;
   loopGuardCandidateIds?: string[];
@@ -926,6 +985,8 @@ export interface AttemptRoutineInput {
   routineStore?: ConversationRoutineStore;
   routineRunner?: ConversationRoutineRunner;
   routineActivator?: ConversationRoutineActivator;
+  routineReentryGate?: ConversationRoutineReentryGate;
+  routineSlotCorrection?: ConversationRoutineSlotCorrection;
   clarifier?: ConversationClarifier;
   clarificationStore?: ConversationClarificationStore;
   loopGuardCandidateIds?: string[];

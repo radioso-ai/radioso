@@ -81,12 +81,15 @@ export interface OpenApiSchemaCatalog {
   ChatConversationDetailSchema: z.ZodTypeAny;
   ChatConversationMessageDebugSchema: z.ZodTypeAny;
   ChatConversationMessageSchema: z.ZodTypeAny;
+  ChatConversationTailSchema: z.ZodTypeAny;
   ClearAnswerFeedbackResponseSchema: z.ZodTypeAny;
   ChatConversationSummarySchema: z.ZodTypeAny;
   ChatHistoryListResponseSchema: z.ZodTypeAny;
   ChatResponseSchema: z.ZodTypeAny;
   ChatSuggestionActionSchema: z.ZodTypeAny;
   ChatSuggestionSchema: z.ZodTypeAny;
+  ConversationOwnershipResponseSchema: z.ZodTypeAny;
+  ConversationOwnershipSchema: z.ZodTypeAny;
   CitationSchema: z.ZodTypeAny;
   ConnectorConfigUpdateSchema: z.ZodTypeAny;
   ConnectorConflictSchema: z.ZodTypeAny;
@@ -132,6 +135,8 @@ export interface OpenApiSchemaCatalog {
   HealthResponseSchema: z.ZodTypeAny;
   HistoryItemSchema: z.ZodTypeAny;
   HistoryItemsResponseSchema: z.ZodTypeAny;
+  HumanReplyMessageResponseSchema: z.ZodTypeAny;
+  HumanReplyMessageSchema: z.ZodTypeAny;
   LowQualityTurnSchema: z.ZodTypeAny;
   LowQualityTurnsPageSchema: z.ZodTypeAny;
   QualityFeedbackCommentSchema: z.ZodTypeAny;
@@ -164,6 +169,7 @@ export interface OpenApiSchemaCatalog {
   PublicChatRequestSchema: z.ZodTypeAny;
   PublicChatSessionRequestSchema: z.ZodTypeAny;
   PublicChatSessionResponseSchema: z.ZodTypeAny;
+  PublicChatConversationTailSchema: z.ZodTypeAny;
   PublicConversationListResponseSchema: z.ZodTypeAny;
   publicConversationParamsSchema: z.AnyZodObject;
   PublicConversationSummarySchema: z.ZodTypeAny;

@@ -20,12 +20,32 @@ const manifest = [
     exportName: "DEFAULT_ROUTINE_STEP_REPLY_PROMPT",
   },
   {
+    source: "routine-step-terminal-handoff.md",
+    exportName: "DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_PROMPT",
+  },
+  {
     source: "routine-next-step.md",
     exportName: "DEFAULT_ROUTINE_NEXT_STEP_PROMPT",
   },
   {
     source: "directive-match.md",
     exportName: "DEFAULT_DIRECTIVE_MATCH_SYSTEM_PROMPT",
+  },
+  {
+    source: "routine-slot-correction-detect.md",
+    exportName: "DEFAULT_ROUTINE_SLOT_CORRECTION_DETECT_PROMPT",
+  },
+  {
+    source: "routine-slot-correction-confirm.md",
+    exportName: "DEFAULT_ROUTINE_SLOT_CORRECTION_CONFIRM_PROMPT",
+  },
+  {
+    source: "routine-slot-correction-invalid.md",
+    exportName: "DEFAULT_ROUTINE_SLOT_CORRECTION_INVALID_PROMPT",
+  },
+  {
+    source: "routine-reentry-gate.md",
+    exportName: "DEFAULT_ROUTINE_REENTRY_GATE_PROMPT",
   },
 ];
 

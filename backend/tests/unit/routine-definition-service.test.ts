@@ -180,6 +180,7 @@ const validDraft = (): RoutineDefinitionDraftInput => ({
     triggerDescription: "When the user asks for support intake",
     gateRef: null,
     priority: 10,
+    reentryMode: "once_per_conversation",
   },
   slots: [{
     stableSlotId: "slot_topic",

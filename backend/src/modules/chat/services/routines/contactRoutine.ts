@@ -3,6 +3,9 @@ import type { RoutineDefinition } from "../../../routines/public.js";
 /** The action type the contact routine emits; the registered handler dispatches it. */
 export const CONTACT_SEND_ACTION_TYPE = "contact.send";
 
+/** The action type routine handoff terminals emit for operator notification. */
+export const HANDOFF_NOTIFY_ACTION_TYPE = "handoff.notify";
+
 /** The routine id. */
 export const CONTACT_ROUTINE_ID = "contact.request";
 
@@ -35,6 +38,9 @@ export const contactRoutineDefinition: RoutineDefinition = {
     triggerDescription: "The user asks a human to follow up with them.",
     gateRef: CONTACT_INTENT_SKILL_NAME,
     priority: 100,
+    // A visitor may want to reach a human more than once in the same conversation,
+    // so this routine stays available after it completes.
+    reentryMode: "always",
   },
   // Slots are intentionally not declared here: the validator requires every declared
   // slot to be referenced via `{{slot.key}}` templating, which would mean restructuring

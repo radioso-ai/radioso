@@ -1,3 +1,9 @@
+---
+title: "Docs"
+description: "Guide to documentation sources for operators, SDK users, and contributors with links to key starting points and architecture materials."
+last_updated: 2026-06-18
+---
+
 # Docs
 
 This directory holds source material for operators, SDK users, and internal contributors. Some of it is published directly. Some of it supports the docs portal or settings UI.
@@ -14,6 +20,7 @@ Before creating or revising documentation in this repo, read [Document Writer Pr
 - [Assistant Execution Model](./assistant-execution-model.md) - why interactive chat and deferred work stay separate
 - [Architecture Extension Points](./architecture-extension-points.md) - supported module boundaries, default composition, and extension rules
 - [API Contract Workflow](./api-contract-workflow.md) - backend OpenAPI, SDK, and MCP generated artifact update flow
+- [Human Takeover](./human-takeover.md) - operator API and ownership behavior for human-owned conversations
 - [Website Crawler Provider](./website-crawler.md) - OSS crawler provider port and document crawl API
 - [Slack Channel](./slack-channel.md) - Slack setup, self-host manifest, data flow, and curated-knowledge boundary
 - [Radioso Skills RFC](./radioso-skills-rfc.md) - vocabulary and direction behind the implemented read-only skills catalog

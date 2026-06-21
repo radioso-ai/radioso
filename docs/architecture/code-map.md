@@ -1,3 +1,9 @@
+---
+title: "Code Map"
+description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
+last_updated: 2026-06-17
+---
+
 # Code Map
 
 This map is a starting point for feature work. It is not a generated inventory.

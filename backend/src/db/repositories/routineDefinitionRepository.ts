@@ -5,10 +5,14 @@ import type { PoolClient, QueryResultRow } from "pg";
 import type { Database } from "../../shared/infra/database.js";
 import {
   routineDefinitionDraftInputSchema,
+  routineReentryModes,
   type RoutineDefinition,
   type RoutineDefinitionDraftInput,
   type RoutineDefinitionPublishOptions,
+  type RoutineFieldGuardOp,
+  type RoutineFieldGuardUnit,
   type RoutineGuardKind,
+  type RoutineReentryMode,
   type RoutineSlotType,
   type RoutineStepKind,
   type RoutineTerminalKind,
@@ -24,6 +28,7 @@ interface RoutineDefinitionRow extends QueryResultRow {
   activation_trigger_description: string;
   activation_gate_ref: string | null;
   activation_priority: number;
+  activation_reentry_mode: string;
   slots: unknown;
   steps: unknown;
   transitions: unknown;
@@ -51,6 +56,26 @@ const readBoolean = (record: Record<string, unknown>, key: string): boolean =>
 const readMetadata = (record: Record<string, unknown>, key: string): Record<string, unknown> =>
   asRecord(record[key]);
 
+// A field guard's comparison value is a string, number, or boolean (or absent). It rides
+// in a jsonb column, so it arrives already typed — pass it through, drop anything else.
+const readFieldValue = (record: Record<string, unknown>, key: string): string | number | boolean | null => {
+  const value = record[key];
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? value : null;
+};
+
+const readFieldValues = (record: Record<string, unknown>, key: string): (string | number | boolean)[] | null => {
+  const value = record[key];
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const primitives = value.filter((entry): entry is string | number | boolean =>
+    typeof entry === "string" || typeof entry === "number" || typeof entry === "boolean",
+  );
+  // An empty list is not a valid `in` guard (the domain enforces min(1)); surface it as
+  // absent rather than a never-matching `values: []` the compiler would still spread.
+  return primitives.length > 0 ? primitives : null;
+};
+
 const asArray = (value: unknown): Record<string, unknown>[] =>
   Array.isArray(value) ? value.map(asRecord) : [];
 
@@ -74,6 +99,7 @@ const definitionSelect = `
     d.activation_trigger_description,
     d.activation_gate_ref,
     d.activation_priority,
+    d.activation_reentry_mode,
     COALESCE(slots.items, '[]'::json) AS slots,
     COALESCE(steps.items, '[]'::json) AS steps,
     COALESCE(transitions.items, '[]'::json) AS transitions,
@@ -89,7 +115,8 @@ const definitionSelect = `
       'type', s.type,
       'required', s.required,
       'description', s.description,
-      'ordinal', s.ordinal
+      'ordinal', s.ordinal,
+      'mutable', s.mutable
     ) ORDER BY s.ordinal ASC, s.stable_slot_id ASC) AS items
     FROM routine_slot s
     WHERE s.definition_id = d.id
@@ -115,6 +142,11 @@ const definitionSelect = `
       'guardText', tr.guard_text,
       'outcomeStatus', tr.outcome_status,
       'counterLimit', tr.counter_limit,
+      'fieldRef', tr.field_ref,
+      'fieldOp', tr.field_op,
+      'fieldValue', tr.field_value,
+      'fieldValues', tr.field_values,
+      'fieldUnit', tr.field_unit,
       'ordinal', tr.ordinal
     ) ORDER BY tr.ordinal ASC, tr.from_step ASC, tr.to_ref ASC) AS items
     FROM routine_transition tr
@@ -152,6 +184,9 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
     triggerDescription: row.activation_trigger_description,
     gateRef: row.activation_gate_ref,
     priority: row.activation_priority,
+    reentryMode: routineReentryModes.includes(row.activation_reentry_mode as RoutineReentryMode)
+      ? (row.activation_reentry_mode as RoutineReentryMode)
+      : "once_per_conversation",
   },
   slots: asArray(row.slots).map((slot) => ({
     stableSlotId: readString(slot, "stableSlotId"),
@@ -160,6 +195,7 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
     required: readBoolean(slot, "required"),
     description: readNullableString(slot, "description"),
     ordinal: readNumber(slot, "ordinal"),
+    ...(readBoolean(slot, "mutable") ? { mutable: true } : {}),
   })),
   steps: asArray(row.steps).map((step) => ({
     stableStepId: readString(step, "stableStepId"),
@@ -177,6 +213,11 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
     guardText: readNullableString(transition, "guardText"),
     outcomeStatus: readNullableString(transition, "outcomeStatus"),
     counterLimit: readNumber(transition, "counterLimit") || null,
+    fieldRef: readNullableString(transition, "fieldRef"),
+    fieldOp: readNullableString(transition, "fieldOp") as RoutineFieldGuardOp | null,
+    fieldValue: readFieldValue(transition, "fieldValue"),
+    fieldValues: readFieldValues(transition, "fieldValues"),
+    fieldUnit: readNullableString(transition, "fieldUnit") as RoutineFieldGuardUnit | null,
     ordinal: readNumber(transition, "ordinal"),
   })),
   terminals: asArray(row.terminals).map((terminal) => ({
@@ -251,9 +292,9 @@ export class RoutineDefinitionRepository {
       await client.query<{ id: string }>(
         `INSERT INTO routine_definition (
            id, agent_id, version, name, status, activation_trigger_description,
-           activation_gate_ref, activation_priority, lineage_id
+           activation_gate_ref, activation_priority, activation_reentry_mode, lineage_id
          )
-         VALUES ($1, $2, 1, $3, 'draft', $4, $5, $6, $7)
+         VALUES ($1, $2, 1, $3, 'draft', $4, $5, $6, $7, $8)
          RETURNING id::text`,
         [
           id,
@@ -262,6 +303,7 @@ export class RoutineDefinitionRepository {
           draft.activation.triggerDescription,
           draft.activation.gateRef,
           draft.activation.priority,
+          draft.activation.reentryMode,
           randomUUID(),
         ],
       );
@@ -283,10 +325,11 @@ export class RoutineDefinitionRepository {
              activation_trigger_description = $4,
              activation_gate_ref = $5,
              activation_priority = $6,
+             activation_reentry_mode = $7,
              updated_at = NOW()
          WHERE agent_id = $1 AND id = $2 AND status = 'draft'
          RETURNING id::text`,
-        [agentId, id, draft.name, draft.activation.triggerDescription, draft.activation.gateRef, draft.activation.priority],
+        [agentId, id, draft.name, draft.activation.triggerDescription, draft.activation.gateRef, draft.activation.priority, draft.activation.reentryMode],
       );
       // A save racing publish (which flips the draft row to published in place)
       // matches zero rows here; replacing children then would silently mutate
@@ -369,7 +412,7 @@ export class RoutineDefinitionRepository {
         await client.query(
           `INSERT INTO routine_definition (
              id, agent_id, version, name, status, activation_trigger_description,
-             activation_gate_ref, activation_priority, lineage_id
+             activation_gate_ref, activation_priority, activation_reentry_mode, lineage_id
            )
            VALUES (
              $1,
@@ -377,14 +420,15 @@ export class RoutineDefinitionRepository {
              (
                SELECT COALESCE(MAX(version), 0) + 1
                FROM routine_definition
-               WHERE lineage_id = $7
+               WHERE lineage_id = $8
              ),
              $3,
              'draft',
              $4,
              $5,
              $6,
-             $7
+             $7,
+             $8
            )`,
           [
             id,
@@ -393,6 +437,7 @@ export class RoutineDefinitionRepository {
             published.activation.triggerDescription,
             published.activation.gateRef,
             published.activation.priority,
+            published.activation.reentryMode,
             published.lineageId,
           ],
         );
@@ -503,9 +548,9 @@ export class RoutineDefinitionRepository {
 
     for (const slot of input.slots) {
       await client.query(
-        `INSERT INTO routine_slot (definition_id, stable_slot_id, key, type, required, description, ordinal)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [definitionId, slot.stableSlotId, slot.key, slot.type, slot.required, slot.description, slot.ordinal],
+        `INSERT INTO routine_slot (definition_id, stable_slot_id, key, type, required, description, ordinal, mutable)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [definitionId, slot.stableSlotId, slot.key, slot.type, slot.required, slot.description, slot.ordinal, slot.mutable ?? false],
       );
     }
     for (const step of input.steps) {
@@ -527,9 +572,10 @@ export class RoutineDefinitionRepository {
     for (const transition of input.transitions) {
       await client.query(
         `INSERT INTO routine_transition (
-           definition_id, from_step, to_ref, guard_kind, guard_text, outcome_status, counter_limit, ordinal
+           definition_id, from_step, to_ref, guard_kind, guard_text, outcome_status, counter_limit,
+           field_ref, field_op, field_value, field_values, field_unit, ordinal
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12, $13)`,
         [
           definitionId,
           transition.fromStep,
@@ -538,6 +584,15 @@ export class RoutineDefinitionRepository {
           transition.guardText,
           transition.outcomeStatus,
           transition.counterLimit,
+          transition.fieldRef ?? null,
+          transition.fieldOp ?? null,
+          // Explicit null/undefined check (not a truthy shortcut): a field guard value of
+          // `0` or `false` is meaningful and must survive serialization, not collapse to NULL.
+          transition.fieldValue === null || transition.fieldValue === undefined
+            ? null
+            : JSON.stringify(transition.fieldValue),
+          transition.fieldValues ? JSON.stringify(transition.fieldValues) : null,
+          transition.fieldUnit ?? null,
           transition.ordinal,
         ],
       );

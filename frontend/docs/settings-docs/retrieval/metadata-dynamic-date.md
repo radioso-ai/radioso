@@ -1,3 +1,9 @@
+---
+title: "Dynamic Date Values"
+description: "Using the today() token in date metadata rules so time-based filters stay current without manual edits."
+last_updated: 2026-04-23
+---
+
 # Dynamic Date Values
 
 ## Summary

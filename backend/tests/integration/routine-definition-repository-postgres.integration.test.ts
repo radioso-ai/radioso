@@ -89,6 +89,7 @@ const createRoutineSchema = async (client: PoolClient, schema: string): Promise<
       activation_trigger_description TEXT NOT NULL,
       activation_gate_ref TEXT NULL,
       activation_priority INTEGER NOT NULL DEFAULT 0,
+      activation_reentry_mode TEXT NOT NULL DEFAULT 'once_per_conversation',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(agent_id, name, version),
@@ -104,6 +105,7 @@ const createRoutineSchema = async (client: PoolClient, schema: string): Promise<
       required BOOLEAN NOT NULL DEFAULT TRUE,
       description TEXT NULL,
       ordinal INTEGER NOT NULL,
+      mutable BOOLEAN NOT NULL DEFAULT FALSE,
       PRIMARY KEY (definition_id, stable_slot_id),
       UNIQUE(definition_id, key),
       UNIQUE(definition_id, ordinal)
@@ -130,6 +132,11 @@ const createRoutineSchema = async (client: PoolClient, schema: string): Promise<
       guard_text TEXT NULL,
       outcome_status TEXT NULL,
       counter_limit INTEGER NULL,
+      field_ref TEXT NULL,
+      field_op TEXT NULL,
+      field_value JSONB NULL,
+      field_values JSONB NULL,
+      field_unit TEXT NULL,
       ordinal INTEGER NOT NULL,
       PRIMARY KEY (definition_id, from_step, ordinal)
     );
@@ -177,6 +184,7 @@ const draftInput = (name = "postgres-lifecycle", label = "v1"): RoutineDefinitio
     triggerDescription: `When the user asks for ${label}.`,
     gateRef: null,
     priority: 10,
+    reentryMode: "once_per_conversation",
   },
   slots: [{
     stableSlotId: "slot_topic",
@@ -306,6 +314,54 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
     expect(await repository.archive(agentId, publishedV2.id)).toBe(true);
     expect(await repository.restore(agentId, publishedV1.id)).toBe(false);
     expect(await repository.restore(agentId, publishedV2.id)).toBe(true);
+  });
+
+  it("round-trips deterministic field guards (ref/op/value/values/unit) through real SQL", async () => {
+    const repository = new RoutineDefinitionRepository(database);
+    const draft = await repository.createDraft(agentId, {
+      name: "field-guard-roundtrip",
+      activation: { triggerDescription: "When checking eligibility.", gateRef: null, priority: 5, reentryMode: "always" },
+      slots: [
+        { stableSlotId: "slot_amount", key: "amount", type: "number", required: true, description: "Order total", ordinal: 0 },
+        { stableSlotId: "slot_tier", key: "tier", type: "text", required: true, description: "Tier", ordinal: 1 },
+      ],
+      steps: [{
+        stableStepId: "step_decide",
+        kind: "chat",
+        instruction: "Evaluate {{slot.amount}} for {{slot.tier}}.",
+        toolRef: null,
+        ordinal: 0,
+        metadata: {},
+      }],
+      transitions: [
+        {
+          fromStep: "step_decide", toRef: "terminal_big", guardKind: "field",
+          guardText: null, outcomeStatus: null, counterLimit: null,
+          fieldRef: "amount", fieldOp: "gte", fieldValue: 100, ordinal: 0,
+        },
+        {
+          fromStep: "step_decide", toRef: "terminal_member", guardKind: "field",
+          guardText: null, outcomeStatus: null, counterLimit: null,
+          fieldRef: "tier", fieldOp: "in", fieldValues: ["gold", "platinum"], ordinal: 1,
+        },
+        {
+          fromStep: "step_decide", toRef: "terminal_standard", guardKind: "default",
+          guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 2,
+        },
+      ],
+      terminals: [
+        { stableStepId: "terminal_big", kind: "complete", instruction: "Free shipping.", ordinal: 0 },
+        { stableStepId: "terminal_member", kind: "complete", instruction: "Member perk.", ordinal: 1 },
+        { stableStepId: "terminal_standard", kind: "complete", instruction: "Standard.", ordinal: 2 },
+      ],
+    });
+
+    const reloaded = await repository.findById(agentId, draft.id);
+    const numeric = reloaded?.transitions.find((transition) => transition.toRef === "terminal_big");
+    const membership = reloaded?.transitions.find((transition) => transition.toRef === "terminal_member");
+
+    expect(numeric).toMatchObject({ guardKind: "field", fieldRef: "amount", fieldOp: "gte", fieldValue: 100 });
+    expect(membership).toMatchObject({ guardKind: "field", fieldRef: "tier", fieldOp: "in", fieldValues: ["gold", "platinum"] });
   });
 
   it("rejects publish when an enabled completion export destination was deleted before publish", async () => {

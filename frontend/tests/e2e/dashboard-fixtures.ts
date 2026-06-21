@@ -507,6 +507,12 @@ export const installDashboardApiMocks = async (
     searchHistory?: unknown;
     documentSources?: unknown;
     conversationDetail?: unknown;
+    conversationDetails?: Record<string, unknown>;
+    pendingDecisions?: ApiSchemas["PendingApprovalDecision"][];
+    conversationTailResponses?: ApiSchemas["ChatConversationTail"][];
+    takeOverConversationResponse?: ApiSchemas["ConversationOwnershipResponse"];
+    humanReplyResponse?: ApiSchemas["HumanReplyMessageResponse"];
+    resolveDecisionResponse?: unknown;
     agentUpdates?: unknown[];
     directiveUpdates?: DirectiveMutationFixture[];
     directives?: AuthoredDirectiveFixture[];
@@ -637,6 +643,19 @@ export const installDashboardApiMocks = async (
     hasMore: false,
   };
   const searchHistory = options.searchHistory ?? emptySearchHistory;
+  let conversationDetail = options.conversationDetail;
+  const conversationDetails = new Map<string, unknown>(Object.entries(options.conversationDetails ?? {}));
+  if (
+    conversationDetail &&
+    typeof conversationDetail === "object" &&
+    "conversationId" in conversationDetail &&
+    typeof conversationDetail.conversationId === "string"
+  ) {
+    conversationDetails.set(conversationDetail.conversationId, conversationDetail);
+  }
+  let pendingDecisions = options.pendingDecisions ?? [];
+  const conversationTailResponses = [...(options.conversationTailResponses ?? [])];
+  let humanReplyCreated = false;
   const documentSources = options.documentSources ?? emptyDocumentSources;
   const historyItems = options.historyItems ?? {
     items: Array.isArray((historyList as { conversations?: unknown[] }).conversations)
@@ -784,8 +803,106 @@ export const installDashboardApiMocks = async (
       return;
     }
 
-    if (request.method() === "GET" && path.startsWith("/history/chat/") && options.conversationDetail) {
-      await json(route, options.conversationDetail);
+    if (request.method() === "GET" && path.startsWith("/history/chat/") && path.endsWith("/tail")) {
+      const conversationId = path.replace("/history/chat/", "").replace("/tail", "");
+      const activeConversationDetail = conversationDetails.get(conversationId) ?? conversationDetail;
+      const tailResponse =
+        !humanReplyCreated && conversationTailResponses.length > 1
+          ? conversationTailResponses[0]
+          : conversationTailResponses.shift();
+      await json(route, tailResponse ?? {
+        messages: [],
+        cursor: null,
+        ownership: (activeConversationDetail as { ownership?: unknown } | undefined)?.ownership,
+      });
+      return;
+    }
+
+    if (request.method() === "GET" && path.startsWith("/history/chat/")) {
+      const conversationId = path.replace("/history/chat/", "");
+      const activeConversationDetail = conversationDetails.get(conversationId) ?? conversationDetail;
+      if (activeConversationDetail) {
+        await json(route, activeConversationDetail);
+        return;
+      }
+    }
+
+    if (request.method() === "GET" && path.startsWith("/history/chat/") && conversationDetail) {
+      await json(route, conversationDetail);
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/decisions") {
+      await json(route, { decisions: pendingDecisions });
+      return;
+    }
+
+    if (request.method() === "POST" && path.startsWith("/conversations/") && path.endsWith("/takeover")) {
+      const response = options.takeOverConversationResponse ?? {
+        ownership: {
+          conversationId: path.replace("/conversations/", "").replace("/takeover", ""),
+          workspaceId,
+          state: "human_owned",
+          ownerAccountId: accountId,
+          ownerDisplayName: "Test Operator",
+          reason: null,
+          version: 2,
+          takenOverAt: nowIso,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        },
+      };
+      if (conversationDetail && typeof conversationDetail === "object") {
+        conversationDetail = {
+          ...conversationDetail,
+          ownership: response.ownership,
+        };
+      }
+      const conversationId = path.replace("/conversations/", "").replace("/takeover", "");
+      const activeConversationDetail = conversationDetails.get(conversationId);
+      if (activeConversationDetail && typeof activeConversationDetail === "object") {
+        conversationDetails.set(conversationId, {
+          ...activeConversationDetail,
+          ownership: response.ownership,
+        });
+      }
+      if (conversationTailResponses[0] && conversationTailResponses[0].messages.length === 0) {
+        conversationTailResponses[0] = {
+          ...conversationTailResponses[0],
+          ownership: response.ownership,
+        };
+      }
+      await json(route, response);
+      return;
+    }
+
+    if (request.method() === "POST" && path.startsWith("/conversations/") && path.endsWith("/reply")) {
+      humanReplyCreated = true;
+      if (conversationTailResponses.length > 1 && conversationTailResponses[0]?.messages.length === 0) {
+        conversationTailResponses.shift();
+      }
+      await json(route, options.humanReplyResponse ?? {
+        message: {
+          id: "human-reply-1",
+          conversationId: path.replace("/conversations/", "").replace("/reply", ""),
+          workspaceId,
+          role: "assistant",
+          source: "human_agent",
+          content: "Human reply",
+          createdAt: nowIso,
+        },
+      }, 201);
+      return;
+    }
+
+    if (request.method() === "POST" && path.startsWith("/agents/") && path.includes("/decisions/") && path.endsWith("/resolve")) {
+      pendingDecisions = pendingDecisions.filter((decision) => !path.includes(`/decisions/${decision.handle}/`));
+      await json(route, options.resolveDecisionResponse ?? {
+        status: "resolved",
+        decision: "approved",
+        conversationId: null,
+        resumed: true,
+      });
       return;
     }
 

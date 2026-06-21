@@ -101,6 +101,15 @@ import type {
   ConversationRepositoryPort,
 } from "../../src/db/repositories/conversationRepository.js";
 import type {
+  ConversationOwnershipHandBackInput,
+  ConversationOwnershipMutationResult,
+  ConversationOwnershipRecord,
+  ConversationOwnershipRepository,
+  ConversationOwnershipRequestHandoffInput,
+  ConversationOwnershipTakeOverInput,
+  ConversationOwnershipTransferInput,
+} from "../../src/db/repositories/conversationOwnershipRepository.js";
+import type {
   AuditEventRecord,
   AuditEventRepositoryPort,
 } from "../../src/db/repositories/auditEventRepository.js";
@@ -114,6 +123,7 @@ import type {
   MessageRecord,
   MessageRepositoryPort,
 } from "../../src/db/repositories/messageRepository.js";
+import type { MessageSource } from "@radioso/conversation-contract";
 import { deriveMessageSourceFromRole } from "../../src/db/repositories/messageRepository.js";
 import type {
   IngestionSettingsRecord,
@@ -3276,9 +3286,162 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
   }
 }
 
+export class InMemoryConversationOwnershipRepository implements Pick<
+  ConversationOwnershipRepository,
+  "load" | "loadByConversationIds" | "requestHandoff" | "takeOver" | "transfer" | "handBack"
+> {
+  readonly items = new Map<string, ConversationOwnershipRecord>();
+
+  async load(conversationId: string): Promise<ConversationOwnershipRecord | null> {
+    return this.items.get(conversationId) ?? null;
+  }
+
+  async loadByConversationIds(
+    conversationIds: string[],
+  ): Promise<Map<string, ConversationOwnershipRecord>> {
+    const result = new Map<string, ConversationOwnershipRecord>();
+    for (const conversationId of conversationIds) {
+      const record = this.items.get(conversationId);
+      if (record) {
+        result.set(conversationId, record);
+      }
+    }
+    return result;
+  }
+
+  async requestHandoff(input: ConversationOwnershipRequestHandoffInput): Promise<ConversationOwnershipRecord> {
+    const existing = this.items.get(input.conversationId);
+    if (existing?.state === "human_owned") {
+      return existing;
+    }
+
+    const record = this.createRecord({
+      conversationId: input.conversationId,
+      workspaceId: input.workspaceId,
+      state: "human_owned",
+      ownerAccountId: null,
+      ownerDisplayName: null,
+      reason: input.reason,
+      version: existing ? existing.version + 1 : 1,
+      takenOverAt: null,
+      createdAt: existing?.createdAt,
+    });
+    this.items.set(input.conversationId, record);
+    return record;
+  }
+
+  async takeOver(input: ConversationOwnershipTakeOverInput): Promise<ConversationOwnershipMutationResult> {
+    const existing = this.items.get(input.conversationId);
+    if (!existing) {
+      const record = this.createRecord({
+        conversationId: input.conversationId,
+        workspaceId: input.workspaceId,
+        state: "human_owned",
+        ownerAccountId: input.accountId,
+        ownerDisplayName: input.displayName,
+        reason: "operator_takeover",
+        version: 1,
+        takenOverAt: new Date(),
+      });
+      this.items.set(input.conversationId, record);
+      return { ok: true, record };
+    }
+
+    if (input.expectedVersion !== undefined && existing.version !== input.expectedVersion) {
+      return { ok: false, record: existing };
+    }
+
+    if (existing.state !== "ai_owned" && existing.ownerAccountId !== null) {
+      return { ok: false, record: existing };
+    }
+
+    const record = this.createRecord({
+      conversationId: input.conversationId,
+      workspaceId: input.workspaceId,
+      state: "human_owned",
+      ownerAccountId: input.accountId,
+      ownerDisplayName: input.displayName,
+      reason: "operator_takeover",
+      version: existing.version + 1,
+      takenOverAt: new Date(),
+      createdAt: existing.createdAt,
+    });
+    this.items.set(input.conversationId, record);
+    return { ok: true, record };
+  }
+
+  async transfer(input: ConversationOwnershipTransferInput): Promise<ConversationOwnershipMutationResult> {
+    const existing = this.items.get(input.conversationId);
+    if (!existing || existing.state !== "human_owned" || existing.version !== input.expectedVersion) {
+      return { ok: false, record: existing ?? null };
+    }
+
+    const record = this.createRecord({
+      ...existing,
+      ownerAccountId: input.accountId,
+      ownerDisplayName: input.displayName,
+      version: existing.version + 1,
+      createdAt: existing.createdAt,
+    });
+    this.items.set(input.conversationId, record);
+    return { ok: true, record };
+  }
+
+  async handBack(input: ConversationOwnershipHandBackInput): Promise<ConversationOwnershipMutationResult> {
+    const existing = this.items.get(input.conversationId);
+    if (!existing || existing.version !== input.expectedVersion) {
+      return { ok: false, record: existing ?? null };
+    }
+
+    const record = this.createRecord({
+      ...existing,
+      state: "ai_owned",
+      ownerAccountId: null,
+      ownerDisplayName: null,
+      version: existing.version + 1,
+      createdAt: existing.createdAt,
+    });
+    this.items.set(input.conversationId, record);
+    return { ok: true, record };
+  }
+
+  private createRecord(input: {
+    conversationId: string;
+    workspaceId: string;
+    state: ConversationOwnershipRecord["state"];
+    ownerAccountId: string | null;
+    ownerDisplayName: string | null;
+    reason: ConversationOwnershipRecord["reason"];
+    version: number;
+    takenOverAt: Date | null;
+    createdAt?: Date;
+  }): ConversationOwnershipRecord {
+    const now = new Date();
+    return {
+      conversationId: input.conversationId,
+      workspaceId: input.workspaceId,
+      state: input.state,
+      ownerAccountId: input.ownerAccountId,
+      ownerDisplayName: input.ownerDisplayName,
+      reason: input.reason,
+      version: input.version,
+      takenOverAt: input.takenOverAt,
+      createdAt: input.createdAt ?? now,
+      updatedAt: now,
+    };
+  }
+}
+
 export class InMemoryMessageRepository implements MessageRepositoryPort {
   readonly items = new Map<string, MessageRecord[]>();
   private nextCreatedAtMs = Date.now();
+
+  cursorFor(message: MessageRecord): string {
+    return encodeCursor({
+      createdAt: message.createdAt.toISOString(),
+      id: message.id,
+    });
+  }
 
   async listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]> {
     return [...(this.items.get(conversationId) ?? [])].filter((message) => message.workspaceId === workspaceId);
@@ -3324,6 +3487,52 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     };
   }
 
+  async listSinceByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    input: { sinceCreatedAt?: Date; sinceId?: string; limit: number },
+  ): Promise<{ messages: MessageRecord[]; latestCursor: string | null }> {
+    const messages = [...(this.items.get(conversationId) ?? [])]
+      .filter((message) => message.workspaceId === workspaceId)
+      .sort((left, right) => {
+        const timeDiff = left.createdAt.getTime() - right.createdAt.getTime();
+        return timeDiff !== 0 ? timeDiff : left.id.localeCompare(right.id);
+      });
+    const latest = messages.at(-1);
+    const latestCursor = latest
+      ? encodeCursor({
+          createdAt: latest.createdAt.toISOString(),
+          id: latest.id,
+        })
+      : null;
+
+    if (!input.sinceCreatedAt || !input.sinceId) {
+      const newest = messages.slice(-input.limit);
+      const lastReturned = newest.at(-1);
+      return {
+        messages: newest,
+        latestCursor: lastReturned ? this.cursorFor(lastReturned) : latestCursor,
+      };
+    }
+
+    const newer = messages
+      .filter((message) =>
+        message.createdAt.getTime() > input.sinceCreatedAt!.getTime() ||
+        (message.createdAt.getTime() === input.sinceCreatedAt!.getTime() && message.id > input.sinceId!)
+      )
+      .slice(0, input.limit);
+
+    return {
+      messages: newer,
+      latestCursor: newer.at(-1)
+        ? encodeCursor({
+            createdAt: newer.at(-1)!.createdAt.toISOString(),
+            id: newer.at(-1)!.id,
+          })
+        : latestCursor,
+    };
+  }
+
   async summarizeByConversationIds(
     workspaceId: string,
     conversationIds: string[],
@@ -3351,20 +3560,33 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     workspaceId: string;
     role: "user" | "assistant" | "system";
     content: string;
+    source?: MessageSource;
+    operatorAccountId?: string;
+    operatorDisplayName?: string;
     inputMetadata?: MessageRecord["inputMetadata"];
     metadata?: Record<string, unknown>;
     skillName?: string;
     skillOutcome?: string;
     skillStatus?: string;
   }): Promise<MessageRecord> {
+    const metadata = input.metadata ?? (input.inputMetadata ? { ...input.inputMetadata } : undefined);
+    const metadataWithOperator = input.operatorAccountId || input.operatorDisplayName
+      ? {
+          ...(metadata ?? {}),
+          humanAgent: {
+            accountId: input.operatorAccountId,
+            displayName: input.operatorDisplayName,
+          },
+        }
+      : metadata;
     const record: MessageRecord = {
       id: input.id ?? randomUUID(),
       conversationId: input.conversationId,
       workspaceId: input.workspaceId,
       role: input.role,
-      source: deriveMessageSourceFromRole(input.role),
+      source: input.source ?? deriveMessageSourceFromRole(input.role),
       content: input.content,
-      metadata: input.metadata ?? (input.inputMetadata ? { ...input.inputMetadata } : undefined),
+      metadata: metadataWithOperator,
       inputMetadata: input.inputMetadata,
       skillName: input.skillName,
       skillOutcome: input.skillOutcome,

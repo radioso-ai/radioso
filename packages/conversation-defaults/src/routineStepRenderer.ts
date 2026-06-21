@@ -9,10 +9,16 @@ import type {
   TurnContext,
 } from "@radioso/conversation-contract";
 
-import { DEFAULT_ROUTINE_STEP_REPLY_PROMPT } from "./generated/defaultPrompts.js";
+import {
+  DEFAULT_ROUTINE_STEP_REPLY_PROMPT,
+  DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_PROMPT,
+} from "./generated/defaultPrompts.js";
 import { renderPromptTemplate } from "./promptTemplate.js";
 
-export { DEFAULT_ROUTINE_STEP_REPLY_PROMPT } from "./generated/defaultPrompts.js";
+export {
+  DEFAULT_ROUTINE_STEP_REPLY_PROMPT,
+  DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_PROMPT,
+} from "./generated/defaultPrompts.js";
 
 const turnMessages = (turn: TurnContext): ConversationMessage[] => [
   ...turn.history,
@@ -102,6 +108,15 @@ language, not the language of these instructions.`;
 const responseLanguageInstruction = (responseLanguage?: string): string =>
   responseLanguage ? `Respond in ${responseLanguage}.` : fallbackResponseLanguageInstruction;
 
+// The handoff copy itself lives in `chat/routine-step-terminal-handoff.md` (overridable
+// like every other prompt); only the gating condition stays in code.
+const terminalBehaviorInstruction = (step: RoutineStep, instruction: string): string => {
+  if (step.kind !== "terminal" || step.metadata?.terminalKind !== "handoff") {
+    return "";
+  }
+  return instruction;
+};
+
 /**
  * Renders a routine step's reply by generating a message that follows the step's
  * projected steering — the host-side `ConversationRoutineStepRenderer` the engine's
@@ -111,12 +126,19 @@ const responseLanguageInstruction = (responseLanguage?: string): string =>
  */
 export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
   private readonly promptTemplate: string;
+  private readonly terminalHandoffInstruction: string;
 
   constructor(
     private readonly modelGateway: ConversationModelGateway,
-    private readonly options: { promptTemplate?: string; responseLanguage?: string | Promise<string | undefined> } = {},
+    private readonly options: {
+      promptTemplate?: string;
+      terminalHandoffInstruction?: string;
+      responseLanguage?: string | Promise<string | undefined>;
+    } = {},
   ) {
     this.promptTemplate = options.promptTemplate ?? DEFAULT_ROUTINE_STEP_REPLY_PROMPT;
+    this.terminalHandoffInstruction =
+      options.terminalHandoffInstruction ?? DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_PROMPT;
   }
 
   async render(input: {
@@ -127,6 +149,10 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
     const responseLanguage = await this.options.responseLanguage;
     const systemPrompt = renderPromptTemplate("chat/routine-step-reply.md", this.promptTemplate, {
       answer_scope_reference: scopeReferenceBlock(input.turn.agent),
+      terminal_behavior_instruction: terminalBehaviorInstruction(
+        input.step,
+        this.terminalHandoffInstruction,
+      ),
       response_language_instruction: responseLanguageInstruction(responseLanguage),
       instructions: instructionsBlock(input.step, input.steering),
     });

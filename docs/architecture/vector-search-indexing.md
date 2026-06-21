@@ -1,3 +1,9 @@
+---
+title: "Vector Search Indexing"
+description: "Design for isolating vector storage behind adapters while keeping PostgreSQL as the canonical source, with a future backend evaluation path."
+last_updated: 2026-05-28
+---
+
 # Vector Search Indexing
 
 This document describes how Radioso should isolate vector search infrastructure

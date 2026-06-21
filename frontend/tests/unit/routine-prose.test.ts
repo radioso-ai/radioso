@@ -460,6 +460,17 @@ describe('routineToChipDoc (inverse serializer)', () => {
     expect(routineToChipDoc({ ...draft, slots: draft.slots.map((slot) => ({ ...slot, required: false })) })).toBeNull()
   })
 
+  it('falls back to Form for a mutable slot (prose would drop the flag)', () => {
+    const draft = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: [{ text: 'Ask for {{slot.email}}.', chips: [{ kind: 'variable', refId: 'email' }] }],
+      variables: [{ id: 'email', name: 'email', type: 'email' }],
+    })
+    expect(routineToChipDoc(draft)).not.toBeNull()
+    expect(routineToChipDoc({ ...draft, slots: draft.slots.map((slot) => ({ ...slot, mutable: true })) })).toBeNull()
+  })
+
   it('synthesizes a non-empty instruction for a bare skill chip (no prose)', () => {
     const draft = draftFromChipDoc({
       name: 'Booking',

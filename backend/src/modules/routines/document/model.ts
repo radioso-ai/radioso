@@ -1,4 +1,4 @@
-import type { RoutineDefinitionDraftInput, RoutineStepMetadata } from "../domain.js";
+import type { RoutineDefinitionDraftInput, RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineStepMetadata } from "../domain.js";
 
 export type RoutineDocumentSectionKind = "routine" | "guidelines" | "glossary";
 
@@ -62,7 +62,15 @@ export type RoutineDocumentGuard =
   | { kind: "llm"; text: string }
   | { kind: "slot_filled"; slots: string[] }
   | { kind: "outcome"; status: string }
-  | { kind: "counter"; limit: number };
+  | { kind: "counter"; limit: number }
+  | {
+      kind: "field";
+      ref: string;
+      op: RoutineFieldGuardOp;
+      value: string | number | boolean | null;
+      values: (string | number | boolean)[] | null;
+      unit: RoutineFieldGuardUnit | null;
+    };
 
 export interface RoutineDocumentBranch {
   fromStepId: string;

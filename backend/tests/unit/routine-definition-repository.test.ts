@@ -28,9 +28,10 @@ const draftInput = (): RoutineDefinitionDraftInput => ({
     triggerDescription: "The user asks for a handoff.",
     gateRef: null,
     priority: 5,
+    reentryMode: "always",
   },
   slots: [
-    { stableSlotId: "slot_name", key: "name", type: "text" as const, required: true, description: "Visitor name.", ordinal: 0 },
+    { stableSlotId: "slot_name", key: "name", type: "text" as const, required: true, description: "Visitor name.", ordinal: 0, mutable: true },
   ],
   steps: [
     { stableStepId: "ask_name", kind: "chat" as const, instruction: "Ask for {{slot.name}}.", toolRef: null, ordinal: 0, metadata: {} },
@@ -58,8 +59,9 @@ const loadedRow = () => ({
   activation_trigger_description: "The user asks for a handoff.",
   activation_gate_ref: null,
   activation_priority: 5,
+  activation_reentry_mode: "always",
   slots: [
-    { stableSlotId: "slot_name", key: "name", type: "text", required: true, description: "Visitor name.", ordinal: 0 },
+    { stableSlotId: "slot_name", key: "name", type: "text", required: true, description: "Visitor name.", ordinal: 0, mutable: true },
   ],
   steps: [
     { stableStepId: "ask_name", kind: "chat", instruction: "Ask for {{slot.name}}.", toolRef: null, ordinal: 0, metadata: {} },
@@ -93,8 +95,8 @@ describe("RoutineDefinitionRepository", () => {
       name: "handoff",
       version: 1,
       status: "published",
-      activation: { triggerDescription: "The user asks for a handoff.", gateRef: null, priority: 5 },
-      slots: [{ stableSlotId: "slot_name", key: "name", type: "text", required: true, description: "Visitor name.", ordinal: 0 }],
+      activation: { triggerDescription: "The user asks for a handoff.", gateRef: null, priority: 5, reentryMode: "always" },
+      slots: [{ stableSlotId: "slot_name", key: "name", type: "text", required: true, description: "Visitor name.", ordinal: 0, mutable: true }],
       steps: [{ stableStepId: "ask_name", kind: "chat", instruction: "Ask for {{slot.name}}.", toolRef: null, ordinal: 0, metadata: {} }],
       transitions: [{ fromStep: "ask_name", toRef: "done", guardKind: "counter", guardText: "2", ordinal: 0 }],
       terminals: [{ stableStepId: "done", kind: "complete", instruction: "Confirm completion.", ordinal: 0 }],
@@ -125,8 +127,11 @@ describe("RoutineDefinitionRepository", () => {
 
     expect(db.withTransaction).toHaveBeenCalledOnce();
     expect(db.mockClient.query.mock.calls[0]![0]).toContain("INSERT INTO routine_definition");
+    expect(db.mockClient.query.mock.calls[0]![0]).toContain("activation_reentry_mode");
+    expect(db.mockClient.query.mock.calls[0]![1]).toContain("always");
     const sql = db.mockClient.query.mock.calls.map((call) => call[0]).join("\n");
     expect(sql).toContain("INSERT INTO routine_slot");
+    expect(sql).toContain("mutable");
     expect(sql).toContain("INSERT INTO routine_step");
     expect(sql).toContain("INSERT INTO routine_transition");
     expect(sql).toContain("INSERT INTO routine_terminal");

@@ -24,6 +24,7 @@ export type AccountPermission =
   | "workspace.rename"
   | "workspace.delete"
   | "workspace.chat.use"
+  | "workspace.conversation.takeover"
   | "workspace.retrieval.query"
   | "workspace.history.read"
   | "workspace.quality.read"
@@ -442,6 +443,38 @@ export class AccountAccessService {
     return this.roleAllows(effectiveRole, input.permission);
   }
 
+  async resolveWorkspaceRole(input: {
+    accountId?: string;
+    userId?: string | null;
+    principal?: {
+      type: string;
+      role?: WorkspaceApiTokenRole | PublicAccessRole;
+      userId?: string;
+    } | null;
+    workspaceId: string;
+  }): Promise<AccountMembershipRole | null> {
+    if (input.principal?.type === "workspace_api_token") {
+      return input.principal.role === "admin" || input.principal.role === "member"
+        ? input.principal.role
+        : null;
+    }
+    if (input.principal?.type === "public_chat_session") {
+      return null;
+    }
+
+    const userId = input.principal?.type === "session_user" ? input.principal.userId : input.userId;
+    if (!input.accountId || !userId) {
+      return null;
+    }
+
+    const membership = await this.findActiveMembership(input.accountId, userId);
+    if (!membership) {
+      return null;
+    }
+
+    return this.resolveEffectiveWorkspaceRole(membership, input.workspaceId);
+  }
+
   private async resolveEffectiveWorkspaceRole(
     membership: AccountMembershipRecord,
     workspaceId: string,
@@ -496,6 +529,7 @@ export class AccountAccessService {
     return [
       "workspace.summary.read",
       "workspace.chat.use",
+      "workspace.conversation.takeover",
       "workspace.retrieval.query",
       "workspace.history.read",
       "workspace.skills.read",

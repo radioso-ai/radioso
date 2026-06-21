@@ -1,3 +1,9 @@
+---
+title: "Customer Email Connections"
+description: "Setup and authoring of workspace-owned outbound email connections via OAuth with constrained agent skills for draft and send modes."
+last_updated: 2026-06-16
+---
+
 # Customer Email Connections
 
 Customer email connections are workspace-owned outbound mail resources. They are

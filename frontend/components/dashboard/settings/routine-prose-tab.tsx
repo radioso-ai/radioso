@@ -19,10 +19,13 @@ export function RoutineProseTab({
   source,
   header,
   onDraftChange,
+  onHeaderChange,
 }: {
   source: RoutineDefinitionDraft
   header: RoutineDraftHeader
   onDraftChange: (draft: RoutineDefinitionDraft | null) => void
+  // Pasting a whole routine carries its name/trigger; lift them back into the host header.
+  onHeaderChange?: (update: (header: RoutineDraftHeader) => RoutineDraftHeader) => void
 }) {
   const loaded = useMemo(() => routineToChipDoc(source), [source])
   const [variables, setVariables] = useState<ChipDocVariable[]>(loaded?.variables ?? [])
@@ -55,7 +58,13 @@ export function RoutineProseTab({
     })
     onDraftChange({
       ...draft,
-      activation: { ...draft.activation, priority: Number.parseInt(header.activation.priority, 10) || 0 },
+      // priority and reentryMode are header fields the prose body does not encode; carry
+      // them back from the header so switching to Prose and saving does not reset them.
+      activation: {
+        ...draft.activation,
+        priority: Number.parseInt(header.activation.priority, 10) || 0,
+        reentryMode: header.activation.reentryMode,
+      },
     })
   }, [loaded, blocks, variables, header, onDraftChange])
 
@@ -85,9 +94,22 @@ export function RoutineProseTab({
         variables={variables}
         reservedRefKinds={reservedRefKinds}
         initialContent={loaded.paragraphs}
+        name={header.name}
+        trigger={header.activation.triggerDescription}
         onCreateVariable={addVariable}
         onDocChange={setBlocks}
         onSetVariableType={setVariableType}
+        onPasteFrontmatter={({ name: pastedName, trigger: pastedTrigger }) => {
+          if (!onHeaderChange) return
+          onHeaderChange((current) => ({
+            ...current,
+            ...(pastedName !== null ? { name: pastedName } : {}),
+            activation: {
+              ...current.activation,
+              ...(pastedTrigger !== null ? { triggerDescription: pastedTrigger } : {}),
+            },
+          }))
+        }}
       />
       <p className="text-xs text-muted-foreground">
         Type <kbd className="rounded border border-border px-1">@</kbd> or use the toolbar to insert a variable. Click a chip to set its type.

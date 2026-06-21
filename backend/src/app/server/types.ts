@@ -5,6 +5,7 @@ import type {
   ChatBootstrapService,
   ChatHistoryService,
   ChatService,
+  PublicConversationEventBus,
   WorkbenchReplayRunner,
 } from "../../modules/chat/composition.js";
 import type {
@@ -45,6 +46,7 @@ import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRep
 import type { AccountRepositoryPort } from "../../modules/auth/services/authService.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
+import type { ConversationOwnershipRepository } from "../../db/repositories/conversationOwnershipRepository.js";
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
 import type { ConnectorIngestionPort } from "@radioso/connector-api";
 import type { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
@@ -81,6 +83,7 @@ import type {
   EvalRunService,
   EvalSnapshotService,
 } from "../../modules/eval/composition.js";
+import type { ApprovalDecisionService } from "../../modules/approvals/public.js";
 
 export interface AppDependencies {
   env: Env;
@@ -93,6 +96,7 @@ export interface AppDependencies {
   usageLimitPolicy: UsageLimitPolicy;
   organizationCreationGuard: OrganizationCreationGuard;
   publicChatActionAdvertiser: PublicChatActionAdvertiserPort;
+  publicConversationEventBus: PublicConversationEventBus;
   contactHistoryProvider: ContactHistoryProviderPort;
   applicationRouteMounts: ApplicationRouteMount[];
   applicationModules: ApplicationModuleCoordinator;
@@ -139,6 +143,7 @@ export interface AppDependencies {
   documentDeletionService: DocumentDeletionService;
   documentStorage: DocumentStoragePort;
   chatService: ChatService;
+  approvalDecisionService: ApprovalDecisionService;
   workbenchReplayRunner: WorkbenchReplayRunner;
   // Worker-process drain loop for the async conversation-action outbox (spec 070).
   // Present in every dependency build; only the worker runtime calls start/stop.
@@ -168,6 +173,10 @@ export interface AppDependencies {
   accountRepository: AccountRepositoryPort;
   bootstrapGreetingCacheRepository: BootstrapGreetingCacheRepositoryPort;
   conversationRepository: ConversationRepositoryPort;
+  conversationOwnershipRepository: Pick<
+    ConversationOwnershipRepository,
+    "load" | "loadByConversationIds" | "requestHandoff" | "takeOver" | "transfer" | "handBack"
+  >;
   messageRepository: MessageRepositoryPort;
   connectorRegistry: ConnectorRegistry;
   connectorIngestionPort: ConnectorIngestionPort;

@@ -3781,6 +3781,15 @@
               },
               "priority": {
                 "type": "integer"
+              },
+              "reentryMode": {
+                "type": "string",
+                "enum": [
+                  "once_per_conversation",
+                  "always",
+                  "semantic"
+                ],
+                "default": "once_per_conversation"
               }
             },
             "required": [
@@ -3830,6 +3839,9 @@
                 "ordinal": {
                   "type": "integer",
                   "minimum": 0
+                },
+                "mutable": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -4269,6 +4281,15 @@
               },
               "priority": {
                 "type": "integer"
+              },
+              "reentryMode": {
+                "type": "string",
+                "enum": [
+                  "once_per_conversation",
+                  "always",
+                  "semantic"
+                ],
+                "default": "once_per_conversation"
               }
             },
             "required": [
@@ -4318,6 +4339,9 @@
                 "ordinal": {
                   "type": "integer",
                   "minimum": 0
+                },
+                "mutable": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -4835,6 +4859,15 @@
               },
               "priority": {
                 "type": "integer"
+              },
+              "reentryMode": {
+                "type": "string",
+                "enum": [
+                  "once_per_conversation",
+                  "always",
+                  "semantic"
+                ],
+                "default": "once_per_conversation"
               }
             },
             "required": [
@@ -4884,6 +4917,9 @@
                 "ordinal": {
                   "type": "integer",
                   "minimum": 0
+                },
+                "mutable": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -5472,6 +5508,15 @@
                   },
                   "priority": {
                     "type": "integer"
+                  },
+                  "reentryMode": {
+                    "type": "string",
+                    "enum": [
+                      "once_per_conversation",
+                      "always",
+                      "semantic"
+                    ],
+                    "default": "once_per_conversation"
                   }
                 },
                 "required": [
@@ -5521,6 +5566,9 @@
                     "ordinal": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "mutable": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -9347,8 +9395,7 @@
             "format": "uuid"
           },
           "assistantMessageId": {
-            "type": "string",
-            "format": "uuid"
+            "type": "string"
           },
           "agentId": {
             "type": "string",
@@ -9377,6 +9424,25 @@
             "items": {
               "$ref": "#/components/schemas/ChatSuggestion"
             }
+          },
+          "ownership": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "ai_owned",
+                  "human_owned"
+                ]
+              },
+              "suppressed": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "state",
+              "suppressed"
+            ]
           },
           "debug": {
             "$ref": "#/components/schemas/AssistantChatDebug"
@@ -9426,6 +9492,25 @@
             "items": {
               "$ref": "#/components/schemas/ChatSuggestion"
             }
+          },
+          "ownership": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "ai_owned",
+                  "human_owned"
+                ]
+              },
+              "suppressed": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "state",
+              "suppressed"
+            ]
           },
           "debug": {
             "$ref": "#/components/schemas/AssistantChatDebug"
@@ -9655,6 +9740,76 @@
         },
         "description": "`message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`."
       },
+      "ConversationOwnership": {
+        "type": "object",
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ai_owned",
+              "human_owned"
+            ]
+          },
+          "ownerAccountId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "ownerDisplayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "takenOverAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "conversationId",
+          "workspaceId",
+          "state",
+          "ownerAccountId",
+          "ownerDisplayName",
+          "reason",
+          "version",
+          "takenOverAt",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
       "ChatConversationSummary": {
         "type": "object",
         "properties": {
@@ -9718,6 +9873,9 @@
               "string",
               "null"
             ]
+          },
+          "ownership": {
+            "$ref": "#/components/schemas/ConversationOwnership"
           }
         },
         "required": [
@@ -10271,6 +10429,9 @@
           },
           "debug": {
             "$ref": "#/components/schemas/ChatConversationMessageDebug"
+          },
+          "operatorDisplayName": {
+            "type": "string"
           }
         },
         "required": [
@@ -10279,6 +10440,125 @@
           "source",
           "content",
           "createdAt"
+        ]
+      },
+      "ConversationOwnershipResponse": {
+        "type": "object",
+        "properties": {
+          "ownership": {
+            "$ref": "#/components/schemas/ConversationOwnership"
+          }
+        },
+        "required": [
+          "ownership"
+        ]
+      },
+      "HumanReplyMessage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant",
+              "system"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "customer",
+              "ai_agent",
+              "human_agent",
+              "human_agent_on_behalf_of_ai_agent",
+              "system"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "inputMetadata": {
+            "type": "object",
+            "properties": {
+              "method": {
+                "type": "string",
+                "enum": [
+                  "typed",
+                  "suggestion_click",
+                  "intent_click"
+                ]
+              },
+              "suggestionSourceMessageId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "intent": {
+                "type": "object",
+                "properties": {
+                  "skillName": {
+                    "type": "string"
+                  },
+                  "intentName": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "skillName"
+                ]
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "skillName": {
+            "type": "string"
+          },
+          "skillOutcome": {
+            "type": "string"
+          },
+          "skillStatus": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "conversationId",
+          "workspaceId",
+          "role",
+          "content",
+          "createdAt"
+        ]
+      },
+      "HumanReplyMessageResponse": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "$ref": "#/components/schemas/HumanReplyMessage"
+          }
+        },
+        "required": [
+          "message"
         ]
       },
       "ChatConversationDetail": {
@@ -10352,11 +10632,21 @@
               "null"
             ]
           },
+          "tailCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Cursor for subsequent tail requests. It marks the newest message included when this detail response was produced."
+          },
           "messages": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ChatConversationMessage"
             }
+          },
+          "ownership": {
+            "$ref": "#/components/schemas/ConversationOwnership"
           }
         },
         "required": [
@@ -10375,7 +10665,53 @@
           "messageWindowLimit",
           "hasOlderMessages",
           "nextCursor",
+          "tailCursor",
           "messages"
+        ]
+      },
+      "ChatConversationTail": {
+        "type": "object",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatConversationMessage"
+            }
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ownership": {
+            "$ref": "#/components/schemas/ConversationOwnership"
+          }
+        },
+        "required": [
+          "messages",
+          "cursor"
+        ]
+      },
+      "PublicChatConversationTail": {
+        "type": "object",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatConversationMessage"
+            }
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "messages",
+          "cursor"
         ]
       },
       "PublicConversationSummary": {
@@ -11112,6 +11448,100 @@
           "to",
           "filters",
           "buckets"
+        ]
+      },
+      "PendingApprovalDecisionOption": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ]
+      },
+      "PendingApprovalDecision": {
+        "type": "object",
+        "properties": {
+          "handle": {
+            "type": "string"
+          },
+          "conversationId": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "routineId": {
+            "type": "string"
+          },
+          "stepId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PendingApprovalDecisionOption"
+            }
+          },
+          "contentHash": {
+            "type": "string"
+          },
+          "canResolve": {
+            "type": "boolean"
+          },
+          "deadline": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "handle",
+          "conversationId",
+          "agentId",
+          "routineId",
+          "stepId",
+          "reason",
+          "options",
+          "contentHash",
+          "canResolve",
+          "deadline",
+          "createdAt"
+        ]
+      },
+      "PendingApprovalDecisionListResponse": {
+        "type": "object",
+        "properties": {
+          "decisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PendingApprovalDecision"
+            }
+          }
+        },
+        "required": [
+          "decisions"
         ]
       },
       "AssistantChatSseStream": {
@@ -24426,6 +24856,92 @@
         }
       }
     },
+    "/api/v1/history/chat/{conversationId}/tail": {
+      "get": {
+        "tags": [
+          "History"
+        ],
+        "summary": "Poll new messages for a saved assistant conversation",
+        "operationId": "tailHistoryConversation",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "New conversation messages after the supplied tail cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatConversationTail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/history/{conversationId}": {
       "get": {
         "tags": [
@@ -24587,6 +25103,644 @@
           },
           "404": {
             "description": "Search history entry not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/conversations/{conversationId}/takeover": {
+      "post": {
+        "tags": [
+          "Conversation Ownership"
+        ],
+        "summary": "Take human ownership of a conversation",
+        "operationId": "takeOverConversation",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Conversation ownership returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationOwnershipResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace conversation takeover permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conversation ownership changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/conversations/{conversationId}/reply": {
+      "post": {
+        "tags": [
+          "Conversation Ownership"
+        ],
+        "summary": "Reply to a conversation as a human operator",
+        "operationId": "replyToConversation",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 50000
+                  },
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "message",
+                  "expectedVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Human reply message created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanReplyMessageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace conversation takeover permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conversation ownership changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/conversations/{conversationId}/transfer": {
+      "post": {
+        "tags": [
+          "Conversation Ownership"
+        ],
+        "summary": "Transfer human ownership of a conversation",
+        "operationId": "transferConversationOwnership",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "toAccountId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "toAccountId",
+                  "expectedVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Conversation ownership returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationOwnershipResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace conversation takeover permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conversation ownership changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/conversations/{conversationId}/handback": {
+      "post": {
+        "tags": [
+          "Conversation Ownership"
+        ],
+        "summary": "Return a human-owned conversation to AI ownership",
+        "operationId": "handBackConversation",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "expectedVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Conversation ownership returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationOwnershipResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace conversation takeover permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conversation ownership changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/decisions": {
+      "get": {
+        "tags": [
+          "Decisions"
+        ],
+        "summary": "List pending human approval decisions",
+        "operationId": "listPendingDecisions",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pending approval decisions for the workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingApprovalDecisionListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not authorized to list decisions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/decisions/{handle}/resolve": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Resolve a pending human approval decision",
+        "operationId": "resolveDecision",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "handle",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "optionId": {
+                    "type": "string"
+                  },
+                  "payload": {},
+                  "contentHash": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "optionId",
+                  "contentHash"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Decision resolved and routine resume attempted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "resolved"
+                      ]
+                    },
+                    "decision": {
+                      "type": "string",
+                      "enum": [
+                        "approved",
+                        "rejected"
+                      ]
+                    },
+                    "conversationId": {
+                      "type": "string"
+                    },
+                    "resumed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "decision",
+                    "conversationId",
+                    "resumed"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not an authorized decider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Decision not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Decision already resolved, stale, or resolved concurrently",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Decision option is invalid",
             "content": {
               "application/json": {
                 "schema": {
@@ -25854,6 +27008,149 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ChatConversationDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Anonymous session continuity is maintained by an HttpOnly cookie set by the server.\n\nThe cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential."
+      }
+    },
+    "/api/v1/public/chat/{token}/tail/{conversationId}": {
+      "get": {
+        "tags": [
+          "Assistant"
+        ],
+        "summary": "Poll new public conversation messages for the current anonymous session",
+        "operationId": "tailPublicChatHistoryConversation",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "token",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "New public conversation messages after the supplied tail cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicChatConversationTail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Anonymous session continuity is maintained by an HttpOnly cookie set by the server.\n\nThe cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential."
+      }
+    },
+    "/api/v1/public/chat/{token}/events/{conversationId}": {
+      "get": {
+        "tags": [
+          "Assistant"
+        ],
+        "summary": "Stream public conversation notifications for the current anonymous session",
+        "operationId": "streamPublicChatConversationEvents",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "token",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Server-sent public conversation notifications. Events include ready and message.created.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }

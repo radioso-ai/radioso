@@ -48,6 +48,11 @@ export interface MessageRepositoryPort {
     conversationId: string,
     input: { limit: number; offset?: number; cursor?: string },
   ): Promise<{ messages: MessageRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
+  listSinceByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    input: { sinceCreatedAt?: Date; sinceId?: string; limit: number },
+  ): Promise<{ messages: MessageRecord[]; latestCursor: string | null }>;
   summarizeByConversationIds(
     workspaceId: string,
     conversationIds: string[],
@@ -58,6 +63,9 @@ export interface MessageRepositoryPort {
     workspaceId: string;
     role: MessageRole;
     content: string;
+    source?: MessageSource;
+    operatorAccountId?: string;
+    operatorDisplayName?: string;
     inputMetadata?: UserMessageInputMetadata;
     metadata?: Record<string, unknown>;
     skillName?: string;
@@ -235,6 +243,85 @@ export class MessageRepository implements MessageRepositoryPort {
     };
   }
 
+  async listSinceByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    input: { sinceCreatedAt?: Date; sinceId?: string; limit: number },
+  ): Promise<{ messages: MessageRecord[]; latestCursor: string | null }> {
+    // Tail cursor is (created_at, id). Safe because messages within a conversation are inserted
+    // one-per-operation via clock_timestamp() and are causally sequential, so created_at is unique
+    // per conversation and the strict (created_at,id) comparison never skips a row. INVARIANT: do
+    // not batch-insert multiple messages to one conversation in a single statement/microsecond
+    // without switching the cursor to a monotonic sequence.
+    const latestRow = await this.database.queryOptional<MessageRow>(
+      `SELECT id, conversation_id, workspace_id, role, content, source, metadata_json, skill_name, skill_outcome, skill_status, created_at
+       FROM messages
+       WHERE workspace_id = $1
+         AND conversation_id = $2
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1`,
+      [workspaceId, conversationId],
+    );
+    const latest = latestRow ? mapMessageRow(latestRow) : null;
+    const newestCursor = latest
+      ? encodeCursor({
+          createdAt: latest.createdAt.toISOString(),
+          id: latest.id,
+        })
+      : null;
+
+    if (!input.sinceCreatedAt || !input.sinceId) {
+      const rows = await this.database.query<MessageRow>(
+        `SELECT id, conversation_id, workspace_id, role, content, source, metadata_json, skill_name, skill_outcome, skill_status, created_at
+         FROM messages
+         WHERE workspace_id = $1
+           AND conversation_id = $2
+         ORDER BY created_at DESC, id DESC
+         LIMIT $3`,
+        [workspaceId, conversationId, input.limit],
+      );
+      const messages = rows.map(mapMessageRow).reverse();
+      const lastReturned = messages.at(-1);
+
+      return {
+        messages,
+        latestCursor: lastReturned
+          ? encodeCursor({
+              createdAt: lastReturned.createdAt.toISOString(),
+              id: lastReturned.id,
+            })
+          : newestCursor,
+      };
+    }
+
+    const rows = await this.database.query<MessageRow>(
+      `SELECT id, conversation_id, workspace_id, role, content, source, metadata_json, skill_name, skill_outcome, skill_status, created_at
+       FROM messages
+       WHERE workspace_id = $1
+         AND conversation_id = $2
+         AND (
+           created_at > $3::timestamptz
+           OR (created_at = $3::timestamptz AND id > $4::uuid)
+         )
+       ORDER BY created_at ASC, id ASC
+       LIMIT $5`,
+      [workspaceId, conversationId, input.sinceCreatedAt.toISOString(), input.sinceId, input.limit],
+    );
+
+    const messages = rows.map(mapMessageRow);
+    const lastReturned = messages.at(-1);
+
+    return {
+      messages,
+      latestCursor: lastReturned
+        ? encodeCursor({
+            createdAt: lastReturned.createdAt.toISOString(),
+            id: lastReturned.id,
+          })
+        : newestCursor,
+    };
+  }
+
   async summarizeByConversationIds(
     workspaceId: string,
     conversationIds: string[],
@@ -296,12 +383,26 @@ export class MessageRepository implements MessageRepositoryPort {
     workspaceId: string;
     role: MessageRole;
     content: string;
+    source?: MessageSource;
+    operatorAccountId?: string;
+    operatorDisplayName?: string;
     inputMetadata?: UserMessageInputMetadata;
     metadata?: Record<string, unknown>;
     skillName?: string;
     skillOutcome?: string;
     skillStatus?: string;
   }): Promise<MessageRecord> {
+    const metadata = {
+      ...(input.metadata ?? input.inputMetadata ?? {}),
+      ...(input.operatorAccountId || input.operatorDisplayName
+        ? {
+            humanAgent: {
+              accountId: input.operatorAccountId,
+              displayName: input.operatorDisplayName,
+            },
+          }
+        : {}),
+    };
     const [row] = await this.database.query<MessageRow>(
       `INSERT INTO messages (id, conversation_id, workspace_id, role, content, source, metadata_json, skill_name, skill_outcome, skill_status, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, clock_timestamp())
@@ -312,8 +413,8 @@ export class MessageRepository implements MessageRepositoryPort {
         input.workspaceId,
         input.role,
         input.content,
-        deriveMessageSourceFromRole(input.role),
-        JSON.stringify(input.metadata ?? input.inputMetadata ?? {}),
+        input.source ?? deriveMessageSourceFromRole(input.role),
+        JSON.stringify(metadata),
         input.skillName ?? null,
         input.skillOutcome ?? null,
         input.skillStatus ?? null,

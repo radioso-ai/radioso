@@ -196,6 +196,24 @@ export interface ApplicationRouteMount {
         workspaceId: string;
         principal?: AuthenticatedPrincipal;
       }>;
+      // Provider-agnostic federated sign-in. EE modules translate their
+      // provider response (e.g. Google OAuth) into this verified-identity
+      // assertion; OSS owns account provisioning + session issuance and never
+      // learns about the specific provider.
+      federatedLogin(input: {
+        provider: string;
+        subject: string;
+        email: string;
+        emailVerified: boolean;
+      }): Promise<{
+        userId: string;
+        accountId: string;
+        organizationName: string;
+        workspaceId: string;
+        workspaceName: string;
+        workspacePublicRouteKey: string;
+        sessionCookie: string;
+      }>;
     };
     accountAccessService: {
       requireActiveMembership(accountId: string, userId: string): Promise<void>;

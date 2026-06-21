@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -35,6 +35,23 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [googleEnabled, setGoogleEnabled] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    authApi.getGoogleLoginStatus().then((status) => {
+      if (active) {
+        setGoogleEnabled(status.enabled)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const handleGoogleSignIn = () => {
+    window.location.assign(authApi.getGoogleLoginStartUrl())
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -91,6 +108,24 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
         {isLoading ? <Spinner className="mr-2" /> : null}
         Sign In
       </Button>
+      {googleEnabled && (
+        <>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="h-px flex-1 bg-border" />
+            <span>or</span>
+            <span className="h-px flex-1 bg-border" />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={handleGoogleSignIn}
+            disabled={isLoading}
+          >
+            Sign in with Google
+          </Button>
+        </>
+      )}
       <p className="text-center text-sm text-muted-foreground">
         {"Don't have an account? "}
         <button

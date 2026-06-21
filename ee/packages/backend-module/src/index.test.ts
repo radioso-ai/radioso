@@ -65,6 +65,7 @@ describe("Enterprise backend module aggregation", () => {
       "ee-usage-limits",
     ]);
     expect(capture.routeMounts.map((mount) => mount.path).sort()).toEqual([
+      "/api/v1/ee/auth/google",
       "/api/v1/ee/usage-limits",
     ]);
     expect(capture.accountCreatedHandlers).toHaveLength(1);

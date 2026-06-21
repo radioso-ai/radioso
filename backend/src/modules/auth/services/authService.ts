@@ -347,6 +347,145 @@ export class AuthService {
     };
   }
 
+  /**
+   * Logs a user in from a provider-verified identity assertion (e.g. Google
+   * OAuth), provisioning a fresh account + workspace on first sign-in. This is
+   * provider-agnostic: callers translate their provider's response into the
+   * shared assertion shape, so this service never learns about Google et al.
+   *
+   * Linking is by verified email. An existing user (verified or not) is logged
+   * in and, if needed, marked verified — the provider has proven control of the
+   * mailbox. The provider `subject` is recorded in the audit trail only; we do
+   * not yet keep a federated-identity link table.
+   */
+  async federatedLogin(input: {
+    provider: string;
+    subject: string;
+    email: string;
+    emailVerified: boolean;
+  }): Promise<{
+    userId: string;
+    accountId: string;
+    organizationName: string;
+    workspaceId: string;
+    workspaceName: string;
+    workspacePublicRouteKey: string;
+    sessionCookie: string;
+  }> {
+    const email = normalizeEmail(input.email);
+
+    if (!input.emailVerified) {
+      await this.dependencies.auditService.record({
+        eventType: "auth.federated_login",
+        eventStatus: "failure",
+        metadata: { email, provider: input.provider, reason: "email_unverified" },
+      });
+      throw unauthorized("Email not verified by the identity provider");
+    }
+
+    const existing = await this.dependencies.userRepository.findByEmail(email);
+    if (existing) {
+      if (!existing.emailVerifiedAt) {
+        // The account was created by password registration but never verified,
+        // so its password was set by whoever registered it — not necessarily
+        // the mailbox owner. The provider has now proven ownership, so treat
+        // this exactly like a password reset: rotate the (possibly attacker-set)
+        // password to an unusable hash and drop any existing sessions before
+        // verifying and issuing a new one. Without this, a pre-verification
+        // squatter keeps a working password into the now-verified account.
+        await this.dependencies.userRepository.updatePassword(existing.id, await hashPassword(generateSessionToken()));
+        await this.dependencies.sessionRepository.revokeAllForUser(existing.id, new Date());
+        await this.dependencies.userRepository.markEmailVerified(existing.id, new Date());
+      }
+
+      const membership = await this.dependencies.accountAccessService.resolveLoginAccount(existing.id);
+      const workspace = await this.dependencies.workspaceService.resolveLoginWorkspace(membership.accountId);
+      const sessionCookie = await this.createSessionCookie(existing.id, membership.accountId);
+
+      await this.dependencies.auditService.record({
+        accountId: membership.accountId,
+        eventType: "auth.federated_login",
+        eventStatus: "success",
+        metadata: { email, provider: input.provider, subject: input.subject, provisioned: false },
+      });
+
+      return {
+        userId: existing.id,
+        accountId: membership.accountId,
+        organizationName: (await this.dependencies.accountRepository.findById(membership.accountId))?.name
+          ?? deriveOrganizationName(email),
+        workspaceId: workspace.id,
+        workspaceName: workspace.name,
+        workspacePublicRouteKey: workspace.publicRouteKey,
+        sessionCookie,
+      };
+    }
+
+    return this.provisionFederatedAccount({ ...input, email });
+  }
+
+  private async provisionFederatedAccount(input: {
+    provider: string;
+    subject: string;
+    email: string;
+  }): Promise<{
+    userId: string;
+    accountId: string;
+    organizationName: string;
+    workspaceId: string;
+    workspaceName: string;
+    workspacePublicRouteKey: string;
+    sessionCookie: string;
+  }> {
+    // Federated users have no password. Store a random, unusable hash so the
+    // NOT NULL column is satisfied; they can adopt password login later via the
+    // reset flow. The email is verified by the provider, so mark it verified.
+    const passwordHash = await hashPassword(generateSessionToken());
+    const organizationName = deriveOrganizationName(input.email);
+    const account = await this.dependencies.accountRepository.create({
+      name: organizationName,
+      email: input.email,
+      passwordHash,
+    });
+
+    try {
+      const user = await this.dependencies.userRepository.create({
+        id: account.id,
+        email: input.email,
+        passwordHash,
+        emailVerifiedAt: new Date(),
+      });
+      await this.dependencies.accountAccessService.ensureMembership({
+        accountId: account.id,
+        userId: user.id,
+        role: "owner",
+      });
+      const workspace = await this.dependencies.workspaceService.createDefault(account.id);
+      await this.dependencies.onAccountCreated?.({ accountId: account.id });
+      const sessionCookie = await this.createSessionCookie(user.id, account.id);
+
+      await this.dependencies.auditService.record({
+        accountId: account.id,
+        eventType: "auth.federated_login",
+        eventStatus: "success",
+        metadata: { email: input.email, provider: input.provider, subject: input.subject, provisioned: true },
+      });
+
+      return {
+        userId: user.id,
+        accountId: account.id,
+        organizationName: account.name,
+        workspaceId: workspace.id,
+        workspaceName: workspace.name,
+        workspacePublicRouteKey: workspace.publicRouteKey,
+        sessionCookie,
+      };
+    } catch (error) {
+      await this.rollbackCreatedAccount(account.id, account.id);
+      throw error;
+    }
+  }
+
   async getInvitation(input: { invitationToken: string }): Promise<{
     accountId: string;
     email: string;

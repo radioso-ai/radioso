@@ -2,6 +2,7 @@ import type { ApplicationModule } from "./radiosoModuleTypes.js";
 
 import { createEnterpriseObservabilityApplicationModule } from "./observability/applicationModule.js";
 import { createUsageLimitsApplicationModule } from "./usageLimits/applicationModule.js";
+import { createGoogleLoginApplicationModule } from "./googleLogin/applicationModule.js";
 
 export {
   collectFrontendRouteContributions,
@@ -11,11 +12,13 @@ export {
 } from "./featureManifest.js";
 export { createUsageLimitsApplicationModule } from "./usageLimits/applicationModule.js";
 export { createEnterpriseObservabilityApplicationModule } from "./observability/applicationModule.js";
+export { createGoogleLoginApplicationModule } from "./googleLogin/applicationModule.js";
 
 export const createEnterpriseBackendModule = (): ApplicationModule => {
   const featureModules = [
     createEnterpriseObservabilityApplicationModule(),
     createUsageLimitsApplicationModule(),
+    createGoogleLoginApplicationModule(),
   ];
 
   return {

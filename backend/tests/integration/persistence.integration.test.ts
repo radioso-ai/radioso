@@ -476,7 +476,7 @@ describeIfDatabase("persistence integration", () => {
     const accountRepository = new AccountRepository(database.kysely);
     const documentRepository = new DocumentRepository(database);
     const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
-    const jobRepository = new DocumentProcessingJobRepository(database);
+    const jobRepository = new DocumentProcessingJobRepository(database.kysely);
     const vectorSearch = new PgVectorSearch(database);
 
     const capturedTexts: string[] = [];
@@ -490,7 +490,7 @@ describeIfDatabase("persistence integration", () => {
     };
 
     const auditService = new AuditService(createLogger("silent"), noopAuditRepository);
-    const ingestionSettingsService = new IngestionSettingsService(new IngestionSettingsRepository(database), auditService);
+    const ingestionSettingsService = new IngestionSettingsService(new IngestionSettingsRepository(database.kysely), auditService);
     const embeddingService = new EmbeddingService(embeddingGateway);
     const processingWorker = new DocumentProcessingWorker(
       documentRepository,

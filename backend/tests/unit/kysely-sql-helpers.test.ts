@@ -3,7 +3,7 @@ import type { Pool } from "pg";
 import { describe, expect, it } from "vitest";
 
 import type { DB } from "../../src/shared/infra/kysely/schema.js";
-import { anyOf, setLocal, toJsonb } from "../../src/shared/infra/kysely/sqlHelpers.js";
+import { anyOf, clockTimestamp, jsonbConcat, setLocal, toJsonb } from "../../src/shared/infra/kysely/sqlHelpers.js";
 
 // Compilation is synchronous and never touches the pool, so a Kysely bound to a dummy pool
 // is enough to assert the SQL each helper emits.
@@ -25,6 +25,18 @@ describe("kysely sqlHelpers", () => {
 
     expect(compiled.sql).toContain("::jsonb");
     expect(compiled.parameters).toEqual(['[{"id":"a"}]']);
+  });
+
+  it("clockTimestamp emits clock_timestamp()", () => {
+    expect(clockTimestamp().compile(db).sql).toBe("clock_timestamp()");
+  });
+
+  it("jsonbConcat emits the || merge with a jsonb-cast right operand", () => {
+    const compiled = db
+      .updateTable("agent_skills")
+      .set({ config: jsonbConcat(sql.ref("config"), toJsonb({ a: 1 })) })
+      .compile();
+    expect(compiled.sql).toContain('"config" = "config" || $1::jsonb');
   });
 
   it("anyOf emits a parameterized = ANY(...) with the array type cast", () => {

@@ -28,6 +28,16 @@ import type { Db } from "./types.js";
 export const toJsonb = (value: unknown): RawBuilder<JsonValue> => sql`${JSON.stringify(value)}::jsonb`;
 
 /**
+ * jsonb `||` concatenation (shallow merge), e.g. `config || '{...}'::jsonb`. Right-hand keys
+ * win, matching the raw `config = config || EXCLUDED.config` merge pattern. Pass `toJsonb(obj)`
+ * for the right operand and `eb.ref("col")` for the existing column.
+ */
+export const jsonbConcat = (
+  left: Expression<unknown>,
+  right: Expression<unknown>,
+): RawBuilder<JsonValue> => sql`${left} || ${right}`;
+
+/**
  * `now()` — the Postgres transaction clock, for `created_at` / `updated_at` writes that
  * must use the database clock (not the app clock) to match the original raw SQL and stay
  * consistent across rows written in one statement. Prefer this over `new Date()` for

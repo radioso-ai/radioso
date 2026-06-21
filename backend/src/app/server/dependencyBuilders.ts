@@ -327,7 +327,7 @@ export const buildRepositories = (
   customerEmailConnectionRepository: new CustomerEmailConnectionRepository(database),
   emailSkillDefinitionRepository: new EmailSkillDefinitionRepository(database),
   emailSkillActivityRepository: new EmailSkillActivityRepository(database),
-  webhookSkillDefinitionRepository: new WebhookSkillDefinitionRepository(database),
+  webhookSkillDefinitionRepository: new WebhookSkillDefinitionRepository(database.kysely),
 });
 
 export const buildAccessServices = (input: {
@@ -1220,7 +1220,7 @@ export const buildChatServices = (input: {
   const handoffWaitingMessageGenerator = new LlmHandoffWaitingMessageGenerator(
     input.llmRegistry.createRewriteInferencePipeline(input.usageEventRecorder),
   );
-  const routineStateRepository = new RoutineStateRepository(input.database);
+  const routineStateRepository = new RoutineStateRepository(input.database.kysely);
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
     messageRepository: input.messageRepository,

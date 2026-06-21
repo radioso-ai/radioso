@@ -9,6 +9,7 @@ import { McpConnectionRepository } from "../../../src/db/repositories/mcpConnect
 import { ExternalSkillDefinitionRepository } from "../../../src/db/repositories/externalSkillDefinitionRepository.js";
 import { decryptField, encryptField } from "../../../src/shared/infra/crypto/fieldEncryption.js";
 import type { Database } from "../../../src/shared/infra/database.js";
+import { createKyselyDatabase } from "../../../src/shared/infra/kysely/kyselyDatabase.js";
 import { testMigrationsPath } from "../../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
@@ -31,16 +32,29 @@ const canReach = async (url?: string): Promise<boolean> => {
 const hasDatabase = await canReach(integrationDatabaseUrl);
 const describeIfDatabase = hasDatabase ? describe : describe.skip;
 
-const clientBackedDatabase = (client: PoolClient): Database =>
-  ({
-    pool: {} as Database["pool"],
+const clientBackedDatabase = (client: PoolClient): Database => {
+  const pool = {
+    async connect() {
+      return new Proxy(client, {
+        get(target, property, receiver) {
+          if (property === "release") return () => undefined;
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      }) as PoolClient;
+    },
+  } as Database["pool"];
+  return {
+    pool,
+    kysely: createKyselyDatabase(pool),
     async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
       return (await client.query<T>(text, params)).rows;
     },
     async execute(text: string, params: unknown[] = []): Promise<number> {
       return (await client.query(text, params)).rowCount ?? 0;
     },
-  }) as Database;
+  } as Database;
+};
 
 describeIfDatabase("external skills repositories (postgres)", () => {
   const schema = `test_extskills_${randomUUID().replace(/-/g, "")}`;
@@ -75,7 +89,7 @@ describeIfDatabase("external skills repositories (postgres)", () => {
     await client.query(`INSERT INTO agents (id, workspace_id) VALUES ($1, $2)`, [agentId, workspaceId]);
 
     const database = clientBackedDatabase(client);
-    connections = new McpConnectionRepository(database);
+    connections = new McpConnectionRepository(database.kysely);
     skills = new ExternalSkillDefinitionRepository(database);
   });
 

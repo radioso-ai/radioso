@@ -312,17 +312,17 @@ export const buildRepositories = (
   ingestionSettingsRepository: new IngestionSettingsRepository(database),
   messageRepository: new MessageRepository(database),
   passwordResetTokenRepository: new PasswordResetTokenRepository(database.kysely),
-  retrievalSettingsRepository: new RetrievalSettingsRepository(database),
+  retrievalSettingsRepository: new RetrievalSettingsRepository(database.kysely),
   routineDefinitionRepository: new RoutineDefinitionRepository(database),
   sessionRepository: new SessionRepository(database.kysely),
   userRepository: new UserRepository(database),
   websiteCrawlJobRepository: new WebsiteCrawlJobRepository(database),
-  workspaceGrantRepository: new WorkspaceGrantRepository(database),
+  workspaceGrantRepository: new WorkspaceGrantRepository(database.kysely),
   workspaceRepository: new WorkspaceRepository(database),
   workspaceTokenRepository: new WorkspaceTokenRepository(database.kysely),
   abuseControlRepository: new AbuseControlRepository(database),
   accountInvitationRepository: new AccountInvitationRepository(database.kysely),
-  workspaceProviderCredentialsRepository: new WorkspaceProviderCredentialsRepository(database),
+  workspaceProviderCredentialsRepository: new WorkspaceProviderCredentialsRepository(database.kysely),
   webhookDestinationRepository: new WebhookDestinationRepository(database),
   customerEmailConnectionRepository: new CustomerEmailConnectionRepository(database),
   emailSkillDefinitionRepository: new EmailSkillDefinitionRepository(database),
@@ -878,7 +878,7 @@ export const buildChatServices = (input: {
     input.env.CONNECTOR_ENCRYPTION_KEY &&
     !input.composition.skillExecutorRegistry.resolve({ kind: "internal", adapter: CUSTOMER_EMAIL_SKILLS_ADAPTER })
   ) {
-    const oauthConnectionRepository = new OauthConnectionRepository(input.database);
+    const oauthConnectionRepository = new OauthConnectionRepository(input.database.kysely);
     // No real Gmail/Microsoft Graph adapter is wired yet (spec 089 follow-up): the
     // mock provider accepts every draft/send and returns a placeholder message id, so
     // `drafted`/`sent` outcomes do NOT mean a message was delivered. Warn loudly so

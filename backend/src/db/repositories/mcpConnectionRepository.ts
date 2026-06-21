@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 
-import type { Database } from "../../shared/infra/database.js";
 import type { McpAuthMethod, McpConnectionStatus } from "../../modules/externalSkills/domain.js";
+import { currentTimestamp, tableExists } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface McpConnectionRecord {
   id: string;
@@ -66,8 +67,20 @@ const mapRecord = (row: McpConnectionRow): McpConnectionRecord => ({
   updatedAt: new Date(row.updated_at),
 });
 
-const COLUMNS =
-  "id, agent_id, display_name, server_url, auth_method, credential_ciphertext, encryption_key_id, oauth_client_ciphertext, oauth_flow_ciphertext, status, created_at, updated_at";
+export const mcpConnectionColumns = [
+  "id",
+  "agent_id",
+  "display_name",
+  "server_url",
+  "auth_method",
+  "credential_ciphertext",
+  "encryption_key_id",
+  "oauth_client_ciphertext",
+  "oauth_flow_ciphertext",
+  "status",
+  "created_at",
+  "updated_at",
+] as const;
 
 export interface McpConnectionRepositoryPort {
   create(input: CreateMcpConnectionInput): Promise<McpConnectionRecord>;
@@ -86,27 +99,25 @@ export interface McpConnectionRepositoryPort {
 }
 
 export class McpConnectionRepository implements McpConnectionRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async create(input: CreateMcpConnectionInput): Promise<McpConnectionRecord> {
-    const [row] = await this.database.query<McpConnectionRow>(
-      `INSERT INTO mcp_connections
-         (id, agent_id, display_name, server_url, auth_method, credential_ciphertext, encryption_key_id, oauth_client_ciphertext, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       RETURNING ${COLUMNS}`,
-      [
-        randomUUID(),
-        input.agentId,
-        input.displayName,
-        input.serverUrl,
-        input.authMethod,
-        input.credentialCiphertext ?? null,
-        input.encryptionKeyId ?? null,
-        input.oauthClientCiphertext ?? null,
-        input.status ?? "unconfigured",
-      ],
-    );
-    return mapRecord(row);
+    const row = await this.db
+      .insertInto("mcp_connections")
+      .values({
+        id: randomUUID(),
+        agent_id: input.agentId,
+        display_name: input.displayName,
+        server_url: input.serverUrl,
+        auth_method: input.authMethod,
+        credential_ciphertext: input.credentialCiphertext ?? null,
+        encryption_key_id: input.encryptionKeyId ?? null,
+        oauth_client_ciphertext: input.oauthClientCiphertext ?? null,
+        status: input.status ?? "unconfigured",
+      })
+      .returning(mcpConnectionColumns)
+      .executeTakeFirstOrThrow();
+    return mapRecord(row as McpConnectionRow);
   }
 
   /** Persist the in-flight authorization (PKCE/state); sets status back to unconfigured. */
@@ -115,13 +126,14 @@ export class McpConnectionRepository implements McpConnectionRepositoryPort {
     id: string,
     oauthFlowCiphertext: string,
   ): Promise<McpConnectionRecord | null> {
-    const [row] = await this.database.query<McpConnectionRow>(
-      `UPDATE mcp_connections SET oauth_flow_ciphertext = $3, updated_at = NOW()
-       WHERE agent_id = $1 AND id = $2
-       RETURNING ${COLUMNS}`,
-      [agentId, id, oauthFlowCiphertext],
-    );
-    return row ? mapRecord(row) : null;
+    const row = await this.db
+      .updateTable("mcp_connections")
+      .set({ oauth_flow_ciphertext: oauthFlowCiphertext, updated_at: currentTimestamp() })
+      .where("agent_id", "=", agentId)
+      .where("id", "=", id)
+      .returning(mcpConnectionColumns)
+      .executeTakeFirst();
+    return row ? mapRecord(row as McpConnectionRow) : null;
   }
 
   /** Store freshly issued/refreshed OAuth tokens, mark authorized, and clear the flow. */
@@ -131,34 +143,40 @@ export class McpConnectionRepository implements McpConnectionRepositoryPort {
     credentialCiphertext: string,
     encryptionKeyId: string | null,
   ): Promise<McpConnectionRecord | null> {
-    const [row] = await this.database.query<McpConnectionRow>(
-      `UPDATE mcp_connections SET
-         credential_ciphertext = $3,
-         encryption_key_id = $4,
-         oauth_flow_ciphertext = NULL,
-         status = 'authorized',
-         updated_at = NOW()
-       WHERE agent_id = $1 AND id = $2
-       RETURNING ${COLUMNS}`,
-      [agentId, id, credentialCiphertext, encryptionKeyId],
-    );
-    return row ? mapRecord(row) : null;
+    const row = await this.db
+      .updateTable("mcp_connections")
+      .set({
+        credential_ciphertext: credentialCiphertext,
+        encryption_key_id: encryptionKeyId,
+        oauth_flow_ciphertext: null,
+        status: "authorized",
+        updated_at: currentTimestamp(),
+      })
+      .where("agent_id", "=", agentId)
+      .where("id", "=", id)
+      .returning(mcpConnectionColumns)
+      .executeTakeFirst();
+    return row ? mapRecord(row as McpConnectionRow) : null;
   }
 
   async findById(agentId: string, id: string): Promise<McpConnectionRecord | null> {
-    const [row] = await this.database.query<McpConnectionRow>(
-      `SELECT ${COLUMNS} FROM mcp_connections WHERE agent_id = $1 AND id = $2`,
-      [agentId, id],
-    );
-    return row ? mapRecord(row) : null;
+    const row = await this.db
+      .selectFrom("mcp_connections")
+      .select(mcpConnectionColumns)
+      .where("agent_id", "=", agentId)
+      .where("id", "=", id)
+      .executeTakeFirst();
+    return row ? mapRecord(row as McpConnectionRow) : null;
   }
 
   async listByAgent(agentId: string): Promise<McpConnectionRecord[]> {
-    const rows = await this.database.query<McpConnectionRow>(
-      `SELECT ${COLUMNS} FROM mcp_connections WHERE agent_id = $1 ORDER BY created_at ASC`,
-      [agentId],
-    );
-    return rows.map(mapRecord);
+    const rows = await this.db
+      .selectFrom("mcp_connections")
+      .select(mcpConnectionColumns)
+      .where("agent_id", "=", agentId)
+      .orderBy("created_at", "asc")
+      .execute();
+    return rows.map((row) => mapRecord(row as McpConnectionRow));
   }
 
   async updateStatus(
@@ -166,13 +184,14 @@ export class McpConnectionRepository implements McpConnectionRepositoryPort {
     id: string,
     status: McpConnectionStatus,
   ): Promise<McpConnectionRecord | null> {
-    const [row] = await this.database.query<McpConnectionRow>(
-      `UPDATE mcp_connections SET status = $3, updated_at = NOW()
-       WHERE agent_id = $1 AND id = $2
-       RETURNING ${COLUMNS}`,
-      [agentId, id, status],
-    );
-    return row ? mapRecord(row) : null;
+    const row = await this.db
+      .updateTable("mcp_connections")
+      .set({ status, updated_at: currentTimestamp() })
+      .where("agent_id", "=", agentId)
+      .where("id", "=", id)
+      .returning(mcpConnectionColumns)
+      .executeTakeFirst();
+    return row ? mapRecord(row as McpConnectionRow) : null;
   }
 
   async update(
@@ -180,34 +199,34 @@ export class McpConnectionRepository implements McpConnectionRepositoryPort {
     id: string,
     input: UpdateMcpConnectionInput,
   ): Promise<McpConnectionRecord | null> {
-    const [row] = await this.database.query<McpConnectionRow>(
-      `UPDATE mcp_connections SET
-         display_name = COALESCE($3, display_name),
-         credential_ciphertext = COALESCE($4, credential_ciphertext),
-         encryption_key_id = COALESCE($5, encryption_key_id),
-         status = COALESCE($6, status),
-         updated_at = NOW()
-       WHERE agent_id = $1 AND id = $2
-       RETURNING ${COLUMNS}`,
-      [agentId, id, input.displayName ?? null, input.credentialCiphertext ?? null, input.encryptionKeyId ?? null, input.status ?? null],
-    );
-    return row ? mapRecord(row) : null;
+    const row = await this.db
+      .updateTable("mcp_connections")
+      .set({
+        ...(input.displayName !== undefined ? { display_name: input.displayName } : {}),
+        ...(input.credentialCiphertext !== undefined ? { credential_ciphertext: input.credentialCiphertext } : {}),
+        ...(input.encryptionKeyId !== undefined ? { encryption_key_id: input.encryptionKeyId } : {}),
+        ...(input.status !== undefined ? { status: input.status } : {}),
+        updated_at: currentTimestamp(),
+      })
+      .where("agent_id", "=", agentId)
+      .where("id", "=", id)
+      .returning(mcpConnectionColumns)
+      .executeTakeFirst();
+    return row ? mapRecord(row as McpConnectionRow) : null;
   }
 
   async remove(agentId: string, id: string): Promise<boolean> {
-    const [table] = await this.database.query<{ to_regclass: string | null }>(
-      "SELECT to_regclass('agent_skills')",
-    );
-    if (table?.to_regclass) {
-      const [reference] = await this.database.query<{ count: string }>(
-        `SELECT COUNT(*)::text AS count
-         FROM agent_skills
-         WHERE kind = 'external_mcp'
-           AND agent_id = $1
-           AND target_type = 'mcp_connection'
-           AND target_id = $2`,
-        [agentId, id],
-      );
+    // Guard mirrors the original: only check references when agent_skills exists (it may be
+    // absent in a partially-migrated schema), then soft-block the delete if still referenced.
+    if (await tableExists(this.db, "agent_skills")) {
+      const reference = await this.db
+        .selectFrom("agent_skills")
+        .select(({ fn }) => fn.count<string>("id").as("count"))
+        .where("kind", "=", "external_mcp")
+        .where("agent_id", "=", agentId)
+        .where("target_type", "=", "mcp_connection")
+        .where("target_id", "=", id)
+        .executeTakeFirst();
       if (Number(reference?.count ?? 0) > 0) {
         const error = new Error("MCP connection is still referenced by skills") as Error & { code?: string };
         error.code = "23503";
@@ -215,10 +234,11 @@ export class McpConnectionRepository implements McpConnectionRepositoryPort {
       }
     }
 
-    const affected = await this.database.execute(
-      `DELETE FROM mcp_connections WHERE agent_id = $1 AND id = $2`,
-      [agentId, id],
-    );
-    return affected > 0;
+    const result = await this.db
+      .deleteFrom("mcp_connections")
+      .where("agent_id", "=", agentId)
+      .where("id", "=", id)
+      .executeTakeFirst();
+    return Number(result.numDeletedRows) > 0;
   }
 }

@@ -1,6 +1,7 @@
 import { sql, type Expression, type RawBuilder } from "kysely";
 
 import type { JsonValue } from "./schema.js";
+import type { Db } from "./types.js";
 
 /**
  * Typed Postgres-specific SQL fragments.
@@ -43,6 +44,17 @@ export const currentTimestamp = (): RawBuilder<Date> => sql`now()`;
  */
 export const setLocal = (name: string, value: string): RawBuilder<unknown> =>
   sql`set local ${sql.raw(name)} = ${sql.raw(value)}`;
+
+/**
+ * Whether a table (or other relation) currently exists, via `to_regclass`. Mirrors the
+ * defensive guard some repositories use before querying a table that may be absent in a
+ * partially-migrated schema (returns NULL rather than erroring on a missing relation).
+ * `name` is a trusted constant, never user input.
+ */
+export const tableExists = async (db: Db, name: string): Promise<boolean> => {
+  const result = await sql<{ reg: string | null }>`select to_regclass(${name}) as reg`.execute(db);
+  return (result.rows[0]?.reg ?? null) !== null;
+};
 
 /**
  * `<expression> = ANY(<values>::<pgArrayType>)` — array membership, the Kysely-typed

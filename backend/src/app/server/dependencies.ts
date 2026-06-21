@@ -132,7 +132,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repositories,
   });
   const oauthConnectionService = new OauthConnectionService({
-    repository: new OauthConnectionRepository(infrastructure.database),
+    repository: new OauthConnectionRepository(infrastructure.database.kysely),
     providers: new StaticOauthProviderRegistry(composition.oauthProviders),
     encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
     appBaseUrl: env.APP_BASE_URL,
@@ -147,7 +147,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       customerEmailOauthProviderIds.map((provider) => new MockCustomerEmailProviderAdapter(provider)),
     ),
   });
-  const mcpConnectionRepository = new McpConnectionRepository(infrastructure.database);
+  const mcpConnectionRepository = new McpConnectionRepository(infrastructure.database.kysely);
   const externalSkillDefinitionRepository = new ExternalSkillDefinitionRepository(infrastructure.database);
   const mcpConnectionService = new McpConnectionService({
     repository: mcpConnectionRepository,

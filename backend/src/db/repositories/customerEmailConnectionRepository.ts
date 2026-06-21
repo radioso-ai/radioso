@@ -4,7 +4,8 @@ import type {
   CustomerEmailConnectionStatus,
   CustomerEmailHealthStatus,
 } from "../../modules/customerEmail/domain.js";
-import type { Database } from "../../shared/infra/database.js";
+import { currentTimestamp, tableExists } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface CustomerEmailConnectionRecord {
   id: string;
@@ -65,8 +66,22 @@ interface CustomerEmailConnectionRow {
   updated_at: Date;
 }
 
-const COLUMNS =
-  "id, workspace_id, oauth_connection_id, provider, display_name, sender_email, sender_name, reply_to_email, status, last_health_status, last_health_checked_at, last_error_code, created_at, updated_at";
+const customerEmailColumns = [
+  "id",
+  "workspace_id",
+  "oauth_connection_id",
+  "provider",
+  "display_name",
+  "sender_email",
+  "sender_name",
+  "reply_to_email",
+  "status",
+  "last_health_status",
+  "last_health_checked_at",
+  "last_error_code",
+  "created_at",
+  "updated_at",
+] as const;
 
 const mapRecord = (row: CustomerEmailConnectionRow): CustomerEmailConnectionRecord => ({
   id: row.id,
@@ -99,50 +114,48 @@ export interface CustomerEmailConnectionRepositoryPort {
 }
 
 export class CustomerEmailConnectionRepository implements CustomerEmailConnectionRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async create(input: CreateCustomerEmailConnectionInput): Promise<CustomerEmailConnectionRecord> {
-    const [row] = await this.database.query<CustomerEmailConnectionRow>(
-      `INSERT INTO customer_email_connections
-         (id, workspace_id, oauth_connection_id, provider, display_name, sender_email, sender_name,
-          reply_to_email, status, last_health_status, last_health_checked_at, last_error_code)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-       RETURNING ${COLUMNS}`,
-      [
-        randomUUID(),
-        input.workspaceId,
-        input.oauthConnectionId,
-        input.provider,
-        input.displayName,
-        input.senderEmail,
-        input.senderName ?? null,
-        input.replyToEmail ?? null,
-        input.status ?? "authorized",
-        input.lastHealthStatus ?? null,
-        input.lastHealthCheckedAt ?? null,
-        input.lastErrorCode ?? null,
-      ],
-    );
-    return mapRecord(row);
+    const row = await this.db
+      .insertInto("customer_email_connections")
+      .values({
+        id: randomUUID(),
+        workspace_id: input.workspaceId,
+        oauth_connection_id: input.oauthConnectionId,
+        provider: input.provider,
+        display_name: input.displayName,
+        sender_email: input.senderEmail,
+        sender_name: input.senderName ?? null,
+        reply_to_email: input.replyToEmail ?? null,
+        status: input.status ?? "authorized",
+        last_health_status: input.lastHealthStatus ?? null,
+        last_health_checked_at: input.lastHealthCheckedAt ?? null,
+        last_error_code: input.lastErrorCode ?? null,
+      })
+      .returning(customerEmailColumns)
+      .executeTakeFirstOrThrow();
+    return mapRecord(row as CustomerEmailConnectionRow);
   }
 
   async findById(workspaceId: string, id: string): Promise<CustomerEmailConnectionRecord | null> {
-    const [row] = await this.database.query<CustomerEmailConnectionRow>(
-      `SELECT ${COLUMNS} FROM customer_email_connections WHERE workspace_id = $1 AND id = $2`,
-      [workspaceId, id],
-    );
-    return row ? mapRecord(row) : null;
+    const row = await this.db
+      .selectFrom("customer_email_connections")
+      .select(customerEmailColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", id)
+      .executeTakeFirst();
+    return row ? mapRecord(row as CustomerEmailConnectionRow) : null;
   }
 
   async listByWorkspace(workspaceId: string): Promise<CustomerEmailConnectionRecord[]> {
-    const rows = await this.database.query<CustomerEmailConnectionRow>(
-      `SELECT ${COLUMNS}
-       FROM customer_email_connections
-       WHERE workspace_id = $1
-       ORDER BY created_at ASC`,
-      [workspaceId],
-    );
-    return rows.map(mapRecord);
+    const rows = await this.db
+      .selectFrom("customer_email_connections")
+      .select(customerEmailColumns)
+      .where("workspace_id", "=", workspaceId)
+      .orderBy("created_at", "asc")
+      .execute();
+    return rows.map((row) => mapRecord(row as CustomerEmailConnectionRow));
   }
 
   async update(
@@ -150,62 +163,55 @@ export class CustomerEmailConnectionRepository implements CustomerEmailConnectio
     id: string,
     input: UpdateCustomerEmailConnectionInput,
   ): Promise<CustomerEmailConnectionRecord | null> {
-    const assignments: string[] = [];
-    const params: unknown[] = [workspaceId, id];
-    const addAssignment = (column: string, value: unknown): void => {
-      params.push(value);
-      assignments.push(`${column} = $${params.length}`);
-    };
+    // Property presence is the signal; Kysely merges chained .set() calls (each typed).
+    let query = this.db.updateTable("customer_email_connections");
+    let hasAssignment = false;
 
-    if ("displayName" in input) addAssignment("display_name", input.displayName);
-    if ("senderEmail" in input) addAssignment("sender_email", input.senderEmail);
-    if ("senderName" in input) addAssignment("sender_name", input.senderName ?? null);
-    if ("replyToEmail" in input) addAssignment("reply_to_email", input.replyToEmail ?? null);
-    if ("status" in input) addAssignment("status", input.status);
-    if ("lastHealthStatus" in input) addAssignment("last_health_status", input.lastHealthStatus ?? null);
-    if ("lastHealthCheckedAt" in input) addAssignment("last_health_checked_at", input.lastHealthCheckedAt ?? null);
-    if ("lastErrorCode" in input) addAssignment("last_error_code", input.lastErrorCode ?? null);
+    if ("displayName" in input) { query = query.set({ display_name: input.displayName! }); hasAssignment = true; }
+    if ("senderEmail" in input) { query = query.set({ sender_email: input.senderEmail! }); hasAssignment = true; }
+    if ("senderName" in input) { query = query.set({ sender_name: input.senderName ?? null }); hasAssignment = true; }
+    if ("replyToEmail" in input) { query = query.set({ reply_to_email: input.replyToEmail ?? null }); hasAssignment = true; }
+    if ("status" in input) { query = query.set({ status: input.status! }); hasAssignment = true; }
+    if ("lastHealthStatus" in input) { query = query.set({ last_health_status: input.lastHealthStatus ?? null }); hasAssignment = true; }
+    if ("lastHealthCheckedAt" in input) { query = query.set({ last_health_checked_at: input.lastHealthCheckedAt ?? null }); hasAssignment = true; }
+    if ("lastErrorCode" in input) { query = query.set({ last_error_code: input.lastErrorCode ?? null }); hasAssignment = true; }
 
-    if (assignments.length === 0) {
+    if (!hasAssignment) {
       return this.findById(workspaceId, id);
     }
 
-    const [row] = await this.database.query<CustomerEmailConnectionRow>(
-      `UPDATE customer_email_connections
-       SET ${assignments.join(", ")}, updated_at = NOW()
-       WHERE workspace_id = $1 AND id = $2
-       RETURNING ${COLUMNS}`,
-      params,
-    );
-    return row ? mapRecord(row) : null;
+    const row = await query
+      .set({ updated_at: currentTimestamp() })
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", id)
+      .returning(customerEmailColumns)
+      .executeTakeFirst();
+    return row ? mapRecord(row as CustomerEmailConnectionRow) : null;
   }
 
   async countSkillReferences(workspaceId: string, id: string): Promise<number> {
     // Skill tables are absent in a few focused repository schemas, so keep this
     // guard tolerant while enforcing references through the shared skill spine.
-    const [table] = await this.database.query<{ to_regclass: string | null }>(
-      "SELECT to_regclass('agent_skills')",
-    );
-    if (!table?.to_regclass) {
+    if (!(await tableExists(this.db, "agent_skills"))) {
       return 0;
     }
-    const [row] = await this.database.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count
-       FROM agent_skills s
-       WHERE s.kind = 'customer_email'
-         AND s.workspace_id = $1
-         AND s.target_type = 'customer_email_connection'
-         AND s.target_id = $2`,
-      [workspaceId, id],
-    );
+    const row = await this.db
+      .selectFrom("agent_skills")
+      .select((eb) => eb.fn.countAll<string>().as("count"))
+      .where("kind", "=", "customer_email")
+      .where("workspace_id", "=", workspaceId)
+      .where("target_type", "=", "customer_email_connection")
+      .where("target_id", "=", id)
+      .executeTakeFirst();
     return Number(row?.count ?? 0);
   }
 
   async remove(workspaceId: string, id: string): Promise<boolean> {
-    const affected = await this.database.execute(
-      `DELETE FROM customer_email_connections WHERE workspace_id = $1 AND id = $2`,
-      [workspaceId, id],
-    );
-    return affected > 0;
+    const result = await this.db
+      .deleteFrom("customer_email_connections")
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", id)
+      .executeTakeFirst();
+    return Number(result.numDeletedRows) > 0;
   }
 }

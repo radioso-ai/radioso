@@ -324,9 +324,9 @@ export const buildRepositories = (
   accountInvitationRepository: new AccountInvitationRepository(database.kysely),
   workspaceProviderCredentialsRepository: new WorkspaceProviderCredentialsRepository(database.kysely),
   webhookDestinationRepository: new WebhookDestinationRepository(database.kysely),
-  customerEmailConnectionRepository: new CustomerEmailConnectionRepository(database),
-  emailSkillDefinitionRepository: new EmailSkillDefinitionRepository(database),
-  emailSkillActivityRepository: new EmailSkillActivityRepository(database),
+  customerEmailConnectionRepository: new CustomerEmailConnectionRepository(database.kysely),
+  emailSkillDefinitionRepository: new EmailSkillDefinitionRepository(database.kysely),
+  emailSkillActivityRepository: new EmailSkillActivityRepository(database.kysely),
   webhookSkillDefinitionRepository: new WebhookSkillDefinitionRepository(database.kysely),
 });
 

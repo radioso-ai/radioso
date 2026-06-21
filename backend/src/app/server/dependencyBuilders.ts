@@ -315,15 +315,15 @@ export const buildRepositories = (
   retrievalSettingsRepository: new RetrievalSettingsRepository(database.kysely),
   routineDefinitionRepository: new RoutineDefinitionRepository(database),
   sessionRepository: new SessionRepository(database.kysely),
-  userRepository: new UserRepository(database),
+  userRepository: new UserRepository(database.kysely),
   websiteCrawlJobRepository: new WebsiteCrawlJobRepository(database),
   workspaceGrantRepository: new WorkspaceGrantRepository(database.kysely),
   workspaceRepository: new WorkspaceRepository(database),
   workspaceTokenRepository: new WorkspaceTokenRepository(database.kysely),
-  abuseControlRepository: new AbuseControlRepository(database),
+  abuseControlRepository: new AbuseControlRepository(database.kysely),
   accountInvitationRepository: new AccountInvitationRepository(database.kysely),
   workspaceProviderCredentialsRepository: new WorkspaceProviderCredentialsRepository(database.kysely),
-  webhookDestinationRepository: new WebhookDestinationRepository(database),
+  webhookDestinationRepository: new WebhookDestinationRepository(database.kysely),
   customerEmailConnectionRepository: new CustomerEmailConnectionRepository(database),
   emailSkillDefinitionRepository: new EmailSkillDefinitionRepository(database),
   emailSkillActivityRepository: new EmailSkillActivityRepository(database),
@@ -820,7 +820,7 @@ export const buildChatServices = (input: {
     present: answerPresentationService.present.bind(answerPresentationService),
     resolveCitationArtifacts,
   };
-  const abuseControlService = new AbuseControlService(new AbuseControlRepository(input.database));
+  const abuseControlService = new AbuseControlService(new AbuseControlRepository(input.database.kysely));
   const publicChatActionAdvertiserContext = {
     database: input.database,
     chatGateway,

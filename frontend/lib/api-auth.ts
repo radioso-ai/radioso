@@ -1,4 +1,4 @@
-import { request } from './api-client'
+import { API_BASE, request } from './api-client'
 import type {
   AcceptedResponse,
   EmailVerificationResendRequest,
@@ -27,6 +27,25 @@ export const authApi = {
       method: "POST",
       body: JSON.stringify(data),
     }, { withSession: true })
+  },
+
+  // Federated (Google) sign-in is an Enterprise Edition capability. The probe
+  // returns `{ enabled: false }` whenever the EE module is absent (404) or the
+  // provider is unconfigured, so the OSS login UI degrades cleanly.
+  async getGoogleLoginStatus(): Promise<{ enabled: boolean }> {
+    try {
+      return await request<{ enabled: boolean }>("/ee/auth/google/status", {
+        method: "GET",
+      })
+    } catch {
+      return { enabled: false }
+    }
+  },
+
+  // Full-page navigation target that begins the Google OAuth redirect dance.
+  // Same-origin via the `/backend` proxy so the session cookie lands on the app.
+  getGoogleLoginStartUrl(): string {
+    return `${API_BASE}/ee/auth/google/start`
   },
 
   async requestPasswordReset(data: PasswordResetRequest): Promise<AcceptedResponse> {

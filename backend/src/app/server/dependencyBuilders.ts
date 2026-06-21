@@ -319,7 +319,7 @@ export const buildRepositories = (
   websiteCrawlJobRepository: new WebsiteCrawlJobRepository(database),
   workspaceGrantRepository: new WorkspaceGrantRepository(database),
   workspaceRepository: new WorkspaceRepository(database),
-  workspaceTokenRepository: new WorkspaceTokenRepository(database),
+  workspaceTokenRepository: new WorkspaceTokenRepository(database.kysely),
   abuseControlRepository: new AbuseControlRepository(database),
   accountInvitationRepository: new AccountInvitationRepository(database),
   workspaceProviderCredentialsRepository: new WorkspaceProviderCredentialsRepository(database),

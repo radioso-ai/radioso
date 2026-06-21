@@ -22,8 +22,10 @@ import { createWorkspaceRoutes } from "./workspaceRoutes.js";
 import { createMcpContextRoutes } from "./mcpContextRoutes.js";
 import { createOauthConnectionRoutes } from "./oauthConnectionRoutes.js";
 import { createCustomerEmailConnectionRoutes } from "./customerEmailConnectionRoutes.js";
+import { createSlackConnectionRoutes } from "./slackConnectionRoutes.js";
 import { createEmailSkillRoutes } from "./emailSkillRoutes.js";
 import { createWebhookSkillRoutes } from "./webhookSkillRoutes.js";
+import { createSlackSkillRoutes } from "./slackSkillRoutes.js";
 import { createEmailSkillActivityRoutes } from "./emailSkillActivityRoutes.js";
 import { createRetrievalRoutes } from "./retrievalRoutes.js";
 import { createConnectorRoutes } from "../../../modules/connectors/http/connectorRoutes.js";
@@ -58,6 +60,7 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   router.use("/api/v1/workspace/mcp", createMcpContextRoutes(dependencies));
   router.use("/api/v1", createOauthConnectionRoutes(dependencies));
   router.use("/api/v1", createCustomerEmailConnectionRoutes(dependencies));
+  router.use("/api/v1", createSlackConnectionRoutes(dependencies));
   router.use("/api/v1", createEmailSkillActivityRoutes(dependencies));
   router.use("/api/v1/agents", createAgentRoutes(dependencies));
   router.use("/api/v1/agents", createDecisionRoutes(dependencies));
@@ -65,6 +68,7 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   router.use("/api/v1/agents", createAgentExternalSkillsRoutes(dependencies));
   router.use("/api/v1/agents", createEmailSkillRoutes(dependencies));
   router.use("/api/v1/agents", createWebhookSkillRoutes(dependencies));
+  router.use("/api/v1/agents", createSlackSkillRoutes(dependencies));
   router.use("/api/v1/assistant", createAssistantRoutes(dependencies));
   router.use("/api/v1/conversations", createConversationOwnershipRoutes(dependencies));
   router.use("/api/v1/history", createHistoryRoutes(dependencies));

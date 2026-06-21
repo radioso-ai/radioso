@@ -19,10 +19,21 @@ export {
 } from "./oauth/slackProvider.js";
 export {
   buildSlackManifest,
+  getSlackReadiness,
   requiredSlackEnvVars,
   slackBotScopes,
+  type RequiredSlackEnvVar,
   type SlackAppManifest,
+  type SlackReadiness,
 } from "./manifest/slackManifest.js";
+export {
+  SLACK_MAX_MESSAGE_TEXT_LENGTH,
+  isSlackAuthError,
+  postSlackText,
+  slackAuthErrorCode,
+  splitSlackMessageText,
+  type SlackPostMessagePort,
+} from "./delivery/slackDelivery.js";
 export {
   SLACK_POST_ACTION_TYPE,
   SlackPostActionCredentialResolver,

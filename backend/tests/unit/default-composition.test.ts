@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   createDefaultApplicationComposition,
+  createDefaultConnectorRegistry,
   createDefaultDocumentJobConsumer,
   createDefaultDocumentJobDispatcher,
   createDefaultWebsiteCrawlJobConsumer,
@@ -138,6 +139,7 @@ describe("default application composition", () => {
       logger: createLogger(),
       env: {
         SLACK_OAUTH_CLIENT_ID: "slack-client",
+        SLACK_OAUTH_CLIENT_SECRET: "slack-secret",
       },
     });
     expect(absent.oauthProviders).toEqual([]);
@@ -162,6 +164,21 @@ describe("default application composition", () => {
         allowedScopes: ["app_mentions:read", "chat:write", "im:history", "im:read", "im:write"],
       }),
     ]);
+  });
+
+  it("registers the Slack connector only when the complete Slack env set is configured", () => {
+    expect(createDefaultConnectorRegistry([], {
+      SLACK_SIGNING_SECRET: "signing-secret",
+    }).listPlugins().map((plugin) => plugin.id)).not.toContain("slack");
+    expect(createDefaultConnectorRegistry([], {
+      SLACK_OAUTH_CLIENT_ID: "slack-client",
+      SLACK_OAUTH_CLIENT_SECRET: "slack-secret",
+    }).listPlugins().map((plugin) => plugin.id)).not.toContain("slack");
+    expect(createDefaultConnectorRegistry([], {
+      SLACK_OAUTH_CLIENT_ID: "slack-client",
+      SLACK_OAUTH_CLIENT_SECRET: "slack-secret",
+      SLACK_SIGNING_SECRET: "signing-secret",
+    }).listPlugins().map((plugin) => plugin.id)).toContain("slack");
   });
 
   it("applies optional connector contributions through module registration", async () => {

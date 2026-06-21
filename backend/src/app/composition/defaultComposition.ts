@@ -185,12 +185,17 @@ export const createDefaultApplicationComposition = (options: {
 
 export const createDefaultConnectorRegistry = (
   connectors: ApplicationComposition["connectors"] = [],
-  env?: Partial<Pick<Env, "SLACK_SIGNING_SECRET" | "CONNECTOR_ENCRYPTION_KEY">>,
+  env?: Partial<Pick<
+    Env,
+    "SLACK_OAUTH_CLIENT_ID" | "SLACK_OAUTH_CLIENT_SECRET" | "SLACK_SIGNING_SECRET" | "CONNECTOR_ENCRYPTION_KEY"
+  >>,
 ): ConnectorRegistry => {
   const registry = new ConnectorRegistry();
   registerBuiltInConnectors(registry, {
     slack: {
-      signingSecret: env?.SLACK_SIGNING_SECRET,
+      SLACK_OAUTH_CLIENT_ID: env?.SLACK_OAUTH_CLIENT_ID,
+      SLACK_OAUTH_CLIENT_SECRET: env?.SLACK_OAUTH_CLIENT_SECRET,
+      SLACK_SIGNING_SECRET: env?.SLACK_SIGNING_SECRET,
       encryptionKey: env?.CONNECTOR_ENCRYPTION_KEY,
     },
   });

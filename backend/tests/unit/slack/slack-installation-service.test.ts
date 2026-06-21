@@ -386,4 +386,31 @@ describe("SlackInstallationService", () => {
     })).rejects.toThrow("CONNECTOR_ENCRYPTION_KEY");
     expect(oauthConnections.created).toHaveLength(0);
   });
+
+  it("marks the integration connection as needs_reauth after Slack auth failure", async () => {
+    const { service, integrationConnections } = createService();
+    const saved = await service.saveInstallation({
+      workspaceId: "workspace-1",
+      teamId: "T123",
+      teamName: "Acme",
+      botUserId: "U_BOT",
+      botAccessToken: "xoxb-token",
+      grantedScopes: ["chat:write"],
+      answeringAgentId: "agent-1",
+    });
+
+    await expect(service.markNeedsReauthForInstallation(saved.installation, "token_revoked")).resolves.toBe(true);
+
+    expect(integrationConnections.updates.at(-1)).toMatchObject({
+      status: "needs_reauth",
+      lastHealthStatus: "failed",
+      lastErrorCode: "token_revoked",
+    });
+    await expect(service.getStatus("workspace-1")).resolves.toMatchObject({
+      status: "needs_reauth",
+      installationId: saved.installation.id,
+      teamName: "Acme",
+      answeringAgentId: "agent-1",
+    });
+  });
 });

@@ -1,10 +1,11 @@
 import type { ConnectorRegistry } from "../services/connectorRegistry.js";
+import { getSlackReadiness, type RequiredSlackEnvVar } from "../../slack/public.js";
 import { SlackPlugin } from "./slack/slackPlugin.js";
 import { WordpressConnector } from "./wordpress/wordpressConnector.js";
 import { WhatsAppPlugin } from "./whatsapp/whatsappPlugin.js";
 
 export interface BuiltInConnectorOptions {
-  slack?: {
+  slack?: Partial<Record<RequiredSlackEnvVar, string | undefined>> & {
     signingSecret?: string;
     encryptionKey?: string;
   };
@@ -17,10 +18,14 @@ export interface BuiltInConnectorOptions {
 export const registerBuiltInConnectors = (registry: ConnectorRegistry, options: BuiltInConnectorOptions = {}): void => {
   registry.register(new WordpressConnector());
   registry.register(new WhatsAppPlugin());
-  if (options.slack?.signingSecret) {
+  if (getSlackReadiness({
+    SLACK_OAUTH_CLIENT_ID: options.slack?.SLACK_OAUTH_CLIENT_ID,
+    SLACK_OAUTH_CLIENT_SECRET: options.slack?.SLACK_OAUTH_CLIENT_SECRET,
+    SLACK_SIGNING_SECRET: options.slack?.SLACK_SIGNING_SECRET ?? options.slack?.signingSecret,
+  }).configured) {
     registry.register(new SlackPlugin({
-      signingSecret: options.slack.signingSecret,
-      encryptionKey: options.slack.encryptionKey,
+      signingSecret: options.slack!.SLACK_SIGNING_SECRET ?? options.slack!.signingSecret!,
+      encryptionKey: options.slack!.encryptionKey,
     }));
   }
 };

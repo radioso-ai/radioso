@@ -5,6 +5,8 @@ import {
   SlackInstallationRepository,
   SlackInstallationService,
   SlackWebApiClient,
+  postSlackText,
+  slackAuthErrorCode,
   type SlackInstallationRecord,
   type SlackWebApiClientOptions,
   type SlackWebApiClient as SlackWebApiClientInstance,
@@ -15,11 +17,12 @@ import type { Database } from "../../../shared/infra/database.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 
 export const SLACK_POST_ACTION_TYPE = "slack.post";
+const MAX_SLACK_POST_ACTION_TEXT_LENGTH = 200_000;
 
 export const slackPostPayloadSchema = z.object({
   installationId: z.string().uuid(),
   channelId: z.string().min(1),
-  text: z.string().min(1).max(40_000),
+  text: z.string().min(1).max(MAX_SLACK_POST_ACTION_TEXT_LENGTH),
   threadTs: z.string().min(1).optional(),
   conversationRef: z.string().min(1),
   kind: z.enum(["gap_escalation", "routine_post"]),
@@ -66,6 +69,7 @@ export type SlackPostClientFactory = (
 
 export interface SlackPostCredentialResolver {
   findInstallationById(installationId: string): Promise<SlackInstallationRecord | null>;
+  markNeedsReauthForInstallation(installation: SlackInstallationRecord, errorCode: string): Promise<boolean>;
   resolveBotTokenForInstallation(installation: SlackInstallationRecord): Promise<string | null>;
 }
 
@@ -91,13 +95,22 @@ export class SlackPostActionHandler implements ActionHandler {
     }
     const botToken = await this.options.credentials.resolveBotTokenForInstallation(installation);
     if (!botToken) {
+      await this.options.credentials.markNeedsReauthForInstallation(installation, "slack_bot_token_not_found");
       throw new Error("slack_bot_token_not_found");
     }
-    await this.clientFactory({ botToken }).postMessage({
-      channel: payload.channelId,
-      text: payload.text,
-      ...(payload.threadTs ? { threadTs: payload.threadTs } : {}),
-    });
+    try {
+      await postSlackText(this.clientFactory({ botToken }), {
+        channel: payload.channelId,
+        text: payload.text,
+        ...(payload.threadTs ? { threadTs: payload.threadTs } : {}),
+      });
+    } catch (error) {
+      const authErrorCode = slackAuthErrorCode(error);
+      if (authErrorCode) {
+        await this.options.credentials.markNeedsReauthForInstallation(installation, authErrorCode);
+      }
+      throw error;
+    }
     this.options.logger?.info?.({
       event: "slack_post",
       workspaceId: input.context.workspaceId,
@@ -157,6 +170,10 @@ export class SlackPostActionCredentialResolver implements SlackPostCredentialRes
 
   async findInstallationById(installationId: string): Promise<SlackInstallationRecord | null> {
     return this.installations.findById(installationId);
+  }
+
+  async markNeedsReauthForInstallation(installation: SlackInstallationRecord, errorCode: string): Promise<boolean> {
+    return this.installationService.markNeedsReauthForInstallation(installation, errorCode);
   }
 
   async resolveBotTokenForInstallation(installation: SlackInstallationRecord): Promise<string | null> {

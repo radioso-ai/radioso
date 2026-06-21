@@ -5,6 +5,8 @@ import type {
 
 import {
   SlackWebApiClient,
+  postSlackText,
+  slackAuthErrorCode,
   type SlackWebApiClientOptions,
   type SlackWebApiClient as SlackWebApiClientInstance,
   type SlackBindingRepositoryPort,
@@ -52,7 +54,7 @@ export interface SlackMessageHandlerOptions {
   chat: ConnectorChatPort;
   installations: SlackInstallationRepositoryPort;
   bindings: SlackBindingRepositoryPort;
-  installationService: Pick<SlackInstallationService, "resolveBotTokenForInstallation">;
+  installationService: Pick<SlackInstallationService, "markNeedsReauthForInstallation" | "resolveBotTokenForInstallation">;
   persistence: SlackPersistencePort;
   slackPostOutbox?: SlackPostOutboxPort;
   clientFactory?: SlackWebApiClientFactory;
@@ -155,6 +157,7 @@ export class SlackMessageHandler {
 
     const botToken = await this.options.installationService.resolveBotTokenForInstallation(installation);
     if (!botToken) {
+      await this.options.installationService.markNeedsReauthForInstallation(installation, "slack_bot_token_not_found");
       await this.options.persistence.markInboundEventStatus(envelope.eventId, "skipped");
       this.options.logger.warn(
         { workspaceId: installation.workspaceId, installationId: installation.id, eventId: envelope.eventId },
@@ -163,11 +166,22 @@ export class SlackMessageHandler {
       return;
     }
 
-    await this.clientFactory({ botToken }).postMessage({
-      channel: envelope.event.channel,
-      text: response.answer,
-      threadTs: input.getReplyThreadTs(),
-    });
+    try {
+      await postSlackText(this.clientFactory({ botToken }), {
+        channel: envelope.event.channel,
+        text: response.answer,
+        threadTs: input.getReplyThreadTs(),
+      });
+    } catch (error) {
+      const authErrorCode = slackAuthErrorCode(error);
+      if (authErrorCode) {
+        await this.options.installationService.markNeedsReauthForInstallation(
+          installation,
+          authErrorCode,
+        );
+      }
+      throw error;
+    }
     await this.options.persistence.markInboundEventStatus(envelope.eventId, "processed");
     this.options.logger.info(
       { workspaceId: installation.workspaceId, installationId: installation.id, eventId: envelope.eventId },

@@ -20345,6 +20345,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "Slack install is not fully configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -20389,6 +20399,29 @@
                         "not_configured"
                       ]
                     },
+                    "readiness": {
+                      "type": "object",
+                      "properties": {
+                        "configured": {
+                          "type": "boolean"
+                        },
+                        "missingEnvVars": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "SLACK_OAUTH_CLIENT_ID",
+                              "SLACK_OAUTH_CLIENT_SECRET",
+                              "SLACK_SIGNING_SECRET"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "configured",
+                        "missingEnvVars"
+                      ]
+                    },
                     "installationId": {
                       "type": "string",
                       "format": "uuid"
@@ -20402,7 +20435,8 @@
                     }
                   },
                   "required": [
-                    "status"
+                    "status",
+                    "readiness"
                   ]
                 }
               }

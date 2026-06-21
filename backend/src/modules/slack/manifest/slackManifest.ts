@@ -11,6 +11,22 @@ export const requiredSlackEnvVars = [
   "SLACK_OAUTH_CLIENT_SECRET",
   "SLACK_SIGNING_SECRET",
 ] as const;
+export type RequiredSlackEnvVar = (typeof requiredSlackEnvVars)[number];
+
+export interface SlackReadiness {
+  configured: boolean;
+  missingEnvVars: RequiredSlackEnvVar[];
+}
+
+export const getSlackReadiness = (
+  env?: Partial<Record<RequiredSlackEnvVar, string | null | undefined>>,
+): SlackReadiness => {
+  const missingEnvVars = requiredSlackEnvVars.filter((envVar) => !env?.[envVar]);
+  return {
+    configured: missingEnvVars.length === 0,
+    missingEnvVars,
+  };
+};
 
 export interface SlackAppManifest {
   display_information: {

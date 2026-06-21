@@ -15,6 +15,10 @@ const SlackInstallStartResponseSchema = z.object({
 
 const SlackInstallStatusSchema = z.object({
   status: z.enum(["connected", "needs_reauth", "disabled", "not_configured"]),
+  readiness: z.object({
+    configured: z.boolean(),
+    missingEnvVars: z.array(z.enum(["SLACK_OAUTH_CLIENT_ID", "SLACK_OAUTH_CLIENT_SECRET", "SLACK_SIGNING_SECRET"])),
+  }),
   installationId: z.string().uuid().optional(),
   teamName: z.string().optional(),
   answeringAgentId: z.string().uuid().optional(),
@@ -87,6 +91,7 @@ export const registerSlackPaths = (
       400: errorResponse("Invalid request or Slack OAuth is not configured"),
       401: errorResponse("Authentication required"),
       403: errorResponse("Agent manage permission required"),
+      503: errorResponse("Slack install is not fully configured"),
     },
   });
 

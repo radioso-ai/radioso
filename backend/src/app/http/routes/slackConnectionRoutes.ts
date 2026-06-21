@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import { badRequest, serviceUnavailable } from "../../../shared/domain/errors.js";
-import { buildSlackManifest, requiredSlackEnvVars } from "../../../modules/slack/public.js";
+import { buildSlackManifest, getSlackReadiness, requiredSlackEnvVars } from "../../../modules/slack/public.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
 import { validateBody } from "../middleware/validate.js";
@@ -41,6 +41,7 @@ export const createSlackConnectionRoutes = (dependencies: SlackConnectionRouteDe
   const agentsManage = requireWorkspacePermission(dependencies, "workspace.agents.manage", (req) =>
     parseUuid(req.params.workspaceId, "workspaceId"),
   );
+  const slackReadiness = () => getSlackReadiness(dependencies.env);
 
   router.post(
     "/workspaces/:workspaceId/slack/install/start",
@@ -49,6 +50,12 @@ export const createSlackConnectionRoutes = (dependencies: SlackConnectionRouteDe
     async (req, res, next) => {
       try {
         const workspaceId = parseUuid(req.params.workspaceId, "workspaceId");
+        const readiness = slackReadiness();
+        if (!readiness.configured) {
+          throw serviceUnavailable(
+            `Slack install requires ${readiness.missingEnvVars.join(", ")}`,
+          );
+        }
         const started = await dependencies.oauthConnectionService.create(workspaceId, {
           provider: "slack",
           displayName: "Slack",
@@ -71,7 +78,10 @@ export const createSlackConnectionRoutes = (dependencies: SlackConnectionRouteDe
     async (req, res, next) => {
       try {
         const workspaceId = parseUuid(req.params.workspaceId, "workspaceId");
-        res.status(200).json(await dependencies.slackInstallationService.getStatus(workspaceId));
+        res.status(200).json({
+          ...(await dependencies.slackInstallationService.getStatus(workspaceId)),
+          readiness: slackReadiness(),
+        });
       } catch (error) {
         next(error);
       }

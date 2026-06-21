@@ -8,6 +8,10 @@ import type {
   SlackInstallationRepositoryPort,
   SlackInstallationService,
 } from "../../../src/modules/slack/public.js";
+import {
+  SLACK_MAX_MESSAGE_TEXT_LENGTH as SLACK_TEXT_LIMIT,
+  SlackWebApiError,
+} from "../../../src/modules/slack/public.js";
 import type { SlackPersistencePort } from "../../../src/modules/connectors/plugins/slack/slackPersistence.js";
 import type { SlackPostOutboxPort } from "../../../src/modules/slack/public.js";
 
@@ -69,7 +73,9 @@ const makeHandler = (input: {
     upsert: vi.fn(),
     removeByInstallationId: vi.fn(),
   };
-  const installationService: Pick<SlackInstallationService, "resolveBotTokenForInstallation"> = {
+  const markNeedsReauthForInstallation = vi.fn(async () => true);
+  const installationService: Pick<SlackInstallationService, "markNeedsReauthForInstallation" | "resolveBotTokenForInstallation"> = {
+    markNeedsReauthForInstallation,
     resolveBotTokenForInstallation: vi.fn(async () => "xoxb-token"),
   };
   const posted = vi.fn();
@@ -88,6 +94,7 @@ const makeHandler = (input: {
       slackPostOutbox: outbox,
       clientFactory: () => ({ postMessage: posted }),
     }),
+    installationService,
   };
 };
 
@@ -186,7 +193,8 @@ describe("Slack gap escalation policy", () => {
       upsert: vi.fn(),
       removeByInstallationId: vi.fn(),
     };
-    const installationService: Pick<SlackInstallationService, "resolveBotTokenForInstallation"> = {
+    const installationService: Pick<SlackInstallationService, "markNeedsReauthForInstallation" | "resolveBotTokenForInstallation"> = {
+      markNeedsReauthForInstallation: vi.fn(async () => true),
       resolveBotTokenForInstallation: vi.fn(async () => "xoxb-token"),
     };
     const posted = vi.fn();
@@ -237,5 +245,38 @@ describe("Slack gap escalation policy", () => {
       text: "Mention reply",
       threadTs: "1700000000.000100",
     }));
+  });
+
+  it("splits long direct Slack replies into bounded messages", async () => {
+    const { handler, posted } = makeHandler({
+      outcome: "answered",
+      answer: `${"a".repeat(SLACK_TEXT_LIMIT)}tail`,
+    });
+
+    await handler.handleMessageIm(event);
+
+    expect(posted).toHaveBeenCalledTimes(2);
+    expect(posted.mock.calls[0]?.[0]).toMatchObject({
+      channel: "D1",
+      text: "a".repeat(SLACK_TEXT_LIMIT),
+    });
+    expect(posted.mock.calls[1]?.[0]).toMatchObject({
+      channel: "D1",
+      text: "tail",
+    });
+  });
+
+  it("marks the installation needs_reauth when Slack rejects the direct reply token", async () => {
+    const { handler, installationService, posted } = makeHandler({
+      outcome: "answered",
+      answer: "reply",
+    });
+    posted.mockImplementation(async () => {
+      throw new SlackWebApiError("invalid_auth", "Slack token is invalid");
+    });
+
+    await expect(handler.handleMessageIm(event)).rejects.toThrow("Slack token is invalid");
+
+    expect(installationService.markNeedsReauthForInstallation).toHaveBeenCalledWith(installation, "invalid_auth");
   });
 });

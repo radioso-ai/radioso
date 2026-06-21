@@ -241,6 +241,24 @@ export class SlackInstallationService {
     return decryptOauthTokens(oauthConnection.credentialCiphertext, key).accessToken;
   }
 
+  async markNeedsReauthForInstallation(
+    installation: SlackInstallationRecord,
+    errorCode: string,
+  ): Promise<boolean> {
+    const updated = await this.options.integrationConnections.update(
+      installation.workspaceId,
+      installation.connectionId,
+      {
+        status: "needs_reauth",
+        lastHealthStatus: "failed",
+        lastHealthCheckedAt: new Date(),
+        lastErrorCode: errorCode,
+      },
+      ["slack"],
+    );
+    return Boolean(updated);
+  }
+
   private async integrationConnectionForInstallation(
     installation: SlackInstallationRecord,
   ): Promise<IntegrationConnectionRecord> {

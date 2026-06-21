@@ -20,6 +20,34 @@ const expectNoSecrets = (body: unknown) => {
 };
 
 describe("Slack admin REST contract", () => {
+  it("reports incomplete Slack readiness and does not start OAuth without the full env set", async () => {
+    const { app } = createTestApp({
+      envOverrides: {
+        APP_BASE_URL: "https://app.test.example.com",
+        SLACK_OAUTH_CLIENT_ID: "test-slack-client",
+        SLACK_OAUTH_CLIENT_SECRET: "test-slack-secret",
+        SLACK_SIGNING_SECRET: undefined,
+      },
+    });
+    const session = await issueTestSession(app, "slack-not-ready@example.com");
+    const headers = adminSessionHeaders(session);
+    const base = `/api/v1/workspaces/${session.workspaceId}/slack`;
+
+    const status = await request(app).get(`${base}/install/status`).set(headers);
+    expect(status.status).toBe(200);
+    expect(status.body).toEqual({
+      status: "not_configured",
+      readiness: {
+        configured: false,
+        missingEnvVars: ["SLACK_SIGNING_SECRET"],
+      },
+    });
+
+    const started = await request(app).post(`${base}/install/start`).set(headers).send({});
+    expect(started.status).toBe(503);
+    expect(started.body.error.message).toContain("SLACK_SIGNING_SECRET");
+  });
+
   it("returns the self-host Slack manifest with env checklist and no secrets", async () => {
     const { app } = createTestApp({
       envOverrides: {
@@ -74,7 +102,13 @@ describe("Slack admin REST contract", () => {
 
     const initialStatus = await request(app).get(`${base}/install/status`).set(headers);
     expect(initialStatus.status).toBe(200);
-    expect(initialStatus.body).toEqual({ status: "not_configured" });
+    expect(initialStatus.body).toEqual({
+      status: "not_configured",
+      readiness: {
+        configured: true,
+        missingEnvVars: [],
+      },
+    });
 
     const started = await request(app).post(`${base}/install/start`).set(headers).send({});
     expect(started.status).toBe(200);
@@ -94,6 +128,10 @@ describe("Slack admin REST contract", () => {
     expect(connected.status).toBe(200);
     expect(connected.body).toEqual({
       status: "connected",
+      readiness: {
+        configured: true,
+        missingEnvVars: [],
+      },
       installationId: expect.any(String),
       teamName: "Test Slack",
     });
@@ -115,6 +153,10 @@ describe("Slack admin REST contract", () => {
     expect(connectedWithBinding.status).toBe(200);
     expect(connectedWithBinding.body).toEqual({
       status: "connected",
+      readiness: {
+        configured: true,
+        missingEnvVars: [],
+      },
       installationId: expect.any(String),
       teamName: "Test Slack",
       answeringAgentId,
@@ -125,6 +167,12 @@ describe("Slack admin REST contract", () => {
 
     const finalStatus = await request(app).get(`${base}/install/status`).set(headers);
     expect(finalStatus.status).toBe(200);
-    expect(finalStatus.body).toEqual({ status: "not_configured" });
+    expect(finalStatus.body).toEqual({
+      status: "not_configured",
+      readiness: {
+        configured: true,
+        missingEnvVars: [],
+      },
+    });
   });
 });

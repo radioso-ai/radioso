@@ -18,7 +18,7 @@ test("Slack channel connects, confirms binding, and disconnects", async ({ page 
     slackBinding: { answeringAgentId: null, escalationChannelId: null },
   });
 
-  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels#slack-channel`);
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=slack-channel`);
 
   await expect(page.getByRole("heading", { name: "Slack" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add to Slack" })).toBeVisible();
@@ -26,7 +26,7 @@ test("Slack channel connects, confirms binding, and disconnects", async ({ page 
   await page.getByRole("button", { name: "Add to Slack" }).click();
   await expect(page).toHaveURL(/\/oauth\/connections\/callback\?status=authorized&provider=slack/);
 
-  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels#slack-channel`);
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=slack-channel`);
 
   await expect(page.getByText("Connected to Radioso Test").first()).toBeVisible();
   await expect(page.getByLabel("Answering agent")).toContainText("Marta");
@@ -75,7 +75,7 @@ test("Slack self-host setup shows generated manifest and env checklist before co
     slackBinding: { answeringAgentId: null, escalationChannelId: null },
   });
 
-  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels#slack-channel`);
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=slack-channel`);
 
   await page.getByRole("button", { name: "Self-host setup" }).click();
   await expect(page.getByText("public HTTPS URL")).toBeVisible();
@@ -85,6 +85,25 @@ test("Slack self-host setup shows generated manifest and env checklist before co
   await expect(page.getByText("SLACK_OAUTH_CLIENT_SECRET")).toBeVisible();
   await expect(page.getByText("SLACK_SIGNING_SECRET")).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy manifest" })).toBeVisible();
+});
+
+test("Slack install is disabled when backend Slack env is incomplete", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    slackStatus: {
+      status: "not_configured",
+      readiness: {
+        configured: false,
+        missingEnvVars: ["SLACK_SIGNING_SECRET"],
+      },
+    },
+    slackBinding: { answeringAgentId: null, escalationChannelId: null },
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=slack-channel`);
+
+  await expect(page.getByText("Configure SLACK_SIGNING_SECRET")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add to Slack" })).toBeDisabled();
 });
 
 test("Slack routine skill authoring creates and disables a skill", async ({ page }) => {
@@ -103,7 +122,7 @@ test("Slack routine skill authoring creates and disables a skill", async ({ page
     slackSkills: [],
   });
 
-  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=assistant#assistant-skills`);
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
 
   const slackSkills = page.locator("#assistant-slack-skills");
   await expect(slackSkills.getByRole("heading", { name: "Slack skills" })).toBeVisible();

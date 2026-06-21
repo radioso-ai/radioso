@@ -10528,6 +10528,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Slack install is not fully configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     getWorkspaceSlackInstallStatus: {
@@ -10550,6 +10559,10 @@ export interface operations {
                     "application/json": {
                         /** @enum {string} */
                         status: "connected" | "needs_reauth" | "disabled" | "not_configured";
+                        readiness: {
+                            configured: boolean;
+                            missingEnvVars: ("SLACK_OAUTH_CLIENT_ID" | "SLACK_OAUTH_CLIENT_SECRET" | "SLACK_SIGNING_SECRET")[];
+                        };
                         /** Format: uuid */
                         installationId?: string;
                         teamName?: string;

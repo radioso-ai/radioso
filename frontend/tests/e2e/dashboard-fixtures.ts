@@ -84,6 +84,10 @@ export type CustomerEmailActivityFixture = {
 };
 export type SlackInstallStatusFixture = {
   status: "connected" | "needs_reauth" | "disabled" | "not_configured";
+  readiness?: {
+    configured: boolean;
+    missingEnvVars: string[];
+  };
   installationId?: string;
   teamName?: string;
   answeringAgentId?: string;
@@ -579,7 +583,8 @@ export const installDashboardApiMocks = async (
   const routineUpdates = options.routineUpdates;
   const emailSkills = options.emailSkills ?? [];
   const emailActivity = options.emailActivity ?? [];
-  let slackStatus = options.slackStatus ?? { status: "not_configured" as const };
+  const slackReady = { configured: true, missingEnvVars: [] };
+  let slackStatus = { readiness: slackReady, ...(options.slackStatus ?? { status: "not_configured" as const }) };
   let slackBinding = options.slackBinding ?? { answeringAgentId: null, escalationChannelId: null };
   const slackManifest = options.slackManifest ?? {
     manifest: {
@@ -925,6 +930,7 @@ export const installDashboardApiMocks = async (
       options.slackRequests?.push({ method: request.method(), path });
       slackStatus = {
         status: "connected",
+        readiness: slackReady,
         installationId: "99999999-9999-4999-8999-000000000003",
         teamName: "Radioso Test",
         answeringAgentId: defaultAgentId,
@@ -961,6 +967,7 @@ export const installDashboardApiMocks = async (
         };
         slackStatus = {
           ...slackStatus,
+          readiness: slackStatus.readiness ?? slackReady,
           answeringAgentId: slackBinding.answeringAgentId ?? undefined,
         };
         await json(route, slackBinding);
@@ -970,7 +977,7 @@ export const installDashboardApiMocks = async (
 
     if (path === `/workspaces/${workspaceId}/slack/installation` && request.method() === "DELETE") {
       options.slackRequests?.push({ method: request.method(), path });
-      slackStatus = { status: "not_configured" };
+      slackStatus = { status: "not_configured", readiness: slackReady };
       slackBinding = { answeringAgentId: null, escalationChannelId: null };
       slackSkills = [];
       await route.fulfill({ status: 204 });

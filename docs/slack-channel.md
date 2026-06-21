@@ -1,3 +1,9 @@
+---
+title: "Slack Channel"
+description: "Connect a Radioso agent to Slack direct messages, mentions, and human escalation posts."
+last_updated: 2026-06-21
+---
+
 # Slack Channel
 
 The Slack channel lets people talk to a Radioso agent from Slack. The same
@@ -57,6 +63,10 @@ operator supplies their own Slack app secrets through environment variables.
    - `SLACK_SIGNING_SECRET`
 6. Restart the backend.
 7. Use **Add to Slack** in the Radioso UI.
+
+Slack is available only when all three Slack environment variables are set.
+If one is missing, Radioso does not start Slack OAuth install and the UI shows
+which variable the operator still needs to configure.
 
 The manifest is available from:
 

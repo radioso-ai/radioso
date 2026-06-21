@@ -45,6 +45,9 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
   }>({ data: null, isLoading: false, error: null, copied: false })
 
   const canUseSlack = Boolean(workspaceId && agentId)
+  const slackReady = status?.readiness.configured ?? false
+  const missingSlackEnv = status?.readiness.missingEnvVars ?? []
+  const canStartInstall = canUseSlack && slackReady
   const resolvedAgentName = agentName.trim() || 'This agent'
   const selectedAgentId = binding?.answeringAgentId ?? (isConnected(status) ? agentId ?? '' : '')
   const statusLabel = useMemo(() => {
@@ -182,7 +185,10 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
     setError(null)
     try {
       await slackApi.disconnect(workspaceId, agentId)
-      setStatus({ status: 'not_configured' })
+      setStatus({
+        status: 'not_configured',
+        readiness: status?.readiness ?? { configured: false, missingEnvVars: [] },
+      })
       setBinding(null)
       setEscalationChannelDraft('')
     } catch (err) {
@@ -220,8 +226,13 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
                   {needsReauth(status) ? 'Slack needs to be reconnected.' : 'Connect Slack to this agent.'}
                 </p>
                 <p className="text-xs text-muted-foreground">No tokens or secrets are entered in Radioso.</p>
+                {!slackReady && missingSlackEnv.length > 0 ? (
+                  <p className="text-xs text-destructive">
+                    Configure {missingSlackEnv.join(', ')} on the backend, then restart Radioso.
+                  </p>
+                ) : null}
               </div>
-              <Button type="button" onClick={startInstall} disabled={!canUseSlack || busyAction === 'install'}>
+              <Button type="button" onClick={startInstall} disabled={!canStartInstall || busyAction === 'install'}>
                 {busyAction === 'install' ? <Spinner className="mr-2 h-4 w-4" /> : <MessageSquare className="mr-2 h-4 w-4" />}
                 {needsReauth(status) ? 'Reconnect Slack' : 'Add to Slack'}
               </Button>

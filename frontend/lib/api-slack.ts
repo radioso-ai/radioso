@@ -10,6 +10,10 @@ export type SlackInstallStartResponse = {
 
 export type SlackInstallStatusResponse = {
   status: SlackInstallStatus
+  readiness: {
+    configured: boolean
+    missingEnvVars: string[]
+  }
   installationId?: string
   teamName?: string
   answeringAgentId?: string

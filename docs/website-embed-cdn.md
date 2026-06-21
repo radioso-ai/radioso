@@ -1,7 +1,7 @@
 ---
 title: "Website embed assets on Cloud CDN"
 description: "Architecture for caching embed launcher and config on Cloud CDN to avoid cold-starting the frontend on every page view."
-last_updated: 2026-06-06
+last_updated: 2026-06-21
 ---
 
 # Website embed assets on Cloud CDN
@@ -92,7 +92,7 @@ The backend service account needs permission to invalidate the URL map
 
 ## Enabling it
 
-1. Set the Terraform variable `frontend_cdn_domain` (for example `radioso.dev`)
+1. Set the Terraform variable `frontend_cdn_domain` (for example `radioso.ai`)
    for the environment. Leaving it empty creates no load balancer or CDN.
 2. Set the backend env var `RADIOSO_CDN_URL_MAP` to the URL map name
    (`<service>-<environment>-frontend-lb`) so settings changes invalidate the

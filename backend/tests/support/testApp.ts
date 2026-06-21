@@ -91,15 +91,27 @@ import {
 } from "../../src/modules/customerEmail/public.js";
 import { WebhookSkillDefinitionService } from "../../src/modules/webhookSkills/public.js";
 import {
+  SlackInstallationService,
+  buildSlackOauthProviderDefinition,
+  type SlackOauthMetadata,
+} from "../../src/modules/slack/public.js";
+import {
   InMemoryMcpConnectionRepository,
   InMemoryExternalSkillDefinitionRepository,
   createMockToolServiceFactory,
 } from "./inMemoryExternalSkills.js";
 import { InMemoryOauthConnectionRepository } from "./inMemoryOauthConnections.js";
 import { InMemoryCustomerEmailConnectionRepository } from "./inMemoryCustomerEmailConnections.js";
+import { InMemoryIntegrationConnectionRepository } from "./inMemoryIntegrationConnections.js";
+import {
+  InMemorySlackBindingRepository,
+  InMemorySlackInstallationRepository,
+} from "./inMemorySlack.js";
 import { InMemoryEmailSkillDefinitionRepository } from "./inMemoryEmailSkillDefinitions.js";
 import { InMemoryEmailSkillActivityRepository } from "./inMemoryEmailSkillActivity.js";
 import { InMemoryWebhookSkillDefinitionRepository } from "./inMemoryWebhookSkillDefinitions.js";
+import { InMemorySlackSkillDefinitionRepository } from "./inMemorySlackSkillDefinitions.js";
+import { SlackSkillDefinitionService } from "../../src/modules/slackSkills/public.js";
 import {
   DefaultWebhookDestinationAdapter,
   WebhookDestinationService,
@@ -246,6 +258,9 @@ export const createTestEnv = (): Env => ({
   WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS: 5_000,
   WEBSITE_CRAWLER_ENABLED: true,
   APP_BASE_URL: undefined,
+  SLACK_OAUTH_CLIENT_ID: undefined,
+  SLACK_OAUTH_CLIENT_SECRET: undefined,
+  SLACK_SIGNING_SECRET: undefined,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
   RADIOSO_BASE_URL: undefined,
   RADIOSO_MCP_ENABLED: false,
@@ -715,8 +730,23 @@ export const createTestDependencies = (overrides: {
     auditService,
     { key: env.CONNECTOR_ENCRYPTION_KEY },
   );
+  const oauthConnectionRepository = new InMemoryOauthConnectionRepository();
+  const integrationConnectionRepository = new InMemoryIntegrationConnectionRepository();
+  const slackInstallationRepository = new InMemorySlackInstallationRepository();
+  const slackBindingRepository = new InMemorySlackBindingRepository();
+  const slackInstallationService = new SlackInstallationService({
+    oauthConnections: oauthConnectionRepository,
+    integrationConnections: integrationConnectionRepository,
+    installations: slackInstallationRepository,
+    bindings: slackBindingRepository,
+    encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
+  });
+  const slackProvider = buildSlackOauthProviderDefinition({
+    clientId: "test-slack-client",
+    clientSecret: "test-slack-secret",
+  });
   const oauthConnectionService = new OauthConnectionService({
-    repository: new InMemoryOauthConnectionRepository(),
+    repository: oauthConnectionRepository,
     providers: new StaticOauthProviderRegistry([
       {
         id: "google_mail",
@@ -751,22 +781,52 @@ export const createTestDependencies = (overrides: {
         defaultScopes: ["mail.send"],
         allowedScopes: ["mail.send", "mail.read"],
       },
+      ...(slackProvider ? [slackProvider] : []),
     ]),
     encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
     appBaseUrl: env.APP_BASE_URL,
     assertPublicUrl: () => undefined,
-    fetchImpl: async () => ({
+    fetchImpl: async (url) => ({
       ok: true,
       status: 200,
-      json: async () => ({ access_token: "test-access-token", refresh_token: "test-refresh", expires_in: 3600 }),
+      json: async () => url.includes("slack.com")
+        ? {
+            ok: true,
+            access_token: "xoxb-test-slack-token",
+            token_type: "bot",
+            scope: "chat:write,im:history,im:read,im:write",
+            team: { id: "TTEST", name: "Test Slack" },
+            bot_user_id: "UTESTBOT",
+            authed_user: { id: "UINSTALLER" },
+          }
+        : { access_token: "test-access-token", refresh_token: "test-refresh", expires_in: 3600 },
     }),
     logger,
+    onAuthorized: async ({ connection, tokens, metadata }) => {
+      if (connection.provider !== "slack") {
+        return;
+      }
+      const slackMetadata = metadata as Partial<SlackOauthMetadata>;
+      if (!slackMetadata.teamId || !slackMetadata.botUserId) {
+        throw new Error("Slack OAuth metadata was missing team or bot identity");
+      }
+      await slackInstallationService.saveInstallation({
+        workspaceId: connection.workspaceId,
+        oauthConnectionId: connection.id,
+        teamId: slackMetadata.teamId,
+        teamName: slackMetadata.teamName ?? null,
+        botUserId: slackMetadata.botUserId,
+        botAccessToken: tokens.accessToken,
+        grantedScopes: connection.grantedScopes,
+      });
+    },
   });
   const customerEmailOAuthService = new CustomerEmailOAuthService(oauthConnectionService);
   const customerEmailConnectionRepository = new InMemoryCustomerEmailConnectionRepository();
   const emailSkillDefinitionRepository = new InMemoryEmailSkillDefinitionRepository();
   const emailSkillActivityRepository = new InMemoryEmailSkillActivityRepository();
   const webhookSkillDefinitionRepository = new InMemoryWebhookSkillDefinitionRepository();
+  const slackSkillDefinitionRepository = new InMemorySlackSkillDefinitionRepository();
   customerEmailConnectionRepository.setReferenceChecker((connectionId) =>
     emailSkillDefinitionRepository.countByConnection("", connectionId),
   );
@@ -832,6 +892,10 @@ export const createTestDependencies = (overrides: {
   const webhookSkillDefinitionService = new WebhookSkillDefinitionService({
     repository: webhookSkillDefinitionRepository,
     destinations: webhookDestinations,
+  });
+  const slackSkillDefinitionService = new SlackSkillDefinitionService({
+    repository: slackSkillDefinitionRepository,
+    installations: slackInstallationRepository,
   });
   const accessGrantService = new AccessGrantService({
     repository: accessGrantRepository,
@@ -1094,10 +1158,12 @@ export const createTestDependencies = (overrides: {
     abuseControlService,
     workspaceProviderCredentialsService,
     oauthConnectionService,
+    slackInstallationService,
     customerEmailOAuthService,
     customerEmailConnectionService,
     emailSkillDefinitionService,
     webhookSkillDefinitionService,
+    slackSkillDefinitionService,
     emailSkillActivityRepository,
     mcpConnectionService,
     externalSkillDefinitionService,

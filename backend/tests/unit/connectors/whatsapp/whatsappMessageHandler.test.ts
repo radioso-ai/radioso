@@ -192,7 +192,7 @@ describe("WhatsAppMessageHandler", () => {
   }) => {
     const persistence = input?.persistence ?? new InMemoryWhatsAppPersistence();
     const chat = input?.chat ?? {
-      answer: vi.fn<ConnectorChatPort["answer"]>(async () => ({ conversationId: "conversation-1", answer: "Combined answer" })),
+      answer: vi.fn<ConnectorChatPort["answer"]>(async () => ({ conversationId: "conversation-1", answer: "Combined answer", outcome: "answered" })),
     };
     const client = input?.client ?? {
       sendTextMessage: vi.fn<WhatsAppClient["sendTextMessage"]>(async () => ({ wamid: "wamid-out-1" })),
@@ -285,9 +285,9 @@ describe("WhatsAppMessageHandler", () => {
     const chat = {
       answer: vi
         .fn()
-        .mockResolvedValueOnce({ conversationId: "conversation-a", answer: "First answer" })
-        .mockResolvedValueOnce({ conversationId: "conversation-a", answer: "Second answer" })
-        .mockResolvedValueOnce({ conversationId: "conversation-b", answer: "Third answer" }),
+        .mockResolvedValueOnce({ conversationId: "conversation-a", answer: "First answer", outcome: "answered" })
+        .mockResolvedValueOnce({ conversationId: "conversation-a", answer: "Second answer", outcome: "answered" })
+        .mockResolvedValueOnce({ conversationId: "conversation-b", answer: "Third answer", outcome: "answered" }),
     };
     const client = {
       sendTextMessage: vi
@@ -323,7 +323,7 @@ describe("WhatsAppMessageHandler", () => {
 
   it("sends configured unsupported-message copy without persisting an internal chat turn", async () => {
     const chat = {
-      answer: vi.fn<ConnectorChatPort["answer"]>(async () => ({ conversationId: "conversation-media", answer: "Assistant media reply" })),
+      answer: vi.fn<ConnectorChatPort["answer"]>(async () => ({ conversationId: "conversation-media", answer: "Assistant media reply", outcome: "answered" })),
     };
     const { handler, persistence, client } = createHandler({
       chat,
@@ -375,7 +375,7 @@ describe("WhatsAppMessageHandler", () => {
     const chat = {
       answer: vi
         .fn<ConnectorChatPort["answer"]>()
-        .mockResolvedValueOnce({ conversationId: "conversation-text", answer: "Text answer" }),
+        .mockResolvedValueOnce({ conversationId: "conversation-text", answer: "Text answer", outcome: "answered" }),
     };
     const client = {
       sendTextMessage: vi
@@ -428,7 +428,7 @@ describe("WhatsAppMessageHandler", () => {
       answer: vi
         .fn<ConnectorChatPort["answer"]>()
         .mockRejectedValueOnce(new Error("temporary LLM outage"))
-        .mockResolvedValueOnce({ conversationId: "conversation-retry", answer: "Recovered answer" }),
+        .mockResolvedValueOnce({ conversationId: "conversation-retry", answer: "Recovered answer", outcome: "answered" }),
     };
     const { handler, persistence, client } = createHandler({
       chat,
@@ -463,7 +463,7 @@ describe("WhatsAppMessageHandler", () => {
 
   it("retries WhatsApp delivery without rerunning the assistant turn", async () => {
     const chat = {
-      answer: vi.fn<ConnectorChatPort["answer"]>(async () => ({ conversationId: "conversation-delivery", answer: "Stable answer" })),
+      answer: vi.fn<ConnectorChatPort["answer"]>(async () => ({ conversationId: "conversation-delivery", answer: "Stable answer", outcome: "answered" })),
     };
     const client = {
       sendTextMessage: vi
@@ -537,7 +537,7 @@ describe("WhatsAppMessageHandler", () => {
       status: "replied",
     });
     const chat = {
-      answer: vi.fn<ConnectorChatPort["answer"]>(async () => ({ conversationId: "conversation-duplicate", answer: "Duplicate answer" })),
+      answer: vi.fn<ConnectorChatPort["answer"]>(async () => ({ conversationId: "conversation-duplicate", answer: "Duplicate answer", outcome: "answered" })),
     };
     const client = {
       sendTextMessage: vi.fn<WhatsAppClient["sendTextMessage"]>(async () => ({ wamid: "wamid-duplicate-send" })),

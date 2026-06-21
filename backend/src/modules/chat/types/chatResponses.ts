@@ -35,6 +35,8 @@ export interface ChatResponse {
   assistantMessageId: string;
   route: ChatRoute;
   answer: string;
+  skillOutcome?: string;
+  answerOutcome?: string;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
   suggestions?: ChatSuggestion[];

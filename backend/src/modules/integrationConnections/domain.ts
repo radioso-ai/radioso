@@ -32,6 +32,7 @@ export interface CreateIntegrationConnectionInput {
 }
 
 export interface UpdateIntegrationConnectionInput {
+  oauthConnectionId?: string;
   displayName?: string;
   status?: IntegrationConnectionStatus;
   lastHealthStatus?: IntegrationConnectionHealthStatus | null;

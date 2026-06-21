@@ -490,6 +490,8 @@ export class ChatTurnLifecycle {
         assistantMessageId: assistantMessage.id,
         route: presentation.route,
         answer: input.presentation.answer,
+        skillOutcome: presentation.skillTurnOutcome.outcome,
+        answerOutcome: input.presentation.answerOutcome ?? legacyAnswerOutcomeForSkillTurnOutcome(presentation.skillTurnOutcome),
         citations: input.presentation.citations,
         answerSegments: input.presentation.answerSegments,
         suggestions: input.presentation.suggestions,

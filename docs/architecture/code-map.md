@@ -139,10 +139,47 @@ Related docs:
 
 - [Customer Email Connections](../customer-email-skills.md)
 
+## Slack Channel
+
+Owns Slack app installation, the inbound Slack Events API connector, Slack
+conversation mapping, generated self-host manifests, and Slack outbound posts
+used by channel escalation and Slack skills.
+
+Should not own assistant turn behavior, retrieval behavior, or routine
+selection. Slack enters the chat path as `sourceChannel: "slack"` and uses the
+shared Slack Web API client for posts.
+
+Public surfaces and key files:
+
+- `backend/src/app/http/routes/slackConnectionRoutes.ts`
+- `backend/src/app/http/openapi/paths/slackPaths.ts`
+- `backend/src/modules/slack/public.ts`
+- `backend/src/modules/slack/manifest/slackManifest.ts`
+- `backend/src/modules/connectors/plugins/slack/`
+- `frontend/lib/api-slack.ts`
+- `frontend/components/dashboard/settings/slack-channel-card.tsx`
+
+Useful searches:
+
+- `rg "slack/manifest|slack/install|slack/binding" backend/src frontend`
+- `rg "app_mention|message.im|slack_conversation_links" backend/src backend/tests`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/slack tests/contract/slack-admin.contract.test.ts tests/contract/slack-webhook.contract.test.ts tests/integration/slack`
+- `cd frontend && pnpm exec vitest run tests/unit/api-slack.test.ts`
+- `cd frontend && pnpm exec playwright test tests/e2e/slack-channel.spec.ts`
+
+Related docs:
+
+- [Slack Channel](../slack-channel.md)
+- [Slack Skills](../slack-skills.md)
+- `specs/092-slack-channel/`
+
 ## Agent Skill Definitions (shared spine)
 
 External MCP skills (`externalSkills`), customer email skills (`customerEmail`),
-and webhook skills (`webhookSkills`) share one persistence spine: `agent_skills`
+webhook skills (`webhookSkills`), and Slack skills (`slackSkills`) share one persistence spine: `agent_skills`
 holds the common columns, a single `@mention` namespace per agent enforced
 **across kinds**, generic `target_type` / `target_id` references, and a JSON
 `config` object. Database triggers enforce the current target references for MCP
@@ -158,7 +195,7 @@ Public surfaces and key files:
 
 - `backend/src/modules/agentSkills/public.ts` (spine vocabulary + shared type)
 - `backend/src/modules/integrationOauth/public.ts` (OAuth lifecycle)
-- `backend/src/db/repositories/externalSkillDefinitionRepository.ts`, `emailSkillDefinitionRepository.ts`, `webhookSkillDefinitionRepository.ts`
+- `backend/src/db/repositories/externalSkillDefinitionRepository.ts`, `emailSkillDefinitionRepository.ts`, `webhookSkillDefinitionRepository.ts`, and `backend/src/modules/slackSkills/repository.ts`
 - `backend/src/db/migrations/099_agent_skills_spine.sql`, `100_email_skills_into_spine.sql`, `101_agent_skills_generic_targets.sql`
 
 Focused checks (real Postgres via `INTEGRATION_DATABASE_URL`):

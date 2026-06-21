@@ -1022,6 +1022,8 @@ describe("chat service streaming", () => {
         reason: "evidence_required",
       },
       answer: "full answer",
+      skillOutcome: "grounded",
+      answerOutcome: "grounded_success",
       citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
       answerSegments: [{ text: "full answer", citationIndices: [0] }],
       suggestions: undefined,
@@ -2418,6 +2420,8 @@ describe("chat service streaming", () => {
         reason: "evidence_required",
       },
       answer: "full answer",
+      skillOutcome: "grounded",
+      answerOutcome: "grounded_success",
       citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
       answerSegments: [
         { text: "full answer", citationIndices: [0] },

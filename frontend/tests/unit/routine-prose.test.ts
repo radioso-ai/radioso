@@ -26,7 +26,7 @@ function paragraphsToBlocks(paragraphs: ProseParagraph[]): RoutineDocBlock[] {
       .join(''),
     chips: paragraph.segments.flatMap((segment) =>
       segment.kind === 'chip'
-        ? [{ kind: segment.chipKind, refId: segment.refId, op: segment.op ?? null, value: segment.value ?? null, values: segment.values ?? null, unit: segment.unit ?? null, counterLimit: segment.counterLimit ?? null }]
+        ? [{ kind: segment.chipKind, refId: segment.refId, op: segment.op ?? null, value: segment.value ?? null, values: segment.values ?? null, unit: segment.unit ?? null, counterLimit: segment.counterLimit ?? null, captureKey: segment.captureKey ?? null, options: segment.options }]
         : [],
     ),
   }))
@@ -469,6 +469,124 @@ describe('routineToChipDoc (inverse serializer)', () => {
     })
     expect(routineToChipDoc(draft)).not.toBeNull()
     expect(routineToChipDoc({ ...draft, slots: draft.slots.map((slot) => ({ ...slot, mutable: true })) })).toBeNull()
+  })
+
+  it('compiles an approval chip into an approval step with one field guard per option', () => {
+    const draft = draftFromChipDoc({
+      name: 'Refund approval',
+      trigger: 'wants a large refund',
+      blocks: [
+        { text: 'Summarize the refund request.', chips: [] },
+        {
+          text: 'Get a manager decision.',
+          chips: [{
+            kind: 'approval',
+            refId: 'refund_decision',
+            captureKey: 'refund_decision',
+            options: [
+              { id: 'approve', label: 'Approve', target: 'done' },
+              { id: 'deny', label: 'Deny', target: 'handoff' },
+            ],
+          }],
+        },
+      ],
+      variables: [],
+    })
+
+    const approvalStep = draft.steps.find((step) => step.kind === 'approval')
+    expect(approvalStep).toMatchObject({
+      kind: 'approval',
+      captureKey: 'refund_decision',
+      instruction: 'Get a manager decision.',
+      options: [{ id: 'approve', label: 'Approve' }, { id: 'deny', label: 'Deny' }],
+    })
+    const edges = draft.transitions.filter((transition) => transition.fromStep === approvalStep!.stableStepId)
+    expect(edges).toEqual([
+      expect.objectContaining({ toRef: 'done', guardKind: 'field', fieldRef: 'refund_decision.id', fieldOp: 'equals', fieldValue: 'approve' }),
+      expect.objectContaining({ toRef: 'handoff', guardKind: 'field', fieldRef: 'refund_decision.id', fieldOp: 'equals', fieldValue: 'deny' }),
+    ])
+    // An approval step routes only through its options — never a default edge.
+    expect(edges.some((edge) => edge.guardKind === 'default')).toBe(false)
+    expect(draft.terminals.map((terminal) => terminal.kind).sort()).toEqual(['complete', 'handoff'])
+  })
+
+  it('round-trips an approval gate (no force-fallback to Form)', () => {
+    const { draft, redraft } = roundTrip(
+      'Refund approval',
+      'wants a large refund',
+      [
+        { text: 'Summarize the refund request.', chips: [] },
+        {
+          text: 'Get a manager decision.',
+          chips: [{
+            kind: 'approval',
+            refId: 'refund_decision',
+            captureKey: 'refund_decision',
+            options: [
+              { id: 'approve', label: 'Approve', target: 'done' },
+              { id: 'deny', label: 'Deny', target: 'handoff' },
+            ],
+          }],
+        },
+      ],
+      [],
+    )
+    expect(draft.steps.some((step) => step.kind === 'approval')).toBe(true)
+    expect(redraft.steps).toEqual(draft.steps)
+    expect(redraft.transitions).toEqual(draft.transitions)
+    expect(redraft.terminals).toEqual(draft.terminals)
+  })
+
+  it('round-trips an approval option that branches to a titled step', () => {
+    const { draft, redraft } = roundTrip(
+      'Escalation',
+      'needs a decision',
+      [
+        {
+          text: 'Review the case.',
+          chips: [{
+            kind: 'approval',
+            refId: 'decision',
+            captureKey: 'decision',
+            options: [
+              { id: 'proceed', label: 'Proceed', target: 'fulfill' },
+              { id: 'reject', label: 'Reject', target: 'done' },
+            ],
+          }],
+        },
+        { text: 'Fulfill', chips: [], headingLevel: 1 },
+        { text: 'Complete the order.', chips: [] },
+      ],
+      [],
+    )
+    const approvalStep = draft.steps.find((step) => step.kind === 'approval')!
+    expect(draft.transitions).toContainEqual(
+      expect.objectContaining({ fromStep: approvalStep.stableStepId, toRef: 'fulfill', guardKind: 'field', fieldValue: 'proceed' }),
+    )
+    expect(redraft.steps).toEqual(draft.steps)
+    expect(redraft.transitions).toEqual(draft.transitions)
+  })
+
+  it('falls back to Form for an approval option whose decision edge is missing', () => {
+    const draft = draftFromChipDoc({
+      name: 'Refund approval',
+      trigger: 'wants a large refund',
+      blocks: [{
+        text: 'Get a manager decision.',
+        chips: [{
+          kind: 'approval',
+          refId: 'refund_decision',
+          captureKey: 'refund_decision',
+          options: [
+            { id: 'approve', label: 'Approve', target: 'done' },
+            { id: 'deny', label: 'Deny', target: '' },
+          ],
+        }],
+      }],
+      variables: [],
+    })
+    // The unrouted option produces no decision edge, so the prose editor can't show it.
+    expect(routineToChipDoc(draft)).toBeNull()
   })
 
   it('synthesizes a non-empty instruction for a bare skill chip (no prose)', () => {

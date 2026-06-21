@@ -997,7 +997,7 @@ export const buildChatServices = (input: {
   // the outbox during the turn (`actionOutbox`); the worker drains and routes it to a
   // registered handler out of band (`actionDispatchWorker`). The two share one repository
   // so the same table backs the enqueue and the drain.
-  const actionOutbox = new ActionRequestRepository(input.database);
+  const actionOutbox = new ActionRequestRepository(input.database.kysely);
   const actionHandlerRegistry = new ActionHandlerRegistry(
     input.composition.actionHandlerRegistrations.map((registration) => ({
       type: registration.type,

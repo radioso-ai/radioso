@@ -73,6 +73,14 @@ export const currentTimestamp = (): RawBuilder<Date> => sql`now()`;
  */
 export const clockTimestamp = (): RawBuilder<Date> => sql`clock_timestamp()`;
 
+/** `now() - make_interval(secs => <seconds>)` — a timestamp `seconds` in the past (DB clock). */
+export const nowMinusSeconds = (seconds: number): RawBuilder<Date> =>
+  sql`now() - make_interval(secs => ${seconds})`;
+
+/** `now() + make_interval(secs => <seconds>)` — a timestamp `seconds` in the future (DB clock). */
+export const nowPlusSeconds = (seconds: number): RawBuilder<Date> =>
+  sql`now() + make_interval(secs => ${seconds})`;
+
 /**
  * `SET LOCAL <name> = <value>` — a session setting scoped to the current transaction.
  * Must run inside a transaction (e.g. `db.transaction().execute(...)`) on the same

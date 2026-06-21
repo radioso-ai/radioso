@@ -168,6 +168,14 @@ export const createApprovalOptionForm = (index: number): RoutineApprovalOptionFo
   target: '',
 })
 
+// A fresh approval gate seeds the two choices every approval needs — approve and decline —
+// so the author starts from a real decision (the validator requires at least two) and only
+// has to point each at a branch. Targets stay empty so the author wires them deliberately.
+export const createDefaultApprovalOptions = (): RoutineApprovalOptionForm[] => ([
+  { id: 'approve', label: 'Approve', description: '', target: '' },
+  { id: 'decline', label: 'Decline', description: '', target: '' },
+])
+
 export const createTerminalForm = (index: number): RoutineTerminalForm => ({
   stableStepId: `complete_${index + 1}`,
   kind: 'complete',

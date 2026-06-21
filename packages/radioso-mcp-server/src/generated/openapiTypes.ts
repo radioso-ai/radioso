@@ -12690,8 +12690,7 @@ export interface operations {
                     "application/json": {
                         /** @enum {string} */
                         status: "resolved";
-                        /** @enum {string} */
-                        decision: "approved" | "rejected";
+                        optionId: string;
                         conversationId: string;
                         resumed: boolean;
                     };

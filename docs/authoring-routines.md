@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "How to create and edit routines in the dashboard using the prose and form editors, bind skill inputs/outputs, copy a routine to text, and manage lifecycle."
-last_updated: 2026-06-21
+last_updated: 2026-06-22
 ---
 
 # Authoring Routines
@@ -242,28 +242,35 @@ gate is different from a handoff: a handoff *ends* the routine and transfers the
 conversation to a person, while an approval gate *suspends* the routine, waits
 for a decision, and resumes - the conversation stays AI-owned.)
 
-An approval gate has one to eight **choices** (normally approve and deny). Each
+An approval gate has two to eight **choices**. A gate must offer at least two,
+because an approval is a real decision: the operator must be able to decline (or
+take a different path, such as asking the customer for more detail), not only
+rubber-stamp. New gates start seeded with **Approve** and **Decline**. Each
 choice routes to its own step or terminal, and Radioso builds the deterministic
-decision branch for it. It also has a **decision name** - a short id the chosen
-choice is recorded under (default `decision`); you only need to change it if a
-later step reads the result, for example branching on `refund_decision.id is
+decision branch for it. The gate also has a **decision name** - a short id the
+chosen choice is recorded under (default `decision`); you only need to change it
+if a later step reads the result, for example branching on `refund_decision.id is
 approve`. Every choice needs a target.
+
+A choice can route anywhere a branch can. To let an operator ask for more
+information rather than approve or decline, add a choice (for example "Ask for
+receipt") that routes to a step which requests it and loops back to the gate.
 
 Author an approval gate in either editor:
 
-- **Prose** - click the **Approval** toolbar button. In the dialog, add each
-  choice with its label and where it continues (a titled step, **End**, or
-  **Handoff**). The chip carries the whole gate, so the routing lives on the chip
-  rather than on separate branch lines.
+- **Prose** - click the **Approval** toolbar button. In the dialog, set each
+  choice's label and where it continues (a titled step, **End**, or **Handoff**).
+  The chip carries the whole gate, so the routing lives on the chip rather than
+  on separate branch lines.
 - **Form** - set a step's kind to **approval**. Add one row per choice, each with
   a label and a **continue to** target. The form synthesizes the decision guards
   from those targets.
 
 When a conversation reaches the approval gate, the routine is suspended. The
 assistant replies with the approval-step message, and Radioso creates a pending
-decision that surfaces in the **Needs attention** inbox. A dashboard operator
-resolves that decision; the routine resumes down the branch for the chosen
-option. If the option's step has a side effect, that side effect is still
+decision that surfaces in the **Needs attention** inbox, where it shows one
+button per choice. A dashboard operator picks one; the routine resumes down the
+branch for that choice. If the chosen step has a side effect, that side effect is still
 dispatched by the routine action outbox - the decision only records the choice
 and resumes the routine.
 

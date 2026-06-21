@@ -154,7 +154,7 @@ describeIfDatabase("PendingDecisionRepository Postgres integration", () => {
     const decidedBy = randomUUID();
     const resolved = await repository.resolve({
       handle: input.handle,
-      outcome: "approved",
+      status: "resolved",
       decision: { optionId: "approve", payload: { note: "Looks correct" } },
       decidedBy,
       contentHash: input.contentHash,
@@ -162,7 +162,7 @@ describeIfDatabase("PendingDecisionRepository Postgres integration", () => {
 
     expect(resolved).toMatchObject({
       handle: input.handle,
-      status: "approved",
+      status: "resolved",
       decision: { optionId: "approve", payload: { note: "Looks correct" } },
       decidedBy,
     });
@@ -170,7 +170,7 @@ describeIfDatabase("PendingDecisionRepository Postgres integration", () => {
 
     await expect(repository.resolve({
       handle: input.handle,
-      outcome: "rejected",
+      status: "resolved",
       decision: { optionId: "reject" },
       decidedBy,
       contentHash: input.contentHash,
@@ -183,7 +183,7 @@ describeIfDatabase("PendingDecisionRepository Postgres integration", () => {
 
     await expect(repository.resolve({
       handle: input.handle,
-      outcome: "approved",
+      status: "resolved",
       decision: { optionId: "approve" },
       decidedBy: randomUUID(),
       contentHash: "sha256:stale",
@@ -223,7 +223,7 @@ describeIfDatabase("PendingDecisionRepository Postgres integration", () => {
     await repository.create(decisionInput({ workspaceId: otherWorkspaceId, handle: "other_workspace" }));
     await repository.resolve({
       handle: approved.handle,
-      outcome: "approved",
+      status: "resolved",
       decision: { optionId: "approve" },
       decidedBy: null,
       contentHash: approved.contentHash,

@@ -42,7 +42,7 @@ describeIfDatabase("agent suggested questions skill settings migration", () => {
 
   beforeAll(async () => {
     database = new Database(integrationDatabaseUrl!);
-    accountRepository = new AccountRepository(database);
+    accountRepository = new AccountRepository(database.kysely);
     workspaceRepository = new WorkspaceRepository(database);
     agentRepository = new AgentRepository(database);
     await runAllTestMigrations(database);

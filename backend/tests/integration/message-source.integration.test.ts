@@ -56,7 +56,7 @@ describeIfDatabase("message source integration", () => {
     );
     expect(sourceColumn).toEqual({ data_type: "text", is_nullable: "YES" });
 
-    const accountRepository = new AccountRepository(database);
+    const accountRepository = new AccountRepository(database.kysely);
     const workspaceRepository = new WorkspaceRepository(database);
     const conversationRepository = new ConversationRepository(database);
     const messageRepository = new MessageRepository(database);

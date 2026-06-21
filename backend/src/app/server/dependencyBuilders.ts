@@ -296,22 +296,22 @@ export const buildRepositories = (
     agentSkillSettings?: AgentSkillSettingsRegistry;
   } = {},
 ) => ({
-  accountMembershipRepository: new AccountMembershipRepository(database),
-  accountRepository: new AccountRepository(database),
-  accessGrantRepository: new AccessGrantRepository(database),
+  accountMembershipRepository: new AccountMembershipRepository(database.kysely),
+  accountRepository: new AccountRepository(database.kysely),
+  accessGrantRepository: new AccessGrantRepository(database.kysely),
   agentRepository: new AgentRepository(database, options.agentSurfaceExtensions, options.agentSkillSettings),
-  bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database),
+  bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database.kysely),
   chunkRepository: new ChunkRepository(database, new PgVectorChunkStorage()),
   conversationRepository: new ConversationRepository(database),
   conversationOwnershipRepository: new ConversationOwnershipRepository(database),
   documentProcessingJobRepository: new DocumentProcessingJobRepository(database),
   documentRepository: new DocumentRepository(database),
   documentSourceRepository: new DocumentSourceRepository(database),
-  emailVerificationTokenRepository: new EmailVerificationTokenRepository(database),
+  emailVerificationTokenRepository: new EmailVerificationTokenRepository(database.kysely),
   historyItemsRepository: new HistoryItemsRepository(database),
   ingestionSettingsRepository: new IngestionSettingsRepository(database),
   messageRepository: new MessageRepository(database),
-  passwordResetTokenRepository: new PasswordResetTokenRepository(database),
+  passwordResetTokenRepository: new PasswordResetTokenRepository(database.kysely),
   retrievalSettingsRepository: new RetrievalSettingsRepository(database),
   routineDefinitionRepository: new RoutineDefinitionRepository(database),
   sessionRepository: new SessionRepository(database.kysely),
@@ -321,7 +321,7 @@ export const buildRepositories = (
   workspaceRepository: new WorkspaceRepository(database),
   workspaceTokenRepository: new WorkspaceTokenRepository(database.kysely),
   abuseControlRepository: new AbuseControlRepository(database),
-  accountInvitationRepository: new AccountInvitationRepository(database),
+  accountInvitationRepository: new AccountInvitationRepository(database.kysely),
   workspaceProviderCredentialsRepository: new WorkspaceProviderCredentialsRepository(database),
   webhookDestinationRepository: new WebhookDestinationRepository(database),
   customerEmailConnectionRepository: new CustomerEmailConnectionRepository(database),
@@ -1196,7 +1196,7 @@ export const buildChatServices = (input: {
     ),
   );
   const conversationEngine = createConversationEngine();
-  const clarificationStore = new ClarificationStateRepository(input.database);
+  const clarificationStore = new ClarificationStateRepository(input.database.kysely);
   const retrievalSenseDetector = new SenseGroupingService({
     policy: retrievalSensePolicy,
     embeddingReader: new PostgresSenseEmbeddingReader(input.database),

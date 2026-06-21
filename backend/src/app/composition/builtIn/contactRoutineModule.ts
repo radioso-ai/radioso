@@ -84,7 +84,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
       handler: ({ database, logger, mailService, assertPublicWebsiteUrl }) => {
         const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
           new WorkspaceRepository(database),
-          new AccountMembershipRepository(database),
+          new AccountMembershipRepository(database.kysely),
         );
         return new ContactSendActionHandler(
           mailService,
@@ -106,7 +106,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
       handler: ({ database, logger, mailService, assertPublicWebsiteUrl }) => {
         const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
           new WorkspaceRepository(database),
-          new AccountMembershipRepository(database),
+          new AccountMembershipRepository(database.kysely),
         );
         return new HandoffNotifyActionHandler(
           mailService,
@@ -126,7 +126,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
       handler: ({ database, logger, mailService, assertPublicWebsiteUrl }) => {
         const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
           new WorkspaceRepository(database),
-          new AccountMembershipRepository(database),
+          new AccountMembershipRepository(database.kysely),
         );
         return new ApprovalRequestActionHandler(
           mailService,

@@ -95,7 +95,7 @@ describeIfDatabase("pending decision assistant-turn commit fence", () => {
   beforeAll(async () => {
     database = new Database(integrationDatabaseUrl!);
     await runAllTestMigrations(database);
-    accounts = new AccountRepository(database);
+    accounts = new AccountRepository(database.kysely);
     workspaces = new WorkspaceRepository(database);
     conversations = new ConversationRepository(database);
     pendingDecisions = new PendingDecisionRepository(database);

@@ -3,7 +3,7 @@ import type { Pool } from "pg";
 import { describe, expect, it } from "vitest";
 
 import type { DB } from "../../src/shared/infra/kysely/schema.js";
-import { anyOf, setLocal } from "../../src/shared/infra/kysely/sqlHelpers.js";
+import { anyOf, setLocal, toJsonb } from "../../src/shared/infra/kysely/sqlHelpers.js";
 
 // Compilation is synchronous and never touches the pool, so a Kysely bound to a dummy pool
 // is enough to assert the SQL each helper emits.
@@ -15,6 +15,16 @@ describe("kysely sqlHelpers", () => {
 
     expect(compiled.sql).toBe("set local statement_timeout = 0");
     expect(compiled.parameters).toEqual([]);
+  });
+
+  it("toJsonb stringifies the value and casts to jsonb (works for arrays)", () => {
+    const compiled = db
+      .selectFrom("sessions")
+      .select(() => toJsonb([{ id: "a" }]).as("payload"))
+      .compile();
+
+    expect(compiled.sql).toContain("::jsonb");
+    expect(compiled.parameters).toEqual(['[{"id":"a"}]']);
   });
 
   it("anyOf emits a parameterized = ANY(...) with the array type cast", () => {

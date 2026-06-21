@@ -53,7 +53,7 @@ describeIfDatabase("workspace retrieval settings to agent skill settings migrati
 
   beforeAll(async () => {
     database = new Database(integrationDatabaseUrl!);
-    accountRepository = new AccountRepository(database);
+    accountRepository = new AccountRepository(database.kysely);
     workspaceRepository = new WorkspaceRepository(database);
     agentRepository = new AgentRepository(database);
     await runAllTestMigrations(database);

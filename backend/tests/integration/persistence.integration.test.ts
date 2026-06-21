@@ -108,7 +108,7 @@ describeIfDatabase("persistence integration", () => {
   };
 
   it("persists records and returns workspace-scoped vector matches", async () => {
-    const accountRepository = new AccountRepository(database);
+    const accountRepository = new AccountRepository(database.kysely);
     const documentRepository = new DocumentRepository(database);
     const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
     const vectorSearch = new PgVectorSearch(database);
@@ -185,7 +185,7 @@ describeIfDatabase("persistence integration", () => {
   });
 
   it("persists and searches workspace chunks with non-1536-dimensional embeddings", async () => {
-    const accountRepository = new AccountRepository(database);
+    const accountRepository = new AccountRepository(database.kysely);
     const documentRepository = new DocumentRepository(database);
     const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
     const vectorSearch = new PgVectorSearch(database);
@@ -248,7 +248,7 @@ describeIfDatabase("persistence integration", () => {
   });
 
   it("does not create duplicate default workspaces when migrations rerun", async () => {
-    const accountRepository = new AccountRepository(database);
+    const accountRepository = new AccountRepository(database.kysely);
     const account = await accountRepository.create({
       name: "Migration Default Organization",
       email: `migration-default-${randomUUID()}@example.com`,
@@ -268,7 +268,7 @@ describeIfDatabase("persistence integration", () => {
   });
 
   it("enforces a single open skill intake state for concurrent starts in one conversation", async () => {
-    const accountRepository = new AccountRepository(database);
+    const accountRepository = new AccountRepository(database.kysely);
     const conversationRepository = new ConversationRepository(database);
     const account = await accountRepository.create({
       name: "Concurrent Intake Organization",
@@ -317,7 +317,7 @@ describeIfDatabase("persistence integration", () => {
   });
 
   it("paginates conversations without skipping rows when updated_at ties", async () => {
-    const accountRepository = new AccountRepository(database);
+    const accountRepository = new AccountRepository(database.kysely);
     const conversationRepository = new ConversationRepository(database);
 
     const account = await accountRepository.create({
@@ -391,7 +391,7 @@ describeIfDatabase("persistence integration", () => {
   });
 
   it("orders merged history items by chat updates and search audit timestamps", async () => {
-    const accountRepository = new AccountRepository(database);
+    const accountRepository = new AccountRepository(database.kysely);
     const historyItemsRepository = new HistoryItemsRepository(database);
 
     const account = await accountRepository.create({
@@ -473,7 +473,7 @@ describeIfDatabase("persistence integration", () => {
   });
 
   it("stores raw chunk content while generating title-aware retrieval embeddings", async () => {
-    const accountRepository = new AccountRepository(database);
+    const accountRepository = new AccountRepository(database.kysely);
     const documentRepository = new DocumentRepository(database);
     const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
     const jobRepository = new DocumentProcessingJobRepository(database);
@@ -559,7 +559,7 @@ describeIfDatabase("persistence integration", () => {
   });
 
   it("deletes documents only within the matching workspace scope and cascades chunks", async () => {
-    const accountRepository = new AccountRepository(database);
+    const accountRepository = new AccountRepository(database.kysely);
     const documentRepository = new DocumentRepository(database);
     const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
 
@@ -629,7 +629,7 @@ describeIfDatabase("persistence integration", () => {
   });
 
   it("persists uploaded document source metadata and derived content updates", async () => {
-    const accountRepository = new AccountRepository(database);
+    const accountRepository = new AccountRepository(database.kysely);
     const documentRepository = new DocumentRepository(database);
 
     const account = await accountRepository.create({
@@ -687,7 +687,7 @@ describeIfDatabase("persistence integration", () => {
   });
 
   it("enforces workspace-scoped external document identity uniqueness and supports idempotent queueing", async () => {
-    const accountRepository = new AccountRepository(database);
+    const accountRepository = new AccountRepository(database.kysely);
     const documentRepository = new DocumentRepository(database);
 
     const accountA = await accountRepository.create({
@@ -801,7 +801,7 @@ describeIfDatabase("persistence integration", () => {
   });
 
   it("persists analytics and error sink events in audit storage", async () => {
-    const accountRepository = new AccountRepository(database);
+    const accountRepository = new AccountRepository(database.kysely);
     const account = await accountRepository.create({
       name: "Analytics Account",
       email: `analytics-${randomUUID()}@example.com`,

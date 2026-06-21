@@ -46,6 +46,11 @@ any -> error                   # unexpected provider/setup error
 
 Workspace-owned outbound email resource backed by an OAuth connection.
 
+> Spec 092 Phase R folds this persistence model into the provider-neutral
+> `integration_connections` spine. The customer-email API shape is unchanged:
+> lifecycle fields map to the spine, and `senderEmail` / `senderName` /
+> `replyToEmail` are stored in spine `config`.
+
 | Field | Type | Notes |
 |---|---|---|
 | id | uuid | Stable reference |

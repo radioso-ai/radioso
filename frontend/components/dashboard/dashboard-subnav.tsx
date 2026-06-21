@@ -49,6 +49,7 @@ const AGENT_GROUPS: { label: string | null; items: AgentItem[] }[] = [
       { id: 'website-embed', label: 'Website widget', icon: Globe },
       { id: 'api-channel', label: 'API', icon: KeyRound },
       { id: 'mcp-channel', label: 'MCP', icon: Plug },
+      { id: 'slack-channel', label: 'Slack', icon: MessageCircle },
       { id: 'whatsapp-channel', label: 'WhatsApp', icon: MessageCircle },
     ],
   },

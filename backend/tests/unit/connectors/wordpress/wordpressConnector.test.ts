@@ -130,7 +130,7 @@ describe("WordpressConnector.onEnable", () => {
     const context: ConnectorContext = {
       db: overrides?.db ?? { query: async () => [] },
       logger: { info: () => {}, warn: () => {}, error: () => {} },
-      chat: { answer: async () => ({ conversationId: "c-1", answer: "" }) },
+      chat: { answer: async () => ({ conversationId: "c-1", answer: "", outcome: "answered" }) },
       state,
       http: { mount: () => {} },
       ingestion,

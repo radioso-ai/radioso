@@ -135,6 +135,11 @@ import { EmailSkillDefinitionRepository } from "../../db/repositories/emailSkill
 import { EmailSkillActivityRepository } from "../../db/repositories/emailSkillActivityRepository.js";
 import { WebhookSkillDefinitionRepository } from "../../db/repositories/webhookSkillDefinitionRepository.js";
 import { OauthConnectionRepository } from "../../db/repositories/oauthConnectionRepository.js";
+import { IntegrationConnectionRepository } from "../../modules/integrationConnections/public.js";
+import {
+  SlackChannelBindingRepository,
+  SlackInstallationRepository,
+} from "../../modules/slack/public.js";
 import {
   DefaultWebhookDestinationAdapter,
   WebhookDestinationService,
@@ -176,6 +181,12 @@ import {
   WebhookRoutineSkillResolver,
   WebhookSkillExecutor,
 } from "../../modules/webhookSkills/public.js";
+import {
+  SLACK_SKILLS_ADAPTER,
+  SlackEscalationExecutor,
+  SlackRoutineSkillResolver,
+  SlackSkillDefinitionRepository,
+} from "../../modules/slackSkills/public.js";
 import { RoutineSkillExecutorDispatcher, StaticRoutineSkillResolver } from "../../modules/routines/public.js";
 import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
@@ -325,9 +336,13 @@ export const buildRepositories = (
   workspaceProviderCredentialsRepository: new WorkspaceProviderCredentialsRepository(database),
   webhookDestinationRepository: new WebhookDestinationRepository(database),
   customerEmailConnectionRepository: new CustomerEmailConnectionRepository(database),
+  integrationConnectionRepository: new IntegrationConnectionRepository(database),
+  slackInstallationRepository: new SlackInstallationRepository(database),
+  slackChannelBindingRepository: new SlackChannelBindingRepository(database),
   emailSkillDefinitionRepository: new EmailSkillDefinitionRepository(database),
   emailSkillActivityRepository: new EmailSkillActivityRepository(database),
   webhookSkillDefinitionRepository: new WebhookSkillDefinitionRepository(database),
+  slackSkillDefinitionRepository: new SlackSkillDefinitionRepository(database),
 });
 
 export const buildAccessServices = (input: {
@@ -778,6 +793,7 @@ export const buildChatServices = (input: {
   emailSkillDefinitionRepository: EmailSkillDefinitionRepository;
   emailSkillActivityRepository: EmailSkillActivityRepository;
   webhookSkillDefinitionRepository: WebhookSkillDefinitionRepository;
+  slackSkillDefinitionRepository: SlackSkillDefinitionRepository;
   mailService: ReturnType<typeof buildInfrastructure>["mailService"];
   publicConversationEventBus: PublicConversationEventBus;
   usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
@@ -919,6 +935,16 @@ export const buildChatServices = (input: {
         destinations: input.webhookDestinations,
         httpClient: new FetchWebhookHttpClient(input.assertPublicWebsiteUrl),
         logger: input.logger,
+      }),
+    });
+  }
+  if (!input.composition.skillExecutorRegistry.resolve({ kind: "internal", adapter: SLACK_SKILLS_ADAPTER })) {
+    input.composition.skillExecutorRegistry.register({
+      kind: "internal",
+      adapter: SLACK_SKILLS_ADAPTER,
+      executor: new SlackEscalationExecutor({
+        skills: input.slackSkillDefinitionRepository,
+        outbox: new ActionRequestRepository(input.database),
       }),
     });
   }
@@ -1109,6 +1135,7 @@ export const buildChatServices = (input: {
       }
       let emailSkillNames: string[] = [];
       let webhookSkillNames: string[] = [];
+      let slackSkillNames: string[] = [];
       try {
         if (workspaceId && agentId) {
           emailSkillNames = (await input.emailSkillDefinitionRepository.listByAgent(workspaceId, agentId))
@@ -1137,6 +1164,21 @@ export const buildChatServices = (input: {
             err: error instanceof Error ? error.message : String(error),
           },
           "Webhook skill definitions failed to load for routine routing; continuing without webhook skills",
+        );
+      }
+      try {
+        if (workspaceId && agentId) {
+          slackSkillNames = (await input.slackSkillDefinitionRepository.listByAgent(workspaceId, agentId))
+            .filter((skill) => skill.enabled)
+            .map((skill) => skill.skillName);
+        }
+      } catch (error) {
+        input.logger.warn(
+          {
+            agentId,
+            err: error instanceof Error ? error.message : String(error),
+          },
+          "Slack skill definitions failed to load for routine routing; continuing without Slack skills",
         );
       }
       return {
@@ -1169,7 +1211,10 @@ export const buildChatServices = (input: {
               routineDispatchableBuiltInSkills,
               new WebhookRoutineSkillResolver(
                 webhookSkillNames,
-                new CustomerEmailRoutineSkillResolver(emailSkillNames, new ExternalSkillRoutineSkillResolver()),
+                new CustomerEmailRoutineSkillResolver(
+                  emailSkillNames,
+                  new SlackRoutineSkillResolver(slackSkillNames, new ExternalSkillRoutineSkillResolver()),
+                ),
               ),
             ),
             input.composition.skillExecutorRegistry,
@@ -1366,7 +1411,7 @@ export const buildConnectorRegistry = (input: {
   env: Env;
   logger: AppLogger;
 }) => {
-  const connectorRegistry = createDefaultConnectorRegistry(input.composition.connectors);
+  const connectorRegistry = createDefaultConnectorRegistry(input.composition.connectors, input.env);
   if (input.env.CONNECTOR_ENCRYPTION_KEY) {
     connectorRegistry.setEncryptionKey(input.env.CONNECTOR_ENCRYPTION_KEY);
   } else {

@@ -5,6 +5,7 @@ export const createConnectorChatPort = (chatService: ChatAnswerPort): ConnectorC
   answer: async (input) => {
     const response = await chatService.answer({
       workspaceId: input.workspaceId,
+      agentId: input.agentId,
       conversationId: input.conversationId,
       query: input.query,
       stream: false,
@@ -14,6 +15,7 @@ export const createConnectorChatPort = (chatService: ChatAnswerPort): ConnectorC
     return {
       conversationId: response.conversationId,
       answer: response.answer,
+      outcome: response.skillOutcome === "no_context" ? "no_context" : "answered",
     };
   },
 });

@@ -52,6 +52,7 @@ import { createAnswerDirectivesApplicationModule } from "./builtIn/answerDirecti
 import { createContactRoutineApplicationModule } from "./builtIn/contactRoutineModule.js";
 import { createWebhookSendApplicationModule } from "./builtIn/webhookSendModule.js";
 import { createCustomerEmailApplicationModule } from "../../modules/customerEmail/composition.js";
+import { createSlackApplicationModule } from "../../modules/slack/composition.js";
 import {
   createDefaultSkillCatalogRegistry,
   SkillExecutorRegistry,
@@ -113,6 +114,9 @@ export const createDefaultApplicationComposition = (options: {
     | "GOOGLE_MAIL_OAUTH_CLIENT_SECRET"
     | "MICROSOFT_GRAPH_MAIL_OAUTH_CLIENT_ID"
     | "MICROSOFT_GRAPH_MAIL_OAUTH_CLIENT_SECRET"
+    | "SLACK_OAUTH_CLIENT_ID"
+    | "SLACK_OAUTH_CLIENT_SECRET"
+    | "SLACK_SIGNING_SECRET"
   >>;
   modules?: ApplicationModule[];
   widgetOrigin?: string;
@@ -134,6 +138,7 @@ export const createDefaultApplicationComposition = (options: {
     createContactRoutineApplicationModule(),
     createWebhookSendApplicationModule(),
     createCustomerEmailApplicationModule(options.env),
+    createSlackApplicationModule(options.env),
     ...(options.modules ?? []),
   ]);
 
@@ -178,9 +183,22 @@ export const createDefaultApplicationComposition = (options: {
   };
 };
 
-export const createDefaultConnectorRegistry = (connectors: ApplicationComposition["connectors"] = []): ConnectorRegistry => {
+export const createDefaultConnectorRegistry = (
+  connectors: ApplicationComposition["connectors"] = [],
+  env?: Partial<Pick<
+    Env,
+    "SLACK_OAUTH_CLIENT_ID" | "SLACK_OAUTH_CLIENT_SECRET" | "SLACK_SIGNING_SECRET" | "CONNECTOR_ENCRYPTION_KEY"
+  >>,
+): ConnectorRegistry => {
   const registry = new ConnectorRegistry();
-  registerBuiltInConnectors(registry);
+  registerBuiltInConnectors(registry, {
+    slack: {
+      SLACK_OAUTH_CLIENT_ID: env?.SLACK_OAUTH_CLIENT_ID,
+      SLACK_OAUTH_CLIENT_SECRET: env?.SLACK_OAUTH_CLIENT_SECRET,
+      SLACK_SIGNING_SECRET: env?.SLACK_SIGNING_SECRET,
+      encryptionKey: env?.CONNECTOR_ENCRYPTION_KEY,
+    },
+  });
   for (const connector of connectors) {
     registry.register(connector);
   }

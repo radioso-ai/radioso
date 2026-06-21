@@ -34,6 +34,7 @@ export type AgentSectionId =
   | 'website-embed'
   | 'api-channel'
   | 'mcp-channel'
+  | 'slack-channel'
   | 'whatsapp-channel'
   | 'danger'
 
@@ -50,6 +51,7 @@ const AGENT_SECTION_ROUTES: Record<AgentSectionId, AgentSectionRoute> = {
   'website-embed': { agentTab: 'channels', anchor: 'website-embed' },
   'api-channel': { agentTab: 'channels', anchor: 'api-channel' },
   'mcp-channel': { agentTab: 'channels', anchor: 'mcp-channel' },
+  'slack-channel': { agentTab: 'channels', anchor: 'slack-channel' },
   'whatsapp-channel': { agentTab: 'channels', anchor: 'whatsapp-channel' },
   danger: { agentTab: 'behavior', anchor: 'agent-danger-zone' },
 }
@@ -59,6 +61,7 @@ const CHANNEL_ANCHORS: Record<string, AgentSectionId> = {
   'website-embed': 'website-embed',
   'api-channel': 'api-channel',
   'mcp-channel': 'mcp-channel',
+  'slack-channel': 'slack-channel',
   'whatsapp-channel': 'whatsapp-channel',
 }
 

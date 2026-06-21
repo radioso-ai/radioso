@@ -2,7 +2,7 @@
 
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
-import { AtSign, BadgeCheck, Bold, CornerUpRight, Database, Flag, Heading1, Italic } from 'lucide-react'
+import { AtSign, BadgeCheck, Bold, CornerUpRight, Database, Flag, Gavel, Heading1, Italic } from 'lucide-react'
 
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
 import { ContentEditable } from '@lexical/react/LexicalContentEditable'
@@ -33,7 +33,7 @@ import {
 
 import { $createHeadingNode, $isHeadingNode, HeadingNode } from '@lexical/rich-text'
 
-import { $createChipNode, $createConditionChipNode, $createStepChipNode, $isChipNode, ChipNode, type RoutineChipKind } from '@/components/dashboard/settings/routine-chip-node'
+import { $createApprovalChipNode, $createChipNode, $createConditionChipNode, $createStepChipNode, $isChipNode, ApprovalChipDialog, approvalChipTargets, ChipNode, type ApprovalChipState, type ApprovalChipTarget, type RoutineChipKind } from '@/components/dashboard/settings/routine-chip-node'
 import { findRoutineSkillDescriptor, normalizeSkillName, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { RoutineVariablesProvider } from '@/components/dashboard/settings/routine-variables-context'
 import { Button } from '@/components/ui/button'
@@ -348,6 +348,8 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
   const [conditionOpen, setConditionOpen] = useState(false)
   const [jumpOpen, setJumpOpen] = useState(false)
   const [jumpTargets, setJumpTargets] = useState<{ id: string; title: string }[]>([])
+  const [approvalOpen, setApprovalOpen] = useState(false)
+  const [approvalTargets, setApprovalTargets] = useState<ApprovalChipTarget[]>([])
   const [formats, setFormats] = useState({ bold: false, italic: false, step: false })
   const skillGroups = useMemo(() => groupSkillsByCategory(skillCatalog.skills), [skillCatalog.skills])
 
@@ -471,6 +473,36 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
     })
   }
 
+  // Approval targets are the document's titled steps plus the two terminals the prose
+  // editor always exposes (end + handoff).
+  const openApproval = () => {
+    const stepTargets: ApprovalChipTarget[] = []
+    editor.getEditorState().read(() => {
+      for (const block of $getRoot().getChildren()) {
+        if ($isHeadingNode(block)) {
+          const title = block.getTextContent().trim()
+          if (title) stepTargets.push({ id: slugifyVariableKey(title), label: title })
+        }
+      }
+    })
+    setApprovalTargets(approvalChipTargets(stepTargets))
+    setApprovalOpen(true)
+  }
+
+  const insertApproval = (state: ApprovalChipState) => {
+    editor.focus(() => {
+      editor.update(() => {
+        const selection = $getSelection()
+        if (!$isRangeSelection(selection)) return
+        const chip = $createApprovalChipNode(state.captureKey, state.options)
+        selection.insertNodes([chip])
+        const trailing = $createTextNode(' ')
+        chip.insertAfter(trailing)
+        trailing.select()
+      })
+    })
+  }
+
   return (
     <div className="flex items-center gap-0.5 border-b border-input px-1.5 py-1">
       <Button type="button" variant="ghost" size="sm" className={cn('h-7 w-7 p-0', formats.bold && ACTIVE_TOOLBAR_BUTTON)} aria-label="Bold" aria-pressed={formats.bold} onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold')}>
@@ -522,6 +554,10 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
         <Flag className="h-4 w-4" />
         End
       </Button>
+      <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={openApproval}>
+        <Gavel className="h-4 w-4" />
+        Approval
+      </Button>
       <Separator orientation="vertical" className="mx-1 h-5" />
       <Button type="button" variant="ghost" size="sm" className={cn('h-7 gap-1 px-2', formats.step && ACTIVE_TOOLBAR_BUTTON)} aria-pressed={formats.step} onClick={toggleLineStep}>
         <Heading1 className="h-4 w-4" />
@@ -533,6 +569,7 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
       </Button>
       <ConditionBuilderDialog open={conditionOpen} onOpenChange={setConditionOpen} variables={variables} onConfirm={insertCondition} onSetVariableType={onSetVariableType} />
       <JumpDialog open={jumpOpen} onOpenChange={setJumpOpen} targets={jumpTargets} onConfirm={insertJump} />
+      <ApprovalChipDialog open={approvalOpen} onOpenChange={setApprovalOpen} targets={approvalTargets} initial={{ captureKey: '', options: [] }} onConfirm={insertApproval} />
     </div>
   )
 }
@@ -710,6 +747,8 @@ function $serializeBlocks(): RoutineDocBlock[] {
           inputBindings: chip.getInputBindings(),
           outputAssignments: chip.getOutputAssignments(),
           mode: chip.getMode() ?? undefined,
+          captureKey: chip.getCaptureKey(),
+          options: chip.getApprovalOptions(),
         }))
       : [],
   }))
@@ -727,6 +766,8 @@ function $proseParagraphToNode(paragraph: ProseParagraph): LexicalNode {
       node.append($createConditionChipNode(segment.refId, segment.op, segment.label, segment.value ?? null, segment.values ?? null, segment.unit ?? null))
     } else if (segment.chipKind === 'step') {
       node.append($createStepChipNode(segment.refId, segment.label, segment.counterLimit ?? null))
+    } else if (segment.chipKind === 'approval') {
+      node.append($createApprovalChipNode(segment.captureKey ?? '', segment.options ?? []))
     } else {
       node.append($createChipNode(segment.chipKind, segment.refId, segment.label, {
         inputBindings: segment.inputBindings,
@@ -766,6 +807,8 @@ function $readProseParagraphs(): ProseParagraph[] {
             inputBindings: child.getInputBindings(),
             outputAssignments: child.getOutputAssignments(),
             mode: child.getMode() ?? undefined,
+            captureKey: child.getCaptureKey() ?? undefined,
+            options: child.getApprovalOptions(),
           })
         } else {
           segments.push({ kind: 'text', text: child.getTextContent() })
@@ -847,6 +890,12 @@ function ClipboardRoundTripPlugin({
         if (!state.read($selectionSpansDocument)) return false
         const { name: currentName, trigger: currentTrigger, variables: currentVariables } = stateRef.current
         const paragraphs = state.read($readProseParagraphs)
+        // The plain-text token grammar has no approval form, so a routine with an approval
+        // gate isn't exported as tokens — fall through to Lexical's native clipboard, which
+        // round-trips losslessly in-app via the JSON flavour.
+        if (paragraphs.some((paragraph) => paragraph.segments.some((segment) => segment.kind === 'chip' && segment.chipKind === 'approval'))) {
+          return false
+        }
         const text = serializeProseDoc({ name: currentName, trigger: currentTrigger, variables: currentVariables, paragraphs })
         event.preventDefault()
         clipboardData.setData('text/plain', text)

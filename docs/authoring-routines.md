@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "How to create and edit routines in the dashboard using the prose and form editors, bind skill inputs/outputs, copy a routine to text, and manage lifecycle."
-last_updated: 2026-06-20
+last_updated: 2026-06-21
 ---
 
 # Authoring Routines
@@ -91,6 +91,9 @@ inline reference, not raw syntax. Each kind has its own colour:
   them (see [Bind a skill's inputs and outputs](#bind-a-skills-inputs-and-outputs)).
 - **Handoff** - a branch target that ends the routine by escalating to a person.
 - **End** - a branch target that completes the routine.
+- **Approval** - a gate that pauses for a human to choose one of several options,
+  then continues down the matching branch. Insert it from the **Approval** toolbar
+  button (see [Approval gates](#approval-gates)).
 - **Condition** - a decided-in-code comparison on a variable. Build it from the
   **Condition** toolbar button (see below).
 - **Step title** - names a step so a jump can target it. Use the **Step** toolbar
@@ -232,20 +235,37 @@ do not match.
 
 ### Approval gates
 
-Use an approval step before a step with side effects, such as sending a webhook
-or issuing a refund. An approval step has options, normally approve and reject.
-Each option must have a branch that checks the stored decision id, for example
-`refund_decision.id is approve`.
+Use an **approval gate** before a step with side effects, such as sending a
+webhook or issuing a refund: it pauses the routine for a human to choose one of
+several options, then continues down the branch for that choice. (An approval
+gate is different from a handoff: a handoff *ends* the routine and transfers the
+conversation to a person, while an approval gate *suspends* the routine, waits
+for a decision, and resumes - the conversation stays AI-owned.)
 
-When a conversation reaches the approval step, the routine is suspended. The
+An approval gate has one to eight **choices** (normally approve and deny). Each
+choice routes to its own step or terminal, and Radioso builds the deterministic
+decision branch for it. It also has a **decision name** - a short id the chosen
+choice is recorded under (default `decision`); you only need to change it if a
+later step reads the result, for example branching on `refund_decision.id is
+approve`. Every choice needs a target.
+
+Author an approval gate in either editor:
+
+- **Prose** - click the **Approval** toolbar button. In the dialog, add each
+  choice with its label and where it continues (a titled step, **End**, or
+  **Handoff**). The chip carries the whole gate, so the routing lives on the chip
+  rather than on separate branch lines.
+- **Form** - set a step's kind to **approval**. Add one row per choice, each with
+  a label and a **continue to** target. The form synthesizes the decision guards
+  from those targets.
+
+When a conversation reaches the approval gate, the routine is suspended. The
 assistant replies with the approval-step message, and Radioso creates a pending
-decision for the workspace. A dashboard operator resolves that decision through
-the authenticated decision endpoint. Approving resumes the routine and enqueues
-the gated action. Rejecting follows the rejection branch and does not enqueue the
-gated action.
-
-The key point is that the side effect is still dispatched by the routine action
-outbox. The approval endpoint only records the decision and resumes the routine.
+decision that surfaces in the **Needs attention** inbox. A dashboard operator
+resolves that decision; the routine resumes down the branch for the chosen
+option. If the option's step has a side effect, that side effect is still
+dispatched by the routine action outbox - the decision only records the choice
+and resumes the routine.
 
 A branch can jump to any step, not only the next one. A forward jump can skip
 steps when a condition makes them unnecessary. A backward jump, including a jump
@@ -336,7 +356,8 @@ underlying draft fields, and to author shapes the prose editor cannot show.
 The form exposes:
 
 - slots, including whether each slot is **Required**
-- step ids and step kind: `chat`, `tool`, or `action`
+- step ids and step kind: `chat`, `tool`, `action`, or `approval`
+- for an `approval` step, its choices (each with a branch target) and decision name
 - transition guard kind: `llm`, `default`, `slot_filled`, `outcome`, or
   `counter`
 - terminal kind and message: `complete` or `handoff`

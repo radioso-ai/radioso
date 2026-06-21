@@ -392,7 +392,7 @@ describeIfDatabase("persistence integration", () => {
 
   it("orders merged history items by chat updates and search audit timestamps", async () => {
     const accountRepository = new AccountRepository(database.kysely);
-    const historyItemsRepository = new HistoryItemsRepository(database);
+    const historyItemsRepository = new HistoryItemsRepository(database.kysely);
 
     const account = await accountRepository.create({
       name: "Merged History Organization",

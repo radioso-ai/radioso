@@ -137,7 +137,11 @@ function ApprovalDialogBody({
   // defaults to a sensible value and stays optional in the form.
   const [captureKey, setCaptureKey] = useState(initial.captureKey || 'decision')
   const [options, setOptions] = useState<ApprovalDocOption[]>(
-    initial.options.length > 0 ? initial.options : [{ id: 'option_1', label: '', target: '' }],
+    // A fresh gate seeds the two choices every approval needs (approve + decline); the author
+    // points each at a branch. Editing an existing gate keeps its saved choices.
+    initial.options.length > 0
+      ? initial.options
+      : [{ id: 'approve', label: 'Approve', target: '' }, { id: 'decline', label: 'Decline', target: '' }],
   )
 
   const updateOption = (index: number, patch: Partial<ApprovalDocOption>) =>

@@ -1,5 +1,4 @@
 import type {
-  PendingDecisionOutcome,
   PendingDecisionRecord,
 } from "../../db/repositories/pendingDecisionRepository.js";
 
@@ -7,8 +6,7 @@ export type ApprovalDecisionFailureReason =
   | "already_resolved"
   | "forbidden_decider"
   | "invalid_option"
-  | "stale_proposal"
-  | "unknown_outcome";
+  | "stale_proposal";
 
 export class ApprovalDecisionDomainError extends Error {
   constructor(readonly reason: ApprovalDecisionFailureReason) {
@@ -29,36 +27,16 @@ export interface DecisionCaller {
   workspaceRole?: "owner" | "admin" | "member" | null;
 }
 
+// A resolved gate carries the operator's exact choice. The routine branches on `optionId`
+// (the `<captureKey>.id == <optionId>` decision guards), so the choice — not a binary
+// approve/reject — is the decision. `label` rides along for the audit record/console.
 export interface ResolvedApprovalDecision {
-  outcome: PendingDecisionOutcome;
   decision: {
     optionId: string;
-    outcome: PendingDecisionOutcome;
+    label: string;
     payload?: unknown;
   };
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-const payloadOutcome = (payload: unknown): PendingDecisionOutcome | null => {
-  if (!isRecord(payload)) {
-    return null;
-  }
-  return payload.outcome === "approved" || payload.outcome === "rejected"
-    ? payload.outcome
-    : null;
-};
-
-const standardOptionOutcome = (optionId: string): PendingDecisionOutcome | null => {
-  if (optionId === "approve" || optionId === "approved") {
-    return "approved";
-  }
-  if (optionId === "reject" || optionId === "rejected") {
-    return "rejected";
-  }
-  return null;
-};
 
 const accountIdsFromScope = (scope: Record<string, unknown>): string[] | null => {
   if (!Array.isArray(scope.accountIds)) {
@@ -132,16 +110,10 @@ export const resolveDecisionDomain = (input: {
     throw new ApprovalDecisionDomainError("invalid_option");
   }
 
-  const outcome = payloadOutcome(option.payload) ?? standardOptionOutcome(option.id);
-  if (!outcome) {
-    throw new ApprovalDecisionDomainError("unknown_outcome");
-  }
-
   return {
-    outcome,
     decision: {
       optionId: option.id,
-      outcome,
+      label: option.label,
       ...(input.payload !== undefined ? { payload: input.payload } : {}),
     },
   };

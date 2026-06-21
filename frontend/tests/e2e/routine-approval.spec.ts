@@ -37,6 +37,7 @@ test("author an approval gate in the Form editor, save, and reload", async ({ pa
   await page.getByLabel("Transition 1 target").click();
   await page.getByRole("option", { name: "complete", exact: true }).click();
 
+  // The gate seeds Approve + Decline; point each at a branch (and rename the second to Deny).
   // Option 1: Approve → the follow-up step.
   await page.getByLabel("Step 1 option 1 label").fill("Approve");
   await page.getByLabel("Step 1 option 1 id").fill("approve");
@@ -44,7 +45,6 @@ test("author an approval gate in the Form editor, save, and reload", async ({ pa
   await page.getByRole("option", { name: "issue", exact: true }).click();
 
   // Option 2: Deny → complete.
-  await page.getByRole("button", { name: "Add choice" }).click();
   await page.getByLabel("Step 1 option 2 label").fill("Deny");
   await page.getByLabel("Step 1 option 2 id").fill("deny");
   await page.getByLabel("Step 1 option 2 target").click();
@@ -92,12 +92,12 @@ test("author an approval gate in the Prose editor, save, and reload without Form
   await editor.click();
   await editor.pressSequentially("Summarize the refund and get a manager decision. ");
 
-  // Insert a self-contained approval chip: capture key + option→target table.
+  // Insert a self-contained approval chip: capture key + option→target table. The dialog
+  // seeds Approve + Decline; point each at a branch (and rename the second to Deny).
   await page.getByRole("button", { name: "Approval" }).click();
   await page.getByLabel("Decision name").fill("refund_decision");
   await page.getByLabel("Option 1 label").fill("Approve");
   await page.getByLabel("Option 1 target").selectOption({ label: "End (complete)" });
-  await page.getByRole("button", { name: "Add choice" }).click();
   await page.getByLabel("Option 2 label").fill("Deny");
   await page.getByLabel("Option 2 target").selectOption({ label: "Handoff" });
   await page.getByRole("button", { name: "Save approval" }).click();

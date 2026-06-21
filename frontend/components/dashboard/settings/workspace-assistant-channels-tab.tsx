@@ -10,12 +10,14 @@ import { AssistantBehaviorSection } from '@/components/dashboard/settings/assist
 import { AssistantDirectivesSection } from '@/components/dashboard/settings/assistant-directives-section'
 import { AssistantExternalSkillsSection } from '@/components/dashboard/settings/assistant-external-skills-section'
 import { AssistantEmailSkillsSection } from '@/components/dashboard/settings/assistant-email-skills-section'
+import { AssistantSlackSkillsSection } from '@/components/dashboard/settings/assistant-slack-skills-section'
 import { AssistantIdentityAppearanceSection } from '@/components/dashboard/settings/assistant-identity-appearance-section'
 import { AssistantPreviewRail } from '@/components/dashboard/settings/assistant-preview-rail'
 import { AssistantRetrievalSkillSettingsSection } from '@/components/dashboard/settings/assistant-retrieval-skill-settings-section'
 import { AssistantRoutinesSection } from '@/components/dashboard/settings/assistant-routines-section'
 import { ConnectorSetupDialog } from '@/components/dashboard/documents/connector-setup-dialog'
 import { McpChannelCard } from '@/components/dashboard/settings/mcp-channel-card'
+import { SlackChannelCard } from '@/components/dashboard/settings/slack-channel-card'
 import { SettingsRow, SettingsRowList } from '@/components/dashboard/settings/settings-row-list'
 import { type AgentSectionId } from '@/lib/dashboard-areas'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
@@ -87,13 +89,14 @@ const writeCachedOrganizationName = (accountId: string, organizationName: string
 
 type GeneralSettingsUpdateInput = Parameters<typeof generalSettingsApi.updateGeneralSettings>[0]
 
-type ChannelId = 'public-chat-link' | 'website-embed' | 'api-channel' | 'mcp-channel' | 'whatsapp-channel'
+type ChannelId = 'public-chat-link' | 'website-embed' | 'api-channel' | 'mcp-channel' | 'slack-channel' | 'whatsapp-channel'
 
 const CHANNEL_TITLES: Record<ChannelId, string> = {
   'public-chat-link': 'Public chat link',
   'website-embed': 'Website chat widget',
   'api-channel': 'API channel',
   'mcp-channel': 'MCP channel',
+  'slack-channel': 'Slack',
   'whatsapp-channel': 'WhatsApp',
 }
 
@@ -301,7 +304,7 @@ export function WorkspaceAssistantChannelsTab({
   // skip the in-page channel index/back affordance.
   const showSection = (id: AgentSectionId) => !agentSection || agentSection === id
   const isChannelId = (id: AgentSectionId | undefined): id is ChannelId =>
-    id === 'public-chat-link' || id === 'website-embed' || id === 'api-channel' || id === 'mcp-channel' || id === 'whatsapp-channel'
+    id === 'public-chat-link' || id === 'website-embed' || id === 'api-channel' || id === 'mcp-channel' || id === 'slack-channel' || id === 'whatsapp-channel'
   const resolvedChannel: ChannelId | null = isChannelId(agentSection) ? agentSection : selectedChannel
   const channelIndexEnabled = !agentSection
   const organizationDraftVersionRef = useRef(0)
@@ -1125,6 +1128,7 @@ export function WorkspaceAssistantChannelsTab({
           <section id="assistant-skills" className="space-y-6 scroll-mt-24">
             {agentId ? <AssistantExternalSkillsSection agentId={agentId} /> : null}
             {agentId ? <AssistantEmailSkillsSection agentId={agentId} workspaceId={activeWorkspaceId} /> : null}
+            {agentId ? <AssistantSlackSkillsSection agentId={agentId} workspaceId={activeWorkspaceId} /> : null}
             <SettingsCard
               id="contact-requests"
               icon={<UserRound className="h-5 w-5 text-primary" />}
@@ -1329,6 +1333,12 @@ export function WorkspaceAssistantChannelsTab({
               />
               <SettingsRow
                 icon={<MessageCircle className="h-5 w-5 text-primary" />}
+                title={CHANNEL_TITLES['slack-channel']}
+                description="Reply to Slack DMs with this agent."
+                onClick={() => setSelectedChannel('slack-channel')}
+              />
+              <SettingsRow
+                icon={<MessageCircle className="h-5 w-5 text-primary" />}
                 title={CHANNEL_TITLES['whatsapp-channel']}
                 description="Reply to WhatsApp Business messages with this agent."
                 onClick={() => setSelectedChannel('whatsapp-channel')}
@@ -1439,6 +1449,16 @@ export function WorkspaceAssistantChannelsTab({
           {mode === 'channels' && !isAnonLoading && resolvedChannel === 'mcp-channel' ? (
           <section id="mcp-channel" className="space-y-6 scroll-mt-24">
             <McpChannelCard workspaceId={activeWorkspaceId} />
+          </section>
+          ) : null}
+
+          {mode === 'channels' && !isAnonLoading && resolvedChannel === 'slack-channel' ? (
+          <section id="slack-channel" className="space-y-6 scroll-mt-24">
+            <SlackChannelCard
+              workspaceId={activeWorkspaceId}
+              agentId={agentId}
+              agentName={agentName || anonSettings?.assistantName || ''}
+            />
           </section>
           ) : null}
 

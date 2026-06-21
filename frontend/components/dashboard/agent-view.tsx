@@ -45,6 +45,8 @@ interface AgentCreationHandoff {
   title: string
   description: string
   items: AgentCreationHandoffItem[]
+  detectedLocale?: string | null
+  detectedPrivacyPolicyUrl?: string | null
   createdAt: number
 }
 
@@ -71,6 +73,7 @@ const AGENT_SECTION_META: Record<Exclude<AgentSectionId, 'chat'>, { title: strin
   'website-embed': { title: 'Website widget', mode: 'channels' },
   'api-channel': { title: 'API', mode: 'channels' },
   'mcp-channel': { title: 'MCP', mode: 'channels' },
+  'slack-channel': { title: 'Slack', mode: 'channels' },
   'whatsapp-channel': { title: 'WhatsApp', mode: 'channels' },
   danger: { title: 'Danger zone', mode: 'assistant' },
 }

@@ -28,7 +28,7 @@ import { EmbeddingService, type EmbeddingGateway } from "../../src/modules/retri
 import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
-import { runAllTestMigrations } from "../support/databaseMigrations.js";
+import { applyTestMigration, runAllTestMigrations } from "../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -255,8 +255,11 @@ describeIfDatabase("persistence integration", () => {
       passwordHash: "hash-default",
     });
 
-    await runAllTestMigrations(database);
-    await runAllTestMigrations(database);
+    // Apply the default-workspace backfill directly (twice) to assert it is idempotent. We invoke
+    // the specific migration rather than runAllTestMigrations because the shared-DB harness applies
+    // each migration once; this is the precise idempotency check this test intends.
+    await applyTestMigration(database, "005_multi_workspace.sql");
+    await applyTestMigration(database, "005_multi_workspace.sql");
 
     const workspaces = await workspaceRepository.listByAccountId(account.id);
 

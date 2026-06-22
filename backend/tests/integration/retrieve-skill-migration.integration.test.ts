@@ -8,7 +8,7 @@ import { AccountRepository } from "../../src/db/repositories/accountRepository.j
 import { AgentRepository } from "../../src/db/repositories/agentRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
-import { testMigrationsPath } from "../support/databaseMigrations.js";
+import { runAllTestMigrations, testMigrationsPath } from "../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -39,12 +39,21 @@ describeIfDatabase("retrieve skills spine migration", () => {
     accountRepository = new AccountRepository(database);
     workspaceRepository = new WorkspaceRepository(database);
     agentRepository = new AgentRepository(database);
-    await database.pool.query(await readFile(path.join(testMigrationsPath, "109_agent_skills_invocation_mode.sql"), "utf8"));
+    // Full schema, then re-apply 110 after seeding legacy retrieval skill_settings so we exercise
+    // its (idempotent) projection against the pre-migration data shape — mirrors the other
+    // migration projection tests (e.g. agent-suggested-questions-skill-migration).
+    await runAllTestMigrations(database);
     migrationSql = await readFile(path.join(testMigrationsPath, "110_retrieve_skills_spine.sql"), "utf8");
   });
 
   afterAll(async () => {
-    await database.close();
+    // Remove rows of kinds added by 094 so a later test file's runAllTestMigrations re-run on the
+    // shared integration DB does not trip migration 108's pre-094 kind CHECK against leftover data.
+    try {
+      await database.execute("DELETE FROM agent_skills WHERE kind IN ('retrieve', 'notify')");
+    } finally {
+      await database.close();
+    }
   });
 
   const createWorkspace = async () => {

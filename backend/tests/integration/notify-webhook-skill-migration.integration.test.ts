@@ -9,7 +9,7 @@ import { AgentRepository } from "../../src/db/repositories/agentRepository.js";
 import { RoutineDefinitionRepository } from "../../src/db/repositories/routineDefinitionRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
-import { testMigrationsPath } from "../support/databaseMigrations.js";
+import { runAllTestMigrations, testMigrationsPath } from "../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -42,11 +42,20 @@ describeIfDatabase("notify and completion-export skill migration", () => {
     workspaceRepository = new WorkspaceRepository(database);
     agentRepository = new AgentRepository(database);
     routineRepository = new RoutineDefinitionRepository(database);
+    // Full schema, then re-apply 111 after seeding legacy contact/webhook-export settings so we
+    // exercise its (idempotent) projection — mirrors the other migration projection tests.
+    await runAllTestMigrations(database);
     migrationSql = await readFile(path.join(testMigrationsPath, "111_notify_and_completion_export_skills.sql"), "utf8");
   });
 
   afterAll(async () => {
-    await database.close();
+    // Remove rows of kinds added by 094 so a later test file's runAllTestMigrations re-run on the
+    // shared integration DB does not trip migration 108's pre-094 kind CHECK against leftover data.
+    try {
+      await database.execute("DELETE FROM agent_skills WHERE kind IN ('retrieve', 'notify')");
+    } finally {
+      await database.close();
+    }
   });
 
   it("creates contact_human and completion_export skills idempotently with preserved destinations", async () => {

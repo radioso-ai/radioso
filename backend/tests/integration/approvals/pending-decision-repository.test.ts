@@ -76,7 +76,7 @@ const decisionInput = (overrides: Partial<PendingDecisionCreateInput> = {}): Pen
   stepId: "step_review",
   reason: "Needs operator review",
   options: [
-    { id: "approve", label: "Approve", payload: { outcome: "approved" } },
+    { id: "approve", label: "Approve" },
     { id: "reject", label: "Reject", description: "Send back for edits" },
   ],
   deciderScope: { kind: "workspace_role", role: "owner" },

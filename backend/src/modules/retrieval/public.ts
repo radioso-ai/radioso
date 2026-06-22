@@ -70,6 +70,15 @@ export {
   type EffectiveRetrievalSkillSettings,
   type RetrievalSkillSettingsOverride,
 } from "./domain/retrievalSkillSettings.js";
+// Exported early (before the service re-exports below that value-import skills/public.js): the
+// skills capability registry reads RETRIEVAL_ANSWER_ADAPTER at module-load via capabilities/retrieve,
+// so it must be initialized before any cyclic service export to avoid a TDZ on that const.
+export {
+  RETRIEVAL_ANSWER_ADAPTER,
+  RETRIEVAL_CONTEXT_SKILL_NAME,
+  RetrievalAnswerSkillExecutor,
+  readRetrievalResult,
+} from "./services/retrievalAnswerSkillExecutor.js";
 export {
   REWRITE_STATUS,
   REWRITE_TURN_KIND,
@@ -203,13 +212,6 @@ export interface RetrievalPipelineService {
   runInterpreted(input: RetrievalPipelineInterpretationResult): Promise<RetrievalPipelineResult>;
   runWithoutRetrieval(input: RetrievalPipelineInterpretationResult): Promise<RetrievalPipelineResult>;
 }
-
-export {
-  RETRIEVAL_ANSWER_ADAPTER,
-  RETRIEVAL_CONTEXT_SKILL_NAME,
-  RetrievalAnswerSkillExecutor,
-  readRetrievalResult,
-} from "./services/retrievalAnswerSkillExecutor.js";
 
 // `RetrievalPipelinePort` is the internal name for the structural surface
 // `RetrievalPipelineService` describes here; re-exported so consumers wiring the

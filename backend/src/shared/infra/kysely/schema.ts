@@ -296,23 +296,6 @@ export interface Conversations {
   workspace_id: string;
 }
 
-export interface CustomerEmailConnections {
-  created_at: Generated<Timestamp>;
-  display_name: string;
-  id: string;
-  last_error_code: string | null;
-  last_health_checked_at: Timestamp | null;
-  last_health_status: string | null;
-  oauth_connection_id: string;
-  provider: string;
-  reply_to_email: string | null;
-  sender_email: string;
-  sender_name: string | null;
-  status: Generated<string>;
-  updated_at: Generated<Timestamp>;
-  workspace_id: string;
-}
-
 export interface DocumentProcessingJobs {
   attempt_count: Generated<number>;
   available_at: Generated<Timestamp>;
@@ -461,6 +444,21 @@ export interface IngestionSettings {
   pending_embedding_model: string | null;
   structured_max_chunk_size: Generated<number>;
   structured_min_chunk_size: Generated<number>;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface IntegrationConnections {
+  config: Generated<Json>;
+  created_at: Generated<Timestamp>;
+  display_name: string;
+  id: string;
+  last_error_code: string | null;
+  last_health_checked_at: Timestamp | null;
+  last_health_status: string | null;
+  oauth_connection_id: string;
+  provider: string;
+  status: Generated<string>;
   updated_at: Generated<Timestamp>;
   workspace_id: string;
 }
@@ -683,6 +681,44 @@ export interface SkillIntakeStates {
   workspace_id: string;
 }
 
+export interface SlackChannelBindings {
+  answering_agent_id: string;
+  created_at: Generated<Timestamp>;
+  escalation_channel_id: string | null;
+  id: string;
+  installation_id: string;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface SlackConversationLinks {
+  conversation_id: string;
+  created_at: Generated<Timestamp>;
+  id: string;
+  installation_id: string;
+  slack_key: string;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface SlackInboundEvents {
+  event_id: string;
+  received_at: Generated<Timestamp>;
+  status: Generated<string>;
+  team_id: string;
+}
+
+export interface SlackInstallations {
+  bot_user_id: string;
+  connection_id: string;
+  created_at: Generated<Timestamp>;
+  id: string;
+  team_id: string;
+  team_name: string | null;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
 export interface UsageDailyRollups {
   account_id: string;
   input_bytes: Generated<Int8>;
@@ -845,7 +881,6 @@ export interface DB {
   connector_whatsapp_message_log: ConnectorWhatsappMessageLog;
   conversation_ownership: ConversationOwnership;
   conversations: Conversations;
-  customer_email_connections: CustomerEmailConnections;
   document_processing_jobs: DocumentProcessingJobs;
   document_sources: DocumentSources;
   documents: Documents;
@@ -856,6 +891,7 @@ export interface DB {
   eval_runs: EvalRuns;
   eval_snapshots: EvalSnapshots;
   ingestion_settings: IngestionSettings;
+  integration_connections: IntegrationConnections;
   integration_oauth_connections: IntegrationOauthConnections;
   mcp_connections: McpConnections;
   messages: Messages;
@@ -872,6 +908,10 @@ export interface DB {
   routine_transition: RoutineTransition;
   sessions: Sessions;
   skill_intake_states: SkillIntakeStates;
+  slack_channel_bindings: SlackChannelBindings;
+  slack_conversation_links: SlackConversationLinks;
+  slack_inbound_events: SlackInboundEvents;
+  slack_installations: SlackInstallations;
   usage_daily_rollups: UsageDailyRollups;
   usage_events: UsageEvents;
   users: Users;

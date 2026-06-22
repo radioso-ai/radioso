@@ -97,6 +97,17 @@ interface TokenEndpointResponse {
   scope?: unknown;
 }
 
+export interface NormalizedOauthTokenResponse {
+  tokens: StoredOauthTokens;
+  providerAccountId?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+export type OauthTokenResponseNormalizer = (
+  payload: unknown,
+  fallback?: StoredOauthTokens,
+) => NormalizedOauthTokenResponse;
+
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 const applyClientAuth = (
@@ -128,6 +139,13 @@ const parseTokenResponse = (payload: TokenEndpointResponse, fallback?: StoredOau
     ...(typeof payload.scope === "string" ? { scope: payload.scope } : {}),
   };
 };
+
+const defaultTokenResponseNormalizer: OauthTokenResponseNormalizer = (
+  payload,
+  fallback,
+): NormalizedOauthTokenResponse => ({
+  tokens: parseTokenResponse(payload as TokenEndpointResponse, fallback),
+});
 
 let nowMs = (): number => Date.now();
 export const __setOauthClock = (clock: () => number): void => {
@@ -165,10 +183,13 @@ export interface ExchangeCodeInput {
   codeVerifier: string;
   redirectUri: string;
   fetchImpl: FetchLike;
+  tokenResponseNormalizer?: OauthTokenResponseNormalizer;
   timeoutMs?: number;
 }
 
-export const exchangeAuthorizationCode = async (input: ExchangeCodeInput): Promise<StoredOauthTokens> => {
+export const exchangeAuthorizationCodeWithMetadata = async (
+  input: ExchangeCodeInput,
+): Promise<NormalizedOauthTokenResponse> => {
   const params = new URLSearchParams({
     grant_type: "authorization_code",
     code: input.code,
@@ -185,7 +206,7 @@ export const exchangeAuthorizationCode = async (input: ExchangeCodeInput): Promi
       headers,
       input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     );
-    return parseTokenResponse(payload);
+    return (input.tokenResponseNormalizer ?? defaultTokenResponseNormalizer)(payload);
   } catch (error) {
     if (error instanceof OauthClientError) {
       throw error;
@@ -198,10 +219,14 @@ export const exchangeAuthorizationCode = async (input: ExchangeCodeInput): Promi
   }
 };
 
+export const exchangeAuthorizationCode = async (input: ExchangeCodeInput): Promise<StoredOauthTokens> =>
+  (await exchangeAuthorizationCodeWithMetadata(input)).tokens;
+
 export interface RefreshTokensInput {
   config: StoredOauthClientConfig;
   tokens: StoredOauthTokens;
   fetchImpl: FetchLike;
+  tokenResponseNormalizer?: OauthTokenResponseNormalizer;
   timeoutMs?: number;
 }
 
@@ -226,7 +251,7 @@ export const refreshAccessToken = async (input: RefreshTokensInput): Promise<Sto
       headers,
       input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     );
-    return parseTokenResponse(payload, input.tokens);
+    return (input.tokenResponseNormalizer ?? defaultTokenResponseNormalizer)(payload, input.tokens).tokens;
   } catch (error) {
     if (error instanceof OauthClientError) {
       throw error;

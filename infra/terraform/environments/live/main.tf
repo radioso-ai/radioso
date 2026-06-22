@@ -66,6 +66,9 @@ module "radioso" {
   public_chat_session_secret            = var.public_chat_session_secret
   radioso_mcp_signing_secret            = var.radioso_mcp_signing_secret
   connector_encryption_key              = var.connector_encryption_key
+  slack_oauth_client_id                 = var.slack_oauth_client_id
+  slack_oauth_client_secret             = var.slack_oauth_client_secret
+  slack_signing_secret                  = var.slack_signing_secret
   resend_mail_api_key                   = var.resend_mail_api_key
   mail_from_email                       = var.mail_from_email
   mail_from_name                        = var.mail_from_name

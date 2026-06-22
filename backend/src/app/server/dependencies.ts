@@ -68,6 +68,10 @@ import type { ConversationModelGateway } from "@radioso/conversation-contract";
 import type { ModelInferencePipeline } from "../../shared/infra/llm/modelInferencePipeline.js";
 import { OauthConnectionService, StaticOauthProviderRegistry } from "../../modules/integrationOauth/public.js";
 import {
+  SlackInstallationService,
+  type SlackOauthMetadata,
+} from "../../modules/slack/public.js";
+import {
   CustomerEmailConnectionService,
   CustomerEmailOAuthService,
   EmailSkillDefinitionService,
@@ -76,6 +80,7 @@ import {
   customerEmailOauthProviderIds,
 } from "../../modules/customerEmail/public.js";
 import { WebhookSkillDefinitionService } from "../../modules/webhookSkills/public.js";
+import { SlackSkillDefinitionService } from "../../modules/slackSkills/public.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -131,13 +136,39 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     repositories,
   });
+  const slackInstallationService = new SlackInstallationService({
+    oauthConnections: new OauthConnectionRepository(infrastructure.database.kysely),
+    integrationConnections: repositories.integrationConnectionRepository,
+    installations: repositories.slackInstallationRepository,
+    bindings: repositories.slackChannelBindingRepository,
+    encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
+  });
   const oauthConnectionService = new OauthConnectionService({
     repository: new OauthConnectionRepository(infrastructure.database.kysely),
     providers: new StaticOauthProviderRegistry(composition.oauthProviders),
     encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
     appBaseUrl: env.APP_BASE_URL,
+    apiBaseUrl: env.CONNECTOR_PUBLIC_BASE_URL ?? env.APP_BASE_URL,
     assertPublicUrl: assertPublicWebsiteUrl,
     logger,
+    onAuthorized: async ({ connection, tokens, metadata }) => {
+      if (connection.provider !== "slack") {
+        return;
+      }
+      const slackMetadata = metadata as Partial<SlackOauthMetadata>;
+      if (!slackMetadata.teamId || !slackMetadata.botUserId) {
+        throw new Error("Slack OAuth metadata was missing team or bot identity");
+      }
+      await slackInstallationService.saveInstallation({
+        workspaceId: connection.workspaceId,
+        oauthConnectionId: connection.id,
+        teamId: slackMetadata.teamId,
+        teamName: slackMetadata.teamName ?? null,
+        botUserId: slackMetadata.botUserId,
+        botAccessToken: tokens.accessToken,
+        grantedScopes: connection.grantedScopes,
+      });
+    },
   });
   const customerEmailOAuthService = new CustomerEmailOAuthService(oauthConnectionService);
   const customerEmailConnectionService = new CustomerEmailConnectionService({
@@ -175,6 +206,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const webhookSkillDefinitionService = new WebhookSkillDefinitionService({
     repository: repositories.webhookSkillDefinitionRepository,
     destinations: webhookDestinations,
+  });
+  const slackSkillDefinitionService = new SlackSkillDefinitionService({
+    repository: repositories.slackSkillDefinitionRepository,
+    installations: repositories.slackInstallationRepository,
   });
   // Build the registry first (no resolver yet) so we can compute supported embedding
   // models; embedding stays env-default and doesn't need the workspace-aware resolver.
@@ -290,6 +325,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     emailSkillDefinitionRepository: repositories.emailSkillDefinitionRepository,
     emailSkillActivityRepository: repositories.emailSkillActivityRepository,
     webhookSkillDefinitionRepository: repositories.webhookSkillDefinitionRepository,
+    slackSkillDefinitionRepository: repositories.slackSkillDefinitionRepository,
     retrievalPipeline: retrieval.retrievalPipeline,
     usageEventRecorder: infrastructure.usageEventRecorder,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
@@ -485,10 +521,12 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     abuseControlService: chat.abuseControlService,
     workspaceProviderCredentialsService,
     oauthConnectionService,
+    slackInstallationService,
     customerEmailOAuthService,
     customerEmailConnectionService,
     emailSkillDefinitionService,
     webhookSkillDefinitionService,
+    slackSkillDefinitionService,
     emailSkillActivityRepository: repositories.emailSkillActivityRepository,
     mcpConnectionService,
     externalSkillDefinitionService,

@@ -8,8 +8,8 @@ function doc(externalDocumentId: string): DocumentInput {
     externalDocumentId,
     title: externalDocumentId,
     content: "body",
-    source: { kind: "website", url: "https://docs.radioso.dev" },
-    metadata: { section: "mdx-docs", slug: "x", url: "https://docs.radioso.dev/x" },
+    source: { kind: "website", url: "https://docs.radioso.ai" },
+    metadata: { section: "mdx-docs", slug: "x", url: "https://docs.radioso.ai/x" },
   };
 }
 

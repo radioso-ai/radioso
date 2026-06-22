@@ -22,6 +22,7 @@ Before creating or revising documentation in this repo, read [Document Writer Pr
 - [API Contract Workflow](./api-contract-workflow.md) - backend OpenAPI, SDK, and MCP generated artifact update flow
 - [Human Takeover](./human-takeover.md) - operator API and ownership behavior for human-owned conversations
 - [Website Crawler Provider](./website-crawler.md) - OSS crawler provider port and document crawl API
+- [Slack Channel](./slack-channel.md) - Slack setup, self-host manifest, data flow, and curated-knowledge boundary
 - [Radioso Skills RFC](./radioso-skills-rfc.md) - vocabulary and direction behind the implemented read-only skills catalog
 - [MCP Client Setup](./mcp-client-setup.md) - current MCP client connection patterns and constraints
 

@@ -135,7 +135,7 @@ variable "frontend_max_instances" {
 }
 
 variable "frontend_cdn_domain" {
-  description = "Domain to serve the frontend behind an external HTTPS load balancer with Cloud CDN for the website-embed assets (e.g. \"radioso.dev\"). Leave empty to keep serving Cloud Run directly with no load balancer or CDN."
+  description = "Domain to serve the frontend behind an external HTTPS load balancer with Cloud CDN for the website-embed assets (e.g. \"radioso.ai\"). Leave empty to keep serving Cloud Run directly with no load balancer or CDN."
   type        = string
   default     = ""
 }
@@ -303,6 +303,27 @@ variable "metrics_auth_token" {
 
 variable "posthog_api_key" {
   description = "Optional PostHog project token used by Enterprise observability sinks."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "slack_oauth_client_id" {
+  description = "Optional Slack app OAuth client ID for the Slack channel. Enables the backend Slack install flow when set."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "slack_oauth_client_secret" {
+  description = "Optional Slack app OAuth client secret for the Slack channel."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "slack_signing_secret" {
+  description = "Optional Slack app signing secret used to verify inbound Slack event requests."
   type        = string
   sensitive   = true
   default     = null

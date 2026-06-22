@@ -3,6 +3,7 @@
 import { useRef, useState, type ComponentType, type JSX } from 'react'
 import { AlertTriangle, BadgeCheck, ChevronDown, CornerUpRight, Flag, Gavel, Plus, Trash2, Zap, type LucideIcon } from 'lucide-react'
 import {
+  $createTextNode,
   $getNodeByKey,
   $getRoot,
   DecoratorNode,
@@ -457,6 +458,19 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
     setDraftBindingState(next)
   }
 
+  // Demote a decided-in-code check to a decided-by-AI one: drop the structured chip and leave
+  // its readable comparison as plain prose, which compiles to an `llm` guard. The inverse of
+  // promoting (toolbar "Check" inserts a structured condition chip = decided in code).
+  const demoteToAi = () => {
+    editor.update(() => {
+      const node = $getNodeByKey(nodeKey)
+      if (!node) return
+      const prose = $createTextNode(label)
+      node.replace(prose)
+      prose.selectEnd()
+    })
+  }
+
   const removeSelf = () => {
     editor.update(() => {
       const node = $getNodeByKey(nodeKey)
@@ -623,6 +637,7 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
           <>
             <DropdownMenuLabel>Decided in code</DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={demoteToAi}>Switch to decided by AI</DropdownMenuItem>
           </>
         ) : null}
         <DropdownMenuItem onClick={removeSelf}>Remove</DropdownMenuItem>

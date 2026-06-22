@@ -1,32 +1,18 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 
 import { MessageRepository } from "../../src/db/repositories/messageRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
+import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 // Characterization for MessageRepository against Postgres. Covers behavior the deleted
 // SQL-string mock unit tests asserted (source derivation, operator-provenance metadata,
 // nested metadata round-trip) plus cursor windowing and conversation summaries.
 
-const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
+const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
-const canReach = async (url?: string): Promise<boolean> => {
-  if (!url) return false;
-  const database = new Database(url);
-  try {
-    await database.query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  } finally {
-    await database.close().catch(() => undefined);
-  }
-};
-
-const describeIfDatabase = (await canReach(integrationDatabaseUrl)) ? describe : describe.skip;
-
-describeIfDatabase("MessageRepository (Postgres)", () => {
+describeIntegration("MessageRepository (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl as string);
   const repository = new MessageRepository(database.kysely);
   const accountId = randomUUID();

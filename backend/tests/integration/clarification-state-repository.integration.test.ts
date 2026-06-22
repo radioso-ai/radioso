@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 
 import {
   ClarificationStateRepository,
 } from "../../src/db/repositories/clarificationStateRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
+import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 // Real-Postgres characterization of ClarificationStateRepository. The risky behaviour is
 // the `save` upsert on session_id (one row per session), the candidates jsonb round-trip
@@ -13,26 +14,9 @@ import { Database } from "../../src/shared/infra/database.js";
 // the status partitioning between loadPending and loadRecent. This is the spec the Kysely
 // migration must preserve.
 
-const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
+const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
-const canReach = async (url?: string): Promise<boolean> => {
-  if (!url) {
-    return false;
-  }
-  const database = new Database(url);
-  try {
-    await database.query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  } finally {
-    await database.close().catch(() => undefined);
-  }
-};
-
-const describeIfDatabase = (await canReach(integrationDatabaseUrl)) ? describe : describe.skip;
-
-describeIfDatabase("ClarificationStateRepository (Postgres)", () => {
+describeIntegration("ClarificationStateRepository (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl as string);
   const repository = new ClarificationStateRepository(database.kysely);
 

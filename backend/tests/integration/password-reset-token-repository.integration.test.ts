@@ -1,35 +1,19 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { PasswordResetTokenRepository } from "../../src/db/repositories/passwordResetTokenRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
+import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 // Real-Postgres characterization of PasswordResetTokenRepository. The risky behaviour the
 // Kysely migration must preserve: the active filter on findLatestActiveForUser, markUsed
 // returning the affected count (1 first call, 0 once already used), and
 // markAllActiveUsedForUser returning the count of newly used tokens.
 
-const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
+const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
-const canReach = async (url?: string): Promise<boolean> => {
-  if (!url) {
-    return false;
-  }
-  const database = new Database(url);
-  try {
-    await database.query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  } finally {
-    await database.close().catch(() => undefined);
-  }
-};
-
-const describeIfDatabase = (await canReach(integrationDatabaseUrl)) ? describe : describe.skip;
-
-describeIfDatabase("PasswordResetTokenRepository (Postgres)", () => {
+describeIntegration("PasswordResetTokenRepository (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl as string);
   const repository = new PasswordResetTokenRepository(database.kysely);
 

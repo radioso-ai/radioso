@@ -1,34 +1,18 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { SessionRepository } from "../../src/db/repositories/sessionRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
+import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 // Real-Postgres characterization of the SessionRepository. The auth "integration" test
 // uses an in-memory fake, so this is the only coverage that exercises the actual SQL
 // (now Kysely). Behaviour here is the spec the Kysely migration must preserve.
 
-const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
+const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
-const canReach = async (url?: string): Promise<boolean> => {
-  if (!url) {
-    return false;
-  }
-  const database = new Database(url);
-  try {
-    await database.query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  } finally {
-    await database.close().catch(() => undefined);
-  }
-};
-
-const describeIfDatabase = (await canReach(integrationDatabaseUrl)) ? describe : describe.skip;
-
-describeIfDatabase("SessionRepository (Postgres)", () => {
+describeIntegration("SessionRepository (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl as string);
   const repository = new SessionRepository(database.kysely);
 

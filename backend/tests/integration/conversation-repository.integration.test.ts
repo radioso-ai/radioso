@@ -1,31 +1,17 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 
 import { ConversationRepository } from "../../src/db/repositories/conversationRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
+import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 // Characterization for ConversationRepository keyset pagination (updated_at, created_at, id)
 // — the migrated cursor-tuple comparison.
 
-const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
+const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
-const canReach = async (url?: string): Promise<boolean> => {
-  if (!url) return false;
-  const database = new Database(url);
-  try {
-    await database.query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  } finally {
-    await database.close().catch(() => undefined);
-  }
-};
-
-const describeIfDatabase = (await canReach(integrationDatabaseUrl)) ? describe : describe.skip;
-
-describeIfDatabase("ConversationRepository (Postgres)", () => {
+describeIntegration("ConversationRepository (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl as string);
   const repository = new ConversationRepository(database.kysely);
   const accountId = randomUUID();

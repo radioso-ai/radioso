@@ -1,35 +1,19 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { AccessGrantRepository } from "../../src/db/repositories/accessGrantRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
+import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 // Real-Postgres characterization of AccessGrantRepository. The risky behaviour is the
 // `save` upsert (ON CONFLICT (token_hash) DO UPDATE SET label = self) which returns the
 // existing row unchanged, the text[] origin_allowlist round-trip, and the rotate/revoke/
 // touch/updateConstraints mutations. This is the spec the Kysely migration must preserve.
 
-const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
+const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
-const canReach = async (url?: string): Promise<boolean> => {
-  if (!url) {
-    return false;
-  }
-  const database = new Database(url);
-  try {
-    await database.query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  } finally {
-    await database.close().catch(() => undefined);
-  }
-};
-
-const describeIfDatabase = (await canReach(integrationDatabaseUrl)) ? describe : describe.skip;
-
-describeIfDatabase("AccessGrantRepository (Postgres)", () => {
+describeIntegration("AccessGrantRepository (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl as string);
   const repository = new AccessGrantRepository(database.kysely);
 

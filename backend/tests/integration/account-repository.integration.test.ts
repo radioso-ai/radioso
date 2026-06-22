@@ -1,33 +1,17 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
+import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 // Real-Postgres characterization of AccountRepository, the spec the Kysely migration must
 // preserve: plain CRUD with updated_at advancing on rename and a boolean delete.
 
-const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
+const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
-const canReach = async (url?: string): Promise<boolean> => {
-  if (!url) {
-    return false;
-  }
-  const database = new Database(url);
-  try {
-    await database.query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  } finally {
-    await database.close().catch(() => undefined);
-  }
-};
-
-const describeIfDatabase = (await canReach(integrationDatabaseUrl)) ? describe : describe.skip;
-
-describeIfDatabase("AccountRepository (Postgres)", () => {
+describeIntegration("AccountRepository (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl as string);
   const repository = new AccountRepository(database.kysely);
 

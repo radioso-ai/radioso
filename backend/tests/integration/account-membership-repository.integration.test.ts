@@ -1,35 +1,19 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { AccountMembershipRepository } from "../../src/db/repositories/accountMembershipRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
+import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 // Real-Postgres characterization of AccountMembershipRepository. The risky behaviour is the
 // create upsert on (account_id, user_id) DO UPDATE SET role = account_memberships.role,
 // which must return the EXISTING row unchanged on conflict, plus the active-only filters,
 // the users JOIN, and ASC ordering.
 
-const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
+const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
-const canReach = async (url?: string): Promise<boolean> => {
-  if (!url) {
-    return false;
-  }
-  const database = new Database(url);
-  try {
-    await database.query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  } finally {
-    await database.close().catch(() => undefined);
-  }
-};
-
-const describeIfDatabase = (await canReach(integrationDatabaseUrl)) ? describe : describe.skip;
-
-describeIfDatabase("AccountMembershipRepository (Postgres)", () => {
+describeIntegration("AccountMembershipRepository (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl as string);
   const repository = new AccountMembershipRepository(database.kysely);
 

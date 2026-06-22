@@ -1,35 +1,19 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { EmailVerificationTokenRepository } from "../../src/db/repositories/emailVerificationTokenRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
+import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 // Real-Postgres characterization of EmailVerificationTokenRepository. The risky behaviour
 // the Kysely migration must preserve: the active filter (used_at IS NULL AND expires_at >
 // now) on findLatestActiveForUser, the idempotent markUsed (no-op once stamped, void
 // return), and markAllActiveUsedForUser returning the affected count.
 
-const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
+const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
-const canReach = async (url?: string): Promise<boolean> => {
-  if (!url) {
-    return false;
-  }
-  const database = new Database(url);
-  try {
-    await database.query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  } finally {
-    await database.close().catch(() => undefined);
-  }
-};
-
-const describeIfDatabase = (await canReach(integrationDatabaseUrl)) ? describe : describe.skip;
-
-describeIfDatabase("EmailVerificationTokenRepository (Postgres)", () => {
+describeIntegration("EmailVerificationTokenRepository (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl as string);
   const repository = new EmailVerificationTokenRepository(database.kysely);
 

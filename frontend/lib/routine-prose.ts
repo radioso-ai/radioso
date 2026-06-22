@@ -1,5 +1,5 @@
 import type { RoutineDefinitionDraft, RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineReentryMode, RoutineSlotType, RoutineTransition } from './api-types'
-import { approvalOptionTargets, approvalOptionTransitions } from './routine-approval'
+import { approvalOptionTransitions } from './routine-approval'
 
 export const ROUTINE_SLOT_TYPES: RoutineSlotType[] = ['text', 'number', 'boolean', 'email', 'date']
 export const ROUTINE_FIELD_GUARD_UNITS: RoutineFieldGuardUnit[] = ['days', 'weeks', 'months', 'years']
@@ -655,38 +655,59 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
     const step = steps[index]!
     const title = titleOf(step)
     if (step.kind === 'approval') {
-      // An approval gate is a single untitled paragraph carrying the approval chip; its
-      // routing (one field guard per option) is recovered onto the chip's option targets.
+      // An approval gate renders inline: a `decision` declaration chip (the choices + labels)
+      // followed by one ordinary branch line per option — "if <decision> is <choice> then
+      // <target>". Each decision edge is one `<captureKey>.id == <option>` field guard.
       if (title) return null
       const captureKey = step.captureKey ?? ''
       const stepOutgoing = [...(outgoing.get(step.stableStepId) ?? [])].sort((left, right) => left.ordinal - right.ordinal)
       const decisionRef = `${captureKey}.id`
-      const declaredOptionIds = new Set((step.options ?? []).map((option) => option.id))
+      const declaredOptions = step.options ?? []
+      const declaredOptionIds = new Set(declaredOptions.map((option) => option.id))
       // Every edge must be a decision field guard on `<captureKey>.id` to a declared option.
-      const cleanEdges = stepOutgoing.every((edge) =>
+      const cleanEdges = stepOutgoing.length > 0 && stepOutgoing.every((edge) =>
         edge.guardKind === 'field'
         && edge.fieldRef === decisionRef
         && edge.fieldOp === 'equals'
         && typeof edge.fieldValue === 'string'
         && declaredOptionIds.has(edge.fieldValue))
       if (!captureKey || !cleanEdges) return null
-      const optionTargets = approvalOptionTargets(stepOutgoing)
-      const docOptions: ApprovalDocOption[] = []
-      for (const option of step.options ?? []) {
-        const target = optionTargets.get(option.id)
-        if (!target) return null
-        const docTarget = approvalDocTarget(target)
-        if (docTarget === null) return null
-        docOptions.push({
+      const optionLabels = new Map(declaredOptions.map((option) => [option.id, option.label] as const))
+      // The declaration: choices + labels, no targets (those live on the branch lines).
+      const declSegments = parseInstructionSegments(step.instruction ?? '', nameByRef)
+      declSegments.push({
+        kind: 'chip',
+        chipKind: 'decision',
+        refId: captureKey,
+        label: 'decision',
+        captureKey,
+        options: declaredOptions.map((option) => ({
           id: option.id,
           label: option.label,
           ...(option.description ? { description: option.description } : {}),
-          target: docTarget,
-        })
+        })),
+      })
+      paragraphs.push({ segments: declSegments })
+      // One inline branch line per decision edge.
+      for (const edge of stepOutgoing) {
+        const optionId = edge.fieldValue as string
+        const docTarget = approvalDocTarget(edge.toRef)
+        if (docTarget === null) return null
+        const condition: ProseSegment = {
+          kind: 'chip',
+          chipKind: 'condition',
+          refId: captureKey,
+          op: 'equals',
+          value: optionId,
+          label: `${captureKey} is ${optionLabels.get(optionId) ?? optionId}`,
+        }
+        const target: ProseSegment = docTarget === DONE_TERMINAL_ID
+          ? { kind: 'chip', chipKind: 'end', refId: DONE_TERMINAL_ID, label: 'end' }
+          : docTarget === HANDOFF_TERMINAL_ID
+            ? { kind: 'chip', chipKind: 'handoff', refId: HANDOFF_TERMINAL_ID, label: HANDOFF_CHIP_LABEL }
+            : { kind: 'chip', chipKind: 'step', refId: docTarget, label: titleByStepId.get(docTarget) ?? docTarget }
+        paragraphs.push({ segments: [condition, target] })
       }
-      const segments = parseInstructionSegments(step.instruction ?? '', nameByRef)
-      segments.push({ kind: 'chip', chipKind: 'approval', refId: captureKey, label: 'approval', captureKey, options: docOptions })
-      paragraphs.push({ segments })
       continue
     }
     if (title) {

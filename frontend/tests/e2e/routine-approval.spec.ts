@@ -126,11 +126,18 @@ test("author an approval gate in the Prose editor, save, and reload without Form
     expect.objectContaining({ toRef: "handoff", fieldRef: "refund_decision.id", fieldOp: "equals", fieldValue: "deny" }),
   ]));
 
-  // Reload: the approval routine round-trips back into Prose (no forced Form fallback).
+  // Reload: the approval round-trips back into Prose as the inline decision model — a small
+  // `decision` declaration chip plus one editable branch line per choice (no Form fallback,
+  // and no opaque block chip).
   await page.getByRole("button", { name: "Back to routines" }).click();
   await page.getByRole("button", { name: "Edit draft Refund approval" }).click();
   await expect(page.getByRole("tab", { name: "Prose" })).toHaveAttribute("data-state", "active");
-  const reloadedChip = page.locator('[data-routine-chip="approval"]');
-  await expect(reloadedChip).toContainText("if Approve then End");
-  await expect(reloadedChip).toContainText("if Deny then Handoff");
+  const decisionChip = page.locator('[data-routine-chip="decision"]');
+  await expect(decisionChip).toBeVisible();
+  await expect(decisionChip).toContainText("refund_decision");
+  await expect(decisionChip).toContainText("Approve");
+  await expect(decisionChip).toContainText("Deny");
+  // The branches are ordinary inline condition + target chips now.
+  await expect(editor.locator('[data-routine-chip="condition"]').first()).toBeVisible();
+  await expect(editor.locator('[data-routine-chip="handoff"]')).toBeVisible();
 });

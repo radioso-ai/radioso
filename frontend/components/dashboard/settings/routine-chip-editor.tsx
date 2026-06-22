@@ -33,7 +33,7 @@ import {
 
 import { $createHeadingNode, $isHeadingNode, HeadingNode } from '@lexical/rich-text'
 
-import { $createApprovalChipNode, $createChipNode, $createConditionChipNode, $createStepChipNode, $isChipNode, ApprovalChipDialog, approvalChipTargets, ChipNode, type ApprovalChipState, type ApprovalChipTarget, type RoutineChipKind } from '@/components/dashboard/settings/routine-chip-node'
+import { $createApprovalChipNode, $createChipNode, $createConditionChipNode, $createDecisionChipNode, $createStepChipNode, $isChipNode, ApprovalChipDialog, approvalChipTargets, ChipNode, type ApprovalChipState, type ApprovalChipTarget, type RoutineChipKind } from '@/components/dashboard/settings/routine-chip-node'
 import { findRoutineSkillDescriptor, normalizeSkillName, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { RoutineVariablesProvider } from '@/components/dashboard/settings/routine-variables-context'
 import { Button } from '@/components/ui/button'
@@ -768,6 +768,8 @@ function $proseParagraphToNode(paragraph: ProseParagraph): LexicalNode {
       node.append($createStepChipNode(segment.refId, segment.label, segment.counterLimit ?? null))
     } else if (segment.chipKind === 'approval') {
       node.append($createApprovalChipNode(segment.captureKey ?? '', segment.options ?? []))
+    } else if (segment.chipKind === 'decision') {
+      node.append($createDecisionChipNode(segment.captureKey ?? '', segment.options ?? []))
     } else {
       node.append($createChipNode(segment.chipKind, segment.refId, segment.label, {
         inputBindings: segment.inputBindings,
@@ -890,10 +892,10 @@ function ClipboardRoundTripPlugin({
         if (!state.read($selectionSpansDocument)) return false
         const { name: currentName, trigger: currentTrigger, variables: currentVariables } = stateRef.current
         const paragraphs = state.read($readProseParagraphs)
-        // The plain-text token grammar has no approval form, so a routine with an approval
+        // The plain-text token grammar has no approval/decision form, so a routine with a
         // gate isn't exported as tokens — fall through to Lexical's native clipboard, which
         // round-trips losslessly in-app via the JSON flavour.
-        if (paragraphs.some((paragraph) => paragraph.segments.some((segment) => segment.kind === 'chip' && segment.chipKind === 'approval'))) {
+        if (paragraphs.some((paragraph) => paragraph.segments.some((segment) => segment.kind === 'chip' && (segment.chipKind === 'approval' || segment.chipKind === 'decision')))) {
           return false
         }
         const text = serializeProseDoc({ name: currentName, trigger: currentTrigger, variables: currentVariables, paragraphs })

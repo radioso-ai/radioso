@@ -49,7 +49,7 @@ import { useRoutineVariables } from '@/components/dashboard/settings/routine-var
 // `condition` chip is a structured comparison ("decided in code"); the others are
 // references/targets. An `end` chip is a branch target that completes the routine (the
 // counterpart to a `handoff` chip, which escalates).
-export type RoutineChipKind = 'variable' | 'skill' | 'handoff' | 'step' | 'condition' | 'end' | 'approval'
+export type RoutineChipKind = 'variable' | 'skill' | 'handoff' | 'step' | 'condition' | 'end' | 'approval' | 'decision'
 
 export type RoutineFieldGuardValue = string | number | boolean
 
@@ -84,6 +84,7 @@ const KIND_META: Record<RoutineChipKind, { className: string; icon: LucideIcon |
   condition: { className: 'border-indigo-300 bg-indigo-100 text-indigo-900', icon: BadgeCheck },
   end: { className: 'border-slate-300 bg-slate-100 text-slate-700', icon: Flag },
   approval: { className: 'border-violet-300 bg-violet-100 text-violet-900', icon: Gavel },
+  decision: { className: 'border-violet-300 bg-violet-100 text-violet-900', icon: Gavel },
 }
 
 function ChipBadge({
@@ -277,6 +278,135 @@ export function ApprovalChipDialog({
   )
 }
 
+// Choices-only editor for an inline decision declaration: the decision name plus the choices
+// (label + optional description). Unlike the block-chip dialog there are NO target pickers —
+// routing lives on the branch lines that follow the chip in the document.
+function DecisionDialogBody({
+  initial,
+  onConfirm,
+  onOpenChange,
+  onRemove,
+}: {
+  initial: ApprovalChipState
+  onConfirm: (state: ApprovalChipState) => void
+  onOpenChange: (open: boolean) => void
+  onRemove?: () => void
+}): JSX.Element {
+  const [captureKey, setCaptureKey] = useState(initial.captureKey || 'decision')
+  const [options, setOptions] = useState<ApprovalDocOption[]>(
+    initial.options.length > 0 ? initial.options : [{ id: 'approve', label: 'Approve' }, { id: 'deny', label: 'Deny' }],
+  )
+
+  const updateOption = (index: number, patch: Partial<ApprovalDocOption>) =>
+    setOptions((prev) => prev.map((option, candidate) => (candidate === index ? { ...option, ...patch } : option)))
+  const addOption = () => setOptions((prev) => [...prev, { id: `option_${prev.length + 1}`, label: '' }])
+  const removeOption = (index: number) => setOptions((prev) => prev.filter((_, candidate) => candidate !== index))
+
+  const canConfirm = options.length >= 2 && options.every((option) => option.label.trim().length > 0)
+
+  const confirm = () => {
+    onConfirm({
+      captureKey: slugifyVariableKey(captureKey || 'decision'),
+      options: options.map((option, index) => ({
+        id: slugifyVariableKey(option.label || option.id || `option_${index + 1}`),
+        label: option.label.trim(),
+        ...(option.description?.trim() ? { description: option.description.trim() } : {}),
+      })),
+    })
+    onOpenChange(false)
+  }
+
+  return (
+    <DialogContent>
+      <DialogHeader>
+        <DialogTitle>Decision</DialogTitle>
+        <DialogDescription>
+          The routine pauses here and a person picks one of these choices. Set where each choice
+          goes on the branch lines below the chip (<code>if decision is …</code>).
+        </DialogDescription>
+      </DialogHeader>
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label>Choices</Label>
+            <Button type="button" size="sm" variant="outline" disabled={options.length >= APPROVAL_OPTION_LIMIT} onClick={addOption}>
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              Add choice
+            </Button>
+          </div>
+          {options.map((option, index) => (
+            <div key={`decision-option-${index}`} className="grid items-center gap-2 rounded-md border border-border p-2 sm:grid-cols-[1fr_auto]">
+              <Input
+                aria-label={`Choice ${index + 1} label`}
+                placeholder="What the person picks (e.g. Approve)"
+                value={option.label}
+                onChange={(event) => updateOption(index, { label: event.target.value })}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => removeOption(index)}
+                aria-label={`Remove choice ${index + 1}`}
+                disabled={options.length <= 2}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+              <Input
+                aria-label={`Choice ${index + 1} description`}
+                placeholder="Extra detail for the person deciding (optional)"
+                value={option.description ?? ''}
+                onChange={(event) => updateOption(index, { description: event.target.value })}
+                className="sm:col-span-2"
+              />
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="decisionCaptureKey" className="text-xs text-muted-foreground">Decision name</Label>
+          <Input
+            id="decisionCaptureKey"
+            aria-label="Decision name"
+            value={captureKey}
+            onChange={(event) => setCaptureKey(event.target.value)}
+            placeholder="decision"
+          />
+          <p className="text-xs text-muted-foreground">Records which choice was made. Change it only if a later step reads the result.</p>
+        </div>
+      </div>
+      <DialogFooter className="sm:justify-between">
+        {onRemove ? (
+          <Button type="button" variant="ghost" onClick={() => { onRemove(); onOpenChange(false) }}>Remove</Button>
+        ) : <span />}
+        <Button type="button" onClick={confirm} disabled={!canConfirm}>Save decision</Button>
+      </DialogFooter>
+    </DialogContent>
+  )
+}
+
+export function DecisionChipDialog({
+  open,
+  onOpenChange,
+  initial,
+  onConfirm,
+  onRemove,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  initial: ApprovalChipState
+  onConfirm: (state: ApprovalChipState) => void
+  onRemove?: () => void
+}): JSX.Element {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {open ? (
+        <DecisionDialogBody initial={initial} onConfirm={onConfirm} onOpenChange={onOpenChange} onRemove={onRemove} />
+      ) : null}
+    </Dialog>
+  )
+}
+
 // The branch targets an approval option can route to, drawn from the document's titled
 // steps plus the two terminals the prose editor always exposes.
 export function approvalChipTargets(stepTargets: ApprovalChipTarget[]): ApprovalChipTarget[] {
@@ -335,6 +465,46 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
   }
 
   const [isApprovalOpen, setIsApprovalOpen] = useState(false)
+  const [isDecisionOpen, setIsDecisionOpen] = useState(false)
+
+  if (kind === 'decision') {
+    // The inline decision declaration: just the choices the person picks between. Routing is
+    // authored on the branch lines that follow this chip, so the chip stays small.
+    let initial: ApprovalChipState = { captureKey: '', options: [] }
+    editor.getEditorState().read(() => {
+      const node = $getNodeByKey(nodeKey)
+      if ($isChipNode(node)) initial = node.getApprovalState()
+    })
+    const commitDecisionState = (state: ApprovalChipState) => {
+      editor.update(() => {
+        const node = $getNodeByKey(nodeKey)
+        if ($isChipNode(node)) node.setApprovalState(state)
+      })
+    }
+    const choices = initial.options.map((option) => option.label || option.id).join(' / ')
+    return (
+      <>
+        <button
+          type="button"
+          contentEditable={false}
+          data-routine-chip={kind}
+          className="mx-0.5 inline-flex items-center gap-1 rounded-md border border-violet-300 bg-violet-100 px-1.5 py-0 align-baseline text-xs font-medium text-violet-900 outline-none"
+          onClick={() => setIsDecisionOpen(true)}
+        >
+          <Gavel className="h-3 w-3" />
+          {initial.captureKey && initial.captureKey !== 'decision' ? initial.captureKey : 'decision'}
+          {choices ? <span className="font-normal opacity-70">· {choices}</span> : null}
+        </button>
+        <DecisionChipDialog
+          open={isDecisionOpen}
+          onOpenChange={setIsDecisionOpen}
+          initial={initial}
+          onConfirm={commitDecisionState}
+          onRemove={removeSelf}
+        />
+      </>
+    )
+  }
 
   if (kind === 'approval') {
     const stepTargets: ApprovalChipTarget[] = []
@@ -711,6 +881,13 @@ export function $createStepChipNode(refId: string, label: string, counterLimit: 
 // to a step/terminal). It compiles to an `approval` step with one field guard per option.
 export function $createApprovalChipNode(captureKey: string, options: ApprovalDocOption[]): ChipNode {
   return new ChipNode('approval', captureKey || 'decision', 'approval', undefined, null, null, null, null, null, {}, {}, null, captureKey || null, options)
+}
+
+// An inline decision declaration chip: the capture slot + the choices (labels), but no
+// targets — routing is authored on the branch lines that follow it. Compiles to the same
+// `approval` step the block chip does; the branches become the decision field guards.
+export function $createDecisionChipNode(captureKey: string, options: ApprovalDocOption[]): ChipNode {
+  return new ChipNode('decision', captureKey || 'decision', 'decision', undefined, null, null, null, null, null, {}, {}, null, captureKey || null, options)
 }
 
 export function $createConditionChipNode(

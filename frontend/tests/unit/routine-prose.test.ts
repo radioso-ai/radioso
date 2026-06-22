@@ -552,6 +552,45 @@ describe('routineToChipDoc (inverse serializer)', () => {
     expect(draft.terminals.map((terminal) => terminal.kind).sort()).toEqual(['complete', 'handoff'])
   })
 
+  it('reverse-renders an approval step as an inline decision declaration + branch lines', () => {
+    const draft = draftFromChipDoc({
+      name: 'Refund approval',
+      trigger: 'wants a large refund',
+      blocks: [
+        {
+          text: 'Get a manager decision.',
+          chips: [{
+            kind: 'approval',
+            refId: 'refund_decision',
+            captureKey: 'refund_decision',
+            options: [
+              { id: 'approve', label: 'Approve', target: 'done' },
+              { id: 'deny', label: 'Deny', target: 'handoff' },
+            ],
+          }],
+        },
+      ],
+      variables: [],
+    })
+
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    const segments = doc!.paragraphs.flatMap((p) => p.segments).filter((s) => s.kind === 'chip')
+    // One declaration chip carrying the choices, no targets on it…
+    expect(segments).toContainEqual(expect.objectContaining({
+      chipKind: 'decision',
+      captureKey: 'refund_decision',
+      options: [{ id: 'approve', label: 'Approve' }, { id: 'deny', label: 'Deny' }],
+    }))
+    // …and one branch line per choice (condition on the decision → its target).
+    expect(segments).toContainEqual(expect.objectContaining({ chipKind: 'condition', refId: 'refund_decision', value: 'approve' }))
+    expect(segments).toContainEqual(expect.objectContaining({ chipKind: 'end' }))
+    expect(segments).toContainEqual(expect.objectContaining({ chipKind: 'condition', refId: 'refund_decision', value: 'deny' }))
+    expect(segments).toContainEqual(expect.objectContaining({ chipKind: 'handoff' }))
+    // The block-chip 'approval' rendering is gone — it's all inline now.
+    expect(segments.some((s) => s.kind === 'chip' && s.chipKind === 'approval')).toBe(false)
+  })
+
   it('round-trips an approval gate (no force-fallback to Form)', () => {
     const { draft, redraft } = roundTrip(
       'Refund approval',
@@ -609,7 +648,7 @@ describe('routineToChipDoc (inverse serializer)', () => {
     expect(redraft.transitions).toEqual(draft.transitions)
   })
 
-  it('falls back to Form for an approval option whose decision edge is missing', () => {
+  it('renders an approval option that has no branch line yet (author can add it inline)', () => {
     const draft = draftFromChipDoc({
       name: 'Refund approval',
       trigger: 'wants a large refund',
@@ -627,8 +666,19 @@ describe('routineToChipDoc (inverse serializer)', () => {
       }],
       variables: [],
     })
-    // The unrouted option produces no decision edge, so the prose editor can't show it.
-    expect(routineToChipDoc(draft)).toBeNull()
+    // The inline model can show this where the block chip couldn't: it declares both choices,
+    // but only renders a branch line for the routed one — so the author sees `deny` is missing
+    // a branch and fixes it in place (the validator flags it as unreachable) instead of being
+    // bounced to the Form editor.
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    const decision = doc!.paragraphs.flatMap((p) => p.segments).find((s) => s.kind === 'chip' && s.chipKind === 'decision')
+    expect(decision).toMatchObject({ options: [{ id: 'approve' }, { id: 'deny' }] })
+    const branchValues = doc!.paragraphs
+      .flatMap((p) => p.segments)
+      .filter((s) => s.kind === 'chip' && s.chipKind === 'condition')
+      .map((s) => (s as { value?: unknown }).value)
+    expect(branchValues).toEqual(['approve'])
   })
 
   it('synthesizes a non-empty instruction for a bare skill chip (no prose)', () => {

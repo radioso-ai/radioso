@@ -1,7 +1,7 @@
 ---
 title: "Slack Channel"
 description: "Connect a Radioso agent to Slack direct messages, mentions, and human escalation posts."
-last_updated: 2026-06-21
+last_updated: 2026-06-22
 ---
 
 # Slack Channel
@@ -53,7 +53,8 @@ The setup uses these API surfaces:
 Self-hosted deployments use the same OAuth flow. The difference is that the
 operator supplies their own Slack app secrets through environment variables.
 
-1. Set `APP_BASE_URL` to the public HTTPS URL of the Radioso backend.
+1. Set `APP_BASE_URL` to the public HTTPS URL where users open the Radioso
+   dashboard.
 2. Open the agent Slack channel settings and expand **Self-host setup**.
 3. Copy the generated Slack app manifest.
 4. In Slack, create an app from that manifest.
@@ -68,16 +69,30 @@ Slack is available only when all three Slack environment variables are set.
 If one is missing, Radioso does not start Slack OAuth install and the UI shows
 which variable the operator still needs to configure.
 
+### Split-host deployments
+
+`APP_BASE_URL` is the dashboard origin. Radioso uses it for browser redirects,
+such as the page shown after a Slack install completes.
+
+Slack reaches the backend directly for the OAuth callback and the Events API.
+When the backend runs on a different host than the dashboard, set
+`CONNECTOR_PUBLIC_BASE_URL` to the backend's public HTTPS origin. The manifest
+and the OAuth callback then use this host. A typical setup is a dashboard at
+`https://app.example.com` and an API at `https://api.example.com`.
+
+When `CONNECTOR_PUBLIC_BASE_URL` is not set, Radioso falls back to
+`APP_BASE_URL`, which is correct when one host serves both.
+
 The manifest is available from:
 
 `GET /api/v1/workspaces/{workspaceId}/slack/manifest`
 
-It fills:
+It fills, using `CONNECTOR_PUBLIC_BASE_URL` when set and otherwise `APP_BASE_URL`:
 
 - `oauth_config.redirect_urls` with
-  `{APP_BASE_URL}/api/v1/oauth/callback/slack`
+  `{backend host}/api/v1/oauth/callback/slack`
 - `settings.event_subscriptions.request_url` with
-  `{APP_BASE_URL}/api/connectors/slack/events`
+  `{backend host}/api/connectors/slack/events`
 - bot scopes for mentions, chat posting, and direct messages
 
 The backend must be reachable by Slack at a public HTTPS URL. If Slack cannot

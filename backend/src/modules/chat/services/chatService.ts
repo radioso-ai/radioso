@@ -716,7 +716,15 @@ export class ChatService {
       throw new Error("approval_resume_agent_service_missing");
     }
 
-    const session = await this.prepareDecisionResumeSession(input.record);
+    let session = await this.prepareDecisionResumeSession(input.record);
+    // A resumed routine renders its own reply, so it needs the same response-language guard
+    // as every other turn — otherwise the renderer falls back to a weak hint and a routine
+    // step authored in another language leaks through (issue #755).
+    session = this.withResponseLanguage(session, await this.detectResponseLanguage({
+      workspaceId: input.record.workspaceId,
+      accountId: input.decidedBy,
+      query: session.userMessage.content,
+    }, session));
     const modelGateway = new RoutineChatModelGateway(this.chatGateway, {
       workspaceContext: this.answerSupport.buildChatWorkspaceContext(session),
       usageContext: this.answerSupport.buildChatUsageContext(session, input.decidedBy, "routine_turn"),

@@ -14,11 +14,13 @@ describe("SkillCapabilityRegistry", () => {
     expect(registry.get("email")?.storedKind).toBe("customer_email");
     expect(registry.get("slack_post")?.storedKind).toBe("slack");
     expect(registry.get("webhook_call")?.storedKind).toBe("webhook");
+    expect(registry.get("notify")?.storedKind).toBe("notify");
     expect(registry.getByStoredKind("retrieve")?.id).toBe("retrieve");
     expect(registry.getByStoredKind("external_mcp")?.id).toBe("mcp_tool");
     expect(registry.getByStoredKind("customer_email")?.id).toBe("email");
     expect(registry.getByStoredKind("slack")?.id).toBe("slack_post");
     expect(registry.getByStoredKind("webhook")?.id).toBe("webhook_call");
+    expect(registry.getByStoredKind("notify")?.id).toBe("notify");
   });
 
   it("projects all F0 capability descriptors with target kind, schemas, outcomes, modes, and executor adapter", () => {
@@ -85,5 +87,18 @@ describe("SkillCapabilityRegistry", () => {
       boundPayload: { source: "routine" },
       exposedPayload: { email: { required: true } },
     }).success).toBe(true);
+
+    expect(registry.get("notify")?.validateConfig({
+      delivery: {
+        recipientEmails: ["sales@example.com"],
+        webhook: { url: "https://hooks.example.com/contact" },
+      },
+      exposedInputs: { message: true, email: true },
+    }).success).toBe(true);
+
+    expect(registry.get("notify")?.validateConfig({
+      delivery: { recipientEmails: ["not-an-email"], webhook: null },
+      exposedInputs: { message: true },
+    }).success).toBe(false);
   });
 });

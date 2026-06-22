@@ -335,6 +335,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       logger,
     }),
     access.accessGrantService,
+    new AgentSkillRepository(infrastructure.database),
   );
   const chat = buildChatServices({
     accountAccessService: access.accountAccessService,

@@ -6,8 +6,9 @@ import { mcpToolCapability } from "./capabilities/mcpTool.js";
 import { emailCapability } from "./capabilities/email.js";
 import { slackPostCapability } from "./capabilities/slackPost.js";
 import { webhookCallCapability } from "./capabilities/webhookCall.js";
+import { notifyCapability } from "./capabilities/notify.js";
 
-export const skillCapabilityIds = ["retrieve", "mcp_tool", "email", "slack_post", "webhook_call"] as const;
+export const skillCapabilityIds = ["retrieve", "mcp_tool", "email", "slack_post", "webhook_call", "notify"] as const;
 export type SkillCapabilityId = (typeof skillCapabilityIds)[number];
 
 export interface SkillCapabilityTarget {
@@ -113,5 +114,6 @@ export const createDefaultSkillCapabilityRegistry = (
       emailCapability,
       slackPostCapability,
       webhookCallCapability,
+      notifyCapability,
     ], enumerators),
   ]);

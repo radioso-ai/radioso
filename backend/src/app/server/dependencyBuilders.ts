@@ -188,6 +188,7 @@ import {
   SlackRoutineSkillResolver,
   SlackSkillDefinitionRepository,
 } from "../../modules/slackSkills/public.js";
+import { NotifyExecutor, NOTIFY_SKILLS_ADAPTER } from "../../modules/notify/notifyExecutor.js";
 import { RoutineSkillExecutorDispatcher, StaticRoutineSkillResolver } from "../../modules/routines/public.js";
 import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
@@ -950,6 +951,16 @@ export const buildChatServices = (input: {
       }),
     });
   }
+  if (!input.composition.skillExecutorRegistry.resolve({ kind: "internal", adapter: NOTIFY_SKILLS_ADAPTER })) {
+    input.composition.skillExecutorRegistry.register({
+      kind: "internal",
+      adapter: NOTIFY_SKILLS_ADAPTER,
+      executor: new NotifyExecutor({
+        skills: new AgentSkillRepository(input.database),
+        outbox: new ActionRequestRepository(input.database),
+      }),
+    });
+  }
   const publicChatActionAdvertisers = input.composition.publicChatActionAdvertiserRegistrations.map((registration) =>
     typeof registration === "function" ? registration(publicChatActionAdvertiserContext) : registration,
   );
@@ -1073,6 +1084,33 @@ export const buildChatServices = (input: {
         },
         "Pinned routine definition failed to load or compile; skipping resume-only registration",
       );
+    },
+    resolveCompletionExport: async (definition) => {
+      const [skill] = await input.database.query<{
+        target_id: string | null;
+        enabled: boolean;
+      }>(
+        `SELECT target_id, enabled
+         FROM agent_skills
+         WHERE agent_id = $1
+           AND skill_name = 'completion_export'
+           AND kind = 'webhook'
+         LIMIT 1`,
+        [definition.agentId],
+      );
+      if (!skill) {
+        return null;
+      }
+      if (!skill.enabled || !skill.target_id) {
+        return { enabled: false, triggerKinds: [], destinationRef: "" };
+      }
+      return {
+        enabled: true,
+        triggerKinds: definition.completionExport?.triggerKinds?.length
+          ? definition.completionExport.triggerKinds
+          : ["complete", "handoff"],
+        destinationRef: skill.target_id,
+      };
     },
   });
   const routineProvider: ChatRoutineProvider = {

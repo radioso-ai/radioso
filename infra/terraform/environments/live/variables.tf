@@ -156,6 +156,27 @@ variable "resend_mail_api_key" {
   default     = null
 }
 
+variable "slack_oauth_client_id" {
+  description = "Slack app OAuth client ID for the Slack channel in live."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "slack_oauth_client_secret" {
+  description = "Slack app OAuth client secret for the Slack channel in live."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "slack_signing_secret" {
+  description = "Slack app signing secret for inbound Slack event verification in live."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
 variable "mail_from_email" {
   description = "Verified sender email address for Enterprise auth mail in live."
   type        = string

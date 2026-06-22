@@ -1,5 +1,5 @@
 import type { RoutineDefinitionDraft, RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineReentryMode, RoutineSlotType, RoutineTransition } from './api-types'
-import { approvalOptionTargets, approvalOptionTransitions } from './routine-approval'
+import { approvalOptionTransitions } from './routine-approval'
 
 export const ROUTINE_SLOT_TYPES: RoutineSlotType[] = ['text', 'number', 'boolean', 'email', 'date']
 export const ROUTINE_FIELD_GUARD_UNITS: RoutineFieldGuardUnit[] = ['days', 'weeks', 'months', 'years']
@@ -180,15 +180,28 @@ export function draftFromChipDoc(input: {
   // Keep blocks with prose or chips (a branch can be pure chips: a condition + target).
   const blocks = input.blocks.filter((block) => block.text.trim().length > 0 || block.chips.length > 0)
 
+  // A `decision` chip declares an approval's capture key + choices (labels), authored inline.
+  // Collected up front so a branch line that conditions on the decision (`@decision is deny`)
+  // is recognised as a decision guard — its field ref is `<captureKey>.id`, not a plain slot.
+  const decisionOptions = new Map<string, ApprovalDocOption[]>()
+  for (const block of blocks) {
+    for (const chip of block.chips) {
+      if (chip.kind === 'decision') {
+        decisionOptions.set(chip.captureKey ?? chip.refId, chip.options ?? [])
+      }
+    }
+  }
+
   // Used slots come from any block — step instructions and branch conditions both count.
   const usedSlotIds = new Set<string>()
   for (const block of blocks) {
     for (const match of block.text.matchAll(SLOT_REFERENCE)) {
       usedSlotIds.add(match[1]!)
     }
-    // A condition chip branches on a variable — that's a slot reference too.
+    // A condition chip branches on a variable — that's a slot reference too. A condition on a
+    // decision is not a slot (the capture key isn't a declared variable), so skip those.
     for (const chip of block.chips) {
-      if (chip.kind === 'condition') usedSlotIds.add(chip.refId)
+      if (chip.kind === 'condition' && !decisionOptions.has(chip.refId)) usedSlotIds.add(chip.refId)
       if (chip.kind === 'skill') {
         for (const binding of Object.values(chip.inputBindings ?? {})) {
           if (binding.kind === 'variableRef') usedSlotIds.add(binding.ref)
@@ -215,6 +228,10 @@ export function draftFromChipDoc(input: {
   // gate routes only through its option branches), so the chain shouldn't add a default
   // edge into or out of it.
   let lastStepRoutes = false
+  // True when the last step is an approval/decision gate: its outgoing edges are the decision
+  // branches (authored as following branch lines), so the chain must never add a default edge
+  // out of it — but those branch lines DO attach to it (unlike `lastStepRoutes`).
+  let lastStepIsDecision = false
   let ordinal = 0
   // The titled step (started by an h1 heading) currently accreting body prose. Untitled
   // authoring leaves this null and keeps the original one-line-one-step behavior.
@@ -233,6 +250,9 @@ export function draftFromChipDoc(input: {
     const condition = block.chips.find((chip) => chip.kind === 'condition')
     const stepChip = block.chips.find((chip) => chip.kind === 'step')
     if (condition?.op) {
+      // A condition on a decision branches on the chosen option id: `<captureKey>.id`. A
+      // condition on an ordinary slot branches on the slot itself.
+      const fieldRef = decisionOptions.has(condition.refId) ? `${condition.refId}.id` : condition.refId
       transitions.push({
         fromStep,
         toRef,
@@ -240,7 +260,7 @@ export function draftFromChipDoc(input: {
         guardText: null,
         outcomeStatus: null,
         counterLimit: null,
-        fieldRef: condition.refId,
+        fieldRef,
         fieldOp: condition.op,
         fieldValue: condition.value ?? null,
         fieldValues: condition.values ?? null,
@@ -271,10 +291,10 @@ export function draftFromChipDoc(input: {
   }
 
   for (const block of blocks) {
-    // A decision (approval) chip is a whole gate: an `approval` step plus one deterministic
-    // field-guard edge per choice (the choice → target routing rides on the chip). It defines
-    // all its own outgoing edges, so the chain skips it. (`approval` is the legacy chip kind.)
-    const approvalChip = block.chips.find((chip) => chip.kind === 'decision' || chip.kind === 'approval')
+    // An approval chip is a whole gate: an `approval` step plus one deterministic
+    // field-guard edge per option (routing lives on the chip, not in following branch
+    // paragraphs). It defines all its own outgoing edges, so the chain skips it.
+    const approvalChip = block.chips.find((chip) => chip.kind === 'approval')
     if (approvalChip) {
       flushTitledBody()
       titledStep = null
@@ -300,7 +320,7 @@ export function draftFromChipDoc(input: {
         ordinal: steps.length,
         metadata: {},
       })
-      if (lastStepId && !lastStepRoutes) {
+      if (lastStepId && !lastStepRoutes && !lastStepIsDecision) {
         transitions.push({ fromStep: lastStepId, toRef: id, guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, ordinal: ordinal++ })
       }
       const branches = options
@@ -312,6 +332,43 @@ export function draftFromChipDoc(input: {
       transitions.push(...approvalOptionTransitions(id, captureKey, branches, () => ordinal++))
       lastStepId = id
       lastStepRoutes = true
+      lastStepIsDecision = false
+      continue
+    }
+    // A `decision` chip declares the same approval gate, but inline: the chip carries only the
+    // capture key + choices (labels), and the routing lives on ordinary branch lines that
+    // follow (`@decision is deny → handoff`). Same `approval` step + field guards as the block
+    // chip — just authored, and editable, as prose.
+    const decisionChip = block.chips.find((chip) => chip.kind === 'decision')
+    if (decisionChip) {
+      flushTitledBody()
+      titledStep = null
+      const id = `step_${steps.length + 1}`
+      const captureKey = decisionChip.captureKey ?? decisionChip.refId ?? ''
+      const options = decisionChip.options ?? []
+      steps.push({
+        stableStepId: id,
+        kind: 'approval',
+        instruction: block.text.trim() || captureKey || 'Make a decision',
+        toolRef: null,
+        actionType: null,
+        captureKey: captureKey || null,
+        options: options.map((option) => ({
+          id: option.id,
+          label: option.label,
+          ...(option.description ? { description: option.description } : {}),
+        })),
+        ordinal: steps.length,
+        metadata: {},
+      })
+      if (lastStepId && !lastStepRoutes && !lastStepIsDecision) {
+        transitions.push({ fromStep: lastStepId, toRef: id, guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, ordinal: ordinal++ })
+      }
+      // The decision's edges are the branch lines that follow; they attach to this step
+      // (lastStepRoutes stays false) but no default edge may leave it (lastStepIsDecision).
+      lastStepId = id
+      lastStepRoutes = false
+      lastStepIsDecision = true
       continue
     }
     const handoffChip = block.chips.find((chip) => chip.kind === 'handoff')
@@ -346,11 +403,12 @@ export function draftFromChipDoc(input: {
         metadata: { outlineLabel: title },
       }
       steps.push(step)
-      if (lastStepId && !lastStepRoutes) {
+      if (lastStepId && !lastStepRoutes && !lastStepIsDecision) {
         transitions.push({ fromStep: lastStepId, toRef: id, guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, ordinal: ordinal++ })
       }
       lastStepId = id
       lastStepRoutes = false
+      lastStepIsDecision = false
       titledStep = { step, body: [] }
       continue
     }
@@ -396,7 +454,7 @@ export function draftFromChipDoc(input: {
           }
         : {},
     })
-    if (lastStepId && !lastStepRoutes) {
+    if (lastStepId && !lastStepRoutes && !lastStepIsDecision) {
       transitions.push({
         fromStep: lastStepId,
         toRef: id,
@@ -409,10 +467,11 @@ export function draftFromChipDoc(input: {
     }
     lastStepId = id
     lastStepRoutes = false
+    lastStepIsDecision = false
   }
 
   flushTitledBody()
-  if (lastStepId && !lastStepRoutes) {
+  if (lastStepId && !lastStepRoutes && !lastStepIsDecision) {
     transitions.push({
       fromStep: lastStepId,
       toRef: DONE_TERMINAL_ID,
@@ -596,39 +655,59 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
     const step = steps[index]!
     const title = titleOf(step)
     if (step.kind === 'approval') {
-      // An approval gate is a single `decision` chip: it carries the choices + where each one
-      // routes (recovered from the `<captureKey>.id == <option>` field guards). The chip
-      // renders the routing inline ("if Approve → End") and is edited in place.
+      // An approval gate renders inline: a `decision` declaration chip (the choices + labels)
+      // followed by one ordinary branch line per option — "if <decision> is <choice> then
+      // <target>". Each decision edge is one `<captureKey>.id == <option>` field guard.
       if (title) return null
       const captureKey = step.captureKey ?? ''
       const stepOutgoing = [...(outgoing.get(step.stableStepId) ?? [])].sort((left, right) => left.ordinal - right.ordinal)
       const decisionRef = `${captureKey}.id`
-      const declaredOptionIds = new Set((step.options ?? []).map((option) => option.id))
+      const declaredOptions = step.options ?? []
+      const declaredOptionIds = new Set(declaredOptions.map((option) => option.id))
       // Every edge must be a decision field guard on `<captureKey>.id` to a declared option.
-      const cleanEdges = stepOutgoing.every((edge) =>
+      const cleanEdges = stepOutgoing.length > 0 && stepOutgoing.every((edge) =>
         edge.guardKind === 'field'
         && edge.fieldRef === decisionRef
         && edge.fieldOp === 'equals'
         && typeof edge.fieldValue === 'string'
         && declaredOptionIds.has(edge.fieldValue))
       if (!captureKey || !cleanEdges) return null
-      const optionTargets = approvalOptionTargets(stepOutgoing)
-      const docOptions: ApprovalDocOption[] = []
-      for (const option of step.options ?? []) {
-        const target = optionTargets.get(option.id)
-        if (!target) return null
-        const docTarget = approvalDocTarget(target)
-        if (docTarget === null) return null
-        docOptions.push({
+      const optionLabels = new Map(declaredOptions.map((option) => [option.id, option.label] as const))
+      // The declaration: choices + labels, no targets (those live on the branch lines).
+      const declSegments = parseInstructionSegments(step.instruction ?? '', nameByRef)
+      declSegments.push({
+        kind: 'chip',
+        chipKind: 'decision',
+        refId: captureKey,
+        label: 'decision',
+        captureKey,
+        options: declaredOptions.map((option) => ({
           id: option.id,
           label: option.label,
           ...(option.description ? { description: option.description } : {}),
-          target: docTarget,
-        })
+        })),
+      })
+      paragraphs.push({ segments: declSegments })
+      // One inline branch line per decision edge.
+      for (const edge of stepOutgoing) {
+        const optionId = edge.fieldValue as string
+        const docTarget = approvalDocTarget(edge.toRef)
+        if (docTarget === null) return null
+        const condition: ProseSegment = {
+          kind: 'chip',
+          chipKind: 'condition',
+          refId: captureKey,
+          op: 'equals',
+          value: optionId,
+          label: `${captureKey} is ${optionLabels.get(optionId) ?? optionId}`,
+        }
+        const target: ProseSegment = docTarget === DONE_TERMINAL_ID
+          ? { kind: 'chip', chipKind: 'end', refId: DONE_TERMINAL_ID, label: 'end' }
+          : docTarget === HANDOFF_TERMINAL_ID
+            ? { kind: 'chip', chipKind: 'handoff', refId: HANDOFF_TERMINAL_ID, label: HANDOFF_CHIP_LABEL }
+            : { kind: 'chip', chipKind: 'step', refId: docTarget, label: titleByStepId.get(docTarget) ?? docTarget }
+        paragraphs.push({ segments: [condition, target] })
       }
-      const segments = parseInstructionSegments(step.instruction ?? '', nameByRef)
-      segments.push({ kind: 'chip', chipKind: 'decision', refId: captureKey, label: 'decision', captureKey, options: docOptions })
-      paragraphs.push({ segments })
       continue
     }
     if (title) {

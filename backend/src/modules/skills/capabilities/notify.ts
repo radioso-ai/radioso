@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { NOTIFY_SKILLS_ADAPTER } from "../../notify/notifyExecutor.js";
+import { NOTIFY_SKILLS_ADAPTER } from "../../notify/public.js";
 import type { SkillCapabilityDescriptor } from "../capabilityRegistry.js";
 
 const emailSchema = z.string().trim().email().max(320);

@@ -1,11 +1,11 @@
 import { z } from "zod";
 
 import {
+  WEBHOOK_SKILLS_ADAPTER,
   webhookSkillBoundPayloadSchema,
   webhookSkillExposedPayloadMapSchema,
   webhookSkillOutcomes,
-} from "../../webhookSkills/domain.js";
-import { WEBHOOK_SKILLS_ADAPTER } from "../../webhookSkills/executor/webhookSkillExecutor.js";
+} from "../../webhookSkills/public.js";
 import type { SkillCapabilityDescriptor } from "../capabilityRegistry.js";
 
 const webhookConfigSchema = z

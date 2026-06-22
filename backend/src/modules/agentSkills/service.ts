@@ -2,12 +2,12 @@ import { z } from "zod";
 
 import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
-import type {
-  SkillCapabilityDescriptor,
-  SkillCapabilityId,
-  SkillCapabilityRegistry,
-} from "../skills/capabilityRegistry.js";
-import { skillCapabilityIdSchema } from "../skills/capabilityRegistry.js";
+import {
+  skillCapabilityIdSchema,
+  type SkillCapabilityDescriptor,
+  type SkillCapabilityId,
+  type SkillCapabilityRegistry,
+} from "../skills/public.js";
 import { agentSkillInvocationModes, type AgentSkillInvocationMode, type AgentSkillSpine } from "./domain.js";
 import type { AgentSkillRepositoryPort } from "./repository.js";
 

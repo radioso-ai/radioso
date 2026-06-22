@@ -1,12 +1,12 @@
 import { z } from "zod";
 
 import {
+  SLACK_SKILLS_ADAPTER,
   slackBoundInputsSchema,
   slackExposedInputsSchema,
   slackSkillInputKeys,
   slackSkillOutcomes,
-} from "../../slackSkills/domain.js";
-import { SLACK_SKILLS_ADAPTER } from "../../slackSkills/executor/slackEscalationExecutor.js";
+} from "../../slackSkills/public.js";
 import type { SkillCapabilityDescriptor } from "../capabilityRegistry.js";
 
 const slackConfigSchema = z

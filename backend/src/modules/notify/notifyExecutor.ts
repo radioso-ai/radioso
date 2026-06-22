@@ -1,6 +1,6 @@
 import type { EnqueueActionRequestInput } from "../../db/repositories/actionRequestRepository.js";
 import type { AgentSkillRepositoryPort } from "../agentSkills/repository.js";
-import { CONTACT_SEND_ACTION_TYPE } from "../chat/composition.js";
+import { CONTACT_SEND_ACTION_TYPE } from "../chat/contracts/index.js";
 import type {
   SkillDispatchResult,
   SkillExecutorPort,

@@ -164,7 +164,7 @@ import {
   routineDispatchableBuiltInSkills,
 } from "../../modules/skills/public.js";
 import { RETRIEVAL_ANSWER_ADAPTER, RetrievalAnswerSkillExecutor } from "../../modules/retrieval/public.js";
-import { RetrieveRoutineSkillResolver } from "../../modules/retrieval/services/retrieveRoutineSkillResolver.js";
+import { RetrieveRoutineSkillResolver } from "../../modules/retrieval/public.js";
 import { EXTERNAL_SKILLS_ADAPTER, McpSkillExecutor } from "../../modules/externalSkills/executor/mcpSkillExecutor.js";
 import { buildExternalSkillsDeps } from "../../modules/externalSkills/composition.js";
 import { ExternalSkillRoutineSkillResolver } from "../../modules/externalSkills/routineSkillResolver.js";

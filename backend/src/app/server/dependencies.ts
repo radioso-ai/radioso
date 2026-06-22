@@ -82,7 +82,7 @@ import {
 import { WebhookSkillDefinitionService } from "../../modules/webhookSkills/public.js";
 import { SlackSkillDefinitionService } from "../../modules/slackSkills/public.js";
 import { AgentSkillRepository, AgentSkillsService } from "../../modules/agentSkills/public.js";
-import { createDefaultSkillCapabilityRegistry } from "../../modules/skills/capabilityRegistry.js";
+import { createDefaultSkillCapabilityRegistry } from "../../modules/skills/public.js";
 import { bindSkillCapabilityExecutors } from "../composition/skillCapabilityRegistry.js";
 
 export interface BuildDependenciesOptions {

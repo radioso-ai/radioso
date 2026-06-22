@@ -1,13 +1,13 @@
 import { z } from "zod";
 
 import {
+  CUSTOMER_EMAIL_SKILLS_ADAPTER,
   customerEmailBoundInputsSchema,
   customerEmailExposedInputsSchema,
   customerEmailSkillModes,
   customerEmailSkillOutcomes,
   requiredCustomerEmailSkillInputs,
-} from "../../customerEmail/domain.js";
-import { CUSTOMER_EMAIL_SKILLS_ADAPTER } from "../../customerEmail/executor/emailSkillExecutor.js";
+} from "../../customerEmail/public.js";
 import type { SkillCapabilityDescriptor } from "../capabilityRegistry.js";
 
 const emailConfigSchema = z

@@ -1,7 +1,10 @@
 import { z } from "zod";
 
-import { boundParamsSchema, exposedParamsSchema } from "../../externalSkills/domain.js";
-import { EXTERNAL_SKILLS_ADAPTER } from "../../externalSkills/executor/mcpSkillExecutor.js";
+import {
+  EXTERNAL_SKILLS_ADAPTER,
+  boundParamsSchema,
+  exposedParamsSchema,
+} from "../../externalSkills/public.js";
 import type { SkillCapabilityDescriptor } from "../capabilityRegistry.js";
 
 const outcomeName = z.string().trim().min(1).max(120).regex(/^[a-z][a-z0-9_]*$/u);

@@ -215,3 +215,4 @@ export {
 // `RetrievalPipelineService` describes here; re-exported so consumers wiring the
 // retrieval.answer executor have one import for the controller type.
 export type { RetrievalPipelinePort } from "./services/retrievalPipelineService.js";
+export { RetrieveRoutineSkillResolver } from "./services/retrieveRoutineSkillResolver.js";

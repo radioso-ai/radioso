@@ -355,10 +355,41 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
         if ($isChipNode(node)) node.setApprovalState(state)
       })
     }
+    // Resolve a stored branch target (a step id or a terminal id) to the label the author
+    // reads, so the gate renders as the SOP — "if <choice> then <where>" — not an opaque badge.
+    const targetLabel = (target: string): string => {
+      if (!target || target === 'done') return 'End'
+      if (target === 'handoff') return 'Handoff'
+      return stepTargets.find((candidate) => candidate.id === target)?.label ?? target
+    }
     return (
       <>
-        <button type="button" contentEditable={false} data-routine-chip={kind} className="mx-0.5 cursor-pointer align-baseline outline-none" onClick={() => setIsApprovalOpen(true)}>
-          <ChipBadge kind={kind} label={label} type={null} />
+        {/* The whole gate reads as conditional prose, not a form behind a badge: the choices
+            and where each one routes are visible inline. Click anywhere on it to edit. */}
+        <button
+          type="button"
+          contentEditable={false}
+          data-routine-chip={kind}
+          className="mx-0.5 inline-flex flex-col gap-0.5 rounded-md border border-violet-300 bg-violet-100 px-2 py-1 text-left align-baseline text-xs text-violet-900 outline-none"
+          onClick={() => setIsApprovalOpen(true)}
+        >
+          <span className="inline-flex items-center gap-1 font-medium">
+            <Gavel className="h-3 w-3" />
+            Approval — a person chooses:
+            {initial.captureKey && initial.captureKey !== 'decision'
+              ? <span className="font-normal opacity-70">· records {initial.captureKey}</span>
+              : null}
+          </span>
+          {initial.options.length === 0 ? (
+            <span className="opacity-70">no choices yet — click to add</span>
+          ) : (
+            initial.options.map((option, index) => (
+              <span key={index} className="font-normal">
+                if <span className="font-medium">{option.label || 'this choice'}</span>
+                {' '}then <span className="font-medium">{targetLabel(option.target)}</span>
+              </span>
+            ))
+          )}
         </button>
         <ApprovalChipDialog
           open={isApprovalOpen}
@@ -644,13 +675,10 @@ export class ChipNode extends DecoratorNode<JSX.Element> {
 
   decorate(): JSX.Element {
     // A step (jump) chip surfaces its loop bound on the face so a backward jump reads as
-    // "go to X · max N". An approval chip surfaces its capture key + option count.
+    // "go to X · max N". An approval chip renders its own conditional-prose block in ChipMenu.
     let label = this.__label
     if (this.__chipKind === 'step' && this.__counterLimit != null) {
       label = `${this.__label} · max ${this.__counterLimit}`
-    } else if (this.__chipKind === 'approval') {
-      const count = this.__options.length
-      label = `${this.__captureKey ? `approval: ${this.__captureKey}` : 'approval'} · ${count} option${count === 1 ? '' : 's'}`
     }
     return <ChipMenu nodeKey={this.getKey()} kind={this.__chipKind} refId={this.__refId} label={label} />
   }

@@ -102,10 +102,13 @@ test("author an approval gate in the Prose editor, save, and reload without Form
   await page.getByLabel("Option 2 target").selectOption({ label: "Handoff" });
   await page.getByRole("button", { name: "Save approval" }).click();
 
+  // The gate renders as conditional prose, not an opaque badge: each choice and where it
+  // routes is visible inline.
   const chip = page.locator('[data-routine-chip="approval"]');
   await expect(chip).toBeVisible();
   await expect(chip).toContainText("refund_decision");
-  await expect(chip).toContainText("2 options");
+  await expect(chip).toContainText("if Approve then End");
+  await expect(chip).toContainText("if Deny then Handoff");
 
   await page.getByRole("button", { name: "Save routine" }).click();
   await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
@@ -127,5 +130,7 @@ test("author an approval gate in the Prose editor, save, and reload without Form
   await page.getByRole("button", { name: "Back to routines" }).click();
   await page.getByRole("button", { name: "Edit draft Refund approval" }).click();
   await expect(page.getByRole("tab", { name: "Prose" })).toHaveAttribute("data-state", "active");
-  await expect(page.locator('[data-routine-chip="approval"]')).toContainText("refund_decision");
+  const reloadedChip = page.locator('[data-routine-chip="approval"]');
+  await expect(reloadedChip).toContainText("if Approve then End");
+  await expect(reloadedChip).toContainText("if Deny then Handoff");
 });

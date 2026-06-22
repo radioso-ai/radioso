@@ -1,0 +1,389 @@
+'use client'
+
+import { useEffect, useMemo, useState } from 'react'
+import { AlertCircle, Check, Plus, Wrench } from 'lucide-react'
+
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Spinner } from '@/components/ui/spinner'
+import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
+import type { AgentSkill, AgentSkillCreateInput, SkillCapabilityDescriptor } from '@/lib/api-skills'
+import { cn } from '@/lib/utils'
+import {
+  buildAgentSkillInput,
+  createInitialSkillDraft,
+  createInputDrafts,
+  deriveSkillFields,
+  formatCapabilityLabel,
+  formatInvocationMode,
+  validateSkillName,
+  type SkillFormDraft,
+  type SkillInputMode,
+} from './skill-form-model'
+
+const unavailableReasonLabel = (reason: string | null) => {
+  if (reason === 'no_connection') {
+    return 'Connect first'
+  }
+  return reason ?? 'Unavailable'
+}
+
+const modeLabel: Record<SkillInputMode, string> = {
+  expose: 'Expose',
+  bind: 'Bind',
+  ignore: 'Skip',
+}
+
+export function SkillForm({
+  open,
+  capabilities,
+  skills,
+  editingSkill = null,
+  isSaving = false,
+  error = null,
+  onOpenChange,
+  onSubmit,
+}: {
+  open: boolean
+  capabilities: SkillCapabilityDescriptor[]
+  skills: AgentSkill[]
+  editingSkill?: AgentSkill | null
+  isSaving?: boolean
+  error?: string | null
+  onOpenChange: (open: boolean) => void
+  onSubmit: (input: AgentSkillCreateInput) => Promise<void>
+}) {
+  const [draft, setDraft] = useState<SkillFormDraft>(() => createInitialSkillDraft(capabilities, editingSkill))
+  const capability = useMemo(
+    () => capabilities.find((item) => item.id === draft.capabilityId) ?? null,
+    [capabilities, draft.capabilityId],
+  )
+  const fields = useMemo(() => capability ? deriveSkillFields(capability) : [], [capability])
+  const nameError = validateSkillName(draft.name, skills, editingSkill?.id)
+  const selectedCapabilityAvailable = Boolean(capability?.available)
+  const selectedTarget = capability?.targets.find((target) => target.id === draft.targetId) ?? null
+  const canSubmit = Boolean(capability && selectedCapabilityAvailable && !nameError && draft.invocationMode && !isSaving)
+
+  useEffect(() => {
+    if (!open) return
+    queueMicrotask(() => {
+      setDraft(createInitialSkillDraft(capabilities, editingSkill))
+    })
+  }, [capabilities, editingSkill, open])
+
+  const updateDraft = (patch: Partial<SkillFormDraft>) => {
+    setDraft((current) => ({ ...current, ...patch }))
+  }
+
+  const selectCapability = (capabilityId: string) => {
+    const nextCapability = capabilities.find((item) => item.id === capabilityId)
+    if (!nextCapability || !nextCapability.available) {
+      return
+    }
+    const nextFields = deriveSkillFields(nextCapability)
+    setDraft((current) => ({
+      ...current,
+      capabilityId: nextCapability.id,
+      targetId: nextCapability.targets[0]?.id ?? '',
+      invocationMode: nextCapability.supportedInvocationModes[0] ?? 'routine_named',
+      toolName: '',
+      inputDrafts: createInputDrafts(nextFields),
+      selectedOutcomes: [...nextCapability.outcomeVocabulary],
+      extraConfigJson: '{}',
+    }))
+  }
+
+  const updateInput = (name: string, patch: Partial<SkillFormDraft['inputDrafts'][string]>) => {
+    setDraft((current) => ({
+      ...current,
+      inputDrafts: {
+        ...current.inputDrafts,
+        [name]: {
+          ...current.inputDrafts[name],
+          ...patch,
+        },
+      },
+    }))
+  }
+
+  const toggleOutcome = (outcome: string, enabled: boolean) => {
+    setDraft((current) => {
+      const currentOutcomes = new Set(current.selectedOutcomes)
+      if (enabled) {
+        currentOutcomes.add(outcome)
+      } else {
+        currentOutcomes.delete(outcome)
+      }
+      return { ...current, selectedOutcomes: [...currentOutcomes] }
+    })
+  }
+
+  const submit = async () => {
+    if (!capability || !canSubmit) {
+      return
+    }
+    await onSubmit(buildAgentSkillInput(capability, draft, fields))
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>{editingSkill ? 'Edit skill' : 'Add new skill'}</DialogTitle>
+          <DialogDescription>
+            Configure a named capability instance for this agent. Connections and credentials are managed separately.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-5">
+          {error ? (
+            <p className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              {error}
+            </p>
+          ) : null}
+
+          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="space-y-2">
+              <Label>Capability</Label>
+              <Select value={draft.capabilityId} onValueChange={selectCapability} disabled={Boolean(editingSkill)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose capability" />
+                </SelectTrigger>
+                <SelectContent>
+                  {capabilities.map((candidate) => (
+                    <SelectItem key={candidate.id} value={candidate.id} disabled={!candidate.available}>
+                      <span className="inline-flex items-center gap-2">
+                        {formatCapabilityLabel(candidate.id)}
+                        {!candidate.available ? (
+                          <span className="text-muted-foreground">({unavailableReasonLabel(candidate.unavailableReason)})</span>
+                        ) : null}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {capability && !capability.available ? (
+                <p className="text-xs text-muted-foreground">
+                  Connect a {formatCapabilityLabel(capability.targetKind)} before creating this skill.
+                </p>
+              ) : null}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Target</Label>
+              <Select
+                value={draft.targetId}
+                onValueChange={(targetId) => updateDraft({ targetId })}
+                disabled={!capability || !capability.available || capability.targets.length === 0}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose target" />
+                </SelectTrigger>
+                <SelectContent>
+                  {capability?.targets.map((target) => (
+                    <SelectItem key={target.id} value={target.id}>
+                      {target.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedTarget?.status ? (
+                <p className="text-xs text-muted-foreground">{selectedTarget.status}</p>
+              ) : null}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="skill-name">Skill name</Label>
+              <Input
+                id="skill-name"
+                value={draft.name}
+                onChange={(event) => updateDraft({ name: event.target.value })}
+                placeholder="retrieve_events"
+                disabled={Boolean(editingSkill)}
+              />
+              <p className={cn('text-xs', nameError ? 'text-destructive' : 'text-muted-foreground')}>
+                {nameError ?? `Reference this skill as @${draft.name || 'name'} in a routine.`}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Invocation mode</Label>
+              <Select
+                value={draft.invocationMode}
+                onValueChange={(invocationMode) => updateDraft({ invocationMode: invocationMode as SkillFormDraft['invocationMode'] })}
+                disabled={!capability}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {capability?.supportedInvocationModes.map((mode) => (
+                    <SelectItem key={mode} value={mode}>{formatInvocationMode(mode)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {capability?.inputSchema.source === 'discovered' ? (
+            <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3">
+              <Label htmlFor="skill-tool-name">Discovered tool name</Label>
+              <Input
+                id="skill-tool-name"
+                value={draft.toolName}
+                onChange={(event) => updateDraft({ toolName: event.target.value })}
+                placeholder="tool_name"
+              />
+              <p className="text-xs text-muted-foreground">
+                Tool discovery is provided by the connected target. If discovery is unavailable, enter the published tool name and leave inputs empty or add them in additional settings.
+              </p>
+            </div>
+          ) : null}
+
+          <div className="space-y-3">
+            <div>
+              <h4 className="text-sm font-medium text-foreground">Inputs</h4>
+              <p className="text-xs text-muted-foreground">
+                Bind values the author fixes now, expose values the routine supplies later, or skip optional fields.
+              </p>
+            </div>
+            {fields.length === 0 ? (
+              <p className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                This capability did not publish static inputs.
+              </p>
+            ) : (
+              <div className="divide-y divide-border rounded-md border border-border">
+                {fields.map((field) => {
+                  const fieldDraft = draft.inputDrafts[field.name]
+                  return (
+                    <div key={field.name} className="grid gap-3 p-3 md:grid-cols-[minmax(0,10rem)_8rem_minmax(0,1fr)]">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-sm font-medium text-foreground">{field.name}</p>
+                          {field.required ? <Badge variant="outline">Required</Badge> : null}
+                        </div>
+                        <p className="text-xs text-muted-foreground">{field.description ?? field.type}</p>
+                      </div>
+                      <Select
+                        value={fieldDraft?.mode ?? 'ignore'}
+                        onValueChange={(mode) => updateInput(field.name, { mode: mode as SkillInputMode })}
+                      >
+                        <SelectTrigger aria-label={field.name}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="expose">{modeLabel.expose}</SelectItem>
+                          <SelectItem value="bind">{modeLabel.bind}</SelectItem>
+                          <SelectItem value="ignore">{modeLabel.ignore}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {fieldDraft?.mode === 'bind' ? (
+                        <Input
+                          value={fieldDraft.boundValue}
+                          onChange={(event) => updateInput(field.name, { boundValue: event.target.value })}
+                          placeholder={field.name}
+                        />
+                      ) : fieldDraft?.mode === 'expose' ? (
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <Input
+                            value={fieldDraft.slotBinding}
+                            onChange={(event) => updateInput(field.name, { slotBinding: event.target.value })}
+                            placeholder={field.name}
+                            aria-label={`${field.name} slot`}
+                          />
+                          <Input
+                            value={fieldDraft.description}
+                            onChange={(event) => updateInput(field.name, { description: event.target.value })}
+                            placeholder="Runtime prompt label"
+                            aria-label={`${field.name} description`}
+                          />
+                        </div>
+                      ) : (
+                        <p className="self-center text-sm text-muted-foreground">Not included</p>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <h4 className="text-sm font-medium text-foreground">Declared outcomes</h4>
+              <p className="text-xs text-muted-foreground">Structured statuses routines can branch on.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {capability?.outcomeVocabulary.map((outcome) => (
+                <button
+                  key={outcome}
+                  type="button"
+                  onClick={() => toggleOutcome(outcome, !draft.selectedOutcomes.includes(outcome))}
+                  className={cn(
+                    'inline-flex h-8 items-center gap-1 rounded-md border px-2 text-xs font-medium transition-colors',
+                    draft.selectedOutcomes.includes(outcome)
+                      ? 'border-primary/50 bg-primary/10 text-foreground'
+                      : 'border-border bg-background text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {draft.selectedOutcomes.includes(outcome) ? <Check className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+                  {outcome}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="skill-extra-config">Additional settings JSON</Label>
+            <Textarea
+              id="skill-extra-config"
+              value={draft.extraConfigJson}
+              onChange={(event) => updateDraft({ extraConfigJson: event.target.value })}
+              className="min-h-28 font-mono text-xs"
+            />
+            <p className="text-xs text-muted-foreground">
+              Use this for descriptor-owned settings that are not credentials, such as retrieval tuning, source scope, notification delivery, or email send mode.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-muted/20 px-3 py-2">
+            <div>
+              <Label htmlFor="skill-enabled">Enabled</Label>
+              <p className="text-xs text-muted-foreground">Disabled skills stay configured but cannot run.</p>
+            </div>
+            <Switch id="skill-enabled" checked={draft.enabled} onCheckedChange={(enabled) => updateDraft({ enabled })} />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
+            Cancel
+          </Button>
+          <Button type="button" onClick={() => void submit()} disabled={!canSubmit}>
+            {isSaving ? <Spinner className="h-4 w-4" /> : <Wrench className="h-4 w-4" />}
+            {editingSkill ? 'Save skill' : 'Create skill'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}

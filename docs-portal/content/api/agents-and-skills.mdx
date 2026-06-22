@@ -1,13 +1,13 @@
 ---
 title: Agents and skills
-description: Configure workspace agents and inspect the read-only skills catalog exposed by the API.
+description: Configure workspace agents, author named agent skills, and inspect the read-only skills catalog exposed by the API.
 ---
 
 # Agents and skills
 
-Agents are the user-facing conversational agents in a workspace. Skills describe the product work Radioso can perform through stable contracts such as assistant chat, retrieval answer, document search, and MCP tools.
+Agents are the user-facing conversational agents in a workspace. Agent skills are named capability instances an agent can use from routines or supported invocation modes. The read-only product skills catalog still describes stable platform contracts.
 
-The key point is that skills are discoverable, but they are not executed through a generic skill endpoint. Callers still use the stable API, SDK, or MCP contract for the actual work.
+The key point is that authoring and execution are different. Agent skills are created through the agent skill endpoints. Runtime still dispatches through the capability executor behind the named skill.
 
 ## Relevant endpoints
 
@@ -19,6 +19,11 @@ PUT    /api/v1/agents/{agentId}
 POST   /api/v1/agents/{agentId}/assistant-logo
 DELETE /api/v1/agents/{agentId}/assistant-logo
 POST   /api/v1/agents/{agentId}/default
+GET    /api/v1/agents/{agentId}/skill-capabilities
+GET    /api/v1/agents/{agentId}/skills
+POST   /api/v1/agents/{agentId}/skills
+PATCH  /api/v1/agents/{agentId}/skills/{skillId}
+DELETE /api/v1/agents/{agentId}/skills/{skillId}
 GET    /api/v1/skills
 GET    /api/v1/skills/{skillName}
 ```
@@ -31,37 +36,50 @@ Agents own:
 
 - display name and logo
 - custom instructions
-- suggested-question behavior
+- suggested-question behavior on the default retrieve skill
 - theme and greeting behavior
-- whether retrieval is enabled
-- per-skill settings in `skillSettings`
 - source scope
 - surface settings for authenticated chat, anonymous chat, and website embed
 
-Retrieval answer configuration lives on the agent. Use `skillSettings["retrieval.answer"]` to set fields such as query rewrite behavior, reranking, metadata rules, strategy, and answer instruction for that one agent. An empty `skillSettings` map means the agent inherits system/model defaults.
+Retrieval answer configuration lives on the agent's default-answer `retrieve` skill. Use the unified skill endpoints to update fields such as query rewrite behavior, reranking, metadata rules, strategy, source scope, suggested questions, and answer instruction for that one agent.
 
 The read-only `GET /api/v1/settings/retrieval-defaults` endpoint returns those inherited retrieval defaults plus workspace metadata field suggestions for the Skills tab. It does not update retrieval behavior.
 
 If an agent has `retrievalEnabled: true`, assistant chat may use retrieval and return citations. If `retrievalEnabled: false`, the agent answers through the direct assistant path and returns diagnostics with `retrievalInvoked: false`.
 
+## Agent skills
+
+`GET /api/v1/agents/{agentId}/skill-capabilities` returns the capability registry projection for the agent. Each capability includes its targets, input schema, outcomes, supported invocation modes, and availability.
+
+`GET /api/v1/agents/{agentId}/skills` returns the agent's named skills in one envelope:
+
+- `name`
+- `capability`
+- `target`
+- `config`
+- `invocationMode`
+- `enabled`
+
+Create skills with `POST /api/v1/agents/{agentId}/skills`. The form and API use the same model for `retrieve`, `mcp_tool`, `email`, `slack_post`, `webhook_call`, and `notify`.
+
 ## Contact requests
 
-An agent can offer a "contact a human" option in chat. It is off by default and turned on per agent with `contactRequestsEnabled`. When it is on, the assistant collects the visitor's email and message, then delivers the request out of band.
+An agent can offer a "contact a human" option in chat. This is backed by a `notify` skill, commonly named `contact_human`. When the skill is enabled, the assistant can collect the visitor's email and message, then deliver the request out of band.
 
-You configure where requests go with `contactRequestDelivery`:
+Configure delivery in the notify skill config:
 
 - `recipientEmails`: up to 5 email addresses. Each is emailed a copy of the request. When the list is empty, Radioso falls back to the workspace owner.
 - `webhook`: an optional `{ "url": "https://..." }`. When set, Radioso also POSTs the request to that URL. Email and webhook both fire when both are configured.
 
-Example agent update fragment:
+Example notify skill config fragment:
 
 ```json
 {
-  "contactRequestsEnabled": true,
-  "contactRequestDelivery": {
+  "delivery": {
     "recipientEmails": ["support@example.com", "ops@example.com"],
     "webhook": { "url": "https://example.com/hooks/contact" }
-  }
+  },
+  "exposedInputs": { "message": true, "email": true }
 }
 ```
 
@@ -86,7 +104,7 @@ Each request carries an `Idempotency-Key` header. Delivery is at-least-once, so 
 
 Radioso sends the request with `POST`, follows redirects only to publicly routable hosts, and applies a short delivery timeout. Point the webhook at a stable public endpoint.
 
-## Skills
+## Read-only skills catalog
 
 The skills catalog is read-only. It helps API, SDK, MCP, and assistant clients understand what work is available and which stable contract owns it.
 

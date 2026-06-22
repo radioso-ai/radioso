@@ -114,6 +114,32 @@ export type SlackSkillFixture = {
   createdAt: string;
   updatedAt: string;
 };
+export type AgentSkillFixture = {
+  id: string;
+  workspaceId: string;
+  agentId: string;
+  name: string;
+  capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+  storedKind: string;
+  target: { kind: string; id: string | null };
+  config: Record<string, unknown>;
+  invocationMode: "default_answer" | "routine_named" | "agent_selectable";
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+export type SkillCapabilityFixture = {
+  id: AgentSkillFixture["capability"];
+  storedKind: string;
+  targetKind: string;
+  inputSchema: { source: "discovered" } | { source: "static"; schema: Record<string, unknown> };
+  outcomeVocabulary: string[];
+  supportedInvocationModes: AgentSkillFixture["invocationMode"][];
+  executorAdapter: string;
+  targets: Array<{ id: string; label: string; status?: string }>;
+  available: boolean;
+  unavailableReason: string | null;
+};
 export type RoutineSkillCatalogFixture = SkillAuthoringDescriptor[];
 export type WebhookDestinationMutationFixture = {
   method: "POST" | "PUT" | "DELETE" | "ROTATE_SECRET";
@@ -455,6 +481,81 @@ export const baseDocumentSources = (): ApiSchemas["DocumentSourceListResponse"] 
   ],
 });
 
+export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
+  {
+    id: "retrieve",
+    storedKind: "retrieve",
+    targetKind: "source_scope",
+    inputSchema: { source: "static", schema: { fields: ["query"] } },
+    outcomeVocabulary: ["found", "empty"],
+    supportedInvocationModes: ["default_answer", "routine_named", "agent_selectable"],
+    executorAdapter: "retrieval.answer",
+    targets: [{ id: "all", label: "All sources", status: "available" }],
+    available: true,
+    unavailableReason: null,
+  },
+  {
+    id: "mcp_tool",
+    storedKind: "external_mcp",
+    targetKind: "mcp_connection",
+    inputSchema: { source: "discovered" },
+    outcomeVocabulary: ["completed", "failed"],
+    supportedInvocationModes: ["routine_named", "agent_selectable"],
+    executorAdapter: "external_mcp",
+    targets: [],
+    available: false,
+    unavailableReason: "no_connection",
+  },
+  {
+    id: "email",
+    storedKind: "customer_email",
+    targetKind: "customer_email_connection",
+    inputSchema: { source: "static", schema: { fields: ["to", "cc", "subject", "bodyText", "bodyHtml", "replyTo"] } },
+    outcomeVocabulary: ["drafted", "sent", "missing_input", "disabled_connection", "needs_reauth", "provider_rejected", "failed"],
+    supportedInvocationModes: ["routine_named", "agent_selectable"],
+    executorAdapter: "customer_email",
+    targets: [{ id: "99999999-9999-4999-8999-000000000001", label: "Support outbound", status: "authorized" }],
+    available: true,
+    unavailableReason: null,
+  },
+  {
+    id: "slack_post",
+    storedKind: "slack",
+    targetKind: "slack_installation",
+    inputSchema: { source: "static", schema: { fields: ["channelId", "text", "threadTs"] } },
+    outcomeVocabulary: ["enqueued", "missing_input", "failed"],
+    supportedInvocationModes: ["routine_named", "agent_selectable"],
+    executorAdapter: "slack",
+    targets: [],
+    available: false,
+    unavailableReason: "no_connection",
+  },
+  {
+    id: "webhook_call",
+    storedKind: "webhook",
+    targetKind: "webhook_destination",
+    inputSchema: { source: "static", schema: { fields: ["payload"] } },
+    outcomeVocabulary: ["delivered", "failed"],
+    supportedInvocationModes: ["routine_named", "agent_selectable"],
+    executorAdapter: "webhook",
+    targets: [{ id: "33333333-3333-4333-8333-333333333333", label: "crm-leads", status: "available" }],
+    available: true,
+    unavailableReason: null,
+  },
+  {
+    id: "notify",
+    storedKind: "notify",
+    targetKind: "notify_delivery",
+    inputSchema: { source: "static", schema: { fields: ["message", "email"] } },
+    outcomeVocabulary: ["delivered", "failed"],
+    supportedInvocationModes: ["routine_named", "agent_selectable"],
+    executorAdapter: "notify",
+    targets: [{ id: "default", label: "Configured delivery", status: "available" }],
+    available: true,
+    unavailableReason: null,
+  },
+];
+
 const emptyCrawlJobs = {
   jobs: [],
   total: 0,
@@ -542,6 +643,9 @@ export const installDashboardApiMocks = async (
     slackManifest?: SlackManifestFixture;
     slackSkills?: SlackSkillFixture[];
     slackRequests?: Array<{ method: string; path: string; body?: unknown }>;
+    skillCapabilities?: SkillCapabilityFixture[];
+    agentSkills?: AgentSkillFixture[];
+    agentSkillRequests?: Array<{ method: string; path: string; body?: unknown }>;
     routineSkillCatalog?: RoutineSkillCatalogFixture;
   } = {},
 ) => {
@@ -606,6 +710,9 @@ export const installDashboardApiMocks = async (
   };
   let slackSkills = options.slackSkills ?? [];
   let nextSlackSkillIndex = slackSkills.length + 1;
+  const skillCapabilities = options.skillCapabilities ?? baseSkillCapabilities();
+  let agentSkills = options.agentSkills ?? [];
+  let nextAgentSkillIndex = agentSkills.length + 1;
   const routineSkillCatalog = options.routineSkillCatalog ?? [];
   let webhookDestinations = options.webhookDestinations ?? [];
   let nextWebhookDestinationIndex = webhookDestinations.length + 1;
@@ -1112,6 +1219,66 @@ export const installDashboardApiMocks = async (
           updatedAt: nowIso,
         };
         await json(route, agentSettings);
+        return;
+      }
+    }
+
+    if (path === `/agents/${defaultAgentId}/skill-capabilities` && request.method() === "GET") {
+      await json(route, { capabilities: skillCapabilities });
+      return;
+    }
+
+    if (path === `/agents/${defaultAgentId}/skills`) {
+      if (request.method() === "GET") {
+        await json(route, { skills: agentSkills });
+        return;
+      }
+
+      if (request.method() === "POST") {
+        const body = request.postDataJSON() as Omit<AgentSkillFixture, "id" | "workspaceId" | "agentId" | "storedKind" | "createdAt" | "updatedAt">;
+        options.agentSkillRequests?.push({ method: request.method(), path, body });
+        const capability = skillCapabilities.find((candidate) => candidate.id === body.capability);
+        const skill: AgentSkillFixture = {
+          id: `66666666-6666-4666-8666-${String(nextAgentSkillIndex).padStart(12, "0")}`,
+          workspaceId,
+          agentId: defaultAgentId,
+          name: body.name,
+          capability: body.capability,
+          storedKind: capability?.storedKind ?? body.capability,
+          target: body.target,
+          config: body.config,
+          invocationMode: body.invocationMode,
+          enabled: body.enabled,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        };
+        nextAgentSkillIndex += 1;
+        agentSkills = [skill, ...agentSkills];
+        await json(route, { skill }, 201);
+        return;
+      }
+    }
+
+    if (path.startsWith(`/agents/${defaultAgentId}/skills/`)) {
+      const skillId = path.replace(`/agents/${defaultAgentId}/skills/`, "");
+      const skill = agentSkills.find((item) => item.id === skillId);
+      if (!skill) {
+        await json(route, { error: { code: "not_found", message: "Skill not found" } }, 404);
+        return;
+      }
+
+      if (request.method() === "PATCH") {
+        const body = request.postDataJSON() as Partial<AgentSkillFixture>;
+        options.agentSkillRequests?.push({ method: request.method(), path, body });
+        agentSkills = agentSkills.map((item) => item.id === skillId ? { ...item, ...body, updatedAt: nowIso } : item);
+        await json(route, { skill: agentSkills.find((item) => item.id === skillId) });
+        return;
+      }
+
+      if (request.method() === "DELETE") {
+        options.agentSkillRequests?.push({ method: request.method(), path });
+        agentSkills = agentSkills.filter((item) => item.id !== skillId);
+        await route.fulfill({ status: 204 });
         return;
       }
     }

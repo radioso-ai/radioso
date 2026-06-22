@@ -1,0 +1,256 @@
+import { z } from "zod";
+
+import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
+import type { AppLogger } from "../../shared/observability/logger.js";
+import type {
+  SkillCapabilityDescriptor,
+  SkillCapabilityId,
+  SkillCapabilityRegistry,
+} from "../skills/capabilityRegistry.js";
+import { skillCapabilityIdSchema } from "../skills/capabilityRegistry.js";
+import { agentSkillInvocationModes, type AgentSkillInvocationMode, type AgentSkillSpine } from "./domain.js";
+import type { AgentSkillRepositoryPort } from "./repository.js";
+
+const skillNamePattern = /^[a-z][a-z0-9_]*$/u;
+
+const targetSchema = z.object({
+  kind: z.string().trim().min(1),
+  id: z.string().uuid().nullable(),
+}).strict();
+
+export const agentSkillCreateSchema = z.object({
+  name: z.string().trim().min(1).max(120).regex(skillNamePattern),
+  capability: skillCapabilityIdSchema,
+  target: targetSchema,
+  config: z.record(z.unknown()).default({}),
+  invocationMode: z.enum(agentSkillInvocationModes).default("routine_named"),
+  enabled: z.boolean().default(true),
+}).strict();
+
+export type AgentSkillCreateInput = z.infer<typeof agentSkillCreateSchema>;
+
+export const agentSkillUpdateSchema = z.object({
+  target: targetSchema.optional(),
+  config: z.record(z.unknown()).optional(),
+  invocationMode: z.enum(agentSkillInvocationModes).optional(),
+  enabled: z.boolean().optional(),
+}).strict().refine((input) => Object.keys(input).length > 0, {
+  message: "At least one field must be provided",
+});
+
+export type AgentSkillUpdateInput = z.infer<typeof agentSkillUpdateSchema>;
+
+export interface AgentSkillView {
+  id: string;
+  workspaceId: string;
+  agentId: string;
+  name: string;
+  capability: SkillCapabilityId;
+  storedKind: string;
+  target: {
+    kind: string | null;
+    id: string | null;
+  };
+  config: Record<string, unknown>;
+  invocationMode: AgentSkillInvocationMode;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentSkillsServiceOptions {
+  repository: AgentSkillRepositoryPort;
+  capabilities: SkillCapabilityRegistry;
+  logger?: AppLogger;
+}
+
+const isUniqueViolation = (error: unknown): boolean =>
+  Boolean(error && typeof error === "object" && "code" in error && error.code === "23505");
+
+export class AgentSkillsService {
+  constructor(private readonly options: AgentSkillsServiceOptions) {}
+
+  async list(workspaceId: string, agentId: string): Promise<AgentSkillView[]> {
+    const records = await this.options.repository.listByAgent(workspaceId, agentId);
+    return records.map((record) => this.toView(record));
+  }
+
+  async create(workspaceId: string, agentId: string, rawInput: AgentSkillCreateInput): Promise<AgentSkillView> {
+    const input = this.parseCreate(rawInput);
+    const descriptor = this.requireCapability(input.capability);
+    await this.validateCreateOrUpdate(workspaceId, agentId, descriptor, input);
+
+    if (await this.options.repository.findByName(workspaceId, agentId, input.name)) {
+      throw conflict(`A skill named "${input.name}" already exists for this agent`);
+    }
+
+    try {
+      const record = await this.options.repository.create({
+        workspaceId,
+        agentId,
+        skillName: input.name,
+        kind: descriptor.storedKind,
+        targetType: input.target.kind,
+        targetId: input.target.id,
+        config: input.config,
+        invocationMode: input.invocationMode,
+        enabled: input.enabled,
+      });
+      this.options.logger?.info({
+        event: "agent_skill_created",
+        workspaceId,
+        agentId,
+        skillId: record.id,
+        capability: descriptor.id,
+        invocationMode: input.invocationMode,
+      });
+      return this.toView(record);
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw conflict(`A skill named "${input.name}" or default answer already exists for this agent`);
+      }
+      throw error;
+    }
+  }
+
+  async update(
+    workspaceId: string,
+    agentId: string,
+    id: string,
+    rawInput: AgentSkillUpdateInput,
+  ): Promise<AgentSkillView> {
+    const input = this.parseUpdate(rawInput);
+    const existing = await this.options.repository.findById(workspaceId, agentId, id);
+    if (!existing) {
+      throw notFound("Skill not found");
+    }
+    const descriptor = this.options.capabilities.getByStoredKind(existing.kind);
+    if (!descriptor) {
+      throw badRequest(`Unsupported skill kind "${existing.kind}"`);
+    }
+    const mergedConfig = { ...(existing.config ?? {}), ...(input.config ?? {}) };
+    const invocationMode = input.invocationMode ?? existing.invocationMode;
+    const target = input.target ?? { kind: existing.targetType ?? descriptor.targetKind, id: existing.targetId ?? null };
+    await this.validateCreateOrUpdate(workspaceId, agentId, descriptor, {
+      name: existing.skillName,
+      capability: descriptor.id,
+      target,
+      config: mergedConfig,
+      invocationMode,
+      enabled: input.enabled ?? existing.enabled,
+    }, existing.id);
+
+    try {
+      const updated = await this.options.repository.update(workspaceId, agentId, id, {
+        targetType: input.target?.kind,
+        targetId: input.target?.id,
+        config: input.config,
+        invocationMode: input.invocationMode,
+        enabled: input.enabled,
+      });
+      if (!updated) {
+        throw notFound("Skill not found");
+      }
+      this.options.logger?.info({
+        event: "agent_skill_updated",
+        workspaceId,
+        agentId,
+        skillId: updated.id,
+        capability: descriptor.id,
+        invocationMode: updated.invocationMode,
+      });
+      return this.toView(updated);
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw conflict("A default-answer skill already exists for this agent");
+      }
+      throw error;
+    }
+  }
+
+  async remove(workspaceId: string, agentId: string, id: string): Promise<void> {
+    const removed = await this.options.repository.remove(workspaceId, agentId, id);
+    if (!removed) {
+      throw notFound("Skill not found");
+    }
+    this.options.logger?.info({
+      event: "agent_skill_deleted",
+      workspaceId,
+      agentId,
+      skillId: id,
+    });
+  }
+
+  private requireCapability(capability: SkillCapabilityId): SkillCapabilityDescriptor {
+    const descriptor = this.options.capabilities.get(capability);
+    if (!descriptor) {
+      throw badRequest(`Unsupported skill capability "${capability}"`);
+    }
+    return descriptor;
+  }
+
+  private parseCreate(rawInput: AgentSkillCreateInput): AgentSkillCreateInput {
+    const parsed = agentSkillCreateSchema.safeParse(rawInput);
+    if (!parsed.success) {
+      throw badRequest("Invalid skill definition", parsed.error.flatten());
+    }
+    return parsed.data;
+  }
+
+  private parseUpdate(rawInput: AgentSkillUpdateInput): AgentSkillUpdateInput {
+    const parsed = agentSkillUpdateSchema.safeParse(rawInput);
+    if (!parsed.success) {
+      throw badRequest("Invalid skill definition", parsed.error.flatten());
+    }
+    return parsed.data;
+  }
+
+  private async validateCreateOrUpdate(
+    workspaceId: string,
+    agentId: string,
+    descriptor: SkillCapabilityDescriptor,
+    input: AgentSkillCreateInput,
+    existingId?: string,
+  ): Promise<void> {
+    if (input.target.kind !== descriptor.targetKind) {
+      throw badRequest(`Capability ${descriptor.id} must target ${descriptor.targetKind}`);
+    }
+    if (!descriptor.supportedInvocationModes.includes(input.invocationMode)) {
+      throw badRequest(`Capability ${descriptor.id} does not support ${input.invocationMode}`);
+    }
+    const config = descriptor.validateConfig(input.config);
+    if (!config.success) {
+      throw badRequest("Invalid skill config", config.error.flatten());
+    }
+    if (input.invocationMode === "default_answer") {
+      const existingDefault = await this.options.repository.findDefaultAnswer(workspaceId, agentId);
+      if (existingDefault && existingDefault.id !== existingId) {
+        throw conflict("A default-answer skill already exists for this agent");
+      }
+    }
+  }
+
+  private toView(record: AgentSkillSpine): AgentSkillView {
+    const descriptor = this.options.capabilities.getByStoredKind(record.kind);
+    if (!descriptor) {
+      throw badRequest(`Unsupported skill kind "${record.kind}"`);
+    }
+    return {
+      id: record.id,
+      workspaceId: record.workspaceId,
+      agentId: record.agentId,
+      name: record.skillName,
+      capability: descriptor.id,
+      storedKind: record.kind,
+      target: {
+        kind: record.targetType ?? null,
+        id: record.targetId ?? null,
+      },
+      config: record.config ?? {},
+      invocationMode: record.invocationMode,
+      enabled: record.enabled,
+      createdAt: record.createdAt.toISOString(),
+      updatedAt: record.updatedAt.toISOString(),
+    };
+  }
+}

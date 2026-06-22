@@ -81,6 +81,9 @@ import {
 } from "../../modules/customerEmail/public.js";
 import { WebhookSkillDefinitionService } from "../../modules/webhookSkills/public.js";
 import { SlackSkillDefinitionService } from "../../modules/slackSkills/public.js";
+import { AgentSkillRepository, AgentSkillsService } from "../../modules/agentSkills/public.js";
+import { createDefaultSkillCapabilityRegistry } from "../../modules/skills/capabilityRegistry.js";
+import { bindSkillCapabilityExecutors } from "../composition/skillCapabilityRegistry.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -211,6 +214,41 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repository: repositories.slackSkillDefinitionRepository,
     installations: repositories.slackInstallationRepository,
   });
+  const skillCapabilityRegistry = createDefaultSkillCapabilityRegistry({
+    mcp_tool: async ({ agentId }) =>
+      (await mcpConnectionService.list(agentId)).map((connection) => ({
+        id: connection.id,
+        label: connection.displayName,
+        status: connection.status,
+      })),
+    email: async ({ workspaceId }) =>
+      (await customerEmailConnectionService.list(workspaceId)).map((connection) => ({
+        id: connection.id,
+        label: connection.displayName,
+        status: connection.status,
+      })),
+    slack_post: async ({ workspaceId }) => {
+      const status = await slackInstallationService.getStatus(workspaceId);
+      return status.installationId
+        ? [{
+            id: status.installationId,
+            label: status.teamName ?? "Slack",
+            status: status.status,
+          }]
+        : [];
+    },
+    webhook_call: async ({ workspaceId }) =>
+      (await webhookDestinations.list(workspaceId)).map((destination) => ({
+        id: destination.id,
+        label: destination.name,
+        status: destination.lastDeliveryStatus ?? undefined,
+      })),
+  });
+  const agentSkillsService = new AgentSkillsService({
+    repository: new AgentSkillRepository(infrastructure.database),
+    capabilities: skillCapabilityRegistry,
+    logger,
+  });
   // Build the registry first (no resolver yet) so we can compute supported embedding
   // models; embedding stays env-default and doesn't need the workspace-aware resolver.
   const llmRegistry = buildLlmRegistry(env, logger);
@@ -332,6 +370,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceRepository: repositories.workspaceRepository,
     assertPublicWebsiteUrl,
     errorReporter: infrastructure.errorReportingService,
+  });
+  bindSkillCapabilityExecutors({
+    capabilities: skillCapabilityRegistry,
+    executors: composition.skillExecutorRegistry,
   });
   const platformSettingsService = new PlatformSettingsService({
     workspaceRepository: repositories.workspaceRepository,
@@ -576,6 +618,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentSurfaceExtensions,
     skillCatalogService,
     skillAuthoringCatalog,
+    skillCapabilityRegistry,
+    agentSkillsService,
     accountRepository: repositories.accountRepository,
     userRepository: repositories.userRepository,
     workspaceRepository: repositories.workspaceRepository,

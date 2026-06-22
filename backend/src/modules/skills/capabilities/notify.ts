@@ -30,6 +30,22 @@ export const notifyCapability: SkillCapabilityDescriptor<"notify", "notify"> = {
     source: "static",
     schema: { fields: ["message", "email"] },
   },
+  settingsFields: [
+    {
+      key: "delivery.recipientEmails",
+      label: "Recipient emails",
+      type: "string_list",
+      help: "Email destinations that receive this notification.",
+      group: "Delivery",
+    },
+    {
+      key: "delivery.webhook.url",
+      label: "Webhook URL",
+      type: "text",
+      help: "Optional HTTPS endpoint that receives this notification.",
+      group: "Delivery",
+    },
+  ],
   outcomeVocabulary: ["delivered", "failed"],
   supportedInvocationModes: ["routine_named", "agent_selectable"],
   executorAdapter: NOTIFY_SKILLS_ADAPTER,

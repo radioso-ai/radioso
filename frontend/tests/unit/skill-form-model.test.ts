@@ -13,6 +13,7 @@ const baseCapability = (input: Partial<SkillCapabilityDescriptor> = {}): SkillCa
   storedKind: 'customer_email',
   targetKind: 'customer_email_connection',
   inputSchema: { source: 'static', schema: { fields: ['to', 'subject', 'bodyText'] } },
+  settingsFields: [],
   outcomeVocabulary: ['sent', 'failed'],
   supportedInvocationModes: ['routine_named', 'agent_selectable'],
   executorAdapter: 'customer_email',
@@ -98,6 +99,97 @@ describe('skill form model', () => {
       invocationMode: 'routine_named',
       enabled: true,
     })
+  })
+
+  it('hydrates typed descriptor settings from existing config', () => {
+    const capability = baseCapability({
+      id: 'retrieve',
+      storedKind: 'retrieve',
+      targetKind: 'source_scope',
+      inputSchema: { source: 'static', schema: { fields: ['query'] } },
+      settingsFields: [
+        { key: 'sourceScope', label: 'Source scope', type: 'source_scope' },
+        { key: 'instruction', label: 'Instruction', type: 'textarea' },
+        { key: 'retrievalStrategy', label: 'Retrieval strategy', type: 'select', options: [{ value: 'fixed', label: 'Fixed' }] },
+        { key: 'vectorTopK', label: 'Vector top K', type: 'number', min: 1, max: 300 },
+        { key: 'rerankEnabled', label: 'Rerank', type: 'boolean' },
+      ],
+      targets: [
+        { id: 'all', label: 'All sources' },
+        { id: '11111111-1111-4111-8111-111111111111', label: 'Course guide' },
+      ],
+    })
+    const draft = createInitialSkillDraft([capability], baseSkill({
+      capability: 'retrieve',
+      storedKind: 'retrieve',
+      target: { kind: 'source_scope', id: null },
+      config: {
+        sourceScope: { sourceIds: ['11111111-1111-4111-8111-111111111111'] },
+        instruction: 'Use course sources only.',
+        retrievalStrategy: 'fixed',
+        vectorTopK: 12,
+        rerankEnabled: true,
+        exposedInputs: { query: true },
+      },
+    }))
+
+    expect(draft.settingDrafts).toEqual({
+      sourceScope: { mode: 'selected', sourceIds: ['11111111-1111-4111-8111-111111111111'] },
+      instruction: 'Use course sources only.',
+      retrievalStrategy: 'fixed',
+      vectorTopK: 12,
+      rerankEnabled: true,
+    })
+    expect(draft.extraConfigJson).toBe('{}')
+  })
+
+  it('maps typed descriptor settings into capability config', () => {
+    const capability = baseCapability({
+      id: 'notify',
+      storedKind: 'notify',
+      targetKind: 'notify_delivery',
+      inputSchema: { source: 'static', schema: { fields: ['message', 'email'] } },
+      settingsFields: [
+        { key: 'delivery.recipientEmails', label: 'Recipient emails', type: 'string_list' },
+        { key: 'delivery.webhook.url', label: 'Webhook URL', type: 'text' },
+      ],
+      targets: [{ id: 'default', label: 'Configured delivery' }],
+    })
+    const draft = createInitialSkillDraft([capability], null)
+    draft.name = 'contact_human'
+    draft.settingDrafts = {
+      'delivery.recipientEmails': ['sales@example.com', 'support@example.com'],
+      'delivery.webhook.url': 'https://hooks.example.com/contact',
+    }
+    draft.inputDrafts.message = { mode: 'expose', boundValue: '', description: '', slotBinding: 'message' }
+
+    expect(buildAgentSkillInput(capability, draft, deriveSkillFields(capability)).config).toEqual({
+      delivery: {
+        recipientEmails: ['sales@example.com', 'support@example.com'],
+        webhook: { url: 'https://hooks.example.com/contact' },
+      },
+      exposedInputs: {
+        message: true,
+        email: true,
+      },
+    })
+  })
+
+  it('keeps genuinely unknown config in the JSON escape hatch only', () => {
+    const capability = baseCapability({
+      settingsFields: [{ key: 'mode', label: 'Mode', type: 'select', options: [{ value: 'send', label: 'Send' }] }],
+    })
+    const draft = createInitialSkillDraft([capability], baseSkill({
+      config: {
+        mode: 'send',
+        customProviderOption: 'preserve',
+        boundInputs: { subject: 'Follow up' },
+        exposedInputs: { to: { slotBinding: 'email' }, bodyText: { slotBinding: 'message' } },
+      },
+    }))
+
+    expect(draft.settingDrafts.mode).toBe('send')
+    expect(draft.extraConfigJson).toBe(JSON.stringify({ customProviderOption: 'preserve' }, null, 2))
   })
 
   it('uses discovered schemas for MCP-style inputs and declared outcomes', () => {

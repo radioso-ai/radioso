@@ -104,6 +104,7 @@ describe("AgentSkillsService", () => {
         targetKind: "mcp_connection",
         enumerateTargets: async () => [],
         inputSchema: { source: "discovered" },
+        settingsFields: [],
         outcomeVocabulary: ["completed"],
         supportedInvocationModes: ["default_answer"],
         executorAdapter: "external-skills",

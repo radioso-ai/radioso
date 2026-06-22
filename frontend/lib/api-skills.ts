@@ -56,11 +56,23 @@ export type SkillCapabilityTarget = {
   status?: string
 }
 
+export type SkillCapabilitySettingsField = {
+  key: string
+  label: string
+  type: 'boolean' | 'number' | 'text' | 'textarea' | 'select' | 'string_list' | 'source_scope'
+  help?: string
+  options?: Array<{ value: string; label: string }>
+  min?: number
+  max?: number
+  group?: string
+}
+
 export type SkillCapabilityDescriptor = {
   id: AgentSkillCapabilityId
   storedKind: string
   targetKind: string
   inputSchema: SkillCapabilityInputSchema
+  settingsFields: SkillCapabilitySettingsField[]
   outcomeVocabulary: string[]
   supportedInvocationModes: AgentSkillInvocationMode[]
   executorAdapter: string

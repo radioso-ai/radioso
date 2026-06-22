@@ -133,6 +133,16 @@ export type SkillCapabilityFixture = {
   storedKind: string;
   targetKind: string;
   inputSchema: { source: "discovered" } | { source: "static"; schema: Record<string, unknown> };
+  settingsFields: Array<{
+    key: string;
+    label: string;
+    type: "boolean" | "number" | "text" | "textarea" | "select" | "string_list" | "source_scope";
+    help?: string;
+    options?: Array<{ value: string; label: string }>;
+    min?: number;
+    max?: number;
+    group?: string;
+  }>;
   outcomeVocabulary: string[];
   supportedInvocationModes: AgentSkillFixture["invocationMode"][];
   executorAdapter: string;
@@ -487,10 +497,37 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
     storedKind: "retrieve",
     targetKind: "source_scope",
     inputSchema: { source: "static", schema: { fields: ["query"] } },
+    settingsFields: [
+      { key: "sourceScope", label: "Source scope", type: "source_scope", group: "Scope" },
+      { key: "instruction", label: "Instruction", type: "textarea", group: "Scope" },
+      {
+        key: "retrievalStrategy",
+        label: "Retrieval strategy",
+        type: "select",
+        options: [
+          { value: "fixed", label: "Fixed" },
+          { value: "reasoning", label: "Reasoning" },
+          { value: "auto", label: "Auto" },
+        ],
+        group: "Retrieval tuning",
+      },
+      { key: "vectorTopK", label: "Vector top K", type: "number", min: 1, max: 300, group: "Retrieval tuning" },
+      { key: "rerankEnabled", label: "Rerank results", type: "boolean", group: "Retrieval tuning" },
+      { key: "rerankTopK", label: "Rerank top K", type: "number", min: 1, max: 100, group: "Retrieval tuning" },
+      { key: "queryRewriteEnabled", label: "Query rewrite", type: "boolean", group: "Query rewrite" },
+      { key: "semanticRewriteInstructions", label: "Semantic rewrite instructions", type: "textarea", group: "Query rewrite" },
+      { key: "lexicalRewriteInstructions", label: "Lexical rewrite instructions", type: "textarea", group: "Query rewrite" },
+      { key: "suggestedQuestionsEnabled", label: "Suggested questions", type: "boolean", group: "Suggested questions" },
+      { key: "suggestedQuestionsCount", label: "Suggested questions count", type: "number", min: 1, max: 4, group: "Suggested questions" },
+    ],
     outcomeVocabulary: ["found", "empty"],
     supportedInvocationModes: ["default_answer", "routine_named", "agent_selectable"],
     executorAdapter: "retrieval.answer",
-    targets: [{ id: "all", label: "All sources", status: "available" }],
+    targets: [
+      { id: "all", label: "All sources", status: "available" },
+      { id: "11111111-1111-4111-8111-111111111111", label: "Course guide", status: "ready" },
+      { id: "22222222-2222-4222-8222-222222222222", label: "Release notes", status: "ready" },
+    ],
     available: true,
     unavailableReason: null,
   },
@@ -499,6 +536,7 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
     storedKind: "external_mcp",
     targetKind: "mcp_connection",
     inputSchema: { source: "discovered" },
+    settingsFields: [],
     outcomeVocabulary: ["completed", "failed"],
     supportedInvocationModes: ["routine_named", "agent_selectable"],
     executorAdapter: "external_mcp",
@@ -511,6 +549,17 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
     storedKind: "customer_email",
     targetKind: "customer_email_connection",
     inputSchema: { source: "static", schema: { fields: ["to", "cc", "subject", "bodyText", "bodyHtml", "replyTo"] } },
+    settingsFields: [
+      {
+        key: "mode",
+        label: "Mode",
+        type: "select",
+        options: [
+          { value: "draft", label: "Draft" },
+          { value: "send", label: "Send" },
+        ],
+      },
+    ],
     outcomeVocabulary: ["drafted", "sent", "missing_input", "disabled_connection", "needs_reauth", "provider_rejected", "failed"],
     supportedInvocationModes: ["routine_named", "agent_selectable"],
     executorAdapter: "customer_email",
@@ -523,6 +572,7 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
     storedKind: "slack",
     targetKind: "slack_installation",
     inputSchema: { source: "static", schema: { fields: ["channelId", "text", "threadTs"] } },
+    settingsFields: [],
     outcomeVocabulary: ["enqueued", "missing_input", "failed"],
     supportedInvocationModes: ["routine_named", "agent_selectable"],
     executorAdapter: "slack",
@@ -535,6 +585,7 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
     storedKind: "webhook",
     targetKind: "webhook_destination",
     inputSchema: { source: "static", schema: { fields: ["payload"] } },
+    settingsFields: [],
     outcomeVocabulary: ["delivered", "failed"],
     supportedInvocationModes: ["routine_named", "agent_selectable"],
     executorAdapter: "webhook",
@@ -547,6 +598,10 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
     storedKind: "notify",
     targetKind: "notify_delivery",
     inputSchema: { source: "static", schema: { fields: ["message", "email"] } },
+    settingsFields: [
+      { key: "delivery.recipientEmails", label: "Recipient emails", type: "string_list", group: "Delivery" },
+      { key: "delivery.webhook.url", label: "Webhook URL", type: "text", group: "Delivery" },
+    ],
     outcomeVocabulary: ["delivered", "failed"],
     supportedInvocationModes: ["routine_named", "agent_selectable"],
     executorAdapter: "notify",

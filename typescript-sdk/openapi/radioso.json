@@ -22781,10 +22781,12 @@
                           "id": {
                             "type": "string",
                             "enum": [
+                              "retrieve",
                               "mcp_tool",
                               "email",
                               "slack_post",
-                              "webhook_call"
+                              "webhook_call",
+                              "notify"
                             ]
                           },
                           "storedKind": {
@@ -22829,6 +22831,67 @@
                                 ]
                               }
                             ]
+                          },
+                          "settingsFields": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "key": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "boolean",
+                                    "number",
+                                    "text",
+                                    "textarea",
+                                    "select",
+                                    "string_list",
+                                    "source_scope"
+                                  ]
+                                },
+                                "help": {
+                                  "type": "string"
+                                },
+                                "options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "value": {
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "value",
+                                      "label"
+                                    ]
+                                  }
+                                },
+                                "min": {
+                                  "type": "number"
+                                },
+                                "max": {
+                                  "type": "number"
+                                },
+                                "group": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "key",
+                                "label",
+                                "type"
+                              ]
+                            }
                           },
                           "outcomeVocabulary": {
                             "type": "array",
@@ -22889,6 +22952,7 @@
                           "storedKind",
                           "targetKind",
                           "inputSchema",
+                          "settingsFields",
                           "outcomeVocabulary",
                           "supportedInvocationModes",
                           "executorAdapter",
@@ -22993,10 +23057,12 @@
                           "capability": {
                             "type": "string",
                             "enum": [
+                              "retrieve",
                               "mcp_tool",
                               "email",
                               "slack_post",
-                              "webhook_call"
+                              "webhook_call",
+                              "notify"
                             ]
                           },
                           "storedKind": {
@@ -23134,10 +23200,12 @@
                   "capability": {
                     "type": "string",
                     "enum": [
+                      "retrieve",
                       "mcp_tool",
                       "email",
                       "slack_post",
-                      "webhook_call"
+                      "webhook_call",
+                      "notify"
                     ]
                   },
                   "target": {
@@ -23216,10 +23284,12 @@
                         "capability": {
                           "type": "string",
                           "enum": [
+                            "retrieve",
                             "mcp_tool",
                             "email",
                             "slack_post",
-                            "webhook_call"
+                            "webhook_call",
+                            "notify"
                           ]
                         },
                         "storedKind": {
@@ -23449,10 +23519,12 @@
                         "capability": {
                           "type": "string",
                           "enum": [
+                            "retrieve",
                             "mcp_tool",
                             "email",
                             "slack_post",
-                            "webhook_call"
+                            "webhook_call",
+                            "notify"
                           ]
                         },
                         "storedKind": {

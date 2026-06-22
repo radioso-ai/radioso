@@ -11814,7 +11814,7 @@ export interface operations {
                     "application/json": {
                         capabilities: {
                             /** @enum {string} */
-                            id: "mcp_tool" | "email" | "slack_post" | "webhook_call";
+                            id: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
                             storedKind: string;
                             targetKind: string;
                             inputSchema: {
@@ -11827,6 +11827,20 @@ export interface operations {
                                     [key: string]: unknown;
                                 };
                             };
+                            settingsFields: {
+                                key: string;
+                                label: string;
+                                /** @enum {string} */
+                                type: "boolean" | "number" | "text" | "textarea" | "select" | "string_list" | "source_scope";
+                                help?: string;
+                                options?: {
+                                    value: string;
+                                    label: string;
+                                }[];
+                                min?: number;
+                                max?: number;
+                                group?: string;
+                            }[];
                             outcomeVocabulary: string[];
                             supportedInvocationModes: ("default_answer" | "routine_named" | "agent_selectable")[];
                             executorAdapter: string;
@@ -11898,7 +11912,7 @@ export interface operations {
                             agentId: string;
                             name: string;
                             /** @enum {string} */
-                            capability: "mcp_tool" | "email" | "slack_post" | "webhook_call";
+                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
                             storedKind: string;
                             target: {
                                 kind: string;
@@ -11960,7 +11974,7 @@ export interface operations {
                 "application/json": {
                     name: string;
                     /** @enum {string} */
-                    capability: "mcp_tool" | "email" | "slack_post" | "webhook_call";
+                    capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
                     target: {
                         kind: string;
                         /** Format: uuid */
@@ -11997,7 +12011,7 @@ export interface operations {
                             agentId: string;
                             name: string;
                             /** @enum {string} */
-                            capability: "mcp_tool" | "email" | "slack_post" | "webhook_call";
+                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
                             storedKind: string;
                             target: {
                                 kind: string;
@@ -12155,7 +12169,7 @@ export interface operations {
                             agentId: string;
                             name: string;
                             /** @enum {string} */
-                            capability: "mcp_tool" | "email" | "slack_post" | "webhook_call";
+                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
                             storedKind: string;
                             target: {
                                 kind: string;

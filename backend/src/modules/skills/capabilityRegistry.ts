@@ -26,6 +26,22 @@ export type SkillCapabilityInputSchema =
   | { source: "static"; schema: Record<string, unknown> }
   | { source: "discovered" };
 
+export interface SkillCapabilitySettingsFieldOption {
+  value: string;
+  label: string;
+}
+
+export interface SkillCapabilitySettingsField {
+  key: string;
+  label: string;
+  type: "boolean" | "number" | "text" | "textarea" | "select" | "string_list" | "source_scope";
+  help?: string;
+  options?: SkillCapabilitySettingsFieldOption[];
+  min?: number;
+  max?: number;
+  group?: string;
+}
+
 export interface SkillCapabilityDescriptor<
   Id extends string = SkillCapabilityId,
   StoredKind extends AgentSkillKind = AgentSkillKind,
@@ -35,6 +51,7 @@ export interface SkillCapabilityDescriptor<
   targetKind: string;
   enumerateTargets(context: SkillCapabilityTargetContext): Promise<SkillCapabilityTarget[]>;
   inputSchema: SkillCapabilityInputSchema;
+  settingsFields: readonly SkillCapabilitySettingsField[];
   outcomeVocabulary: readonly string[];
   supportedInvocationModes: readonly AgentSkillInvocationMode[];
   executorAdapter: string;

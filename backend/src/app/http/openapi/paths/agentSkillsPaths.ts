@@ -6,7 +6,7 @@ import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
 const AgentParams = z.object({ agentId: z.string().uuid() });
 const AgentSkillParams = AgentParams.extend({ skillId: z.string().uuid() });
 const InvocationModeSchema = z.enum(["default_answer", "routine_named", "agent_selectable"]);
-const CapabilityIdSchema = z.enum(["mcp_tool", "email", "slack_post", "webhook_call"]);
+const CapabilityIdSchema = z.enum(["retrieve", "mcp_tool", "email", "slack_post", "webhook_call", "notify"]);
 
 const AgentSkillTargetSchema = z.object({
   kind: z.string(),
@@ -50,6 +50,20 @@ const CapabilityTargetSchema = z.object({
   status: z.string().optional(),
 });
 
+const CapabilitySettingsFieldSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  type: z.enum(["boolean", "number", "text", "textarea", "select", "string_list", "source_scope"]),
+  help: z.string().optional(),
+  options: z.array(z.object({
+    value: z.string(),
+    label: z.string(),
+  })).optional(),
+  min: z.number().optional(),
+  max: z.number().optional(),
+  group: z.string().optional(),
+});
+
 const CapabilitySchema = z.object({
   id: CapabilityIdSchema,
   storedKind: z.string(),
@@ -58,6 +72,7 @@ const CapabilitySchema = z.object({
     z.object({ source: z.literal("discovered") }),
     z.object({ source: z.literal("static"), schema: z.record(z.unknown()) }),
   ]),
+  settingsFields: z.array(CapabilitySettingsFieldSchema),
   outcomeVocabulary: z.array(z.string()),
   supportedInvocationModes: z.array(InvocationModeSchema),
   executorAdapter: z.string(),

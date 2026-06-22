@@ -4,8 +4,10 @@ import type {
   AgentSkillCreateInput,
   AgentSkillInvocationMode,
   SkillCapabilityDescriptor,
+  SkillCapabilitySettingsField,
 } from '@/lib/api-skills'
 import { getToolInputFields, normalizeSkillName, parseBoundParamValue, type ToolInputField } from '@/lib/external-skills'
+import type { AgentSourceScope } from '@/lib/api'
 
 export type SkillInputMode = 'bind' | 'expose' | 'ignore'
 
@@ -24,11 +26,13 @@ export type SkillFormDraft = {
   enabled: boolean
   toolName: string
   inputDrafts: Record<string, SkillInputDraft>
+  settingDrafts: Record<string, SkillSettingDraftValue>
   selectedOutcomes: string[]
   extraConfigJson: string
 }
 
 export type DerivedSkillField = ToolInputField
+export type SkillSettingDraftValue = string | number | boolean | string[] | AgentSourceScope | undefined
 
 const DEFAULT_OUTCOMES = ['completed', 'failed']
 
@@ -98,10 +102,17 @@ export const createInitialSkillDraft = (
     enabled: existingSkill?.enabled ?? true,
     toolName: typeof existingSkill?.config.toolName === 'string' ? existingSkill.config.toolName : '',
     inputDrafts: createInputDrafts(fields, existingSkill?.config),
+    settingDrafts: createSettingDrafts(capability?.settingsFields ?? [], existingSkill?.config),
     selectedOutcomes: readOutcomeList(existingSkill?.config, capability?.outcomeVocabulary ?? DEFAULT_OUTCOMES),
-    extraConfigJson: existingSkill ? JSON.stringify(stripDerivedConfig(existingSkill.config), null, 2) : '{}',
+    extraConfigJson: existingSkill ? JSON.stringify(stripDerivedConfig(existingSkill.config, capability?.settingsFields ?? []), null, 2) : '{}',
   }
 }
+
+export const createSettingDrafts = (
+  settingsFields: readonly SkillCapabilitySettingsField[],
+  existingConfig?: Record<string, unknown>,
+): Record<string, SkillSettingDraftValue> =>
+  Object.fromEntries(settingsFields.map((field) => [field.key, readSettingDraftValue(field, existingConfig)]))
 
 export const validateSkillName = (
   name: string,
@@ -126,6 +137,7 @@ export const buildAgentSkillInput = (
 ): AgentSkillCreateInput => {
   const extraConfig = parseExtraConfig(draft.extraConfigJson)
   const inputConfig = buildInputConfig(capability, draft, fields)
+  const settingsConfig = buildSettingsConfig(capability.settingsFields, draft.settingDrafts)
   const outcomes = buildOutcomeConfig(capability, draft.selectedOutcomes)
 
   return {
@@ -139,6 +151,7 @@ export const buildAgentSkillInput = (
       ...defaultConfigForTargetKind(capability),
       ...extraConfig,
       ...inputConfig,
+      ...settingsConfig,
       ...outcomes,
     },
     invocationMode: draft.invocationMode,
@@ -190,7 +203,10 @@ const readOutcomeList = (
   return [...fallback]
 }
 
-const stripDerivedConfig = (config: Record<string, unknown>): Record<string, unknown> => {
+const stripDerivedConfig = (
+  config: Record<string, unknown>,
+  settingsFields: readonly SkillCapabilitySettingsField[],
+): Record<string, unknown> => {
   const derivedKeys = new Set([
     'toolName',
     'boundInputs',
@@ -202,7 +218,11 @@ const stripDerivedConfig = (config: Record<string, unknown>): Record<string, unk
     'declaredOutcomes',
     'outcomes',
   ])
-  return Object.fromEntries(Object.entries(config).filter(([key]) => !derivedKeys.has(key)))
+  let stripped = Object.fromEntries(Object.entries(config).filter(([key]) => !derivedKeys.has(key)))
+  for (const field of settingsFields) {
+    stripped = omitPath(stripped, field.key.split('.'))
+  }
+  return stripped
 }
 
 const parseExtraConfig = (value: string): Record<string, unknown> => {
@@ -286,6 +306,140 @@ const buildOutcomeConfig = (
     return { declaredOutcomes: outcomes }
   }
   return {}
+}
+
+const readSettingDraftValue = (
+  field: SkillCapabilitySettingsField,
+  config: Record<string, unknown> | undefined,
+): SkillSettingDraftValue => {
+  const value = readPath(config ?? {}, field.key.split('.'))
+  if (field.type === 'source_scope') {
+    return configSourceScopeToDraft(value)
+  }
+  if (field.type === 'string_list') {
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+  }
+  if (field.type === 'boolean') {
+    return typeof value === 'boolean' ? value : undefined
+  }
+  if (field.type === 'number') {
+    return typeof value === 'number' ? value : undefined
+  }
+  if (field.type === 'select') {
+    return typeof value === 'string' ? value : field.options?.[0]?.value
+  }
+  return typeof value === 'string' ? value : ''
+}
+
+const buildSettingsConfig = (
+  settingsFields: readonly SkillCapabilitySettingsField[],
+  settingDrafts: Record<string, SkillSettingDraftValue>,
+): Record<string, unknown> => {
+  let config: Record<string, unknown> = {}
+  for (const field of settingsFields) {
+    const value = settingDraftValueToConfig(field, settingDrafts[field.key])
+    if (value === undefined) {
+      continue
+    }
+    config = setPath(config, field.key.split('.'), value)
+  }
+  return config
+}
+
+const settingDraftValueToConfig = (
+  field: SkillCapabilitySettingsField,
+  value: SkillSettingDraftValue,
+): unknown => {
+  if (field.type === 'source_scope') {
+    return draftSourceScopeToConfig(value)
+  }
+  if (field.type === 'string_list') {
+    return Array.isArray(value) ? value.map((item) => item.trim()).filter(Boolean) : []
+  }
+  if (field.type === 'number') {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+  }
+  if (field.type === 'boolean') {
+    return typeof value === 'boolean' ? value : undefined
+  }
+  if (typeof value !== 'string') {
+    return undefined
+  }
+  const trimmed = value.trim()
+  return trimmed ? trimmed : undefined
+}
+
+const configSourceScopeToDraft = (value: unknown): AgentSourceScope => {
+  if (value === 'all' || value === undefined) {
+    return { mode: 'all' }
+  }
+  if (isRecord(value) && Array.isArray(value.sourceIds)) {
+    return {
+      mode: 'selected',
+      sourceIds: value.sourceIds.filter((item): item is string => typeof item === 'string'),
+    }
+  }
+  return { mode: 'all' }
+}
+
+const draftSourceScopeToConfig = (value: SkillSettingDraftValue): unknown => {
+  if (isRecord(value) && value.mode === 'selected' && Array.isArray(value.sourceIds)) {
+    return { sourceIds: value.sourceIds.filter((item): item is string => typeof item === 'string') }
+  }
+  return 'all'
+}
+
+const readPath = (record: Record<string, unknown>, path: readonly string[]): unknown => {
+  let current: unknown = record
+  for (const segment of path) {
+    if (!isRecord(current)) {
+      return undefined
+    }
+    current = current[segment]
+  }
+  return current
+}
+
+const setPath = (
+  record: Record<string, unknown>,
+  path: readonly string[],
+  value: unknown,
+): Record<string, unknown> => {
+  const [head, ...tail] = path
+  if (!head) {
+    return record
+  }
+  if (tail.length === 0) {
+    return { ...record, [head]: value }
+  }
+  const child = isRecord(record[head]) ? record[head] : {}
+  return { ...record, [head]: setPath(child, tail, value) }
+}
+
+const omitPath = (
+  record: Record<string, unknown>,
+  path: readonly string[],
+): Record<string, unknown> => {
+  const [head, ...tail] = path
+  if (!head || !Object.prototype.hasOwnProperty.call(record, head)) {
+    return record
+  }
+  if (tail.length === 0) {
+    const rest = { ...record }
+    delete rest[head]
+    return rest
+  }
+  const child = record[head]
+  if (!isRecord(child)) {
+    return record
+  }
+  const nextChild = omitPath(child, tail)
+  if (Object.keys(nextChild).length === 0) {
+    const rest = { ...record }
+    delete rest[head]
+    return rest
+  }
+  return { ...record, [head]: nextChild }
 }
 
 const defaultConfigForTargetKind = (capability: SkillCapabilityDescriptor): Record<string, unknown> => {

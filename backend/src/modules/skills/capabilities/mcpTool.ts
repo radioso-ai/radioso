@@ -34,6 +34,7 @@ export const mcpToolCapability: SkillCapabilityDescriptor<"mcp_tool", "external_
   targetKind: "mcp_connection",
   enumerateTargets: async () => [],
   inputSchema: { source: "discovered" },
+  settingsFields: [],
   outcomeVocabulary: ["completed", "failed"],
   supportedInvocationModes: ["routine_named", "agent_selectable"],
   executorAdapter: EXTERNAL_SKILLS_ADAPTER,

@@ -58,6 +58,18 @@ export const emailCapability: SkillCapabilityDescriptor<"email", "customer_email
       fields: ["to", "cc", "subject", "bodyText", "bodyHtml", "replyTo"],
     },
   },
+  settingsFields: [
+    {
+      key: "mode",
+      label: "Mode",
+      type: "select",
+      options: [
+        { value: "draft", label: "Draft" },
+        { value: "send", label: "Send" },
+      ],
+      help: "Choose whether the skill drafts an email or sends it directly.",
+    },
+  ],
   outcomeVocabulary: customerEmailSkillOutcomes,
   supportedInvocationModes: ["routine_named", "agent_selectable"],
   executorAdapter: CUSTOMER_EMAIL_SKILLS_ADAPTER,

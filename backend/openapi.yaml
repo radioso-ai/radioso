@@ -14697,10 +14697,12 @@ paths:
                         id:
                           type: string
                           enum: &a69
+                            - retrieve
                             - mcp_tool
                             - email
                             - slack_post
                             - webhook_call
+                            - notify
                         storedKind:
                           type: string
                         targetKind:
@@ -14727,6 +14729,49 @@ paths:
                               required:
                                 - source
                                 - schema
+                        settingsFields:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              key:
+                                type: string
+                              label:
+                                type: string
+                              type:
+                                type: string
+                                enum:
+                                  - boolean
+                                  - number
+                                  - text
+                                  - textarea
+                                  - select
+                                  - string_list
+                                  - source_scope
+                              help:
+                                type: string
+                              options:
+                                type: array
+                                items:
+                                  type: object
+                                  properties:
+                                    value:
+                                      type: string
+                                    label:
+                                      type: string
+                                  required:
+                                    - value
+                                    - label
+                              min:
+                                type: number
+                              max:
+                                type: number
+                              group:
+                                type: string
+                            required:
+                              - key
+                              - label
+                              - type
                         outcomeVocabulary:
                           type: array
                           items:
@@ -14768,6 +14813,7 @@ paths:
                         - storedKind
                         - targetKind
                         - inputSchema
+                        - settingsFields
                         - outcomeVocabulary
                         - supportedInvocationModes
                         - executorAdapter

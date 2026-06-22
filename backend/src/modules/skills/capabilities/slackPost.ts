@@ -39,6 +39,7 @@ export const slackPostCapability: SkillCapabilityDescriptor<"slack_post", "slack
       fields: [...slackSkillInputKeys],
     },
   },
+  settingsFields: [],
   outcomeVocabulary: slackSkillOutcomes,
   supportedInvocationModes: ["routine_named", "agent_selectable"],
   executorAdapter: SLACK_SKILLS_ADAPTER,

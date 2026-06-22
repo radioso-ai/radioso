@@ -38,6 +38,7 @@ export const webhookCallCapability: SkillCapabilityDescriptor<"webhook_call", "w
       fields: ["payload"],
     },
   },
+  settingsFields: [],
   outcomeVocabulary: webhookSkillOutcomes,
   supportedInvocationModes: ["routine_named", "agent_selectable"],
   executorAdapter: WEBHOOK_SKILLS_ADAPTER,

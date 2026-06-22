@@ -25,7 +25,9 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import type { AgentSkill, AgentSkillCreateInput, SkillCapabilityDescriptor } from '@/lib/api-skills'
+import { AssistantSourceScopeSelector } from '@/components/dashboard/settings/assistant-source-scope-selector'
+import type { AgentSourceScope, DocumentSourceListItem } from '@/lib/api'
+import type { AgentSkill, AgentSkillCreateInput, SkillCapabilityDescriptor, SkillCapabilitySettingsField } from '@/lib/api-skills'
 import { cn } from '@/lib/utils'
 import {
   buildAgentSkillInput,
@@ -37,6 +39,7 @@ import {
   validateSkillName,
   type SkillFormDraft,
   type SkillInputMode,
+  type SkillSettingDraftValue,
 } from './skill-form-model'
 
 const unavailableReasonLabel = (reason: string | null) => {
@@ -50,6 +53,163 @@ const modeLabel: Record<SkillInputMode, string> = {
   expose: 'Expose',
   bind: 'Bind',
   ignore: 'Skip',
+}
+
+const isSourceScopeDraft = (value: SkillSettingDraftValue): value is AgentSourceScope =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value) && 'mode' in value
+
+const sourceTargetsToList = (capability: SkillCapabilityDescriptor | null): DocumentSourceListItem[] =>
+  (capability?.targets ?? [])
+    .filter((target) => target.id !== 'all')
+    .map((target) => ({
+      id: target.id,
+      name: target.label,
+      kind: 'upload',
+      externalId: null,
+      lastSyncStatus: target.status ?? null,
+      lastSyncedAt: null,
+      documentCount: 0,
+      createdAt: '',
+      updatedAt: '',
+    }))
+
+const groupedSettingsFields = (fields: readonly SkillCapabilitySettingsField[]) => {
+  const groups = new Map<string, SkillCapabilitySettingsField[]>()
+  for (const field of fields) {
+    const group = field.group ?? 'Settings'
+    groups.set(group, [...(groups.get(group) ?? []), field])
+  }
+  return [...groups.entries()]
+}
+
+function SkillSettingControl({
+  field,
+  value,
+  sourceList,
+  onChange,
+}: {
+  field: SkillCapabilitySettingsField
+  value: SkillSettingDraftValue
+  sourceList: DocumentSourceListItem[]
+  onChange: (value: SkillSettingDraftValue) => void
+}) {
+  const fieldId = `skill-setting-${field.key.replace(/[^a-z0-9_-]/giu, '-')}`
+
+  if (field.type === 'source_scope') {
+    return (
+      <div className="md:col-span-2">
+        <AssistantSourceScopeSelector
+          sourceScope={isSourceScopeDraft(value) ? value : { mode: 'all' }}
+          sourceList={sourceList}
+          onChange={onChange}
+        />
+      </div>
+    )
+  }
+
+  if (field.type === 'boolean') {
+    return (
+      <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-muted/20 px-3 py-2">
+        <div className="space-y-1">
+          <Label htmlFor={fieldId}>{field.label}</Label>
+          {field.help ? <p className="text-xs text-muted-foreground">{field.help}</p> : null}
+        </div>
+        <Switch id={fieldId} checked={value === true} onCheckedChange={onChange} />
+      </div>
+    )
+  }
+
+  if (field.type === 'select') {
+    return (
+      <div className="space-y-2">
+        <Label htmlFor={fieldId}>{field.label}</Label>
+        <Select value={typeof value === 'string' ? value : undefined} onValueChange={onChange}>
+          <SelectTrigger id={fieldId}>
+            <SelectValue placeholder="Choose option" />
+          </SelectTrigger>
+          <SelectContent>
+            {(field.options ?? []).map((option) => (
+              <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {field.help ? <p className="text-xs text-muted-foreground">{field.help}</p> : null}
+      </div>
+    )
+  }
+
+  if (field.type === 'textarea') {
+    return (
+      <div className="space-y-2 md:col-span-2">
+        <Label htmlFor={fieldId}>{field.label}</Label>
+        <Textarea
+          id={fieldId}
+          value={typeof value === 'string' ? value : ''}
+          onChange={(event) => onChange(event.target.value)}
+          className="min-h-24"
+        />
+        {field.help ? <p className="text-xs text-muted-foreground">{field.help}</p> : null}
+      </div>
+    )
+  }
+
+  if (field.type === 'string_list') {
+    const items = Array.isArray(value) ? value : []
+    const updateItem = (index: number, nextValue: string) => {
+      const next = [...items]
+      next[index] = nextValue
+      onChange(next)
+    }
+    const removeItem = (index: number) => {
+      onChange(items.filter((_, itemIndex) => itemIndex !== index))
+    }
+    return (
+      <div className="space-y-2 md:col-span-2">
+        <Label>{field.label}</Label>
+        <div className="space-y-2">
+          {[...items, ''].map((item, index) => (
+            <div key={index} className="flex gap-2">
+              <Input
+                value={item}
+                onChange={(event) => updateItem(index, event.target.value)}
+                placeholder="name@example.com"
+                aria-label={`${field.label} ${index + 1}`}
+              />
+              {index < items.length ? (
+                <Button type="button" variant="outline" onClick={() => removeItem(index)}>
+                  Remove
+                </Button>
+              ) : null}
+            </div>
+          ))}
+        </div>
+        {field.help ? <p className="text-xs text-muted-foreground">{field.help}</p> : null}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={fieldId}>{field.label}</Label>
+      <Input
+        id={fieldId}
+        type={field.type === 'number' ? 'number' : 'text'}
+        min={field.min}
+        max={field.max}
+        value={field.type === 'number'
+          ? typeof value === 'number' ? String(value) : ''
+          : typeof value === 'string' ? value : ''}
+        onChange={(event) => {
+          if (field.type === 'number') {
+            onChange(event.target.value === '' ? undefined : Number(event.target.value))
+            return
+          }
+          onChange(event.target.value)
+        }}
+      />
+      {field.help ? <p className="text-xs text-muted-foreground">{field.help}</p> : null}
+    </div>
+  )
 }
 
 export function SkillForm({
@@ -108,6 +268,7 @@ export function SkillForm({
       inputDrafts: createInputDrafts(nextFields),
       selectedOutcomes: [...nextCapability.outcomeVocabulary],
       extraConfigJson: '{}',
+      settingDrafts: createInitialSkillDraft([nextCapability], null).settingDrafts,
     }))
   }
 
@@ -120,6 +281,16 @@ export function SkillForm({
           ...current.inputDrafts[name],
           ...patch,
         },
+      },
+    }))
+  }
+
+  const updateSetting = (key: string, value: SkillSettingDraftValue) => {
+    setDraft((current) => ({
+      ...current,
+      settingDrafts: {
+        ...current.settingDrafts,
+        [key]: value,
       },
     }))
   }
@@ -254,8 +425,37 @@ export function SkillForm({
                 placeholder="tool_name"
               />
               <p className="text-xs text-muted-foreground">
-                Tool discovery is provided by the connected target. If discovery is unavailable, enter the published tool name and leave inputs empty or add them in additional settings.
+                Tool discovery is provided by the connected target. If discovery is unavailable, enter the published tool name and leave inputs empty.
               </p>
+            </div>
+          ) : null}
+
+          {capability?.settingsFields.length ? (
+            <div className="space-y-3">
+              <div>
+                <h4 className="text-sm font-medium text-foreground">Settings</h4>
+                <p className="text-xs text-muted-foreground">
+                  Configure author-owned behavior for this capability.
+                </p>
+              </div>
+              <div className="space-y-4">
+                {groupedSettingsFields(capability.settingsFields).map(([group, groupFields]) => (
+                  <div key={group} className="space-y-3 rounded-md border border-border p-3">
+                    <h5 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{group}</h5>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {groupFields.map((field) => (
+                        <SkillSettingControl
+                          key={field.key}
+                          field={field}
+                          value={draft.settingDrafts[field.key]}
+                          sourceList={sourceTargetsToList(capability)}
+                          onChange={(value) => updateSetting(field.key, value)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           ) : null}
 
@@ -352,18 +552,20 @@ export function SkillForm({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="skill-extra-config">Additional settings JSON</Label>
-            <Textarea
-              id="skill-extra-config"
-              value={draft.extraConfigJson}
-              onChange={(event) => updateDraft({ extraConfigJson: event.target.value })}
-              className="min-h-28 font-mono text-xs"
-            />
-            <p className="text-xs text-muted-foreground">
-              Use this for descriptor-owned settings that are not credentials, such as retrieval tuning, source scope, notification delivery, or email send mode.
-            </p>
-          </div>
+          {draft.extraConfigJson.trim() !== '{}' ? (
+            <div className="space-y-2">
+              <Label htmlFor="skill-extra-config">Advanced config JSON</Label>
+              <Textarea
+                id="skill-extra-config"
+                value={draft.extraConfigJson}
+                onChange={(event) => updateDraft({ extraConfigJson: event.target.value })}
+                className="min-h-28 font-mono text-xs"
+              />
+              <p className="text-xs text-muted-foreground">
+                Preserves config keys this descriptor does not publish as typed settings.
+              </p>
+            </div>
+          ) : null}
 
           <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-muted/20 px-3 py-2">
             <div>

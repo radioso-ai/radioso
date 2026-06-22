@@ -84,6 +84,32 @@ describe("Slack admin REST contract", () => {
     expectNoSecrets(response.body);
   });
 
+  it("builds the Slack manifest from the API origin on split-host deployments", async () => {
+    const { app } = createTestApp({
+      envOverrides: {
+        APP_BASE_URL: "https://app.example.com",
+        CONNECTOR_PUBLIC_BASE_URL: "https://api.example.com",
+        SLACK_OAUTH_CLIENT_ID: "test-slack-client",
+        SLACK_OAUTH_CLIENT_SECRET: "test-slack-secret",
+        SLACK_SIGNING_SECRET: "test-signing-secret",
+      },
+    });
+    const session = await issueTestSession(app, "slack-manifest-split@example.com");
+    const headers = adminSessionHeaders(session);
+
+    const response = await request(app)
+      .get(`/api/v1/workspaces/${session.workspaceId}/slack/manifest`)
+      .set(headers);
+
+    expect(response.status).toBe(200);
+    expect(response.body.manifest.oauth_config.redirect_urls).toEqual([
+      "https://api.example.com/api/v1/oauth/callback/slack",
+    ]);
+    expect(response.body.manifest.settings.event_subscriptions.request_url).toBe(
+      "https://api.example.com/api/connectors/slack/events",
+    );
+  });
+
   it("starts install, reports status, manages binding, and disconnects without returning secrets", async () => {
     const { app } = createTestApp({
       envOverrides: {

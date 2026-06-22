@@ -95,11 +95,16 @@ export const createSlackConnectionRoutes = (dependencies: SlackConnectionRouteDe
     async (req, res, next) => {
       try {
         parseUuid(req.params.workspaceId, "workspaceId");
-        if (!dependencies.env.APP_BASE_URL) {
-          throw serviceUnavailable("APP_BASE_URL must be set to generate a Slack app manifest");
+        // Slack reaches the backend directly (OAuth callback + Events API), so
+        // the manifest URLs must use the public API origin. On split-host
+        // deployments that is CONNECTOR_PUBLIC_BASE_URL; otherwise it falls back
+        // to APP_BASE_URL (single-origin / local).
+        const apiBaseUrl = dependencies.env.CONNECTOR_PUBLIC_BASE_URL ?? dependencies.env.APP_BASE_URL;
+        if (!apiBaseUrl) {
+          throw serviceUnavailable("CONNECTOR_PUBLIC_BASE_URL or APP_BASE_URL must be set to generate a Slack app manifest");
         }
         res.status(200).json({
-          manifest: buildSlackManifest(dependencies.env.APP_BASE_URL),
+          manifest: buildSlackManifest(apiBaseUrl),
           requiredEnvVars: [...requiredSlackEnvVars],
         });
       } catch (error) {

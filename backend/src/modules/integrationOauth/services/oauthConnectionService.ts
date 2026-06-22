@@ -60,7 +60,18 @@ export interface OauthConnectionServiceOptions {
   repository: OauthConnectionRepositoryPort;
   providers: OauthProviderRegistryPort;
   encryptionKey?: string;
+  /**
+   * Public origin of the user-facing dashboard. Used for the post-authorization
+   * browser redirect back to the connections UI.
+   */
   appBaseUrl?: string;
+  /**
+   * Public origin where the backend serves the OAuth provider callback
+   * (`/api/v1/oauth/callback/...`). On split-host deployments this is the API
+   * host, distinct from the dashboard `appBaseUrl`. Falls back to `appBaseUrl`
+   * when unset (single-origin / local).
+   */
+  apiBaseUrl?: string;
   fetchImpl?: FetchLike;
   assertPublicUrl?: (url: string) => Promise<void> | void;
   logger?: Pick<AppLogger, "info" | "warn">;
@@ -236,7 +247,7 @@ export class OauthConnectionService {
     config: StoredOauthClientConfig,
     key: string,
   ): Promise<OauthAuthorizationStartResult> {
-    const baseUrl = normalizeBaseUrl(this.options.appBaseUrl);
+    const baseUrl = normalizeBaseUrl(this.options.apiBaseUrl ?? this.options.appBaseUrl);
     if (!baseUrl) {
       throw serviceUnavailable("APP_BASE_URL must be set so OAuth connections have a redirect URI");
     }

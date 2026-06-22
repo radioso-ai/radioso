@@ -83,6 +83,42 @@ describe("workspace OAuth connections contract", () => {
     expect(JSON.stringify(authorized.body)).not.toContain("test-access-token");
   });
 
+  it("uses the API origin for the provider callback and the dashboard origin for the browser redirect", async () => {
+    const { app } = createTestApp({
+      envOverrides: {
+        APP_BASE_URL: "https://app.test.example.com",
+        CONNECTOR_PUBLIC_BASE_URL: "https://api.test.example.com",
+      },
+    });
+    const session = await issueTestSession(app, "workspace-oauth-split@example.com");
+    const headers = adminSessionHeaders(session);
+
+    const created = await request(app)
+      .post(`/api/v1/workspaces/${session.workspaceId}/oauth-connections`)
+      .set(headers)
+      .send({
+        provider: "test_mail",
+        displayName: "Support Mailbox",
+        requestedScopes: ["mail.send"],
+      });
+    expect(created.status).toBe(201);
+    // The provider callback (where the provider redirects the browser with the
+    // code) must hit the backend API origin, not the dashboard.
+    expect(created.body.authorizationUrl).toContain(
+      encodeURIComponent("https://api.test.example.com/api/v1/oauth/callback/test_mail"),
+    );
+    const connectionId = created.body.connectionId as string;
+
+    const callback = await request(app)
+      .get(`/api/v1/oauth/callback/test_mail`)
+      .query({ code: "provider-code", state: extractState(created.body.authorizationUrl as string) });
+    expect(callback.status).toBe(302);
+    // The post-authorization browser redirect must land on the dashboard origin.
+    expect(callback.headers.location).toContain("https://app.test.example.com/oauth/connections/callback");
+    expect(callback.headers.location).not.toContain("https://api.test.example.com/oauth/connections/callback");
+    expect(callback.headers.location).toContain(`connectionId=${connectionId}`);
+  });
+
   it("rejects unsupported providers and unauthenticated status reads", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "workspace-oauth-invalid@example.com");

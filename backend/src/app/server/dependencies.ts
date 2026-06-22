@@ -148,6 +148,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     providers: new StaticOauthProviderRegistry(composition.oauthProviders),
     encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
     appBaseUrl: env.APP_BASE_URL,
+    apiBaseUrl: env.CONNECTOR_PUBLIC_BASE_URL ?? env.APP_BASE_URL,
     assertPublicUrl: assertPublicWebsiteUrl,
     logger,
     onAuthorized: async ({ connection, tokens, metadata }) => {

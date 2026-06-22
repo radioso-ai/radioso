@@ -790,6 +790,7 @@ export const createTestDependencies = (overrides: {
     ]),
     encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
     appBaseUrl: env.APP_BASE_URL,
+    apiBaseUrl: env.CONNECTOR_PUBLIC_BASE_URL ?? env.APP_BASE_URL,
     assertPublicUrl: () => undefined,
     fetchImpl: async (url) => ({
       ok: true,

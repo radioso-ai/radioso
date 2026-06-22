@@ -1,6 +1,9 @@
 locals {
   radioso_mcp_signing_secret_configured = try(length(trimspace(nonsensitive(var.radioso_mcp_signing_secret))) > 0, false)
   posthog_api_key_configured            = nonsensitive(try(length(trimspace(var.posthog_api_key)) > 0, false))
+  slack_oauth_client_id_configured      = nonsensitive(try(length(trimspace(var.slack_oauth_client_id)) > 0, false))
+  slack_oauth_client_secret_configured  = nonsensitive(try(length(trimspace(var.slack_oauth_client_secret)) > 0, false))
+  slack_signing_secret_configured       = nonsensitive(try(length(trimspace(var.slack_signing_secret)) > 0, false))
 
   secret_values = merge(
     {
@@ -23,6 +26,15 @@ locals {
     },
     local.posthog_api_key_configured ? {
       "posthog-api-key" = var.posthog_api_key
+    } : {},
+    local.slack_oauth_client_id_configured ? {
+      "slack-oauth-client-id" = var.slack_oauth_client_id
+    } : {},
+    local.slack_oauth_client_secret_configured ? {
+      "slack-oauth-client-secret" = var.slack_oauth_client_secret
+    } : {},
+    local.slack_signing_secret_configured ? {
+      "slack-signing-secret" = var.slack_signing_secret
     } : {},
   )
 
@@ -47,6 +59,15 @@ locals {
     },
     local.posthog_api_key_configured ? {
       "posthog-api-key" = true
+    } : {},
+    local.slack_oauth_client_id_configured ? {
+      "slack-oauth-client-id" = true
+    } : {},
+    local.slack_oauth_client_secret_configured ? {
+      "slack-oauth-client-secret" = true
+    } : {},
+    local.slack_signing_secret_configured ? {
+      "slack-signing-secret" = true
     } : {},
   ))))
 }

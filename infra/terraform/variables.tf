@@ -308,6 +308,27 @@ variable "posthog_api_key" {
   default     = null
 }
 
+variable "slack_oauth_client_id" {
+  description = "Optional Slack app OAuth client ID for the Slack channel. Enables the backend Slack install flow when set."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "slack_oauth_client_secret" {
+  description = "Optional Slack app OAuth client secret for the Slack channel."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "slack_signing_secret" {
+  description = "Optional Slack app signing secret used to verify inbound Slack event requests."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
 # --- Backend env vars (non-secret) ---
 
 variable "product_analytics_sinks" {

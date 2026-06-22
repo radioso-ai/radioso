@@ -47,6 +47,9 @@ jobs:
       TF_VAR_session_cookie_secret: ${{ secrets.SESSION_COOKIE_SECRET }}
       TF_VAR_public_chat_session_secret: ${{ secrets.PUBLIC_CHAT_SESSION_SECRET }}
       TF_VAR_workspace_token_secret: ${{ secrets.WORKSPACE_TOKEN_SECRET }}
+      TF_VAR_slack_oauth_client_id: ${{ secrets.SLACK_OAUTH_CLIENT_ID }}
+      TF_VAR_slack_oauth_client_secret: ${{ secrets.SLACK_OAUTH_CLIENT_SECRET }}
+      TF_VAR_slack_signing_secret: ${{ secrets.SLACK_SIGNING_SECRET }}
 
     steps:
       - name: Require configured GitHub environment variables

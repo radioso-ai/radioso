@@ -103,7 +103,9 @@ export type ApprovalDocOption = {
   id: string
   label: string
   description?: string | null
-  target: string
+  // Where the routine continues when a person picks this choice. Carried on the block-chip
+  // model; absent in the inline model, where the target lives on a separate branch line.
+  target?: string
 }
 
 export type RoutineDocChip = {
@@ -178,15 +180,28 @@ export function draftFromChipDoc(input: {
   // Keep blocks with prose or chips (a branch can be pure chips: a condition + target).
   const blocks = input.blocks.filter((block) => block.text.trim().length > 0 || block.chips.length > 0)
 
+  // A `decision` chip declares an approval's capture key + choices (labels), authored inline.
+  // Collected up front so a branch line that conditions on the decision (`@decision is deny`)
+  // is recognised as a decision guard — its field ref is `<captureKey>.id`, not a plain slot.
+  const decisionOptions = new Map<string, ApprovalDocOption[]>()
+  for (const block of blocks) {
+    for (const chip of block.chips) {
+      if (chip.kind === 'decision') {
+        decisionOptions.set(chip.captureKey ?? chip.refId, chip.options ?? [])
+      }
+    }
+  }
+
   // Used slots come from any block — step instructions and branch conditions both count.
   const usedSlotIds = new Set<string>()
   for (const block of blocks) {
     for (const match of block.text.matchAll(SLOT_REFERENCE)) {
       usedSlotIds.add(match[1]!)
     }
-    // A condition chip branches on a variable — that's a slot reference too.
+    // A condition chip branches on a variable — that's a slot reference too. A condition on a
+    // decision is not a slot (the capture key isn't a declared variable), so skip those.
     for (const chip of block.chips) {
-      if (chip.kind === 'condition') usedSlotIds.add(chip.refId)
+      if (chip.kind === 'condition' && !decisionOptions.has(chip.refId)) usedSlotIds.add(chip.refId)
       if (chip.kind === 'skill') {
         for (const binding of Object.values(chip.inputBindings ?? {})) {
           if (binding.kind === 'variableRef') usedSlotIds.add(binding.ref)
@@ -213,6 +228,10 @@ export function draftFromChipDoc(input: {
   // gate routes only through its option branches), so the chain shouldn't add a default
   // edge into or out of it.
   let lastStepRoutes = false
+  // True when the last step is an approval/decision gate: its outgoing edges are the decision
+  // branches (authored as following branch lines), so the chain must never add a default edge
+  // out of it — but those branch lines DO attach to it (unlike `lastStepRoutes`).
+  let lastStepIsDecision = false
   let ordinal = 0
   // The titled step (started by an h1 heading) currently accreting body prose. Untitled
   // authoring leaves this null and keeps the original one-line-one-step behavior.
@@ -231,6 +250,9 @@ export function draftFromChipDoc(input: {
     const condition = block.chips.find((chip) => chip.kind === 'condition')
     const stepChip = block.chips.find((chip) => chip.kind === 'step')
     if (condition?.op) {
+      // A condition on a decision branches on the chosen option id: `<captureKey>.id`. A
+      // condition on an ordinary slot branches on the slot itself.
+      const fieldRef = decisionOptions.has(condition.refId) ? `${condition.refId}.id` : condition.refId
       transitions.push({
         fromStep,
         toRef,
@@ -238,7 +260,7 @@ export function draftFromChipDoc(input: {
         guardText: null,
         outcomeStatus: null,
         counterLimit: null,
-        fieldRef: condition.refId,
+        fieldRef,
         fieldOp: condition.op,
         fieldValue: condition.value ?? null,
         fieldValues: condition.values ?? null,
@@ -298,11 +320,11 @@ export function draftFromChipDoc(input: {
         ordinal: steps.length,
         metadata: {},
       })
-      if (lastStepId && !lastStepRoutes) {
+      if (lastStepId && !lastStepRoutes && !lastStepIsDecision) {
         transitions.push({ fromStep: lastStepId, toRef: id, guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, ordinal: ordinal++ })
       }
       const branches = options
-        .filter((option) => option.target)
+        .filter((option): option is ApprovalDocOption & { target: string } => Boolean(option.target))
         .map((option) => ({ optionId: option.id, target: option.target }))
       for (const branch of branches) {
         if (branch.target === HANDOFF_TERMINAL_ID) needHandoffTerminal = true
@@ -310,6 +332,43 @@ export function draftFromChipDoc(input: {
       transitions.push(...approvalOptionTransitions(id, captureKey, branches, () => ordinal++))
       lastStepId = id
       lastStepRoutes = true
+      lastStepIsDecision = false
+      continue
+    }
+    // A `decision` chip declares the same approval gate, but inline: the chip carries only the
+    // capture key + choices (labels), and the routing lives on ordinary branch lines that
+    // follow (`@decision is deny → handoff`). Same `approval` step + field guards as the block
+    // chip — just authored, and editable, as prose.
+    const decisionChip = block.chips.find((chip) => chip.kind === 'decision')
+    if (decisionChip) {
+      flushTitledBody()
+      titledStep = null
+      const id = `step_${steps.length + 1}`
+      const captureKey = decisionChip.captureKey ?? decisionChip.refId ?? ''
+      const options = decisionChip.options ?? []
+      steps.push({
+        stableStepId: id,
+        kind: 'approval',
+        instruction: block.text.trim() || captureKey || 'Make a decision',
+        toolRef: null,
+        actionType: null,
+        captureKey: captureKey || null,
+        options: options.map((option) => ({
+          id: option.id,
+          label: option.label,
+          ...(option.description ? { description: option.description } : {}),
+        })),
+        ordinal: steps.length,
+        metadata: {},
+      })
+      if (lastStepId && !lastStepRoutes && !lastStepIsDecision) {
+        transitions.push({ fromStep: lastStepId, toRef: id, guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, ordinal: ordinal++ })
+      }
+      // The decision's edges are the branch lines that follow; they attach to this step
+      // (lastStepRoutes stays false) but no default edge may leave it (lastStepIsDecision).
+      lastStepId = id
+      lastStepRoutes = false
+      lastStepIsDecision = true
       continue
     }
     const handoffChip = block.chips.find((chip) => chip.kind === 'handoff')
@@ -344,11 +403,12 @@ export function draftFromChipDoc(input: {
         metadata: { outlineLabel: title },
       }
       steps.push(step)
-      if (lastStepId && !lastStepRoutes) {
+      if (lastStepId && !lastStepRoutes && !lastStepIsDecision) {
         transitions.push({ fromStep: lastStepId, toRef: id, guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, ordinal: ordinal++ })
       }
       lastStepId = id
       lastStepRoutes = false
+      lastStepIsDecision = false
       titledStep = { step, body: [] }
       continue
     }
@@ -394,7 +454,7 @@ export function draftFromChipDoc(input: {
           }
         : {},
     })
-    if (lastStepId && !lastStepRoutes) {
+    if (lastStepId && !lastStepRoutes && !lastStepIsDecision) {
       transitions.push({
         fromStep: lastStepId,
         toRef: id,
@@ -407,10 +467,11 @@ export function draftFromChipDoc(input: {
     }
     lastStepId = id
     lastStepRoutes = false
+    lastStepIsDecision = false
   }
 
   flushTitledBody()
-  if (lastStepId && !lastStepRoutes) {
+  if (lastStepId && !lastStepRoutes && !lastStepIsDecision) {
     transitions.push({
       fromStep: lastStepId,
       toRef: DONE_TERMINAL_ID,
@@ -446,7 +507,7 @@ export function draftFromChipDoc(input: {
 // One inline piece of a loaded prose paragraph: literal text or a chip. This is the
 // richer shape draftFromChipDoc's flat {text, chips} can't carry — it preserves where
 // each chip sits inline — so the editor can rebuild the Lexical document on load.
-export type ProseChipKind = 'variable' | 'skill' | 'handoff' | 'step' | 'condition' | 'end' | 'approval'
+export type ProseChipKind = 'variable' | 'skill' | 'handoff' | 'step' | 'condition' | 'end' | 'approval' | 'decision'
 export type ProseSegment =
   | { kind: 'text'; text: string }
   | {

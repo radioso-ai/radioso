@@ -510,6 +510,48 @@ describe('routineToChipDoc (inverse serializer)', () => {
     expect(draft.terminals.map((terminal) => terminal.kind).sort()).toEqual(['complete', 'handoff'])
   })
 
+  // RFC: author an approval as a `@decision` declaration (choices + labels) plus ordinary
+  // inline branch lines, instead of one block chip. It must compile to the SAME approval-step
+  // graph the block chip produces — proving the inline model is just the existing graph spelled
+  // out, with the branches now editable as prose.
+  it('compiles an inline decision (declaration + branch lines) to the same approval graph as a block chip', () => {
+    const draft = draftFromChipDoc({
+      name: 'Refund approval',
+      trigger: 'wants a large refund',
+      blocks: [
+        { text: 'Summarize the refund request.', chips: [] },
+        {
+          text: 'Get a manager decision.',
+          chips: [{
+            kind: 'decision',
+            refId: 'refund_decision',
+            captureKey: 'refund_decision',
+            options: [{ id: 'approve', label: 'Approve' }, { id: 'deny', label: 'Deny' }],
+          }],
+        },
+        { text: '', chips: [{ kind: 'condition', refId: 'refund_decision', op: 'equals', value: 'approve' }, { kind: 'end', refId: 'done' }] },
+        { text: '', chips: [{ kind: 'condition', refId: 'refund_decision', op: 'equals', value: 'deny' }, { kind: 'handoff', refId: 'handoff' }] },
+      ],
+      variables: [],
+    })
+
+    const approvalStep = draft.steps.find((step) => step.kind === 'approval')
+    expect(approvalStep).toMatchObject({
+      kind: 'approval',
+      captureKey: 'refund_decision',
+      instruction: 'Get a manager decision.',
+      options: [{ id: 'approve', label: 'Approve' }, { id: 'deny', label: 'Deny' }],
+    })
+    const edges = draft.transitions.filter((transition) => transition.fromStep === approvalStep!.stableStepId)
+    expect(edges).toEqual([
+      expect.objectContaining({ toRef: 'done', guardKind: 'field', fieldRef: 'refund_decision.id', fieldOp: 'equals', fieldValue: 'approve' }),
+      expect.objectContaining({ toRef: 'handoff', guardKind: 'field', fieldRef: 'refund_decision.id', fieldOp: 'equals', fieldValue: 'deny' }),
+    ])
+    // No default/llm edge out of the gate — every path is a decision branch.
+    expect(edges.every((edge) => edge.guardKind === 'field')).toBe(true)
+    expect(draft.terminals.map((terminal) => terminal.kind).sort()).toEqual(['complete', 'handoff'])
+  })
+
   it('round-trips an approval gate (no force-fallback to Form)', () => {
     const { draft, redraft } = roundTrip(
       'Refund approval',

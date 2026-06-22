@@ -9,10 +9,12 @@ describe("SkillCapabilityRegistry", () => {
   it("maps public capability ids to stored agent_skills kinds in one place", () => {
     const registry = createDefaultSkillCapabilityRegistry();
 
+    expect(registry.get("retrieve")?.storedKind).toBe("retrieve");
     expect(registry.get("mcp_tool")?.storedKind).toBe("external_mcp");
     expect(registry.get("email")?.storedKind).toBe("customer_email");
     expect(registry.get("slack_post")?.storedKind).toBe("slack");
     expect(registry.get("webhook_call")?.storedKind).toBe("webhook");
+    expect(registry.getByStoredKind("retrieve")?.id).toBe("retrieve");
     expect(registry.getByStoredKind("external_mcp")?.id).toBe("mcp_tool");
     expect(registry.getByStoredKind("customer_email")?.id).toBe("email");
     expect(registry.getByStoredKind("slack")?.id).toBe("slack_post");
@@ -37,6 +39,9 @@ describe("SkillCapabilityRegistry", () => {
   it("enforces supported invocation modes by capability", () => {
     const registry = createDefaultSkillCapabilityRegistry();
 
+    expect(registry.supportsInvocationMode("retrieve", "default_answer")).toBe(true);
+    expect(registry.supportsInvocationMode("retrieve", "routine_named")).toBe(true);
+    expect(registry.supportsInvocationMode("retrieve", "agent_selectable")).toBe(true);
     expect(registry.supportsInvocationMode("mcp_tool", "routine_named")).toBe(true);
     expect(registry.supportsInvocationMode("mcp_tool", "agent_selectable")).toBe(true);
     expect(registry.supportsInvocationMode("mcp_tool", "default_answer")).toBe(false);
@@ -44,6 +49,25 @@ describe("SkillCapabilityRegistry", () => {
 
   it("validates capability config with each descriptor schema", () => {
     const registry = createDefaultSkillCapabilityRegistry();
+
+    expect(registry.get("retrieve")?.validateConfig({
+      sourceScope: { sourceIds: ["2e0c6264-f2c4-4549-bcd8-bf2f7d1a0d1e"] },
+      instruction: "Use event sources only.",
+      retrievalStrategy: "fixed",
+      vectorTopK: 12,
+      rerankEnabled: true,
+      rerankTopK: 6,
+      queryRewriteEnabled: true,
+      suggestedQuestionsEnabled: false,
+      suggestedQuestionsCount: 2,
+      exposedInputs: { query: true },
+    }).success).toBe(true);
+
+    expect(registry.get("retrieve")?.validateConfig({
+      sourceScope: "all",
+      similarityThreshold: 0.42,
+      exposedInputs: { query: true },
+    }).success).toBe(false);
 
     expect(registry.get("email")?.validateConfig({
       mode: "draft",

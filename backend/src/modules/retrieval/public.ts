@@ -62,7 +62,11 @@ export type {
 } from "./domain/retrievalSourceFilter.js";
 export {
   normalizeRetrievalSkillSettingsOverride,
+  parseRetrieveSkillConfig,
   parsePersistedRetrievalSkillSettingsOverride,
+  retrieveSkillConfigSchema,
+  retrieveSkillConfigToSettingsOverride,
+  type RetrieveSkillConfig,
   type EffectiveRetrievalSkillSettings,
   type RetrievalSkillSettingsOverride,
 } from "./domain/retrievalSkillSettings.js";

@@ -164,6 +164,7 @@ import {
   routineDispatchableBuiltInSkills,
 } from "../../modules/skills/public.js";
 import { RETRIEVAL_ANSWER_ADAPTER, RetrievalAnswerSkillExecutor } from "../../modules/retrieval/public.js";
+import { RetrieveRoutineSkillResolver } from "../../modules/retrieval/services/retrieveRoutineSkillResolver.js";
 import { EXTERNAL_SKILLS_ADAPTER, McpSkillExecutor } from "../../modules/externalSkills/executor/mcpSkillExecutor.js";
 import { buildExternalSkillsDeps } from "../../modules/externalSkills/composition.js";
 import { ExternalSkillRoutineSkillResolver } from "../../modules/externalSkills/routineSkillResolver.js";
@@ -208,6 +209,7 @@ import { LlmProviderRegistry } from "../../shared/infra/llm/providerRegistry.js"
 import { ContextualDirectiveMatchGatewayFactory } from "../../shared/infra/llm/contextualGateways.js";
 import { TextGenerationClientCache } from "../../shared/infra/llm/textClientFactory.js";
 import { createMailService } from "../../modules/mail/public.js";
+import { AgentSkillRepository } from "../../modules/agentSkills/public.js";
 import { createLogger, type AppLogger } from "../../shared/observability/logger.js";
 import { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
 import { createPublishedRoutineRegistrationSource } from "../composition/routineDefinitionSource.js";
@@ -1136,6 +1138,12 @@ export const buildChatServices = (input: {
       let emailSkillNames: string[] = [];
       let webhookSkillNames: string[] = [];
       let slackSkillNames: string[] = [];
+      let retrieveSkills: Array<{
+        skillName: string;
+        enabled: boolean;
+        invocationMode: string;
+        config?: Record<string, unknown>;
+      }> = [];
       try {
         if (workspaceId && agentId) {
           emailSkillNames = (await input.emailSkillDefinitionRepository.listByAgent(workspaceId, agentId))
@@ -1181,6 +1189,26 @@ export const buildChatServices = (input: {
           "Slack skill definitions failed to load for routine routing; continuing without Slack skills",
         );
       }
+      try {
+        if (workspaceId && agentId) {
+          retrieveSkills = (await new AgentSkillRepository(input.database).listByAgent(workspaceId, agentId))
+            .filter((skill) => skill.kind === "retrieve")
+            .map((skill) => ({
+              skillName: skill.skillName,
+              enabled: skill.enabled,
+              invocationMode: skill.invocationMode,
+              config: skill.config,
+            }));
+        }
+      } catch (error) {
+        input.logger.warn(
+          {
+            agentId,
+            err: error instanceof Error ? error.message : String(error),
+          },
+          "Retrieve skill definitions failed to load for routine routing; continuing without retrieve skills",
+        );
+      }
       return {
         activator: routineRegistry.isEmpty
           ? { activate: async () => null }
@@ -1213,7 +1241,10 @@ export const buildChatServices = (input: {
                 webhookSkillNames,
                 new CustomerEmailRoutineSkillResolver(
                   emailSkillNames,
-                  new SlackRoutineSkillResolver(slackSkillNames, new ExternalSkillRoutineSkillResolver()),
+                  new SlackRoutineSkillResolver(
+                    slackSkillNames,
+                    new RetrieveRoutineSkillResolver(retrieveSkills, new ExternalSkillRoutineSkillResolver()),
+                  ),
                 ),
               ),
             ),

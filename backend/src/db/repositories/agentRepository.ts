@@ -34,6 +34,8 @@ interface AgentRow {
   retrieval_enabled: boolean;
   source_scope_mode: "all" | "selected";
   source_ids: string[] | null;
+  default_retrieve_enabled: boolean | null;
+  default_retrieve_config: Record<string, unknown> | null;
   behavior_settings: unknown;
   greeting_settings: unknown;
   output_modes: unknown;
@@ -146,6 +148,24 @@ const agentColumns = `
     ),
     ARRAY[]::text[]
   ) AS source_ids,
+  (
+    SELECT s.enabled
+    FROM agent_skills s
+    WHERE s.agent_id = agents.id
+      AND s.kind = 'retrieve'
+      AND s.invocation_mode = 'default_answer'
+    ORDER BY s.created_at ASC
+    LIMIT 1
+  ) AS default_retrieve_enabled,
+  (
+    SELECT s.config
+    FROM agent_skills s
+    WHERE s.agent_id = agents.id
+      AND s.kind = 'retrieve'
+      AND s.invocation_mode = 'default_answer'
+    ORDER BY s.created_at ASC
+    LIMIT 1
+  ) AS default_retrieve_config,
   behavior_settings,
   greeting_settings,
   output_modes,
@@ -201,6 +221,41 @@ const readStringArray = (record: Record<string, unknown>, key: string): string[]
   Array.isArray(record[key])
     ? (record[key] as unknown[]).filter((item): item is string => typeof item === "string")
     : undefined;
+
+const sourceScopeFromRetrieveConfig = (
+  config: Record<string, unknown> | null,
+  fallback: { mode: "all" } | { mode: "selected"; sourceIds: string[] },
+): { mode: "all" } | { mode: "selected"; sourceIds: string[] } => {
+  const sourceScope = config?.sourceScope;
+  if (sourceScope === "all") {
+    return { mode: "all" };
+  }
+  if (sourceScope && typeof sourceScope === "object" && !Array.isArray(sourceScope)) {
+    const sourceIds = readStringArray(sourceScope as Record<string, unknown>, "sourceIds");
+    if (sourceIds) {
+      return { mode: "selected", sourceIds };
+    }
+  }
+  return fallback;
+};
+
+const skillSettingsFromRetrieveConfig = (
+  legacy: Record<string, unknown>,
+  config: Record<string, unknown> | null,
+): Record<string, unknown> => {
+  if (!config) {
+    return legacy;
+  }
+  const { sourceScope: _sourceScope, exposedInputs: _exposedInputs, instruction, ...settings } = config;
+  return {
+    ...legacy,
+    "retrieval.answer": {
+      ...asRecord(legacy["retrieval.answer"]),
+      ...settings,
+      ...(typeof instruction === "string" ? { customInstruction: instruction } : {}),
+    },
+  };
+};
 
 const asMetadata = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value)
@@ -394,21 +449,30 @@ const mapAgent = (
     ? { provider: row.chat_provider, model: row.chat_model }
     : null;
 
+  const legacySourceScope = row.source_scope_mode === "selected"
+    ? { mode: "selected" as const, sourceIds: row.source_ids ?? [] }
+    : { mode: "all" as const };
+  const retrieveConfig = asRecord(row.default_retrieve_config);
+  const hasDefaultRetrieveSkill = row.default_retrieve_enabled !== null || Object.keys(retrieveConfig).length > 0;
+  const sourceScope = hasDefaultRetrieveSkill
+    ? sourceScopeFromRetrieveConfig(retrieveConfig, legacySourceScope)
+    : legacySourceScope;
+  const legacySkillSettings = asRecord(row.skill_settings);
   const normalized = validateAgentInput({
     name: row.name,
     customInstruction: readString(behavior, "customInstruction"),
-    suggestedQuestionsEnabled: readBoolean(behavior, "suggestedQuestionsEnabled"),
+    suggestedQuestionsEnabled: hasDefaultRetrieveSkill
+      ? readBoolean(retrieveConfig, "suggestedQuestionsEnabled")
+      : readBoolean(behavior, "suggestedQuestionsEnabled"),
     assistantLinkUtmEnabled: readBoolean(behavior, "assistantLinkUtmEnabled") ?? true,
     citationDisplayEnabled: readBoolean(behavior, "citationDisplayEnabled") ?? true,
     contactRequestsEnabled: readBoolean(behavior, "contactRequestsEnabled") ?? false,
     webhookExportsEnabled: readBoolean(behavior, "webhookExportsEnabled") ?? false,
     handoffOnRetrievalMiss: readBoolean(behavior, "handoffOnRetrievalMiss") ?? false,
     contactRequestDelivery: readContactRequestDelivery(behavior),
-    retrievalEnabled: row.retrieval_enabled,
-    sourceScope: row.source_scope_mode === "selected"
-      ? { mode: "selected", sourceIds: row.source_ids ?? [] }
-      : { mode: "all" },
-    skillSettings: asRecord(row.skill_settings),
+    retrievalEnabled: hasDefaultRetrieveSkill ? row.default_retrieve_enabled ?? true : row.retrieval_enabled,
+    sourceScope,
+    skillSettings: skillSettingsFromRetrieveConfig(legacySkillSettings, hasDefaultRetrieveSkill ? retrieveConfig : null),
     logo: (behavior.logo ?? websiteEmbedSource.logo) as AgentLogo | null | undefined,
     theme: (behavior.theme ?? websiteEmbedSource.theme) as AgentEmbedTheme | undefined,
     branding: behavior.branding as AgentBrandingSettings | undefined,

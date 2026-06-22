@@ -1,12 +1,13 @@
 import { z, type SafeParseReturnType, type ZodType } from "zod";
 
 import type { AgentSkillInvocationMode, AgentSkillKind } from "../agentSkills/domain.js";
+import { retrieveCapability } from "./capabilities/retrieve.js";
 import { mcpToolCapability } from "./capabilities/mcpTool.js";
 import { emailCapability } from "./capabilities/email.js";
 import { slackPostCapability } from "./capabilities/slackPost.js";
 import { webhookCallCapability } from "./capabilities/webhookCall.js";
 
-export const skillCapabilityIds = ["mcp_tool", "email", "slack_post", "webhook_call"] as const;
+export const skillCapabilityIds = ["retrieve", "mcp_tool", "email", "slack_post", "webhook_call"] as const;
 export type SkillCapabilityId = (typeof skillCapabilityIds)[number];
 
 export interface SkillCapabilityTarget {
@@ -107,6 +108,7 @@ export const createDefaultSkillCapabilityRegistry = (
 ): SkillCapabilityRegistry =>
   new SkillCapabilityRegistry([
     ...withEnumerators([
+      retrieveCapability,
       mcpToolCapability,
       emailCapability,
       slackPostCapability,

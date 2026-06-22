@@ -136,4 +136,31 @@ describe("AgentSkillsService", () => {
       enabled: true,
     })).rejects.toMatchObject({ statusCode: 409 });
   });
+
+  it("creates one default-answer retrieve skill and rejects a second with a friendly conflict", async () => {
+    const { service } = makeService();
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+
+    await service.create(workspaceId, agentId, {
+      name: "answer",
+      capability: "retrieve",
+      target: { kind: "source_scope", id: null },
+      config: { sourceScope: "all", exposedInputs: { query: true } },
+      invocationMode: "default_answer",
+      enabled: true,
+    });
+
+    await expect(service.create(workspaceId, agentId, {
+      name: "answer_two",
+      capability: "retrieve",
+      target: { kind: "source_scope", id: null },
+      config: { sourceScope: "all", exposedInputs: { query: true } },
+      invocationMode: "default_answer",
+      enabled: true,
+    })).rejects.toMatchObject({
+      statusCode: 409,
+      message: "A default-answer skill already exists for this agent",
+    });
+  });
 });

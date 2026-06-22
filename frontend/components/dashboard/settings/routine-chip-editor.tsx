@@ -494,7 +494,7 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
       editor.update(() => {
         const selection = $getSelection()
         if (!$isRangeSelection(selection)) return
-        const chip = $createApprovalChipNode(state.captureKey, state.options)
+        const chip = $createDecisionChipNode(state.captureKey, state.options)
         selection.insertNodes([chip])
         const trailing = $createTextNode(' ')
         chip.insertAfter(trailing)
@@ -556,7 +556,7 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
       </Button>
       <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={openApproval}>
         <Gavel className="h-4 w-4" />
-        Approval
+        Decision
       </Button>
       <Separator orientation="vertical" className="mx-1 h-5" />
       <Button type="button" variant="ghost" size="sm" className={cn('h-7 gap-1 px-2', formats.step && ACTIVE_TOOLBAR_BUTTON)} aria-pressed={formats.step} onClick={toggleLineStep}>

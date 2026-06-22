@@ -92,9 +92,9 @@ test("author an approval gate in the Prose editor, save, and reload without Form
   await editor.click();
   await editor.pressSequentially("Summarize the refund and get a manager decision. ");
 
-  // Insert a self-contained approval chip: capture key + option→target table. The dialog
-  // seeds Approve + Decline; point each at a branch (and rename the second to Deny).
-  await page.getByRole("button", { name: "Approval" }).click();
+  // Author the decision from scratch via the Decision toolbar button: enter the choices and
+  // where each one routes. The dialog seeds Approve + Decline; point each at a branch.
+  await page.getByRole("button", { name: "Decision", exact: true }).click();
   await page.getByLabel("Decision name").fill("refund_decision");
   await page.getByLabel("Option 1 label").fill("Approve");
   await page.getByLabel("Option 1 target").selectOption({ label: "End (complete)" });
@@ -103,8 +103,8 @@ test("author an approval gate in the Prose editor, save, and reload without Form
   await page.getByRole("button", { name: "Save approval" }).click();
 
   // The gate renders as conditional prose, not an opaque badge: each choice and where it
-  // routes is visible inline.
-  const chip = page.locator('[data-routine-chip="approval"]');
+  // routes is visible inline, in one decision chip.
+  const chip = page.locator('[data-routine-chip="decision"]');
   await expect(chip).toBeVisible();
   await expect(chip).toContainText("refund_decision");
   await expect(chip).toContainText("if Approve then End");
@@ -126,18 +126,14 @@ test("author an approval gate in the Prose editor, save, and reload without Form
     expect.objectContaining({ toRef: "handoff", fieldRef: "refund_decision.id", fieldOp: "equals", fieldValue: "deny" }),
   ]));
 
-  // Reload: the approval round-trips back into Prose as the inline decision model — a small
-  // `decision` declaration chip plus one editable branch line per choice (no Form fallback,
-  // and no opaque block chip).
+  // Reload: the gate round-trips back into Prose as the same inline decision chip (no Form
+  // fallback, no opaque block chip), routing still visible.
   await page.getByRole("button", { name: "Back to routines" }).click();
   await page.getByRole("button", { name: "Edit draft Refund approval" }).click();
   await expect(page.getByRole("tab", { name: "Prose" })).toHaveAttribute("data-state", "active");
   const decisionChip = page.locator('[data-routine-chip="decision"]');
   await expect(decisionChip).toBeVisible();
   await expect(decisionChip).toContainText("refund_decision");
-  await expect(decisionChip).toContainText("Approve");
-  await expect(decisionChip).toContainText("Deny");
-  // The branches are ordinary inline condition + target chips now.
-  await expect(editor.locator('[data-routine-chip="condition"]').first()).toBeVisible();
-  await expect(editor.locator('[data-routine-chip="handoff"]')).toBeVisible();
+  await expect(decisionChip).toContainText("if Approve then End");
+  await expect(decisionChip).toContainText("if Deny then Handoff");
 });

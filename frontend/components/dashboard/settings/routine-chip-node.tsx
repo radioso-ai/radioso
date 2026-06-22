@@ -151,7 +151,7 @@ function ApprovalDialogBody({
   const removeOption = (index: number) => setOptions((prev) => prev.filter((_, candidate) => candidate !== index))
 
   const canConfirm = options.length > 0
-    && options.every((option) => option.label.trim().length > 0 && option.target.length > 0)
+    && options.every((option) => option.label.trim().length > 0 && (option.target ?? '').length > 0)
 
   const confirm = () => {
     onConfirm({
@@ -556,7 +556,7 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
             initial.options.map((option, index) => (
               <span key={index} className="font-normal">
                 if <span className="font-medium">{option.label || 'this choice'}</span>
-                {' '}then <span className="font-medium">{targetLabel(option.target)}</span>
+                {' '}then <span className="font-medium">{targetLabel(option.target ?? '')}</span>
               </span>
             ))
           )}

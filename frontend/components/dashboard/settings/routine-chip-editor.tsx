@@ -69,6 +69,7 @@ import {
   ROUTINE_FIELD_GUARD_UNITS,
   ROUTINE_SLOT_TYPES,
   slugifyVariableKey,
+  type ApprovalDocOption,
   type ChipDocVariable,
   type ProseParagraph,
   type ProseSegment,
@@ -85,14 +86,34 @@ class ChipMenuOption extends MenuOption {
   isNew: boolean
   refId: string
   name: string
+  // For a typed decision-branch condition (`@decision is approve`): the chosen option id and
+  // the chip label. For creating a decision: the seeded choices.
+  op?: RoutineFieldGuardOp
+  value?: string
+  chipLabel?: string
+  decisionOptions?: ApprovalDocOption[]
 
-  constructor(key: string, data: { display: string; kind: RoutineChipKind; isNew: boolean; refId: string; name: string }) {
+  constructor(key: string, data: {
+    display: string
+    kind: RoutineChipKind
+    isNew: boolean
+    refId: string
+    name: string
+    op?: RoutineFieldGuardOp
+    value?: string
+    chipLabel?: string
+    decisionOptions?: ApprovalDocOption[]
+  }) {
     super(key)
     this.display = data.display
     this.kind = data.kind
     this.isNew = data.isNew
     this.refId = data.refId
     this.name = data.name
+    this.op = data.op
+    this.value = data.value
+    this.chipLabel = data.chipLabel
+    this.decisionOptions = data.decisionOptions
   }
 }
 
@@ -666,8 +687,61 @@ function ChipTypeaheadPlugin({
         }))
       }
     }
+
+    // Decision authoring by typing: read the decisions already declared in the document so a
+    // branch line can be typed as `@<decision> is <choice>`, plus `@end`/`@handoff` targets and
+    // `@decision` to declare a new gate. (The decision chip carries the choices the branch
+    // conditions reference; conditions compile to `<captureKey>.id == <option>` field guards.)
+    const decisions: { captureKey: string; options: ApprovalDocOption[] }[] = []
+    editor.getEditorState().read(() => {
+      for (const block of $getRoot().getChildren()) {
+        if (!$isElementNode(block)) continue
+        for (const child of block.getChildren()) {
+          if ($isChipNode(child) && child.getChipKind() === 'decision') {
+            decisions.push({ captureKey: child.getCaptureKey() ?? child.getRefId(), options: child.getApprovalOptions() })
+          }
+        }
+      }
+    })
+    const branchOptions: ChipMenuOption[] = []
+    for (const decision of decisions) {
+      for (const option of decision.options) {
+        const choiceLabel = option.label || option.id
+        const chipLabel = `${decision.captureKey} is ${choiceLabel}`
+        if (lowered && !chipLabel.toLowerCase().includes(lowered) && !choiceLabel.toLowerCase().includes(lowered)) continue
+        branchOptions.push(new ChipMenuOption(`cond-${decision.captureKey}-${option.id}`, {
+          display: `If ${chipLabel}`,
+          kind: 'condition',
+          isNew: false,
+          refId: decision.captureKey,
+          name: chipLabel,
+          op: 'equals',
+          value: option.id,
+          chipLabel,
+        }))
+      }
+    }
+    // Typed branch conditions come first — they're what you're writing on a branch line.
+    result.unshift(...branchOptions)
+    if (!lowered || 'end'.includes(lowered) || 'complete'.includes(lowered)) {
+      result.push(new ChipMenuOption('target-end', { display: 'End (complete the routine)', kind: 'end', isNew: false, refId: 'done', name: 'end' }))
+    }
+    if (!lowered || 'handoff'.includes(lowered)) {
+      result.push(new ChipMenuOption('target-handoff', { display: 'Handoff (escalate to a person)', kind: 'handoff', isNew: false, refId: 'handoff', name: 'handoff' }))
+    }
+    if (!lowered || 'decision'.includes(lowered) || (raw.length > 0 && decisions.length === 0)) {
+      const captureKey = slugifyVariableKey(raw && lowered !== 'decision' ? raw : 'decision')
+      result.push(new ChipMenuOption(`new-decision-${captureKey}`, {
+        display: raw && lowered !== 'decision' ? `Decision: ${raw} (a person chooses)` : 'Decision (a person chooses)',
+        kind: 'decision',
+        isNew: true,
+        refId: captureKey,
+        name: captureKey,
+        decisionOptions: [{ id: 'approve', label: 'Approve' }, { id: 'deny', label: 'Deny' }],
+      }))
+    }
     return result.slice(0, 8)
-  }, [skillCatalog.skills, variables, reservedRefKinds, query])
+  }, [editor, skillCatalog.skills, variables, reservedRefKinds, query])
 
   const onSelectOption = useCallback(
     (option: ChipMenuOption, nodeToReplace: TextNode | null, closeMenu: () => void) => {
@@ -675,8 +749,18 @@ function ChipTypeaheadPlugin({
         if (option.kind === 'variable' && option.isNew) {
           onCreateVariable({ id: option.refId, name: option.name })
         }
-        const label = option.kind === 'variable' ? `@${option.name}` : option.name
-        const chip = $createChipNode(option.kind, option.refId, label)
+        let chip: ChipNode
+        if (option.kind === 'decision') {
+          // Declare the gate inline; choices are seeded so branch lines have something to
+          // reference, and the chip is click-editable for labels/targets afterwards.
+          chip = $createDecisionChipNode(option.refId, option.decisionOptions ?? [])
+        } else if (option.kind === 'condition') {
+          // A typed decision branch: `<captureKey> is <choice>` → a decision field guard.
+          chip = $createConditionChipNode(option.refId, option.op ?? 'equals', option.chipLabel ?? option.name, option.value ?? null, null, null)
+        } else {
+          const label = option.kind === 'variable' ? `@${option.name}` : option.name
+          chip = $createChipNode(option.kind, option.refId, label)
+        }
         if (nodeToReplace) {
           nodeToReplace.replace(chip)
         }

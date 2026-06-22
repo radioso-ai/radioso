@@ -141,3 +141,48 @@ test("author an approval gate in the Prose editor, save, and reload without Form
   await expect(editor.locator('[data-routine-chip="condition"]').first()).toBeVisible();
   await expect(editor.locator('[data-routine-chip="handoff"]')).toBeVisible();
 });
+
+test("author an approval gate by typing the rules in the Prose editor (no buttons)", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Typed approval");
+  await page.getByLabel("Trigger", { exact: true }).fill("A refund needs a manager.");
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+
+  // Declare the gate by typing @decision — no toolbar button.
+  await editor.pressSequentially("Get a manager decision. ");
+  await editor.pressSequentially("@decision");
+  await page.getByRole("option", { name: "Decision (a person chooses)" }).click();
+
+  // Type the rules as branch lines: "if decision is Approve → End", "if decision is Deny → Handoff".
+  await page.keyboard.press("Enter");
+  await editor.pressSequentially("@approve");
+  await page.getByRole("option", { name: "If decision is Approve" }).click();
+  await editor.pressSequentially("@end");
+  await page.getByRole("option", { name: "End (complete the routine)" }).click();
+
+  await page.keyboard.press("Enter");
+  await editor.pressSequentially("@deny");
+  await page.getByRole("option", { name: "If decision is Deny" }).click();
+  await editor.pressSequentially("@handoff");
+  await page.getByRole("option", { name: "Handoff (escalate to a person)" }).click();
+
+  await page.getByRole("button", { name: "Save routine" }).click();
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+
+  const body = routineUpdates.find((update) => update.method === "POST")?.body as RoutineFixture | undefined;
+  const approvalStep = body?.steps.find((step) => step.kind === "approval");
+  expect(approvalStep).toMatchObject({ captureKey: "decision", options: [{ id: "approve" }, { id: "deny" }] });
+  const edges = (body?.transitions ?? []).filter((transition) => transition.guardKind === "field");
+  expect(edges).toEqual(expect.arrayContaining([
+    expect.objectContaining({ toRef: "done", fieldRef: "decision.id", fieldOp: "equals", fieldValue: "approve" }),
+    expect.objectContaining({ toRef: "handoff", fieldRef: "decision.id", fieldOp: "equals", fieldValue: "deny" }),
+  ]));
+});

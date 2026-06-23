@@ -1,9 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { CircleSlash, Pencil, Plus, RefreshCw, Trash2, Wrench } from 'lucide-react'
+import { CircleSlash, Pencil, Trash2, Wrench } from 'lucide-react'
 
-import { SettingsCard } from '@/components/dashboard/settings/settings-card'
+import { useRegisterAddSkillAction } from '@/components/dashboard/shared/skills-header-action'
+
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -154,11 +155,13 @@ export function SkillList({ agentId }: { agentId: string }) {
     })
   }, [load])
 
-  const openCreate = () => {
+  const openCreate = useCallback(() => {
     setEditingSkill(null)
     setSelectedCapabilityId(null)
     setPickerOpen(true)
-  }
+  }, [])
+
+  useRegisterAddSkillAction(openCreate)
 
   const selectCapability = (capabilityId: AgentSkillCapabilityId) => {
     setSelectedCapabilityId(capabilityId)
@@ -224,44 +227,27 @@ export function SkillList({ agentId }: { agentId: string }) {
   }
 
   return (
-    <SettingsCard
-      id="assistant-skills-list"
-      icon={<Wrench className="h-5 w-5 text-primary" />}
-      title="Skills"
-      description="Named capabilities this agent can use from routines or supported invocation modes."
-      headerEnd={(
-        <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => void load()} disabled={isLoading}>
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
-          <Button type="button" size="sm" onClick={openCreate} disabled={isLoading}>
-            <Plus className="h-4 w-4" />
-            Add new skill
-          </Button>
+    <section id="assistant-skills-list" className="space-y-4 scroll-mt-24">
+      {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
+
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Spinner className="h-4 w-4" />
+          Loading skills...
         </div>
-      )}
-    >
-      <div className="space-y-5">
-        {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
+      ) : null}
 
-        {isLoading ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Spinner className="h-4 w-4" />
-            Loading skills...
-          </div>
-        ) : null}
+      {!isLoading && skills.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+          No skills yet. Add a named skill by choosing a capability type.
+        </div>
+      ) : null}
 
-        {!isLoading && skills.length === 0 ? (
-          <div className="rounded-md border border-dashed border-border px-3 py-6 text-sm text-muted-foreground">
-            No skills yet. Add a named skill by choosing a capability type.
-          </div>
-        ) : null}
-
-        {skills.length > 0 ? (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {skills.map((skill) => (
-              <article key={skill.id} className="flex min-h-40 flex-col justify-between gap-4 rounded-md border border-border bg-background p-4">
+      {skills.length > 0 ? (
+        <ul className="space-y-3">
+          {skills.map((skill) => (
+            <li key={skill.id}>
+              <article className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-card p-4 shadow-sm">
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-sm font-medium text-foreground">@{skill.name}</span>
@@ -274,7 +260,7 @@ export function SkillList({ agentId }: { agentId: string }) {
                     {targetLabel(skill, capabilities)} · {formatInvocationMode(skill.invocationMode)}
                   </p>
                 </div>
-                <div className="flex items-center justify-end gap-2">
+                <div className="flex items-center gap-2">
                   <Switch
                     checked={skill.enabled}
                     onCheckedChange={(enabled) => void toggleSkill(skill, enabled)}
@@ -296,34 +282,34 @@ export function SkillList({ agentId }: { agentId: string }) {
                   </Button>
                 </div>
               </article>
-            ))}
-          </div>
-        ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
-        <CapabilityPicker
-          open={pickerOpen}
-          capabilities={capabilities}
-          onOpenChange={setPickerOpen}
-          onSelect={selectCapability}
-        />
-        <SkillForm
-          open={formOpen}
-          capabilities={capabilities}
-          skills={skills}
-          editingSkill={editingSkill}
-          capabilityId={selectedCapabilityId}
-          isSaving={busyAction === 'save'}
-          error={busyAction === 'save' ? null : error}
-          onOpenChange={(open) => {
-            setFormOpen(open)
-            if (!open) {
-              setEditingSkill(null)
-              setSelectedCapabilityId(null)
-            }
-          }}
-          onSubmit={submitSkill}
-        />
-      </div>
-    </SettingsCard>
+      <CapabilityPicker
+        open={pickerOpen}
+        capabilities={capabilities}
+        onOpenChange={setPickerOpen}
+        onSelect={selectCapability}
+      />
+      <SkillForm
+        open={formOpen}
+        capabilities={capabilities}
+        skills={skills}
+        editingSkill={editingSkill}
+        capabilityId={selectedCapabilityId}
+        isSaving={busyAction === 'save'}
+        error={busyAction === 'save' ? null : error}
+        onOpenChange={(open) => {
+          setFormOpen(open)
+          if (!open) {
+            setEditingSkill(null)
+            setSelectedCapabilityId(null)
+          }
+        }}
+        onSubmit={submitSkill}
+      />
+    </section>
   )
 }

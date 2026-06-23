@@ -6,6 +6,7 @@ import { Globe2, RefreshCw, X } from 'lucide-react'
 
 import { WorkbenchView } from '@/components/dashboard/workbench/workbench-view'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
+import { AddSkillHeaderButton, SkillsHeaderActionProvider } from '@/components/dashboard/shared/skills-header-action'
 import { SaveStateIndicator } from '@/components/dashboard/shared/save-state-indicator'
 import { WorkspaceAssistantChannelsTab } from '@/components/dashboard/settings/workspace-assistant-channels-tab'
 import { Button } from '@/components/ui/button'
@@ -422,10 +423,11 @@ export function AgentView({
 
   const meta = AGENT_SECTION_META[section]
   return (
-    <>
+    <SkillsHeaderActionProvider>
       <DashboardPage
         title={meta.title}
         titleAccessory={saveStateAccessory}
+        actions={section === 'skills' ? <AddSkillHeaderButton /> : undefined}
         contentClassName="flex flex-col overflow-hidden p-0"
         contentScroll={false}
       >
@@ -443,6 +445,6 @@ export function AgentView({
         />
       </DashboardPage>
       {wizard}
-    </>
+    </SkillsHeaderActionProvider>
   )
 }

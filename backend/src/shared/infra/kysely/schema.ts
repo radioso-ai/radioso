@@ -135,6 +135,7 @@ export interface AgentSkills {
   created_at: Generated<Timestamp>;
   enabled: Generated<boolean>;
   id: string;
+  invocation_mode: Generated<string>;
   kind: string;
   skill_name: string;
   target_id: string | null;

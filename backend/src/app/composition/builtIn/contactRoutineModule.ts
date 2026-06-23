@@ -20,6 +20,7 @@ import { WorkspaceRepository } from "../../../db/repositories/workspaceRepositor
 import { AccountMembershipRepository } from "../../../db/repositories/accountMembershipRepository.js";
 import { AgentRepository } from "../../../db/repositories/agentRepository.js";
 import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
+import { AgentSkillRepository } from "../../../modules/agentSkills/repository.js";
 import type { ApplicationModule } from "../applicationModule.js";
 
 /** Reads the per-agent contact-requests flag for the advertiser. */
@@ -92,6 +93,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
             new ConversationRepository(database.kysely),
             new AgentRepository(database.kysely),
             ownerFallback,
+            new AgentSkillRepository(database.kysely),
           ),
           logger,
           // SSRF guard: every webhook hop is re-validated against the public-host
@@ -114,6 +116,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
             new ConversationRepository(database.kysely),
             new AgentRepository(database.kysely),
             ownerFallback,
+            new AgentSkillRepository(database.kysely),
           ),
           logger,
           new FetchContactWebhookHttpClient(assertPublicWebsiteUrl),
@@ -134,6 +137,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
             new ConversationRepository(database.kysely),
             new AgentRepository(database.kysely),
             ownerFallback,
+            new AgentSkillRepository(database.kysely),
           ),
           logger,
           new FetchContactWebhookHttpClient(assertPublicWebsiteUrl),

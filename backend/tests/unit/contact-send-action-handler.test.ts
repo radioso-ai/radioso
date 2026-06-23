@@ -325,4 +325,62 @@ describe("ConfiguredContactDeliveryResolver", () => {
       webhook: null,
     });
   });
+
+  it("prefers the contact_human notify skill delivery over legacy agent delivery", async () => {
+    const resolver = new ConfiguredContactDeliveryResolver(
+      { findByIdAndWorkspaceId: async () => ({ agentId: "agent_1" }) },
+      {
+        findByIdAndWorkspaceId: async () => ({
+          contactRequestDelivery: {
+            recipientEmails: ["legacy@example.com"],
+            webhook: null,
+          },
+        }),
+      },
+      { resolve: async () => ({ emails: ["owner@example.com"], webhook: null }) },
+      {
+        findByName: async () => ({
+          kind: "notify",
+          enabled: true,
+          config: {
+            delivery: {
+              recipientEmails: ["sales@example.com"],
+              webhook: { url: "https://hooks.example.com/contact" },
+            },
+          },
+        }),
+      },
+    );
+
+    await expect(resolver.resolve(context)).resolves.toEqual({
+      emails: ["sales@example.com"],
+      webhook: { url: "https://hooks.example.com/contact" },
+    });
+  });
+
+  it("treats a disabled contact_human notify skill as no delivery target", async () => {
+    const resolver = new ConfiguredContactDeliveryResolver(
+      { findByIdAndWorkspaceId: async () => ({ agentId: "agent_1" }) },
+      {
+        findByIdAndWorkspaceId: async () => ({
+          contactRequestDelivery: {
+            recipientEmails: ["legacy@example.com"],
+            webhook: null,
+          },
+        }),
+      },
+      { resolve: async () => ({ emails: ["owner@example.com"], webhook: null }) },
+      {
+        findByName: async () => ({
+          kind: "notify",
+          enabled: false,
+          config: {
+            delivery: { recipientEmails: ["sales@example.com"], webhook: null },
+          },
+        }),
+      },
+    );
+
+    await expect(resolver.resolve(context)).resolves.toEqual({ emails: [], webhook: null });
+  });
 });

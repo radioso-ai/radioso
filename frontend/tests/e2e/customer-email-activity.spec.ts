@@ -9,7 +9,7 @@ import {
   workspaceKey,
 } from "./dashboard-fixtures";
 
-test("workspace settings shows sanitized customer email activity", async ({ page }) => {
+test("workspace settings does not mix in customer email skill activity", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     emailActivity: [
@@ -39,11 +39,12 @@ test("workspace settings shows sanitized customer email activity", async ({ page
 
   await page.goto(`/w/${workspaceKey}/settings?tab=workspace`);
 
-  await expect(page.getByRole("heading", { name: "Email skill activity" })).toBeVisible();
-  await expect(page.getByText("support_email_customer")).toBeVisible();
-  await expect(page.getByText("Needs re-auth")).toBeVisible();
-  await expect(page.getByText("c***@example.com")).toBeVisible();
-  await expect(page.getByText("1 to, 0 cc · example.com")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Customer email" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Email skill activity" })).toHaveCount(0);
+  await expect(page.getByText("support_email_customer")).toHaveCount(0);
+  await expect(page.getByText("Needs re-auth")).toHaveCount(0);
+  await expect(page.getByText("c***@example.com")).toHaveCount(0);
+  await expect(page.getByText("1 to, 0 cc · example.com")).toHaveCount(0);
   await expect(page.getByText("This is the full confidential message body")).toHaveCount(0);
   await expect(page.getByText("refresh-token-secret")).toHaveCount(0);
 });

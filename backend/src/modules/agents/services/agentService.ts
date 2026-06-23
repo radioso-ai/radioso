@@ -2,6 +2,7 @@ import type { AgentRepositoryPort } from "../../../db/repositories/agentReposito
 import type { DocumentSourceRepositoryPort } from "../../../db/repositories/documentSourceRepository.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AccessGrantService } from "../../accessGrants/public.js";
+import type { AgentSkillRepositoryPort } from "../../agentSkills/repository.js";
 import { generateApiToken } from "../../auth/contracts/index.js";
 import type { EmbedConfigCacheInvalidator } from "./embedConfigCacheInvalidator.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../documents/contracts/index.js";
@@ -28,6 +29,7 @@ export class AgentService {
     >,
     private readonly embedConfigCacheInvalidator?: EmbedConfigCacheInvalidator,
     private readonly accessGrantService?: AccessGrantService,
+    private readonly agentSkills?: Pick<AgentSkillRepositoryPort, "findByName">,
   ) {}
 
   async list(workspaceId: string): Promise<AgentSettingsResource[]> {
@@ -52,14 +54,21 @@ export class AgentService {
   }
 
   async resolve(workspaceId: string, agentId?: string | null): Promise<AgentRecord> {
+    const withSkillBackedFlags = async (agent: AgentRecord): Promise<AgentRecord> => {
+      const notifySkill = await this.agentSkills?.findByName(workspaceId, agent.id, "contact_human");
+      if (notifySkill?.kind !== "notify") {
+        return agent;
+      }
+      return { ...agent, contactRequestsEnabled: notifySkill.enabled };
+    };
     if (agentId) {
       const agent = await this.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
       if (!agent) {
         throw notFound("Agent not found");
       }
-      return agent;
+      return withSkillBackedFlags(agent);
     }
-    return this.ensureDefaultAgent(workspaceId);
+    return withSkillBackedFlags(await this.ensureDefaultAgent(workspaceId));
   }
 
   async create(workspaceId: string, input: AgentInput): Promise<AgentSettingsResource> {

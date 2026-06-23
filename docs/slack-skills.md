@@ -1,3 +1,9 @@
+---
+title: "Slack Skills"
+description: "How to configure Slack as a connection target and define Slack post skills through the unified skill form."
+last_updated: 2026-06-23
+---
+
 # Slack Skills
 
 Slack skills let an agent's routines post to Slack through a connected workspace
@@ -19,7 +25,22 @@ the agent posts there when a Slack question has no grounded answer.
 
 ## 2. Define an agent Slack skill
 
-Create a skill under the agent:
+Open the agent's **Skills** list and choose **Add new skill**. Pick the
+**Slack post** tile, which is enabled when the workspace has a connected Slack
+installation. Choose the installation as the target and keep or edit the
+suggested skill name. Required inputs are exposed to the routine by default.
+Open **Advanced** to bind fixed values, include optional inputs, change
+invocation behavior, narrow outcomes, or disable the skill.
+
+The unified endpoints are:
+
+- `GET /api/v1/agents/{agentId}/skill-capabilities`
+- `GET /api/v1/agents/{agentId}/skills`
+- `POST /api/v1/agents/{agentId}/skills`
+- `PATCH /api/v1/agents/{agentId}/skills/{skillId}`
+- `DELETE /api/v1/agents/{agentId}/skills/{skillId}`
+
+Legacy Slack skill endpoints may remain available during cutover:
 
 - `GET /api/v1/agents/{agentId}/slack-skills`
 - `POST /api/v1/agents/{agentId}/slack-skills`

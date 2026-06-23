@@ -131,6 +131,74 @@ describe("RetrievalAnswerSkillExecutor", () => {
     });
   });
 
+  it("runs a named retrieve skill with its configured source scope and instruction", async () => {
+    const result = sampleResult();
+    const controller = stubController(result);
+    const executor = new RetrievalAnswerSkillExecutor(controller);
+
+    const dispatch = await executor.dispatch({
+      skill: {
+        name: "retrieve_events",
+        metadata: {
+          retrieveConfig: {
+            sourceScope: { sourceIds: ["2e0c6264-f2c4-4549-bcd8-bf2f7d1a0d1e"] },
+            instruction: "Use event documents only.",
+            vectorTopK: 7,
+            exposedInputs: { query: true },
+          },
+        },
+      } as unknown as SkillDefinition,
+      collected: { query: "Which events are upcoming?" },
+      context: {
+        workspaceId: "w1",
+        turn: {
+          sessionId: "conversation-1",
+          inputEvent: { id: "message-2", kind: "message", content: "continue", locale: "en" },
+          agent: { id: "agent-1", metadata: {} },
+          history: [],
+          stagedContext: [],
+          steering: [],
+        },
+      },
+      emit: noopSkillEmitPort,
+    });
+
+    expect(controller.run).toHaveBeenCalledWith(expect.objectContaining({
+      query: "Which events are upcoming?",
+      sourceScope: { mode: "selected", sourceIds: ["2e0c6264-f2c4-4549-bcd8-bf2f7d1a0d1e"] },
+      agentSkillSettings: {
+        "retrieval.answer": {
+          customInstruction: "Use event documents only.",
+          vectorTopK: 7,
+        },
+      },
+    }));
+    expect(dispatch.disposition).toBe("settled");
+    if (dispatch.disposition !== "settled") return;
+    expect(dispatch.outcome.status).toBe("found");
+    expect(dispatch.outcome.outputs).toMatchObject({ found: true, source_count: 1 });
+  });
+
+  it("settles a named retrieve skill as empty when no contexts are found", async () => {
+    const controller = stubController({ ...sampleResult(), contexts: [], citations: [] });
+    const executor = new RetrievalAnswerSkillExecutor(controller);
+
+    const dispatch = await executor.dispatch({
+      skill: {
+        name: "retrieve_events",
+        metadata: { retrieveConfig: { sourceScope: "all", exposedInputs: { query: true } } },
+      } as unknown as SkillDefinition,
+      collected: { query: "Anything?" },
+      context: { request: { workspaceId: "w1", query: "Anything?", history: [] } },
+      emit: noopSkillEmitPort,
+    });
+
+    expect(dispatch.disposition).toBe("settled");
+    if (dispatch.disposition !== "settled") return;
+    expect(dispatch.outcome.status).toBe("empty");
+    expect(dispatch.outcome.outputs).toMatchObject({ found: false, source_count: 0 });
+  });
+
   it("dispatches an interpreted result through runInterpreted when provided", async () => {
     const result = sampleResult();
     const controller = stubController(result);

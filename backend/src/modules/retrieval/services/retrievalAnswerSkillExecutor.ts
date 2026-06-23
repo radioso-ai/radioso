@@ -16,6 +16,12 @@ import type {
   RetrievalPipelineResult,
 } from "./retrievalPipelineService.js";
 import type { RetrievalPipelineRequest } from "./retrievalPipelineStages.js";
+import {
+  parseRetrieveSkillConfig,
+  retrieveSkillConfigToSettingsOverride,
+  type RetrieveSkillConfig,
+} from "../domain/retrievalSkillSettings.js";
+import type { RetrievalSourceScope } from "../domain/retrievalSourceFilter.js";
 
 /** Internal-adapter key the `retrieval.answer` skill declares in its execution descriptor. */
 export const RETRIEVAL_ANSWER_ADAPTER = "retrieval_answer";
@@ -62,6 +68,32 @@ const embedRetrievalContextResult = (result: RetrievalPipelineResult): SkillOutc
 const outcomeForSkill = (skillName: string, result: RetrievalPipelineResult): SkillOutcome =>
   skillName === RETRIEVAL_CONTEXT_SKILL_NAME ? embedRetrievalContextResult(result) : embedRetrievalResult(result);
 
+const namedRetrieveOutcome = (result: RetrievalPipelineResult): SkillOutcome => ({
+  status: (result.contexts.length > 0 ? "found" : "empty") as SkillOutcome["status"],
+  outputs: {
+    found: result.contexts.length > 0,
+    source_count: result.contexts.length,
+    rewritten_query: result.rewrittenQuery,
+    contexts: result.contexts.map((context) => ({
+      documentId: context.documentId,
+      chunkId: context.chunkId,
+      title: context.title,
+      metadata: context.metadata,
+      score: context.relevanceScore,
+      promptPosition: context.promptPosition,
+    })),
+    citations: result.citations.map((citation) => {
+      const record = citation as { documentId?: unknown; chunkId?: unknown; title?: unknown };
+      return {
+        documentId: record.documentId,
+        chunkId: record.chunkId,
+        title: record.title,
+      };
+    }),
+  },
+  metadata: { [RETRIEVAL_RESULT_KEY]: result },
+});
+
 /** Extracts the RetrievalPipelineResult a retrieval.answer dispatch settled with, if present. */
 export const readRetrievalResult = (outcome: SkillOutcome): RetrievalPipelineResult | null => {
   const value = outcome.metadata?.[RETRIEVAL_RESULT_KEY];
@@ -100,6 +132,39 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const optionalRecord = (value: unknown): Record<string, unknown> | undefined =>
   isRecord(value) ? value : undefined;
 
+const retrieveConfigFromSkill = (skill: SkillInvocation["skill"]): RetrieveSkillConfig | null => {
+  const metadata = optionalRecord((skill as SkillInvocation["skill"] & { metadata?: unknown }).metadata);
+  const config = metadata?.retrieveConfig;
+  return config ? parseRetrieveSkillConfig(config) : null;
+};
+
+const sourceScopeFromConfig = (config: RetrieveSkillConfig): RetrievalSourceScope | undefined => {
+  if (config.sourceScope === "all") {
+    return { mode: "all" };
+  }
+  return { mode: "selected", sourceIds: config.sourceScope.sourceIds };
+};
+
+const applyRetrieveConfig = (
+  request: RetrievalPipelineRequest,
+  config: RetrieveSkillConfig | null,
+): RetrievalPipelineRequest => {
+  if (!config) {
+    return request;
+  }
+  return {
+    ...request,
+    sourceScope: sourceScopeFromConfig(config),
+    agentSkillSettings: {
+      ...(request.agentSkillSettings ?? {}),
+      "retrieval.answer": {
+        ...optionalRecord(request.agentSkillSettings?.["retrieval.answer"]),
+        ...retrieveSkillConfigToSettingsOverride(config),
+      },
+    },
+  };
+};
+
 const messageDate = (message: ConversationMessage): Date => {
   if (!message.createdAt) return new Date(0);
   const parsed = new Date(message.createdAt);
@@ -127,9 +192,10 @@ const toRetrievalHistory = (
 const requestFromTurn = (
   { turn, workspaceId }: TurnInvocationContext,
   boundQuery?: string,
+  retrieveConfig?: RetrieveSkillConfig | null,
 ): RetrievalPipelineRequest => {
   const metadata = optionalRecord(turn.agent.metadata);
-  return {
+  return applyRetrieveConfig({
     workspaceId,
     // A typed routine step can bind the `query` input to a slot or literal; honor
     // that over the turn's latest message. Untyped/legacy steps leave it unbound
@@ -138,7 +204,7 @@ const requestFromTurn = (
     history: toRetrievalHistory(turn.history, workspaceId, turn.sessionId),
     ...(turn.inputEvent.locale ? { responseLanguage: turn.inputEvent.locale } : {}),
     ...(metadata?.skillSettings ? { agentSkillSettings: optionalRecord(metadata.skillSettings) } : {}),
-  };
+  }, retrieveConfig ?? null);
 };
 
 /**
@@ -158,24 +224,29 @@ export class RetrievalAnswerSkillExecutor implements SkillExecutorPort {
 
   async dispatch(invocation: SkillInvocation): Promise<SkillDispatchResult> {
     const context = invocation.context ?? {};
+    const retrieveConfig = retrieveConfigFromSkill(invocation.skill);
+    const namedRetrieve = retrieveConfig !== null;
 
     if (isInterpreted(context)) {
+      const interpreted = retrieveConfig
+        ? { ...context.interpreted, request: applyRetrieveConfig(context.interpreted.request, retrieveConfig) }
+        : context.interpreted;
       const result = context.withRetrieval
-        ? await this.controller.runInterpreted(context.interpreted)
-        : await this.controller.runWithoutRetrieval(context.interpreted);
-      return { disposition: "settled", outcome: outcomeForSkill(invocation.skill.name, result) };
+        ? await this.controller.runInterpreted(interpreted)
+        : await this.controller.runWithoutRetrieval(interpreted);
+      return { disposition: "settled", outcome: namedRetrieve ? namedRetrieveOutcome(result) : outcomeForSkill(invocation.skill.name, result) };
     }
 
     if (isRequest(context.request)) {
-      const result = await this.controller.run(context.request);
-      return { disposition: "settled", outcome: outcomeForSkill(invocation.skill.name, result) };
+      const result = await this.controller.run(applyRetrieveConfig(context.request, retrieveConfig));
+      return { disposition: "settled", outcome: namedRetrieve ? namedRetrieveOutcome(result) : outcomeForSkill(invocation.skill.name, result) };
     }
 
     if (isTurnInvocation(context)) {
       const bound = invocation.collected?.query;
       const boundQuery = typeof bound === "string" && bound.trim().length > 0 ? bound : undefined;
-      const result = await this.controller.run(requestFromTurn(context, boundQuery));
-      return { disposition: "settled", outcome: outcomeForSkill(invocation.skill.name, result) };
+      const result = await this.controller.run(requestFromTurn(context, boundQuery, retrieveConfig));
+      return { disposition: "settled", outcome: namedRetrieve ? namedRetrieveOutcome(result) : outcomeForSkill(invocation.skill.name, result) };
     }
 
     throw new Error(

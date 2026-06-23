@@ -46,6 +46,14 @@ export interface WebhookSendAgentLookup {
   } | null>;
 }
 
+export interface WebhookCompletionExportSkillLookup {
+  findByName(workspaceId: string, agentId: string, skillName: string): Promise<{
+    kind: string;
+    enabled: boolean;
+    targetId?: string | null;
+  } | null>;
+}
+
 export type WebhookSendHttpClient = WebhookHttpClient;
 
 interface WebhookSendPayload {
@@ -103,6 +111,7 @@ export class ConversationAgentWebhookPermissionResolver implements WebhookSendPe
   constructor(
     private readonly conversations: WebhookSendConversationLookup,
     private readonly agents: WebhookSendAgentLookup,
+    private readonly skills?: WebhookCompletionExportSkillLookup,
   ) {}
 
   async canSend(context: ActionHandlerContext): Promise<WebhookSendPermissionDecision> {
@@ -119,6 +128,10 @@ export class ConversationAgentWebhookPermissionResolver implements WebhookSendPe
     const agent = await this.agents.findByIdAndWorkspaceId(conversation.agentId, context.workspaceId);
     if (!agent) {
       return { allowed: false, reason: "agent_not_resolved" };
+    }
+    const skill = await this.skills?.findByName(context.workspaceId, conversation.agentId, "completion_export");
+    if (skill?.kind === "webhook") {
+      return skill.enabled ? { allowed: true } : { allowed: false, reason: "capability_disabled" };
     }
     if (agent.webhookExportsEnabled !== true) {
       return { allowed: false, reason: "capability_disabled" };

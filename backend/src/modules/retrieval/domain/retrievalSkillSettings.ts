@@ -50,6 +50,35 @@ const retrievalSkillSettingsOverrideShape = {
   customInstruction: z.string().max(2000).optional(),
 };
 
+export const retrieveSkillSourceScopeSchema = z.union([
+  z.literal("all"),
+  z.object({
+    sourceIds: z.array(z.string().uuid()).max(200),
+  }).strict(),
+]);
+
+export const retrieveSkillExposedInputsSchema = z.object({
+  query: z.literal(true).default(true),
+}).strict();
+
+export const retrieveSkillConfigSchema = z.object({
+  sourceScope: retrieveSkillSourceScopeSchema.default("all"),
+  instruction: z.string().max(2000).optional(),
+  retrievalStrategy: retrievalSkillSettingsOverrideShape.retrievalStrategy,
+  vectorTopK: retrievalSkillSettingsOverrideShape.vectorTopK,
+  rerankEnabled: retrievalSkillSettingsOverrideShape.rerankEnabled,
+  rerankTopK: retrievalSkillSettingsOverrideShape.rerankTopK,
+  queryRewriteEnabled: retrievalSkillSettingsOverrideShape.queryRewriteEnabled,
+  semanticRewriteInstructions: retrievalSkillSettingsOverrideShape.semanticRewriteInstructions,
+  lexicalRewriteInstructions: retrievalSkillSettingsOverrideShape.lexicalRewriteInstructions,
+  suggestedQuestionsEnabled: retrievalSkillSettingsOverrideShape.suggestedQuestionsEnabled,
+  suggestedQuestionsCount: retrievalSkillSettingsOverrideShape.suggestedQuestionsCount,
+  metadataRules: retrievalSkillSettingsOverrideShape.metadataRules,
+  exposedInputs: retrieveSkillExposedInputsSchema.default({ query: true }),
+}).strict();
+
+export type RetrieveSkillConfig = z.infer<typeof retrieveSkillConfigSchema>;
+
 // Keep this aligned with the retrieval.answer manifest's RetrievalSettingsOverride.
 // Per-agent policy intentionally excludes similarityThreshold because it is model-coupled.
 export const retrievalSkillSettingsOverrideSchema = z.object(retrievalSkillSettingsOverrideShape).strict();
@@ -101,4 +130,20 @@ export const parsePersistedRetrievalSkillSettingsOverride = (input: unknown): Re
   }
 
   return parsed as RetrievalSkillSettingsOverride;
+};
+
+export const parseRetrieveSkillConfig = (input: unknown): RetrieveSkillConfig =>
+  retrieveSkillConfigSchema.parse(input);
+
+export const retrieveSkillConfigToSettingsOverride = (config: RetrieveSkillConfig): RetrievalSkillSettingsOverride => {
+  const {
+    sourceScope: _sourceScope,
+    instruction,
+    exposedInputs: _exposedInputs,
+    ...settings
+  } = config;
+  return {
+    ...settings,
+    ...(instruction !== undefined ? { customInstruction: instruction } : {}),
+  };
 };

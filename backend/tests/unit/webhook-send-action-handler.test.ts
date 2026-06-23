@@ -312,4 +312,21 @@ describe("ConversationAgentWebhookPermissionResolver", () => {
       reason: "missing_context",
     });
   });
+
+  it("prefers the completion_export webhook skill gate over the legacy agent flag", async () => {
+    const conversations = {
+      findByIdAndWorkspaceId: vi.fn(async () => ({ agentId: "agent_1" })),
+    };
+    const agents = {
+      findByIdAndWorkspaceId: vi.fn(async () => ({ webhookExportsEnabled: false })),
+    };
+    const skills = {
+      findByName: vi.fn(async () => ({ kind: "webhook", enabled: true, targetId: "dest_1" })),
+    };
+
+    const resolver = new ConversationAgentWebhookPermissionResolver(conversations, agents, skills);
+
+    await expect(resolver.canSend(context)).resolves.toEqual({ allowed: true });
+    expect(skills.findByName).toHaveBeenCalledWith("ws_1", "agent_1", "completion_export");
+  });
 });

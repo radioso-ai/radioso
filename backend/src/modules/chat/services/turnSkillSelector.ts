@@ -3,12 +3,20 @@ import type { SelectionDecision } from "@radioso/conversation-contract";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { TurnSkill } from "./turnOutcome.js";
 import type { TurnSelectionStrategy } from "./turnSelectionStrategy.js";
+import type { AgentSkillInvocationMode } from "../../agentSkills/domain.js";
 
 /** The terminal skill that claims a turn, with the engine-shaped decision behind it. */
 export interface TurnSkillSelection {
   skill: TurnSkill;
   decision: SelectionDecision;
 }
+
+export const filterAutonomousTurnSkills = (
+  candidates: Array<{ skill: TurnSkill; invocationMode: AgentSkillInvocationMode }>,
+): TurnSkill[] =>
+  candidates
+    .filter((candidate) => candidate.invocationMode === "agent_selectable")
+    .map((candidate) => candidate.skill);
 
 /**
  * The single seam that decides which registered terminal skill claims a prepared

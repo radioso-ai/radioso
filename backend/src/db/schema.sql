@@ -463,8 +463,10 @@ CREATE TABLE public.agent_skills (
     target_type text,
     target_id text,
     config jsonb DEFAULT '{}'::jsonb NOT NULL,
+    invocation_mode text DEFAULT 'routine_named'::text NOT NULL,
     CONSTRAINT agent_skills_config_target_check CHECK (((jsonb_typeof(config) = 'object'::text) AND ((target_type IS NULL) OR (NULLIF(btrim(target_type), ''::text) IS NOT NULL)) AND ((target_id IS NULL) OR (NULLIF(btrim(target_id), ''::text) IS NOT NULL)))),
-    CONSTRAINT agent_skills_kind_check CHECK ((kind = ANY (ARRAY['external_mcp'::text, 'customer_email'::text, 'webhook'::text, 'slack'::text])))
+    CONSTRAINT agent_skills_invocation_mode_check CHECK ((invocation_mode = ANY (ARRAY['default_answer'::text, 'routine_named'::text, 'agent_selectable'::text]))),
+    CONSTRAINT agent_skills_kind_check CHECK ((kind = ANY (ARRAY['external_mcp'::text, 'customer_email'::text, 'webhook'::text, 'slack'::text, 'retrieve'::text, 'notify'::text])))
 );
 
 
@@ -2962,6 +2964,13 @@ ALTER TABLE ONLY public.workspace_webhook_destinations
 
 ALTER TABLE ONLY public.workspaces
     ADD CONSTRAINT workspaces_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_skills_one_default_answer; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX agent_skills_one_default_answer ON public.agent_skills USING btree (agent_id) WHERE (invocation_mode = 'default_answer'::text);
 
 
 --

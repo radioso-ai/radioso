@@ -166,8 +166,9 @@ Use the **Condition** toolbar button to build a comparison:
 
 A **tool** step calls a skill. In the **Form** view, the skill field offers the
 agent's skills and flags a name the agent does not have. The step branches on the
-skill's outcome. See [External Skills via MCP](./external-skills.md) for how to
-connect a server and define external skills.
+skill's outcome. Add or edit skills from the agent's **Skills** list. Each skill
+is a named capability instance, such as `retrieve`, `email`, `slack_post`,
+`webhook_call`, `mcp_tool`, or `notify`.
 
 Every branch line shows how it is decided. A branch with a condition chip - or a
 capped loop back to an earlier step - is marked **Rule**: an exact comparison
@@ -325,7 +326,7 @@ such as:
   routine never sets
 - a comparison on a variable that does not exist, or a type that does not fit
   the check
-- an enabled completion export that points at an unknown webhook destination
+- a completion-export webhook skill that points at an unknown webhook destination
 
 Use **Save draft** to keep work in progress. Use **Publish** to create an
 immutable version that the chat runtime can run.
@@ -368,7 +369,7 @@ The form exposes:
 - transition guard kind: `llm`, `default`, `slot_filled`, `outcome`, or
   `counter`
 - terminal kind and message: `complete` or `handoff`
-- completion export settings for webhook delivery
+- completion export through a `webhook_call` skill
 
 A routine that uses any of these advanced shapes - an action (outbox) step, a
 counter or outcome branch, a custom terminal message, a non-required slot, or a
@@ -377,7 +378,12 @@ short note pointing you to **Form** for that routine.
 
 ### Completion export
 
-A routine can declare a completion export:
+Completion export is configured as an agent skill. Create or edit a
+`webhook_call` skill, commonly named `completion_export`, and bind it to a
+workspace webhook destination. The routine runtime invokes that skill when a
+published routine reaches completion.
+
+The stored routine shape still contains completion export metadata:
 
 ```json
 {
@@ -393,10 +399,10 @@ A routine can declare a completion export:
 the destination name or URL. A destination can be renamed without breaking
 routines that reference it.
 
-When completion export is enabled, validation and publish check that the
-destination exists in the same workspace. If it does not, the routine gets a
-diagnostic on `completionExport.destinationRef`. Deleting a destination is also
-blocked while a published routine references it.
+When completion export is enabled through the skill, validation and publish check
+that the destination exists in the same workspace. If it does not, the routine
+gets a diagnostic on `completionExport.destinationRef`. Deleting a destination is
+also blocked while a published routine references it.
 
 When a routine reaches a terminal whose kind appears in `triggerKinds`, the
 runtime emits a `webhook.send` action. The action worker resolves the
@@ -404,8 +410,8 @@ destination, signs the JSON body with the destination secret, and posts it over
 the existing action outbox. Delivery uses the same public-host SSRF guard as
 outbound contact webhooks.
 
-Webhook export is gated per agent. If the agent does not have webhook exports
-enabled, the worker records a terminal skip instead of retrying. Missing or
+Webhook export is gated by the `completion_export` skill. If that skill is
+disabled, the worker records a terminal skip instead of retrying. Missing or
 deleted destinations are also terminal skips; transient transport failures retry
 through the action outbox.
 

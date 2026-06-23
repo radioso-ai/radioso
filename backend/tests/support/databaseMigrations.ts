@@ -73,13 +73,31 @@ const runAllTestMigrationsOnce = async (database: Database): Promise<void> => {
   const client = await database.pool.connect();
   try {
     await client.query("SELECT pg_advisory_lock($1)", [migrationAdvisoryLockKey]);
+    // Apply each migration at most once per database, like the production runner. Integration
+    // test files share one database, so re-running the whole set per file (the old behavior)
+    // re-applied earlier constraint-narrowing migrations against rows that later migrations had
+    // since created — e.g. migration 110/111 add agent_skills rows of kind retrieve/notify, which
+    // a re-applied (pre-widening) kind CHECK then rejects. Tracking applied files makes the rerun
+    // a no-op. Projection tests that exercise a single migration apply it directly via the pool,
+    // independent of this helper, so they are unaffected.
+    await client.query(
+      "CREATE TABLE IF NOT EXISTS _test_applied_migrations (file text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())",
+    );
     const migrationFiles = (await readdir(testMigrationsPath))
       .filter((file) => file.endsWith(".sql"))
       .sort();
 
     for (const migrationFile of migrationFiles) {
+      const alreadyApplied = await client.query(
+        "SELECT 1 FROM _test_applied_migrations WHERE file = $1",
+        [migrationFile],
+      );
+      if ((alreadyApplied.rowCount ?? 0) > 0) {
+        continue;
+      }
       const migrationSql = await readFile(path.join(testMigrationsPath, migrationFile), "utf8");
       await client.query(migrationSql);
+      await client.query("INSERT INTO _test_applied_migrations (file) VALUES ($1)", [migrationFile]);
     }
   } finally {
     try {

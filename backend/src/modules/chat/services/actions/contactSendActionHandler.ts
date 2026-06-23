@@ -44,6 +44,14 @@ export interface ContactAgentLookup {
   } | null>;
 }
 
+export interface ContactNotifySkillLookup {
+  findByName(workspaceId: string, agentId: string, skillName: string): Promise<{
+    kind: string;
+    enabled: boolean;
+    config?: Record<string, unknown>;
+  } | null>;
+}
+
 export type ContactWebhookHttpClient = WebhookHttpClient;
 
 /**
@@ -93,6 +101,7 @@ export class ConfiguredContactDeliveryResolver implements ContactRecipientResolv
     private readonly conversations: ContactConversationLookup,
     private readonly agents: ContactAgentLookup,
     private readonly fallback: ContactRecipientResolver,
+    private readonly notifySkills?: ContactNotifySkillLookup,
   ) {}
 
   async resolve(context: ActionHandlerContext): Promise<ContactDeliveryTarget> {
@@ -102,6 +111,26 @@ export class ConfiguredContactDeliveryResolver implements ContactRecipientResolv
     const conversation = await this.conversations.findByIdAndWorkspaceId(context.conversationId, context.workspaceId);
     if (!conversation?.agentId) {
       return this.fallback.resolve(context);
+    }
+    const notifySkill = await this.notifySkills?.findByName(context.workspaceId, conversation.agentId, "contact_human");
+    if (notifySkill?.kind === "notify") {
+      if (!notifySkill.enabled) {
+        return { emails: [], webhook: null };
+      }
+      const delivery = readNotifyDelivery(notifySkill.config);
+      if (delivery) {
+        if (delivery.recipientEmails.length > 0) {
+          return {
+            emails: delivery.recipientEmails,
+            webhook: delivery.webhook,
+          };
+        }
+        const fallback = await this.fallback.resolve(context);
+        return {
+          emails: fallback.emails,
+          webhook: delivery.webhook,
+        };
+      }
     }
     const agent = await this.agents.findByIdAndWorkspaceId(conversation.agentId, context.workspaceId);
     if (!agent) {
@@ -123,6 +152,22 @@ export class ConfiguredContactDeliveryResolver implements ContactRecipientResolv
     };
   }
 }
+
+const readNotifyDelivery = (config: Record<string, unknown> | undefined): AgentContactRequestDelivery | null => {
+  const delivery = config?.delivery;
+  if (!delivery || typeof delivery !== "object" || Array.isArray(delivery)) {
+    return null;
+  }
+  const record = delivery as { recipientEmails?: unknown; webhook?: unknown };
+  const recipientEmails = Array.isArray(record.recipientEmails)
+    ? record.recipientEmails.filter((email): email is string => typeof email === "string")
+    : [];
+  const webhook = record.webhook && typeof record.webhook === "object" && !Array.isArray(record.webhook)
+    && typeof (record.webhook as { url?: unknown }).url === "string"
+    ? { url: (record.webhook as { url: string }).url }
+    : null;
+  return { recipientEmails, webhook };
+};
 
 export class FetchContactWebhookHttpClient extends FetchWebhookHttpClient {}
 

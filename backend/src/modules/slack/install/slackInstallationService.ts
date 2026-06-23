@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import type { QueryResultRow } from "pg";
-
+import { currentTimestamp } from "../../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../../shared/infra/kysely/types.js";
 import { conflict, notFound } from "../../../shared/domain/errors.js";
 import type {
   CreateOauthConnectionInput,
@@ -340,7 +340,7 @@ export class SlackInstallationService {
   }
 }
 
-interface SlackInstallationRow extends QueryResultRow {
+interface SlackInstallationRow {
   id: string;
   connection_id: string;
   workspace_id: string;
@@ -351,7 +351,16 @@ interface SlackInstallationRow extends QueryResultRow {
   updated_at: Date;
 }
 
-const installationColumns = "id, connection_id, workspace_id, team_id, team_name, bot_user_id, created_at, updated_at";
+const installationColumns = [
+  "id",
+  "connection_id",
+  "workspace_id",
+  "team_id",
+  "team_name",
+  "bot_user_id",
+  "created_at",
+  "updated_at",
+] as const;
 
 const mapInstallation = (row: SlackInstallationRow): SlackInstallationRecord => ({
   id: row.id,
@@ -365,63 +374,73 @@ const mapInstallation = (row: SlackInstallationRow): SlackInstallationRecord => 
 });
 
 export class SlackInstallationRepository implements SlackInstallationRepositoryPort {
-  constructor(private readonly database: { query<T extends QueryResultRow>(text: string, params?: unknown[]): Promise<T[]> }) {}
+  constructor(private readonly db: Db) {}
 
   async findById(installationId: string): Promise<SlackInstallationRecord | null> {
-    const [row] = await this.database.query<SlackInstallationRow>(
-      `SELECT ${installationColumns} FROM slack_installations WHERE id = $1`,
-      [installationId],
-    );
-    return row ? mapInstallation(row) : null;
+    const row = await this.db
+      .selectFrom("slack_installations")
+      .select(installationColumns)
+      .where("id", "=", installationId)
+      .executeTakeFirst();
+    return row ? mapInstallation(row as SlackInstallationRow) : null;
   }
 
   async findByTeamId(teamId: string): Promise<SlackInstallationRecord | null> {
-    const [row] = await this.database.query<SlackInstallationRow>(
-      `SELECT ${installationColumns} FROM slack_installations WHERE team_id = $1`,
-      [teamId],
-    );
-    return row ? mapInstallation(row) : null;
+    const row = await this.db
+      .selectFrom("slack_installations")
+      .select(installationColumns)
+      .where("team_id", "=", teamId)
+      .executeTakeFirst();
+    return row ? mapInstallation(row as SlackInstallationRow) : null;
   }
 
   async findByWorkspaceId(workspaceId: string): Promise<SlackInstallationRecord | null> {
-    const [row] = await this.database.query<SlackInstallationRow>(
-      `SELECT ${installationColumns}
-       FROM slack_installations
-       WHERE workspace_id = $1
-       ORDER BY updated_at DESC
-       LIMIT 1`,
-      [workspaceId],
-    );
-    return row ? mapInstallation(row) : null;
+    const row = await this.db
+      .selectFrom("slack_installations")
+      .select(installationColumns)
+      .where("workspace_id", "=", workspaceId)
+      .orderBy("updated_at", "desc")
+      .limit(1)
+      .executeTakeFirst();
+    return row ? mapInstallation(row as SlackInstallationRow) : null;
   }
 
   async upsert(input: UpsertSlackInstallationInput): Promise<SlackInstallationRecord> {
-    const [row] = await this.database.query<SlackInstallationRow>(
-      `INSERT INTO slack_installations
-         (id, connection_id, workspace_id, team_id, team_name, bot_user_id)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (team_id) DO UPDATE
-       SET connection_id = EXCLUDED.connection_id,
-           workspace_id = EXCLUDED.workspace_id,
-           team_name = EXCLUDED.team_name,
-           bot_user_id = EXCLUDED.bot_user_id,
-           updated_at = NOW()
-       RETURNING ${installationColumns}`,
-      [randomUUID(), input.connectionId, input.workspaceId, input.teamId, input.teamName ?? null, input.botUserId],
-    );
-    return mapInstallation(row);
+    const row = await this.db
+      .insertInto("slack_installations")
+      .values({
+        id: randomUUID(),
+        connection_id: input.connectionId,
+        workspace_id: input.workspaceId,
+        team_id: input.teamId,
+        team_name: input.teamName ?? null,
+        bot_user_id: input.botUserId,
+      })
+      .onConflict((oc) =>
+        oc.column("team_id").doUpdateSet({
+          connection_id: (eb) => eb.ref("excluded.connection_id"),
+          workspace_id: (eb) => eb.ref("excluded.workspace_id"),
+          team_name: (eb) => eb.ref("excluded.team_name"),
+          bot_user_id: (eb) => eb.ref("excluded.bot_user_id"),
+          updated_at: currentTimestamp(),
+        }),
+      )
+      .returning(installationColumns)
+      .executeTakeFirstOrThrow();
+    return mapInstallation(row as SlackInstallationRow);
   }
 
   async removeByWorkspaceId(workspaceId: string): Promise<boolean> {
-    const rows = await this.database.query<{ id: string }>(
-      `DELETE FROM slack_installations WHERE workspace_id = $1 RETURNING id`,
-      [workspaceId],
-    );
+    const rows = await this.db
+      .deleteFrom("slack_installations")
+      .where("workspace_id", "=", workspaceId)
+      .returning("id")
+      .execute();
     return rows.length > 0;
   }
 }
 
-interface SlackChannelBindingRow extends QueryResultRow {
+interface SlackChannelBindingRow {
   id: string;
   installation_id: string;
   workspace_id: string;
@@ -431,7 +450,15 @@ interface SlackChannelBindingRow extends QueryResultRow {
   updated_at: Date;
 }
 
-const bindingColumns = "id, installation_id, workspace_id, answering_agent_id, escalation_channel_id, created_at, updated_at";
+const bindingColumns = [
+  "id",
+  "installation_id",
+  "workspace_id",
+  "answering_agent_id",
+  "escalation_channel_id",
+  "created_at",
+  "updated_at",
+] as const;
 
 const mapBinding = (row: SlackChannelBindingRow): SlackChannelBindingRecord => ({
   id: row.id,
@@ -444,45 +471,46 @@ const mapBinding = (row: SlackChannelBindingRow): SlackChannelBindingRecord => (
 });
 
 export class SlackChannelBindingRepository implements SlackBindingRepositoryPort {
-  constructor(private readonly database: { query<T extends QueryResultRow>(text: string, params?: unknown[]): Promise<T[]> }) {}
+  constructor(private readonly db: Db) {}
 
   async findByInstallationId(installationId: string): Promise<SlackChannelBindingRecord | null> {
-    const [row] = await this.database.query<SlackChannelBindingRow>(
-      `SELECT ${bindingColumns}
-       FROM slack_channel_bindings
-       WHERE installation_id = $1`,
-      [installationId],
-    );
-    return row ? mapBinding(row) : null;
+    const row = await this.db
+      .selectFrom("slack_channel_bindings")
+      .select(bindingColumns)
+      .where("installation_id", "=", installationId)
+      .executeTakeFirst();
+    return row ? mapBinding(row as SlackChannelBindingRow) : null;
   }
 
   async upsert(input: UpsertSlackBindingInput): Promise<SlackChannelBindingRecord> {
-    const [row] = await this.database.query<SlackChannelBindingRow>(
-      `INSERT INTO slack_channel_bindings
-         (id, installation_id, workspace_id, answering_agent_id, escalation_channel_id)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (installation_id) DO UPDATE
-       SET workspace_id = EXCLUDED.workspace_id,
-           answering_agent_id = EXCLUDED.answering_agent_id,
-           escalation_channel_id = EXCLUDED.escalation_channel_id,
-           updated_at = NOW()
-       RETURNING ${bindingColumns}`,
-      [
-        randomUUID(),
-        input.installationId,
-        input.workspaceId,
-        input.answeringAgentId,
-        input.escalationChannelId ?? null,
-      ],
-    );
-    return mapBinding(row);
+    const row = await this.db
+      .insertInto("slack_channel_bindings")
+      .values({
+        id: randomUUID(),
+        installation_id: input.installationId,
+        workspace_id: input.workspaceId,
+        answering_agent_id: input.answeringAgentId,
+        escalation_channel_id: input.escalationChannelId ?? null,
+      })
+      .onConflict((oc) =>
+        oc.column("installation_id").doUpdateSet({
+          workspace_id: (eb) => eb.ref("excluded.workspace_id"),
+          answering_agent_id: (eb) => eb.ref("excluded.answering_agent_id"),
+          escalation_channel_id: (eb) => eb.ref("excluded.escalation_channel_id"),
+          updated_at: currentTimestamp(),
+        }),
+      )
+      .returning(bindingColumns)
+      .executeTakeFirstOrThrow();
+    return mapBinding(row as SlackChannelBindingRow);
   }
 
   async removeByInstallationId(installationId: string): Promise<boolean> {
-    const rows = await this.database.query<{ id: string }>(
-      `DELETE FROM slack_channel_bindings WHERE installation_id = $1 RETURNING id`,
-      [installationId],
-    );
+    const rows = await this.db
+      .deleteFrom("slack_channel_bindings")
+      .where("installation_id", "=", installationId)
+      .returning("id")
+      .execute();
     return rows.length > 0;
   }
 }

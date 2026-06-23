@@ -11,7 +11,7 @@ export const createUsageReportingApplicationModule = (): ApplicationModule => ({
     context.registerRouteMount({
       path: "/api/v1/account",
       createRouter(dependencies) {
-        const service = new UsageTrendsService(dependencies.connectorDb, dependencies.accountAccessService);
+        const service = new UsageTrendsService(dependencies.connectorDb.kysely, dependencies.accountAccessService);
         return createUsageTrendsRoutes(dependencies, service);
       },
     });

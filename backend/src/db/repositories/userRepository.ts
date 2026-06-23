@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import type { Database } from "../../shared/infra/database.js";
+import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface UserRecord {
   id: string;
@@ -19,6 +20,8 @@ interface UserRow {
   created_at: Date;
   updated_at: Date;
 }
+
+const userColumns = ["id", "email", "password_hash", "email_verified_at", "created_at", "updated_at"] as const;
 
 const mapUser = (row: UserRow): UserRecord => ({
   id: row.id,
@@ -39,68 +42,71 @@ export interface UserRepositoryPort {
 }
 
 export class UserRepository implements UserRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async create(params: { id?: string; email: string; passwordHash: string; emailVerifiedAt?: Date | null }): Promise<UserRecord> {
-    const row = await this.database.queryOne<UserRow>(
-      `INSERT INTO users (id, email, password_hash, email_verified_at)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, email, password_hash, email_verified_at, created_at, updated_at`,
-      [params.id ?? randomUUID(), params.email, params.passwordHash, params.emailVerifiedAt ?? null],
-    );
+    const row = await this.db
+      .insertInto("users")
+      .values({
+        id: params.id ?? randomUUID(),
+        email: params.email,
+        password_hash: params.passwordHash,
+        email_verified_at: params.emailVerifiedAt ?? null,
+      })
+      .returning(userColumns)
+      .executeTakeFirstOrThrow();
 
     return mapUser(row);
   }
 
   async findByEmail(email: string): Promise<UserRecord | null> {
-    const row = await this.database.queryOptional<UserRow>(
-      `SELECT id, email, password_hash, email_verified_at, created_at, updated_at
-       FROM users
-       WHERE email = $1`,
-      [email],
-    );
+    const row = await this.db
+      .selectFrom("users")
+      .select(userColumns)
+      .where("email", "=", email)
+      .executeTakeFirst();
 
     return row ? mapUser(row) : null;
   }
 
   async findById(id: string): Promise<UserRecord | null> {
-    const row = await this.database.queryOptional<UserRow>(
-      `SELECT id, email, password_hash, email_verified_at, created_at, updated_at
-       FROM users
-       WHERE id = $1`,
-      [id],
-    );
+    const row = await this.db
+      .selectFrom("users")
+      .select(userColumns)
+      .where("id", "=", id)
+      .executeTakeFirst();
 
     return row ? mapUser(row) : null;
   }
 
   async updatePassword(id: string, passwordHash: string): Promise<UserRecord> {
-    const row = await this.database.queryOne<UserRow>(
-      `UPDATE users
-       SET password_hash = $2,
-           updated_at = NOW()
-       WHERE id = $1
-       RETURNING id, email, password_hash, email_verified_at, created_at, updated_at`,
-      [id, passwordHash],
-    );
+    const row = await this.db
+      .updateTable("users")
+      .set({ password_hash: passwordHash, updated_at: currentTimestamp() })
+      .where("id", "=", id)
+      .returning(userColumns)
+      .executeTakeFirstOrThrow();
 
     return mapUser(row);
   }
 
   async markEmailVerified(id: string, verifiedAt: Date): Promise<UserRecord> {
-    const row = await this.database.queryOne<UserRow>(
-      `UPDATE users
-       SET email_verified_at = COALESCE(email_verified_at, $2),
-           updated_at = NOW()
-       WHERE id = $1
-       RETURNING id, email, password_hash, email_verified_at, created_at, updated_at`,
-      [id, verifiedAt],
-    );
+    const row = await this.db
+      .updateTable("users")
+      // COALESCE keeps an existing verification timestamp (idempotent re-verify).
+      .set((eb) => ({
+        email_verified_at: eb.fn.coalesce("email_verified_at", eb.val(verifiedAt)),
+        updated_at: currentTimestamp(),
+      }))
+      .where("id", "=", id)
+      .returning(userColumns)
+      .executeTakeFirstOrThrow();
 
     return mapUser(row);
   }
 
   async deleteById(id: string): Promise<boolean> {
-    return (await this.database.execute("DELETE FROM users WHERE id = $1", [id])) > 0;
+    const result = await this.db.deleteFrom("users").where("id", "=", id).executeTakeFirst();
+    return Number(result.numDeletedRows) > 0;
   }
 }

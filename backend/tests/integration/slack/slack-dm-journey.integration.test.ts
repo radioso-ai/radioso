@@ -16,6 +16,7 @@ import {
 import { SlackMessageHandler } from "../../../src/modules/connectors/plugins/slack/slackMessageHandler.js";
 import { PostgresSlackPersistence } from "../../../src/modules/connectors/plugins/slack/slackPersistence.js";
 import type { Database } from "../../../src/shared/infra/database.js";
+import { createKyselyDatabase } from "../../../src/shared/infra/kysely/kyselyDatabase.js";
 import { testMigrationsPath } from "../../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
@@ -38,9 +39,23 @@ const canReach = async (url?: string): Promise<boolean> => {
 const hasDatabase = await canReach(integrationDatabaseUrl);
 const describeIfDatabase = hasDatabase ? describe : describe.skip;
 
-const clientBackedDatabase = (client: PoolClient): Database =>
-  ({
-    pool: {} as Database["pool"],
+const clientBackedDatabase = (client: PoolClient): Database => {
+  // Single-client pool so Kysely (used by the migrated Oauth/ActionRequest repos) shares the
+  // test transaction with the raw-SQL repos that still call query()/execute() on this shim.
+  const pool = {
+    async connect() {
+      return new Proxy(client, {
+        get(target, property, receiver) {
+          if (property === "release") return () => undefined;
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      }) as PoolClient;
+    },
+  } as Database["pool"];
+  return {
+    pool,
+    kysely: createKyselyDatabase(pool),
     async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
       return (await client.query<T>(text, params)).rows;
     },
@@ -55,7 +70,8 @@ const clientBackedDatabase = (client: PoolClient): Database =>
     async execute(text: string, params: unknown[] = []): Promise<number> {
       return (await client.query(text, params)).rowCount ?? 0;
     },
-  }) as Database;
+  } as Database;
+};
 
 describeIfDatabase("Slack DM journey (postgres)", () => {
   const schema = `test_slack_dm_${randomUUID().replace(/-/g, "")}`;
@@ -102,10 +118,10 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
   });
 
   it("creates a Slack conversation on first DM, posts a reply, and reuses it on the second DM", async () => {
-    const oauthConnections = new OauthConnectionRepository(database);
-    const integrationConnections = new IntegrationConnectionRepository(database);
-    const installations = new SlackInstallationRepository(database);
-    const bindings = new SlackChannelBindingRepository(database);
+    const oauthConnections = new OauthConnectionRepository(database.kysely);
+    const integrationConnections = new IntegrationConnectionRepository(database.kysely);
+    const installations = new SlackInstallationRepository(database.kysely);
+    const bindings = new SlackChannelBindingRepository(database.kysely);
     const installationService = new SlackInstallationService({
       oauthConnections,
       integrationConnections,
@@ -135,7 +151,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       installations,
       bindings,
       installationService,
-      persistence: new PostgresSlackPersistence(database),
+      persistence: new PostgresSlackPersistence(database.kysely),
       chat: {
         answer: async (input) => {
           chatInputs.push({
@@ -215,10 +231,10 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
   });
 
   it("maps a channel mention thread to one conversation and escalates no-context mention turns", async () => {
-    const oauthConnections = new OauthConnectionRepository(database);
-    const integrationConnections = new IntegrationConnectionRepository(database);
-    const installations = new SlackInstallationRepository(database);
-    const bindings = new SlackChannelBindingRepository(database);
+    const oauthConnections = new OauthConnectionRepository(database.kysely);
+    const integrationConnections = new IntegrationConnectionRepository(database.kysely);
+    const installations = new SlackInstallationRepository(database.kysely);
+    const bindings = new SlackChannelBindingRepository(database.kysely);
     const installationService = new SlackInstallationService({
       oauthConnections,
       integrationConnections,
@@ -249,8 +265,8 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       installations,
       bindings,
       installationService,
-      persistence: new PostgresSlackPersistence(database),
-      slackPostOutbox: new ActionRequestRepository(database),
+      persistence: new PostgresSlackPersistence(database.kysely),
+      slackPostOutbox: new ActionRequestRepository(database.kysely),
       chat: {
         answer: async (input) => {
           chatInputs.push({
@@ -355,10 +371,10 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
   });
 
   it("enqueues a gap escalation from a typed no_context outcome and skips grounded turns", async () => {
-    const oauthConnections = new OauthConnectionRepository(database);
-    const integrationConnections = new IntegrationConnectionRepository(database);
-    const installations = new SlackInstallationRepository(database);
-    const bindings = new SlackChannelBindingRepository(database);
+    const oauthConnections = new OauthConnectionRepository(database.kysely);
+    const integrationConnections = new IntegrationConnectionRepository(database.kysely);
+    const installations = new SlackInstallationRepository(database.kysely);
+    const bindings = new SlackChannelBindingRepository(database.kysely);
     const installationService = new SlackInstallationService({
       oauthConnections,
       integrationConnections,
@@ -387,8 +403,8 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       installations,
       bindings,
       installationService,
-      persistence: new PostgresSlackPersistence(database),
-      slackPostOutbox: new ActionRequestRepository(database),
+      persistence: new PostgresSlackPersistence(database.kysely),
+      slackPostOutbox: new ActionRequestRepository(database.kysely),
       chat: {
         answer: async (input) => {
           const [row] = await database.query<{ id: string }>(

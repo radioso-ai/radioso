@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import type { Database } from "../../shared/infra/database.js";
+import { currentTimestamp, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../modules/documents/domain/sourceConstants.js";
 
 export type DocumentOriginKind = "website" | "api" | "connector" | "upload";
@@ -75,33 +76,33 @@ interface DocumentSourceListRow extends DocumentSourceRow {
   document_count: string;
 }
 
-const sourceSelect = `
-  id,
-  workspace_id,
-  kind,
-  name,
-  external_id,
-  config,
-  metadata,
-  last_sync_status,
-  last_synced_at,
-  created_at,
-  updated_at
-`;
+const sourceColumns = [
+  "id",
+  "workspace_id",
+  "kind",
+  "name",
+  "external_id",
+  "config",
+  "metadata",
+  "last_sync_status",
+  "last_synced_at",
+  "created_at",
+  "updated_at",
+] as const;
 
-const qualifiedSourceSelect = `
-  document_sources.id,
-  document_sources.workspace_id,
-  document_sources.kind,
-  document_sources.name,
-  document_sources.external_id,
-  document_sources.config,
-  document_sources.metadata,
-  document_sources.last_sync_status,
-  document_sources.last_synced_at,
-  document_sources.created_at,
-  document_sources.updated_at
-`;
+const qualifiedSourceColumns = [
+  "document_sources.id",
+  "document_sources.workspace_id",
+  "document_sources.kind",
+  "document_sources.name",
+  "document_sources.external_id",
+  "document_sources.config",
+  "document_sources.metadata",
+  "document_sources.last_sync_status",
+  "document_sources.last_synced_at",
+  "document_sources.created_at",
+  "document_sources.updated_at",
+] as const;
 
 export const toDocumentSourceSummary = (source: DocumentSourceRecord): DocumentSourceSummary => ({
   id: source.id,
@@ -130,59 +131,56 @@ const mapDocumentSourceListRecord = (row: DocumentSourceListRow): DocumentSource
 });
 
 export class DocumentSourceRepository implements DocumentSourceRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async findByIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<DocumentSourceRecord | null> {
-    const [row] = await this.database.query<DocumentSourceRow>(
-      `SELECT ${sourceSelect}
-       FROM document_sources
-       WHERE id = $1 AND workspace_id = $2`,
-      [sourceId, workspaceId],
-    );
+    const row = await this.db
+      .selectFrom("document_sources")
+      .select(sourceColumns)
+      .where("id", "=", sourceId)
+      .where("workspace_id", "=", workspaceId)
+      .executeTakeFirst();
 
-    return row ? mapDocumentSource(row) : null;
+    return row ? mapDocumentSource(row as DocumentSourceRow) : null;
   }
 
   async findExistingIdsByWorkspaceId(workspaceId: string, sourceIds: string[]): Promise<string[]> {
     if (sourceIds.length === 0) {
       return [];
     }
-    const rows = await this.database.query<{ id: string }>(
-      `SELECT id::text AS id
-       FROM document_sources
-       WHERE workspace_id = $1
-         AND id = ANY($2::uuid[])`,
-      [workspaceId, sourceIds],
-    );
+    const rows = await this.db
+      .selectFrom("document_sources")
+      .select("id")
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "in", sourceIds)
+      .execute();
 
     return rows.map((row) => row.id);
   }
 
   async listByWorkspaceIdWithDocumentCounts(workspaceId: string): Promise<DocumentSourceListRecord[]> {
-    const rows = await this.database.query<DocumentSourceListRow>(
-      `SELECT ${qualifiedSourceSelect},
-              COUNT(d.id)::text AS document_count
-       FROM document_sources
-       LEFT JOIN documents d
-         ON d.source_id = document_sources.id
-        AND d.workspace_id = document_sources.workspace_id
-       WHERE document_sources.workspace_id = $1
-       GROUP BY document_sources.id
-       ORDER BY document_sources.created_at DESC, document_sources.id DESC`,
-      [workspaceId],
-    );
+    const rows = await this.db
+      .selectFrom("document_sources")
+      .leftJoin("documents as d", (join) =>
+        join.onRef("d.source_id", "=", "document_sources.id").onRef("d.workspace_id", "=", "document_sources.workspace_id"),
+      )
+      .select([...qualifiedSourceColumns, (eb) => eb.fn.count<string>("d.id").as("document_count")])
+      .where("document_sources.workspace_id", "=", workspaceId)
+      .groupBy("document_sources.id")
+      .orderBy("document_sources.created_at", "desc")
+      .orderBy("document_sources.id", "desc")
+      .execute();
 
-    return rows.map(mapDocumentSourceListRecord);
+    return rows.map((row) => mapDocumentSourceListRecord(row as DocumentSourceListRow));
   }
 
   async countDocumentsWithoutSource(workspaceId: string): Promise<number> {
-    const [row] = await this.database.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count
-       FROM documents
-       WHERE workspace_id = $1
-         AND source_id IS NULL`,
-      [workspaceId],
-    );
+    const row = await this.db
+      .selectFrom("documents")
+      .select((eb) => eb.fn.countAll<string>().as("count"))
+      .where("workspace_id", "=", workspaceId)
+      .where("source_id", "is", null)
+      .executeTakeFirst();
 
     return Number(row?.count ?? "0");
   }
@@ -195,36 +193,33 @@ export class DocumentSourceRepository implements DocumentSourceRepositoryPort {
     config?: Record<string, unknown>;
     metadata?: Record<string, unknown>;
   }): Promise<DocumentSourceRecord> {
-    const [row] = await this.database.query<DocumentSourceRow>(
-      `INSERT INTO document_sources (
-         id,
-         workspace_id,
-         kind,
-         name,
-         external_id,
-         config,
-         metadata
-       )
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb)
-       ON CONFLICT (workspace_id, kind, external_id) WHERE external_id IS NOT NULL
-       DO UPDATE
-         SET name = EXCLUDED.name,
-             config = EXCLUDED.config,
-             metadata = document_sources.metadata || EXCLUDED.metadata,
-             updated_at = NOW()
-       RETURNING ${sourceSelect}`,
-      [
-        randomUUID(),
-        input.workspaceId,
-        input.kind,
-        input.name,
-        input.externalId,
-        JSON.stringify(input.config ?? {}),
-        JSON.stringify(input.metadata ?? {}),
-      ],
-    );
+    const row = await this.db
+      .insertInto("document_sources")
+      .values({
+        id: randomUUID(),
+        workspace_id: input.workspaceId,
+        kind: input.kind,
+        name: input.name,
+        external_id: input.externalId,
+        config: toJsonb(input.config ?? {}),
+        metadata: toJsonb(input.metadata ?? {}),
+      })
+      .onConflict((oc) =>
+        // partial-index conflict target: (workspace_id, kind, external_id) WHERE external_id IS NOT NULL
+        oc
+          .columns(["workspace_id", "kind", "external_id"])
+          .where("external_id", "is not", null)
+          .doUpdateSet((eb) => ({
+            name: eb.ref("excluded.name"),
+            config: eb.ref("excluded.config"),
+            metadata: jsonbConcat(eb.ref("document_sources.metadata"), eb.ref("excluded.metadata")),
+            updated_at: currentTimestamp(),
+          })),
+      )
+      .returning(sourceColumns)
+      .executeTakeFirstOrThrow();
 
-    return mapDocumentSource(row);
+    return mapDocumentSource(row as DocumentSourceRow);
   }
 
   async updateSyncState(input: {
@@ -233,14 +228,17 @@ export class DocumentSourceRepository implements DocumentSourceRepositoryPort {
     status: string;
     syncedAt?: Date | null;
   }): Promise<void> {
-    await this.database.query(
-      `UPDATE document_sources
-       SET last_sync_status = $3,
-           last_synced_at = COALESCE($4, last_synced_at),
-           updated_at = NOW()
-       WHERE id = $1 AND workspace_id = $2`,
-      [input.sourceId, input.workspaceId, input.status, input.syncedAt ?? null],
-    );
+    await this.db
+      .updateTable("document_sources")
+      .set({
+        last_sync_status: input.status,
+        // COALESCE($, last_synced_at): keep existing when not provided.
+        ...(input.syncedAt != null ? { last_synced_at: input.syncedAt } : {}),
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", input.sourceId)
+      .where("workspace_id", "=", input.workspaceId)
+      .execute();
   }
 
   async updateConfigByIdAndWorkspaceId(input: {
@@ -248,28 +246,26 @@ export class DocumentSourceRepository implements DocumentSourceRepositoryPort {
     workspaceId: string;
     config: Record<string, unknown>;
   }): Promise<DocumentSourceRecord> {
-    const [row] = await this.database.query<DocumentSourceRow>(
-      `UPDATE document_sources
-       SET config = $3::jsonb,
-           updated_at = NOW()
-       WHERE id = $1 AND workspace_id = $2
-       RETURNING ${sourceSelect}`,
-      [input.sourceId, input.workspaceId, JSON.stringify(input.config)],
-    );
+    const row = await this.db
+      .updateTable("document_sources")
+      .set({ config: toJsonb(input.config), updated_at: currentTimestamp() })
+      .where("id", "=", input.sourceId)
+      .where("workspace_id", "=", input.workspaceId)
+      .returning(sourceColumns)
+      .executeTakeFirst();
 
     if (!row) {
       throw new Error(`Document source ${input.sourceId} not found in workspace ${input.workspaceId}`);
     }
-    return mapDocumentSource(row);
+    return mapDocumentSource(row as DocumentSourceRow);
   }
 
   async deleteByIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<boolean> {
-    const rows = await this.database.query<{ id: string }>(
-      `DELETE FROM document_sources
-       WHERE id = $1 AND workspace_id = $2
-       RETURNING id`,
-      [sourceId, workspaceId],
-    );
-    return rows.length > 0;
+    const result = await this.db
+      .deleteFrom("document_sources")
+      .where("id", "=", sourceId)
+      .where("workspace_id", "=", workspaceId)
+      .executeTakeFirst();
+    return Number(result.numDeletedRows) > 0;
   }
 }

@@ -1,9 +1,10 @@
-import type { Database } from "../../shared/infra/database.js";
 import type {
   IngestionSettingsRecord,
   ValidatedIngestionSettingsInput,
 } from "../../modules/settings/contracts/ingestion.js";
 import type { IngestionSettingsRepositoryPort } from "../../modules/settings/contracts/services.js";
+import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 
 interface IngestionSettingsRow {
   workspace_id: string;
@@ -31,126 +32,134 @@ const mapSettings = (row: IngestionSettingsRow): IngestionSettingsRecord => ({
   updatedAt: new Date(row.updated_at),
 });
 
-const ingestionSettingsColumns = `workspace_id, chunking_strategy, fixed_window_chunk_size, fixed_window_chunk_overlap,
-              structured_min_chunk_size, structured_max_chunk_size, embedding_model, pending_embedding_model, created_at, updated_at`;
+const ingestionSettingsColumns = [
+  "workspace_id",
+  "chunking_strategy",
+  "fixed_window_chunk_size",
+  "fixed_window_chunk_overlap",
+  "structured_min_chunk_size",
+  "structured_max_chunk_size",
+  "embedding_model",
+  "pending_embedding_model",
+  "created_at",
+  "updated_at",
+] as const;
 
 export class IngestionSettingsRepository implements IngestionSettingsRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async findByWorkspaceId(workspaceId: string): Promise<IngestionSettingsRecord | null> {
-    const row = await this.database.queryOptional<IngestionSettingsRow>(
-      `SELECT ${ingestionSettingsColumns}
-       FROM ingestion_settings
-       WHERE workspace_id = $1`,
-      [workspaceId],
-    );
+    const row = await this.db
+      .selectFrom("ingestion_settings")
+      .select(ingestionSettingsColumns)
+      .where("workspace_id", "=", workspaceId)
+      .executeTakeFirst();
 
-    return row ? mapSettings(row) : null;
+    return row ? mapSettings(row as IngestionSettingsRow) : null;
   }
 
   async upsert(workspaceId: string, input: ValidatedIngestionSettingsInput): Promise<IngestionSettingsRecord> {
-    const row = await this.database.queryOne<IngestionSettingsRow>(
-      `INSERT INTO ingestion_settings (
-         workspace_id,
-         chunking_strategy,
-         fixed_window_chunk_size,
-         fixed_window_chunk_overlap,
-         structured_min_chunk_size,
-         structured_max_chunk_size,
-         embedding_model,
-         pending_embedding_model
-       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       ON CONFLICT (workspace_id)
-       DO UPDATE SET chunking_strategy = EXCLUDED.chunking_strategy,
-                     fixed_window_chunk_size = EXCLUDED.fixed_window_chunk_size,
-                     fixed_window_chunk_overlap = EXCLUDED.fixed_window_chunk_overlap,
-                     structured_min_chunk_size = EXCLUDED.structured_min_chunk_size,
-                     structured_max_chunk_size = EXCLUDED.structured_max_chunk_size,
-                     embedding_model = EXCLUDED.embedding_model,
-                     pending_embedding_model = EXCLUDED.pending_embedding_model,
-                     updated_at = NOW()
-       RETURNING ${ingestionSettingsColumns}`,
-      [
-        workspaceId,
-        input.chunkingStrategy,
-        input.fixedWindowChunkSize,
-        input.fixedWindowChunkOverlap,
-        input.structuredMinChunkSize,
-        input.structuredMaxChunkSize,
-        input.embeddingModel,
-        input.pendingEmbeddingModel,
-      ],
-    );
+    const row = await this.db
+      .insertInto("ingestion_settings")
+      .values({
+        workspace_id: workspaceId,
+        chunking_strategy: input.chunkingStrategy,
+        fixed_window_chunk_size: input.fixedWindowChunkSize,
+        fixed_window_chunk_overlap: input.fixedWindowChunkOverlap,
+        structured_min_chunk_size: input.structuredMinChunkSize,
+        structured_max_chunk_size: input.structuredMaxChunkSize,
+        embedding_model: input.embeddingModel,
+        pending_embedding_model: input.pendingEmbeddingModel,
+      })
+      .onConflict((oc) =>
+        oc.column("workspace_id").doUpdateSet((eb) => ({
+          chunking_strategy: eb.ref("excluded.chunking_strategy"),
+          fixed_window_chunk_size: eb.ref("excluded.fixed_window_chunk_size"),
+          fixed_window_chunk_overlap: eb.ref("excluded.fixed_window_chunk_overlap"),
+          structured_min_chunk_size: eb.ref("excluded.structured_min_chunk_size"),
+          structured_max_chunk_size: eb.ref("excluded.structured_max_chunk_size"),
+          embedding_model: eb.ref("excluded.embedding_model"),
+          pending_embedding_model: eb.ref("excluded.pending_embedding_model"),
+          updated_at: currentTimestamp(),
+        })),
+      )
+      .returning(ingestionSettingsColumns)
+      .executeTakeFirstOrThrow();
 
-    return mapSettings(row);
+    return mapSettings(row as IngestionSettingsRow);
   }
 
   async clearPendingEmbeddingModel(workspaceId: string): Promise<IngestionSettingsRecord | null> {
-    const row = await this.database.queryOptional<IngestionSettingsRow>(
-      `UPDATE ingestion_settings
-       SET pending_embedding_model = NULL,
-           updated_at = NOW()
-       WHERE workspace_id = $1
-       RETURNING ${ingestionSettingsColumns}`,
-      [workspaceId],
-    );
+    const row = await this.db
+      .updateTable("ingestion_settings")
+      .set({
+        pending_embedding_model: null,
+        updated_at: currentTimestamp(),
+      })
+      .where("workspace_id", "=", workspaceId)
+      .returning(ingestionSettingsColumns)
+      .executeTakeFirst();
 
-    return row ? mapSettings(row) : null;
+    return row ? mapSettings(row as IngestionSettingsRow) : null;
   }
 
   async promotePendingEmbeddingModelIfReady(workspaceId: string): Promise<IngestionSettingsRecord | null> {
-    return this.database.withTransaction(async (client) => {
-      const settingsResult = await client.query<IngestionSettingsRow>(
-        `SELECT ${ingestionSettingsColumns}
-         FROM ingestion_settings
-         WHERE workspace_id = $1
-         FOR UPDATE`,
-        [workspaceId],
-      );
-      const settings = settingsResult.rows[0];
+    return this.db.transaction().execute(async (trx) => {
+      const settings = await trx
+        .selectFrom("ingestion_settings")
+        .select(ingestionSettingsColumns)
+        .where("workspace_id", "=", workspaceId)
+        .forUpdate()
+        .executeTakeFirst();
       const pendingModel = settings?.pending_embedding_model;
 
       if (!settings || !pendingModel) {
-        return settings ? mapSettings(settings) : null;
+        return settings ? mapSettings(settings as IngestionSettingsRow) : null;
       }
 
-      const readiness = await client.query<{ pending_document_count: string; mismatched_ready_document_count: string }>(
-        `SELECT
-           COUNT(*) FILTER (WHERE d.status IN ('queued', 'processing'))::text AS pending_document_count,
-           COUNT(*) FILTER (
-             WHERE d.status = 'ready'
-               AND EXISTS (
-                 SELECT 1
-                 FROM chunks c
-                 WHERE c.document_id = d.id
-                   AND c.workspace_id = d.workspace_id
-                   AND c.embedding_model IS DISTINCT FROM $2
-               )
-           )::text AS mismatched_ready_document_count
-         FROM documents d
-         WHERE d.workspace_id = $1`,
-        [workspaceId, pendingModel],
-      );
-      const row = readiness.rows[0];
+      const row = await trx
+        .selectFrom("documents as d")
+        .select((eb) => [
+          eb.fn
+            .countAll<number>()
+            .filterWhere("d.status", "in", ["queued", "processing"])
+            .as("pending_document_count"),
+          eb.fn
+            .countAll<number>()
+            .filterWhere("d.status", "=", "ready")
+            .filterWhere(
+              eb.exists(
+                eb
+                  .selectFrom("chunks as c")
+                  .select("c.id")
+                  .whereRef("c.document_id", "=", "d.id")
+                  .whereRef("c.workspace_id", "=", "d.workspace_id")
+                  .where("c.embedding_model", "is distinct from", pendingModel),
+              ),
+            )
+            .as("mismatched_ready_document_count"),
+        ])
+        .where("d.workspace_id", "=", workspaceId)
+        .executeTakeFirst();
       const hasPendingDocuments = Number(row?.pending_document_count ?? "0") > 0;
       const hasMismatchedReadyDocuments = Number(row?.mismatched_ready_document_count ?? "0") > 0;
 
       if (hasPendingDocuments || hasMismatchedReadyDocuments) {
-        return mapSettings(settings);
+        return mapSettings(settings as IngestionSettingsRow);
       }
 
-      const promoted = await client.query<IngestionSettingsRow>(
-        `UPDATE ingestion_settings
-         SET embedding_model = pending_embedding_model,
-             pending_embedding_model = NULL,
-             updated_at = NOW()
-         WHERE workspace_id = $1
-         RETURNING ${ingestionSettingsColumns}`,
-        [workspaceId],
-      );
+      const promoted = await trx
+        .updateTable("ingestion_settings")
+        .set((eb) => ({
+          embedding_model: eb.fn.coalesce("pending_embedding_model", "embedding_model"),
+          pending_embedding_model: null,
+          updated_at: currentTimestamp(),
+        }))
+        .where("workspace_id", "=", workspaceId)
+        .returning(ingestionSettingsColumns)
+        .executeTakeFirst();
 
-      return promoted.rows[0] ? mapSettings(promoted.rows[0]) : null;
+      return promoted ? mapSettings(promoted as IngestionSettingsRow) : null;
     });
   }
 }

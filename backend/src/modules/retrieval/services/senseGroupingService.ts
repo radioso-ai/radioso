@@ -1,8 +1,10 @@
 import type { ClarificationCandidate } from "@radioso/conversation-contract";
+import { sql } from "kysely";
 
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
-import type { Database } from "../../../shared/infra/database.js";
+import { anyOf } from "../../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../../shared/infra/kysely/types.js";
 import type { RetrievedCandidate } from "../domain/retrievalPipelineTypes.js";
 
 export interface RetrievalSensePolicy {
@@ -60,18 +62,24 @@ export const documentScopeFromClarificationCandidate = (
 };
 
 export class PostgresSenseEmbeddingReader implements SenseEmbeddingReader {
-  constructor(private readonly database: Pick<Database, "query">) {}
+  constructor(private readonly db: Db) {}
 
   async readChunkEmbeddings(input: { workspaceId: string; chunkIds: string[] }): Promise<Map<string, number[]>> {
     if (input.chunkIds.length === 0) {
       return new Map();
     }
-    const rows = await this.database.query<{ id: string; embedding_text: string | null }>(
-      `SELECT id, COALESCE(embedding_unbounded::text, embedding::text) AS embedding_text
-       FROM chunks
-       WHERE workspace_id = $1 AND id = ANY($2::uuid[])`,
-      [input.workspaceId, input.chunkIds],
-    );
+    // pgvector columns serialize to text for in-process distance math; the cast is a
+    // Postgres-specific fragment the builder can't express. `parsePgVector` maps the
+    // `[a,b,...]` literal back to numbers, unchanged from the raw-SQL behaviour.
+    const rows = await this.db
+      .selectFrom("chunks")
+      .select([
+        "id",
+        sql<string | null>`coalesce(embedding_unbounded::text, embedding::text)`.as("embedding_text"),
+      ])
+      .where("workspace_id", "=", input.workspaceId)
+      .where((eb) => anyOf(eb.ref("id"), input.chunkIds, "uuid[]"))
+      .execute();
     return new Map(rows.flatMap((row) => {
       const vector = parsePgVector(row.embedding_text);
       return vector ? [[row.id, vector] as const] : [];

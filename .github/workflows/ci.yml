@@ -252,6 +252,10 @@ jobs:
         working-directory: backend
         run: pnpm run db:schema:check
 
+      - name: Verify Kysely schema types match migrations
+        working-directory: backend
+        run: pnpm run db:types:check
+
       - name: Test backend integration suite
         working-directory: backend
         run: pnpm run test:integration

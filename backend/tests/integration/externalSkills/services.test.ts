@@ -12,6 +12,7 @@ import { ExternalSkillDefinitionService } from "../../../src/modules/externalSki
 import { SdkMcpToolService } from "../../../src/modules/externalSkills/toolService/sdkMcpToolService.js";
 import type { ToolServiceFactory } from "../../../src/modules/externalSkills/executor/mcpSkillExecutor.js";
 import type { Database } from "../../../src/shared/infra/database.js";
+import { createKyselyDatabase } from "../../../src/shared/infra/kysely/kyselyDatabase.js";
 import { connectMockMcpServer } from "../../support/mockMcpServer.js";
 import { testMigrationsPath } from "../../support/databaseMigrations.js";
 
@@ -32,16 +33,29 @@ const canReach = async (url?: string): Promise<boolean> => {
 
 const describeIfDatabase = (await canReach(integrationDatabaseUrl)) ? describe : describe.skip;
 
-const clientBackedDatabase = (client: PoolClient): Database =>
-  ({
-    pool: {} as Database["pool"],
+const clientBackedDatabase = (client: PoolClient): Database => {
+  const pool = {
+    async connect() {
+      return new Proxy(client, {
+        get(target, property, receiver) {
+          if (property === "release") return () => undefined;
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      }) as PoolClient;
+    },
+  } as Database["pool"];
+  return {
+    pool,
+    kysely: createKyselyDatabase(pool),
     async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
       return (await client.query<T>(text, params)).rows;
     },
     async execute(text: string, params: unknown[] = []): Promise<number> {
       return (await client.query(text, params)).rowCount ?? 0;
     },
-  }) as Database;
+  } as Database;
+};
 
 const DISCOVERED = [
   {
@@ -93,12 +107,12 @@ describeIfDatabase("external skills services (postgres)", () => {
 
     const database = clientBackedDatabase(client);
     connections = new McpConnectionService({
-      repository: new McpConnectionRepository(database),
+      repository: new McpConnectionRepository(database.kysely),
       toolServiceFactory: mockToolServiceFactory,
       encryptionKey,
       encryptionKeyId: "k1",
     });
-    skills = new ExternalSkillDefinitionService(new ExternalSkillDefinitionRepository(database), connections);
+    skills = new ExternalSkillDefinitionService(new ExternalSkillDefinitionRepository(database.kysely), connections);
   });
 
   afterAll(async () => {

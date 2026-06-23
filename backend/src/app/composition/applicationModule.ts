@@ -13,6 +13,7 @@ import type {
 } from "../../modules/documents/contracts/index.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { Database } from "../../shared/infra/database.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
 import type { OrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
@@ -144,7 +145,7 @@ export type ApplicationContactHistoryProviderRegistration =
 export type ApplicationAnswerFeedbackHistoryProviderRegistration =
   | AnswerFeedbackHistoryProviderPort
   | ((context: {
-      database: ApplicationDatabasePort;
+      database: Db;
       logger: AppLogger;
     }) => AnswerFeedbackHistoryProviderPort);
 

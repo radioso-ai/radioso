@@ -18,6 +18,7 @@ import type {
   ConnectorValidationIssue,
 } from "@radioso/connector-api";
 
+import { connectorKyselyDb } from "../../services/connectorKyselyDb.js";
 import { createWordpressWebhookRouter } from "./wordpressWebhookRouter.js";
 import {
   requestBackfill,
@@ -105,7 +106,7 @@ export class WordpressConnector implements ConnectorPlugin {
   async initialize(context: ConnectorContext): Promise<void> {
     this.syncDeps = {
       logger: context.logger,
-      db: context.db,
+      db: connectorKyselyDb(context.db),
       state: context.state,
       ingestion: context.ingestion,
     };

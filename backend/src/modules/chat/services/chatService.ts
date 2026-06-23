@@ -32,7 +32,7 @@ import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspace
 import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { PendingDecisionCreateInput, PendingDecisionRecord } from "../../../db/repositories/pendingDecisionRepository.js";
 import type { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
-import type { DatabaseExecutor } from "../../../shared/infra/database.js";
+import type { Db } from "../../../shared/infra/kysely/types.js";
 import type { AgentService } from "../../agents/public.js";
 import { buildPendingDecisionTransition, type ResumeRunner } from "../../approvals/public.js";
 import type { ChatGateway, ChatGatewayInput } from "../contracts/chatGateway.js";
@@ -707,7 +707,7 @@ export class ChatService {
     optionId: string;
     payload?: unknown;
     decidedBy: string;
-    executor: DatabaseExecutor;
+    transaction: Db;
   }): Promise<{ conversationId: string; resumed: boolean; assistantMessageId?: string }> {
     if (!this.routineProvider || !this.suspendedRoutineReader) {
       throw new Error("approval_resume_routine_provider_missing");
@@ -788,7 +788,7 @@ export class ChatService {
           optionId: input.optionId,
         },
       },
-      executor: input.executor,
+      transaction: input.transaction,
     });
 
     return {

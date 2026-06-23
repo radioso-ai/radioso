@@ -7,6 +7,7 @@ import type { PoolClient, QueryResultRow } from "pg";
 
 import { RoutineDefinitionRepository } from "../../src/db/repositories/routineDefinitionRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
+import { createKyselyDatabase } from "../../src/shared/infra/kysely/kyselyDatabase.js";
 import { validateRoutineDefinition, type RoutineDefinitionDraftInput } from "../../src/modules/routines/public.js";
 import { testMigrationsPath } from "../support/databaseMigrations.js";
 
@@ -30,8 +31,27 @@ const canReachIntegrationDatabase = async (databaseUrl?: string): Promise<boolea
 const hasReachableIntegrationDatabase = await canReachIntegrationDatabase(integrationDatabaseUrl);
 const describeIfDatabase = hasReachableIntegrationDatabase ? describe : describe.skip;
 
-const createClientBackedDatabase = (client: PoolClient): Database => ({
-  pool: {} as Database["pool"],
+const createClientBackedDatabase = (client: PoolClient): Database => {
+  // Back Kysely with the SAME client the raw helpers use, so Kysely queries run inside
+  // this test's per-test schema (search_path) and open transaction — a fresh pool would
+  // miss both. The pool's connect() hands back the client with release() neutered.
+  const pool = {
+    async connect() {
+      return new Proxy(client, {
+        get(target, property, receiver) {
+          if (property === "release") {
+            return () => undefined;
+          }
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      }) as PoolClient;
+    },
+  } as Database["pool"];
+
+  return {
+  pool,
+  kysely: createKyselyDatabase(pool),
   async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
     const result = await client.query<T>(text, params);
     return result.rows;
@@ -64,7 +84,8 @@ const createClientBackedDatabase = (client: PoolClient): Database => ({
     }
   },
   async close(): Promise<void> {},
-} as Database);
+  } as Database;
+};
 
 const createRoutineSchema = async (client: PoolClient, schema: string): Promise<void> => {
   await client.query(`CREATE SCHEMA ${schema}`);
@@ -254,7 +275,7 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
   });
 
   it("publishes, revises, archives, and restores against real SQL indexes", async () => {
-    const repository = new RoutineDefinitionRepository(database);
+    const repository = new RoutineDefinitionRepository(database.kysely);
     const draftV1 = await repository.createDraft(agentId, draftInput("postgres-lifecycle", "v1"));
     const publishedV1 = await repository.publish(agentId, draftV1.id);
 
@@ -320,7 +341,7 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
   });
 
   it("round-trips deterministic field guards (ref/op/value/values/unit) through real SQL", async () => {
-    const repository = new RoutineDefinitionRepository(database);
+    const repository = new RoutineDefinitionRepository(database.kysely);
     const draft = await repository.createDraft(agentId, {
       name: "field-guard-roundtrip",
       activation: { triggerDescription: "When checking eligibility.", gateRef: null, priority: 5, reentryMode: "always" },
@@ -368,7 +389,7 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
   });
 
   it("round-trips an approval step's capture key and options through real SQL (issue #755)", async () => {
-    const repository = new RoutineDefinitionRepository(database);
+    const repository = new RoutineDefinitionRepository(database.kysely);
     const draft = await repository.createDraft(agentId, {
       name: "approval-roundtrip",
       activation: { triggerDescription: "When a refund needs a manager.", gateRef: null, priority: 0, reentryMode: "once_per_conversation" },
@@ -434,7 +455,7 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
   });
 
   it("rejects publish when an enabled completion export destination was deleted before publish", async () => {
-    const repository = new RoutineDefinitionRepository(database);
+    const repository = new RoutineDefinitionRepository(database.kysely);
     const destinationId = randomUUID();
     await database.execute(
       `INSERT INTO workspace_webhook_destinations (
@@ -481,7 +502,7 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
   });
 
   it("rejects restore when an enabled completion export destination was deleted while archived", async () => {
-    const repository = new RoutineDefinitionRepository(database);
+    const repository = new RoutineDefinitionRepository(database.kysely);
     const destinationId = randomUUID();
     await database.execute(
       `INSERT INTO workspace_webhook_destinations (
@@ -603,7 +624,7 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
   });
 
   it("rejects a draft save that races publish without mutating the published children", async () => {
-    const repository = new RoutineDefinitionRepository(database);
+    const repository = new RoutineDefinitionRepository(database.kysely);
     const draft = await repository.createDraft(agentId, draftInput("postgres-update-race", "v1"));
     const published = await repository.publish(agentId, draft.id);
 

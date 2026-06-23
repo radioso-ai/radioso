@@ -13,7 +13,8 @@ import {
 import { createWorkspacePublicRouteKey } from "../../modules/workspace/domain/publicRouteKey.js";
 import { randomUUID } from "node:crypto";
 
-import type { Database } from "../../shared/infra/database.js";
+import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface WorkspaceRecord extends AssistantBootstrapSettingsRecord, WebsiteEmbedSettingsRecord {
   id: string;
@@ -84,28 +85,28 @@ const mapWorkspace = (row: WorkspaceRow): WorkspaceRecord => {
   };
 };
 
-const workspaceColumns = `
-  id,
-  account_id,
-  name,
-  public_route_key,
-  default_agent_id,
-  assistant_name,
-  greeting_instruction,
-  assistant_default_locale,
-  proactive_greeting_enabled,
-  anonymous_chat_enabled,
-  anonymous_chat_token,
-  anonymous_rate_limit,
-  website_embed_enabled,
-  website_embed_token,
-  website_embed_allowed_origins,
-  website_embed_launcher_label,
-  website_embed_launcher_icon,
-  website_embed_launcher_position,
-  created_at,
-  updated_at
-`;
+const workspaceColumns = [
+  "id",
+  "account_id",
+  "name",
+  "public_route_key",
+  "default_agent_id",
+  "assistant_name",
+  "greeting_instruction",
+  "assistant_default_locale",
+  "proactive_greeting_enabled",
+  "anonymous_chat_enabled",
+  "anonymous_chat_token",
+  "anonymous_rate_limit",
+  "website_embed_enabled",
+  "website_embed_token",
+  "website_embed_allowed_origins",
+  "website_embed_launcher_label",
+  "website_embed_launcher_icon",
+  "website_embed_launcher_position",
+  "created_at",
+  "updated_at",
+] as const;
 
 export interface WorkspaceRepositoryPort {
   create(accountId: string, name: string, publicRouteKey?: string): Promise<WorkspaceRecord>;
@@ -147,109 +148,109 @@ export interface WorkspaceRepositoryPort {
 }
 
 export class WorkspaceRepository implements WorkspaceRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async create(accountId: string, name: string, publicRouteKey?: string): Promise<WorkspaceRecord> {
-    const row = await this.database.queryOne<WorkspaceRow>(
-      `INSERT INTO workspaces (id, account_id, name, public_route_key)
-       VALUES ($1, $2, $3, $4)
-       RETURNING ${workspaceColumns}`,
-      [randomUUID(), accountId, name, publicRouteKey ?? createWorkspacePublicRouteKey(name)],
-    );
+    const row = await this.db
+      .insertInto("workspaces")
+      .values({
+        id: randomUUID(),
+        account_id: accountId,
+        name,
+        public_route_key: publicRouteKey ?? createWorkspacePublicRouteKey(name),
+      })
+      .returning(workspaceColumns)
+      .executeTakeFirstOrThrow();
 
-    return mapWorkspace(row);
+    return mapWorkspace(row as WorkspaceRow);
   }
 
   async findById(id: string): Promise<WorkspaceRecord | null> {
-    const row = await this.database.queryOptional<WorkspaceRow>(
-      `SELECT ${workspaceColumns}
-       FROM workspaces
-       WHERE id = $1`,
-      [id],
-    );
+    const row = await this.db
+      .selectFrom("workspaces")
+      .select(workspaceColumns)
+      .where("id", "=", id)
+      .executeTakeFirst();
 
-    return row ? mapWorkspace(row) : null;
+    return row ? mapWorkspace(row as WorkspaceRow) : null;
   }
 
   async findByIdAndAccountId(workspaceId: string, accountId: string): Promise<WorkspaceRecord | null> {
-    const row = await this.database.queryOptional<WorkspaceRow>(
-      `SELECT ${workspaceColumns}
-       FROM workspaces
-       WHERE id = $1 AND account_id = $2`,
-      [workspaceId, accountId],
-    );
+    const row = await this.db
+      .selectFrom("workspaces")
+      .select(workspaceColumns)
+      .where("id", "=", workspaceId)
+      .where("account_id", "=", accountId)
+      .executeTakeFirst();
 
-    return row ? mapWorkspace(row) : null;
+    return row ? mapWorkspace(row as WorkspaceRow) : null;
   }
 
   async findByPublicRouteKey(publicRouteKey: string): Promise<WorkspaceRecord | null> {
-    const row = await this.database.queryOptional<WorkspaceRow>(
-      `SELECT ${workspaceColumns}
-       FROM workspaces
-       WHERE public_route_key = $1`,
-      [publicRouteKey],
-    );
+    const row = await this.db
+      .selectFrom("workspaces")
+      .select(workspaceColumns)
+      .where("public_route_key", "=", publicRouteKey)
+      .executeTakeFirst();
 
-    return row ? mapWorkspace(row) : null;
+    return row ? mapWorkspace(row as WorkspaceRow) : null;
   }
 
   async listByAccountId(accountId: string): Promise<WorkspaceRecord[]> {
-    const rows = await this.database.query<WorkspaceRow>(
-      `SELECT ${workspaceColumns}
-       FROM workspaces
-       WHERE account_id = $1
-       ORDER BY created_at ASC`,
-      [accountId],
-    );
+    const rows = await this.db
+      .selectFrom("workspaces")
+      .select(workspaceColumns)
+      .where("account_id", "=", accountId)
+      .orderBy("created_at", "asc")
+      .execute();
 
-    return rows.map(mapWorkspace);
+    return rows.map((row) => mapWorkspace(row as WorkspaceRow));
   }
 
   async countByAccountId(accountId: string): Promise<number> {
-    const row = await this.database.queryOne<{ count: string }>(
-      `SELECT COUNT(*)::text AS count FROM workspaces WHERE account_id = $1`,
-      [accountId],
-    );
+    const row = await this.db
+      .selectFrom("workspaces")
+      .select((eb) => eb.fn.countAll<string>().as("count"))
+      .where("account_id", "=", accountId)
+      .executeTakeFirstOrThrow();
 
     return parseInt(row.count, 10);
   }
 
   async updateName(workspaceId: string, accountId: string, name: string): Promise<WorkspaceRecord> {
-    const row = await this.database.queryOptional<WorkspaceRow>(
-      `UPDATE workspaces SET name = $1, updated_at = NOW()
-       WHERE id = $2
-         AND account_id = $3
-       RETURNING ${workspaceColumns}`,
-      [name, workspaceId, accountId],
-    );
+    const row = await this.db
+      .updateTable("workspaces")
+      .set({ name, updated_at: currentTimestamp() })
+      .where("id", "=", workspaceId)
+      .where("account_id", "=", accountId)
+      .returning(workspaceColumns)
+      .executeTakeFirst();
 
     if (!row) {
       throw new Error(`Workspace ${workspaceId} not found`);
     }
 
-    return mapWorkspace(row);
+    return mapWorkspace(row as WorkspaceRow);
   }
 
   async findByAnonymousChatToken(token: string): Promise<WorkspaceRecord | null> {
-    const row = await this.database.queryOptional<WorkspaceRow>(
-      `SELECT ${workspaceColumns}
-       FROM workspaces
-       WHERE anonymous_chat_token = $1`,
-      [token],
-    );
+    const row = await this.db
+      .selectFrom("workspaces")
+      .select(workspaceColumns)
+      .where("anonymous_chat_token", "=", token)
+      .executeTakeFirst();
 
-    return row ? mapWorkspace(row) : null;
+    return row ? mapWorkspace(row as WorkspaceRow) : null;
   }
 
   async findByWebsiteEmbedToken(token: string): Promise<WorkspaceRecord | null> {
-    const row = await this.database.queryOptional<WorkspaceRow>(
-      `SELECT ${workspaceColumns}
-       FROM workspaces
-       WHERE website_embed_token = $1`,
-      [token],
-    );
+    const row = await this.db
+      .selectFrom("workspaces")
+      .select(workspaceColumns)
+      .where("website_embed_token", "=", token)
+      .executeTakeFirst();
 
-    return row ? mapWorkspace(row) : null;
+    return row ? mapWorkspace(row as WorkspaceRow) : null;
   }
 
   async updateAnonymousChatSettings(
@@ -258,19 +259,23 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
     token: string | null,
     rateLimit: number,
   ): Promise<WorkspaceRecord> {
-    const row = await this.database.queryOptional<WorkspaceRow>(
-      `UPDATE workspaces
-       SET anonymous_chat_enabled = $1, anonymous_chat_token = $2, anonymous_rate_limit = $3, updated_at = NOW()
-       WHERE id = $4
-       RETURNING ${workspaceColumns}`,
-      [enabled, token, rateLimit, workspaceId],
-    );
+    const row = await this.db
+      .updateTable("workspaces")
+      .set({
+        anonymous_chat_enabled: enabled,
+        anonymous_chat_token: token,
+        anonymous_rate_limit: rateLimit,
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", workspaceId)
+      .returning(workspaceColumns)
+      .executeTakeFirst();
 
     if (!row) {
       throw new Error(`Workspace ${workspaceId} not found`);
     }
 
-    return mapWorkspace(row);
+    return mapWorkspace(row as WorkspaceRow);
   }
 
   async updateAssistantBootstrapSettings(
@@ -281,29 +286,24 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       ...defaultAssistantBootstrapSettings(),
       ...input,
     });
-    const row = await this.database.queryOptional<WorkspaceRow>(
-      `UPDATE workspaces
-       SET assistant_name = $1,
-           greeting_instruction = $2,
-           assistant_default_locale = $3,
-           proactive_greeting_enabled = $4,
-           updated_at = NOW()
-       WHERE id = $5
-       RETURNING ${workspaceColumns}`,
-      [
-        normalized.assistantName,
-        normalized.greetingInstruction,
-        normalized.assistantDefaultLocale,
-        normalized.proactiveGreetingEnabled,
-        workspaceId,
-      ],
-    );
+    const row = await this.db
+      .updateTable("workspaces")
+      .set({
+        assistant_name: normalized.assistantName,
+        greeting_instruction: normalized.greetingInstruction,
+        assistant_default_locale: normalized.assistantDefaultLocale,
+        proactive_greeting_enabled: normalized.proactiveGreetingEnabled,
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", workspaceId)
+      .returning(workspaceColumns)
+      .executeTakeFirst();
 
     if (!row) {
       throw new Error(`Workspace ${workspaceId} not found`);
     }
 
-    return mapWorkspace(row);
+    return mapWorkspace(row as WorkspaceRow);
   }
 
   async updateGeneralSettings(
@@ -322,51 +322,39 @@ export class WorkspaceRepository implements WorkspaceRepositoryPort {
       websiteEmbedLauncherPosition: WebsiteEmbedLauncherPosition;
     },
   ): Promise<WorkspaceRecord> {
-    const row = await this.database.queryOptional<WorkspaceRow>(
-      `UPDATE workspaces
-       SET anonymous_chat_enabled = $1,
-           anonymous_chat_token = $2,
-           assistant_name = $3,
-           greeting_instruction = $4,
-           assistant_default_locale = $5,
-           proactive_greeting_enabled = $6,
-           website_embed_enabled = $7,
-           website_embed_token = $8,
-           website_embed_allowed_origins = $9,
-           website_embed_launcher_label = $10,
-           website_embed_launcher_position = $11,
-           updated_at = NOW()
-       WHERE id = $12
-       RETURNING ${workspaceColumns}`,
-      [
-        input.anonymousChatEnabled,
-        input.anonymousChatToken,
-        input.assistantName,
-        input.greetingInstruction,
-        input.assistantDefaultLocale,
-        input.proactiveGreetingEnabled,
-        input.websiteEmbedEnabled,
-        input.websiteEmbedToken,
-        input.websiteEmbedAllowedOrigins,
-        input.websiteEmbedLauncherLabel,
-        input.websiteEmbedLauncherPosition,
-        workspaceId,
-      ],
-    );
+    const row = await this.db
+      .updateTable("workspaces")
+      .set({
+        anonymous_chat_enabled: input.anonymousChatEnabled,
+        anonymous_chat_token: input.anonymousChatToken,
+        assistant_name: input.assistantName,
+        greeting_instruction: input.greetingInstruction,
+        assistant_default_locale: input.assistantDefaultLocale,
+        proactive_greeting_enabled: input.proactiveGreetingEnabled,
+        website_embed_enabled: input.websiteEmbedEnabled,
+        website_embed_token: input.websiteEmbedToken,
+        website_embed_allowed_origins: input.websiteEmbedAllowedOrigins,
+        website_embed_launcher_label: input.websiteEmbedLauncherLabel,
+        website_embed_launcher_position: input.websiteEmbedLauncherPosition,
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", workspaceId)
+      .returning(workspaceColumns)
+      .executeTakeFirst();
 
     if (!row) {
       throw new Error(`Workspace ${workspaceId} not found`);
     }
 
-    return mapWorkspace(row);
+    return mapWorkspace(row as WorkspaceRow);
   }
 
   async deleteByIdAndAccountId(workspaceId: string, accountId: string): Promise<boolean> {
-    return (
-      (await this.database.execute(
-        "DELETE FROM workspaces WHERE id = $1 AND account_id = $2",
-        [workspaceId, accountId],
-      )) > 0
-    );
+    const result = await this.db
+      .deleteFrom("workspaces")
+      .where("id", "=", workspaceId)
+      .where("account_id", "=", accountId)
+      .executeTakeFirst();
+    return Number(result.numDeletedRows) > 0;
   }
 }

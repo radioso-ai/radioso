@@ -23,8 +23,8 @@ export const createWebhookSendApplicationModule = (): ApplicationModule => ({
           destinations: webhookDestinations,
           deliveryOutcomes: webhookDestinations,
           permission: new ConversationAgentWebhookPermissionResolver(
-            new ConversationRepository(database),
-            new AgentRepository(database),
+            new ConversationRepository(database.kysely),
+            new AgentRepository(database.kysely),
           ),
           httpClient: new FetchWebhookHttpClient(assertPublicWebsiteUrl),
           telemetryService,

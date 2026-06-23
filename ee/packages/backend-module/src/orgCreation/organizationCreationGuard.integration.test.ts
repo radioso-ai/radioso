@@ -76,9 +76,24 @@ const createMinimalBaseSchema = async (database: UsageLimitDatabasePort): Promis
 describeIfDatabase("EE organization creation guard integration", () => {
   let pool: pg.Pool;
   let database: PgDatabase;
+  // Isolate this suite in its own randomly-named Postgres schema so its minimal
+  // base tables (users/accounts/workspaces + ee_*) never collide with the full OSS
+  // schema living in `public` on the shared ci:local test DB.
+  const schema = `ee_test_${randomUUID().replace(/-/g, "")}`;
 
   beforeAll(async () => {
-    pool = new pg.Pool({ connectionString: integrationDatabaseUrl! });
+    const admin = new pg.Pool({ connectionString: integrationDatabaseUrl! });
+    try {
+      await admin.query(`CREATE SCHEMA "${schema}"`);
+    } finally {
+      await admin.end().catch(() => undefined);
+    }
+    // Pin the dedicated schema (NOT public) on every connection in the test pool so
+    // unqualified table names resolve to this suite's isolated tables.
+    pool = new pg.Pool({
+      connectionString: integrationDatabaseUrl!,
+      options: `-c search_path=${schema}`,
+    });
     database = new PgDatabase(pool);
     await createMinimalBaseSchema(database);
     await usageLimitMigrator.migrate(database);
@@ -86,6 +101,12 @@ describeIfDatabase("EE organization creation guard integration", () => {
 
   afterAll(async () => {
     await pool.end();
+    const admin = new pg.Pool({ connectionString: integrationDatabaseUrl! });
+    try {
+      await admin.query(`DROP SCHEMA "${schema}" CASCADE`);
+    } finally {
+      await admin.end().catch(() => undefined);
+    }
   });
 
   const seedUser = async (): Promise<string> => {
@@ -103,9 +124,10 @@ describeIfDatabase("EE organization creation guard integration", () => {
     const rows = await database.query<{ table_name: string }>(
       `SELECT table_name
        FROM information_schema.tables
-       WHERE table_schema = 'public'
+       WHERE table_schema = $1
          AND table_name IN ('ee_org_creation_counters', 'ee_org_creation_overrides')
        ORDER BY table_name`,
+      [schema],
     );
 
     expect(rows.map((row) => row.table_name)).toEqual([
@@ -141,5 +163,97 @@ describeIfDatabase("EE organization creation guard integration", () => {
       [userId],
     );
     expect(rows[0].used_count).toBe(1);
+  });
+
+  it("increments the counter atomically up to the limit and rejects beyond it", async () => {
+    const userId = await seedUser();
+    const guard = new EnterpriseOrganizationCreationGuard(database, {
+      defaultLimit: 1,
+      now: () => new Date("2026-06-09T12:00:00.000Z"),
+    });
+
+    await guard.reserve({ userId });
+
+    await expect(guard.reserve({ userId })).rejects.toMatchObject({
+      details: {
+        limit: 1,
+        used: 1,
+        periodStart: "2026-06-01",
+        resetAt: "2026-07-01T00:00:00.000Z",
+      },
+    });
+  });
+
+  it("does not increment the counter when an unlimited override is present", async () => {
+    const userId = await seedUser();
+    const guard = new EnterpriseOrganizationCreationGuard(database, {
+      defaultLimit: 1,
+      now: () => new Date("2026-06-09T12:00:00.000Z"),
+    });
+    await guard.upsertOverride({ userId, monthlyLimit: null });
+
+    const reservation = await guard.reserve({ userId });
+    await reservation.commit();
+
+    const rows = await database.query<{ used_count: number }>(
+      `SELECT used_count
+       FROM ee_org_creation_counters
+       WHERE user_id = $1 AND period_start = '2026-06-01'::date`,
+      [userId],
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  it("releases a successful reservation by decrementing the counter", async () => {
+    const userId = await seedUser();
+    const guard = new EnterpriseOrganizationCreationGuard(database, {
+      defaultLimit: 2,
+      now: () => new Date("2026-06-09T12:00:00.000Z"),
+    });
+
+    const reservation = await guard.reserve({ userId });
+    let rows = await database.query<{ used_count: number }>(
+      `SELECT used_count
+       FROM ee_org_creation_counters
+       WHERE user_id = $1 AND period_start = '2026-06-01'::date`,
+      [userId],
+    );
+    expect(rows[0].used_count).toBe(1);
+
+    await reservation.release();
+    rows = await database.query<{ used_count: number }>(
+      `SELECT used_count
+       FROM ee_org_creation_counters
+       WHERE user_id = $1 AND period_start = '2026-06-01'::date`,
+      [userId],
+    );
+    expect(rows[0].used_count).toBe(0);
+
+    // Release is idempotent: a committed reservation never decrements.
+    await reservation.release();
+    rows = await database.query<{ used_count: number }>(
+      `SELECT used_count
+       FROM ee_org_creation_counters
+       WHERE user_id = $1 AND period_start = '2026-06-01'::date`,
+      [userId],
+    );
+    expect(rows[0].used_count).toBe(0);
+  });
+
+  it("reads, upserts, and deletes per-user overrides", async () => {
+    const userId = await seedUser();
+    const guard = new EnterpriseOrganizationCreationGuard(database);
+
+    expect(await guard.getOverride(userId)).toBeNull();
+
+    const created = await guard.upsertOverride({ userId, monthlyLimit: 25 });
+    expect(created).toMatchObject({ userId, monthlyLimit: 25, unlimited: false });
+    expect(await guard.getOverride(userId)).toMatchObject({ userId, monthlyLimit: 25, unlimited: false });
+
+    const unlimited = await guard.upsertOverride({ userId, monthlyLimit: null });
+    expect(unlimited).toMatchObject({ monthlyLimit: null, unlimited: true });
+
+    await guard.deleteOverride(userId);
+    expect(await guard.getOverride(userId)).toBeNull();
   });
 });

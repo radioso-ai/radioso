@@ -1,4 +1,8 @@
+import type { Kysely } from "kysely";
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
+
+import { createKyselyDatabase } from "./kysely/kyselyDatabase.js";
+import type { DB } from "./kysely/schema.js";
 
 export interface DatabaseExecutor {
   query<T extends QueryResultRow>(text: string, params?: unknown[]): Promise<T[]>;
@@ -19,6 +23,7 @@ export interface DatabaseOptions {
 
 export class Database {
   readonly pool: Pool;
+  #kysely?: Kysely<DB>;
 
   constructor(connectionString: string, options: DatabaseOptions = {}) {
     this.pool = new Pool({
@@ -32,6 +37,19 @@ export class Database {
       application_name: options.applicationName,
       keepAlive: true,
     });
+  }
+
+  /**
+   * Kysely query builder over the same pool. Repositories migrated off raw SQL are
+   * injected this (typed `Db`); it shares the pool and transaction context with the raw
+   * `query*` methods during the migration. Lazily created; closed via {@link close}.
+   */
+  get kysely(): Kysely<DB> {
+    if (!this.#kysely) {
+      this.#kysely = createKyselyDatabase(this.pool);
+    }
+
+    return this.#kysely;
   }
 
   async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {

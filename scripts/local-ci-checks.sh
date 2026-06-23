@@ -227,6 +227,7 @@ if [ "$backend" = true ]; then
   run_sh "cd backend && pnpm run build"
   require_docker
   run_sh "cd backend && pnpm run db:schema:check"
+  run_sh "cd backend && pnpm run db:types:check"
   run_sh "cd backend && pnpm run test:unit"
   start_postgres
   run_sh "cd backend && pnpm run test:integration"

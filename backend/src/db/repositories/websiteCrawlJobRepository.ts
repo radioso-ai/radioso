@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import type { Database } from "../../shared/infra/database.js";
 import {
   DEFAULT_WEBSITE_CRAWL_POLICY,
   emptyWebsiteCrawlCheckpoint,
@@ -9,6 +8,8 @@ import {
   type WebsiteCrawlCheckpoint,
   type WebsiteCrawlPolicy,
 } from "../../modules/websiteCrawler/policy.js";
+import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 
 export type WebsiteCrawlJobStatus = "queued" | "processing" | "paused" | "completed" | "failed";
 
@@ -76,11 +77,6 @@ const websiteCrawlJobColumns = [
   "updated_at",
 ] as const;
 
-const selectWebsiteCrawlJob = websiteCrawlJobColumns.join(", ");
-
-const selectWebsiteCrawlJobAs = (alias: string): string =>
-  websiteCrawlJobColumns.map((column) => `${alias}.${column}`).join(", ");
-
 const mapWebsiteCrawlJob = (row: WebsiteCrawlJobRow): WebsiteCrawlJobRecord => ({
   id: row.id,
   accountId: row.account_id,
@@ -141,7 +137,7 @@ export interface WebsiteCrawlJobRepositoryPort {
 }
 
 export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async create(input: {
     accountId?: string | null;
@@ -152,129 +148,120 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
     policy?: WebsiteCrawlPolicy;
     checkpoint?: WebsiteCrawlCheckpoint;
   }): Promise<WebsiteCrawlJobRecord> {
-    const [row] = await this.database.query<WebsiteCrawlJobRow>(
-      `INSERT INTO website_crawl_jobs (
-         id,
-         account_id,
-         workspace_id,
-         source_id,
-         requested_url,
-         crawl_limit,
-         policy_json,
-         checkpoint_json,
-         status
-       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, 'queued')
-       RETURNING ${selectWebsiteCrawlJob}`,
-      [
-        randomUUID(),
-        input.accountId ?? null,
-        input.workspaceId,
-        input.sourceId ?? null,
-        input.requestedUrl,
-        input.limit,
-        JSON.stringify(input.policy ?? DEFAULT_WEBSITE_CRAWL_POLICY),
-        JSON.stringify(input.checkpoint ?? emptyWebsiteCrawlCheckpoint()),
-      ],
-    );
+    const row = await this.db
+      .insertInto("website_crawl_jobs")
+      .values({
+        id: randomUUID(),
+        account_id: input.accountId ?? null,
+        workspace_id: input.workspaceId,
+        source_id: input.sourceId ?? null,
+        requested_url: input.requestedUrl,
+        crawl_limit: input.limit,
+        policy_json: toJsonb(input.policy ?? DEFAULT_WEBSITE_CRAWL_POLICY),
+        checkpoint_json: toJsonb(input.checkpoint ?? emptyWebsiteCrawlCheckpoint()),
+        status: "queued",
+      })
+      .returning(websiteCrawlJobColumns)
+      .executeTakeFirstOrThrow();
 
-    return mapWebsiteCrawlJob(row!);
+    return mapWebsiteCrawlJob(row as WebsiteCrawlJobRow);
   }
 
   async findById(jobId: string): Promise<WebsiteCrawlJobRecord | null> {
-    const [row] = await this.database.query<WebsiteCrawlJobRow>(
-      `SELECT ${selectWebsiteCrawlJob}
-       FROM website_crawl_jobs
-       WHERE id = $1`,
-      [jobId],
-    );
+    const row = await this.db
+      .selectFrom("website_crawl_jobs")
+      .select(websiteCrawlJobColumns)
+      .where("id", "=", jobId)
+      .executeTakeFirst();
 
-    return row ? mapWebsiteCrawlJob(row) : null;
+    return row ? mapWebsiteCrawlJob(row as WebsiteCrawlJobRow) : null;
   }
 
   async findByIdAndWorkspaceId(jobId: string, workspaceId: string): Promise<WebsiteCrawlJobRecord | null> {
-    const [row] = await this.database.query<WebsiteCrawlJobRow>(
-      `SELECT ${selectWebsiteCrawlJob}
-       FROM website_crawl_jobs
-       WHERE id = $1
-         AND workspace_id = $2`,
-      [jobId, workspaceId],
-    );
+    const row = await this.db
+      .selectFrom("website_crawl_jobs")
+      .select(websiteCrawlJobColumns)
+      .where("id", "=", jobId)
+      .where("workspace_id", "=", workspaceId)
+      .executeTakeFirst();
 
-    return row ? mapWebsiteCrawlJob(row) : null;
+    return row ? mapWebsiteCrawlJob(row as WebsiteCrawlJobRow) : null;
   }
 
   async deleteById(jobId: string, workspaceId: string): Promise<boolean> {
-    const rowCount = await this.database.execute(
-      `DELETE FROM website_crawl_jobs
-       WHERE id = $1
-         AND workspace_id = $2
-         AND status IN ('completed', 'failed')`,
-      [jobId, workspaceId],
-    );
-    return rowCount > 0;
+    const result = await this.db
+      .deleteFrom("website_crawl_jobs")
+      .where("id", "=", jobId)
+      .where("workspace_id", "=", workspaceId)
+      .where("status", "in", ["completed", "failed"])
+      .executeTakeFirst();
+    return Number(result.numDeletedRows) > 0;
   }
 
   async cancelBySourceId(sourceId: string, workspaceId: string): Promise<number> {
-    return this.database.execute(
-      `DELETE FROM website_crawl_jobs
-       WHERE source_id = $1
-         AND workspace_id = $2`,
-      [sourceId, workspaceId],
-    );
+    const result = await this.db
+      .deleteFrom("website_crawl_jobs")
+      .where("source_id", "=", sourceId)
+      .where("workspace_id", "=", workspaceId)
+      .executeTakeFirst();
+    return Number(result.numDeletedRows);
   }
 
   async pauseBySourceId(sourceId: string, workspaceId: string): Promise<WebsiteCrawlJobRecord[]> {
-    const rows = await this.database.query<WebsiteCrawlJobRow>(
-      `UPDATE website_crawl_jobs
-       SET status = 'paused',
-           claimed_at = CASE WHEN status = 'queued' THEN NULL ELSE claimed_at END,
-           resume_requested_at = NULL,
-           updated_at = NOW()
-       WHERE source_id = $1
-         AND workspace_id = $2
-         AND (
-           status IN ('queued', 'processing')
-           OR (status = 'paused' AND resume_requested_at IS NOT NULL)
-         )
-       RETURNING ${selectWebsiteCrawlJob}`,
-      [sourceId, workspaceId],
-    );
-    return rows.map(mapWebsiteCrawlJob);
+    const rows = await this.db
+      .updateTable("website_crawl_jobs")
+      .set((eb) => ({
+        status: "paused",
+        claimed_at: eb.case().when("status", "=", "queued").then(null).else(eb.ref("claimed_at")).end(),
+        resume_requested_at: null,
+        updated_at: currentTimestamp(),
+      }))
+      .where("source_id", "=", sourceId)
+      .where("workspace_id", "=", workspaceId)
+      .where((eb) =>
+        eb.or([
+          eb("status", "in", ["queued", "processing"]),
+          eb.and([eb("status", "=", "paused"), eb("resume_requested_at", "is not", null)]),
+        ]),
+      )
+      .returning(websiteCrawlJobColumns)
+      .execute();
+    return rows.map((row) => mapWebsiteCrawlJob(row as WebsiteCrawlJobRow));
   }
 
   async resumePausedBySourceId(sourceId: string, workspaceId: string): Promise<ResumePausedWebsiteCrawlJobsResult> {
-    const rows = await this.database.query<WebsiteCrawlJobResumeRow>(
-      `WITH updated AS (
-         UPDATE website_crawl_jobs
-         SET status = CASE WHEN claimed_at IS NULL THEN 'queued' ELSE status END,
-             available_at = CASE WHEN claimed_at IS NULL THEN NOW() ELSE available_at END,
-             resume_requested_at = CASE WHEN claimed_at IS NULL THEN NULL ELSE NOW() END,
-             updated_at = NOW()
-         WHERE source_id = $1
-           AND workspace_id = $2
-           AND status = 'paused'
-         RETURNING ${selectWebsiteCrawlJob}, status = 'paused' AS resume_pending
-       )
-       SELECT ${selectWebsiteCrawlJob}, resume_pending
-       FROM updated`,
-      [sourceId, workspaceId],
-    );
+    const rows = await this.db
+      .updateTable("website_crawl_jobs")
+      .set((eb) => ({
+        status: eb.case().when("claimed_at", "is", null).then("queued").else(eb.ref("status")).end(),
+        available_at: eb.case().when("claimed_at", "is", null).then(currentTimestamp()).else(eb.ref("available_at")).end(),
+        resume_requested_at: eb.case().when("claimed_at", "is", null).then(null).else(currentTimestamp()).end(),
+        updated_at: currentTimestamp(),
+      }))
+      .where("source_id", "=", sourceId)
+      .where("workspace_id", "=", workspaceId)
+      .where("status", "=", "paused")
+      .returning((eb) => [
+        ...websiteCrawlJobColumns,
+        eb("status", "=", "paused").as("resume_pending"),
+      ])
+      .execute();
     return {
-      resumedJobs: rows.filter((row) => !row.resume_pending).map(mapWebsiteCrawlJob),
+      resumedJobs: rows.filter((row) => !row.resume_pending).map((row) => mapWebsiteCrawlJob(row as WebsiteCrawlJobResumeRow)),
       pendingResumeJobCount: rows.filter((row) => row.resume_pending).length,
     };
   }
 
   async updateCheckpoint(jobId: string, checkpoint: WebsiteCrawlCheckpoint): Promise<void> {
-    await this.database.execute(
-      `UPDATE website_crawl_jobs
-       SET checkpoint_json = $2::jsonb,
-           updated_at = NOW()
-       WHERE id = $1
-         AND status IN ('processing', 'paused')`,
-      [jobId, JSON.stringify(checkpoint)],
-    );
+    await this.db
+      .updateTable("website_crawl_jobs")
+      .set({
+        checkpoint_json: toJsonb(checkpoint),
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", jobId)
+      .where("status", "in", ["processing", "paused"])
+      .execute();
   }
 
   async listForWorkspace(
@@ -285,147 +272,177 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
     const status = options.status ?? null;
     const since = options.since ?? null;
     const sourceId = options.sourceId ?? null;
-    const rows = await this.database.query<WebsiteCrawlJobRow>(
-      `SELECT ${selectWebsiteCrawlJob}
-       FROM website_crawl_jobs
-       WHERE workspace_id = $1
-         AND ($2::text IS NULL OR status = $2)
-         AND ($3::timestamptz IS NULL OR updated_at >= $3)
-         AND ($5::uuid IS NULL OR source_id = $5)
-       ORDER BY updated_at DESC
-       LIMIT $4`,
-      [workspaceId, status, since, limit, sourceId],
-    );
+    let query = this.db
+      .selectFrom("website_crawl_jobs")
+      .select(websiteCrawlJobColumns)
+      .where("workspace_id", "=", workspaceId)
+      .orderBy("updated_at", "desc")
+      .limit(limit);
 
-    return rows.map(mapWebsiteCrawlJob);
+    if (status) {
+      query = query.where("status", "=", status);
+    }
+    if (since) {
+      query = query.where("updated_at", ">=", since);
+    }
+    if (sourceId) {
+      query = query.where("source_id", "=", sourceId);
+    }
+
+    const rows = await query.execute();
+
+    return rows.map((row) => mapWebsiteCrawlJob(row as WebsiteCrawlJobRow));
   }
 
   async claimNext(now: Date = new Date()): Promise<WebsiteCrawlJobRecord | null> {
-    return this.database.withTransaction(async (client) => {
-      const rows = await client.query<WebsiteCrawlJobRow>(
-        `WITH next_job AS (
-           SELECT id
-           FROM website_crawl_jobs
-           WHERE status = 'queued'
-             AND available_at <= $1
-           ORDER BY created_at ASC
-           FOR UPDATE SKIP LOCKED
-           LIMIT 1
-         )
-         UPDATE website_crawl_jobs jobs
-         SET status = 'processing',
-             attempt_count = jobs.attempt_count + 1,
-             claimed_at = $1,
-             updated_at = $1
-         FROM next_job
-         WHERE jobs.id = next_job.id
-         RETURNING ${selectWebsiteCrawlJobAs("jobs")}`,
-        [now],
-      );
+    return this.db.transaction().execute(async (trx) => {
+      const nextJob = await trx
+        .selectFrom("website_crawl_jobs")
+        .select("id")
+        .where("status", "=", "queued")
+        .where("available_at", "<=", now)
+        .orderBy("created_at", "asc")
+        .forUpdate()
+        .skipLocked()
+        .limit(1)
+        .executeTakeFirst();
 
-      return rows.rows[0] ? mapWebsiteCrawlJob(rows.rows[0]) : null;
+      if (!nextJob) {
+        return null;
+      }
+
+      const row = await trx
+        .updateTable("website_crawl_jobs")
+        .set((eb) => ({
+          status: "processing",
+          attempt_count: eb("attempt_count", "+", 1),
+          claimed_at: now,
+          updated_at: now,
+        }))
+        .where("id", "=", nextJob.id)
+        .returning(websiteCrawlJobColumns)
+        .executeTakeFirst();
+
+      return row ? mapWebsiteCrawlJob(row as WebsiteCrawlJobRow) : null;
     });
   }
 
   async claimById(jobId: string, now: Date = new Date()): Promise<WebsiteCrawlJobRecord | null> {
-    const [row] = await this.database.query<WebsiteCrawlJobRow>(
-      `UPDATE website_crawl_jobs
-       SET status = 'processing',
-           attempt_count = attempt_count + 1,
-           claimed_at = $2,
-           updated_at = $2
-       WHERE id = $1
-         AND status = 'queued'
-         AND available_at <= $2
-       RETURNING ${selectWebsiteCrawlJob}`,
-      [jobId, now],
+    const row = await this.db.transaction().execute((trx) =>
+      trx
+        .updateTable("website_crawl_jobs")
+        .set((eb) => ({
+          status: "processing",
+          attempt_count: eb("attempt_count", "+", 1),
+          claimed_at: now,
+          updated_at: now,
+        }))
+        .where("id", "=", jobId)
+        .where("status", "=", "queued")
+        .where("available_at", "<=", now)
+        .returning(websiteCrawlJobColumns)
+        .executeTakeFirst(),
     );
 
-    return row ? mapWebsiteCrawlJob(row) : null;
+    return row ? mapWebsiteCrawlJob(row as WebsiteCrawlJobRow) : null;
   }
 
   async releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<boolean> {
-    const rowCount = await this.database.execute(
-      `UPDATE website_crawl_jobs
-       SET status = 'queued',
-           claimed_at = NULL,
-           last_error = $3,
-           updated_at = NOW()
-       WHERE id = $1
-         AND status = 'processing'
-         AND claimed_at <= $2`,
-      [jobId, claimedAtOrBefore, errorMessage],
-    );
+    const result = await this.db
+      .updateTable("website_crawl_jobs")
+      .set({
+        status: "queued",
+        claimed_at: null,
+        last_error: errorMessage,
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", jobId)
+      .where("status", "=", "processing")
+      .where("claimed_at", "<=", claimedAtOrBefore)
+      .executeTakeFirst();
 
-    return rowCount > 0;
+    return Number(result.numUpdatedRows) > 0;
   }
 
   async releaseAllTimedOutClaims(claimedAtOrBefore: Date, errorMessage: string): Promise<number> {
-    return this.database.execute(
-      `UPDATE website_crawl_jobs
-       SET status = CASE
-             WHEN status = 'processing' THEN 'queued'
-             WHEN status = 'paused' AND resume_requested_at IS NOT NULL THEN 'queued'
-             ELSE status
-           END,
-           available_at = CASE
-             WHEN status = 'processing' OR resume_requested_at IS NOT NULL THEN NOW()
-             ELSE available_at
-           END,
-           claimed_at = NULL,
-           resume_requested_at = NULL,
-           last_error = CASE WHEN status = 'processing' THEN $2 ELSE last_error END,
-           updated_at = NOW()
-       WHERE status IN ('processing', 'paused')
-         AND (
-           (status = 'processing' AND claimed_at <= $1)
-           OR (status = 'paused' AND resume_requested_at IS NULL AND claimed_at <= $1)
-           OR (status = 'paused' AND resume_requested_at IS NOT NULL AND resume_requested_at <= $1)
-         )`,
-      [claimedAtOrBefore, errorMessage],
-    );
+    const result = await this.db
+      .updateTable("website_crawl_jobs")
+      .set((eb) => ({
+        status: eb
+          .case()
+          .when("status", "=", "processing")
+          .then("queued")
+          .when(eb.and([eb("status", "=", "paused"), eb("resume_requested_at", "is not", null)]))
+          .then("queued")
+          .else(eb.ref("status"))
+          .end(),
+        available_at: eb
+          .case()
+          .when(eb.or([eb("status", "=", "processing"), eb("resume_requested_at", "is not", null)]))
+          .then(currentTimestamp())
+          .else(eb.ref("available_at"))
+          .end(),
+        claimed_at: null,
+        resume_requested_at: null,
+        last_error: eb.case().when("status", "=", "processing").then(errorMessage).else(eb.ref("last_error")).end(),
+        updated_at: currentTimestamp(),
+      }))
+      .where("status", "in", ["processing", "paused"])
+      .where((eb) =>
+        eb.or([
+          eb.and([eb("status", "=", "processing"), eb("claimed_at", "<=", claimedAtOrBefore)]),
+          eb.and([eb("status", "=", "paused"), eb("resume_requested_at", "is", null), eb("claimed_at", "<=", claimedAtOrBefore)]),
+          eb.and([eb("status", "=", "paused"), eb("resume_requested_at", "is not", null), eb("resume_requested_at", "<=", claimedAtOrBefore)]),
+        ]),
+      )
+      .executeTakeFirst();
+
+    return Number(result.numUpdatedRows);
   }
 
   async releasePausedClaim(jobId: string): Promise<void> {
-    await this.database.execute(
-      `UPDATE website_crawl_jobs
-       SET status = CASE WHEN resume_requested_at IS NULL THEN 'paused' ELSE 'queued' END,
-           available_at = CASE WHEN resume_requested_at IS NULL THEN available_at ELSE NOW() END,
-           claimed_at = NULL,
-           resume_requested_at = NULL,
-           updated_at = NOW()
-       WHERE id = $1
-         AND status = 'paused'`,
-      [jobId],
-    );
+    await this.db
+      .updateTable("website_crawl_jobs")
+      .set((eb) => ({
+        status: eb.case().when("resume_requested_at", "is", null).then("paused").else("queued").end(),
+        available_at: eb.case().when("resume_requested_at", "is", null).then(eb.ref("available_at")).else(currentTimestamp()).end(),
+        claimed_at: null,
+        resume_requested_at: null,
+        updated_at: currentTimestamp(),
+      }))
+      .where("id", "=", jobId)
+      .where("status", "=", "paused")
+      .execute();
   }
 
   async markCompleted(jobId: string, result: Record<string, unknown>): Promise<void> {
-    await this.database.execute(
-      `UPDATE website_crawl_jobs
-       SET status = 'completed',
-           result_json = $2,
-           last_error = NULL,
-           resume_requested_at = NULL,
-           completed_at = NOW(),
-           updated_at = NOW()
-       WHERE id = $1
-         AND status IN ('processing', 'paused')`,
-      [jobId, result],
-    );
+    await this.db
+      .updateTable("website_crawl_jobs")
+      .set({
+        status: "completed",
+        result_json: toJsonb(result),
+        last_error: null,
+        resume_requested_at: null,
+        completed_at: currentTimestamp(),
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", jobId)
+      .where("status", "in", ["processing", "paused"])
+      .execute();
   }
 
   async markFailed(jobId: string, errorMessage: string): Promise<void> {
-    await this.database.execute(
-      `UPDATE website_crawl_jobs
-       SET status = 'failed',
-           last_error = $2,
-           resume_requested_at = NULL,
-           completed_at = NOW(),
-           updated_at = NOW()
-       WHERE id = $1
-         AND status = 'processing'`,
-      [jobId, errorMessage],
-    );
+    await this.db
+      .updateTable("website_crawl_jobs")
+      .set({
+        status: "failed",
+        last_error: errorMessage,
+        resume_requested_at: null,
+        completed_at: currentTimestamp(),
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", jobId)
+      .where("status", "=", "processing")
+      .execute();
   }
 }

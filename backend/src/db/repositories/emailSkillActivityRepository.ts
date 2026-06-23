@@ -5,7 +5,8 @@ import type {
   CustomerEmailSkillOutcome,
   EmailSkillRecipientSummary,
 } from "../../modules/customerEmail/domain.js";
-import type { Database } from "../../shared/infra/database.js";
+import { toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface EmailSkillActivityRecord {
   id: string;
@@ -67,8 +68,22 @@ interface EmailSkillActivityRow {
   created_at: Date;
 }
 
-const COLUMNS =
-  "id, workspace_id, agent_id, routine_id, conversation_id, skill_definition_id, connection_id, skill_name, mode, outcome, recipient_summary, provider_message_id, error_code, created_at";
+const emailSkillActivityColumns = [
+  "id",
+  "workspace_id",
+  "agent_id",
+  "routine_id",
+  "conversation_id",
+  "skill_definition_id",
+  "connection_id",
+  "skill_name",
+  "mode",
+  "outcome",
+  "recipient_summary",
+  "provider_message_id",
+  "error_code",
+  "created_at",
+] as const;
 
 const normalizeRecipientSummary = (value: EmailSkillRecipientSummary | null | undefined): EmailSkillRecipientSummary => ({
   toCount: Number(value?.toCount ?? 0),
@@ -102,58 +117,49 @@ export interface EmailSkillActivityRepositoryPort {
 }
 
 export class EmailSkillActivityRepository implements EmailSkillActivityRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async record(input: CreateEmailSkillActivityInput): Promise<EmailSkillActivityRecord> {
-    const [row] = await this.database.query<EmailSkillActivityRow>(
-      `INSERT INTO email_skill_activity
-         (id, workspace_id, agent_id, routine_id, conversation_id, skill_definition_id, connection_id, skill_name, mode, outcome,
-          recipient_summary, provider_message_id, error_code)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13)
-       RETURNING ${COLUMNS}`,
-      [
-        randomUUID(),
-        input.workspaceId,
-        input.agentId,
-        input.routineId ?? null,
-        input.conversationId ?? null,
-        input.skillDefinitionId,
-        input.connectionId,
-        input.skillName,
-        input.mode,
-        input.outcome,
-        JSON.stringify(normalizeRecipientSummary(input.recipientSummary)),
-        input.providerMessageId ?? null,
-        input.errorCode ?? null,
-      ],
-    );
-    return mapRecord(row);
+    const row = await this.db
+      .insertInto("email_skill_activity")
+      .values({
+        id: randomUUID(),
+        workspace_id: input.workspaceId,
+        agent_id: input.agentId,
+        routine_id: input.routineId ?? null,
+        conversation_id: input.conversationId ?? null,
+        skill_definition_id: input.skillDefinitionId,
+        connection_id: input.connectionId,
+        skill_name: input.skillName,
+        mode: input.mode,
+        outcome: input.outcome,
+        recipient_summary: toJsonb(normalizeRecipientSummary(input.recipientSummary)),
+        provider_message_id: input.providerMessageId ?? null,
+        error_code: input.errorCode ?? null,
+      })
+      .returning(emailSkillActivityColumns)
+      .executeTakeFirstOrThrow();
+    return mapRecord(row as unknown as EmailSkillActivityRow);
   }
 
   async list(input: ListEmailSkillActivityInput): Promise<EmailSkillActivityRecord[]> {
-    const params: unknown[] = [input.workspaceId];
-    const conditions = ["workspace_id = $1"];
-    const addCondition = (column: string, value: unknown, operator = "="): void => {
-      params.push(value);
-      conditions.push(`${column} ${operator} $${params.length}`);
-    };
+    let query = this.db
+      .selectFrom("email_skill_activity")
+      .select(emailSkillActivityColumns)
+      .where("workspace_id", "=", input.workspaceId);
 
-    if (input.agentId) addCondition("agent_id", input.agentId);
-    if (input.connectionId) addCondition("connection_id", input.connectionId);
-    if (input.skillDefinitionId) addCondition("skill_definition_id", input.skillDefinitionId);
-    if (input.outcome) addCondition("outcome", input.outcome);
-    if (input.createdFrom) addCondition("created_at", input.createdFrom, ">=");
-    if (input.createdTo) addCondition("created_at", input.createdTo, "<=");
-    params.push(input.limit ?? 50);
+    if (input.agentId) query = query.where("agent_id", "=", input.agentId);
+    if (input.connectionId) query = query.where("connection_id", "=", input.connectionId);
+    if (input.skillDefinitionId) query = query.where("skill_definition_id", "=", input.skillDefinitionId);
+    if (input.outcome) query = query.where("outcome", "=", input.outcome);
+    if (input.createdFrom) query = query.where("created_at", ">=", input.createdFrom);
+    if (input.createdTo) query = query.where("created_at", "<=", input.createdTo);
 
-    const rows = await this.database.query<EmailSkillActivityRow>(
-      `SELECT ${COLUMNS}
-       FROM email_skill_activity
-       WHERE ${conditions.join(" AND ")}
-       ORDER BY created_at DESC, id DESC
-       LIMIT $${params.length}`,
-      params,
-    );
-    return rows.map(mapRecord);
+    const rows = await query
+      .orderBy("created_at", "desc")
+      .orderBy("id", "desc")
+      .limit(input.limit ?? 50)
+      .execute();
+    return rows.map((row) => mapRecord(row as unknown as EmailSkillActivityRow));
   }
 }

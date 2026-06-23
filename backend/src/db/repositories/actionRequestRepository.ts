@@ -1,4 +1,5 @@
-import type { Database } from "../../shared/infra/database.js";
+import { currentTimestamp, nowMinusSeconds, nowPlusSeconds, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 
 export type ActionRequestStatus = "pending" | "in_progress" | "dispatched" | "failed";
 
@@ -60,32 +61,32 @@ const mapRecord = (row: ActionRequestRow): ActionRequestRecord => ({
  * row lifecycle (pending → dispatched/failed); routing to handlers is the dispatcher.
  */
 export class ActionRequestRepository {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   /** Idempotent enqueue; returns the row id (existing one when the key already exists). */
   async enqueue(input: EnqueueActionRequestInput): Promise<{ id: string; duplicate: boolean }> {
-    const inserted = await this.database.queryOptional<{ id: string }>(
-      `INSERT INTO routine_action_requests (type, payload, workspace_id, account_id, conversation_id, idempotency_key)
-       VALUES ($1, $2::jsonb, $3, $4, $5, $6)
-       ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
-       RETURNING id`,
-      [
-        input.type,
-        JSON.stringify(input.payload ?? {}),
-        input.workspaceId ?? null,
-        input.accountId ?? null,
-        input.conversationId ?? null,
-        input.idempotencyKey ?? null,
-      ],
-    );
+    const inserted = await this.db
+      .insertInto("routine_action_requests")
+      .values({
+        type: input.type,
+        payload: toJsonb(input.payload ?? {}),
+        workspace_id: input.workspaceId ?? null,
+        account_id: input.accountId ?? null,
+        conversation_id: input.conversationId ?? null,
+        idempotency_key: input.idempotencyKey ?? null,
+      })
+      .onConflict((oc) => oc.column("idempotency_key").where("idempotency_key", "is not", null).doNothing())
+      .returning("id")
+      .executeTakeFirst();
     if (inserted) {
       return { id: inserted.id, duplicate: false };
     }
     // Conflict on the idempotency key — return the existing row.
-    const existing = await this.database.queryOne<{ id: string }>(
-      `SELECT id FROM routine_action_requests WHERE idempotency_key = $1`,
-      [input.idempotencyKey],
-    );
+    const existing = await this.db
+      .selectFrom("routine_action_requests")
+      .select("id")
+      .where("idempotency_key", "=", input.idempotencyKey!)
+      .executeTakeFirstOrThrow();
     return { id: existing.id, duplicate: true };
   }
 
@@ -99,22 +100,30 @@ export class ActionRequestRepository {
    * `next_attempt_at` (the retry backoff) has passed.
    */
   async claimPending(limit: number, leaseSeconds: number): Promise<ActionRequestRecord[]> {
-    const rows = await this.database.query<ActionRequestRow>(
-      `UPDATE routine_action_requests
-          SET status = 'in_progress', attempts = attempts + 1, updated_at = now()
-        WHERE id IN (
-          SELECT id
-            FROM routine_action_requests
-           WHERE (status = 'pending' AND (next_attempt_at IS NULL OR next_attempt_at <= now()))
-              OR (status = 'in_progress' AND updated_at < now() - make_interval(secs => $2))
-           ORDER BY created_at ASC
-           LIMIT $1
-           FOR UPDATE SKIP LOCKED
-        )
-        RETURNING id, type, payload, workspace_id, account_id, conversation_id, idempotency_key, status, attempts`,
-      [limit, leaseSeconds],
-    );
-    return rows.map(mapRecord);
+    const rows = await this.db
+      .updateTable("routine_action_requests")
+      .set((eb) => ({ status: "in_progress", attempts: eb("attempts", "+", 1), updated_at: currentTimestamp() }))
+      .where("id", "in", (eb) =>
+        eb
+          .selectFrom("routine_action_requests")
+          .select("id")
+          .where((due) =>
+            due.or([
+              due.and([
+                due("status", "=", "pending"),
+                due.or([due("next_attempt_at", "is", null), due("next_attempt_at", "<=", currentTimestamp())]),
+              ]),
+              due.and([due("status", "=", "in_progress"), due("updated_at", "<", nowMinusSeconds(leaseSeconds))]),
+            ]),
+          )
+          .orderBy("created_at", "asc")
+          .limit(limit)
+          .forUpdate()
+          .skipLocked(),
+      )
+      .returning(actionRequestColumns)
+      .execute();
+    return rows.map((row) => mapRecord(row as ActionRequestRow));
   }
 
   /**
@@ -124,12 +133,13 @@ export class ActionRequestRepository {
    * cannot mark that newer claim dispatched. No-op when the claim was superseded.
    */
   async markDispatched(id: string, attempt: number): Promise<void> {
-    await this.database.execute(
-      `UPDATE routine_action_requests
-          SET status = 'dispatched', updated_at = now()
-        WHERE id = $1 AND attempts = $2 AND status = 'in_progress'`,
-      [id, attempt],
-    );
+    await this.db
+      .updateTable("routine_action_requests")
+      .set({ status: "dispatched", updated_at: currentTimestamp() })
+      .where("id", "=", id)
+      .where("attempts", "=", attempt)
+      .where("status", "=", "in_progress")
+      .execute();
   }
 
   /**
@@ -146,19 +156,39 @@ export class ActionRequestRepository {
     maxAttempts: number,
     retryBackoffSeconds: number,
   ): Promise<ActionFailureOutcome> {
-    const row = await this.database.queryOptional<{ status: string }>(
-      `UPDATE routine_action_requests
-          SET status = CASE WHEN attempts >= $4 THEN 'failed' ELSE 'pending' END,
-              next_attempt_at = CASE WHEN attempts >= $4 THEN NULL ELSE now() + make_interval(secs => $5) END,
-              last_error = $2,
-              updated_at = now()
-        WHERE id = $1 AND attempts = $3 AND status = 'in_progress'
-        RETURNING status`,
-      [id, error, attempt, maxAttempts, retryBackoffSeconds],
-    );
+    const row = await this.db
+      .updateTable("routine_action_requests")
+      .set((eb) => ({
+        status: eb.case().when(eb("attempts", ">=", maxAttempts)).then(eb.val("failed")).else(eb.val("pending")).end(),
+        next_attempt_at: eb
+          .case()
+          .when(eb("attempts", ">=", maxAttempts))
+          .then(eb.val(null))
+          .else(nowPlusSeconds(retryBackoffSeconds))
+          .end(),
+        last_error: error,
+        updated_at: currentTimestamp(),
+      }))
+      .where("id", "=", id)
+      .where("attempts", "=", attempt)
+      .where("status", "=", "in_progress")
+      .returning("status")
+      .executeTakeFirst();
     if (!row) {
       return "superseded";
     }
     return row.status === "failed" ? "failed" : "retry";
   }
 }
+
+const actionRequestColumns = [
+  "id",
+  "type",
+  "payload",
+  "workspace_id",
+  "account_id",
+  "conversation_id",
+  "idempotency_key",
+  "status",
+  "attempts",
+] as const;

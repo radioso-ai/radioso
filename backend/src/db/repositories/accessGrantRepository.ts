@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { Database } from "../../shared/infra/database.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 import type {
   AccessGrantRole,
   AccessGrant,
@@ -81,57 +81,55 @@ export interface AccessGrantRepositoryPort {
   }): Promise<AccessGrant | null>;
 }
 
-const grantColumns = `
-  id,
-  agent_id,
-  workspace_id,
-  label,
-  principal_kind,
-  role,
-  token_prefix,
-  token_hash,
-  encrypted_token,
-  origin_mode,
-  origin_allowlist,
-  enabled,
-  expires_at,
-  created_at,
-  last_used_at,
-  revoked_at
-`;
+const grantColumns = [
+  "id",
+  "agent_id",
+  "workspace_id",
+  "label",
+  "principal_kind",
+  "role",
+  "token_prefix",
+  "token_hash",
+  "encrypted_token",
+  "origin_mode",
+  "origin_allowlist",
+  "enabled",
+  "expires_at",
+  "created_at",
+  "last_used_at",
+  "revoked_at",
+] as const;
 
 export class AccessGrantRepository implements AccessGrantRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async findById(grantId: string): Promise<AccessGrant | null> {
-    const row = await this.database.queryOptional<AccessGrantRow>(
-      `SELECT ${grantColumns}
-       FROM agent_access_grants
-       WHERE id = $1`,
-      [grantId],
-    );
-    return row ? mapGrant(row) : null;
+    const row = await this.db
+      .selectFrom("agent_access_grants")
+      .select(grantColumns)
+      .where("id", "=", grantId)
+      .executeTakeFirst();
+    return row ? mapGrant(row as AccessGrantRow) : null;
   }
 
   async findByTokenHash(tokenHash: string): Promise<AccessGrant | null> {
-    const row = await this.database.queryOptional<AccessGrantRow>(
-      `SELECT ${grantColumns}
-       FROM agent_access_grants
-       WHERE token_hash = $1`,
-      [tokenHash],
-    );
-    return row ? mapGrant(row) : null;
+    const row = await this.db
+      .selectFrom("agent_access_grants")
+      .select(grantColumns)
+      .where("token_hash", "=", tokenHash)
+      .executeTakeFirst();
+    return row ? mapGrant(row as AccessGrantRow) : null;
   }
 
   async listByAgent(agentId: string): Promise<AccessGrant[]> {
-    const rows = await this.database.query<AccessGrantRow>(
-      `SELECT ${grantColumns}
-       FROM agent_access_grants
-       WHERE agent_id = $1
-       ORDER BY created_at ASC, id ASC`,
-      [agentId],
-    );
-    return rows.map(mapGrant);
+    const rows = await this.db
+      .selectFrom("agent_access_grants")
+      .select(grantColumns)
+      .where("agent_id", "=", agentId)
+      .orderBy("created_at", "asc")
+      .orderBy("id", "asc")
+      .execute();
+    return rows.map((row) => mapGrant(row as AccessGrantRow));
   }
 
   async save(params: {
@@ -147,43 +145,32 @@ export class AccessGrantRepository implements AccessGrantRepositoryPort {
     enabled?: boolean;
     expiresAt?: Date | null;
   }): Promise<AccessGrant> {
-    const [row] = await this.database.query<AccessGrantRow>(
-      `INSERT INTO agent_access_grants (
-         id,
-         agent_id,
-         workspace_id,
-         label,
-         principal_kind,
-         role,
-         token_prefix,
-         token_hash,
-         encrypted_token,
-         origin_mode,
-         origin_allowlist,
-         enabled,
-         expires_at
-       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::text[], $12, $13)
-       ON CONFLICT (token_hash) DO UPDATE
-       SET label = agent_access_grants.label
-       RETURNING ${grantColumns}`,
-      [
-        randomUUID(),
-        params.agentId,
-        params.workspaceId,
-        params.label ?? null,
-        params.principalKind,
-        params.role,
-        params.tokenPrefix,
-        params.tokenHash,
-        params.encryptedToken,
-        params.originConstraint.mode,
-        params.originConstraint.mode === "allow-all" ? [] : params.originConstraint.origins,
-        params.enabled ?? true,
-        params.expiresAt ?? null,
-      ],
-    );
-    return mapGrant(row);
+    const row = await this.db
+      .insertInto("agent_access_grants")
+      .values({
+        id: randomUUID(),
+        agent_id: params.agentId,
+        workspace_id: params.workspaceId,
+        label: params.label ?? null,
+        principal_kind: params.principalKind,
+        role: params.role,
+        token_prefix: params.tokenPrefix,
+        token_hash: params.tokenHash,
+        encrypted_token: params.encryptedToken,
+        origin_mode: params.originConstraint.mode,
+        origin_allowlist:
+          params.originConstraint.mode === "allow-all" ? [] : params.originConstraint.origins,
+        enabled: params.enabled ?? true,
+        expires_at: params.expiresAt ?? null,
+      })
+      .onConflict((oc) =>
+        oc.column("token_hash").doUpdateSet((eb) => ({
+          label: eb.ref("agent_access_grants.label"),
+        })),
+      )
+      .returning(grantColumns)
+      .executeTakeFirstOrThrow();
+    return mapGrant(row as AccessGrantRow);
   }
 
   async rotate(grantId: string, params: {
@@ -191,39 +178,38 @@ export class AccessGrantRepository implements AccessGrantRepositoryPort {
     tokenHash: string;
     encryptedToken: string;
   }): Promise<AccessGrant | null> {
-    const row = await this.database.queryOptional<AccessGrantRow>(
-      `UPDATE agent_access_grants
-       SET token_prefix = $2,
-           token_hash = $3,
-           encrypted_token = $4,
-           last_used_at = NULL,
-           revoked_at = NULL
-       WHERE id = $1
-       RETURNING ${grantColumns}`,
-      [grantId, params.tokenPrefix, params.tokenHash, params.encryptedToken],
-    );
-    return row ? mapGrant(row) : null;
+    const row = await this.db
+      .updateTable("agent_access_grants")
+      .set({
+        token_prefix: params.tokenPrefix,
+        token_hash: params.tokenHash,
+        encrypted_token: params.encryptedToken,
+        last_used_at: null,
+        revoked_at: null,
+      })
+      .where("id", "=", grantId)
+      .returning(grantColumns)
+      .executeTakeFirst();
+    return row ? mapGrant(row as AccessGrantRow) : null;
   }
 
   async revoke(grantId: string, revokedAt: Date): Promise<AccessGrant | null> {
-    const row = await this.database.queryOptional<AccessGrantRow>(
-      `UPDATE agent_access_grants
-       SET revoked_at = $2
-       WHERE id = $1
-       RETURNING ${grantColumns}`,
-      [grantId, revokedAt],
-    );
-    return row ? mapGrant(row) : null;
+    const row = await this.db
+      .updateTable("agent_access_grants")
+      .set({ revoked_at: revokedAt })
+      .where("id", "=", grantId)
+      .returning(grantColumns)
+      .executeTakeFirst();
+    return row ? mapGrant(row as AccessGrantRow) : null;
   }
 
   async touch(grantId: string, lastUsedAt: Date): Promise<void> {
-    await this.database.query(
-      `UPDATE agent_access_grants
-       SET last_used_at = $2
-       WHERE id = $1
-         AND revoked_at IS NULL`,
-      [grantId, lastUsedAt],
-    );
+    await this.db
+      .updateTable("agent_access_grants")
+      .set({ last_used_at: lastUsedAt })
+      .where("id", "=", grantId)
+      .where("revoked_at", "is", null)
+      .execute();
   }
 
   async updateConstraints(grantId: string, params: {
@@ -236,22 +222,17 @@ export class AccessGrantRepository implements AccessGrantRepositoryPort {
       return null;
     }
     const originConstraint = params.originConstraint ?? current.originConstraint;
-    const row = await this.database.queryOptional<AccessGrantRow>(
-      `UPDATE agent_access_grants
-       SET origin_mode = $2,
-           origin_allowlist = $3::text[],
-           enabled = $4,
-           label = $5
-       WHERE id = $1
-       RETURNING ${grantColumns}`,
-      [
-        grantId,
-        originConstraint.mode,
-        originConstraint.mode === "allow-all" ? [] : originConstraint.origins,
-        params.enabled ?? current.enabled,
-        params.label === undefined ? current.label : params.label,
-      ],
-    );
-    return row ? mapGrant(row) : null;
+    const row = await this.db
+      .updateTable("agent_access_grants")
+      .set({
+        origin_mode: originConstraint.mode,
+        origin_allowlist: originConstraint.mode === "allow-all" ? [] : originConstraint.origins,
+        enabled: params.enabled ?? current.enabled,
+        label: params.label === undefined ? current.label : params.label,
+      })
+      .where("id", "=", grantId)
+      .returning(grantColumns)
+      .executeTakeFirst();
+    return row ? mapGrant(row as AccessGrantRow) : null;
   }
 }

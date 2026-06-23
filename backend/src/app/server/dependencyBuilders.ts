@@ -196,10 +196,7 @@ import type { RetrievalDefaultsProvider, SkillSettingsResolver } from "../../mod
 import { ProductAnalyticsService } from "../../shared/analytics/productAnalyticsService.js";
 import type { OrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
 import { NoopUsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
-import {
-  DurableUsageEventRecorder,
-  requireTransactionalUsageEventDatabase,
-} from "../../shared/infra/usage/durableUsageEventRecorder.js";
+import { DurableUsageEventRecorder } from "../../shared/infra/usage/durableUsageEventRecorder.js";
 import { ErrorReportingService } from "../../shared/errors/errorReportingService.js";
 import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
 import { Database } from "../../shared/infra/database.js";
@@ -235,7 +232,7 @@ export const buildInfrastructure = (input: {
     queryTimeoutMs: env.DB_QUERY_TIMEOUT_MS,
     applicationName: `radioso-${env.NODE_ENV}`,
   });
-  const auditEventRepository = new AuditEventRepository(database);
+  const auditEventRepository = new AuditEventRepository(database.kysely);
   const auditService = new AuditService(logger, auditEventRepository);
   const telemetryService = new TelemetryService({
     enabled: env.OBSERVABILITY_ENABLED,
@@ -280,7 +277,7 @@ export const buildInfrastructure = (input: {
   // OSS default: durable usage accounting out of the box (FR-027). A module may
   // still override the recorder by registering its own.
   const usageEventRecorder = !composition.usageEventRecorderRegistration
-    ? new DurableUsageEventRecorder(requireTransactionalUsageEventDatabase(database), logger)
+    ? new DurableUsageEventRecorder(database.kysely, logger)
     : typeof composition.usageEventRecorderRegistration === "function"
       ? composition.usageEventRecorderRegistration({ database, logger })
       : composition.usageEventRecorderRegistration;
@@ -307,42 +304,45 @@ export const buildRepositories = (
     agentSkillSettings?: AgentSkillSettingsRegistry;
   } = {},
 ) => ({
-  accountMembershipRepository: new AccountMembershipRepository(database),
-  accountRepository: new AccountRepository(database),
-  accessGrantRepository: new AccessGrantRepository(database),
-  agentRepository: new AgentRepository(database, options.agentSurfaceExtensions, options.agentSkillSettings),
-  bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database),
+  accountMembershipRepository: new AccountMembershipRepository(database.kysely),
+  accountRepository: new AccountRepository(database.kysely),
+  accessGrantRepository: new AccessGrantRepository(database.kysely),
+  agentRepository: new AgentRepository(database.kysely, options.agentSurfaceExtensions, options.agentSkillSettings),
+  bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database.kysely),
   chunkRepository: new ChunkRepository(database, new PgVectorChunkStorage()),
-  conversationRepository: new ConversationRepository(database),
-  conversationOwnershipRepository: new ConversationOwnershipRepository(database),
-  documentProcessingJobRepository: new DocumentProcessingJobRepository(database),
-  documentRepository: new DocumentRepository(database),
-  documentSourceRepository: new DocumentSourceRepository(database),
-  emailVerificationTokenRepository: new EmailVerificationTokenRepository(database),
-  historyItemsRepository: new HistoryItemsRepository(database),
-  ingestionSettingsRepository: new IngestionSettingsRepository(database),
-  messageRepository: new MessageRepository(database),
-  passwordResetTokenRepository: new PasswordResetTokenRepository(database),
-  retrievalSettingsRepository: new RetrievalSettingsRepository(database),
-  routineDefinitionRepository: new RoutineDefinitionRepository(database),
-  sessionRepository: new SessionRepository(database),
-  userRepository: new UserRepository(database),
-  websiteCrawlJobRepository: new WebsiteCrawlJobRepository(database),
-  workspaceGrantRepository: new WorkspaceGrantRepository(database),
-  workspaceRepository: new WorkspaceRepository(database),
-  workspaceTokenRepository: new WorkspaceTokenRepository(database),
-  abuseControlRepository: new AbuseControlRepository(database),
-  accountInvitationRepository: new AccountInvitationRepository(database),
-  workspaceProviderCredentialsRepository: new WorkspaceProviderCredentialsRepository(database),
-  webhookDestinationRepository: new WebhookDestinationRepository(database),
-  customerEmailConnectionRepository: new CustomerEmailConnectionRepository(database),
-  integrationConnectionRepository: new IntegrationConnectionRepository(database),
-  slackInstallationRepository: new SlackInstallationRepository(database),
-  slackChannelBindingRepository: new SlackChannelBindingRepository(database),
-  emailSkillDefinitionRepository: new EmailSkillDefinitionRepository(database),
-  emailSkillActivityRepository: new EmailSkillActivityRepository(database),
-  webhookSkillDefinitionRepository: new WebhookSkillDefinitionRepository(database),
-  slackSkillDefinitionRepository: new SlackSkillDefinitionRepository(database),
+  conversationRepository: new ConversationRepository(database.kysely),
+  conversationOwnershipRepository: new ConversationOwnershipRepository(database.kysely),
+  documentProcessingJobRepository: new DocumentProcessingJobRepository(database.kysely),
+  documentRepository: new DocumentRepository(database.kysely),
+  documentSourceRepository: new DocumentSourceRepository(database.kysely),
+  emailVerificationTokenRepository: new EmailVerificationTokenRepository(database.kysely),
+  historyItemsRepository: new HistoryItemsRepository(database.kysely),
+  ingestionSettingsRepository: new IngestionSettingsRepository(database.kysely),
+  messageRepository: new MessageRepository(database.kysely),
+  passwordResetTokenRepository: new PasswordResetTokenRepository(database.kysely),
+  retrievalSettingsRepository: new RetrievalSettingsRepository(database.kysely),
+  routineDefinitionRepository: new RoutineDefinitionRepository(database.kysely),
+  sessionRepository: new SessionRepository(database.kysely),
+  userRepository: new UserRepository(database.kysely),
+  websiteCrawlJobRepository: new WebsiteCrawlJobRepository(database.kysely),
+  workspaceGrantRepository: new WorkspaceGrantRepository(database.kysely),
+  workspaceRepository: new WorkspaceRepository(database.kysely),
+  workspaceTokenRepository: new WorkspaceTokenRepository(database.kysely),
+  abuseControlRepository: new AbuseControlRepository(database.kysely),
+  accountInvitationRepository: new AccountInvitationRepository(database.kysely),
+  workspaceProviderCredentialsRepository: new WorkspaceProviderCredentialsRepository(database.kysely),
+  webhookDestinationRepository: new WebhookDestinationRepository(database.kysely),
+  // customer-email connections moved onto the integration_connections spine (#751) after
+  // this Kysely migration began; that repo still targets the spine via raw SQL and will be
+  // migrated to Kysely in a later pass, so it keeps the raw Database here.
+  customerEmailConnectionRepository: new CustomerEmailConnectionRepository(database.kysely),
+  integrationConnectionRepository: new IntegrationConnectionRepository(database.kysely),
+  slackInstallationRepository: new SlackInstallationRepository(database.kysely),
+  slackChannelBindingRepository: new SlackChannelBindingRepository(database.kysely),
+  emailSkillDefinitionRepository: new EmailSkillDefinitionRepository(database.kysely),
+  emailSkillActivityRepository: new EmailSkillActivityRepository(database.kysely),
+  webhookSkillDefinitionRepository: new WebhookSkillDefinitionRepository(database.kysely),
+  slackSkillDefinitionRepository: new SlackSkillDefinitionRepository(database.kysely),
 });
 
 export const buildAccessServices = (input: {
@@ -836,7 +836,7 @@ export const buildChatServices = (input: {
     present: answerPresentationService.present.bind(answerPresentationService),
     resolveCitationArtifacts,
   };
-  const abuseControlService = new AbuseControlService(new AbuseControlRepository(input.database));
+  const abuseControlService = new AbuseControlService(new AbuseControlRepository(input.database.kysely));
   const publicChatActionAdvertiserContext = {
     database: input.database,
     chatGateway,
@@ -894,7 +894,7 @@ export const buildChatServices = (input: {
     input.env.CONNECTOR_ENCRYPTION_KEY &&
     !input.composition.skillExecutorRegistry.resolve({ kind: "internal", adapter: CUSTOMER_EMAIL_SKILLS_ADAPTER })
   ) {
-    const oauthConnectionRepository = new OauthConnectionRepository(input.database);
+    const oauthConnectionRepository = new OauthConnectionRepository(input.database.kysely);
     // No real Gmail/Microsoft Graph adapter is wired yet (spec 089 follow-up): the
     // mock provider accepts every draft/send and returns a placeholder message id, so
     // `drafted`/`sent` outcomes do NOT mean a message was delivered. Warn loudly so
@@ -944,7 +944,7 @@ export const buildChatServices = (input: {
       adapter: SLACK_SKILLS_ADAPTER,
       executor: new SlackEscalationExecutor({
         skills: input.slackSkillDefinitionRepository,
-        outbox: new ActionRequestRepository(input.database),
+        outbox: new ActionRequestRepository(input.database.kysely),
       }),
     });
   }
@@ -968,7 +968,7 @@ export const buildChatServices = (input: {
     ? new NoopAnswerFeedbackHistoryProvider()
     : typeof input.composition.answerFeedbackHistoryProviderRegistration === "function"
       ? input.composition.answerFeedbackHistoryProviderRegistration({
-          database: input.database,
+          database: input.database.kysely,
           logger: input.logger,
         })
       : input.composition.answerFeedbackHistoryProviderRegistration;
@@ -1023,7 +1023,7 @@ export const buildChatServices = (input: {
   // the outbox during the turn (`actionOutbox`); the worker drains and routes it to a
   // registered handler out of band (`actionDispatchWorker`). The two share one repository
   // so the same table backs the enqueue and the drain.
-  const actionOutbox = new ActionRequestRepository(input.database);
+  const actionOutbox = new ActionRequestRepository(input.database.kysely);
   const actionHandlerRegistry = new ActionHandlerRegistry(
     input.composition.actionHandlerRegistrations.map((registration) => ({
       type: registration.type,
@@ -1241,10 +1241,10 @@ export const buildChatServices = (input: {
     ),
   );
   const conversationEngine = createConversationEngine();
-  const clarificationStore = new ClarificationStateRepository(input.database);
+  const clarificationStore = new ClarificationStateRepository(input.database.kysely);
   const retrievalSenseDetector = new SenseGroupingService({
     policy: retrievalSensePolicy,
-    embeddingReader: new PostgresSenseEmbeddingReader(input.database),
+    embeddingReader: new PostgresSenseEmbeddingReader(input.database.kysely),
     labelGateway: new ModelSenseLabelGateway(
       input.llmRegistry.createChatInferencePipeline(input.usageEventRecorder),
       loadPromptTemplate("chat/clarification-sense-labels.md"),
@@ -1265,7 +1265,7 @@ export const buildChatServices = (input: {
   const handoffWaitingMessageGenerator = new LlmHandoffWaitingMessageGenerator(
     input.llmRegistry.createRewriteInferencePipeline(input.usageEventRecorder),
   );
-  const routineStateRepository = new RoutineStateRepository(input.database);
+  const routineStateRepository = new RoutineStateRepository(input.database.kysely);
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
     messageRepository: input.messageRepository,
@@ -1300,7 +1300,7 @@ export const buildChatServices = (input: {
     // dispatched out of band by `actionDispatchWorker` in the worker process.
     actionOutbox,
     assistantTurnPersistence: new PostgresAssistantTurnPersistence(
-      input.database,
+      input.database.kysely,
       undefined,
       input.conversationOwnershipRepository,
     ),
@@ -1375,7 +1375,7 @@ export const buildChatServices = (input: {
     turnRouter,
   });
   const approvalDecisionService = new ApprovalDecisionService(
-    new PendingDecisionRepository(input.database),
+    new PendingDecisionRepository(input.database.kysely),
     chatService.asApprovalResumeRunner(),
     {
       resolveWorkspaceRole: (caller) => input.accountAccessService.resolveWorkspaceRole(caller),

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import type { Database } from "../../shared/infra/database.js";
+import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 
 export type DocumentProcessingJobStatus = "queued" | "processing" | "completed" | "failed" | "skipped";
 
@@ -78,51 +79,48 @@ const mapJob = (row: DocumentProcessingJobRow): DocumentProcessingJobRecord => (
   updatedAt: new Date(row.updated_at),
 });
 
+const documentProcessingJobColumns = [
+  "id",
+  "document_id",
+  "workspace_id",
+  "document_revision",
+  "status",
+  "attempt_count",
+  "last_error",
+  "available_at",
+  "claimed_at",
+  "completed_at",
+  "created_at",
+  "updated_at",
+] as const;
+
 export class DocumentProcessingJobRepository implements DocumentProcessingJobRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async enqueue(input: { documentId: string; workspaceId: string; documentRevision: number }): Promise<DocumentProcessingJobRecord> {
-    const [row] = await this.database.query<DocumentProcessingJobRow>(
-      `INSERT INTO document_processing_jobs (id, document_id, workspace_id, document_revision, status)
-       VALUES ($1, $2, $3, $4, 'queued')
-       RETURNING id,
-                 document_id,
-                 workspace_id,
-                 document_revision,
-                 status,
-                 attempt_count,
-                 last_error,
-                 available_at,
-                 claimed_at,
-                 completed_at,
-                 created_at,
-                 updated_at`,
-      [randomUUID(), input.documentId, input.workspaceId, input.documentRevision],
-    );
+    const row = await this.db
+      .insertInto("document_processing_jobs")
+      .values({
+        id: randomUUID(),
+        document_id: input.documentId,
+        workspace_id: input.workspaceId,
+        document_revision: input.documentRevision,
+        status: "queued",
+      })
+      .returning(documentProcessingJobColumns)
+      .executeTakeFirstOrThrow();
 
-    return mapJob(row);
+    return mapJob(row as DocumentProcessingJobRow);
   }
 
   async findById(jobId: string): Promise<DocumentProcessingJobRecord | null> {
-    const [row] = await this.database.query<DocumentProcessingJobRow>(
-      `SELECT id,
-              document_id,
-              workspace_id,
-              document_revision,
-              status,
-              attempt_count,
-              last_error,
-              available_at,
-              claimed_at,
-              completed_at,
-              created_at,
-              updated_at
-       FROM document_processing_jobs
-       WHERE id = $1`,
-      [jobId],
-    );
+    const row = await this.db
+      .selectFrom("document_processing_jobs")
+      .select(documentProcessingJobColumns)
+      .where("id", "=", jobId)
+      .executeTakeFirst();
 
-    return row ? mapJob(row) : null;
+    return row ? mapJob(row as DocumentProcessingJobRow) : null;
   }
 
   async findByDocumentRevision(input: {
@@ -130,168 +128,133 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
     workspaceId: string;
     documentRevision: number;
   }): Promise<DocumentProcessingJobRecord | null> {
-    const [row] = await this.database.query<DocumentProcessingJobRow>(
-      `SELECT id,
-              document_id,
-              workspace_id,
-              document_revision,
-              status,
-              attempt_count,
-              last_error,
-              available_at,
-              claimed_at,
-              completed_at,
-              created_at,
-              updated_at
-       FROM document_processing_jobs
-       WHERE document_id = $1
-         AND workspace_id = $2
-         AND document_revision = $3
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [input.documentId, input.workspaceId, input.documentRevision],
-    );
+    const row = await this.db
+      .selectFrom("document_processing_jobs")
+      .select(documentProcessingJobColumns)
+      .where("document_id", "=", input.documentId)
+      .where("workspace_id", "=", input.workspaceId)
+      .where("document_revision", "=", input.documentRevision)
+      .orderBy("created_at", "desc")
+      .limit(1)
+      .executeTakeFirst();
 
-    return row ? mapJob(row) : null;
+    return row ? mapJob(row as DocumentProcessingJobRow) : null;
   }
 
   async claimNext(now: Date = new Date()): Promise<DocumentProcessingJobRecord | null> {
-    return this.database.withTransaction(async (client) => {
-      const rows = await client.query<DocumentProcessingJobRow>(
-        `WITH next_job AS (
-           SELECT id
-           FROM document_processing_jobs
-           WHERE status = 'queued'
-             AND available_at <= $1
-           ORDER BY created_at ASC
-           FOR UPDATE SKIP LOCKED
-           LIMIT 1
-         )
-         UPDATE document_processing_jobs jobs
-         SET status = 'processing',
-             attempt_count = jobs.attempt_count + 1,
-             claimed_at = $1,
-             updated_at = $1
-         FROM next_job
-         WHERE jobs.id = next_job.id
-         RETURNING jobs.id,
-                   jobs.document_id,
-                   jobs.workspace_id,
-                   jobs.document_revision,
-                   jobs.status,
-                   jobs.attempt_count,
-                   jobs.last_error,
-                   jobs.available_at,
-                   jobs.claimed_at,
-                   jobs.completed_at,
-                   jobs.created_at,
-                   jobs.updated_at`,
-        [now],
-      );
+    return this.db.transaction().execute(async (trx) => {
+      const nextJob = await trx
+        .selectFrom("document_processing_jobs")
+        .select("id")
+        .where("status", "=", "queued")
+        .where("available_at", "<=", now)
+        .orderBy("created_at", "asc")
+        .forUpdate()
+        .skipLocked()
+        .limit(1)
+        .executeTakeFirst();
 
-      return rows.rows[0] ? mapJob(rows.rows[0]) : null;
+      if (!nextJob) {
+        return null;
+      }
+
+      const row = await trx
+        .updateTable("document_processing_jobs")
+        .set((eb) => ({
+          status: "processing",
+          attempt_count: eb("attempt_count", "+", 1),
+          claimed_at: now,
+          updated_at: now,
+        }))
+        .where("id", "=", nextJob.id)
+        .returning(documentProcessingJobColumns)
+        .executeTakeFirst();
+
+      return row ? mapJob(row as DocumentProcessingJobRow) : null;
     });
   }
 
   async claimById(jobId: string, now: Date = new Date()): Promise<DocumentProcessingJobRecord | null> {
-    return this.database.withTransaction(async (client) => {
-      const rows = await client.query<DocumentProcessingJobRow>(
-        `UPDATE document_processing_jobs
-         SET status = 'processing',
-             attempt_count = attempt_count + 1,
-             claimed_at = $2,
-             updated_at = $2
-         WHERE id = $1
-           AND status = 'queued'
-           AND available_at <= $2
-         RETURNING id,
-                   document_id,
-                   workspace_id,
-                   document_revision,
-                   status,
-                   attempt_count,
-                   last_error,
-                   available_at,
-                   claimed_at,
-                   completed_at,
-                   created_at,
-                   updated_at`,
-        [jobId, now],
-      );
+    return this.db.transaction().execute(async (trx) => {
+      const row = await trx
+        .updateTable("document_processing_jobs")
+        .set((eb) => ({
+          status: "processing",
+          attempt_count: eb("attempt_count", "+", 1),
+          claimed_at: now,
+          updated_at: now,
+        }))
+        .where("id", "=", jobId)
+        .where("status", "=", "queued")
+        .where("available_at", "<=", now)
+        .returning(documentProcessingJobColumns)
+        .executeTakeFirst();
 
-      return rows.rows[0] ? mapJob(rows.rows[0]) : null;
+      return row ? mapJob(row as DocumentProcessingJobRow) : null;
     });
   }
 
   async backfillMissingQueuedJobs(limit = 100): Promise<number> {
-    return this.database.withTransaction(async (client) => {
-      const missingRows = await client.query<{
-        id: string;
-        workspace_id: string;
-        revision: number;
-      }>(
-        `SELECT d.id, d.workspace_id, d.revision
-         FROM documents d
-         WHERE d.status = 'queued'
-           AND NOT EXISTS (
-             SELECT 1
-             FROM document_processing_jobs jobs
-             WHERE jobs.document_id = d.id
-               AND jobs.document_revision = d.revision
-           )
-         ORDER BY d.updated_at ASC, d.id ASC
-         LIMIT $1
-         FOR UPDATE OF d SKIP LOCKED`,
-        [limit],
-      );
+    return this.db.transaction().execute(async (trx) => {
+      const missingRows = await trx
+        .selectFrom("documents as d")
+        .select(["d.id", "d.workspace_id", "d.revision"])
+        .where("d.status", "=", "queued")
+        .where((eb) =>
+          eb.not(
+            eb.exists(
+              eb
+                .selectFrom("document_processing_jobs as jobs")
+                .select("jobs.id")
+                .whereRef("jobs.document_id", "=", "d.id")
+                .whereRef("jobs.document_revision", "=", "d.revision"),
+            ),
+          ),
+        )
+        .orderBy("d.updated_at", "asc")
+        .orderBy("d.id", "asc")
+        .limit(limit)
+        .forUpdate("d")
+        .skipLocked()
+        .execute();
 
-      for (const row of missingRows.rows) {
-        await client.query(
-          `INSERT INTO document_processing_jobs (id, document_id, workspace_id, document_revision, status)
-           VALUES ($1, $2, $3, $4, 'queued')`,
-          [randomUUID(), row.id, row.workspace_id, row.revision],
-        );
+      for (const row of missingRows) {
+        await trx
+          .insertInto("document_processing_jobs")
+          .values({
+            id: randomUUID(),
+            document_id: row.id,
+            workspace_id: row.workspace_id,
+            document_revision: row.revision,
+            status: "queued",
+          })
+          .execute();
       }
 
-      return missingRows.rows.length;
+      return missingRows.length;
     });
   }
 
   async listProcessingJobs(): Promise<DocumentProcessingJobRecord[]> {
-    const rows = await this.database.query<DocumentProcessingJobRow>(
-      `SELECT id,
-              document_id,
-              workspace_id,
-              document_revision,
-              status,
-              attempt_count,
-              last_error,
-              available_at,
-              claimed_at,
-              completed_at,
-              created_at,
-              updated_at
-       FROM document_processing_jobs
-       WHERE status = 'processing'
-       ORDER BY created_at ASC`,
-    );
+    const rows = await this.db
+      .selectFrom("document_processing_jobs")
+      .select(documentProcessingJobColumns)
+      .where("status", "=", "processing")
+      .orderBy("created_at", "asc")
+      .execute();
 
-    return rows.map(mapJob);
+    return rows.map((row) => mapJob(row as DocumentProcessingJobRow));
   }
 
   async getQueueSnapshot(now: Date = new Date()): Promise<DocumentProcessingQueueSnapshot> {
-    const [row] = await this.database.query<{
-      queued_job_count: number | string;
-      processing_job_count: number | string;
-      oldest_queued_job_created_at: Date | null;
-    }>(
-      `SELECT
-         COUNT(*) FILTER (WHERE status = 'queued' AND available_at <= $1) AS queued_job_count,
-         COUNT(*) FILTER (WHERE status = 'processing') AS processing_job_count,
-         MIN(created_at) FILTER (WHERE status = 'queued' AND available_at <= $1) AS oldest_queued_job_created_at
-       FROM document_processing_jobs`,
-      [now],
-    );
+    const row = await this.db
+      .selectFrom("document_processing_jobs")
+      .select((eb) => [
+        eb.fn.countAll<number>().filterWhere("status", "=", "queued").filterWhere("available_at", "<=", now).as("queued_job_count"),
+        eb.fn.countAll<number>().filterWhere("status", "=", "processing").as("processing_job_count"),
+        eb.fn.min<Date>("created_at").filterWhere("status", "=", "queued").filterWhere("available_at", "<=", now).as("oldest_queued_job_created_at"),
+      ])
+      .executeTakeFirst();
 
     return {
       queuedJobCount: Number(row?.queued_job_count ?? 0),
@@ -301,38 +264,41 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
   }
 
   async markCompleted(jobId: string): Promise<void> {
-    await this.database.query(
-      `UPDATE document_processing_jobs
-       SET status = 'completed',
-           completed_at = NOW(),
-           updated_at = NOW()
-       WHERE id = $1`,
-      [jobId],
-    );
+    await this.db
+      .updateTable("document_processing_jobs")
+      .set({
+        status: "completed",
+        completed_at: currentTimestamp(),
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", jobId)
+      .execute();
   }
 
   async markSkipped(jobId: string, reason: string): Promise<void> {
-    await this.database.query(
-      `UPDATE document_processing_jobs
-       SET status = 'skipped',
-           last_error = $2,
-           completed_at = NOW(),
-           updated_at = NOW()
-       WHERE id = $1`,
-      [jobId, reason],
-    );
+    await this.db
+      .updateTable("document_processing_jobs")
+      .set({
+        status: "skipped",
+        last_error: reason,
+        completed_at: currentTimestamp(),
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", jobId)
+      .execute();
   }
 
   async markFailed(jobId: string, errorMessage: string): Promise<void> {
-    await this.database.query(
-      `UPDATE document_processing_jobs
-       SET status = 'failed',
-           last_error = $2,
-           completed_at = NOW(),
-           updated_at = NOW()
-       WHERE id = $1`,
-      [jobId, errorMessage],
-    );
+    await this.db
+      .updateTable("document_processing_jobs")
+      .set({
+        status: "failed",
+        last_error: errorMessage,
+        completed_at: currentTimestamp(),
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", jobId)
+      .execute();
   }
 
   async markFailedIfDocumentMatches(input: {
@@ -342,67 +308,71 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
     revision: number;
     errorMessage: string;
   }): Promise<boolean> {
-    return this.database.withTransaction(async (client) => {
-      const documentResult = await client.query(
-        `UPDATE documents
-         SET status = 'failed',
-             failed_at = NOW(),
-             failure_reason = $4,
-             updated_at = NOW()
-         WHERE id = $1
-           AND workspace_id = $2
-           AND revision = $3
-         RETURNING id`,
-        [input.documentId, input.workspaceId, input.revision, input.errorMessage],
-      );
+    return this.db.transaction().execute(async (trx) => {
+      const document = await trx
+        .updateTable("documents")
+        .set({
+          status: "failed",
+          failed_at: currentTimestamp(),
+          failure_reason: input.errorMessage,
+          updated_at: currentTimestamp(),
+        })
+        .where("id", "=", input.documentId)
+        .where("workspace_id", "=", input.workspaceId)
+        .where("revision", "=", input.revision)
+        .returning("id")
+        .executeTakeFirst();
 
-      if (documentResult.rows.length === 0) {
+      if (!document) {
         return false;
       }
 
-      await client.query(
-        `UPDATE document_processing_jobs
-         SET status = 'failed',
-             last_error = $2,
-             completed_at = NOW(),
-             updated_at = NOW()
-         WHERE id = $1`,
-        [input.jobId, input.errorMessage],
-      );
+      await trx
+        .updateTable("document_processing_jobs")
+        .set({
+          status: "failed",
+          last_error: input.errorMessage,
+          completed_at: currentTimestamp(),
+          updated_at: currentTimestamp(),
+        })
+        .where("id", "=", input.jobId)
+        .execute();
 
       return true;
     });
   }
 
   async reschedule(jobId: string, nextAttemptAt: Date, errorMessage: string): Promise<void> {
-    await this.database.query(
-      `UPDATE document_processing_jobs
-       SET status = 'queued',
-           last_error = $2,
-           available_at = $3,
-           claimed_at = NULL,
-           updated_at = NOW()
-       WHERE id = $1`,
-      [jobId, errorMessage, nextAttemptAt],
-    );
+    await this.db
+      .updateTable("document_processing_jobs")
+      .set({
+        status: "queued",
+        last_error: errorMessage,
+        available_at: nextAttemptAt,
+        claimed_at: null,
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", jobId)
+      .execute();
   }
 
   async releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<boolean> {
-    const rows = await this.database.query<{ id: string }>(
-      `UPDATE document_processing_jobs
-       SET status = 'queued',
-           last_error = $3,
-           available_at = NOW(),
-           claimed_at = NULL,
-           updated_at = NOW()
-       WHERE id = $1
-         AND status = 'processing'
-         AND claimed_at IS NOT NULL
-         AND claimed_at <= $2
-       RETURNING id`,
-      [jobId, claimedAtOrBefore, errorMessage],
-    );
+    const row = await this.db
+      .updateTable("document_processing_jobs")
+      .set({
+        status: "queued",
+        last_error: errorMessage,
+        available_at: currentTimestamp(),
+        claimed_at: null,
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", jobId)
+      .where("status", "=", "processing")
+      .where("claimed_at", "is not", null)
+      .where("claimed_at", "<=", claimedAtOrBefore)
+      .returning("id")
+      .executeTakeFirst();
 
-    return rows.length > 0;
+    return Boolean(row);
   }
 }

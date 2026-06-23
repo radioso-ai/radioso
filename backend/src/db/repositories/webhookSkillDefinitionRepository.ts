@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import type {
   WebhookSkillDefinitionSummary,
 } from "../../modules/webhookSkills/domain.js";
-import type { Database } from "../../shared/infra/database.js";
+import { currentTimestamp, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface WebhookSkillDefinitionRecord {
   id: string;
@@ -49,10 +50,17 @@ interface WebhookSkillDefinitionRow {
   updated_at: Date;
 }
 
-const SELECT_BASE = `SELECT s.id, s.workspace_id, s.agent_id, s.target_id, s.skill_name,
-         s.config, s.enabled, s.created_at, s.updated_at
-   FROM agent_skills s
-   WHERE s.kind = 'webhook'`;
+const webhookSkillColumns = [
+  "id",
+  "workspace_id",
+  "agent_id",
+  "target_id",
+  "skill_name",
+  "config",
+  "enabled",
+  "created_at",
+  "updated_at",
+] as const;
 
 const mapRecord = (row: WebhookSkillDefinitionRow): WebhookSkillDefinitionRecord => ({
   id: row.id,
@@ -83,55 +91,61 @@ export interface WebhookSkillDefinitionRepositoryPort {
   listSkillNamesByDestination(workspaceId: string, destinationId: string): Promise<string[]>;
 }
 
+const selectWebhookSkills = (db: Db) =>
+  db.selectFrom("agent_skills").select(webhookSkillColumns).where("kind", "=", "webhook");
+
 export class WebhookSkillDefinitionRepository implements WebhookSkillDefinitionRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async create(input: CreateWebhookSkillDefinitionInput): Promise<WebhookSkillDefinitionRecord> {
     const config = {
       boundPayload: input.boundPayload ?? {},
       exposedPayload: input.exposedPayload ?? {},
     };
-    const [row] = await this.database.query<WebhookSkillDefinitionRow>(
-      `INSERT INTO agent_skills (
-         id, agent_id, workspace_id, skill_name, kind, enabled, target_type, target_id, config
-       )
-       VALUES ($1, $3, $2, $5, 'webhook', $7, 'webhook_destination', $4, $6::jsonb)
-       RETURNING id, workspace_id, agent_id, target_id, skill_name, config, enabled, created_at, updated_at`,
-      [
-        randomUUID(),
-        input.workspaceId,
-        input.agentId,
-        input.destinationId,
-        input.skillName,
-        JSON.stringify(config),
-        input.enabled ?? true,
-      ],
-    );
-    return mapRecord(row);
+    const row = await this.db
+      .insertInto("agent_skills")
+      .values({
+        id: randomUUID(),
+        agent_id: input.agentId,
+        workspace_id: input.workspaceId,
+        skill_name: input.skillName,
+        kind: "webhook",
+        enabled: input.enabled ?? true,
+        target_type: "webhook_destination",
+        target_id: input.destinationId,
+        config: toJsonb(config),
+      })
+      .returning(webhookSkillColumns)
+      .executeTakeFirstOrThrow();
+    return mapRecord(row as WebhookSkillDefinitionRow);
   }
 
   async findById(workspaceId: string, agentId: string, id: string): Promise<WebhookSkillDefinitionRecord | null> {
-    const [row] = await this.database.query<WebhookSkillDefinitionRow>(
-      `${SELECT_BASE} AND s.workspace_id = $1 AND s.agent_id = $2 AND s.id = $3`,
-      [workspaceId, agentId, id],
-    );
-    return row ? mapRecord(row) : null;
+    const row = await selectWebhookSkills(this.db)
+      .where("workspace_id", "=", workspaceId)
+      .where("agent_id", "=", agentId)
+      .where("id", "=", id)
+      .executeTakeFirst();
+    return row ? mapRecord(row as WebhookSkillDefinitionRow) : null;
   }
 
   async findEnabledByName(workspaceId: string, agentId: string, skillName: string): Promise<WebhookSkillDefinitionRecord | null> {
-    const [row] = await this.database.query<WebhookSkillDefinitionRow>(
-      `${SELECT_BASE} AND s.workspace_id = $1 AND s.agent_id = $2 AND s.skill_name = $3 AND s.enabled = TRUE`,
-      [workspaceId, agentId, skillName],
-    );
-    return row ? mapRecord(row) : null;
+    const row = await selectWebhookSkills(this.db)
+      .where("workspace_id", "=", workspaceId)
+      .where("agent_id", "=", agentId)
+      .where("skill_name", "=", skillName)
+      .where("enabled", "=", true)
+      .executeTakeFirst();
+    return row ? mapRecord(row as WebhookSkillDefinitionRow) : null;
   }
 
   async listByAgent(workspaceId: string, agentId: string): Promise<WebhookSkillDefinitionRecord[]> {
-    const rows = await this.database.query<WebhookSkillDefinitionRow>(
-      `${SELECT_BASE} AND s.workspace_id = $1 AND s.agent_id = $2 ORDER BY s.skill_name ASC`,
-      [workspaceId, agentId],
-    );
-    return rows.map(mapRecord);
+    const rows = await selectWebhookSkills(this.db)
+      .where("workspace_id", "=", workspaceId)
+      .where("agent_id", "=", agentId)
+      .orderBy("skill_name", "asc")
+      .execute();
+    return rows.map((row) => mapRecord(row as WebhookSkillDefinitionRow));
   }
 
   async update(
@@ -140,60 +154,61 @@ export class WebhookSkillDefinitionRepository implements WebhookSkillDefinitionR
     id: string,
     input: UpdateWebhookSkillDefinitionInput,
   ): Promise<WebhookSkillDefinitionRecord | null> {
+    // Only the provided sub-keys are merged into config (config || {...}); an empty object
+    // is a no-op merge, matching the original COALESCE($::jsonb, '{}').
     const config = {
       ...("boundPayload" in input ? { boundPayload: input.boundPayload ?? {} } : {}),
       ...("exposedPayload" in input ? { exposedPayload: input.exposedPayload ?? {} } : {}),
     };
-    const [row] = await this.database.query<WebhookSkillDefinitionRow>(
-      `UPDATE agent_skills SET
-         enabled = COALESCE($4, enabled),
-         config = config || COALESCE($5::jsonb, '{}'::jsonb),
-         updated_at = NOW()
-       WHERE workspace_id = $1 AND agent_id = $2 AND id = $3 AND kind = 'webhook'
-       RETURNING id, workspace_id, agent_id, target_id, skill_name, config, enabled, created_at, updated_at`,
-      [
-        workspaceId,
-        agentId,
-        id,
-        "enabled" in input ? input.enabled ?? null : null,
-        Object.keys(config).length > 0 ? JSON.stringify(config) : null,
-      ],
-    );
-    return row ? mapRecord(row) : null;
+    const row = await this.db
+      .updateTable("agent_skills")
+      .set((eb) => ({
+        ...(input.enabled != null ? { enabled: input.enabled } : {}),
+        config: jsonbConcat(eb.ref("config"), toJsonb(config)),
+        updated_at: currentTimestamp(),
+      }))
+      .where("workspace_id", "=", workspaceId)
+      .where("agent_id", "=", agentId)
+      .where("id", "=", id)
+      .where("kind", "=", "webhook")
+      .returning(webhookSkillColumns)
+      .executeTakeFirst();
+    return row ? mapRecord(row as WebhookSkillDefinitionRow) : null;
   }
 
   async remove(workspaceId: string, agentId: string, id: string): Promise<boolean> {
-    const affected = await this.database.execute(
-      `DELETE FROM agent_skills WHERE workspace_id = $1 AND agent_id = $2 AND id = $3 AND kind = 'webhook'`,
-      [workspaceId, agentId, id],
-    );
-    return affected > 0;
+    const result = await this.db
+      .deleteFrom("agent_skills")
+      .where("workspace_id", "=", workspaceId)
+      .where("agent_id", "=", agentId)
+      .where("id", "=", id)
+      .where("kind", "=", "webhook")
+      .executeTakeFirst();
+    return Number(result.numDeletedRows) > 0;
   }
 
   async countByDestination(workspaceId: string, destinationId: string): Promise<number> {
-    const [row] = await this.database.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count
-       FROM agent_skills s
-       WHERE s.kind = 'webhook'
-         AND s.workspace_id = $1
-         AND s.target_type = 'webhook_destination'
-         AND s.target_id = $2`,
-      [workspaceId, destinationId],
-    );
+    const row = await this.db
+      .selectFrom("agent_skills")
+      .select((eb) => eb.fn.countAll<string>().as("count"))
+      .where("kind", "=", "webhook")
+      .where("workspace_id", "=", workspaceId)
+      .where("target_type", "=", "webhook_destination")
+      .where("target_id", "=", destinationId)
+      .executeTakeFirst();
     return Number(row?.count ?? 0);
   }
 
   async listSkillNamesByDestination(workspaceId: string, destinationId: string): Promise<string[]> {
-    const rows = await this.database.query<{ skill_name: string }>(
-      `SELECT s.skill_name
-       FROM agent_skills s
-       WHERE s.kind = 'webhook'
-         AND s.workspace_id = $1
-         AND s.target_type = 'webhook_destination'
-         AND s.target_id = $2
-       ORDER BY s.skill_name ASC`,
-      [workspaceId, destinationId],
-    );
+    const rows = await this.db
+      .selectFrom("agent_skills")
+      .select("skill_name")
+      .where("kind", "=", "webhook")
+      .where("workspace_id", "=", workspaceId)
+      .where("target_type", "=", "webhook_destination")
+      .where("target_id", "=", destinationId)
+      .orderBy("skill_name", "asc")
+      .execute();
     return rows.map((row) => row.skill_name);
   }
 }

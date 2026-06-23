@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import type { ConnectorDatabasePort } from "@radioso/connector-api";
+import { currentTimestamp } from "../../../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../../../shared/infra/kysely/types.js";
 
 export interface SlackConversationLinkRecord {
   id: string;
@@ -40,34 +41,34 @@ const mapLink = (row: SlackConversationLinkRow): SlackConversationLinkRecord => 
 });
 
 export class PostgresSlackPersistence implements SlackPersistencePort {
-  constructor(private readonly db: ConnectorDatabasePort) {}
+  constructor(private readonly db: Db) {}
 
   async createInboundEvent(input: { eventId: string; teamId: string }): Promise<boolean> {
-    const rows = await this.db.query<{ event_id: string }>(
-      `INSERT INTO slack_inbound_events (event_id, team_id, status)
-       VALUES ($1, $2, 'received')
-       ON CONFLICT (event_id) DO NOTHING
-       RETURNING event_id`,
-      [input.eventId, input.teamId],
-    );
-    return rows.length > 0;
+    const row = await this.db
+      .insertInto("slack_inbound_events")
+      .values({ event_id: input.eventId, team_id: input.teamId, status: "received" })
+      .onConflict((oc) => oc.column("event_id").doNothing())
+      .returning("event_id")
+      .executeTakeFirst();
+    return row !== undefined;
   }
 
   async markInboundEventStatus(eventId: string, status: "processed" | "skipped" | "failed"): Promise<void> {
-    await this.db.query(
-      `UPDATE slack_inbound_events SET status = $2 WHERE event_id = $1`,
-      [eventId, status],
-    );
+    await this.db
+      .updateTable("slack_inbound_events")
+      .set({ status })
+      .where("event_id", "=", eventId)
+      .execute();
   }
 
   async markStaleInboundEventsFailed(input: { olderThan: Date }): Promise<number> {
-    const rows = await this.db.query<{ event_id: string }>(
-      `UPDATE slack_inbound_events
-       SET status = 'failed'
-       WHERE status = 'received' AND received_at < $1
-       RETURNING event_id`,
-      [input.olderThan],
-    );
+    const rows = await this.db
+      .updateTable("slack_inbound_events")
+      .set({ status: "failed" })
+      .where("status", "=", "received")
+      .where("received_at", "<", input.olderThan)
+      .returning("event_id")
+      .execute();
     return rows.length;
   }
 
@@ -75,12 +76,12 @@ export class PostgresSlackPersistence implements SlackPersistencePort {
     workspaceId: string;
     slackKey: string;
   }): Promise<SlackConversationLinkRecord | null> {
-    const [row] = await this.db.query<SlackConversationLinkRow>(
-      `SELECT id, workspace_id, installation_id, slack_key, conversation_id
-       FROM slack_conversation_links
-       WHERE workspace_id = $1 AND slack_key = $2`,
-      [input.workspaceId, input.slackKey],
-    );
+    const row = await this.db
+      .selectFrom("slack_conversation_links")
+      .select(["id", "workspace_id", "installation_id", "slack_key", "conversation_id"])
+      .where("workspace_id", "=", input.workspaceId)
+      .where("slack_key", "=", input.slackKey)
+      .executeTakeFirst();
     return row ? mapLink(row) : null;
   }
 
@@ -90,16 +91,24 @@ export class PostgresSlackPersistence implements SlackPersistencePort {
     slackKey: string;
     conversationId: string;
   }): Promise<SlackConversationLinkRecord> {
-    const [row] = await this.db.query<SlackConversationLinkRow>(
-      `INSERT INTO slack_conversation_links (id, workspace_id, installation_id, slack_key, conversation_id)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (slack_key) DO UPDATE
-       SET conversation_id = EXCLUDED.conversation_id,
-           installation_id = EXCLUDED.installation_id,
-           updated_at = NOW()
-       RETURNING id, workspace_id, installation_id, slack_key, conversation_id`,
-      [randomUUID(), input.workspaceId, input.installationId, input.slackKey, input.conversationId],
-    );
+    const row = await this.db
+      .insertInto("slack_conversation_links")
+      .values({
+        id: randomUUID(),
+        workspace_id: input.workspaceId,
+        installation_id: input.installationId,
+        slack_key: input.slackKey,
+        conversation_id: input.conversationId,
+      })
+      .onConflict((oc) =>
+        oc.column("slack_key").doUpdateSet((eb) => ({
+          conversation_id: eb.ref("excluded.conversation_id"),
+          installation_id: eb.ref("excluded.installation_id"),
+          updated_at: currentTimestamp(),
+        })),
+      )
+      .returning(["id", "workspace_id", "installation_id", "slack_key", "conversation_id"])
+      .executeTakeFirstOrThrow();
     return mapLink(row);
   }
 }

@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { ConversationOwnershipRepository } from "../../../src/db/repositories/conversationOwnershipRepository.js";
 import { Database } from "../../../src/shared/infra/database.js";
+import { createKyselyDatabase } from "../../../src/shared/infra/kysely/kyselyDatabase.js";
 import { applyTestMigration } from "../../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
@@ -27,8 +28,27 @@ const canReachIntegrationDatabase = async (databaseUrl?: string): Promise<boolea
 const hasReachableIntegrationDatabase = await canReachIntegrationDatabase(integrationDatabaseUrl);
 const describeIfDatabase = hasReachableIntegrationDatabase ? describe : describe.skip;
 
-const createClientBackedDatabase = (client: PoolClient): Database => ({
-  pool: {} as Database["pool"],
+const createClientBackedDatabase = (client: PoolClient): Database => {
+  // A one-connection pool that always hands back the same open client so Kysely runs every
+  // statement (and its BEGIN/COMMIT) on the same per-test schema + transaction as the raw
+  // helper queries; `release` is neutered so Kysely can't return the client to a real pool.
+  const pool = {
+    async connect() {
+      return new Proxy(client, {
+        get(target, property, receiver) {
+          if (property === "release") {
+            return () => undefined;
+          }
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      }) as PoolClient;
+    },
+  } as Database["pool"];
+
+  return {
+  pool,
+  kysely: createKyselyDatabase(pool),
   async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
     const result = await client.query<T>(text, params);
     return result.rows;
@@ -61,7 +81,8 @@ const createClientBackedDatabase = (client: PoolClient): Database => ({
     }
   },
   async close(): Promise<void> {},
-} as Database);
+} as Database;
+};
 
 const seedConversation = async (
   database: Database,
@@ -98,7 +119,7 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
     database = createClientBackedDatabase(client);
     await applyTestMigration(database, "001_init.sql");
     await applyTestMigration(database, "105_conversation_ownership.sql");
-    repository = new ConversationOwnershipRepository(database);
+    repository = new ConversationOwnershipRepository(database.kysely);
   });
 
   beforeEach(async () => {

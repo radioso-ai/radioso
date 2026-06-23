@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { Database } from "../../shared/infra/database.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface WorkspaceTokenRecord {
   id: string;
@@ -25,6 +25,18 @@ interface WorkspaceTokenRow {
   last_used_at: Date | null;
   revoked_at: Date | null;
 }
+
+const workspaceTokenColumns = [
+  "id",
+  "workspace_id",
+  "account_id",
+  "token_prefix",
+  "token_hash",
+  "encrypted_token",
+  "created_at",
+  "last_used_at",
+  "revoked_at",
+] as const;
 
 const mapToken = (row: WorkspaceTokenRow): WorkspaceTokenRecord => ({
   id: row.id,
@@ -52,28 +64,26 @@ export interface WorkspaceTokenRepositoryPort {
 }
 
 export class WorkspaceTokenRepository implements WorkspaceTokenRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async findByWorkspaceId(workspaceId: string): Promise<WorkspaceTokenRecord | null> {
-    const [row] = await this.database.query<WorkspaceTokenRow>(
-      `SELECT id, workspace_id, account_id, token_prefix, token_hash, encrypted_token, created_at, last_used_at, revoked_at
-       FROM workspace_tokens
-       WHERE workspace_id = $1
-         AND revoked_at IS NULL`,
-      [workspaceId],
-    );
+    const row = await this.db
+      .selectFrom("workspace_tokens")
+      .select(workspaceTokenColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("revoked_at", "is", null)
+      .executeTakeFirst();
 
     return row ? mapToken(row) : null;
   }
 
   async findByTokenHash(tokenHash: string): Promise<WorkspaceTokenRecord | null> {
-    const [row] = await this.database.query<WorkspaceTokenRow>(
-      `SELECT id, workspace_id, account_id, token_prefix, token_hash, encrypted_token, created_at, last_used_at, revoked_at
-       FROM workspace_tokens
-       WHERE token_hash = $1
-         AND revoked_at IS NULL`,
-      [tokenHash],
-    );
+    const row = await this.db
+      .selectFrom("workspace_tokens")
+      .select(workspaceTokenColumns)
+      .where("token_hash", "=", tokenHash)
+      .where("revoked_at", "is", null)
+      .executeTakeFirst();
 
     return row ? mapToken(row) : null;
   }
@@ -85,28 +95,36 @@ export class WorkspaceTokenRepository implements WorkspaceTokenRepositoryPort {
     tokenHash: string;
     encryptedToken: string;
   }): Promise<WorkspaceTokenRecord> {
-    const [row] = await this.database.query<WorkspaceTokenRow>(
-      `INSERT INTO workspace_tokens (id, workspace_id, account_id, token_prefix, token_hash, encrypted_token)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (workspace_id)
-       DO UPDATE SET token_prefix = EXCLUDED.token_prefix,
-                     token_hash = EXCLUDED.token_hash,
-                     encrypted_token = EXCLUDED.encrypted_token,
-                     revoked_at = NULL
-       RETURNING id, workspace_id, account_id, token_prefix, token_hash, encrypted_token, created_at, last_used_at, revoked_at`,
-      [randomUUID(), params.workspaceId, params.accountId, params.tokenPrefix, params.tokenHash, params.encryptedToken],
-    );
+    const row = await this.db
+      .insertInto("workspace_tokens")
+      .values({
+        id: randomUUID(),
+        workspace_id: params.workspaceId,
+        account_id: params.accountId,
+        token_prefix: params.tokenPrefix,
+        token_hash: params.tokenHash,
+        encrypted_token: params.encryptedToken,
+      })
+      .onConflict((oc) =>
+        oc.column("workspace_id").doUpdateSet((eb) => ({
+          token_prefix: eb.ref("excluded.token_prefix"),
+          token_hash: eb.ref("excluded.token_hash"),
+          encrypted_token: eb.ref("excluded.encrypted_token"),
+          revoked_at: null,
+        })),
+      )
+      .returning(workspaceTokenColumns)
+      .executeTakeFirstOrThrow();
 
     return mapToken(row);
   }
 
   async touch(workspaceId: string, lastUsedAt: Date): Promise<void> {
-    await this.database.query(
-      `UPDATE workspace_tokens
-       SET last_used_at = $2
-       WHERE workspace_id = $1
-         AND revoked_at IS NULL`,
-      [workspaceId, lastUsedAt],
-    );
+    await this.db
+      .updateTable("workspace_tokens")
+      .set({ last_used_at: lastUsedAt })
+      .where("workspace_id", "=", workspaceId)
+      .where("revoked_at", "is", null)
+      .execute();
   }
 }

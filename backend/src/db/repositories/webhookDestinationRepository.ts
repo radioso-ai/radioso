@@ -1,12 +1,12 @@
-import type { Database } from "../../shared/infra/database.js";
-import type { QueryResultRow } from "pg";
+import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 import type {
   WebhookDeliveryOutcomeStatus,
   WebhookDestinationRecord,
   WebhookDestinationRepositoryPort,
 } from "../../modules/webhooks/public.js";
 
-interface WebhookDestinationRow extends QueryResultRow {
+interface WebhookDestinationRow {
   id: string;
   workspace_id: string;
   name: string;
@@ -18,6 +18,19 @@ interface WebhookDestinationRow extends QueryResultRow {
   created_at: Date;
   updated_at: Date;
 }
+
+const destinationColumns = [
+  "id",
+  "workspace_id",
+  "name",
+  "url",
+  "secret_ciphertext",
+  "encryption_key_id",
+  "last_delivery_status",
+  "last_delivery_at",
+  "created_at",
+  "updated_at",
+] as const;
 
 const mapRow = (row: WebhookDestinationRow): WebhookDestinationRecord => ({
   id: row.id,
@@ -32,25 +45,12 @@ const mapRow = (row: WebhookDestinationRow): WebhookDestinationRecord => ({
   updatedAt: new Date(row.updated_at),
 });
 
-const destinationColumns = `
-  id::text,
-  workspace_id::text,
-  name,
-  url,
-  secret_ciphertext,
-  encryption_key_id,
-  last_delivery_status,
-  last_delivery_at,
-  created_at,
-  updated_at
-`;
-
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
 const isUuid = (value: string): boolean => uuidPattern.test(value);
 
 export class WebhookDestinationRepository implements WebhookDestinationRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async create(input: {
     workspaceId: string;
@@ -59,45 +59,43 @@ export class WebhookDestinationRepository implements WebhookDestinationRepositor
     secretCiphertext: string;
     encryptionKeyId: string;
   }): Promise<WebhookDestinationRecord> {
-    const row = await this.database.queryOne<WebhookDestinationRow>(
-      `INSERT INTO workspace_webhook_destinations (
-         workspace_id, name, url, secret_ciphertext, encryption_key_id
-       )
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING ${destinationColumns}`,
-      [
-        input.workspaceId,
-        input.name,
-        input.url,
-        input.secretCiphertext,
-        input.encryptionKeyId,
-      ],
-    );
-    return mapRow(row);
+    const row = await this.db
+      .insertInto("workspace_webhook_destinations")
+      .values({
+        workspace_id: input.workspaceId,
+        name: input.name,
+        url: input.url,
+        secret_ciphertext: input.secretCiphertext,
+        encryption_key_id: input.encryptionKeyId,
+      })
+      .returning(destinationColumns)
+      .executeTakeFirstOrThrow();
+    return mapRow(row as WebhookDestinationRow);
   }
 
   async listByWorkspace(workspaceId: string): Promise<WebhookDestinationRecord[]> {
-    const rows = await this.database.query<WebhookDestinationRow>(
-      `SELECT ${destinationColumns}
-       FROM workspace_webhook_destinations
-       WHERE workspace_id = $1
-       ORDER BY lower(name) ASC, created_at ASC, id ASC`,
-      [workspaceId],
-    );
-    return rows.map(mapRow);
+    const rows = await this.db
+      .selectFrom("workspace_webhook_destinations")
+      .select(destinationColumns)
+      .where("workspace_id", "=", workspaceId)
+      .orderBy((eb) => eb.fn<string>("lower", ["name"]), "asc")
+      .orderBy("created_at", "asc")
+      .orderBy("id", "asc")
+      .execute();
+    return rows.map((row) => mapRow(row as WebhookDestinationRow));
   }
 
   async findByIdAndWorkspace(id: string, workspaceId: string): Promise<WebhookDestinationRecord | null> {
     if (!isUuid(id)) {
       return null;
     }
-    const row = await this.database.queryOptional<WebhookDestinationRow>(
-      `SELECT ${destinationColumns}
-       FROM workspace_webhook_destinations
-       WHERE id = $1 AND workspace_id = $2`,
-      [id, workspaceId],
-    );
-    return row ? mapRow(row) : null;
+    const row = await this.db
+      .selectFrom("workspace_webhook_destinations")
+      .select(destinationColumns)
+      .where("id", "=", id)
+      .where("workspace_id", "=", workspaceId)
+      .executeTakeFirst();
+    return row ? mapRow(row as WebhookDestinationRow) : null;
   }
 
   async update(
@@ -108,16 +106,14 @@ export class WebhookDestinationRepository implements WebhookDestinationRepositor
     if (!isUuid(id)) {
       return null;
     }
-    const row = await this.database.queryOptional<WebhookDestinationRow>(
-      `UPDATE workspace_webhook_destinations
-       SET name = $3,
-           url = $4,
-           updated_at = NOW()
-       WHERE id = $1 AND workspace_id = $2
-       RETURNING ${destinationColumns}`,
-      [id, workspaceId, input.name, input.url],
-    );
-    return row ? mapRow(row) : null;
+    const row = await this.db
+      .updateTable("workspace_webhook_destinations")
+      .set({ name: input.name, url: input.url, updated_at: currentTimestamp() })
+      .where("id", "=", id)
+      .where("workspace_id", "=", workspaceId)
+      .returning(destinationColumns)
+      .executeTakeFirst();
+    return row ? mapRow(row as WebhookDestinationRow) : null;
   }
 
   async updateSecret(
@@ -128,16 +124,18 @@ export class WebhookDestinationRepository implements WebhookDestinationRepositor
     if (!isUuid(id)) {
       return null;
     }
-    const row = await this.database.queryOptional<WebhookDestinationRow>(
-      `UPDATE workspace_webhook_destinations
-       SET secret_ciphertext = $3,
-           encryption_key_id = $4,
-           updated_at = NOW()
-       WHERE id = $1 AND workspace_id = $2
-       RETURNING ${destinationColumns}`,
-      [id, workspaceId, input.secretCiphertext, input.encryptionKeyId],
-    );
-    return row ? mapRow(row) : null;
+    const row = await this.db
+      .updateTable("workspace_webhook_destinations")
+      .set({
+        secret_ciphertext: input.secretCiphertext,
+        encryption_key_id: input.encryptionKeyId,
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", id)
+      .where("workspace_id", "=", workspaceId)
+      .returning(destinationColumns)
+      .executeTakeFirst();
+    return row ? mapRow(row as WebhookDestinationRow) : null;
   }
 
   async recordDeliveryOutcome(
@@ -148,25 +146,23 @@ export class WebhookDestinationRepository implements WebhookDestinationRepositor
     if (!isUuid(id)) {
       return;
     }
-    await this.database.execute(
-      `UPDATE workspace_webhook_destinations
-       SET last_delivery_status = $3,
-           last_delivery_at = NOW(),
-           updated_at = NOW()
-       WHERE id = $1 AND workspace_id = $2`,
-      [id, workspaceId, status],
-    );
+    await this.db
+      .updateTable("workspace_webhook_destinations")
+      .set({ last_delivery_status: status, last_delivery_at: currentTimestamp(), updated_at: currentTimestamp() })
+      .where("id", "=", id)
+      .where("workspace_id", "=", workspaceId)
+      .execute();
   }
 
   async delete(id: string, workspaceId: string): Promise<boolean> {
     if (!isUuid(id)) {
       return false;
     }
-    const affected = await this.database.execute(
-      `DELETE FROM workspace_webhook_destinations
-       WHERE id = $1 AND workspace_id = $2`,
-      [id, workspaceId],
-    );
-    return affected > 0;
+    const result = await this.db
+      .deleteFrom("workspace_webhook_destinations")
+      .where("id", "=", id)
+      .where("workspace_id", "=", workspaceId)
+      .executeTakeFirst();
+    return Number(result.numDeletedRows) > 0;
   }
 }

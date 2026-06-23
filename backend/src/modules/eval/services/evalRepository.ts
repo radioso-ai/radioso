@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import type { QueryResultRow } from "pg";
-
-import type { ApplicationDatabasePort } from "../../../app/composition/applicationModule.js";
+import { currentTimestamp, toJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../../shared/infra/kysely/types.js";
 import type {
   AssertionVerdict,
   EvalAssertion,
@@ -23,7 +22,7 @@ import type { AgentSnapshot } from "../../agents/public.js";
 import type { InternalAgentConfig } from "../../agents/public.js";
 import type { RetrievalSettingsSnapshot } from "../../settings/contracts/retrieval.js";
 
-type SnapshotRow = QueryResultRow & {
+type SnapshotRow = {
   id: string;
   workspace_id: string;
   source_conversation_id: string;
@@ -41,7 +40,7 @@ type SnapshotRow = QueryResultRow & {
   captured_by: string | null;
 };
 
-type CaseRow = QueryResultRow & {
+type CaseRow = {
   id: string;
   workspace_id: string;
   snapshot_id: string;
@@ -53,7 +52,7 @@ type CaseRow = QueryResultRow & {
   updated_at: Date | string;
 };
 
-type RunRow = QueryResultRow & {
+type RunRow = {
   id: string;
   workspace_id: string;
   snapshot_id: string;
@@ -200,99 +199,131 @@ export interface EvalRepositoryPort {
   ): Promise<EvalCase>;
 }
 
+const snapshotColumns = [
+  "id",
+  "workspace_id",
+  "source_conversation_id",
+  "source_message_id",
+  "fidelity",
+  "messages",
+  "original_instruction_block",
+  "original_model_id",
+  "original_retrieval_settings",
+  "original_retrieval_result",
+  "original_agent",
+  "original_agent_config",
+  "source_agent_id",
+  "captured_at",
+  "captured_by",
+] as const;
+
+const caseColumns = [
+  "id",
+  "workspace_id",
+  "snapshot_id",
+  "name",
+  "assertions",
+  "status",
+  "last_run_id",
+  "created_at",
+  "updated_at",
+] as const;
+
+const runColumns = [
+  "id",
+  "workspace_id",
+  "snapshot_id",
+  "case_id",
+  "mode",
+  "overrides",
+  "resolved_config",
+  "observed_output",
+  "assertion_verdicts",
+  "status",
+  "outcome_reason",
+  "started_at",
+  "completed_at",
+] as const;
+
 export class EvalRepository implements EvalRepositoryPort {
-  constructor(private readonly database: ApplicationDatabasePort) {}
+  constructor(private readonly db: Db) {}
 
   async createSnapshot(input: CreateSnapshotInput): Promise<EvalSnapshot> {
-    const [row] = await this.database.query<SnapshotRow>(
-      `INSERT INTO eval_snapshots (
-         id, workspace_id, source_conversation_id, source_message_id, fidelity,
-         messages, original_instruction_block, original_model_id,
-         original_retrieval_settings, original_retrieval_result,
-         original_agent, original_agent_config, source_agent_id, captured_by
-       )
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13, $14)
-       RETURNING id, workspace_id, source_conversation_id, source_message_id, fidelity,
-                 messages, original_instruction_block, original_model_id,
-                 original_retrieval_settings, original_retrieval_result,
-                 original_agent, original_agent_config, source_agent_id, captured_at, captured_by`,
-      [
-        randomUUID(),
-        input.workspaceId,
-        input.sourceConversationId,
-        input.sourceMessageId,
-        input.fidelity,
-        JSON.stringify(input.messages),
-        input.originalInstructionBlock !== null
-          ? JSON.stringify(input.originalInstructionBlock)
+    const row = await this.db
+      .insertInto("eval_snapshots")
+      .values({
+        id: randomUUID(),
+        workspace_id: input.workspaceId,
+        source_conversation_id: input.sourceConversationId,
+        source_message_id: input.sourceMessageId,
+        fidelity: input.fidelity,
+        messages: toJsonb(input.messages),
+        original_instruction_block:
+          input.originalInstructionBlock !== null ? toJsonb(input.originalInstructionBlock) : null,
+        original_model_id: input.originalModelId,
+        original_retrieval_settings: input.originalRetrievalSettings
+          ? toJsonb(input.originalRetrievalSettings)
           : null,
-        input.originalModelId,
-        input.originalRetrievalSettings ? JSON.stringify(input.originalRetrievalSettings) : null,
-        input.originalRetrievalResult ? JSON.stringify(input.originalRetrievalResult) : null,
-        input.originalAgent ? JSON.stringify(input.originalAgent) : null,
-        input.originalAgentConfig ? JSON.stringify(input.originalAgentConfig) : null,
-        input.sourceAgentId,
-        input.capturedBy,
-      ],
-    );
-    return mapSnapshot(row!);
+        original_retrieval_result: input.originalRetrievalResult
+          ? toJsonb(input.originalRetrievalResult)
+          : null,
+        original_agent: input.originalAgent ? toJsonb(input.originalAgent) : null,
+        original_agent_config: input.originalAgentConfig ? toJsonb(input.originalAgentConfig) : null,
+        source_agent_id: input.sourceAgentId,
+        captured_by: input.capturedBy,
+      })
+      .returning(snapshotColumns)
+      .executeTakeFirstOrThrow();
+    return mapSnapshot(row as SnapshotRow);
   }
 
   async findSnapshot(workspaceId: string, id: string): Promise<EvalSnapshot | null> {
-    const rows = await this.database.query<SnapshotRow>(
-      `SELECT id, workspace_id, source_conversation_id, source_message_id, fidelity,
-              messages, original_instruction_block, original_model_id,
-              original_retrieval_settings, original_retrieval_result,
-              original_agent, original_agent_config, source_agent_id, captured_at, captured_by
-       FROM eval_snapshots
-       WHERE workspace_id = $1 AND id = $2
-       LIMIT 1`,
-      [workspaceId, id],
-    );
-    return rows[0] ? mapSnapshot(rows[0]) : null;
+    const row = await this.db
+      .selectFrom("eval_snapshots")
+      .select(snapshotColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", id)
+      .limit(1)
+      .executeTakeFirst();
+    return row ? mapSnapshot(row as SnapshotRow) : null;
   }
 
   async createCase(input: CreateCaseInput): Promise<EvalCase> {
-    const [row] = await this.database.query<CaseRow>(
-      `INSERT INTO eval_cases (
-         id, workspace_id, snapshot_id, name, assertions, status
-       )
-       VALUES ($1, $2, $3, $4, $5::jsonb, 'pending')
-       RETURNING id, workspace_id, snapshot_id, name, assertions, status,
-                 last_run_id, created_at, updated_at`,
-      [
-        randomUUID(),
-        input.workspaceId,
-        input.snapshotId,
-        input.name,
-        JSON.stringify(input.assertions),
-      ],
-    );
-    return mapCase(row!);
+    const row = await this.db
+      .insertInto("eval_cases")
+      .values({
+        id: randomUUID(),
+        workspace_id: input.workspaceId,
+        snapshot_id: input.snapshotId,
+        name: input.name,
+        assertions: toJsonb(input.assertions),
+        status: "pending",
+      })
+      .returning(caseColumns)
+      .executeTakeFirstOrThrow();
+    return mapCase(row as CaseRow);
   }
 
   async findCase(workspaceId: string, id: string): Promise<EvalCase | null> {
-    const rows = await this.database.query<CaseRow>(
-      `SELECT id, workspace_id, snapshot_id, name, assertions, status,
-              last_run_id, created_at, updated_at
-       FROM eval_cases
-       WHERE workspace_id = $1 AND id = $2
-       LIMIT 1`,
-      [workspaceId, id],
-    );
-    return rows[0] ? mapCase(rows[0]) : null;
+    const row = await this.db
+      .selectFrom("eval_cases")
+      .select(caseColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", id)
+      .limit(1)
+      .executeTakeFirst();
+    return row ? mapCase(row as CaseRow) : null;
   }
 
   async listCases(workspaceId: string): Promise<EvalCase[]> {
-    const rows = await this.database.query<CaseRow>(
-      `SELECT id, workspace_id, snapshot_id, name, assertions, status,
-              last_run_id, created_at, updated_at
-       FROM eval_cases
-       WHERE workspace_id = $1
-       ORDER BY updated_at DESC, id DESC`,
-      [workspaceId],
-    );
-    return rows.map(mapCase);
+    const rows = await this.db
+      .selectFrom("eval_cases")
+      .select(caseColumns)
+      .where("workspace_id", "=", workspaceId)
+      .orderBy("updated_at", "desc")
+      .orderBy("id", "desc")
+      .execute();
+    return rows.map((row) => mapCase(row as CaseRow));
   }
 
   async updateCaseAssertions(
@@ -304,73 +335,67 @@ export class EvalRepository implements EvalRepositoryPort {
     // run history is no longer comparable. Reset case status to 'pending'
     // until a fresh run completes. The runs themselves are NOT deleted —
     // they remain as historical records of what the case used to assert.
-    const [row] = await this.database.query<CaseRow>(
-      `UPDATE eval_cases
-         SET assertions = $3::jsonb,
-             status = 'pending',
-             last_run_id = NULL,
-             updated_at = NOW()
-       WHERE workspace_id = $1 AND id = $2
-       RETURNING id, workspace_id, snapshot_id, name, assertions, status,
-                 last_run_id, created_at, updated_at`,
-      [workspaceId, caseId, JSON.stringify(assertions)],
-    );
-    return mapCase(row!);
+    const row = await this.db
+      .updateTable("eval_cases")
+      .set({
+        assertions: toJsonb(assertions),
+        status: "pending",
+        last_run_id: null,
+        updated_at: currentTimestamp(),
+      })
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", caseId)
+      .returning(caseColumns)
+      .executeTakeFirstOrThrow();
+    return mapCase(row as CaseRow);
   }
 
   async updateCaseName(workspaceId: string, caseId: string, name: string): Promise<EvalCase> {
-    const [row] = await this.database.query<CaseRow>(
-      `UPDATE eval_cases
-         SET name = $3,
-             updated_at = NOW()
-       WHERE workspace_id = $1 AND id = $2
-       RETURNING id, workspace_id, snapshot_id, name, assertions, status,
-                 last_run_id, created_at, updated_at`,
-      [workspaceId, caseId, name],
-    );
-    return mapCase(row!);
+    const row = await this.db
+      .updateTable("eval_cases")
+      .set({
+        name,
+        updated_at: currentTimestamp(),
+      })
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", caseId)
+      .returning(caseColumns)
+      .executeTakeFirstOrThrow();
+    return mapCase(row as CaseRow);
   }
 
   async createRun(input: CreateRunInput): Promise<EvalRun> {
-    const [row] = await this.database.query<RunRow>(
-      `INSERT INTO eval_runs (
-         id, workspace_id, snapshot_id, case_id, mode,
-         overrides, resolved_config, observed_output, assertion_verdicts,
-         status, outcome_reason, completed_at
-       )
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11, $12)
-       RETURNING id, workspace_id, snapshot_id, case_id, mode,
-                 overrides, resolved_config, observed_output, assertion_verdicts,
-                 status, outcome_reason, started_at, completed_at`,
-      [
-        input.id ?? randomUUID(),
-        input.workspaceId,
-        input.snapshotId,
-        input.caseId,
-        input.mode,
-        JSON.stringify(input.overrides),
-        JSON.stringify(input.resolvedConfig),
-        JSON.stringify(input.observedOutput),
-        JSON.stringify(input.assertionVerdicts),
-        input.status,
-        input.outcomeReason,
-        input.completedAt,
-      ],
-    );
-    return mapRun(row!);
+    const row = await this.db
+      .insertInto("eval_runs")
+      .values({
+        id: input.id ?? randomUUID(),
+        workspace_id: input.workspaceId,
+        snapshot_id: input.snapshotId,
+        case_id: input.caseId,
+        mode: input.mode,
+        overrides: toJsonb(input.overrides),
+        resolved_config: toJsonb(input.resolvedConfig),
+        observed_output: toJsonb(input.observedOutput),
+        assertion_verdicts: toJsonb(input.assertionVerdicts),
+        status: input.status,
+        outcome_reason: input.outcomeReason,
+        completed_at: input.completedAt,
+      })
+      .returning(runColumns)
+      .executeTakeFirstOrThrow();
+    return mapRun(row as RunRow);
   }
 
   async listRunsForCase(workspaceId: string, caseId: string): Promise<EvalRun[]> {
-    const rows = await this.database.query<RunRow>(
-      `SELECT id, workspace_id, snapshot_id, case_id, mode,
-              overrides, resolved_config, observed_output, assertion_verdicts,
-              status, outcome_reason, started_at, completed_at
-       FROM eval_runs
-       WHERE workspace_id = $1 AND case_id = $2
-       ORDER BY started_at DESC, id DESC`,
-      [workspaceId, caseId],
-    );
-    return rows.map(mapRun);
+    const rows = await this.db
+      .selectFrom("eval_runs")
+      .select(runColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("case_id", "=", caseId)
+      .orderBy("started_at", "desc")
+      .orderBy("id", "desc")
+      .execute();
+    return rows.map((row) => mapRun(row as RunRow));
   }
 
   async updateCaseLastRun(
@@ -379,16 +404,17 @@ export class EvalRepository implements EvalRepositoryPort {
     lastRunId: string,
     status: EvalCaseStatus,
   ): Promise<EvalCase> {
-    const [row] = await this.database.query<CaseRow>(
-      `UPDATE eval_cases
-         SET last_run_id = $3,
-             status = $4,
-             updated_at = NOW()
-       WHERE workspace_id = $1 AND id = $2
-       RETURNING id, workspace_id, snapshot_id, name, assertions, status,
-                 last_run_id, created_at, updated_at`,
-      [workspaceId, caseId, lastRunId, status],
-    );
-    return mapCase(row!);
+    const row = await this.db
+      .updateTable("eval_cases")
+      .set({
+        last_run_id: lastRunId,
+        status,
+        updated_at: currentTimestamp(),
+      })
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", caseId)
+      .returning(caseColumns)
+      .executeTakeFirstOrThrow();
+    return mapCase(row as CaseRow);
   }
 }

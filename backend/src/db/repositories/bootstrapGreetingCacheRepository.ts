@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import type { Database } from "../../shared/infra/database.js";
+import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface BootstrapGreetingCacheRecord {
   id: string;
@@ -24,6 +25,17 @@ interface BootstrapGreetingCacheRow {
   created_at: Date;
   updated_at: Date;
 }
+
+const greetingCacheColumns = [
+  "id",
+  "workspace_id",
+  "agent_id",
+  "fingerprint",
+  "locale_used",
+  "greeting_text",
+  "created_at",
+  "updated_at",
+] as const;
 
 const mapRecord = (row: BootstrapGreetingCacheRow): BootstrapGreetingCacheRecord => ({
   id: row.id,
@@ -49,30 +61,31 @@ export interface BootstrapGreetingCacheRepositoryPort {
 }
 
 export class BootstrapGreetingCacheRepository implements BootstrapGreetingCacheRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async findByWorkspaceAgentAndFingerprint(
     workspaceId: string,
     agentId: string,
     fingerprint: string,
   ): Promise<BootstrapGreetingCacheRecord | null> {
-    const row = await this.database.queryOptional<BootstrapGreetingCacheRow>(
-      `SELECT id, workspace_id, agent_id, fingerprint, locale_used, greeting_text, created_at, updated_at
-       FROM bootstrap_greeting_cache
-       WHERE workspace_id = $1 AND agent_id = $2 AND fingerprint = $3`,
-      [workspaceId, agentId, fingerprint],
-    );
+    const row = await this.db
+      .selectFrom("bootstrap_greeting_cache")
+      .select(greetingCacheColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("agent_id", "=", agentId)
+      .where("fingerprint", "=", fingerprint)
+      .executeTakeFirst();
 
     return row ? mapRecord(row) : null;
   }
 
   async findById(workspaceId: string, id: string): Promise<BootstrapGreetingCacheRecord | null> {
-    const row = await this.database.queryOptional<BootstrapGreetingCacheRow>(
-      `SELECT id, workspace_id, agent_id, fingerprint, locale_used, greeting_text, created_at, updated_at
-       FROM bootstrap_greeting_cache
-       WHERE workspace_id = $1 AND id = $2`,
-      [workspaceId, id],
-    );
+    const row = await this.db
+      .selectFrom("bootstrap_greeting_cache")
+      .select(greetingCacheColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", id)
+      .executeTakeFirst();
 
     return row ? mapRecord(row) : null;
   }
@@ -84,16 +97,25 @@ export class BootstrapGreetingCacheRepository implements BootstrapGreetingCacheR
     localeUsed: string | null;
     greetingText: string;
   }): Promise<BootstrapGreetingCacheRecord> {
-    const row = await this.database.queryOne<BootstrapGreetingCacheRow>(
-      `INSERT INTO bootstrap_greeting_cache (id, workspace_id, agent_id, fingerprint, locale_used, greeting_text)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (workspace_id, agent_id, fingerprint)
-       DO UPDATE SET locale_used = EXCLUDED.locale_used,
-                     greeting_text = EXCLUDED.greeting_text,
-                     updated_at = NOW()
-      RETURNING id, workspace_id, agent_id, fingerprint, locale_used, greeting_text, created_at, updated_at`,
-      [randomUUID(), input.workspaceId, input.agentId, input.fingerprint, input.localeUsed, input.greetingText],
-    );
+    const row = await this.db
+      .insertInto("bootstrap_greeting_cache")
+      .values({
+        id: randomUUID(),
+        workspace_id: input.workspaceId,
+        agent_id: input.agentId,
+        fingerprint: input.fingerprint,
+        locale_used: input.localeUsed,
+        greeting_text: input.greetingText,
+      })
+      .onConflict((oc) =>
+        oc.columns(["workspace_id", "agent_id", "fingerprint"]).doUpdateSet((eb) => ({
+          locale_used: eb.ref("excluded.locale_used"),
+          greeting_text: eb.ref("excluded.greeting_text"),
+          updated_at: currentTimestamp(),
+        })),
+      )
+      .returning(greetingCacheColumns)
+      .executeTakeFirstOrThrow();
 
     return mapRecord(row);
   }

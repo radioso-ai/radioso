@@ -1,9 +1,8 @@
 import { randomUUID } from "node:crypto";
 
-import type { QueryResultRow } from "pg";
-
-import type { ApplicationDatabasePort } from "../../../app/composition/applicationModule.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
+import { anyOf, currentTimestamp } from "../../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../../shared/infra/kysely/types.js";
 import type {
   AnswerFeedbackHistoryProviderPort,
   ChatAnswerFeedbackEntry,
@@ -20,7 +19,7 @@ export interface AnswerFeedbackActor {
   anonymousSessionId?: string | null;
 }
 
-type FeedbackRow = QueryResultRow & {
+interface FeedbackRow {
   id: string;
   workspace_id: string;
   conversation_id: string;
@@ -34,7 +33,7 @@ type FeedbackRow = QueryResultRow & {
   comment: string | null;
   created_at: Date | string;
   updated_at: Date | string;
-};
+}
 
 const COMMENT_MAX_LENGTH = 2000;
 
@@ -65,8 +64,24 @@ const mapFeedbackRow = (row: FeedbackRow): ChatAnswerFeedbackEntry => ({
   updatedAt: serializeDate(row.updated_at),
 });
 
+const feedbackColumns = [
+  "id",
+  "workspace_id",
+  "conversation_id",
+  "assistant_message_id",
+  "account_id",
+  "user_id",
+  "anonymous_session_id",
+  "actor_type",
+  "actor_id",
+  "value",
+  "comment",
+  "created_at",
+  "updated_at",
+] as const;
+
 export class AnswerFeedbackService implements AnswerFeedbackHistoryProviderPort {
-  constructor(private readonly database: ApplicationDatabasePort) {}
+  constructor(private readonly db: Db) {}
 
   async upsert(input: {
     workspaceId: string;
@@ -87,47 +102,35 @@ export class AnswerFeedbackService implements AnswerFeedbackHistoryProviderPort 
     }
 
     const comment = input.value === "down" ? normalizeComment(input.comment) : null;
-    const [row] = await this.database.query<FeedbackRow>(
-      `INSERT INTO assistant_answer_feedback (
-         id,
-         workspace_id,
-         conversation_id,
-         assistant_message_id,
-         account_id,
-         user_id,
-         anonymous_session_id,
-         actor_type,
-         actor_id,
-         value,
-         comment
-       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-       ON CONFLICT (assistant_message_id, actor_type, actor_id)
-       DO UPDATE SET
-         value = EXCLUDED.value,
-         comment = EXCLUDED.comment,
-         account_id = EXCLUDED.account_id,
-         user_id = EXCLUDED.user_id,
-         anonymous_session_id = EXCLUDED.anonymous_session_id,
-         updated_at = NOW()
-       RETURNING id, workspace_id, conversation_id, assistant_message_id, account_id, user_id,
-                 anonymous_session_id, actor_type, actor_id, value, comment, created_at, updated_at`,
-      [
-        randomUUID(),
-        input.workspaceId,
-        target.conversationId,
-        input.assistantMessageId,
-        input.actor.accountId ?? null,
-        input.actor.userId ?? null,
-        input.actor.anonymousSessionId ?? null,
-        input.actor.type,
-        input.actor.id,
-        input.value,
+    const row = await this.db
+      .insertInto("assistant_answer_feedback")
+      .values({
+        id: randomUUID(),
+        workspace_id: input.workspaceId,
+        conversation_id: target.conversationId,
+        assistant_message_id: input.assistantMessageId,
+        account_id: input.actor.accountId ?? null,
+        user_id: input.actor.userId ?? null,
+        anonymous_session_id: input.actor.anonymousSessionId ?? null,
+        actor_type: input.actor.type,
+        actor_id: input.actor.id,
+        value: input.value,
         comment,
-      ],
-    );
+      })
+      .onConflict((oc) =>
+        oc.columns(["assistant_message_id", "actor_type", "actor_id"]).doUpdateSet((eb) => ({
+          value: eb.ref("excluded.value"),
+          comment: eb.ref("excluded.comment"),
+          account_id: eb.ref("excluded.account_id"),
+          user_id: eb.ref("excluded.user_id"),
+          anonymous_session_id: eb.ref("excluded.anonymous_session_id"),
+          updated_at: currentTimestamp(),
+        })),
+      )
+      .returning(feedbackColumns)
+      .executeTakeFirstOrThrow();
 
-    return mapFeedbackRow(row!);
+    return mapFeedbackRow(row as FeedbackRow);
   }
 
   async clear(input: {
@@ -146,15 +149,14 @@ export class AnswerFeedbackService implements AnswerFeedbackHistoryProviderPort 
       throw notFound("Assistant message not found");
     }
 
-    const rows = await this.database.query<{ id: string }>(
-      `DELETE FROM assistant_answer_feedback
-       WHERE workspace_id = $1
-         AND assistant_message_id = $2
-         AND actor_type = $3
-         AND actor_id = $4
-       RETURNING id`,
-      [input.workspaceId, input.assistantMessageId, input.actor.type, input.actor.id],
-    );
+    const rows = await this.db
+      .deleteFrom("assistant_answer_feedback")
+      .where("workspace_id", "=", input.workspaceId)
+      .where("assistant_message_id", "=", input.assistantMessageId)
+      .where("actor_type", "=", input.actor.type)
+      .where("actor_id", "=", input.actor.id)
+      .returning("id")
+      .execute();
 
     return { cleared: rows.length > 0 };
   }
@@ -168,17 +170,16 @@ export class AnswerFeedbackService implements AnswerFeedbackHistoryProviderPort 
       return feedback;
     }
 
-    const rows = await this.database.query<FeedbackRow>(
-      `SELECT id, workspace_id, conversation_id, assistant_message_id, account_id, user_id,
-              anonymous_session_id, actor_type, actor_id, value, comment, created_at, updated_at
-       FROM assistant_answer_feedback
-       WHERE workspace_id = $1
-         AND assistant_message_id = ANY($2::uuid[])
-       ORDER BY created_at ASC, id ASC`,
-      [workspaceId, assistantMessageIds],
-    );
+    const rows = await this.db
+      .selectFrom("assistant_answer_feedback")
+      .select(feedbackColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where((eb) => anyOf(eb.ref("assistant_message_id"), assistantMessageIds, "uuid[]"))
+      .orderBy("created_at", "asc")
+      .orderBy("id", "asc")
+      .execute();
 
-    for (const row of rows) {
+    for (const row of rows as FeedbackRow[]) {
       const entries = feedback.get(row.assistant_message_id) ?? [];
       entries.push(mapFeedbackRow(row));
       feedback.set(row.assistant_message_id, entries);
@@ -193,36 +194,23 @@ export class AnswerFeedbackService implements AnswerFeedbackHistoryProviderPort 
     assistantMessageId: string;
     anonymousSessionId?: string | null;
   }): Promise<{ conversationId: string } | null> {
-    const params: unknown[] = [input.workspaceId, input.assistantMessageId];
-    let nextParamIndex = 3;
-    const anonymousSessionClause = input.anonymousSessionId
-      ? `AND c.anonymous_session_id = $${nextParamIndex++}`
-      : "";
+    let query = this.db
+      .selectFrom("messages as m")
+      .innerJoin("conversations as c", "c.id", "m.conversation_id")
+      .select("m.conversation_id")
+      .where("m.workspace_id", "=", input.workspaceId)
+      .where("m.id", "=", input.assistantMessageId)
+      .where("m.role", "=", "assistant")
+      .where("c.workspace_id", "=", input.workspaceId);
+
     if (input.anonymousSessionId) {
-      params.push(input.anonymousSessionId);
+      query = query.where("c.anonymous_session_id", "=", input.anonymousSessionId);
     }
-    const agentClause = input.agentId
-      ? `AND c.agent_id = $${nextParamIndex++}`
-      : "";
     if (input.agentId) {
-      params.push(input.agentId);
+      query = query.where("c.agent_id", "=", input.agentId);
     }
 
-    const rows = await this.database.query<{ conversation_id: string }>(
-      `SELECT m.conversation_id
-       FROM messages m
-       JOIN conversations c ON c.id = m.conversation_id
-       WHERE m.workspace_id = $1
-         AND m.id = $2
-         AND m.role = 'assistant'
-         AND c.workspace_id = $1
-         ${anonymousSessionClause}
-         ${agentClause}
-       LIMIT 1`,
-      params,
-    );
-
-    const row = rows[0];
+    const row = await query.limit(1).executeTakeFirst();
     return row ? { conversationId: row.conversation_id } : null;
   }
 }

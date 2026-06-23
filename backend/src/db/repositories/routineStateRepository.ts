@@ -1,6 +1,7 @@
 import type { ConversationRoutineStore, RoutineState } from "@radioso/conversation-contract";
 
-import type { Database } from "../../shared/infra/database.js";
+import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 
 interface RoutineStateRow {
   // SQL rows keep database column names; the repository maps to the contract record.
@@ -12,6 +13,8 @@ interface RoutineStateRow {
   status: string;
   expires_at: Date | null;
 }
+
+const routineStateColumns = ["session_id", "routine_id", "path", "variables", "attempts", "status", "expires_at"] as const;
 
 const mapAttempts = (value: Record<string, unknown> | null): Record<string, number> | undefined => {
   if (!value) {
@@ -46,73 +49,74 @@ export const DEFAULT_ROUTINE_STATE_TTL_MS = 30 * 60 * 1000;
  */
 export class RoutineStateRepository implements ConversationRoutineStore {
   constructor(
-    private readonly database: Database,
+    private readonly db: Db,
     private readonly ttlMs: number = DEFAULT_ROUTINE_STATE_TTL_MS,
   ) {}
 
   async loadActive(input: { sessionId: string }): Promise<RoutineState | null> {
-    const row = await this.database.queryOptional<RoutineStateRow>(
-      `SELECT session_id, routine_id, path, variables, attempts, status, expires_at
-         FROM routine_states
-        WHERE session_id = $1
-          AND status = 'active'
-          AND (expires_at IS NULL OR expires_at > now())`,
-      [input.sessionId],
-    );
-    return row ? mapState(row) : null;
+    const row = await this.db
+      .selectFrom("routine_states")
+      .select(routineStateColumns)
+      .where("session_id", "=", input.sessionId)
+      .where("status", "=", "active")
+      // expires_at IS NULL OR expires_at > now()
+      .where((eb) => eb.or([eb("expires_at", "is", null), eb("expires_at", ">", currentTimestamp())]))
+      .executeTakeFirst();
+    return row ? mapState(row as RoutineStateRow) : null;
   }
 
   async loadCompleted(input: { sessionId: string }): Promise<RoutineState[]> {
-    const rows = await this.database.query<RoutineStateRow>(
-      `SELECT session_id, routine_id, path, variables, attempts, status, expires_at
-         FROM routine_states
-        WHERE session_id = $1
-          AND status = 'completed'
-          AND (expires_at IS NULL OR expires_at > now())`,
-      [input.sessionId],
-    );
-    return rows.map(mapState);
+    const rows = await this.db
+      .selectFrom("routine_states")
+      .select(routineStateColumns)
+      .where("session_id", "=", input.sessionId)
+      .where("status", "=", "completed")
+      .where((eb) => eb.or([eb("expires_at", "is", null), eb("expires_at", ">", currentTimestamp())]))
+      .execute();
+    return rows.map((row) => mapState(row as RoutineStateRow));
   }
 
   async loadSuspended(input: { sessionId: string }): Promise<RoutineState | null> {
-    const row = await this.database.queryOptional<RoutineStateRow>(
-      `SELECT session_id, routine_id, path, variables, attempts, status, expires_at
-         FROM routine_states
-        WHERE session_id = $1
-          AND status = 'suspended'`,
-      [input.sessionId],
-    );
-    return row ? mapState(row) : null;
+    const row = await this.db
+      .selectFrom("routine_states")
+      .select(routineStateColumns)
+      .where("session_id", "=", input.sessionId)
+      .where("status", "=", "suspended")
+      .executeTakeFirst();
+    return row ? mapState(row as RoutineStateRow) : null;
   }
 
   async save(state: RoutineState): Promise<void> {
-    const expiresAt = state.status === "suspended" ? null : new Date(Date.now() + this.ttlMs).toISOString();
+    const expiresAt = state.status === "suspended" ? null : new Date(Date.now() + this.ttlMs);
     // One row per session — advancing a routine upserts; an expired row is overwritten
     // when a fresh routine activates for the same session.
-    await this.database.execute(
-      `INSERT INTO routine_states (session_id, routine_id, path, variables, attempts, status, expires_at, updated_at)
-       VALUES ($1, $2, $3::text[], $4::jsonb, $5::jsonb, $6, $7, now())
-       ON CONFLICT (session_id) DO UPDATE SET
-         routine_id = EXCLUDED.routine_id,
-         path = EXCLUDED.path,
-         variables = EXCLUDED.variables,
-         attempts = EXCLUDED.attempts,
-         status = EXCLUDED.status,
-         expires_at = EXCLUDED.expires_at,
-         updated_at = now()`,
-      [
-        state.sessionId,
-        state.routineId,
-        state.path,
-        JSON.stringify(state.variables),
-        JSON.stringify(state.attempts ?? {}),
-        state.status,
-        expiresAt,
-      ],
-    );
+    await this.db
+      .insertInto("routine_states")
+      .values({
+        session_id: state.sessionId,
+        routine_id: state.routineId,
+        path: state.path,
+        variables: toJsonb(state.variables),
+        attempts: toJsonb(state.attempts ?? {}),
+        status: state.status,
+        expires_at: expiresAt,
+        updated_at: currentTimestamp(),
+      })
+      .onConflict((oc) =>
+        oc.column("session_id").doUpdateSet((eb) => ({
+          routine_id: eb.ref("excluded.routine_id"),
+          path: eb.ref("excluded.path"),
+          variables: eb.ref("excluded.variables"),
+          attempts: eb.ref("excluded.attempts"),
+          status: eb.ref("excluded.status"),
+          expires_at: eb.ref("excluded.expires_at"),
+          updated_at: currentTimestamp(),
+        })),
+      )
+      .execute();
   }
 
   async clear(input: { sessionId: string }): Promise<void> {
-    await this.database.execute(`DELETE FROM routine_states WHERE session_id = $1`, [input.sessionId]);
+    await this.db.deleteFrom("routine_states").where("session_id", "=", input.sessionId).execute();
   }
 }

@@ -141,7 +141,6 @@ describe('skill form model', () => {
         { key: 'rerankEnabled', label: 'Rerank', type: 'boolean' },
       ],
       targets: [
-        { id: 'all', label: 'All sources' },
         { id: '11111111-1111-4111-8111-111111111111', label: 'Course guide' },
       ],
     })

@@ -52,7 +52,9 @@ describeIfDatabase("notify and completion-export skill migration", () => {
     // Remove rows of kinds added by 094 so a later test file's runAllTestMigrations re-run on the
     // shared integration DB does not trip migration 108's pre-094 kind CHECK against leftover data.
     try {
-      await database.execute("DELETE FROM agent_skills WHERE kind IN ('retrieve', 'notify')");
+      await database.execute(
+        "DELETE FROM agent_skills WHERE kind IN ('retrieve', 'notify') OR skill_name IN ('contact_human', 'completion_export')",
+      );
     } finally {
       await database.close();
     }
@@ -145,5 +147,41 @@ describeIfDatabase("notify and completion-export skill migration", () => {
       invocation_mode: "routine_named",
       enabled: true,
     });
+  });
+
+  it("fails instead of overwriting an existing non-notify contact_human skill", async () => {
+    const account = await accountRepository.create({
+      name: "US4 Conflict Migration",
+      email: `us4-conflict-migration-${randomUUID()}@example.com`,
+      passwordHash: "hash",
+    });
+    const workspace = await workspaceRepository.create(account.id, "US4 Conflict Migration");
+    const agent = await agentRepository.create(workspace.id, {
+      name: "US4 Conflict Agent",
+      contactRequestsEnabled: true,
+    });
+    const destinationId = randomUUID();
+    await database.execute(
+      `INSERT INTO workspace_webhook_destinations (
+         id, workspace_id, name, url, secret_ciphertext, encryption_key_id
+       )
+       VALUES ($1, $2, 'Contact Conflict', 'https://example.test/contact-conflict', 'ciphertext', 'test-key')`,
+      [destinationId, workspace.id],
+    );
+    await database.execute(
+      `INSERT INTO agent_skills (
+         id, workspace_id, agent_id, skill_name, kind, target_type, target_id, config, invocation_mode, enabled
+       )
+       VALUES ($1, $2, $3, 'contact_human', 'webhook', 'webhook_destination', $4, '{}'::jsonb, 'routine_named', TRUE)`,
+      [randomUUID(), workspace.id, agent.id, destinationId],
+    );
+
+    await expect(database.pool.query(migrationSql)).rejects.toThrow(/non-notify skill named "contact_human"/);
+
+    const [row] = await database.query<{ kind: string; target_id: string }>(
+      `SELECT kind, target_id FROM agent_skills WHERE agent_id = $1 AND skill_name = 'contact_human'`,
+      [agent.id],
+    );
+    expect(row).toEqual({ kind: "webhook", target_id: destinationId });
   });
 });

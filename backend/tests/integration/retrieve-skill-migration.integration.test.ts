@@ -50,7 +50,7 @@ describeIfDatabase("retrieve skills spine migration", () => {
     // Remove rows of kinds added by 094 so a later test file's runAllTestMigrations re-run on the
     // shared integration DB does not trip migration 108's pre-094 kind CHECK against leftover data.
     try {
-      await database.execute("DELETE FROM agent_skills WHERE kind IN ('retrieve', 'notify')");
+      await database.execute("DELETE FROM agent_skills WHERE kind IN ('retrieve', 'notify') OR skill_name = 'answer'");
     } finally {
       await database.close();
     }
@@ -122,5 +122,35 @@ describeIfDatabase("retrieve skills spine migration", () => {
       exposedInputs: { query: true },
     });
     expect(rows[0]?.config).not.toHaveProperty("similarityThreshold");
+  });
+
+  it("fails instead of overwriting an existing non-retrieve answer skill", async () => {
+    const workspace = await createWorkspace();
+    const agent = await agentRepository.create(workspace.id, {
+      name: "Conflicting Agent",
+    });
+    const destinationId = randomUUID();
+    await database.execute(
+      `INSERT INTO workspace_webhook_destinations (
+         id, workspace_id, name, url, secret_ciphertext, encryption_key_id
+       )
+       VALUES ($1, $2, 'Answer Webhook', 'https://example.test/answer', 'ciphertext', 'test-key')`,
+      [destinationId, workspace.id],
+    );
+    await database.execute(
+      `INSERT INTO agent_skills (
+         id, workspace_id, agent_id, skill_name, kind, target_type, target_id, config, invocation_mode, enabled
+       )
+       VALUES ($1, $2, $3, 'answer', 'webhook', 'webhook_destination', $4, '{}'::jsonb, 'routine_named', TRUE)`,
+      [randomUUID(), workspace.id, agent.id, destinationId],
+    );
+
+    await expect(database.pool.query(migrationSql)).rejects.toThrow(/non-retrieve skill named "answer"/);
+
+    const [row] = await database.query<{ kind: string; target_id: string }>(
+      `SELECT kind, target_id FROM agent_skills WHERE agent_id = $1 AND skill_name = 'answer'`,
+      [agent.id],
+    );
+    expect(row).toEqual({ kind: "webhook", target_id: destinationId });
   });
 });

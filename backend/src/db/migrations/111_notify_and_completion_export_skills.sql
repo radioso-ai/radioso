@@ -1,3 +1,37 @@
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM agent_skills
+    WHERE skill_name = 'contact_human'
+      AND NOT (
+        kind = 'notify'
+        AND target_type = 'notify_delivery'
+        AND target_id IS NULL
+        AND invocation_mode = 'routine_named'
+      )
+  ) THEN
+    RAISE EXCEPTION 'Cannot migrate contact request settings: one or more agents already have a non-notify skill named "contact_human". Rename the conflicting skill before applying migration 111.'
+      USING ERRCODE = '23505',
+            CONSTRAINT = 'agent_skills_contact_human_name_reserved';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM agent_skills
+    WHERE skill_name = 'completion_export'
+      AND NOT (
+        kind = 'webhook'
+        AND target_type = 'webhook_destination'
+        AND invocation_mode = 'routine_named'
+      )
+  ) THEN
+    RAISE EXCEPTION 'Cannot migrate completion export settings: one or more agents already have a non-webhook skill named "completion_export". Rename the conflicting skill before applying migration 111.'
+      USING ERRCODE = '23505',
+            CONSTRAINT = 'agent_skills_completion_export_name_reserved';
+  END IF;
+END $$;
+
 INSERT INTO agent_skills (
   id, workspace_id, agent_id, skill_name, kind, target_type, target_id,
   config, invocation_mode, enabled

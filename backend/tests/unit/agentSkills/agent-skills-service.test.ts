@@ -194,4 +194,60 @@ describe("AgentSkillsService", () => {
       enabled: true,
     });
   });
+
+  describe("persistence-error translation", () => {
+    const makeServiceThatThrowsOnCreate = (error: unknown) => {
+      const repository = {
+        ...new InMemoryAgentSkillRepository(),
+        findByName: async () => null,
+        findDefaultAnswer: async () => null,
+        create: async () => {
+          throw error;
+        },
+      } as unknown as InMemoryAgentSkillRepository;
+      return new AgentSkillsService({
+        repository,
+        capabilities: createDefaultSkillCapabilityRegistry(),
+      });
+    };
+
+    const webhookInput = {
+      name: "send_webhook",
+      capability: "webhook_call" as const,
+      target: { kind: "webhook_destination", id: randomUUID() },
+      config: { boundPayload: {}, exposedPayload: {} },
+      invocationMode: "routine_named" as const,
+      enabled: true,
+    };
+
+    it("maps an unknown/foreign target reference (23503) to a 400, not a 500", async () => {
+      const service = makeServiceThatThrowsOnCreate({
+        code: "23503",
+        constraint: "agent_skills_webhook_target_fk",
+      });
+      await expect(service.create(randomUUID(), randomUUID(), webhookInput)).rejects.toMatchObject({
+        statusCode: 400,
+      });
+    });
+
+    it("disambiguates a default-answer collision from a name collision on 23505", async () => {
+      const defaultAnswerConflict = makeServiceThatThrowsOnCreate({
+        code: "23505",
+        constraint: "agent_skills_one_default_answer",
+      });
+      await expect(defaultAnswerConflict.create(randomUUID(), randomUUID(), webhookInput)).rejects.toMatchObject({
+        statusCode: 409,
+        message: "A default-answer skill already exists for this agent",
+      });
+
+      const nameConflict = makeServiceThatThrowsOnCreate({
+        code: "23505",
+        constraint: "agent_skills_agent_id_skill_name_key",
+      });
+      await expect(nameConflict.create(randomUUID(), randomUUID(), webhookInput)).rejects.toMatchObject({
+        statusCode: 409,
+        message: 'A skill named "send_webhook" already exists for this agent',
+      });
+    });
+  });
 });

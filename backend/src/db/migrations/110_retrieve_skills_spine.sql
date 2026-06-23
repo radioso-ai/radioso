@@ -1,3 +1,22 @@
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM agent_skills
+    WHERE skill_name = 'answer'
+      AND NOT (
+        kind = 'retrieve'
+        AND target_type = 'source_scope'
+        AND target_id IS NULL
+        AND invocation_mode = 'default_answer'
+      )
+  ) THEN
+    RAISE EXCEPTION 'Cannot migrate retrieval settings: one or more agents already have a non-retrieve skill named "answer". Rename the conflicting skill before applying migration 110.'
+      USING ERRCODE = '23505',
+            CONSTRAINT = 'agent_skills_retrieve_answer_name_reserved';
+  END IF;
+END $$;
+
 WITH agent_retrieval AS (
   SELECT
     a.id AS agent_id,

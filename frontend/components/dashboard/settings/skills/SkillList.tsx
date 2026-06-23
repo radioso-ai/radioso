@@ -1,7 +1,17 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { CircleSlash, Pencil, Trash2, Wrench } from 'lucide-react'
+import {
+  BellRing,
+  Cable,
+  DatabaseZap,
+  Mail,
+  MessageSquareText,
+  Pencil,
+  Trash2,
+  Webhook,
+  type LucideIcon,
+} from 'lucide-react'
 
 import { useRegisterAddSkillAction } from '@/components/dashboard/shared/skills-header-action'
 
@@ -21,6 +31,33 @@ import { agentSkillsApi, type AgentSkill, type AgentSkillCapabilityId, type Agen
 import { cn } from '@/lib/utils'
 import { SkillForm } from './SkillForm'
 import { formatCapabilityLabel, formatInvocationMode } from './skill-form-model'
+
+const capabilityIcons: Record<AgentSkillCapabilityId, { icon: LucideIcon; tone: string }> = {
+  retrieve: {
+    icon: DatabaseZap,
+    tone: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/50 dark:text-emerald-300',
+  },
+  mcp_tool: {
+    icon: Cable,
+    tone: 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/70 dark:bg-blue-950/50 dark:text-blue-300',
+  },
+  email: {
+    icon: Mail,
+    tone: 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/50 dark:text-rose-300',
+  },
+  slack_post: {
+    icon: MessageSquareText,
+    tone: 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900/70 dark:bg-violet-950/50 dark:text-violet-300',
+  },
+  webhook_call: {
+    icon: Webhook,
+    tone: 'border-cyan-200 bg-cyan-50 text-cyan-700 dark:border-cyan-900/70 dark:bg-cyan-950/50 dark:text-cyan-300',
+  },
+  notify: {
+    icon: BellRing,
+    tone: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/50 dark:text-amber-300',
+  },
+}
 
 const targetLabel = (skill: AgentSkill, capabilities: readonly SkillCapabilityDescriptor[]) => {
   const capability = capabilities.find((candidate) => candidate.id === skill.capability)
@@ -65,6 +102,8 @@ function CapabilityPicker({
   onOpenChange: (open: boolean) => void
   onSelect: (capabilityId: AgentSkillCapabilityId) => void
 }) {
+  const visibleCapabilities = capabilities.filter((capability) => capability.id !== 'notify')
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl">
@@ -75,8 +114,10 @@ function CapabilityPicker({
           </DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {capabilities.map((capability) => {
+          {visibleCapabilities.map((capability) => {
             const enabled = capability.available
+            const icon = capabilityIcons[capability.id]
+            const CapabilityIcon = icon.icon
             return (
               <button
                 key={capability.id}
@@ -93,9 +134,9 @@ function CapabilityPicker({
                 <span className="space-y-3">
                   <span className={cn(
                     'inline-flex h-9 w-9 items-center justify-center rounded-md border',
-                    enabled ? 'border-primary/30 bg-primary/10 text-primary' : 'border-border bg-background text-muted-foreground',
+                    enabled ? icon.tone : 'border-border bg-background text-muted-foreground',
                   )}>
-                    {enabled ? <Wrench className="h-4 w-4" /> : <CircleSlash className="h-4 w-4" />}
+                    <CapabilityIcon className="h-4 w-4" />
                   </span>
                   <span className="block">
                     <span className="block text-sm font-medium text-foreground">{formatCapabilityLabel(capability.id)}</span>

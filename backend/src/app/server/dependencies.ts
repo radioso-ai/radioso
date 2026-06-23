@@ -84,6 +84,7 @@ import { SlackSkillDefinitionService } from "../../modules/slackSkills/public.js
 import { AgentSkillRepository, AgentSkillsService } from "../../modules/agentSkills/public.js";
 import { createDefaultSkillCapabilityRegistry } from "../../modules/skills/public.js";
 import { bindSkillCapabilityExecutors } from "../composition/skillCapabilityRegistry.js";
+import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../modules/documents/contracts/index.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -243,6 +244,26 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
         label: destination.name,
         status: destination.lastDeliveryStatus ?? undefined,
       })),
+    retrieve: async ({ workspaceId }) => {
+      const [sources, manualDocumentCount] = await Promise.all([
+        repositories.documentSourceRepository.listByWorkspaceIdWithDocumentCounts(workspaceId),
+        repositories.documentSourceRepository.countDocumentsWithoutSource(workspaceId),
+      ]);
+      return [
+        ...sources.map((source) => ({
+          id: source.id,
+          label: source.name,
+          status: source.lastSyncStatus ?? undefined,
+        })),
+        ...(manualDocumentCount > 0
+          ? [{
+              id: MANUALLY_ADDED_DOCUMENTS_SOURCE_ID,
+              label: "Manually added documents",
+              status: "available",
+            }]
+          : []),
+      ];
+    },
   });
   const agentSkillsService = new AgentSkillsService({
     repository: new AgentSkillRepository(infrastructure.database),
@@ -372,10 +393,28 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     assertPublicWebsiteUrl,
     errorReporter: infrastructure.errorReportingService,
   });
-  bindSkillCapabilityExecutors({
+  const skillCapabilityBindings = bindSkillCapabilityExecutors({
     capabilities: skillCapabilityRegistry,
     executors: composition.skillExecutorRegistry,
   });
+  const unboundCapabilities = skillCapabilityBindings.filter((binding) => !binding.bound);
+  if (unboundCapabilities.length > 0) {
+    // A capability with no resolvable executor still advertises as available via
+    // GET /skill-capabilities, so an author can create+enable a skill that only
+    // fails at routine-dispatch time. This is a legitimate degraded mode (e.g.
+    // email/external skipped when CONNECTOR_ENCRYPTION_KEY is unset), so warn
+    // rather than fail boot — but make it observable instead of silent.
+    logger.warn(
+      {
+        event: "skill_capability_executor_unbound",
+        capabilities: unboundCapabilities.map((binding) => ({
+          capability: binding.capabilityId,
+          executorAdapter: binding.executorAdapter,
+        })),
+      },
+      "One or more skill capabilities have no bound executor; skills using them will fail at dispatch",
+    );
+  }
   const platformSettingsService = new PlatformSettingsService({
     workspaceRepository: repositories.workspaceRepository,
     agentService,

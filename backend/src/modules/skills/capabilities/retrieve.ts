@@ -5,9 +5,8 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
   id: "retrieve",
   storedKind: "retrieve",
   targetKind: "source_scope",
-  enumerateTargets: async () => [
-    { id: "all", label: "All sources", status: "available" },
-  ],
+  requiresTarget: false,
+  enumerateTargets: async () => [],
   inputSchema: {
     source: "static",
     schema: {

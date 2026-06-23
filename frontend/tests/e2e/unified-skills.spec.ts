@@ -29,9 +29,9 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
 
   await page.getByRole("button", { name: "Add new skill" }).click();
   await expect(page.getByRole("dialog", { name: "Add new skill" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Mcp Tool/i })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /MCP Tool/i })).toBeDisabled();
   await expect(page.getByRole("button", { name: /Slack Post/i })).toBeDisabled();
-  await expect(page.getByRole("button", { name: /Notify/i })).toBeEnabled();
+  await expect(page.getByRole("button", { name: /Notify Human/i })).toHaveCount(0);
   await page.getByRole("button", { name: /Email/i }).click();
   await expect(page.getByRole("dialog", { name: "Configure Email" })).toBeVisible();
   await expect(page.getByLabel("Skill name")).toHaveValue("send_support_outbound_email");
@@ -55,7 +55,8 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await expect(page.getByText("@send_followup_email")).toBeVisible();
 
   await page.getByRole("button", { name: "Add new skill" }).click();
-  await page.getByRole("button", { name: /Retrieve/i }).click();
+  await page.getByRole("button", { name: /Knowledge Retrieval/i }).click();
+  await expect(page.getByRole("dialog", { name: "Configure Knowledge Retrieval" })).toBeVisible();
   await expect(page.getByLabel("Skill name")).toHaveValue("retrieve_answer");
   await expect(page.getByLabel("Vector top K")).toHaveCount(0);
   await page.getByLabel("Skill name").fill("retrieve_events");
@@ -81,25 +82,14 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await expect(page.getByText("@retrieve_events")).toBeVisible();
 
   await page.getByRole("button", { name: "Add new skill" }).click();
-  await expect(page.getByRole("button", { name: /Notify/i })).toBeEnabled();
-  await page.getByRole("button", { name: /Notify/i }).click();
-  await expect(page.getByLabel("Skill name")).toHaveValue("notify_human");
-  await expect(page.getByLabel("Target")).toHaveCount(0);
-  await expect(page.getByRole("combobox", { name: "message" })).toHaveCount(0);
-  await page.getByLabel("Skill name").fill("contact_human");
-  await page.getByLabel("Recipient emails 1").fill("sales@example.com");
-  await page.getByLabel("Recipient emails 2").fill("support@example.com");
-  await page.getByLabel("Webhook URL").fill("https://hooks.example.com/contact");
-  await page.getByRole("button", { name: "Create skill" }).click();
-
-  await expect(page.getByText("@contact_human")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Notify Human/i })).toHaveCount(0);
 
   await expect.poll(() =>
     agentSkillRequests.filter((request) =>
       request.method === "POST" &&
       request.path === `/agents/${defaultAgentId}/skills`,
     ).length,
-  ).toBe(3);
+  ).toBe(2);
   const createBodies = agentSkillRequests
     .filter((request) => request.method === "POST" && request.path === `/agents/${defaultAgentId}/skills`)
     .map((request) => request.body);
@@ -123,7 +113,7 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   expect(createBodies[1]).toMatchObject({
     name: "retrieve_events",
     capability: "retrieve",
-    target: { kind: "source_scope", id: "all" },
+    target: { kind: "source_scope", id: null },
     config: {
       sourceScope: { sourceIds: ["11111111-1111-4111-8111-111111111111"] },
       instruction: "Use event-specific sources only.",
@@ -145,18 +135,4 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
     config: { similarityThreshold: expect.anything() },
   });
 
-  expect(createBodies[2]).toMatchObject({
-    name: "contact_human",
-    capability: "notify",
-    target: { kind: "notify_delivery", id: null },
-    config: {
-      delivery: {
-        recipientEmails: ["sales@example.com", "support@example.com"],
-        webhook: { url: "https://hooks.example.com/contact" },
-      },
-      exposedInputs: {
-        message: true,
-      },
-    },
-  });
 });

@@ -56,7 +56,10 @@ export const emailCapability: SkillCapabilityDescriptor<"email", "customer_email
     source: "static",
     schema: {
       fields: ["to", "cc", "subject", "bodyText", "bodyHtml", "replyTo"],
-      required: ["to", "subject", "bodyText"],
+      // The body is a one-of (bodyText OR bodyHtml) enforced by configSchema's
+      // superRefine, so neither is unconditionally required here — forcing
+      // bodyText would block a valid bodyHtml-only email skill in the form.
+      required: [...requiredCustomerEmailSkillInputs],
     },
   },
   settingsFields: [

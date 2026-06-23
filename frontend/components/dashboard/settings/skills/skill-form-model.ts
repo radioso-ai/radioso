@@ -183,8 +183,17 @@ export const buildAgentSkillInput = (
   }
 }
 
+const capabilityLabels: Record<string, string> = {
+  retrieve: 'Knowledge Retrieval',
+  mcp_tool: 'MCP Tool',
+  email: 'Email',
+  slack_post: 'Slack Post',
+  webhook_call: 'Webhook Call',
+  notify: 'Notify Human',
+}
+
 export const formatCapabilityLabel = (value: string): string =>
-  value.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
+  capabilityLabels[value] ?? value.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
 
 export const formatInvocationMode = (value: AgentSkillInvocationMode): string =>
   ({

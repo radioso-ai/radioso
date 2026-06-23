@@ -63,7 +63,7 @@ describe("SkillCapabilityRegistry", () => {
       expect(descriptor.executorAdapter).toEqual(expect.any(String));
     }
     expect(registry.get("notify")?.requiresTarget).toBe(false);
-    expect(registry.get("retrieve")?.requiresTarget).toBe(true);
+    expect(registry.get("retrieve")?.requiresTarget).toBe(false);
     expect(registry.get("email")?.requiresTarget).toBe(true);
   });
 

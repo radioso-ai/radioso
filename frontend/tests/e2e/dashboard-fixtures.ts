@@ -499,7 +499,7 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
     id: "retrieve",
     storedKind: "retrieve",
     targetKind: "source_scope",
-    requiresTarget: true,
+    requiresTarget: false,
     inputSchema: { source: "static", schema: { fields: ["query"], required: ["query"] } },
     settingsFields: [
       { key: "sourceScope", label: "Source scope", type: "source_scope", group: "Scope" },
@@ -530,7 +530,6 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
     defaultInvocationMode: "default_answer",
     executorAdapter: "retrieval.answer",
     targets: [
-      { id: "all", label: "All sources", status: "available" },
       { id: "11111111-1111-4111-8111-111111111111", label: "Course guide", status: "ready" },
       { id: "22222222-2222-4222-8222-222222222222", label: "Release notes", status: "ready" },
     ],

@@ -116,6 +116,7 @@ import { InMemoryAgentSkillRepository } from "./inMemoryAgentSkills.js";
 import { SlackSkillDefinitionService } from "../../src/modules/slackSkills/public.js";
 import { AgentSkillsService } from "../../src/modules/agentSkills/public.js";
 import { createDefaultSkillCapabilityRegistry } from "../../src/modules/skills/capabilityRegistry.js";
+import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../src/modules/documents/contracts/index.js";
 import {
   DefaultWebhookDestinationAdapter,
   WebhookDestinationService,
@@ -932,6 +933,26 @@ export const createTestDependencies = (overrides: {
         label: destination.name,
         status: destination.lastDeliveryStatus ?? undefined,
       })),
+    retrieve: async ({ workspaceId }) => {
+      const [sources, manualDocumentCount] = await Promise.all([
+        documentSourceRepository.listByWorkspaceIdWithDocumentCounts(workspaceId),
+        documentSourceRepository.countDocumentsWithoutSource(workspaceId),
+      ]);
+      return [
+        ...sources.map((source) => ({
+          id: source.id,
+          label: source.name,
+          status: source.lastSyncStatus ?? undefined,
+        })),
+        ...(manualDocumentCount > 0
+          ? [{
+              id: MANUALLY_ADDED_DOCUMENTS_SOURCE_ID,
+              label: "Manually added documents",
+              status: "available",
+            }]
+          : []),
+      ];
+    },
   });
   const agentSkillsService = new AgentSkillsService({
     repository: agentSkillRepository,

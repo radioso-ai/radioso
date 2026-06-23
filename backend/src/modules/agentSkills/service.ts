@@ -64,8 +64,27 @@ export interface AgentSkillsServiceOptions {
   logger?: AppLogger;
 }
 
-const isUniqueViolation = (error: unknown): boolean =>
-  Boolean(error && typeof error === "object" && "code" in error && error.code === "23505");
+const pgErrorMeta = (error: unknown): { code?: string; constraint?: string } => {
+  if (!error || typeof error !== "object") {
+    return {};
+  }
+  const candidate = error as { code?: unknown; constraint?: unknown };
+  return {
+    code: typeof candidate.code === "string" ? candidate.code : undefined,
+    constraint: typeof candidate.constraint === "string" ? candidate.constraint : undefined,
+  };
+};
+
+const isUniqueViolation = (error: unknown): boolean => pgErrorMeta(error).code === "23505";
+
+// The agent_skills target-reference trigger raises 23503 with an `*_target_fk`
+// constraint when target_id is missing/unknown or points at another workspace's
+// connection. Surfacing it as a clean 4xx (instead of a generic 500) avoids both a
+// confusing contract and an enumeration oracle on valid-format-but-foreign ids.
+const isTargetReferenceViolation = (error: unknown): boolean => {
+  const { code, constraint } = pgErrorMeta(error);
+  return code === "23503" && typeof constraint === "string" && constraint.endsWith("_target_fk");
+};
 
 export class AgentSkillsService {
   constructor(private readonly options: AgentSkillsServiceOptions) {}
@@ -106,10 +125,7 @@ export class AgentSkillsService {
       });
       return this.toView(record);
     } catch (error) {
-      if (isUniqueViolation(error)) {
-        throw conflict(`A skill named "${input.name}" or default answer already exists for this agent`);
-      }
-      throw error;
+      throw this.translatePersistenceError(error, input.name, input.target);
     }
   }
 
@@ -161,11 +177,34 @@ export class AgentSkillsService {
       });
       return this.toView(updated);
     } catch (error) {
-      if (isUniqueViolation(error)) {
-        throw conflict("A default-answer skill already exists for this agent");
-      }
-      throw error;
+      throw this.translatePersistenceError(error, existing.skillName, target);
     }
+  }
+
+  /**
+   * Maps a persistence-layer constraint violation to a precise client error.
+   * Distinguishes a name collision from a default-answer collision (both 23505 but
+   * different constraints) and turns an invalid/foreign target reference (23503)
+   * into a 400 rather than letting it bubble up as a 500.
+   */
+  private translatePersistenceError(
+    error: unknown,
+    skillName: string,
+    target: { kind: string; id: string | null },
+  ): unknown {
+    if (isUniqueViolation(error)) {
+      const { constraint } = pgErrorMeta(error);
+      if (constraint === "agent_skills_one_default_answer") {
+        return conflict("A default-answer skill already exists for this agent");
+      }
+      return conflict(`A skill named "${skillName}" already exists for this agent`);
+    }
+    if (isTargetReferenceViolation(error)) {
+      return badRequest(
+        `Target ${target.id ?? "(none)"} is not a valid ${target.kind} for this agent`,
+      );
+    }
+    return error;
   }
 
   async remove(workspaceId: string, agentId: string, id: string): Promise<void> {

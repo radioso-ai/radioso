@@ -30,7 +30,6 @@ import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-setti
 import { WebhookDestinationsPanel } from '@/components/dashboard/settings/webhook-destinations-panel'
 import { WebsiteEmbedSettingsController } from '@/components/dashboard/settings/website-embed-settings-controller'
 import { WorkspaceEmailConnectionsSection } from '@/components/dashboard/settings/workspace-email-connections-section'
-import { CustomerEmailActivitySection } from '@/components/dashboard/settings/customer-email-activity-section'
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
 import {
@@ -943,7 +942,6 @@ export function WorkspaceAssistantChannelsTab({
           {mode === 'assistant' && showSection('skills') ? (
           <section id="assistant-skills" className="space-y-6 scroll-mt-24">
             {agentId ? <SkillList agentId={agentId} /> : null}
-            {agentId ? <McpConnectionsSection agentId={agentId} /> : null}
           </section>
           ) : null}
 
@@ -1117,6 +1115,7 @@ export function WorkspaceAssistantChannelsTab({
           {mode === 'channels' && !isAnonLoading && resolvedChannel === 'mcp-channel' ? (
           <section id="mcp-channel" className="space-y-6 scroll-mt-24">
             <McpChannelCard workspaceId={activeWorkspaceId} />
+            {agentId ? <McpConnectionsSection agentId={agentId} /> : null}
           </section>
           ) : null}
 
@@ -1157,7 +1156,6 @@ export function WorkspaceAssistantChannelsTab({
           {mode === 'workspace' ? (
           <section className="space-y-6">
             <WorkspaceEmailConnectionsSection workspaceId={activeWorkspaceId} />
-            <CustomerEmailActivitySection workspaceId={activeWorkspaceId} />
           </section>
           ) : null}
 

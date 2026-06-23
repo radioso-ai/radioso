@@ -21,9 +21,11 @@ Rules that keep this clean:
 - **Domain depends on the port, never on Postgres.** A module imports
   `FooRepositoryPort` (a type); it does not import `pg`, the `Database` class, or a
   concrete repository. The dependency points *into* the domain, not out to infra.
-- **SQL lives in the adapter, not in domain code.** Raw SQL strings inside a
-  repository are correct and expected. Raw SQL inside a service/route handler is the
-  smell — that's a missing port.
+- **Query-building lives in the adapter, not in domain code.** Adapters build queries
+  with the Kysely query builder, typed against the generated schema
+  (`shared/infra/kysely/schema.ts`). Query-building inside a service/route handler is the
+  smell — that's a missing port. Raw SQL strings belong only in migrations and in the
+  centralized `shared/infra/kysely/sqlHelpers.ts`; never hand-write SQL in a repository.
 - **Rows are not domain objects.** A `*Row` interface describes DB columns; a mapper
   converts it to the domain record. Keep DB column names (`snake_case`) out of the
   domain.
@@ -37,8 +39,7 @@ See the project-wide rationale in `../../../../docs/architecture/code-map.md` an
 ## Worked example: adding a new entity
 
 Suppose you're adding a `Widget` entity. The canonical reference to copy is
-`documentRepository.ts` + `documentRowMapper.ts` (the most complete example —
-transactions, cursor pagination, conflict mapping). A minimal version:
+`sessionRepository.ts` (a minimal Kysely adapter). A minimal version:
 
 ### 1. Migration — define the schema (system of record)
 
@@ -87,8 +88,8 @@ export interface WidgetRow {
   created_at: Date;
 }
 
-// Reusable SELECT fragment so column lists don't drift between queries.
-export const widgetSelect = `id, workspace_id, name, created_at`;
+// Reusable column tuple so select/returning lists don't drift between queries.
+export const widgetColumns = ["id", "workspace_id", "name", "created_at"] as const;
 
 export const mapWidget = (row: WidgetRow): WidgetRecord => ({
   id: row.id,
@@ -103,56 +104,73 @@ export const mapWidget = (row: WidgetRow): WidgetRecord => ({
 
 ### 4. Repository — the adapter that owns the SQL
 
-`widgetRepository.ts`:
+Adapters use the **Kysely** query builder, typed against the generated schema
+(`shared/infra/kysely/schema.ts`). The reference to copy for a simple repository is
+`sessionRepository.ts`. `widgetRepository.ts`:
 
 ```ts
 import { randomUUID } from "node:crypto";
-import type { Database } from "../../shared/infra/database.js";
-import { mapWidget, widgetSelect, type WidgetRow } from "./widgetRowMapper.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
+import { mapWidget, widgetColumns, type WidgetRow } from "./widgetRowMapper.js";
 
 export class WidgetRepository implements WidgetRepositoryPort {
-  constructor(private readonly database: Database) {}
+  // `Db` is `Kysely<DB> | Transaction<DB>` — the repo works standalone or inside a
+  // caller's transaction. Composition injects `database.kysely`.
+  constructor(private readonly db: Db) {}
 
   async create(input: WidgetCreateInput): Promise<WidgetRecord> {
-    const [row] = await this.database.query<WidgetRow>(
-      `INSERT INTO widgets (id, workspace_id, name)
-       VALUES ($1, $2, $3)
-       RETURNING ${widgetSelect}`,
-      [randomUUID(), input.workspaceId, input.name],
-    );
+    const row = await this.db
+      .insertInto("widgets")
+      .values({ id: randomUUID(), workspace_id: input.workspaceId, name: input.name })
+      .returning(widgetColumns)
+      .executeTakeFirstOrThrow();
     return mapWidget(row);
   }
 
   async findByIdAndWorkspaceId(id: string, workspaceId: string): Promise<WidgetRecord | null> {
-    const [row] = await this.database.query<WidgetRow>(
-      `SELECT ${widgetSelect} FROM widgets WHERE id = $1 AND workspace_id = $2`,
-      [id, workspaceId],
-    );
+    const row = await this.db
+      .selectFrom("widgets")
+      .select(widgetColumns)
+      .where("id", "=", id)
+      .where("workspace_id", "=", workspaceId)
+      .executeTakeFirst();
     return row ? mapWidget(row) : null;
   }
 
   async listByWorkspaceId(workspaceId: string): Promise<WidgetRecord[]> {
-    const rows = await this.database.query<WidgetRow>(
-      `SELECT ${widgetSelect} FROM widgets WHERE workspace_id = $1 ORDER BY created_at DESC`,
-      [workspaceId],
-    );
+    const rows = await this.db
+      .selectFrom("widgets")
+      .select(widgetColumns)
+      .where("workspace_id", "=", workspaceId)
+      .orderBy("created_at", "desc")
+      .execute();
     return rows.map(mapWidget);
   }
 }
 ```
 
-The `Database` helper (`shared/infra/database.ts`) gives you `query` / `queryOptional`
-/ `queryOne` / `execute` and `withTransaction(client => ...)`. Use `withTransaction`
-whenever a write spans more than one statement (see `createAndQueue` in
-`documentRepository.ts`, which inserts the document *and* enqueues a processing job
-atomically).
+where `widgetColumns` is the shared column tuple in the mapper
+(`["id", "workspace_id", "name", "created_at"] as const`), so column lists don't drift.
+
+Kysely is injected as `Db` (`shared/infra/kysely/types.ts`). For writes that span more
+than one statement, use `db.transaction().execute(async (trx) => { ... })` and pass `trx`
+to each participating repository so they share one transaction (Kysely `Transaction<DB>`
+satisfies `Db`).
+
+Postgres-specific SQL the builder can't express — pgvector distance/casts, full-text
+predicates, JSONB operators, `FOR UPDATE SKIP LOCKED`, `SET LOCAL` — comes from typed
+fragments in `shared/infra/kysely/sqlHelpers.ts`, the **only** place (besides migrations)
+where raw SQL belongs. Don't inline `sql` tags in repositories; add a helper.
+
+> Migration in progress: some repositories still take the raw `Database` and use
+> `query` / `withTransaction`. New and migrated repositories use Kysely as above.
 
 ### 5. Composition — wire it once
 
 In `app/server/dependencyBuilders.ts`, alongside the other repositories:
 
 ```ts
-widgetRepository: new WidgetRepository(database),
+widgetRepository: new WidgetRepository(database.kysely),
 ```
 
 Domain code receives `widgetRepository` typed as `WidgetRepositoryPort` — it never sees
@@ -163,10 +181,13 @@ the concrete class.
 - [ ] One repository per entity/aggregate; methods named for intent
       (`findByIdAndWorkspaceId`, not `select`).
 - [ ] **Always scope by `workspace_id`** in tenant-owned queries.
-- [ ] Parameterize everything (`$1`, `$2`, …). Never interpolate values into SQL.
-- [ ] Share `SELECT` column lists via an exported fragment in the mapper.
-- [ ] Map rows → records in the mapper; don't leak `*Row` types out of this directory.
-- [ ] Multi-statement writes go through `withTransaction`.
+- [ ] Build queries with Kysely against the generated schema; never hand-write SQL in a
+      repository. Postgres-specific fragments come from `kysely/sqlHelpers.ts`.
+- [ ] Share select/returning column lists via an exported `as const` tuple in the mapper.
+- [ ] Map rows → records in the mapper; don't leak `*Row` or `DB` schema types out of
+      this directory.
+- [ ] Multi-statement writes go through `db.transaction().execute((trx) => ...)`, passing
+      `trx` to each participating repository.
 - [ ] Translate Postgres error codes (e.g. `23505` unique violation) to domain errors
       (`conflict`, `notFound`) — see `mapDocumentConflict` in `documentRepository.ts`.
 - [ ] Tests: integration tests against a real Postgres
@@ -199,3 +220,20 @@ stack running.
 `db:schema:check` runs in CI (the backend integration job) and in `pnpm run ci:local`,
 so a migration that changes the schema without a regenerated snapshot fails the build.
 Regenerate and commit `schema.sql` in the same change as any migration.
+
+## Schema types (Kysely)
+
+`shared/infra/kysely/schema.ts` is the **generated TypeScript schema** Kysely queries are
+typed against — one interface per table, derived from the migrations. Like the SQL
+snapshot it is generated, read-only, and must not be hand-edited.
+
+```bash
+pnpm --dir backend run db:types         # regenerate after adding a migration
+pnpm --dir backend run db:types:check   # fail if the generated types are stale
+```
+
+It uses the same throwaway `pgvector:pg16` container as `db:schema` (replays every
+migration, then introspects with `kysely-codegen`), so the types can never drift from the
+migrations. `vector`/`tsvector` columns map to `string` (the repositories serialize/parse
+them); `BIGINT`/`NUMERIC` come back as strings. **Regenerate and commit `schema.ts` in the
+same change as any migration**, the same way you do for `schema.sql`.

@@ -83,14 +83,14 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
       requiredCapabilities: [capabilityNames.humanContact.request],
       handler: ({ database, logger, mailService, assertPublicWebsiteUrl }) => {
         const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
-          new WorkspaceRepository(database),
-          new AccountMembershipRepository(database),
+          new WorkspaceRepository(database.kysely),
+          new AccountMembershipRepository(database.kysely),
         );
         return new ContactSendActionHandler(
           mailService,
           new ConfiguredContactDeliveryResolver(
-            new ConversationRepository(database),
-            new AgentRepository(database),
+            new ConversationRepository(database.kysely),
+            new AgentRepository(database.kysely),
             ownerFallback,
           ),
           logger,
@@ -105,14 +105,14 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
       requiredCapabilities: [capabilityNames.humanContact.request],
       handler: ({ database, logger, mailService, assertPublicWebsiteUrl }) => {
         const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
-          new WorkspaceRepository(database),
-          new AccountMembershipRepository(database),
+          new WorkspaceRepository(database.kysely),
+          new AccountMembershipRepository(database.kysely),
         );
         return new HandoffNotifyActionHandler(
           mailService,
           new ConfiguredContactDeliveryResolver(
-            new ConversationRepository(database),
-            new AgentRepository(database),
+            new ConversationRepository(database.kysely),
+            new AgentRepository(database.kysely),
             ownerFallback,
           ),
           logger,
@@ -125,14 +125,14 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
       requiredCapabilities: [capabilityNames.humanContact.request],
       handler: ({ database, logger, mailService, assertPublicWebsiteUrl }) => {
         const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
-          new WorkspaceRepository(database),
-          new AccountMembershipRepository(database),
+          new WorkspaceRepository(database.kysely),
+          new AccountMembershipRepository(database.kysely),
         );
         return new ApprovalRequestActionHandler(
           mailService,
           new ConfiguredContactDeliveryResolver(
-            new ConversationRepository(database),
-            new AgentRepository(database),
+            new ConversationRepository(database.kysely),
+            new AgentRepository(database.kysely),
             ownerFallback,
           ),
           logger,

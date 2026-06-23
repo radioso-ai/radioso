@@ -1,55 +1,28 @@
 import { randomUUID } from "node:crypto";
 
-import type { QueryResultRow } from "pg";
-
 import type {
   EmbeddingUsageEvent,
   ModelUsageEvent,
   UsageEventRecorder,
 } from "../../domain/usageEventRecorder.js";
+import type { Db } from "../kysely/types.js";
 import type { AppLogger } from "../../observability/logger.js";
-
-/**
- * Minimal transactional database surface the durable recorder needs. The OSS
- * `Database` satisfies this (its `query` returns rows directly; transaction
- * clients return `{ rows }`), so both shapes are tolerated. The generic mirrors
- * pg's `QueryResultRow` constraint so the concrete `Database` is assignable.
- */
-export interface UsageEventDatabaseClient {
-  query<T extends QueryResultRow = QueryResultRow>(
-    text: string,
-    params?: unknown[],
-  ): Promise<T[] | { rows: T[] }>;
-}
-
-export interface TransactionalUsageEventDatabase extends UsageEventDatabaseClient {
-  withTransaction<T>(callback: (client: UsageEventDatabaseClient) => Promise<T>): Promise<T>;
-}
-
-const queryRows = async <T extends QueryResultRow = QueryResultRow>(
-  client: UsageEventDatabaseClient,
-  text: string,
-  params: unknown[] = [],
-): Promise<T[]> => {
-  const result = await client.query<T>(text, params);
-  return Array.isArray(result) ? result : result.rows;
-};
 
 const toIsoDate = (date: Date): string =>
   `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
 
 const resolveAccountId = async (
-  database: UsageEventDatabaseClient,
+  db: Db,
   input: { accountId?: string | null; workspaceId: string },
 ): Promise<string | null> => {
   if (input.accountId) {
     return input.accountId;
   }
-  const [workspace] = await queryRows<{ account_id: string }>(
-    database,
-    `SELECT account_id FROM workspaces WHERE id = $1`,
-    [input.workspaceId],
-  );
+  const workspace = await db
+    .selectFrom("workspaces")
+    .select("account_id")
+    .where("id", "=", input.workspaceId)
+    .executeTakeFirst();
   return workspace?.account_id ?? null;
 };
 
@@ -66,12 +39,12 @@ const resolveAccountId = async (
  */
 export class DurableUsageEventRecorder implements UsageEventRecorder {
   constructor(
-    private readonly database: TransactionalUsageEventDatabase,
+    private readonly db: Db,
     private readonly logger?: Pick<AppLogger, "warn">,
   ) {}
 
   async recordEmbedding(event: EmbeddingUsageEvent): Promise<void> {
-    const accountId = await resolveAccountId(this.database, {
+    const accountId = await resolveAccountId(this.db, {
       accountId: event.accountId,
       workspaceId: event.workspaceId,
     });
@@ -79,71 +52,44 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
     const totalTokens = (event.inputTokens ?? 0) + (event.outputTokens ?? 0);
     const eventId = randomUUID();
 
-    const inserted = await this.database.withTransaction(async (client) => {
-      const inserted = await queryRows<{ id: string }>(
-        client,
-        `INSERT INTO usage_events (
-         id,
-         idempotency_key,
-         account_id,
-         workspace_id,
-         source_id,
-         document_id,
-         document_revision,
-         conversation_id,
-         message_id,
-         job_id,
-         surface,
-         operation,
-         provider,
-         model,
-         input_tokens,
-         output_tokens,
-         total_tokens,
-         input_bytes,
-         output_bytes,
-         vector_count,
-         status,
-         usage_quality,
-         provider_request_id,
-         error_code,
-         occurred_at
-       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 0, $19, $20, $21, $22, $23, $24::timestamptz)
-       ON CONFLICT (idempotency_key) DO NOTHING
-       RETURNING id`,
-        [
-          eventId,
-          event.idempotencyKey,
-          accountId,
-          event.workspaceId,
-          event.sourceId ?? null,
-          event.documentId ?? null,
-          event.documentRevision ?? null,
-          event.conversationId ?? null,
-          event.messageId ?? null,
-          event.jobId ?? null,
-          event.surface ?? "embedding",
-          event.operation ?? "embedding",
-          event.provider,
-          event.model,
-          event.inputTokens ?? 0,
-          event.outputTokens ?? 0,
-          totalTokens,
-          event.inputBytes,
-          event.vectorCount,
-          event.status,
-          event.usageQuality,
-          event.providerRequestId ?? null,
-          event.errorCode ?? null,
-          occurredAt.toISOString(),
-        ],
-      );
+    const inserted = await this.db.transaction().execute(async (trx) => {
+      const insertedRow = await trx
+        .insertInto("usage_events")
+        .values({
+          id: eventId,
+          idempotency_key: event.idempotencyKey,
+          account_id: accountId,
+          workspace_id: event.workspaceId,
+          source_id: event.sourceId ?? null,
+          document_id: event.documentId ?? null,
+          document_revision: event.documentRevision ?? null,
+          conversation_id: event.conversationId ?? null,
+          message_id: event.messageId ?? null,
+          job_id: event.jobId ?? null,
+          surface: event.surface ?? "embedding",
+          operation: event.operation ?? "embedding",
+          provider: event.provider,
+          model: event.model,
+          input_tokens: event.inputTokens ?? 0,
+          output_tokens: event.outputTokens ?? 0,
+          total_tokens: totalTokens,
+          input_bytes: event.inputBytes,
+          output_bytes: 0,
+          vector_count: event.vectorCount,
+          status: event.status,
+          usage_quality: event.usageQuality,
+          provider_request_id: event.providerRequestId ?? null,
+          error_code: event.errorCode ?? null,
+          occurred_at: occurredAt,
+        })
+        .onConflict((oc) => oc.column("idempotency_key").doNothing())
+        .returning("id")
+        .executeTakeFirst();
 
-      if (inserted.length === 0) {
+      if (!insertedRow) {
         return false;
       }
-      const insertedId = inserted[0].id;
+      const insertedId = insertedRow.id;
 
       if (event.chunks && event.chunks.length > 0) {
         if (!event.documentId || event.documentRevision === null || event.documentRevision === undefined) {
@@ -153,7 +99,7 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
           );
           return true;
         }
-        await this.insertEmbeddingItems(client, {
+        await this.insertEmbeddingItems(trx, {
           usageEventId: insertedId,
           documentId: event.documentId,
           documentRevision: event.documentRevision,
@@ -180,7 +126,7 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
   }
 
   private async insertEmbeddingItems(
-    client: UsageEventDatabaseClient,
+    db: Db,
     input: {
       usageEventId: string;
       documentId: string;
@@ -188,43 +134,25 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
       chunks: NonNullable<EmbeddingUsageEvent["chunks"]>;
     },
   ): Promise<void> {
-    const valuePlaceholders: string[] = [];
-    const params: unknown[] = [];
-    input.chunks.forEach((chunk, index) => {
-      const offset = index * 7;
-      valuePlaceholders.push(
-        `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7})`,
-      );
-      params.push(
-        input.usageEventId,
-        input.documentId,
-        input.documentRevision,
-        chunk.chunkId ?? null,
-        chunk.chunkIndex,
-        chunk.contentBytes,
-        chunk.estimatedTokens ?? null,
-      );
-    });
-
-    await queryRows(
-      client,
-      `INSERT INTO embedding_usage_items (
-             usage_event_id,
-             document_id,
-             document_revision,
-             chunk_id,
-             chunk_index,
-             content_bytes,
-             estimated_tokens
-           )
-       VALUES ${valuePlaceholders.join(", ")}
-       ON CONFLICT DO NOTHING`,
-      params,
-    );
+    await db
+      .insertInto("embedding_usage_items")
+      .values(
+        input.chunks.map((chunk) => ({
+          usage_event_id: input.usageEventId,
+          document_id: input.documentId,
+          document_revision: input.documentRevision,
+          chunk_id: chunk.chunkId ?? null,
+          chunk_index: chunk.chunkIndex,
+          content_bytes: chunk.contentBytes,
+          estimated_tokens: chunk.estimatedTokens ?? null,
+        })),
+      )
+      .onConflict((oc) => oc.doNothing())
+      .execute();
   }
 
   async recordModelCall(event: ModelUsageEvent): Promise<void> {
-    const accountId = await resolveAccountId(this.database, {
+    const accountId = await resolveAccountId(this.db, {
       accountId: event.accountId,
       workspaceId: event.workspaceId,
     });
@@ -232,64 +160,37 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
     const totalTokens = event.totalTokens ?? ((event.inputTokens ?? 0) + (event.outputTokens ?? 0));
     const eventId = randomUUID();
 
-    const inserted = await this.database.withTransaction(async (client) => {
-      const inserted = await queryRows<{ id: string }>(
-        client,
-        `INSERT INTO usage_events (
-         id,
-         idempotency_key,
-         account_id,
-         workspace_id,
-         conversation_id,
-         message_id,
-         surface,
-         operation,
-         provider,
-         model,
-         input_tokens,
-         output_tokens,
-         total_tokens,
-         input_bytes,
-         output_bytes,
-         vector_count,
-         status,
-         usage_quality,
-         provider_request_id,
-         error_code,
-         occurred_at
-       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 0, $16, $17, $18, $19, $20::timestamptz)
-       ON CONFLICT (idempotency_key) DO NOTHING
-       RETURNING id`,
-        [
-          eventId,
-          event.idempotencyKey,
-          accountId,
-          event.workspaceId,
-          event.conversationId ?? null,
-          event.messageId ?? null,
-          event.surface,
-          event.operation,
-          event.provider,
-          event.model,
-          event.inputTokens ?? 0,
-          event.outputTokens ?? 0,
-          totalTokens,
-          event.inputBytes ?? 0,
-          event.outputBytes ?? 0,
-          event.status,
-          event.usageQuality,
-          event.providerRequestId ?? null,
-          event.errorCode ?? null,
-          occurredAt.toISOString(),
-        ],
-      );
+    const inserted = await this.db.transaction().execute(async (trx) => {
+      const insertedRow = await trx
+        .insertInto("usage_events")
+        .values({
+          id: eventId,
+          idempotency_key: event.idempotencyKey,
+          account_id: accountId,
+          workspace_id: event.workspaceId,
+          conversation_id: event.conversationId ?? null,
+          message_id: event.messageId ?? null,
+          surface: event.surface,
+          operation: event.operation,
+          provider: event.provider,
+          model: event.model,
+          input_tokens: event.inputTokens ?? 0,
+          output_tokens: event.outputTokens ?? 0,
+          total_tokens: totalTokens,
+          input_bytes: event.inputBytes ?? 0,
+          output_bytes: event.outputBytes ?? 0,
+          vector_count: 0,
+          status: event.status,
+          usage_quality: event.usageQuality,
+          provider_request_id: event.providerRequestId ?? null,
+          error_code: event.errorCode ?? null,
+          occurred_at: occurredAt,
+        })
+        .onConflict((oc) => oc.column("idempotency_key").doNothing())
+        .returning("id")
+        .executeTakeFirst();
 
-      if (inserted.length === 0) {
-        return false;
-      }
-
-      return true;
+      return Boolean(insertedRow);
     });
 
     if (inserted && accountId && event.status === "succeeded") {
@@ -323,7 +224,7 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
     },
   ): Promise<void> {
     try {
-      await this.upsertDailyRollup(this.database, accountId, occurredAt, deltas);
+      await this.upsertDailyRollup(accountId, occurredAt, deltas);
     } catch (error) {
       this.logger?.warn(
         {
@@ -340,7 +241,6 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
   }
 
   private async upsertDailyRollup(
-    client: UsageEventDatabaseClient,
     accountId: string,
     occurredAt: Date,
     deltas: {
@@ -355,52 +255,33 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
       vectorCount: number;
     },
   ): Promise<void> {
-    await queryRows(
-      client,
-      `INSERT INTO usage_daily_rollups (
-         account_id,
-         usage_date,
-         operation,
-         provider,
-         model,
-         input_tokens,
-         output_tokens,
-         total_tokens,
-         input_bytes,
-         output_bytes,
-         vector_count
-       )
-       VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-       ON CONFLICT (account_id, usage_date, operation, provider, model)
-       DO UPDATE SET
-         input_tokens = usage_daily_rollups.input_tokens + EXCLUDED.input_tokens,
-         output_tokens = usage_daily_rollups.output_tokens + EXCLUDED.output_tokens,
-         total_tokens = usage_daily_rollups.total_tokens + EXCLUDED.total_tokens,
-         input_bytes = usage_daily_rollups.input_bytes + EXCLUDED.input_bytes,
-         output_bytes = usage_daily_rollups.output_bytes + EXCLUDED.output_bytes,
-         vector_count = usage_daily_rollups.vector_count + EXCLUDED.vector_count`,
-      [
-        accountId,
-        toIsoDate(occurredAt),
-        deltas.operation,
-        deltas.provider,
-        deltas.model,
-        deltas.inputTokens,
-        deltas.outputTokens,
-        deltas.totalTokens,
-        deltas.inputBytes,
-        deltas.outputBytes,
-        deltas.vectorCount,
-      ],
-    );
+    await this.db
+      .insertInto("usage_daily_rollups")
+      .values({
+        account_id: accountId,
+        usage_date: toIsoDate(occurredAt),
+        operation: deltas.operation,
+        provider: deltas.provider,
+        model: deltas.model,
+        input_tokens: deltas.inputTokens,
+        output_tokens: deltas.outputTokens,
+        total_tokens: deltas.totalTokens,
+        input_bytes: deltas.inputBytes,
+        output_bytes: deltas.outputBytes,
+        vector_count: deltas.vectorCount,
+      })
+      .onConflict((oc) =>
+        oc
+          .columns(["account_id", "usage_date", "operation", "provider", "model"])
+          .doUpdateSet((eb) => ({
+            input_tokens: eb("usage_daily_rollups.input_tokens", "+", eb.ref("excluded.input_tokens")),
+            output_tokens: eb("usage_daily_rollups.output_tokens", "+", eb.ref("excluded.output_tokens")),
+            total_tokens: eb("usage_daily_rollups.total_tokens", "+", eb.ref("excluded.total_tokens")),
+            input_bytes: eb("usage_daily_rollups.input_bytes", "+", eb.ref("excluded.input_bytes")),
+            output_bytes: eb("usage_daily_rollups.output_bytes", "+", eb.ref("excluded.output_bytes")),
+            vector_count: eb("usage_daily_rollups.vector_count", "+", eb.ref("excluded.vector_count")),
+          })),
+      )
+      .execute();
   }
 }
-
-export const requireTransactionalUsageEventDatabase = (
-  database: UsageEventDatabaseClient & { withTransaction?: TransactionalUsageEventDatabase["withTransaction"] },
-): TransactionalUsageEventDatabase => {
-  if (!database.withTransaction) {
-    throw new Error("Durable usage event recording requires transactional database support");
-  }
-  return database as TransactionalUsageEventDatabase;
-};

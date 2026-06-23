@@ -24,7 +24,7 @@ export const createAnswerFeedbackApplicationModule = (
       path: "/api/v1/answer-feedback",
       createRouter(dependencies) {
         if (!state.service) {
-          state.service = new AnswerFeedbackService(dependencies.connectorDb);
+          state.service = new AnswerFeedbackService(dependencies.connectorDb.kysely);
         }
         return createAnswerFeedbackRoutes(dependencies, state.service);
       },

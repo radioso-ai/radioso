@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 
+import { sql } from "kysely";
+
+import { createEeKysely, type EeDb } from "../db/eeSchema.js";
 import type {
   IndexedStorageReservationInput,
   MonthlyIndexedContentReservationInput,
-  UsageLimitDatabaseClient,
   UsageLimitDatabasePort,
   UsageLimitPolicy,
   UsageLimitReservation,
@@ -48,15 +50,6 @@ export interface AccountUsageSummary {
 
 const DOCUMENT_RESERVATION_TTL_MS = 10 * 60 * 1000;
 const STORAGE_RESERVATION_TTL_MS = 10 * 60 * 1000;
-
-const queryRows = async <T = Record<string, unknown>>(
-  client: UsageLimitDatabaseClient,
-  text: string,
-  params: unknown[] = [],
-): Promise<T[]> => {
-  const result = await client.query<T>(text, params);
-  return Array.isArray(result) ? result : result.rows;
-};
 
 const toIsoDate = (date: Date): string => date.toISOString().slice(0, 10);
 
@@ -106,29 +99,28 @@ const mapProfile = (row: {
   updatedAt: row.updated_at.toISOString(),
 });
 
-type ProfileRow = Parameters<typeof mapProfile>[0];
-
-const PROFILE_COLUMNS = `
-  key,
-  display_name,
-  monthly_answer_limit,
-  stored_document_limit,
-  stored_indexed_byte_limit,
-  monthly_indexed_byte_limit,
-  created_at,
-  updated_at
-`;
-
 export class EnterpriseUsageLimitService implements UsageLimitPolicy {
-  constructor(private readonly database: UsageLimitDatabasePort) {}
+  private readonly db: EeDb;
+
+  constructor(private readonly database: UsageLimitDatabasePort) {
+    this.db = createEeKysely(this.database.pool);
+  }
 
   async listProfiles(): Promise<UsageLimitProfile[]> {
-    const rows = await queryRows<ProfileRow>(
-      this.database,
-      `SELECT ${PROFILE_COLUMNS}
-       FROM ee_usage_limit_profiles
-       ORDER BY key ASC`,
-    );
+    const rows = await this.db
+      .selectFrom("ee_usage_limit_profiles")
+      .select([
+        "key",
+        "display_name",
+        "monthly_answer_limit",
+        "stored_document_limit",
+        "stored_indexed_byte_limit",
+        "monthly_indexed_byte_limit",
+        "created_at",
+        "updated_at",
+      ])
+      .orderBy("key", "asc")
+      .execute();
 
     return rows.map(mapProfile);
   }
@@ -141,73 +133,81 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
     storedIndexedByteLimit?: number | null;
     monthlyIndexedByteLimit?: number | null;
   }): Promise<UsageLimitProfile> {
-    const [row] = await queryRows<ProfileRow>(
-      this.database,
-      `INSERT INTO ee_usage_limit_profiles (
-         key,
-         display_name,
-         monthly_answer_limit,
-         stored_document_limit,
-         stored_indexed_byte_limit,
-         monthly_indexed_byte_limit
-       )
-       VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (key)
-       DO UPDATE SET
-         display_name = EXCLUDED.display_name,
-         monthly_answer_limit = EXCLUDED.monthly_answer_limit,
-         stored_document_limit = EXCLUDED.stored_document_limit,
-         stored_indexed_byte_limit = EXCLUDED.stored_indexed_byte_limit,
-         monthly_indexed_byte_limit = EXCLUDED.monthly_indexed_byte_limit,
-         updated_at = NOW()
-       RETURNING ${PROFILE_COLUMNS}`,
-      [
-        input.key,
-        input.displayName,
-        input.monthlyAnswerLimit,
-        input.storedDocumentLimit,
-        input.storedIndexedByteLimit ?? null,
-        input.monthlyIndexedByteLimit ?? null,
-      ],
-    );
+    const row = await this.db
+      .insertInto("ee_usage_limit_profiles")
+      .values({
+        key: input.key,
+        display_name: input.displayName,
+        monthly_answer_limit: input.monthlyAnswerLimit,
+        stored_document_limit: input.storedDocumentLimit,
+        stored_indexed_byte_limit:
+          input.storedIndexedByteLimit === null || input.storedIndexedByteLimit === undefined
+            ? null
+            : String(input.storedIndexedByteLimit),
+        monthly_indexed_byte_limit:
+          input.monthlyIndexedByteLimit === null || input.monthlyIndexedByteLimit === undefined
+            ? null
+            : String(input.monthlyIndexedByteLimit),
+      })
+      .onConflict((oc) =>
+        oc.column("key").doUpdateSet({
+          display_name: (eb) => eb.ref("excluded.display_name"),
+          monthly_answer_limit: (eb) => eb.ref("excluded.monthly_answer_limit"),
+          stored_document_limit: (eb) => eb.ref("excluded.stored_document_limit"),
+          stored_indexed_byte_limit: (eb) => eb.ref("excluded.stored_indexed_byte_limit"),
+          monthly_indexed_byte_limit: (eb) => eb.ref("excluded.monthly_indexed_byte_limit"),
+          updated_at: sql<Date>`now()`,
+        }),
+      )
+      .returning([
+        "key",
+        "display_name",
+        "monthly_answer_limit",
+        "stored_document_limit",
+        "stored_indexed_byte_limit",
+        "monthly_indexed_byte_limit",
+        "created_at",
+        "updated_at",
+      ])
+      .executeTakeFirstOrThrow();
 
     return mapProfile(row);
   }
 
   async assignProfile(accountId: string, profileKey: string | null): Promise<AccountUsageSummary> {
     if (profileKey === null) {
-      await queryRows(
-        this.database,
-        `DELETE FROM ee_usage_limit_account_assignments WHERE account_id = $1`,
-        [accountId],
-      );
+      await this.db
+        .deleteFrom("ee_usage_limit_account_assignments")
+        .where("account_id", "=", accountId)
+        .execute();
       return this.getAccountUsage(accountId);
     }
 
-    await queryRows(
-      this.database,
-      `INSERT INTO ee_usage_limit_account_assignments (account_id, profile_key)
-       VALUES ($1, $2)
-       ON CONFLICT (account_id)
-       DO UPDATE SET profile_key = EXCLUDED.profile_key, updated_at = NOW()`,
-      [accountId, profileKey],
-    );
+    await this.db
+      .insertInto("ee_usage_limit_account_assignments")
+      .values({ account_id: accountId, profile_key: profileKey })
+      .onConflict((oc) =>
+        oc.column("account_id").doUpdateSet({
+          profile_key: (eb) => eb.ref("excluded.profile_key"),
+          updated_at: sql<Date>`now()`,
+        }),
+      )
+      .execute();
 
     return this.getAccountUsage(accountId);
   }
 
   async getAccountUsage(accountId: string, periodStart = currentPeriodStart()): Promise<AccountUsageSummary> {
     const profile = await this.findProfileForAccount(accountId);
-    const [answerCounter] = await queryRows<{ used_count: number }>(
-      this.database,
-      `SELECT used_count
-       FROM ee_usage_limit_answer_counters
-       WHERE account_id = $1 AND period_start = $2::date`,
-      [accountId, periodStart],
-    );
+    const answerCounter = await this.db
+      .selectFrom("ee_usage_limit_answer_counters")
+      .select("used_count")
+      .where("account_id", "=", accountId)
+      .where("period_start", "=", sql<string>`${periodStart}::date`)
+      .executeTakeFirst();
     const persistedAnswerCount = await this.countPersistedAssistantAnswers(accountId, periodStart);
-    const storedDocumentCount = await this.countStoredDocuments(accountId, this.database, false);
-    const storedIndexedBytes = await this.sumStoredIndexedBytes(accountId, this.database, false);
+    const storedDocumentCount = await this.countStoredDocuments(accountId, this.db, false);
+    const storedIndexedBytes = await this.sumStoredIndexedBytes(accountId, this.db, false);
     const monthlyIndexedBytes = await this.readMonthlyIndexedBytes(accountId, periodStart);
 
     return {
@@ -253,34 +253,35 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
     }
 
     const periodStart = currentPeriodStart();
-    await queryRows(
-      this.database,
-      `INSERT INTO ee_usage_limit_answer_counters (account_id, period_start, used_count)
-       VALUES ($1, $2::date, 0)
-       ON CONFLICT (account_id, period_start) DO NOTHING`,
-      [accountId, periodStart],
-    );
+    await this.db
+      .insertInto("ee_usage_limit_answer_counters")
+      .values({
+        account_id: accountId,
+        period_start: sql<string>`${periodStart}::date`,
+        used_count: 0,
+      })
+      .onConflict((oc) => oc.columns(["account_id", "period_start"]).doNothing())
+      .execute();
 
-    const rows = await queryRows<{ used_count: number }>(
-      this.database,
-      `UPDATE ee_usage_limit_answer_counters
-       SET used_count = used_count + 1,
-           updated_at = NOW()
-       WHERE account_id = $1
-         AND period_start = $2::date
-         AND used_count < $3
-       RETURNING used_count`,
-      [accountId, periodStart, limit],
-    );
+    const rows = await this.db
+      .updateTable("ee_usage_limit_answer_counters")
+      .set({
+        used_count: sql<number>`used_count + 1`,
+        updated_at: sql<Date>`now()`,
+      })
+      .where("account_id", "=", accountId)
+      .where("period_start", "=", sql<string>`${periodStart}::date`)
+      .where("used_count", "<", limit)
+      .returning("used_count")
+      .execute();
 
     if (rows.length === 0) {
-      const [counter] = await queryRows<{ used_count: number }>(
-        this.database,
-        `SELECT used_count
-         FROM ee_usage_limit_answer_counters
-         WHERE account_id = $1 AND period_start = $2::date`,
-        [accountId, periodStart],
-      );
+      const counter = await this.db
+        .selectFrom("ee_usage_limit_answer_counters")
+        .select("used_count")
+        .where("account_id", "=", accountId)
+        .where("period_start", "=", sql<string>`${periodStart}::date`)
+        .executeTakeFirst();
       throw new UsageLimitExceededError({
         profileKey: profile.key,
         resource: "monthly_answers",
@@ -291,17 +292,19 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
       });
     }
 
+    const db = this.db;
     return {
       async commit() {},
       release: async () => {
-        await queryRows(
-          this.database,
-          `UPDATE ee_usage_limit_answer_counters
-           SET used_count = GREATEST(used_count - 1, 0),
-               updated_at = NOW()
-           WHERE account_id = $1 AND period_start = $2::date`,
-          [accountId, periodStart],
-        );
+        await db
+          .updateTable("ee_usage_limit_answer_counters")
+          .set({
+            used_count: sql<number>`greatest(used_count - 1, 0)`,
+            updated_at: sql<Date>`now()`,
+          })
+          .where("account_id", "=", accountId)
+          .where("period_start", "=", sql<string>`${periodStart}::date`)
+          .execute();
       },
     };
   }
@@ -324,36 +327,38 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
       : null;
 
     const periodStart = currentPeriodStart();
-    await queryRows(
-      this.database,
-      `INSERT INTO ee_usage_limit_monthly_indexed_byte_counters (account_id, period_start, used_bytes)
-       VALUES ($1, $2::date, 0)
-       ON CONFLICT (account_id, period_start) DO NOTHING`,
-      [accountId, periodStart],
-    );
+    await this.db
+      .insertInto("ee_usage_limit_monthly_indexed_byte_counters")
+      .values({
+        account_id: accountId,
+        period_start: sql<string>`${periodStart}::date`,
+        used_bytes: "0",
+      })
+      .onConflict((oc) => oc.columns(["account_id", "period_start"]).doNothing())
+      .execute();
 
     const rows = enforcement
-      ? await queryRows<{ used_bytes: string | number }>(
-          this.database,
-          `UPDATE ee_usage_limit_monthly_indexed_byte_counters
-           SET used_bytes = used_bytes + $3,
-               updated_at = NOW()
-           WHERE account_id = $1
-             AND period_start = $2::date
-             AND used_bytes + $3 <= $4
-           RETURNING used_bytes`,
-          [accountId, periodStart, requestedBytes, enforcement.limit],
-        )
-      : await queryRows<{ used_bytes: string | number }>(
-          this.database,
-          `UPDATE ee_usage_limit_monthly_indexed_byte_counters
-           SET used_bytes = used_bytes + $3,
-               updated_at = NOW()
-           WHERE account_id = $1
-             AND period_start = $2::date
-           RETURNING used_bytes`,
-          [accountId, periodStart, requestedBytes],
-        );
+      ? await this.db
+          .updateTable("ee_usage_limit_monthly_indexed_byte_counters")
+          .set({
+            used_bytes: sql<string>`used_bytes + ${requestedBytes}`,
+            updated_at: sql<Date>`now()`,
+          })
+          .where("account_id", "=", accountId)
+          .where("period_start", "=", sql<string>`${periodStart}::date`)
+          .where(sql<boolean>`used_bytes + ${requestedBytes} <= ${enforcement.limit}`)
+          .returning("used_bytes")
+          .execute()
+      : await this.db
+          .updateTable("ee_usage_limit_monthly_indexed_byte_counters")
+          .set({
+            used_bytes: sql<string>`used_bytes + ${requestedBytes}`,
+            updated_at: sql<Date>`now()`,
+          })
+          .where("account_id", "=", accountId)
+          .where("period_start", "=", sql<string>`${periodStart}::date`)
+          .returning("used_bytes")
+          .execute();
 
     if (enforcement && rows.length === 0) {
       const used = await this.readMonthlyIndexedBytes(accountId, periodStart);
@@ -367,17 +372,19 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
       });
     }
 
+    const db = this.db;
     return {
       async commit() {},
       release: async () => {
-        await queryRows(
-          this.database,
-          `UPDATE ee_usage_limit_monthly_indexed_byte_counters
-           SET used_bytes = GREATEST(used_bytes - $3, 0),
-               updated_at = NOW()
-           WHERE account_id = $1 AND period_start = $2::date`,
-          [accountId, periodStart, requestedBytes],
-        );
+        await db
+          .updateTable("ee_usage_limit_monthly_indexed_byte_counters")
+          .set({
+            used_bytes: sql<string>`greatest(used_bytes - ${requestedBytes}, 0)`,
+            updated_at: sql<Date>`now()`,
+          })
+          .where("account_id", "=", accountId)
+          .where("period_start", "=", sql<string>`${periodStart}::date`)
+          .execute();
       },
     };
   }
@@ -400,15 +407,14 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
     }
 
     const reservationId = randomUUID();
-    await this.withTransaction(async (client) => {
-      await this.lockAccountUsage(client, accountId);
-      await queryRows(
-        client,
-        `DELETE FROM ee_usage_limit_storage_reservations
-         WHERE account_id = $1 AND expires_at <= NOW()`,
-        [accountId],
-      );
-      const used = await this.sumStoredIndexedBytes(accountId, client, true);
+    await this.db.transaction().execute(async (trx) => {
+      await this.lockAccountUsage(trx, accountId);
+      await trx
+        .deleteFrom("ee_usage_limit_storage_reservations")
+        .where("account_id", "=", accountId)
+        .where("expires_at", "<=", sql<Date>`now()`)
+        .execute();
+      const used = await this.sumStoredIndexedBytes(accountId, trx, true);
       if (used + requestedBytes > limit) {
         throw new UsageLimitExceededError({
           profileKey: profile.key,
@@ -418,24 +424,16 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
         });
       }
 
-      await queryRows(
-        client,
-        `INSERT INTO ee_usage_limit_storage_reservations (
-           id,
-           account_id,
-           workspace_id,
-           bytes_reserved,
-           expires_at
-         )
-         VALUES ($1, $2, $3, $4, $5::timestamptz)`,
-        [
-          reservationId,
-          accountId,
-          input.workspaceId,
-          requestedBytes,
-          new Date(Date.now() + STORAGE_RESERVATION_TTL_MS).toISOString(),
-        ],
-      );
+      await trx
+        .insertInto("ee_usage_limit_storage_reservations")
+        .values({
+          id: reservationId,
+          account_id: accountId,
+          workspace_id: input.workspaceId,
+          bytes_reserved: String(requestedBytes),
+          expires_at: new Date(Date.now() + STORAGE_RESERVATION_TTL_MS),
+        })
+        .execute();
     });
 
     return {
@@ -470,15 +468,14 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
     }
 
     const reservationId = randomUUID();
-    await this.withTransaction(async (client) => {
-      await this.lockAccountUsage(client, accountId);
-      await queryRows(
-        client,
-        `DELETE FROM ee_usage_limit_document_reservations
-         WHERE account_id = $1 AND expires_at <= NOW()`,
-        [accountId],
-      );
-      const used = await this.countStoredDocuments(accountId, client, true);
+    await this.db.transaction().execute(async (trx) => {
+      await this.lockAccountUsage(trx, accountId);
+      await trx
+        .deleteFrom("ee_usage_limit_document_reservations")
+        .where("account_id", "=", accountId)
+        .where("expires_at", "<=", sql<Date>`now()`)
+        .execute();
+      const used = await this.countStoredDocuments(accountId, trx, true);
       if (used >= limit) {
         throw new UsageLimitExceededError({
           profileKey: profile.key,
@@ -488,22 +485,15 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
         });
       }
 
-      await queryRows(
-        client,
-        `INSERT INTO ee_usage_limit_document_reservations (
-           id,
-           account_id,
-           workspace_id,
-           expires_at
-         )
-         VALUES ($1, $2, $3, $4::timestamptz)`,
-        [
-          reservationId,
-          accountId,
-          input.workspaceId,
-          new Date(Date.now() + DOCUMENT_RESERVATION_TTL_MS).toISOString(),
-        ],
-      );
+      await trx
+        .insertInto("ee_usage_limit_document_reservations")
+        .values({
+          id: reservationId,
+          account_id: accountId,
+          workspace_id: input.workspaceId,
+          expires_at: new Date(Date.now() + DOCUMENT_RESERVATION_TTL_MS),
+        })
+        .execute();
     });
 
     return {
@@ -516,20 +506,8 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
     };
   }
 
-  private async withTransaction<T>(callback: (client: UsageLimitDatabaseClient) => Promise<T>): Promise<T> {
-    if (!this.database.withTransaction) {
-      throw new Error("Usage limit enforcement requires transactional database support");
-    }
-
-    return this.database.withTransaction(callback);
-  }
-
-  private async lockAccountUsage(client: UsageLimitDatabaseClient, accountId: string): Promise<void> {
-    await queryRows(
-      client,
-      `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
-      [accountId],
-    );
+  private async lockAccountUsage(db: EeDb, accountId: string): Promise<void> {
+    await sql`SELECT pg_advisory_xact_lock(hashtextextended(${accountId}, 0))`.execute(db);
   }
 
   private async resolveAccountId(input: {
@@ -540,124 +518,113 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
       return input.accountId;
     }
 
-    const [workspace] = await queryRows<{ account_id: string }>(
-      this.database,
-      `SELECT account_id FROM workspaces WHERE id = $1`,
-      [input.workspaceId],
-    );
+    const workspace = await this.db
+      .selectFrom("workspaces")
+      .select("account_id")
+      .where("id", "=", input.workspaceId)
+      .executeTakeFirst();
     return workspace?.account_id ?? null;
   }
 
   private async findProfileForAccount(accountId: string): Promise<UsageLimitProfile | null> {
-    const [row] = await queryRows<ProfileRow>(
-      this.database,
-      `SELECT
-         p.key,
-         p.display_name,
-         p.monthly_answer_limit,
-         p.stored_document_limit,
-         p.stored_indexed_byte_limit,
-         p.monthly_indexed_byte_limit,
-         p.created_at,
-         p.updated_at
-       FROM ee_usage_limit_account_assignments a
-       JOIN ee_usage_limit_profiles p ON p.key = a.profile_key
-       WHERE a.account_id = $1`,
-      [accountId],
-    );
+    const row = await this.db
+      .selectFrom("ee_usage_limit_account_assignments as a")
+      .innerJoin("ee_usage_limit_profiles as p", "p.key", "a.profile_key")
+      .select([
+        "p.key",
+        "p.display_name",
+        "p.monthly_answer_limit",
+        "p.stored_document_limit",
+        "p.stored_indexed_byte_limit",
+        "p.monthly_indexed_byte_limit",
+        "p.created_at",
+        "p.updated_at",
+      ])
+      .where("a.account_id", "=", accountId)
+      .executeTakeFirst();
 
     return row ? mapProfile(row) : null;
   }
 
   private async sumStoredIndexedBytes(
     accountId: string,
-    client: UsageLimitDatabaseClient,
+    db: EeDb,
     includeReservations: boolean,
   ): Promise<number> {
-    const [row] = await queryRows<{ bytes: string | null }>(
-      client,
-      `SELECT COALESCE(SUM(d.content_size_bytes), 0)::text AS bytes
-       FROM documents d
-       JOIN workspaces w ON w.id = d.workspace_id
-       WHERE w.account_id = $1`,
-      [accountId],
-    );
+    const row = await db
+      .selectFrom("documents as d")
+      .innerJoin("workspaces as w", "w.id", "d.workspace_id")
+      .select(sql<string>`coalesce(sum(d.content_size_bytes), 0)::text`.as("bytes"))
+      .where("w.account_id", "=", accountId)
+      .executeTakeFirst();
     const documentBytes = Number(row?.bytes ?? "0");
     if (!includeReservations) {
       return documentBytes;
     }
 
-    const [reservations] = await queryRows<{ bytes: string | null }>(
-      client,
-      `SELECT COALESCE(SUM(bytes_reserved), 0)::text AS bytes
-       FROM ee_usage_limit_storage_reservations
-       WHERE account_id = $1 AND expires_at > NOW()`,
-      [accountId],
-    );
+    const reservations = await db
+      .selectFrom("ee_usage_limit_storage_reservations")
+      .select(sql<string>`coalesce(sum(bytes_reserved), 0)::text`.as("bytes"))
+      .where("account_id", "=", accountId)
+      .where("expires_at", ">", sql<Date>`now()`)
+      .executeTakeFirst();
 
     return documentBytes + Number(reservations?.bytes ?? "0");
   }
 
   private async readMonthlyIndexedBytes(accountId: string, periodStart: string): Promise<number> {
-    const [row] = await queryRows<{ used_bytes: string | number }>(
-      this.database,
-      `SELECT used_bytes
-       FROM ee_usage_limit_monthly_indexed_byte_counters
-       WHERE account_id = $1 AND period_start = $2::date`,
-      [accountId, periodStart],
-    );
+    const row = await this.db
+      .selectFrom("ee_usage_limit_monthly_indexed_byte_counters")
+      .select("used_bytes")
+      .where("account_id", "=", accountId)
+      .where("period_start", "=", sql<string>`${periodStart}::date`)
+      .executeTakeFirst();
     return Number(row?.used_bytes ?? 0);
   }
 
   private async releaseStorageReservation(reservationId: string): Promise<void> {
-    await queryRows(
-      this.database,
-      `DELETE FROM ee_usage_limit_storage_reservations WHERE id = $1`,
-      [reservationId],
-    );
+    await this.db
+      .deleteFrom("ee_usage_limit_storage_reservations")
+      .where("id", "=", reservationId)
+      .execute();
   }
 
   private async countPersistedAssistantAnswers(accountId: string, periodStart: string): Promise<number> {
-    const [answers] = await queryRows<{ count: string }>(
-      this.database,
-      `SELECT COUNT(*)::text AS count
-       FROM messages m
-       JOIN workspaces w ON w.id = m.workspace_id
-       WHERE w.account_id = $1
-         AND m.role = 'assistant'
-         AND m.created_at >= $2::date
-         AND m.created_at < $3::timestamptz`,
-      [accountId, periodStart, nextPeriodStart(periodStart)],
-    );
+    const answers = await this.db
+      .selectFrom("messages as m")
+      .innerJoin("workspaces as w", "w.id", "m.workspace_id")
+      .select(sql<string>`count(*)::text`.as("count"))
+      .where("w.account_id", "=", accountId)
+      .where("m.role", "=", "assistant")
+      .where("m.created_at", ">=", sql<Date>`${periodStart}::date`)
+      .where("m.created_at", "<", sql<Date>`${nextPeriodStart(periodStart)}::timestamptz`)
+      .executeTakeFirst();
 
     return Number(answers?.count ?? "0");
   }
 
   private async countStoredDocuments(
     accountId: string,
-    client: UsageLimitDatabaseClient,
+    db: EeDb,
     includeReservations: boolean,
   ): Promise<number> {
-    const [documents] = await queryRows<{ count: string }>(
-      client,
-      `SELECT COUNT(*)::text AS count
-       FROM documents d
-       JOIN workspaces w ON w.id = d.workspace_id
-       WHERE w.account_id = $1`,
-      [accountId],
-    );
+    const documents = await db
+      .selectFrom("documents as d")
+      .innerJoin("workspaces as w", "w.id", "d.workspace_id")
+      .select(sql<string>`count(*)::text`.as("count"))
+      .where("w.account_id", "=", accountId)
+      .executeTakeFirst();
     const documentCount = Number(documents?.count ?? "0");
     if (!includeReservations) {
       return documentCount;
     }
 
-    const [reservations] = await queryRows<{ count: string }>(
-      client,
-      `SELECT COUNT(*)::text AS count
-       FROM ee_usage_limit_document_reservations
-       WHERE account_id = $1 AND expires_at > NOW()`,
-      [accountId],
-    );
+    const reservations = await db
+      .selectFrom("ee_usage_limit_document_reservations")
+      .select(sql<string>`count(*)::text`.as("count"))
+      .where("account_id", "=", accountId)
+      .where("expires_at", ">", sql<Date>`now()`)
+      .executeTakeFirst();
 
     return documentCount + Number(reservations?.count ?? "0");
   }
@@ -671,26 +638,23 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
       return false;
     }
 
-    const rows = await queryRows<{ id: string }>(
-      this.database,
-      `SELECT id
-       FROM documents
-       WHERE workspace_id = $1
-         AND external_document_id = $2
-         AND source_kind = 'inline_text'
-       LIMIT 1`,
-      [input.workspaceId, input.externalDocumentId],
-    );
+    const row = await this.db
+      .selectFrom("documents")
+      .select("id")
+      .where("workspace_id", "=", input.workspaceId)
+      .where("external_document_id", "=", input.externalDocumentId)
+      .where("source_kind", "=", "inline_text")
+      .limit(1)
+      .executeTakeFirst();
 
-    return rows.length > 0;
+    return row !== undefined;
   }
 
   private async releaseDocumentReservation(reservationId: string): Promise<void> {
-    await queryRows(
-      this.database,
-      `DELETE FROM ee_usage_limit_document_reservations WHERE id = $1`,
-      [reservationId],
-    );
+    await this.db
+      .deleteFrom("ee_usage_limit_document_reservations")
+      .where("id", "=", reservationId)
+      .execute();
   }
 }
 

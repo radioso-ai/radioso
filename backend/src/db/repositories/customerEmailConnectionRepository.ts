@@ -6,7 +6,8 @@ import {
   IntegrationConnectionRepository,
   type IntegrationConnectionRecord,
 } from "../../modules/integrationConnections/public.js";
-import type { Database, DatabaseExecutor } from "../../shared/infra/database.js";
+import { castText, tableExists } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface CustomerEmailConnectionRecord {
   id: string;
@@ -108,9 +109,11 @@ export interface CustomerEmailConnectionRepositoryPort {
 
 export class CustomerEmailConnectionRepository implements CustomerEmailConnectionRepositoryPort {
   private readonly integrationConnections: IntegrationConnectionRepository;
+  private readonly db: Db;
 
-  constructor(private readonly database: Database | DatabaseExecutor) {
-    this.integrationConnections = new IntegrationConnectionRepository(database);
+  constructor(db: Db) {
+    this.integrationConnections = new IntegrationConnectionRepository(db);
+    this.db = db;
   }
 
   async create(input: CreateCustomerEmailConnectionInput): Promise<CustomerEmailConnectionRecord> {
@@ -177,21 +180,17 @@ export class CustomerEmailConnectionRepository implements CustomerEmailConnectio
   async countSkillReferences(workspaceId: string, id: string): Promise<number> {
     // Skill tables are absent in a few focused repository schemas, so keep this
     // guard tolerant while enforcing references through the shared skill spine.
-    const [table] = await this.database.query<{ to_regclass: string | null }>(
-      "SELECT to_regclass('agent_skills')",
-    );
-    if (!table?.to_regclass) {
+    if (!(await tableExists(this.db, "agent_skills"))) {
       return 0;
     }
-    const [row] = await this.database.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count
-       FROM agent_skills s
-       WHERE s.kind = 'customer_email'
-         AND s.workspace_id = $1
-         AND s.target_type = 'customer_email_connection'
-         AND s.target_id = $2`,
-      [workspaceId, id],
-    );
+    const row = await this.db
+      .selectFrom("agent_skills as s")
+      .select((eb) => castText(eb.fn.countAll()).as("count"))
+      .where("s.kind", "=", "customer_email")
+      .where("s.workspace_id", "=", workspaceId)
+      .where("s.target_type", "=", "customer_email_connection")
+      .where("s.target_id", "=", id)
+      .executeTakeFirst();
     return Number(row?.count ?? 0);
   }
 

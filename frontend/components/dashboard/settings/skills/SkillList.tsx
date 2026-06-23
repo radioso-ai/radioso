@@ -10,6 +10,7 @@ import {
   Pencil,
   Trash2,
   Webhook,
+  Wrench,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -57,6 +58,11 @@ const capabilityIcons: Record<AgentSkillCapabilityId, { icon: LucideIcon; tone: 
     icon: BellRing,
     tone: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/50 dark:text-amber-300',
   },
+}
+
+const defaultCapabilityIcon = {
+  icon: Wrench,
+  tone: 'border-border bg-background text-muted-foreground',
 }
 
 const targetLabel = (skill: AgentSkill, capabilities: readonly SkillCapabilityDescriptor[]) => {
@@ -116,7 +122,7 @@ function CapabilityPicker({
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {visibleCapabilities.map((capability) => {
             const enabled = capability.available
-            const icon = capabilityIcons[capability.id]
+            const icon = capabilityIcons[capability.id] ?? defaultCapabilityIcon
             const CapabilityIcon = icon.icon
             return (
               <button

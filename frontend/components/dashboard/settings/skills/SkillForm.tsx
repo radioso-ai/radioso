@@ -228,6 +228,7 @@ export function SkillForm({
   }, [capabilities, capabilityId, editingSkill])
   const [draft, setDraft] = useState<SkillFormDraft>(() => createInitialSkillDraft(scopedCapabilities, editingSkill, skills))
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [localError, setLocalError] = useState<string | null>(null)
   const capability = useMemo(
     () => scopedCapabilities.find((item) => item.id === draft.capabilityId) ?? null,
     [scopedCapabilities, draft.capabilityId],
@@ -252,14 +253,17 @@ export function SkillForm({
     queueMicrotask(() => {
       setDraft(createInitialSkillDraft(scopedCapabilities, editingSkill, skills))
       setAdvancedOpen(false)
+      setLocalError(null)
     })
   }, [editingSkill, open, scopedCapabilities, skills])
 
   const updateDraft = (patch: Partial<SkillFormDraft>) => {
+    setLocalError(null)
     setDraft((current) => ({ ...current, ...patch }))
   }
 
   const updateInput = (name: string, patch: Partial<SkillFormDraft['inputDrafts'][string]>) => {
+    setLocalError(null)
     setDraft((current) => ({
       ...current,
       inputDrafts: {
@@ -273,6 +277,7 @@ export function SkillForm({
   }
 
   const updateSetting = (key: string, value: SkillSettingDraftValue) => {
+    setLocalError(null)
     setDraft((current) => ({
       ...current,
       settingDrafts: {
@@ -283,6 +288,7 @@ export function SkillForm({
   }
 
   const toggleOutcome = (outcome: string, enabled: boolean) => {
+    setLocalError(null)
     setDraft((current) => {
       const currentOutcomes = new Set(current.selectedOutcomes)
       if (enabled) {
@@ -298,8 +304,18 @@ export function SkillForm({
     if (!capability || !canSubmit) {
       return
     }
-    await onSubmit(buildAgentSkillInput(capability, draft, fields))
+    let input: AgentSkillCreateInput
+    try {
+      input = buildAgentSkillInput(capability, draft, fields)
+    } catch (buildError) {
+      setLocalError(buildError instanceof Error ? buildError.message : 'Invalid skill configuration.')
+      return
+    }
+    setLocalError(null)
+    await onSubmit(input)
   }
+
+  const displayedError = localError ?? error
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -312,10 +328,10 @@ export function SkillForm({
         </DialogHeader>
 
         <div className="space-y-5">
-          {error ? (
+          {displayedError ? (
             <p className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-              {error}
+              {displayedError}
             </p>
           ) : null}
 

@@ -415,6 +415,25 @@ const toOutputModes = (agent: NormalizedAgentInput): Record<string, unknown> => 
 
 const toSkillSettings = (agent: NormalizedAgentInput): Record<string, unknown> => agent.skillSettings;
 
+const toRetrieveSkillSourceScope = (
+  sourceScope: NormalizedAgentInput["sourceScope"],
+): "all" | { sourceIds: string[] } =>
+  sourceScope.mode === "selected"
+    ? { sourceIds: sourceScope.sourceIds }
+    : "all";
+
+const toDefaultRetrieveSkillConfig = (agent: NormalizedAgentInput): Record<string, unknown> => {
+  const retrievalSettings = asRecord(agent.skillSettings["retrieval.answer"]);
+  const { customInstruction, similarityThreshold: _similarityThreshold, ...settings } = retrievalSettings;
+  return {
+    ...settings,
+    ...(typeof customInstruction === "string" ? { instruction: customInstruction } : {}),
+    sourceScope: toRetrieveSkillSourceScope(agent.sourceScope),
+    suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
+    exposedInputs: { query: true },
+  };
+};
+
 const persistableSourceIds = (sourceScope: NormalizedAgentInput["sourceScope"]): Array<string | null> =>
   sourceScope.mode === "selected"
     ? sourceScope.sourceIds.map((sourceId) => sourceId === MANUALLY_ADDED_DOCUMENTS_SOURCE_ID ? null : sourceId)
@@ -570,6 +589,7 @@ export class AgentRepository implements AgentRepositoryPort {
         RETURNING ${agentColumns}
       `.execute(trx);
       await this.replaceSourceScope(trx, agentId, normalized.sourceScope);
+      const syncedDefaultRetrieveSkill = await this.syncDefaultRetrieveSkill(trx, agentId, normalized);
       const row = result.rows[0];
       if (!row) {
         throw new Error("Expected created agent");
@@ -577,6 +597,8 @@ export class AgentRepository implements AgentRepositoryPort {
       return mapAgent({
         ...row,
         source_ids: normalized.sourceScope.mode === "selected" ? normalized.sourceScope.sourceIds : [],
+        default_retrieve_enabled: syncedDefaultRetrieveSkill ? normalized.retrievalEnabled : row.default_retrieve_enabled,
+        default_retrieve_config: syncedDefaultRetrieveSkill ? toDefaultRetrieveSkillConfig(normalized) : row.default_retrieve_config,
       }, this.surfaceExtensions, this.skillSettings);
     });
   }
@@ -668,9 +690,12 @@ export class AgentRepository implements AgentRepositoryPort {
         throw conflict("Agent was updated by another writer; reload before saving again");
       }
       await this.replaceSourceScope(trx, agentId, normalized.sourceScope);
+      const syncedDefaultRetrieveSkill = await this.syncDefaultRetrieveSkill(trx, agentId, normalized);
       return mapAgent({
         ...row,
         source_ids: normalized.sourceScope.mode === "selected" ? normalized.sourceScope.sourceIds : [],
+        default_retrieve_enabled: syncedDefaultRetrieveSkill ? normalized.retrievalEnabled : row.default_retrieve_enabled,
+        default_retrieve_config: syncedDefaultRetrieveSkill ? toDefaultRetrieveSkillConfig(normalized) : row.default_retrieve_config,
       }, this.surfaceExtensions, this.skillSettings);
     });
   }
@@ -920,5 +945,28 @@ export class AgentRepository implements AgentRepositoryPort {
       SELECT ${agentId}::uuid, UNNEST(${sql.val(sourceIds)}::uuid[])
       ON CONFLICT DO NOTHING
     `.execute(db);
+  }
+
+  private async syncDefaultRetrieveSkill(
+    db: Db,
+    agentId: string,
+    agent: NormalizedAgentInput,
+  ): Promise<boolean> {
+    const config = toDefaultRetrieveSkillConfig(agent);
+    const row = await db
+      .updateTable("agent_skills")
+      .set({
+        enabled: agent.retrievalEnabled,
+        // Replace the projected retrieve config instead of shallow-merging so
+        // sourceScope and renamed instruction fields cannot retain stale values.
+        config: toJsonb(config),
+        updated_at: currentTimestamp(),
+      })
+      .where("agent_id", "=", agentId)
+      .where("kind", "=", "retrieve")
+      .where("invocation_mode", "=", "default_answer")
+      .returning("id")
+      .executeTakeFirst();
+    return Boolean(row);
   }
 }

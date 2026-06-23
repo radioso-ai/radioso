@@ -81,6 +81,10 @@ import {
 } from "../../modules/customerEmail/public.js";
 import { WebhookSkillDefinitionService } from "../../modules/webhookSkills/public.js";
 import { SlackSkillDefinitionService } from "../../modules/slackSkills/public.js";
+import { ActionRequestRepository } from "../../db/repositories/actionRequestRepository.js";
+import { CustomerReplyDeliveryDispatcher } from "../../modules/customerReplyDelivery/public.js";
+import { OperatorReplyService } from "../../modules/handoff/public.js";
+import { SlackCustomerReplyDeliverer } from "../../modules/slack/public.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -495,6 +499,19 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     chat.workbenchReplayRunner,
     logger,
   );
+  const customerReplyDelivery = new CustomerReplyDeliveryDispatcher({
+    slack: new SlackCustomerReplyDeliverer({
+      installations: repositories.slackInstallationRepository,
+      outbox: new ActionRequestRepository(infrastructure.database.kysely),
+    }),
+  });
+  const operatorReplyService = new OperatorReplyService({
+    conversationRepository: repositories.conversationRepository,
+    messageRepository: repositories.messageRepository,
+    auditService: infrastructure.auditService,
+    publicConversationEventBus,
+    customerReplyDelivery,
+  });
 
   return {
     env,
@@ -555,6 +572,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentStorage: documents.documentStorage,
     chatService: chat.chatService,
     approvalDecisionService: chat.approvalDecisionService,
+    operatorReplyService,
     workbenchReplayRunner: chat.workbenchReplayRunner,
     chatBootstrapService: chat.chatBootstrapService,
     chatHistoryService: chat.chatHistoryService,

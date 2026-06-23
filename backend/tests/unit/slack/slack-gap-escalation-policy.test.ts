@@ -123,6 +123,12 @@ describe("Slack gap escalation policy", () => {
       agentId: "66666666-6666-6666-6666-666666666666",
       workspaceId: installation.workspaceId,
       sourceChannel: "slack",
+      channelContext: {
+        provider: "slack",
+        team: { id: "T1", name: "Acme" },
+        channel: { id: "D1", type: "im" },
+        user: { id: "U1" },
+      },
     }));
     expect(outbox.enqueue).toHaveBeenCalledWith(expect.objectContaining({
       type: "slack.post",
@@ -239,6 +245,13 @@ describe("Slack gap escalation policy", () => {
       conversationId: "44444444-4444-4444-4444-444444444444",
       query: "<@UBOT> follow up",
       sourceChannel: "slack",
+      channelContext: {
+        provider: "slack",
+        team: { id: "T1", name: "Acme" },
+        channel: { id: "CCHANNEL", type: "channel" },
+        threadTs: "1700000000.000100",
+        user: { id: "U1" },
+      },
     }));
     expect(posted).toHaveBeenCalledWith(expect.objectContaining({
       channel: "CCHANNEL",

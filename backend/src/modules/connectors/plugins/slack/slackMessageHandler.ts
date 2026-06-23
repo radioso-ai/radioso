@@ -2,6 +2,7 @@ import type {
   ConnectorChatPort,
   ConnectorLogger,
 } from "@radioso/connector-api";
+import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
 import {
   SlackWebApiClient,
@@ -80,6 +81,15 @@ export class SlackMessageHandler {
       envelope: input as SlackInboundEventEnvelope & { event: SlackMessageImEvent },
       getSlackKey: (installation) => dmSlackKey(installation.teamId, input.event.user),
       getReplyThreadTs: () => undefined,
+      getChannelContext: (installation) => ({
+        provider: "slack",
+        team: {
+          id: installation.teamId,
+          ...(installation.teamName ? { name: installation.teamName } : {}),
+        },
+        channel: { id: input.event.channel, type: "im" },
+        user: { id: input.event.user },
+      }),
     });
   }
 
@@ -91,6 +101,16 @@ export class SlackMessageHandler {
         return mentionSlackKey(installation.teamId, input.event.channel, threadTs);
       },
       getReplyThreadTs: () => input.event.thread_ts ?? input.event.ts,
+      getChannelContext: (installation) => ({
+        provider: "slack",
+        team: {
+          id: installation.teamId,
+          ...(installation.teamName ? { name: installation.teamName } : {}),
+        },
+        channel: { id: input.event.channel, type: "channel" },
+        threadTs: input.event.thread_ts ?? input.event.ts,
+        user: { id: input.event.user },
+      }),
     });
   }
 
@@ -98,6 +118,7 @@ export class SlackMessageHandler {
     envelope: SlackInboundEventEnvelope & { event: SlackMessageImEvent | SlackAppMentionEvent };
     getSlackKey: (installation: SlackInstallationRecord) => string;
     getReplyThreadTs: () => string | undefined;
+    getChannelContext: (installation: SlackInstallationRecord) => ConversationChannelContext;
   }): Promise<void> {
     const { envelope } = input;
     const installation = await this.options.installations.findByTeamId(envelope.teamId);
@@ -139,6 +160,7 @@ export class SlackMessageHandler {
       conversationId: existingLink?.conversationId,
       query,
       sourceChannel: "slack",
+      channelContext: input.getChannelContext(installation),
     });
     await this.options.persistence.upsertConversationLink({
       workspaceId: installation.workspaceId,

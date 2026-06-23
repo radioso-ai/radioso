@@ -89,6 +89,9 @@ export {
   SlackOperatorNotificationSink,
 } from "./operator/slackOperatorNotificationSink.js";
 export {
+  SlackCustomerReplyDeliverer,
+} from "./operator/slackCustomerReplyDeliverer.js";
+export {
   createSlackInteractivityRouter,
   type SlackInteractivityRouterOptions,
 } from "./operator/slackInteractivityRouter.js";

@@ -84,6 +84,7 @@ import type {
   EvalSnapshotService,
 } from "../../modules/eval/composition.js";
 import type { ApprovalDecisionService } from "../../modules/approvals/public.js";
+import type { OperatorReplyService } from "../../modules/handoff/public.js";
 
 export interface AppDependencies {
   env: Env;
@@ -144,6 +145,7 @@ export interface AppDependencies {
   documentStorage: DocumentStoragePort;
   chatService: ChatService;
   approvalDecisionService: ApprovalDecisionService;
+  operatorReplyService: OperatorReplyService;
   workbenchReplayRunner: WorkbenchReplayRunner;
   // Worker-process drain loop for the async conversation-action outbox (spec 070).
   // Present in every dependency build; only the worker runtime calls start/stop.

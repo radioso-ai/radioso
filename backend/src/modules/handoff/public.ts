@@ -5,6 +5,7 @@ export {
   isHumanOwned,
   resolveOwnership,
 } from "./ownershipState.js";
+export { OperatorReplyService } from "./operatorReplyService.js";
 export type {
   CanResumeInput,
   CanResumeResult,

@@ -14,8 +14,7 @@ type ConversationOwnershipRouteDependencies = WorkspaceSessionDependencies & Pic
   | "auditService"
   | "conversationOwnershipRepository"
   | "conversationRepository"
-  | "messageRepository"
-  | "publicConversationEventBus"
+  | "operatorReplyService"
   | "userRepository"
   | "workspaceRepository"
 >;
@@ -155,35 +154,12 @@ export const createConversationOwnershipRoutes = (
       const displayName = await resolveDisplayName(dependencies, { accountId, userId });
       const body = req.body as z.infer<typeof replyBodySchema>;
       await requireOwnershipVersion(dependencies, conversationId, body.expectedVersion);
-      const message = await dependencies.messageRepository.create({
+      const message = await dependencies.operatorReplyService.reply({
         conversationId,
         workspaceId,
-        role: "assistant",
-        source: "human_agent",
-        content: body.message,
-        operatorAccountId: accountId,
-        operatorDisplayName: displayName,
-      });
-      await dependencies.conversationRepository.touch(conversationId, workspaceId);
-
-      await dependencies.auditService.record({
         accountId,
-        workspaceId,
-        eventType: "hitl.ownership",
-        eventStatus: "success",
-        metadata: {
-          action: "replied",
-          conversationId,
-          messageId: message.id,
-          messageLength: body.message.length,
-        },
-      });
-      dependencies.publicConversationEventBus.publish({
-        type: "message.created",
-        conversationId,
-        workspaceId,
-        messageId: message.id,
-        createdAt: message.createdAt instanceof Date ? message.createdAt.toISOString() : message.createdAt,
+        displayName,
+        message: body.message,
       });
 
       res.status(201).json({ message });

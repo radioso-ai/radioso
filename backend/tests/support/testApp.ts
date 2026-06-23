@@ -113,6 +113,7 @@ import { InMemoryEmailSkillActivityRepository } from "./inMemoryEmailSkillActivi
 import { InMemoryWebhookSkillDefinitionRepository } from "./inMemoryWebhookSkillDefinitions.js";
 import { InMemorySlackSkillDefinitionRepository } from "./inMemorySlackSkillDefinitions.js";
 import { SlackSkillDefinitionService } from "../../src/modules/slackSkills/public.js";
+import { OperatorReplyService } from "../../src/modules/handoff/public.js";
 import {
   DefaultWebhookDestinationAdapter,
   WebhookDestinationService,
@@ -1126,6 +1127,13 @@ export const createTestDependencies = (overrides: {
   );
   const assistantHistoryService = new AssistantHistoryService(chatHistoryService);
   const publicConversationEventBus = new InMemoryPublicConversationEventBus();
+  const operatorReplyService = new OperatorReplyService({
+    conversationRepository,
+    messageRepository,
+    auditService,
+    publicConversationEventBus,
+    customerReplyDelivery: { deliver: async () => {} },
+  });
   const retrievalSearchService = new RetrievalSearchService(retrievalPipeline);
   const retrievalAnswerService = new RetrievalAnswerService({
     retrievalPipeline,
@@ -1256,6 +1264,7 @@ export const createTestDependencies = (overrides: {
     documentStorage,
     chatService,
     approvalDecisionService,
+    operatorReplyService,
     workbenchReplayRunner: workbenchReplayRunner as any,
     actionDispatchWorker,
     chatBootstrapService,

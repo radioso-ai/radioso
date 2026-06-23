@@ -511,6 +511,9 @@ importers:
 
   packages/connector-api:
     dependencies:
+      '@radioso/conversation-contract':
+        specifier: workspace:*
+        version: link:../conversation-contract
       express:
         specifier: ^4.21.2
         version: 4.22.2

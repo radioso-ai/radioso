@@ -267,6 +267,19 @@ export function draftFromChipDoc(input: {
         fieldUnit: condition.unit ?? null,
         ordinal: ordinal++,
       })
+    } else if (condition && typeof condition.value === 'string' && condition.value.trim()) {
+      // A decided-by-AI condition chip: no operator, just the comparison in prose. It carries
+      // its phrase in `value` so it stays a togglable chip (vs bare prose) and compiles to an
+      // `llm` guard — the AI judges the phrase at runtime.
+      transitions.push({
+        fromStep,
+        toRef,
+        guardKind: 'llm',
+        guardText: condition.value.trim(),
+        outcomeStatus: null,
+        counterLimit: null,
+        ordinal: ordinal++,
+      })
     } else if (stepChip && stepChip.counterLimit != null) {
       transitions.push({
         fromStep,
@@ -568,7 +581,10 @@ function branchGuardSegments(edge: RoutineTransition, nameByRef: Map<string, str
     }]
   }
   if (edge.guardKind === 'llm' && edge.guardText) {
-    return [{ kind: 'text', text: edge.guardText }]
+    // A decided-by-AI guard renders as an AI-mode condition chip (no operator), carrying its
+    // phrase in `value`. Keeping it a chip — not bare text — means it stays togglable back to
+    // decided-in-code after a reload (issue: "once decided by AI, can't go back").
+    return [{ kind: 'chip', chipKind: 'condition', refId: '', label: edge.guardText, value: edge.guardText }]
   }
   return []
 }

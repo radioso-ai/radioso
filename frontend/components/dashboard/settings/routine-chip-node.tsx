@@ -1,9 +1,8 @@
 'use client'
 
 import { useRef, useState, type ComponentType, type JSX } from 'react'
-import { AlertTriangle, BadgeCheck, ChevronDown, CornerUpRight, Flag, Gavel, Plus, Trash2, Zap, type LucideIcon } from 'lucide-react'
+import { AlertTriangle, BadgeCheck, ChevronDown, CornerUpRight, Flag, Gavel, Plus, Sparkles, Trash2, Zap, type LucideIcon } from 'lucide-react'
 import {
-  $createTextNode,
   $getNodeByKey,
   $getRoot,
   DecoratorNode,
@@ -25,6 +24,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { ConditionBuilderDialog, type ConditionDraft } from '@/components/dashboard/settings/routine-condition-builder-dialog'
 import { useSkillDescriptor, RoutineSkillCatalogPopover } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { Button } from '@/components/ui/button'
 import {
@@ -458,16 +458,26 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
     setDraftBindingState(next)
   }
 
-  // Demote a decided-in-code check to a decided-by-AI one: drop the structured chip and leave
-  // its readable comparison as plain prose, which compiles to an `llm` guard. The inverse of
-  // promoting (toolbar "Check" inserts a structured condition chip = decided in code).
+  const [isConditionBuilderOpen, setIsConditionBuilderOpen] = useState(false)
+
+  // Demote a decided-in-code check to decided-by-AI: keep the comparison as an AI condition
+  // CHIP (carrying the phrase), not bare text — so it stays togglable back to decided-in-code
+  // (issue: "once decided by AI, can't go back"). Compiles to an `llm` guard.
   const demoteToAi = () => {
     editor.update(() => {
       const node = $getNodeByKey(nodeKey)
       if (!node) return
-      const prose = $createTextNode(label)
-      node.replace(prose)
-      prose.selectEnd()
+      node.replace($createAiConditionChipNode(label))
+    })
+  }
+
+  // Promote a decided-by-AI condition to decided-in-code: the structured comparison from the
+  // builder replaces the AI chip, producing a deterministic field guard.
+  const promoteToCode = (condition: ConditionDraft) => {
+    editor.update(() => {
+      const node = $getNodeByKey(nodeKey)
+      if (!node) return
+      node.replace($createConditionChipNode(condition.refId, condition.op, condition.label, condition.value, condition.values, condition.unit))
     })
   }
 
@@ -615,6 +625,52 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
     )
   }
 
+  if (kind === 'condition') {
+    // A condition shows its decision mode and can be switched either way: decided-in-code
+    // (a structured rule, op set) ⇄ decided-by-AI (a free phrase, no op). The mode is read
+    // from the node so it reflects the current state after a toggle.
+    let isAi = false
+    editor.getEditorState().read(() => {
+      const node = $getNodeByKey(nodeKey)
+      if ($isChipNode(node)) isAi = node.getChipOp() === null
+    })
+    return (
+      <>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button type="button" contentEditable={false} data-routine-chip={kind} data-guard-mode={isAi ? 'ai' : 'code'} className="mx-0.5 cursor-pointer align-baseline outline-none">
+              <ChipBadge
+                kind={kind}
+                label={label}
+                type={null}
+                icon={isAi ? Sparkles : BadgeCheck}
+                suffix={isAi ? 'AI decides' : 'rule'}
+                className={isAi ? 'border-violet-300 bg-violet-100 text-violet-900' : undefined}
+              />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-56">
+            <DropdownMenuLabel>{isAi ? 'Decided by AI' : 'Decided in code'}</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {isAi ? (
+              <DropdownMenuItem onClick={() => setIsConditionBuilderOpen(true)}>Switch to decided in code</DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem onClick={demoteToAi}>Switch to decided by AI</DropdownMenuItem>
+            )}
+            <DropdownMenuItem onClick={removeSelf}>Remove</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <ConditionBuilderDialog
+          open={isConditionBuilderOpen}
+          onOpenChange={setIsConditionBuilderOpen}
+          variables={variables}
+          onConfirm={promoteToCode}
+          onSetVariableType={setType}
+        />
+      </>
+    )
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -632,12 +688,6 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
               ))}
             </DropdownMenuRadioGroup>
             <DropdownMenuSeparator />
-          </>
-        ) : kind === 'condition' ? (
-          <>
-            <DropdownMenuLabel>Decided in code</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={demoteToAi}>Switch to decided by AI</DropdownMenuItem>
           </>
         ) : null}
         <DropdownMenuItem onClick={removeSelf}>Remove</DropdownMenuItem>
@@ -914,6 +964,12 @@ export function $createConditionChipNode(
   unit: RoutineFieldGuardUnit | null,
 ): ChipNode {
   return new ChipNode('condition', refId, label, undefined, op, value, values, unit)
+}
+
+// A decided-by-AI condition chip: no operator, just the comparison phrase (held in `value`
+// and shown as the label). Compiles to an `llm` guard; togglable to a decided-in-code chip.
+export function $createAiConditionChipNode(phrase: string): ChipNode {
+  return new ChipNode('condition', '', phrase, undefined, null, phrase)
 }
 
 export function $isChipNode(node: LexicalNode | null | undefined): node is ChipNode {

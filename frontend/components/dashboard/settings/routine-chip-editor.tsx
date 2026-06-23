@@ -33,7 +33,8 @@ import {
 
 import { $createHeadingNode, $isHeadingNode, HeadingNode } from '@lexical/rich-text'
 
-import { $createApprovalChipNode, $createChipNode, $createConditionChipNode, $createDecisionChipNode, $createStepChipNode, $isChipNode, ApprovalChipDialog, approvalChipTargets, ChipNode, type ApprovalChipState, type ApprovalChipTarget, type RoutineChipKind } from '@/components/dashboard/settings/routine-chip-node'
+import { $createAiConditionChipNode, $createApprovalChipNode, $createChipNode, $createConditionChipNode, $createDecisionChipNode, $createStepChipNode, $isChipNode, ApprovalChipDialog, approvalChipTargets, ChipNode, type ApprovalChipState, type ApprovalChipTarget, type RoutineChipKind } from '@/components/dashboard/settings/routine-chip-node'
+import { ConditionBuilderDialog, type ConditionDraft } from '@/components/dashboard/settings/routine-condition-builder-dialog'
 import { findRoutineSkillDescriptor, normalizeSkillName, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { RoutineVariablesProvider } from '@/components/dashboard/settings/routine-variables-context'
 import { Button } from '@/components/ui/button'
@@ -59,22 +60,14 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import type { RoutineSkillCategory, SkillAuthoringDescriptor } from '@/lib/api-routine-skill-catalog'
 import { cn } from '@/lib/utils'
-import type { RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineSlotType } from '@/lib/api-types'
+import type { RoutineFieldGuardOp, RoutineSlotType } from '@/lib/api-types'
 import {
-  fieldGuardOpLabel,
-  fieldGuardOpNeedsUnit,
-  fieldGuardOpNeedsValue,
-  fieldGuardOpsForType,
-  formatConditionLabel,
-  ROUTINE_FIELD_GUARD_UNITS,
-  ROUTINE_SLOT_TYPES,
   slugifyVariableKey,
   type ApprovalDocOption,
   type ChipDocVariable,
   type ProseParagraph,
   type ProseSegment,
   type RoutineDocBlock,
-  type RoutineFieldGuardValue,
 } from '@/lib/routine-prose'
 import { looksLikeRoutineProse, parseProseDoc, serializeProseDoc } from '@/lib/routine-prose-tokens'
 
@@ -115,158 +108,6 @@ class ChipMenuOption extends MenuOption {
     this.chipLabel = data.chipLabel
     this.decisionOptions = data.decisionOptions
   }
-}
-
-type ConditionDraft = {
-  refId: string
-  op: RoutineFieldGuardOp
-  label: string
-  value: RoutineFieldGuardValue | null
-  values: RoutineFieldGuardValue[] | null
-  unit: RoutineFieldGuardUnit | null
-}
-
-function ConditionBuilderDialog({
-  open,
-  onOpenChange,
-  variables,
-  onConfirm,
-  onSetVariableType,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  variables: ChipDocVariable[]
-  onConfirm: (condition: ConditionDraft) => void
-  onSetVariableType: (refId: string, type: RoutineSlotType) => void
-}) {
-  const [refId, setRefId] = useState('')
-  const [op, setOp] = useState<RoutineFieldGuardOp>('equals')
-  const [valueText, setValueText] = useState('')
-  const [unit, setUnit] = useState<RoutineFieldGuardUnit>('months')
-  const selected = variables.find((variable) => variable.id === refId)
-  const ops = selected ? fieldGuardOpsForType(selected.type) : []
-  const needsValue = fieldGuardOpNeedsValue(op)
-  const needsUnit = fieldGuardOpNeedsUnit(op)
-
-  const reset = () => {
-    setRefId('')
-    setOp('equals')
-    setValueText('')
-    setUnit('months')
-  }
-
-  const confirm = () => {
-    if (!selected) return
-    const numeric = needsUnit || selected.type === 'number'
-    const coerce = (raw: string): RoutineFieldGuardValue =>
-      numeric && raw !== '' && !Number.isNaN(Number(raw)) ? Number(raw) : raw
-    const value = needsValue && op !== 'in' ? coerce(valueText.trim()) : null
-    const values = needsValue && op === 'in'
-      ? valueText.split(',').map((part) => part.trim()).filter((part) => part !== '').map(coerce)
-      : null
-    const unitValue = needsUnit ? unit : null
-    onConfirm({ refId: selected.id, op, label: formatConditionLabel(selected.name, op, value, values, unitValue), value, values, unit: unitValue })
-    reset()
-    onOpenChange(false)
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) reset(); onOpenChange(next) }}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Add a check</DialogTitle>
-          <DialogDescription>Branch on a variable with an exact comparison — decided in code, not by the AI.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="conditionVariable">Variable</Label>
-            <select
-              id="conditionVariable"
-              value={refId}
-              onChange={(event) => {
-                const next = event.target.value
-                setRefId(next)
-                const variable = variables.find((candidate) => candidate.id === next)
-                if (variable) setOp(fieldGuardOpsForType(variable.type)[0]!)
-              }}
-              className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
-            >
-              <option value="">Choose a variable…</option>
-              {variables.map((variable) => (
-                <option key={variable.id} value={variable.id}>{variable.name}</option>
-              ))}
-            </select>
-          </div>
-          {selected ? (
-            <div className="space-y-1.5">
-              <Label htmlFor="conditionType">Type</Label>
-              <select
-                id="conditionType"
-                value={selected.type}
-                onChange={(event) => {
-                  const nextType = event.target.value as RoutineSlotType
-                  onSetVariableType(selected.id, nextType)
-                  setOp(fieldGuardOpsForType(nextType)[0]!)
-                }}
-                className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
-              >
-                {ROUTINE_SLOT_TYPES.map((type) => (
-                  <option key={type} value={type}>{type}</option>
-                ))}
-              </select>
-              <p className="text-xs text-muted-foreground">The type decides which exact checks are available.</p>
-            </div>
-          ) : null}
-          {selected ? (
-            <div className="space-y-1.5">
-              <Label htmlFor="conditionOp">Check</Label>
-              <select
-                id="conditionOp"
-                value={op}
-                onChange={(event) => setOp(event.target.value as RoutineFieldGuardOp)}
-                className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
-              >
-                {ops.map((candidate) => (
-                  <option key={candidate} value={candidate}>{fieldGuardOpLabel(candidate)}</option>
-                ))}
-              </select>
-            </div>
-          ) : null}
-          {selected && needsValue ? (
-            <div className="space-y-1.5">
-              <Label htmlFor="conditionValue">{op === 'in' ? 'Values (comma-separated)' : needsUnit ? 'Amount' : 'Value'}</Label>
-              <Input
-                id="conditionValue"
-                value={valueText}
-                onChange={(event) => setValueText(event.target.value)}
-                placeholder={op === 'in' ? 'completed, refunded' : needsUnit ? '6' : 'completed'}
-              />
-            </div>
-          ) : null}
-          {selected && needsUnit ? (
-            <div className="space-y-1.5">
-              <Label htmlFor="conditionUnit">Unit</Label>
-              <select
-                id="conditionUnit"
-                value={unit}
-                onChange={(event) => setUnit(event.target.value as RoutineFieldGuardUnit)}
-                className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
-              >
-                {ROUTINE_FIELD_GUARD_UNITS.map((candidate) => (
-                  <option key={candidate} value={candidate}>{candidate}</option>
-                ))}
-              </select>
-            </div>
-          ) : null}
-        </div>
-        <DialogFooter>
-          <Button type="button" onClick={confirm} disabled={!selected || (needsValue && !valueText.trim())}>
-            Add check
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
 }
 
 // Insert a jump to a named step. A jump back to an earlier step is a loop, so it must be
@@ -848,6 +689,9 @@ function $proseParagraphToNode(paragraph: ProseParagraph): LexicalNode {
       node.append($createTextNode(segment.text))
     } else if (segment.chipKind === 'condition' && segment.op) {
       node.append($createConditionChipNode(segment.refId, segment.op, segment.label, segment.value ?? null, segment.values ?? null, segment.unit ?? null))
+    } else if (segment.chipKind === 'condition') {
+      // A decided-by-AI condition (no operator): carries its phrase in `value`/label.
+      node.append($createAiConditionChipNode(typeof segment.value === 'string' ? segment.value : segment.label))
     } else if (segment.chipKind === 'step') {
       node.append($createStepChipNode(segment.refId, segment.label, segment.counterLimit ?? null))
     } else if (segment.chipKind === 'approval') {

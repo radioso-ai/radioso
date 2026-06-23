@@ -138,6 +138,32 @@ describe('routine prose helpers', () => {
     expect(draft.terminals.map((terminal) => terminal.kind).sort()).toEqual(['complete', 'handoff'])
   })
 
+  // A decided-by-AI condition is a chip (no operator, phrase in `value`) so it stays togglable
+  // both ways. It compiles to an `llm` guard, and an `llm` guard reverse-renders back to that
+  // chip — so the AI ↔ code switch survives a reload (issue: "once decided by AI, can't go back").
+  it('round-trips an AI-mode condition chip ↔ llm guard', () => {
+    const draft = draftFromChipDoc({
+      name: 'Refund',
+      trigger: 'wants a refund',
+      blocks: [
+        { text: 'Review the case.', chips: [] },
+        { text: '', chips: [{ kind: 'condition', refId: '', op: null, value: 'the customer seems upset' }, { kind: 'handoff', refId: 'handoff' }] },
+      ],
+      variables: [],
+    })
+    // The op-less condition chip compiled to an AI-decided (llm) guard carrying its phrase.
+    expect(draft.transitions).toContainEqual(
+      expect.objectContaining({ toRef: 'handoff', guardKind: 'llm', guardText: 'the customer seems upset' }),
+    )
+    // Reverse: that llm guard comes back as an AI condition chip (op-less, phrase in value) —
+    // not bare text — so the editor can render its toggle.
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    const segments = doc!.paragraphs.flatMap((paragraph) => paragraph.segments)
+    expect(segments).toContainEqual(expect.objectContaining({ kind: 'chip', chipKind: 'condition', value: 'the customer seems upset' }))
+    expect(segments).not.toContainEqual(expect.objectContaining({ kind: 'text', text: 'the customer seems upset' }))
+  })
+
   it('compiles a condition chip into a decided-in-code (field) branch', () => {
     const draft = draftFromChipDoc({
       name: 'Refund',

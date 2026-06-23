@@ -16463,18 +16463,15 @@ paths:
                     type: string
                     enum:
                       - resolved
-                  decision:
+                  optionId:
                     type: string
-                    enum:
-                      - approved
-                      - rejected
                   conversationId:
                     type: string
                   resumed:
                     type: boolean
                 required:
                   - status
-                  - decision
+                  - optionId
                   - conversationId
                   - resumed
         "400":

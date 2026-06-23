@@ -8,6 +8,7 @@ import {
   type RoutineDefinition,
   type RoutineDefinitionDraftInput,
   type RoutineDefinitionPublishOptions,
+  type RoutineApprovalOption,
   type RoutineFieldGuardOp,
   type RoutineFieldGuardUnit,
   type RoutineGuardKind,
@@ -80,6 +81,24 @@ const readFieldValues = (record: Record<string, unknown>, key: string): (string 
 const asArray = (value: unknown): Record<string, unknown>[] =>
   Array.isArray(value) ? value.map(asRecord) : [];
 
+// An approval step's options ride in a jsonb column. Read back the {id,label,description?}
+// shape the domain expects, dropping anything malformed. Absent for non-approval steps.
+const readApprovalOptions = (record: Record<string, unknown>, key: string): RoutineApprovalOption[] | null => {
+  const value = record[key];
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const options = value
+    .map(asRecord)
+    .filter((option) => typeof option.id === "string" && typeof option.label === "string")
+    .map((option) => ({
+      id: option.id as string,
+      label: option.label as string,
+      description: typeof option.description === "string" ? option.description : null,
+    }));
+  return options.length > 0 ? options : null;
+};
+
 const normalizeStepKind = (kind: string): RoutineStepKind =>
   kind === "fork" ? "chat" : kind as RoutineStepKind;
 
@@ -135,6 +154,8 @@ const definitionSelect = sql`
       'instruction', st.instruction,
       'toolRef', st.tool_ref,
       'actionType', st.action_type,
+      'captureKey', st.capture_key,
+      'options', st.options,
       'ordinal', st.ordinal,
       'metadata', st.metadata
     ) ORDER BY st.ordinal ASC, st.stable_step_id ASC) AS items
@@ -204,15 +225,23 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
     ordinal: readNumber(slot, "ordinal"),
     ...(readBoolean(slot, "mutable") ? { mutable: true } : {}),
   })),
-  steps: asArray(row.steps).map((step) => ({
-    stableStepId: readString(step, "stableStepId"),
-    kind: normalizeStepKind(readString(step, "kind")),
-    instruction: readString(step, "instruction"),
-    toolRef: readNullableString(step, "toolRef"),
-    actionType: readNullableString(step, "actionType"),
-    ordinal: readNumber(step, "ordinal"),
-    metadata: readMetadata(step, "metadata"),
-  })),
+  steps: asArray(row.steps).map((step) => {
+    // captureKey/options are only valid on approval steps; the domain rejects them on any
+    // other kind, so include them only when present (NULL columns on every other step).
+    const captureKey = readNullableString(step, "captureKey");
+    const options = readApprovalOptions(step, "options");
+    return {
+      stableStepId: readString(step, "stableStepId"),
+      kind: normalizeStepKind(readString(step, "kind")),
+      instruction: readString(step, "instruction"),
+      toolRef: readNullableString(step, "toolRef"),
+      actionType: readNullableString(step, "actionType"),
+      ...(captureKey !== null ? { captureKey } : {}),
+      ...(options !== null ? { options } : {}),
+      ordinal: readNumber(step, "ordinal"),
+      metadata: readMetadata(step, "metadata"),
+    };
+  }),
   transitions: asArray(row.transitions).map((transition) => ({
     fromStep: readString(transition, "fromStep"),
     toRef: readString(transition, "toRef"),
@@ -567,6 +596,8 @@ export class RoutineDefinitionRepository {
           instruction: step.instruction,
           tool_ref: step.toolRef,
           action_type: step.actionType,
+          capture_key: step.captureKey ?? null,
+          options: step.options ? toJsonb(step.options) : null,
           ordinal: step.ordinal,
           metadata: toJsonb(step.metadata),
         })

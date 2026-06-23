@@ -621,10 +621,12 @@ export interface RoutineStates {
 
 export interface RoutineStep {
   action_type: string | null;
+  capture_key: string | null;
   definition_id: string;
   instruction: string;
   kind: string;
   metadata: Generated<Json>;
+  options: Json | null;
   ordinal: number;
   stable_step_id: string;
   tool_ref: string | null;

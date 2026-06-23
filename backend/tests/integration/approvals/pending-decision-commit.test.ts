@@ -59,8 +59,8 @@ const pendingDecisionInput = (
   stepId: "await_approval",
   reason: "Needs operator approval before continuing.",
   options: [
-    { id: "approve", label: "Approve", payload: { outcome: "approved" } },
-    { id: "reject", label: "Reject", payload: { outcome: "rejected" } },
+    { id: "approve", label: "Approve" },
+    { id: "reject", label: "Reject" },
   ],
   deciderScope: { kind: "workspace_role", role: "admin" },
   contentHash: `sha256:${randomUUID()}`,

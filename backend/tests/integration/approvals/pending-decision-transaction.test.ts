@@ -142,7 +142,7 @@ describeIfDatabase("PendingDecisionRepository transaction helper", () => {
 
     const result = await repository.resolveInTransaction({
       handle: input.handle,
-      outcome: "approved",
+      status: "resolved",
       decision: { optionId: "approve" },
       decidedBy: null,
       contentHash: input.contentHash,
@@ -154,12 +154,12 @@ describeIfDatabase("PendingDecisionRepository transaction helper", () => {
         .select(["handle", "status"])
         .where("handle", "=", record.handle)
         .executeTakeFirstOrThrow();
-      expect(seen.status).toBe("approved");
+      expect(seen.status).toBe("resolved");
       return record.sessionId;
     });
 
     expect(result).toBe(input.sessionId);
-    expect(await repository.loadByHandle(input.handle)).toMatchObject({ status: "approved" });
+    expect(await repository.loadByHandle(input.handle)).toMatchObject({ status: "resolved" });
   });
 
   it("skips caller resume work when the CAS does not resolve a pending row", async () => {
@@ -169,7 +169,7 @@ describeIfDatabase("PendingDecisionRepository transaction helper", () => {
 
     const result = await repository.resolveInTransaction({
       handle: input.handle,
-      outcome: "approved",
+      status: "resolved",
       decision: { optionId: "approve" },
       decidedBy: null,
       contentHash: "sha256:stale",

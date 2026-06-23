@@ -8,7 +8,7 @@ import type { PoolClient, QueryResultRow } from "pg";
 import { RoutineDefinitionRepository } from "../../src/db/repositories/routineDefinitionRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { createKyselyDatabase } from "../../src/shared/infra/kysely/kyselyDatabase.js";
-import type { RoutineDefinitionDraftInput } from "../../src/modules/routines/public.js";
+import { validateRoutineDefinition, type RoutineDefinitionDraftInput } from "../../src/modules/routines/public.js";
 import { testMigrationsPath } from "../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
@@ -139,10 +139,13 @@ const createRoutineSchema = async (client: PoolClient, schema: string): Promise<
       instruction TEXT NOT NULL,
       tool_ref TEXT NULL,
       action_type TEXT NULL,
+      capture_key TEXT NULL,
+      options JSONB NULL,
       ordinal INTEGER NOT NULL,
       metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
       PRIMARY KEY (definition_id, stable_step_id),
-      UNIQUE(definition_id, ordinal)
+      UNIQUE(definition_id, ordinal),
+      CHECK (kind IN ('chat', 'tool', 'action', 'approval'))
     );
 
     CREATE TABLE routine_transition (
@@ -383,6 +386,72 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
 
     expect(numeric).toMatchObject({ guardKind: "field", fieldRef: "amount", fieldOp: "gte", fieldValue: 100 });
     expect(membership).toMatchObject({ guardKind: "field", fieldRef: "tier", fieldOp: "in", fieldValues: ["gold", "platinum"] });
+  });
+
+  it("round-trips an approval step's capture key and options through real SQL (issue #755)", async () => {
+    const repository = new RoutineDefinitionRepository(database.kysely);
+    const draft = await repository.createDraft(agentId, {
+      name: "approval-roundtrip",
+      activation: { triggerDescription: "When a refund needs a manager.", gateRef: null, priority: 0, reentryMode: "once_per_conversation" },
+      slots: [],
+      steps: [
+        {
+          stableStepId: "review",
+          kind: "approval",
+          instruction: "Approve or deny the refund.",
+          toolRef: null,
+          actionType: null,
+          captureKey: "refund_decision",
+          options: [
+            { id: "approve", label: "Approve", description: "Issue the refund" },
+            { id: "deny", label: "Deny" },
+          ],
+          ordinal: 0,
+          metadata: {},
+        },
+        {
+          stableStepId: "issue",
+          kind: "chat",
+          instruction: "Issue the refund.",
+          toolRef: null,
+          ordinal: 1,
+          metadata: {},
+        },
+      ],
+      transitions: [
+        {
+          fromStep: "review", toRef: "issue", guardKind: "field", guardText: null, outcomeStatus: null, counterLimit: null,
+          fieldRef: "refund_decision.id", fieldOp: "equals", fieldValue: "approve", ordinal: 0,
+        },
+        {
+          fromStep: "review", toRef: "terminal_done", guardKind: "field", guardText: null, outcomeStatus: null, counterLimit: null,
+          fieldRef: "refund_decision.id", fieldOp: "equals", fieldValue: "deny", ordinal: 1,
+        },
+        {
+          fromStep: "issue", toRef: "terminal_done", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 2,
+        },
+      ],
+      terminals: [{ stableStepId: "terminal_done", kind: "complete", instruction: "Done.", ordinal: 0 }],
+    });
+
+    const reloaded = await repository.findById(agentId, draft.id);
+    const approvalStep = reloaded?.steps.find((step) => step.kind === "approval");
+    expect(approvalStep).toMatchObject({
+      stableStepId: "review",
+      captureKey: "refund_decision",
+      options: [
+        { id: "approve", label: "Approve", description: "Issue the refund" },
+        { id: "deny", label: "Deny", description: null },
+      ],
+    });
+    // A non-approval step must not gain capture key / options on the round-trip.
+    const chatStep = reloaded?.steps.find((step) => step.stableStepId === "issue");
+    expect(chatStep).not.toHaveProperty("captureKey");
+    expect(chatStep).not.toHaveProperty("options");
+
+    // The persisted gate still validates clean: the decision field guards resolve against
+    // the recovered capture key (a dropped captureKey would surface field_guard_unknown_reference).
+    expect(validateRoutineDefinition(reloaded!)).toMatchObject({ ok: true });
   });
 
   it("rejects publish when an enabled completion export destination was deleted before publish", async () => {

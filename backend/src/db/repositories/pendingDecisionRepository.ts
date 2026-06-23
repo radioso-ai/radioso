@@ -3,14 +3,16 @@ import { sql } from "kysely";
 import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
-export type PendingDecisionStatus = "pending" | "approved" | "rejected" | "cancelled";
-export type PendingDecisionOutcome = "approved" | "rejected";
+// A gate is `pending` until an operator picks a choice, then `resolved` (the routine
+// branches on the chosen option id, so the status is bookkeeping, not the decision), or
+// `cancelled` if the conversation ends the gate without a choice. The legacy `approved`/
+// `rejected` values predate multi-way gates and are retained only so historical rows read.
+export type PendingDecisionStatus = "pending" | "resolved" | "approved" | "rejected" | "cancelled";
 
 export interface PendingDecisionOption {
   id: string;
   label: string;
   description?: string;
-  payload?: unknown;
 }
 
 export interface PendingDecisionRecord {
@@ -52,7 +54,7 @@ export interface PendingDecisionCreateInput {
 
 export interface PendingDecisionResolveInput {
   handle: string;
-  outcome: PendingDecisionOutcome;
+  status: PendingDecisionStatus;
   decision: unknown;
   decidedBy: string | null;
   contentHash: string;
@@ -218,7 +220,7 @@ export class PendingDecisionRepository {
   ): Promise<PendingDecisionRecord | null> {
     const result = await sql<PendingDecisionRow>`
       UPDATE pending_decisions
-         SET status = ${input.outcome},
+         SET status = ${input.status},
              decision = ${toJsonb(input.decision)},
              decided_by = ${input.decidedBy},
              decided_at = ${currentTimestamp()},

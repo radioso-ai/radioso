@@ -184,6 +184,19 @@ describe("routine approval authoring", () => {
     expect(result.success).toBe(false);
   });
 
+  it("rejects a one-option approval gate: an approval must offer a real decision", () => {
+    const draft = approvalDraft();
+    const result = routineDefinitionDraftInputSchema.safeParse({
+      ...draft,
+      steps: [{
+        ...draft.steps[0],
+        options: [{ id: "approve", label: "Approve" }],
+      }],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it("rejects a decision edge whose value is not a declared option", () => {
     const base = approvalDefinition();
     const definition: RoutineDefinition = {

@@ -1,7 +1,7 @@
 ---
 title: "External Skills via MCP"
-description: "Configuration of external MCP server connections and named skill definitions for agent routines with encrypted credential storage."
-last_updated: 2026-06-17
+description: "Configuration of external MCP server connections and unified named skill definitions for agent routines with encrypted credential storage."
+last_updated: 2026-06-23
 ---
 
 # External Skills via MCP
@@ -15,12 +15,13 @@ model and transactional-mail boundary. See
 [Customer Email Connections](./customer-email-skills.md).
 
 In practice there are three things to set up, in order: a **connection**, one or
-more **skill definitions**, and a routine **step** that uses a skill. All of it
-lives under an agent's **Behavior** settings.
+more named **skills**, and a routine **step** that uses a skill. Connections are
+managed separately from skill authoring.
 
 ## 1. Connect an MCP server
 
-Open **Agent → Behavior → MCP connections** and add a connection:
+Open the agent's **Skills** settings, then use **Connections** to add an MCP
+server:
 
 - **Name** — a label for the connection.
 - **Server URL** — the MCP server's HTTPS endpoint. It must be `https://`, must
@@ -71,14 +72,20 @@ Authorizing requires `APP_BASE_URL` to be set, since it forms the redirect URL.
 
 ## 2. Define a skill
 
-Open **Agent → Behavior → External skills** and add a skill:
+Open the same agent's **Skills** list and choose **Add new skill**. The picker
+shows capability tiles. **MCP tool** is enabled after at least one MCP connection
+exists:
 
-1. Pick a connection. Radioso discovers the server's tools live.
-2. Pick a tool. Its inputs are read from the tool's own schema.
-3. For each input, choose **Fixed value** (bound — you set it now) or **Filled by
-   conversation** (exposed — the agent supplies it at run time).
+1. Pick the **MCP tool** tile.
+2. Pick the connected MCP server as the target.
+3. Enter the tool name. When discovery is available, inputs come from the tool's
+   own schema.
 4. Give the skill a name. The name is a lower-case identifier (for example
    `handoff_slack`) and must be unique within the agent.
+
+Required tool inputs are exposed to the routine by default. Open **Advanced** to
+bind fixed values, include optional inputs, change invocation behavior, or edit
+declared outcomes.
 
 The skill is validated against the tool before it is saved: the tool must still
 exist, and the tool's required inputs must each be bound or exposed.
@@ -139,7 +146,7 @@ its connection.
 
 ## Managing connections and skills
 
-Both connections and skills support full create, read, update, and delete. You
-can rename a connection, rotate its token, disable a skill, or change a skill's
-bindings or outcome map without recreating it (so routine references stay
-intact). Re-binding a skill is re-validated against the tool's current schema.
+Connections and skills are separate records. You can rename a connection, rotate
+its token, disable a skill, or change a skill's bindings without putting
+credentials in the skill form. Routine references stay stable because they use
+the skill name.

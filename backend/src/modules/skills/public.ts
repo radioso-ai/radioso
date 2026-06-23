@@ -91,3 +91,18 @@ export {
   type SkillOutcomeControl,
   type SkillTransientGuidance,
 } from "./composition.js";
+// Exported last: the capability registry's descriptors import sibling module barrels whose
+// executors depend back on the composition exports above, so this must initialize after them.
+export {
+  SkillCapabilityRegistry,
+  createDefaultSkillCapabilityRegistry,
+  createSkillCapabilityDescriptor,
+  skillCapabilityIds,
+  skillCapabilityIdSchema,
+  type SkillCapabilityDescriptor,
+  type SkillCapabilityId,
+  type SkillCapabilityInputSchema,
+  type SkillCapabilityTarget,
+  type SkillCapabilityTargetContext,
+  type SkillCapabilityTargetEnumerators,
+} from "./capabilityRegistry.js";

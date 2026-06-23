@@ -2,7 +2,7 @@
 
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
-import { AtSign, BadgeCheck, Bold, CornerUpRight, Database, Flag, Heading1, Italic } from 'lucide-react'
+import { AtSign, BadgeCheck, Bold, CornerUpRight, Database, Flag, Gavel, Heading1, Italic } from 'lucide-react'
 
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
 import { ContentEditable } from '@lexical/react/LexicalContentEditable'
@@ -33,7 +33,8 @@ import {
 
 import { $createHeadingNode, $isHeadingNode, HeadingNode } from '@lexical/rich-text'
 
-import { $createChipNode, $createConditionChipNode, $createStepChipNode, $isChipNode, ChipNode, type RoutineChipKind } from '@/components/dashboard/settings/routine-chip-node'
+import { $createAiConditionChipNode, $createApprovalChipNode, $createChipNode, $createConditionChipNode, $createDecisionChipNode, $createStepChipNode, $isChipNode, ApprovalChipDialog, approvalChipTargets, ChipNode, type ApprovalChipState, type ApprovalChipTarget, type RoutineChipKind } from '@/components/dashboard/settings/routine-chip-node'
+import { ConditionBuilderDialog, type ConditionDraft } from '@/components/dashboard/settings/routine-condition-builder-dialog'
 import { findRoutineSkillDescriptor, normalizeSkillName, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { RoutineVariablesProvider } from '@/components/dashboard/settings/routine-variables-context'
 import { Button } from '@/components/ui/button'
@@ -59,21 +60,14 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import type { RoutineSkillCategory, SkillAuthoringDescriptor } from '@/lib/api-routine-skill-catalog'
 import { cn } from '@/lib/utils'
-import type { RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineSlotType } from '@/lib/api-types'
+import type { RoutineFieldGuardOp, RoutineSlotType } from '@/lib/api-types'
 import {
-  fieldGuardOpLabel,
-  fieldGuardOpNeedsUnit,
-  fieldGuardOpNeedsValue,
-  fieldGuardOpsForType,
-  formatConditionLabel,
-  ROUTINE_FIELD_GUARD_UNITS,
-  ROUTINE_SLOT_TYPES,
   slugifyVariableKey,
+  type ApprovalDocOption,
   type ChipDocVariable,
   type ProseParagraph,
   type ProseSegment,
   type RoutineDocBlock,
-  type RoutineFieldGuardValue,
 } from '@/lib/routine-prose'
 import { looksLikeRoutineProse, parseProseDoc, serializeProseDoc } from '@/lib/routine-prose-tokens'
 
@@ -85,167 +79,35 @@ class ChipMenuOption extends MenuOption {
   isNew: boolean
   refId: string
   name: string
+  // For a typed decision-branch condition (`@decision is approve`): the chosen option id and
+  // the chip label. For creating a decision: the seeded choices.
+  op?: RoutineFieldGuardOp
+  value?: string
+  chipLabel?: string
+  decisionOptions?: ApprovalDocOption[]
 
-  constructor(key: string, data: { display: string; kind: RoutineChipKind; isNew: boolean; refId: string; name: string }) {
+  constructor(key: string, data: {
+    display: string
+    kind: RoutineChipKind
+    isNew: boolean
+    refId: string
+    name: string
+    op?: RoutineFieldGuardOp
+    value?: string
+    chipLabel?: string
+    decisionOptions?: ApprovalDocOption[]
+  }) {
     super(key)
     this.display = data.display
     this.kind = data.kind
     this.isNew = data.isNew
     this.refId = data.refId
     this.name = data.name
+    this.op = data.op
+    this.value = data.value
+    this.chipLabel = data.chipLabel
+    this.decisionOptions = data.decisionOptions
   }
-}
-
-type ConditionDraft = {
-  refId: string
-  op: RoutineFieldGuardOp
-  label: string
-  value: RoutineFieldGuardValue | null
-  values: RoutineFieldGuardValue[] | null
-  unit: RoutineFieldGuardUnit | null
-}
-
-function ConditionBuilderDialog({
-  open,
-  onOpenChange,
-  variables,
-  onConfirm,
-  onSetVariableType,
-}: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  variables: ChipDocVariable[]
-  onConfirm: (condition: ConditionDraft) => void
-  onSetVariableType: (refId: string, type: RoutineSlotType) => void
-}) {
-  const [refId, setRefId] = useState('')
-  const [op, setOp] = useState<RoutineFieldGuardOp>('equals')
-  const [valueText, setValueText] = useState('')
-  const [unit, setUnit] = useState<RoutineFieldGuardUnit>('months')
-  const selected = variables.find((variable) => variable.id === refId)
-  const ops = selected ? fieldGuardOpsForType(selected.type) : []
-  const needsValue = fieldGuardOpNeedsValue(op)
-  const needsUnit = fieldGuardOpNeedsUnit(op)
-
-  const reset = () => {
-    setRefId('')
-    setOp('equals')
-    setValueText('')
-    setUnit('months')
-  }
-
-  const confirm = () => {
-    if (!selected) return
-    const numeric = needsUnit || selected.type === 'number'
-    const coerce = (raw: string): RoutineFieldGuardValue =>
-      numeric && raw !== '' && !Number.isNaN(Number(raw)) ? Number(raw) : raw
-    const value = needsValue && op !== 'in' ? coerce(valueText.trim()) : null
-    const values = needsValue && op === 'in'
-      ? valueText.split(',').map((part) => part.trim()).filter((part) => part !== '').map(coerce)
-      : null
-    const unitValue = needsUnit ? unit : null
-    onConfirm({ refId: selected.id, op, label: formatConditionLabel(selected.name, op, value, values, unitValue), value, values, unit: unitValue })
-    reset()
-    onOpenChange(false)
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) reset(); onOpenChange(next) }}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Add a check</DialogTitle>
-          <DialogDescription>Branch on a variable with an exact comparison — decided in code, not by the AI.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="conditionVariable">Variable</Label>
-            <select
-              id="conditionVariable"
-              value={refId}
-              onChange={(event) => {
-                const next = event.target.value
-                setRefId(next)
-                const variable = variables.find((candidate) => candidate.id === next)
-                if (variable) setOp(fieldGuardOpsForType(variable.type)[0]!)
-              }}
-              className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
-            >
-              <option value="">Choose a variable…</option>
-              {variables.map((variable) => (
-                <option key={variable.id} value={variable.id}>{variable.name}</option>
-              ))}
-            </select>
-          </div>
-          {selected ? (
-            <div className="space-y-1.5">
-              <Label htmlFor="conditionType">Type</Label>
-              <select
-                id="conditionType"
-                value={selected.type}
-                onChange={(event) => {
-                  const nextType = event.target.value as RoutineSlotType
-                  onSetVariableType(selected.id, nextType)
-                  setOp(fieldGuardOpsForType(nextType)[0]!)
-                }}
-                className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
-              >
-                {ROUTINE_SLOT_TYPES.map((type) => (
-                  <option key={type} value={type}>{type}</option>
-                ))}
-              </select>
-              <p className="text-xs text-muted-foreground">The type decides which exact checks are available.</p>
-            </div>
-          ) : null}
-          {selected ? (
-            <div className="space-y-1.5">
-              <Label htmlFor="conditionOp">Check</Label>
-              <select
-                id="conditionOp"
-                value={op}
-                onChange={(event) => setOp(event.target.value as RoutineFieldGuardOp)}
-                className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
-              >
-                {ops.map((candidate) => (
-                  <option key={candidate} value={candidate}>{fieldGuardOpLabel(candidate)}</option>
-                ))}
-              </select>
-            </div>
-          ) : null}
-          {selected && needsValue ? (
-            <div className="space-y-1.5">
-              <Label htmlFor="conditionValue">{op === 'in' ? 'Values (comma-separated)' : needsUnit ? 'Amount' : 'Value'}</Label>
-              <Input
-                id="conditionValue"
-                value={valueText}
-                onChange={(event) => setValueText(event.target.value)}
-                placeholder={op === 'in' ? 'completed, refunded' : needsUnit ? '6' : 'completed'}
-              />
-            </div>
-          ) : null}
-          {selected && needsUnit ? (
-            <div className="space-y-1.5">
-              <Label htmlFor="conditionUnit">Unit</Label>
-              <select
-                id="conditionUnit"
-                value={unit}
-                onChange={(event) => setUnit(event.target.value as RoutineFieldGuardUnit)}
-                className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
-              >
-                {ROUTINE_FIELD_GUARD_UNITS.map((candidate) => (
-                  <option key={candidate} value={candidate}>{candidate}</option>
-                ))}
-              </select>
-            </div>
-          ) : null}
-        </div>
-        <DialogFooter>
-          <Button type="button" onClick={confirm} disabled={!selected || (needsValue && !valueText.trim())}>
-            Add check
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
 }
 
 // Insert a jump to a named step. A jump back to an earlier step is a loop, so it must be
@@ -348,6 +210,8 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
   const [conditionOpen, setConditionOpen] = useState(false)
   const [jumpOpen, setJumpOpen] = useState(false)
   const [jumpTargets, setJumpTargets] = useState<{ id: string; title: string }[]>([])
+  const [approvalOpen, setApprovalOpen] = useState(false)
+  const [approvalTargets, setApprovalTargets] = useState<ApprovalChipTarget[]>([])
   const [formats, setFormats] = useState({ bold: false, italic: false, step: false })
   const skillGroups = useMemo(() => groupSkillsByCategory(skillCatalog.skills), [skillCatalog.skills])
 
@@ -471,6 +335,36 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
     })
   }
 
+  // Approval targets are the document's titled steps plus the two terminals the prose
+  // editor always exposes (end + handoff).
+  const openApproval = () => {
+    const stepTargets: ApprovalChipTarget[] = []
+    editor.getEditorState().read(() => {
+      for (const block of $getRoot().getChildren()) {
+        if ($isHeadingNode(block)) {
+          const title = block.getTextContent().trim()
+          if (title) stepTargets.push({ id: slugifyVariableKey(title), label: title })
+        }
+      }
+    })
+    setApprovalTargets(approvalChipTargets(stepTargets))
+    setApprovalOpen(true)
+  }
+
+  const insertApproval = (state: ApprovalChipState) => {
+    editor.focus(() => {
+      editor.update(() => {
+        const selection = $getSelection()
+        if (!$isRangeSelection(selection)) return
+        const chip = $createApprovalChipNode(state.captureKey, state.options)
+        selection.insertNodes([chip])
+        const trailing = $createTextNode(' ')
+        chip.insertAfter(trailing)
+        trailing.select()
+      })
+    })
+  }
+
   return (
     <div className="flex items-center gap-0.5 border-b border-input px-1.5 py-1">
       <Button type="button" variant="ghost" size="sm" className={cn('h-7 w-7 p-0', formats.bold && ACTIVE_TOOLBAR_BUTTON)} aria-label="Bold" aria-pressed={formats.bold} onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold')}>
@@ -522,6 +416,10 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
         <Flag className="h-4 w-4" />
         End
       </Button>
+      <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={openApproval}>
+        <Gavel className="h-4 w-4" />
+        Approval
+      </Button>
       <Separator orientation="vertical" className="mx-1 h-5" />
       <Button type="button" variant="ghost" size="sm" className={cn('h-7 gap-1 px-2', formats.step && ACTIVE_TOOLBAR_BUTTON)} aria-pressed={formats.step} onClick={toggleLineStep}>
         <Heading1 className="h-4 w-4" />
@@ -533,6 +431,7 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
       </Button>
       <ConditionBuilderDialog open={conditionOpen} onOpenChange={setConditionOpen} variables={variables} onConfirm={insertCondition} onSetVariableType={onSetVariableType} />
       <JumpDialog open={jumpOpen} onOpenChange={setJumpOpen} targets={jumpTargets} onConfirm={insertJump} />
+      <ApprovalChipDialog open={approvalOpen} onOpenChange={setApprovalOpen} targets={approvalTargets} initial={{ captureKey: '', options: [] }} onConfirm={insertApproval} />
     </div>
   )
 }
@@ -629,8 +528,61 @@ function ChipTypeaheadPlugin({
         }))
       }
     }
+
+    // Decision authoring by typing: read the decisions already declared in the document so a
+    // branch line can be typed as `@<decision> is <choice>`, plus `@end`/`@handoff` targets and
+    // `@decision` to declare a new gate. (The decision chip carries the choices the branch
+    // conditions reference; conditions compile to `<captureKey>.id == <option>` field guards.)
+    const decisions: { captureKey: string; options: ApprovalDocOption[] }[] = []
+    editor.getEditorState().read(() => {
+      for (const block of $getRoot().getChildren()) {
+        if (!$isElementNode(block)) continue
+        for (const child of block.getChildren()) {
+          if ($isChipNode(child) && child.getChipKind() === 'decision') {
+            decisions.push({ captureKey: child.getCaptureKey() ?? child.getRefId(), options: child.getApprovalOptions() })
+          }
+        }
+      }
+    })
+    const branchOptions: ChipMenuOption[] = []
+    for (const decision of decisions) {
+      for (const option of decision.options) {
+        const choiceLabel = option.label || option.id
+        const chipLabel = `${decision.captureKey} is ${choiceLabel}`
+        if (lowered && !chipLabel.toLowerCase().includes(lowered) && !choiceLabel.toLowerCase().includes(lowered)) continue
+        branchOptions.push(new ChipMenuOption(`cond-${decision.captureKey}-${option.id}`, {
+          display: `If ${chipLabel}`,
+          kind: 'condition',
+          isNew: false,
+          refId: decision.captureKey,
+          name: chipLabel,
+          op: 'equals',
+          value: option.id,
+          chipLabel,
+        }))
+      }
+    }
+    // Typed branch conditions come first — they're what you're writing on a branch line.
+    result.unshift(...branchOptions)
+    if (!lowered || 'end'.includes(lowered) || 'complete'.includes(lowered)) {
+      result.push(new ChipMenuOption('target-end', { display: 'End (complete the routine)', kind: 'end', isNew: false, refId: 'done', name: 'end' }))
+    }
+    if (!lowered || 'handoff'.includes(lowered)) {
+      result.push(new ChipMenuOption('target-handoff', { display: 'Handoff (escalate to a person)', kind: 'handoff', isNew: false, refId: 'handoff', name: 'handoff' }))
+    }
+    if (!lowered || 'decision'.includes(lowered) || (raw.length > 0 && decisions.length === 0)) {
+      const captureKey = slugifyVariableKey(raw && lowered !== 'decision' ? raw : 'decision')
+      result.push(new ChipMenuOption(`new-decision-${captureKey}`, {
+        display: raw && lowered !== 'decision' ? `Decision: ${raw} (a person chooses)` : 'Decision (a person chooses)',
+        kind: 'decision',
+        isNew: true,
+        refId: captureKey,
+        name: captureKey,
+        decisionOptions: [{ id: 'approve', label: 'Approve' }, { id: 'deny', label: 'Deny' }],
+      }))
+    }
     return result.slice(0, 8)
-  }, [skillCatalog.skills, variables, reservedRefKinds, query])
+  }, [editor, skillCatalog.skills, variables, reservedRefKinds, query])
 
   const onSelectOption = useCallback(
     (option: ChipMenuOption, nodeToReplace: TextNode | null, closeMenu: () => void) => {
@@ -638,8 +590,18 @@ function ChipTypeaheadPlugin({
         if (option.kind === 'variable' && option.isNew) {
           onCreateVariable({ id: option.refId, name: option.name })
         }
-        const label = option.kind === 'variable' ? `@${option.name}` : option.name
-        const chip = $createChipNode(option.kind, option.refId, label)
+        let chip: ChipNode
+        if (option.kind === 'decision') {
+          // Declare the gate inline; choices are seeded so branch lines have something to
+          // reference, and the chip is click-editable for labels/targets afterwards.
+          chip = $createDecisionChipNode(option.refId, option.decisionOptions ?? [])
+        } else if (option.kind === 'condition') {
+          // A typed decision branch: `<captureKey> is <choice>` → a decision field guard.
+          chip = $createConditionChipNode(option.refId, option.op ?? 'equals', option.chipLabel ?? option.name, option.value ?? null, null, null)
+        } else {
+          const label = option.kind === 'variable' ? `@${option.name}` : option.name
+          chip = $createChipNode(option.kind, option.refId, label)
+        }
         if (nodeToReplace) {
           nodeToReplace.replace(chip)
         }
@@ -710,6 +672,8 @@ function $serializeBlocks(): RoutineDocBlock[] {
           inputBindings: chip.getInputBindings(),
           outputAssignments: chip.getOutputAssignments(),
           mode: chip.getMode() ?? undefined,
+          captureKey: chip.getCaptureKey(),
+          options: chip.getApprovalOptions(),
         }))
       : [],
   }))
@@ -725,8 +689,15 @@ function $proseParagraphToNode(paragraph: ProseParagraph): LexicalNode {
       node.append($createTextNode(segment.text))
     } else if (segment.chipKind === 'condition' && segment.op) {
       node.append($createConditionChipNode(segment.refId, segment.op, segment.label, segment.value ?? null, segment.values ?? null, segment.unit ?? null))
+    } else if (segment.chipKind === 'condition') {
+      // A decided-by-AI condition (no operator): carries its phrase in `value`/label.
+      node.append($createAiConditionChipNode(typeof segment.value === 'string' ? segment.value : segment.label))
     } else if (segment.chipKind === 'step') {
       node.append($createStepChipNode(segment.refId, segment.label, segment.counterLimit ?? null))
+    } else if (segment.chipKind === 'approval') {
+      node.append($createApprovalChipNode(segment.captureKey ?? '', segment.options ?? []))
+    } else if (segment.chipKind === 'decision') {
+      node.append($createDecisionChipNode(segment.captureKey ?? '', segment.options ?? []))
     } else {
       node.append($createChipNode(segment.chipKind, segment.refId, segment.label, {
         inputBindings: segment.inputBindings,
@@ -766,6 +737,8 @@ function $readProseParagraphs(): ProseParagraph[] {
             inputBindings: child.getInputBindings(),
             outputAssignments: child.getOutputAssignments(),
             mode: child.getMode() ?? undefined,
+            captureKey: child.getCaptureKey() ?? undefined,
+            options: child.getApprovalOptions(),
           })
         } else {
           segments.push({ kind: 'text', text: child.getTextContent() })
@@ -847,6 +820,12 @@ function ClipboardRoundTripPlugin({
         if (!state.read($selectionSpansDocument)) return false
         const { name: currentName, trigger: currentTrigger, variables: currentVariables } = stateRef.current
         const paragraphs = state.read($readProseParagraphs)
+        // The plain-text token grammar has no approval/decision form, so a routine with a
+        // gate isn't exported as tokens — fall through to Lexical's native clipboard, which
+        // round-trips losslessly in-app via the JSON flavour.
+        if (paragraphs.some((paragraph) => paragraph.segments.some((segment) => segment.kind === 'chip' && (segment.chipKind === 'approval' || segment.chipKind === 'decision')))) {
+          return false
+        }
         const text = serializeProseDoc({ name: currentName, trigger: currentTrigger, variables: currentVariables, paragraphs })
         event.preventDefault()
         clipboardData.setData('text/plain', text)

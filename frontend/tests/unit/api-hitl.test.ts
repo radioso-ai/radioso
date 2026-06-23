@@ -23,7 +23,7 @@ describe('hitlApi', () => {
   it('resolves a decision with agent, handle, and body', async () => {
     const response = {
       status: 'resolved',
-      decision: 'approved',
+      optionId: 'approve',
       conversationId: 'conversation-1',
       resumed: true,
     }

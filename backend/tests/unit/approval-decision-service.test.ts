@@ -20,8 +20,8 @@ const decision = (overrides: Partial<PendingDecisionRecord> = {}): PendingDecisi
   stepId: "approval",
   reason: null,
   options: [
-    { id: "approve", label: "Approve", payload: { outcome: "approved" } },
-    { id: "reject", label: "Reject", payload: { outcome: "rejected" } },
+    { id: "approve", label: "Approve" },
+    { id: "reject", label: "Reject" },
   ],
   deciderScope: { kind: "workspace_role", role: "admin" },
   contentHash: "hash_1",
@@ -63,7 +63,7 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
       optionId: "approve",
       contentHash: pending.contentHash,
       caller: { accountId: "account_1", workspaceId: pending.workspaceId },
-    })).resolves.toMatchObject({ status: "resolved", decision: "approved" });
+    })).resolves.toMatchObject({ status: "resolved", optionId: "approve" });
 
     expect(resumeRunner.resume).toHaveBeenCalledTimes(1);
   });

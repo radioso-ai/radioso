@@ -52,7 +52,8 @@ export type DirectiveDraftDirective = ApiSchemas['DirectiveDraftDirective']
 
 export type RoutineDefinitionStatus = ApiSchemas['RoutineDefinition']['status']
 export type RoutineSlotType = 'text' | 'number' | 'boolean' | 'email' | 'date'
-export type RoutineStepKind = 'chat' | 'tool' | 'action'
+export type RoutineStepKind = 'chat' | 'tool' | 'action' | 'approval'
+export type ApprovalOption = NonNullable<ApiSchemas['RoutineDefinition']['steps'][number]['options']>[number]
 export type RoutineGuardKind = 'llm' | 'default' | 'slot_filled' | 'outcome' | 'counter' | 'field'
 export type RoutineReentryMode = 'once_per_conversation' | 'always' | 'semantic'
 export type RoutineFieldGuardOp =
@@ -70,10 +71,12 @@ export type RoutineValidationCode =
   | 'missing_terminal'
   | 'dangling_action_reference'
   | 'dangling_step_reference'
+  | 'unbounded_back_edge'
   | 'missing_action_follow_up'
   | 'declared_unused_slot'
   | 'referenced_undeclared_slot'
   | 'unregistered_action_type'
+  | 'unknown_skill'
   | 'action_capability_denied'
   | 'invalid_webhook_destination_ref'
   | 'unknown_webhook_destination'
@@ -83,6 +86,15 @@ export type RoutineValidationCode =
   | 'field_guard_unknown_reference'
   | 'field_guard_incompatible_type'
   | 'completion_export_missing_destination'
+  | 'approval_step_llm_edge'
+  | 'approval_step_no_decision_edge'
+  | 'approval_step_unknown_option'
+  | 'approval_step_unreachable_option'
+  | 'unsatisfiable_required_input'
+  | 'input_type_mismatch'
+  | 'unknown_input_binding'
+  | 'unknown_variable_ref'
+  | 'variable_name_collision'
 
 export type RoutineValidationDiagnostic = {
   code: RoutineValidationCode

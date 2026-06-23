@@ -199,6 +199,9 @@ export function OperatorActionBar({
                           size="sm"
                           variant="secondary"
                           disabled={isBusy || !decision.canResolve}
+                          // The author's per-option note (e.g. "Issue the refund") is the
+                          // operator's context for what each choice does.
+                          title={option.description ?? undefined}
                           onClick={() => void handleResolveDecision(decision, option.id)}
                         >
                           {option.label}

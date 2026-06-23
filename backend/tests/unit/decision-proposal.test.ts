@@ -102,12 +102,11 @@ describe("decision proposal helper", () => {
       stepId: "manager_review",
       reason: "Refund amount is above the automatic approval limit.",
       options: [
-        { id: "approve", label: "Approve", payload: { internalCode: "approve_refund" } },
+        { id: "approve", label: "Approve" },
         {
           id: "reject",
           label: "Reject",
           description: "Decline the refund.",
-          payload: { internalCode: "reject_refund" },
         },
       ],
       deciderScope: { kind: "workspace_member" },

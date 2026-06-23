@@ -17,8 +17,7 @@ export type ApprovalDecisionServiceFailureReason =
   | "forbidden_decider"
   | "invalid_option"
   | "stale_proposal"
-  | "concurrent_resolution"
-  | "unknown_outcome";
+  | "concurrent_resolution";
 
 export class ApprovalDecisionServiceError extends Error {
   constructor(readonly reason: ApprovalDecisionServiceFailureReason) {
@@ -30,11 +29,9 @@ export class ApprovalDecisionServiceError extends Error {
 export interface ResumeRunner {
   resume(input: {
     record: PendingDecisionRecord;
-    // The exact option the operator chose, used as the engine decision id. Distinct from
-    // `outcome` (approved/rejected) because several options can map to one outcome, and a
-    // routine branches on the option id — never reconstruct it from the outcome.
+    // The exact option the operator chose, used as the engine decision id: a routine
+    // branches on the option id via its `<captureKey>.id == <optionId>` decision guards.
     optionId: string;
-    outcome: ResolvedApprovalDecision["outcome"];
     payload?: unknown;
     decidedBy: string;
     executor: DatabaseExecutor;
@@ -65,7 +62,9 @@ export interface ApprovalDecisionRoleResolver {
 
 export interface ResolveApprovalDecisionResult {
   status: "resolved";
-  decision: ResolvedApprovalDecision["outcome"];
+  // The option id the operator chose (what the routine branched on), echoed back for the
+  // caller's record. Not a binary approve/reject — a gate can have any author-named choices.
+  optionId: string;
   conversationId: string;
   resumed: boolean;
 }
@@ -121,7 +120,7 @@ export class ApprovalDecisionService {
 
     const resume = await this.pendingDecisions.resolveInTransaction({
       handle: input.handle,
-      outcome: resolved.outcome,
+      status: "resolved",
       decision: resolved.decision,
       decidedBy: input.caller.accountId,
       contentHash: input.contentHash,
@@ -129,7 +128,6 @@ export class ApprovalDecisionService {
       this.resumeRunner.resume({
         record: resolvedRecord,
         optionId: resolved.decision.optionId,
-        outcome: resolved.outcome,
         payload: input.payload,
         decidedBy: input.caller.accountId,
         executor,
@@ -151,7 +149,7 @@ export class ApprovalDecisionService {
 
     return {
       status: "resolved",
-      decision: resolved.outcome,
+      optionId: resolved.decision.optionId,
       conversationId: resume.conversationId,
       resumed: resume.resumed,
     };

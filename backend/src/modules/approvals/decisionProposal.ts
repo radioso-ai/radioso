@@ -52,11 +52,13 @@ export const computeProposalContentHash = (proposal: ProposalContentHashInput): 
 export const buildPendingDecisionTransition = (
   input: BuildPendingDecisionTransitionInput,
 ): PendingDecisionCreateInput => {
+  // Persist only what the operator picks between: id, label, description. An option's
+  // `payload` is internal engine data (it no longer carries a decision outcome — gates
+  // resolve on the chosen option id) and must not leak into the stored/exposed decision.
   const options: PendingDecisionOption[] = input.awaitingDecision.options.map((option) => ({
     id: option.id,
     label: option.label,
     ...(option.description === undefined ? {} : { description: option.description }),
-    ...(option.payload === undefined ? {} : { payload: option.payload }),
   }));
 
   return {

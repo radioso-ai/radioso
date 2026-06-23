@@ -64,10 +64,14 @@ const clearAgentCreationHandoff: () => void = agentCreationExtensionsEnabled
   : () => {}
 
 /** Each non-chat agent section maps to a content mode and a column-3 title. */
-const AGENT_SECTION_META: Record<Exclude<AgentSectionId, 'chat'>, { title: string; mode: 'assistant' | 'channels' }> = {
+const AGENT_SECTION_META: Record<Exclude<AgentSectionId, 'chat'>, { title: string; mode: 'assistant' | 'channels'; description?: string }> = {
   identity: { title: 'Identity & appearance', mode: 'assistant' },
   behavior: { title: 'Behavior', mode: 'assistant' },
-  skills: { title: 'Skills', mode: 'assistant' },
+  skills: {
+    title: 'Skills',
+    mode: 'assistant',
+    description: 'Named actions this agent can take — answer from knowledge, send email, post to Slack, call a webhook, or notify a human — usable in routines.',
+  },
   directives: { title: 'Directives', mode: 'assistant' },
   routines: { title: 'Routines', mode: 'assistant' },
   'public-chat-link': { title: 'Public chat link', mode: 'channels' },
@@ -426,6 +430,7 @@ export function AgentView({
     <SkillsHeaderActionProvider>
       <DashboardPage
         title={meta.title}
+        description={meta.description}
         titleAccessory={saveStateAccessory}
         actions={section === 'skills' ? <AddSkillHeaderButton /> : undefined}
         contentClassName="flex flex-col overflow-hidden p-0"

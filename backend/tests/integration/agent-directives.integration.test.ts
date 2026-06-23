@@ -40,7 +40,7 @@ describeIfDatabase("agent directives persistence", () => {
     database = new Database(integrationDatabaseUrl!);
     accountRepository = new AccountRepository(database.kysely);
     workspaceRepository = new WorkspaceRepository(database.kysely);
-    agentRepository = new AgentRepository(database);
+    agentRepository = new AgentRepository(database.kysely);
     await runAllTestMigrations(database);
   });
 

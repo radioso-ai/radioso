@@ -109,7 +109,7 @@ describeIfDatabase("persistence integration", () => {
 
   it("persists records and returns workspace-scoped vector matches", async () => {
     const accountRepository = new AccountRepository(database.kysely);
-    const documentRepository = new DocumentRepository(database);
+    const documentRepository = new DocumentRepository(database.kysely);
     const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
     const vectorSearch = new PgVectorSearch(database);
 
@@ -186,7 +186,7 @@ describeIfDatabase("persistence integration", () => {
 
   it("persists and searches workspace chunks with non-1536-dimensional embeddings", async () => {
     const accountRepository = new AccountRepository(database.kysely);
-    const documentRepository = new DocumentRepository(database);
+    const documentRepository = new DocumentRepository(database.kysely);
     const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
     const vectorSearch = new PgVectorSearch(database);
 
@@ -474,7 +474,7 @@ describeIfDatabase("persistence integration", () => {
 
   it("stores raw chunk content while generating title-aware retrieval embeddings", async () => {
     const accountRepository = new AccountRepository(database.kysely);
-    const documentRepository = new DocumentRepository(database);
+    const documentRepository = new DocumentRepository(database.kysely);
     const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
     const jobRepository = new DocumentProcessingJobRepository(database.kysely);
     const vectorSearch = new PgVectorSearch(database);
@@ -560,7 +560,7 @@ describeIfDatabase("persistence integration", () => {
 
   it("deletes documents only within the matching workspace scope and cascades chunks", async () => {
     const accountRepository = new AccountRepository(database.kysely);
-    const documentRepository = new DocumentRepository(database);
+    const documentRepository = new DocumentRepository(database.kysely);
     const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
 
     const ownerAccount = await accountRepository.create({
@@ -630,7 +630,7 @@ describeIfDatabase("persistence integration", () => {
 
   it("persists uploaded document source metadata and derived content updates", async () => {
     const accountRepository = new AccountRepository(database.kysely);
-    const documentRepository = new DocumentRepository(database);
+    const documentRepository = new DocumentRepository(database.kysely);
 
     const account = await accountRepository.create({
       name: "Imported Source Organization",
@@ -688,7 +688,7 @@ describeIfDatabase("persistence integration", () => {
 
   it("enforces workspace-scoped external document identity uniqueness and supports idempotent queueing", async () => {
     const accountRepository = new AccountRepository(database.kysely);
-    const documentRepository = new DocumentRepository(database);
+    const documentRepository = new DocumentRepository(database.kysely);
 
     const accountA = await accountRepository.create({
       name: "External Id A Organization",

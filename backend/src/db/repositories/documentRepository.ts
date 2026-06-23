@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { sql } from "kysely";
+
 import type {
   DocumentCreateInput,
   DocumentDerivedContentUpdateInput,
@@ -12,12 +14,11 @@ import type {
 } from "../../modules/documents/contracts/index.js";
 import type { MetadataFieldSuggestion, MetadataValueType } from "../../modules/settings/contracts/retrieval.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
-import type { Database } from "../../shared/infra/database.js";
 import { conflict, notFound } from "../../shared/domain/errors.js";
+import { anyOf, currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 import {
   collectMetadataPaths,
-  documentSelect,
-  documentSummarySelect,
   mapDocument,
   mapDocumentSummary,
   type DocumentRow,
@@ -28,34 +29,105 @@ interface QueuedDocumentRow {
   revision: number;
 }
 
+/**
+ * Correlated `source` summary subquery shared by the full and summary projections. Mirrors
+ * the raw `documentSelect`/`documentSummarySelect` subquery exactly: a single-row
+ * `jsonb_build_object` from `document_sources` keyed on `documents.source_id`. Built as a
+ * `sql` fragment because the column list is a fixed projection the Kysely builder can't
+ * model more concisely than the SQL itself.
+ */
+const sourceSummaryExpression = sql<DocumentRow["source"]>`(
+    SELECT jsonb_build_object(
+      'id', s.id,
+      'kind', s.kind,
+      'name', s.name,
+      'externalId', s.external_id
+    )
+    FROM document_sources s
+    WHERE s.id = documents.source_id
+  )`;
+
+/**
+ * `COALESCE(content_size_bytes, source_size_bytes, OCTET_LENGTH(source_content))` — the
+ * derived size used by the summary projection. Preserves the raw `content_size` fallback
+ * chain and ordering.
+ */
+const contentSizeExpression = sql<
+  number | string | null
+>`COALESCE(content_size_bytes, source_size_bytes, OCTET_LENGTH(source_content))`;
+
+const documentSelectColumns = [
+  "id",
+  "workspace_id",
+  "title",
+  "source_content",
+  "markdown_content",
+  "source_id",
+  sourceSummaryExpression.as("source"),
+  "external_document_id",
+  "status",
+  "revision",
+  "failure_reason",
+  "created_at",
+  "updated_at",
+  "metadata",
+  "source_kind",
+  "source_filename",
+  "source_mime_type",
+  "source_storage_bucket",
+  "source_storage_object",
+  "source_storage_generation",
+  "source_size_bytes",
+  "content_size_bytes",
+  "content_hash",
+] as const;
+
+const documentSummarySelectColumns = [
+  "id",
+  "workspace_id",
+  "title",
+  "status",
+  "failure_reason",
+  "created_at",
+  "updated_at",
+  "metadata",
+  "source_id",
+  sourceSummaryExpression.as("source"),
+  "external_document_id",
+  "source_kind",
+  "source_filename",
+  "source_mime_type",
+  "source_storage_bucket",
+  "source_storage_object",
+  "source_storage_generation",
+  "source_size_bytes",
+  "content_size_bytes",
+  "content_hash",
+  contentSizeExpression.as("content_size"),
+] as const;
+
 export class DocumentRepository implements DocumentRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async summarizeWorkspace(workspaceId: string): Promise<DocumentWorkspaceSummaryRecord> {
-    const [row] = await this.database.query<{
-      document_count: string;
-      ready_document_count: string;
-      pending_document_count: string;
-      sample_document_count: string;
-      sample_document_slugs: string[];
-    }>(
-      `SELECT
-         COUNT(*)::text AS document_count,
-         COUNT(*) FILTER (WHERE status = 'ready')::text AS ready_document_count,
-         COUNT(*) FILTER (WHERE status IN ('queued', 'processing'))::text AS pending_document_count,
-         COUNT(*) FILTER (WHERE metadata ->> 'sampleDocument' = 'true')::text AS sample_document_count,
-         COALESCE(
+    const row = await this.db
+      .selectFrom("documents")
+      .select((eb) => [
+        sql<string>`COUNT(*)::text`.as("document_count"),
+        sql<string>`COUNT(*) FILTER (WHERE status = 'ready')::text`.as("ready_document_count"),
+        sql<string>`COUNT(*) FILTER (WHERE status IN ('queued', 'processing'))::text`.as("pending_document_count"),
+        sql<string>`COUNT(*) FILTER (WHERE metadata ->> 'sampleDocument' = 'true')::text`.as("sample_document_count"),
+        sql<string[]>`COALESCE(
            ARRAY_AGG(metadata ->> 'sampleSlug')
              FILTER (
                WHERE metadata ->> 'sampleDocument' = 'true'
                  AND NULLIF(metadata ->> 'sampleSlug', '') IS NOT NULL
              ),
            ARRAY[]::text[]
-         ) AS sample_document_slugs
-       FROM documents
-       WHERE workspace_id = $1`,
-      [workspaceId],
-    );
+         )`.as("sample_document_slugs"),
+      ])
+      .where("workspace_id", "=", workspaceId)
+      .executeTakeFirst();
 
     return {
       documentCount: Number(row?.document_count ?? "0"),
@@ -67,17 +139,17 @@ export class DocumentRepository implements DocumentRepositoryPort {
   }
 
   async listMetadataFieldSuggestions(workspaceId: string): Promise<MetadataFieldSuggestion[]> {
-    const rows = await this.database.query<{ metadata: Record<string, unknown> | null }>(
-      `SELECT metadata
-       FROM documents
-       WHERE workspace_id = $1`,
-      [workspaceId],
-    );
+    const rows = await this.db
+      .selectFrom("documents")
+      .select("metadata")
+      .where("workspace_id", "=", workspaceId)
+      .execute();
 
     const fields = new Map<string, MetadataValueType>();
 
     for (const row of rows) {
-      for (const entry of collectMetadataPaths(row.metadata ?? {})) {
+      const metadata = (row.metadata ?? {}) as Record<string, unknown>;
+      for (const entry of collectMetadataPaths(metadata)) {
         const existing = fields.get(entry.path);
         fields.set(entry.path, existing && existing !== entry.inferredType ? "string" : entry.inferredType);
       }
@@ -89,216 +161,174 @@ export class DocumentRepository implements DocumentRepositoryPort {
   }
 
   async createAndQueue(input: DocumentCreateInput): Promise<DocumentRecord> {
-    return this.database.withTransaction(async (client) => {
+    return this.db.transaction().execute(async (trx) => {
       const documentId = randomUUID();
-      const conflictTarget = input.sourceId
-        ? "(workspace_id, source_id, external_document_id) WHERE source_id IS NOT NULL AND external_document_id IS NOT NULL"
-        : "(workspace_id, external_document_id) WHERE source_id IS NULL AND external_document_id IS NOT NULL";
-      const [documentRow] = (
-        await client.query<DocumentRow>(
-          `INSERT INTO documents (
-             id,
-             workspace_id,
-             title,
-             source_content,
-             markdown_content,
-             source_id,
-             external_document_id,
-             status,
-             revision,
-             metadata,
-             source_kind,
-             source_filename,
-             source_mime_type,
-             source_storage_bucket,
-             source_storage_object,
-             source_storage_generation,
-             source_size_bytes,
-             content_size_bytes,
-             content_hash
-           )
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 'queued', 1, $8::jsonb, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-           ON CONFLICT ${conflictTarget}
-           DO UPDATE
-             SET title = EXCLUDED.title,
-                 source_content = EXCLUDED.source_content,
-                 markdown_content = EXCLUDED.markdown_content,
-                 source_id = EXCLUDED.source_id,
-                 status = 'queued',
-                 revision = documents.revision + 1,
-                 failed_at = NULL,
-                 failure_reason = NULL,
-                 updated_at = NOW(),
-                 metadata = EXCLUDED.metadata,
-                 source_kind = EXCLUDED.source_kind,
-                 source_filename = EXCLUDED.source_filename,
-                 source_mime_type = EXCLUDED.source_mime_type,
-                 source_storage_bucket = EXCLUDED.source_storage_bucket,
-                 source_storage_object = EXCLUDED.source_storage_object,
-                 source_storage_generation = EXCLUDED.source_storage_generation,
-                 source_size_bytes = EXCLUDED.source_size_bytes,
-                 content_size_bytes = EXCLUDED.content_size_bytes,
-                 content_hash = EXCLUDED.content_hash
-           WHERE documents.source_kind = EXCLUDED.source_kind
-           RETURNING ${documentSelect}`,
-          [
-            documentId,
-            input.workspaceId,
-            input.title,
-            input.sourceContent,
-            input.markdownContent,
-            input.sourceId ?? null,
-            input.externalDocumentId ?? null,
-            JSON.stringify(input.metadata ?? {}),
-            input.sourceKind ?? "inline_text",
-            input.sourceFilename ?? null,
-            input.sourceMimeType ?? null,
-            input.sourceStorageBucket ?? null,
-            input.sourceStorageObject ?? null,
-            input.sourceStorageGeneration ?? null,
-            input.sourceSizeBytes ?? null,
-            input.contentSizeBytes ?? null,
-            input.contentHash ?? null,
-          ],
+      // ON CONFLICT target depends on whether the document is sourced: a sourced page keys
+      // on (workspace_id, source_id, external_document_id); a manual document keys on
+      // (workspace_id, external_document_id). Each is a partial unique index, so the target
+      // is its column list plus the index predicate (Kysely: .columns(...).where(...)).
+      const conflictColumns = (input.sourceId
+        ? ["workspace_id", "source_id", "external_document_id"]
+        : ["workspace_id", "external_document_id"]) as ("workspace_id" | "source_id" | "external_document_id")[];
+      const conflictPredicate = input.sourceId
+        ? sql<boolean>`source_id IS NOT NULL AND external_document_id IS NOT NULL`
+        : sql<boolean>`source_id IS NULL AND external_document_id IS NOT NULL`;
+
+      const documentRow = (await trx
+        .insertInto("documents")
+        .values({
+          id: documentId,
+          workspace_id: input.workspaceId,
+          title: input.title,
+          source_content: input.sourceContent,
+          markdown_content: input.markdownContent,
+          source_id: input.sourceId ?? null,
+          external_document_id: input.externalDocumentId ?? null,
+          status: "queued",
+          revision: 1,
+          metadata: toJsonb(input.metadata ?? {}),
+          source_kind: input.sourceKind ?? "inline_text",
+          source_filename: input.sourceFilename ?? null,
+          source_mime_type: input.sourceMimeType ?? null,
+          source_storage_bucket: input.sourceStorageBucket ?? null,
+          source_storage_object: input.sourceStorageObject ?? null,
+          source_storage_generation: input.sourceStorageGeneration ?? null,
+          source_size_bytes: input.sourceSizeBytes ?? null,
+          content_size_bytes: input.contentSizeBytes ?? null,
+          content_hash: input.contentHash ?? null,
+        })
+        .onConflict((oc) =>
+          oc.columns(conflictColumns).where(conflictPredicate).doUpdateSet((eb) => ({
+            title: eb.ref("excluded.title"),
+            source_content: eb.ref("excluded.source_content"),
+            markdown_content: eb.ref("excluded.markdown_content"),
+            source_id: eb.ref("excluded.source_id"),
+            status: "queued",
+            revision: sql<number>`documents.revision + 1`,
+            failed_at: null,
+            failure_reason: null,
+            updated_at: currentTimestamp(),
+            metadata: eb.ref("excluded.metadata"),
+            source_kind: eb.ref("excluded.source_kind"),
+            source_filename: eb.ref("excluded.source_filename"),
+            source_mime_type: eb.ref("excluded.source_mime_type"),
+            source_storage_bucket: eb.ref("excluded.source_storage_bucket"),
+            source_storage_object: eb.ref("excluded.source_storage_object"),
+            source_storage_generation: eb.ref("excluded.source_storage_generation"),
+            source_size_bytes: eb.ref("excluded.source_size_bytes"),
+            content_size_bytes: eb.ref("excluded.content_size_bytes"),
+            content_hash: eb.ref("excluded.content_hash"),
+          })).where(sql<boolean>`documents.source_kind = excluded.source_kind`),
         )
-      ).rows;
+        .returning(documentSelectColumns)
+        .executeTakeFirst()) as DocumentRow | undefined;
 
       if (!documentRow) {
         throw conflict("Imported documents cannot be updated through the inline document API");
       }
 
-      await client.query(
-        `INSERT INTO document_processing_jobs (id, document_id, workspace_id, document_revision, status)
-         VALUES ($1, $2, $3, $4, 'queued')`,
-        [randomUUID(), documentRow.id, input.workspaceId, documentRow.revision],
-      );
+      await this.insertProcessingJob(trx, documentRow.id, input.workspaceId, documentRow.revision);
 
       return mapDocument(documentRow);
     });
   }
 
   async create(input: DocumentCreateInput & { status: string }): Promise<DocumentRecord> {
-    const [row] = await this.database.query<DocumentRow>(
-      `INSERT INTO documents (
-         id,
-         workspace_id,
-         title,
-         source_content,
-         markdown_content,
-         source_id,
-         external_document_id,
-         status,
-         revision,
-         metadata,
-         source_kind,
-         source_filename,
-         source_mime_type,
-         source_storage_bucket,
-         source_storage_object,
-         source_storage_generation,
-         source_size_bytes,
-         content_size_bytes,
-         content_hash
-       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9::jsonb, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-       RETURNING ${documentSelect}`,
-      [
-        randomUUID(),
-        input.workspaceId,
-        input.title,
-        input.sourceContent,
-        input.markdownContent,
-        input.sourceId ?? null,
-        input.externalDocumentId ?? null,
-        input.status,
-        JSON.stringify(input.metadata ?? {}),
-        input.sourceKind ?? "inline_text",
-        input.sourceFilename ?? null,
-        input.sourceMimeType ?? null,
-        input.sourceStorageBucket ?? null,
-        input.sourceStorageObject ?? null,
-        input.sourceStorageGeneration ?? null,
-        input.sourceSizeBytes ?? null,
-        input.contentSizeBytes ?? null,
-        input.contentHash ?? null,
-      ],
-    );
+    const row = (await this.db
+      .insertInto("documents")
+      .values({
+        id: randomUUID(),
+        workspace_id: input.workspaceId,
+        title: input.title,
+        source_content: input.sourceContent,
+        markdown_content: input.markdownContent,
+        source_id: input.sourceId ?? null,
+        external_document_id: input.externalDocumentId ?? null,
+        status: input.status,
+        revision: 1,
+        metadata: toJsonb(input.metadata ?? {}),
+        source_kind: input.sourceKind ?? "inline_text",
+        source_filename: input.sourceFilename ?? null,
+        source_mime_type: input.sourceMimeType ?? null,
+        source_storage_bucket: input.sourceStorageBucket ?? null,
+        source_storage_object: input.sourceStorageObject ?? null,
+        source_storage_generation: input.sourceStorageGeneration ?? null,
+        source_size_bytes: input.sourceSizeBytes ?? null,
+        content_size_bytes: input.contentSizeBytes ?? null,
+        content_hash: input.contentHash ?? null,
+      })
+      .returning(documentSelectColumns)
+      .executeTakeFirstOrThrow()) as DocumentRow;
 
     return mapDocument(row);
   }
 
   async updateAndQueue(input: DocumentQueueUpdateInput): Promise<DocumentRecord> {
-    return this.database.withTransaction(async (client) => {
-      const documentResult = await client.query<DocumentRow>(
-        `UPDATE documents
-         SET title = $3,
-             source_content = $4,
-             markdown_content = $5,
-             status = 'queued',
-             revision = revision + 1,
-             failed_at = NULL,
-             failure_reason = NULL,
-             updated_at = NOW(),
-             metadata = COALESCE($6::jsonb, metadata),
-             external_document_id = COALESCE($7, external_document_id),
-             source_id = COALESCE($8, source_id),
-             source_kind = COALESCE($9, source_kind),
-             source_filename = COALESCE($10, source_filename),
-             source_mime_type = COALESCE($11, source_mime_type),
-             source_storage_bucket = COALESCE($12, source_storage_bucket),
-             source_storage_object = COALESCE($13, source_storage_object),
-             source_storage_generation = COALESCE($14, source_storage_generation),
-             source_size_bytes = COALESCE($15, source_size_bytes),
-             content_size_bytes = COALESCE($16, content_size_bytes),
-             content_hash = COALESCE($17, content_hash)
-         WHERE id = $1 AND workspace_id = $2
-         RETURNING ${documentSelect}`,
-        [
-          input.documentId,
-          input.workspaceId,
-          input.title,
-          input.sourceContent,
-          input.markdownContent,
-          input.metadata !== undefined ? JSON.stringify(input.metadata) : null,
-          input.externalDocumentId ?? null,
-          input.sourceId ?? null,
-          input.sourceKind ?? null,
-          input.sourceFilename ?? null,
-          input.sourceMimeType ?? null,
-          input.sourceStorageBucket ?? null,
-          input.sourceStorageObject ?? null,
-          input.sourceStorageGeneration ?? null,
-          input.sourceSizeBytes ?? null,
-          input.contentSizeBytes ?? null,
-          input.contentHash ?? null,
-        ],
-      ).catch((error: unknown) => {
-        throw this.mapDocumentConflict(error);
-      });
-      const [documentRow] = documentResult.rows;
+    return this.db.transaction().execute(async (trx) => {
+      const documentRow = (await trx
+        .updateTable("documents")
+        .set((eb) => ({
+          title: input.title,
+          source_content: input.sourceContent,
+          markdown_content: input.markdownContent,
+          status: "queued",
+          revision: sql<number>`revision + 1`,
+          failed_at: null,
+          failure_reason: null,
+          updated_at: currentTimestamp(),
+          metadata:
+            input.metadata !== undefined
+              ? toJsonb(input.metadata)
+              : eb.ref("metadata"),
+          external_document_id: eb.fn.coalesce(
+            eb.val(input.externalDocumentId ?? null),
+            "external_document_id",
+          ),
+          source_id: eb.fn.coalesce(eb.val(input.sourceId ?? null), "source_id"),
+          source_kind: eb.fn.coalesce(eb.val(input.sourceKind ?? null), "source_kind"),
+          source_filename: eb.fn.coalesce(eb.val(input.sourceFilename ?? null), "source_filename"),
+          source_mime_type: eb.fn.coalesce(eb.val(input.sourceMimeType ?? null), "source_mime_type"),
+          source_storage_bucket: eb.fn.coalesce(
+            eb.val(input.sourceStorageBucket ?? null),
+            "source_storage_bucket",
+          ),
+          source_storage_object: eb.fn.coalesce(
+            eb.val(input.sourceStorageObject ?? null),
+            "source_storage_object",
+          ),
+          source_storage_generation: eb.fn.coalesce(
+            eb.val(input.sourceStorageGeneration ?? null),
+            "source_storage_generation",
+          ),
+          source_size_bytes: eb.fn.coalesce(eb.val(input.sourceSizeBytes ?? null), "source_size_bytes"),
+          content_size_bytes: eb.fn.coalesce(eb.val(input.contentSizeBytes ?? null), "content_size_bytes"),
+          content_hash: eb.fn.coalesce(eb.val(input.contentHash ?? null), "content_hash"),
+        }))
+        .where("id", "=", input.documentId)
+        .where("workspace_id", "=", input.workspaceId)
+        .returning(documentSelectColumns)
+        .executeTakeFirst()
+        .catch((error: unknown) => {
+          throw this.mapDocumentConflict(error);
+        })) as DocumentRow | undefined;
 
       if (!documentRow) {
         throw notFound("Document not found");
       }
 
-      await client.query(
-        `INSERT INTO document_processing_jobs (id, document_id, workspace_id, document_revision, status)
-         VALUES ($1, $2, $3, $4, 'queued')`,
-        [randomUUID(), input.documentId, input.workspaceId, documentRow.revision],
-      );
+      await this.insertProcessingJob(trx, input.documentId, input.workspaceId, documentRow.revision);
 
       return mapDocument(documentRow);
     });
   }
 
   async listByWorkspaceId(workspaceId: string): Promise<DocumentRecord[]> {
-    const rows = await this.database.query<DocumentRow>(
-      `SELECT ${documentSelect}
-       FROM documents
-       WHERE workspace_id = $1
-       ORDER BY created_at DESC`,
-      [workspaceId],
-    );
+    const rows = (await this.db
+      .selectFrom("documents")
+      .select(documentSelectColumns)
+      .where("workspace_id", "=", workspaceId)
+      .orderBy("created_at", "desc")
+      .execute()) as DocumentRow[];
 
     return rows.map(mapDocument);
   }
@@ -308,13 +338,12 @@ export class DocumentRepository implements DocumentRepositoryPort {
       return [];
     }
 
-    const rows = await this.database.query<DocumentRow>(
-      `SELECT ${documentSummarySelect}
-       FROM documents
-       WHERE workspace_id = $1
-         AND id = ANY($2::uuid[])`,
-      [workspaceId, documentIds],
-    );
+    const rows = (await this.db
+      .selectFrom("documents")
+      .select(documentSummarySelectColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where((eb) => anyOf(eb.ref("id"), documentIds, "uuid[]"))
+      .execute()) as DocumentRow[];
 
     return rows.map(mapDocumentSummary);
   }
@@ -324,45 +353,39 @@ export class DocumentRepository implements DocumentRepositoryPort {
     input: { limit: number; offset?: number; cursor?: string },
   ): Promise<{ documents: DocumentSummaryRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
     const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
-    const total = cursor?.totalSnapshot !== undefined
-      ? Number(cursor.totalSnapshot)
-      : Number((await this.database.query<{ count: string }>(
-          `SELECT COUNT(*)::text AS count
-           FROM documents
-           WHERE workspace_id = $1`,
-          [workspaceId],
-        ))[0]?.count ?? "0");
-    const params: Array<string | number> = [workspaceId];
-    let cursorClause = "";
+    const total =
+      cursor?.totalSnapshot !== undefined
+        ? Number(cursor.totalSnapshot)
+        : Number(
+            (
+              await this.db
+                .selectFrom("documents")
+                .select(sql<string>`COUNT(*)::text`.as("count"))
+                .where("workspace_id", "=", workspaceId)
+                .executeTakeFirst()
+            )?.count ?? "0",
+          );
 
-    if (cursor) {
-      params.push(cursor.keys.createdAt, cursor.keys.id);
-      cursorClause = `
-         AND (
-           created_at < $2::timestamptz
-           OR (created_at = $2::timestamptz AND id < $3::uuid)
-         )`;
-    }
-
-    const limitParam = params.length + 1;
-    params.push(input.limit + 1);
-
-    let offsetClause = "";
-    if (!cursor) {
-      offsetClause = `OFFSET $${params.length + 1}`;
-      params.push(input.offset ?? 0);
-    }
-
-    const rows = await this.database.query<DocumentRow>(
-      `SELECT ${documentSummarySelect}
-       FROM documents
-       WHERE workspace_id = $1
-       ${cursorClause}
-       ORDER BY created_at DESC, id DESC
-       LIMIT $${limitParam}
-       ${offsetClause}`,
-      params,
-    );
+    const rows = (await this.db
+      .selectFrom("documents")
+      .select(documentSummarySelectColumns)
+      .where("workspace_id", "=", workspaceId)
+      .$if(Boolean(cursor), (qb) =>
+        qb.where((eb) =>
+          eb.or([
+            eb("created_at", "<", sql<Date>`${cursor!.keys.createdAt}::timestamptz`),
+            eb.and([
+              eb("created_at", "=", sql<Date>`${cursor!.keys.createdAt}::timestamptz`),
+              eb("id", "<", sql<string>`${cursor!.keys.id}::uuid`),
+            ]),
+          ]),
+        ),
+      )
+      .orderBy("created_at", "desc")
+      .orderBy("id", "desc")
+      .limit(input.limit + 1)
+      .$if(!cursor, (qb) => qb.offset(input.offset ?? 0))
+      .execute()) as DocumentRow[];
 
     const documents = rows.slice(0, input.limit).map(mapDocumentSummary);
     const hasMore = rows.length > input.limit;
@@ -371,23 +394,27 @@ export class DocumentRepository implements DocumentRepositoryPort {
     return {
       documents,
       total,
-      nextCursor: hasMore && lastDocument
-        ? encodeCursor({
-            createdAt: lastDocument.createdAt.toISOString(),
-            id: lastDocument.id,
-          }, total)
-        : null,
+      nextCursor:
+        hasMore && lastDocument
+          ? encodeCursor(
+              {
+                createdAt: lastDocument.createdAt.toISOString(),
+                id: lastDocument.id,
+              },
+              total,
+            )
+          : null,
       hasMore,
     };
   }
 
   async findByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<DocumentRecord | null> {
-    const [row] = await this.database.query<DocumentRow>(
-      `SELECT ${documentSelect}
-       FROM documents
-       WHERE id = $1 AND workspace_id = $2`,
-      [documentId, workspaceId],
-    );
+    const row = (await this.db
+      .selectFrom("documents")
+      .select(documentSelectColumns)
+      .where("id", "=", documentId)
+      .where("workspace_id", "=", workspaceId)
+      .executeTakeFirst()) as DocumentRow | undefined;
 
     return row ? mapDocument(row) : null;
   }
@@ -396,125 +423,124 @@ export class DocumentRepository implements DocumentRepositoryPort {
     workspaceId: string,
     externalDocumentId: string,
   ): Promise<DocumentRecord | null> {
-    const [row] = await this.database.query<DocumentRow>(
-      `SELECT ${documentSelect}
-       FROM documents
-       WHERE workspace_id = $1 AND external_document_id = $2
-       LIMIT 1`,
-      [workspaceId, externalDocumentId],
-    );
+    const row = (await this.db
+      .selectFrom("documents")
+      .select(documentSelectColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("external_document_id", "=", externalDocumentId)
+      .limit(1)
+      .executeTakeFirst()) as DocumentRow | undefined;
 
     return row ? mapDocument(row) : null;
   }
 
   async update(input: DocumentUpdateInput): Promise<DocumentRecord> {
-    const [row] = await this.database.query<DocumentRow>(
-      `UPDATE documents
-       SET title = $3,
-           source_content = $4,
-           markdown_content = $5,
-           status = $6,
-           revision = revision + 1,
-           failed_at = NULL,
-           failure_reason = NULL,
-           updated_at = NOW(),
-           metadata = COALESCE($7::jsonb, metadata),
-           external_document_id = COALESCE($8, external_document_id),
-           source_id = COALESCE($9, source_id),
-           source_kind = COALESCE($10, source_kind),
-           source_filename = COALESCE($11, source_filename),
-           source_mime_type = COALESCE($12, source_mime_type),
-           source_storage_bucket = COALESCE($13, source_storage_bucket),
-           source_storage_object = COALESCE($14, source_storage_object),
-           source_storage_generation = COALESCE($15, source_storage_generation),
-           source_size_bytes = COALESCE($16, source_size_bytes),
-           content_size_bytes = COALESCE($17, content_size_bytes),
-           content_hash = COALESCE($18, content_hash)
-       WHERE id = $1 AND workspace_id = $2
-       RETURNING ${documentSelect}`,
-      [
-        input.documentId,
-        input.workspaceId,
-        input.title,
-        input.sourceContent,
-        input.markdownContent,
-        input.status,
-        input.metadata !== undefined ? JSON.stringify(input.metadata) : null,
-        input.externalDocumentId ?? null,
-        input.sourceId ?? null,
-        input.sourceKind ?? null,
-        input.sourceFilename ?? null,
-        input.sourceMimeType ?? null,
-        input.sourceStorageBucket ?? null,
-        input.sourceStorageObject ?? null,
-        input.sourceStorageGeneration ?? null,
-        input.sourceSizeBytes ?? null,
-        input.contentSizeBytes ?? null,
-        input.contentHash ?? null,
-      ],
-    ).catch((error: unknown) => {
-      throw this.mapDocumentConflict(error);
-    });
+    const row = (await this.db
+      .updateTable("documents")
+      .set((eb) => ({
+        title: input.title,
+        source_content: input.sourceContent,
+        markdown_content: input.markdownContent,
+        status: input.status,
+        revision: sql<number>`revision + 1`,
+        failed_at: null,
+        failure_reason: null,
+        updated_at: currentTimestamp(),
+        metadata:
+          input.metadata !== undefined ? toJsonb(input.metadata) : eb.ref("metadata"),
+        external_document_id: eb.fn.coalesce(
+          eb.val(input.externalDocumentId ?? null),
+          "external_document_id",
+        ),
+        source_id: eb.fn.coalesce(eb.val(input.sourceId ?? null), "source_id"),
+        source_kind: eb.fn.coalesce(eb.val(input.sourceKind ?? null), "source_kind"),
+        source_filename: eb.fn.coalesce(eb.val(input.sourceFilename ?? null), "source_filename"),
+        source_mime_type: eb.fn.coalesce(eb.val(input.sourceMimeType ?? null), "source_mime_type"),
+        source_storage_bucket: eb.fn.coalesce(
+          eb.val(input.sourceStorageBucket ?? null),
+          "source_storage_bucket",
+        ),
+        source_storage_object: eb.fn.coalesce(
+          eb.val(input.sourceStorageObject ?? null),
+          "source_storage_object",
+        ),
+        source_storage_generation: eb.fn.coalesce(
+          eb.val(input.sourceStorageGeneration ?? null),
+          "source_storage_generation",
+        ),
+        source_size_bytes: eb.fn.coalesce(eb.val(input.sourceSizeBytes ?? null), "source_size_bytes"),
+        content_size_bytes: eb.fn.coalesce(eb.val(input.contentSizeBytes ?? null), "content_size_bytes"),
+        content_hash: eb.fn.coalesce(eb.val(input.contentHash ?? null), "content_hash"),
+      }))
+      .where("id", "=", input.documentId)
+      .where("workspace_id", "=", input.workspaceId)
+      .returning(documentSelectColumns)
+      .executeTakeFirst()
+      .catch((error: unknown) => {
+        throw this.mapDocumentConflict(error);
+      })) as DocumentRow | undefined;
 
-    return mapDocument(row);
+    // Preserves the raw behaviour: a no-match `UPDATE … RETURNING` yields `undefined`, and
+    // `mapDocument(undefined)` threw a TypeError. The non-null assertion keeps that contract.
+    return mapDocument(row!);
   }
 
   async updateDerivedContentForRevision(input: DocumentDerivedContentUpdateInput): Promise<DocumentRecord | null> {
-    const [row] = await this.database.query<DocumentRow>(
-      `UPDATE documents
-       SET source_content = $4,
-           markdown_content = $5,
-           updated_at = NOW()
-       WHERE id = $1
-         AND workspace_id = $2
-         AND revision = $3
-       RETURNING ${documentSelect}`,
-      [input.documentId, input.workspaceId, input.revision, input.sourceContent, input.markdownContent],
-    );
+    const row = (await this.db
+      .updateTable("documents")
+      .set({
+        source_content: input.sourceContent,
+        markdown_content: input.markdownContent,
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", input.documentId)
+      .where("workspace_id", "=", input.workspaceId)
+      .where("revision", "=", input.revision)
+      .returning(documentSelectColumns)
+      .executeTakeFirst()) as DocumentRow | undefined;
 
     return row ? mapDocument(row) : null;
   }
 
   async requeue(documentId: string, workspaceId: string): Promise<DocumentRecord> {
-    const [row] = await this.database.query<DocumentRow>(
-      `UPDATE documents
-       SET status = 'queued',
-           revision = revision + 1,
-           failed_at = NULL,
-           failure_reason = NULL,
-           updated_at = NOW()
-       WHERE id = $1 AND workspace_id = $2
-       RETURNING ${documentSelect}`,
-      [documentId, workspaceId],
-    );
+    const row = (await this.db
+      .updateTable("documents")
+      .set({
+        status: "queued",
+        revision: sql<number>`revision + 1`,
+        failed_at: null,
+        failure_reason: null,
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", documentId)
+      .where("workspace_id", "=", workspaceId)
+      .returning(documentSelectColumns)
+      .executeTakeFirst()) as DocumentRow | undefined;
 
-    return mapDocument(row);
+    return mapDocument(row!);
   }
 
   async requeueAndQueue(documentId: string, workspaceId: string): Promise<DocumentRecord> {
-    return this.database.withTransaction(async (client) => {
-      const documentResult = await client.query<DocumentRow>(
-        `UPDATE documents
-         SET status = 'queued',
-             revision = revision + 1,
-             failed_at = NULL,
-             failure_reason = NULL,
-             updated_at = NOW()
-         WHERE id = $1 AND workspace_id = $2
-         RETURNING ${documentSelect}`,
-        [documentId, workspaceId],
-      );
-      const [documentRow] = documentResult.rows;
+    return this.db.transaction().execute(async (trx) => {
+      const documentRow = (await trx
+        .updateTable("documents")
+        .set({
+          status: "queued",
+          revision: sql<number>`revision + 1`,
+          failed_at: null,
+          failure_reason: null,
+          updated_at: currentTimestamp(),
+        })
+        .where("id", "=", documentId)
+        .where("workspace_id", "=", workspaceId)
+        .returning(documentSelectColumns)
+        .executeTakeFirst()) as DocumentRow | undefined;
 
       if (!documentRow) {
         throw notFound("Document not found");
       }
 
-      await client.query(
-        `INSERT INTO document_processing_jobs (id, document_id, workspace_id, document_revision, status)
-         VALUES ($1, $2, $3, $4, 'queued')`,
-        [randomUUID(), documentId, workspaceId, documentRow.revision],
-      );
+      await this.insertProcessingJob(trx, documentId, workspaceId, documentRow.revision);
 
       return mapDocument(documentRow);
     });
@@ -525,37 +551,32 @@ export class DocumentRepository implements DocumentRepositoryPort {
     skippedDocumentCount: number;
     queuedDocuments: Array<{ documentId: string; revision: number }>;
   }> {
-    return this.database.withTransaction(async (client) => {
-      const countsResult = await client.query<{ total_count: string; skipped_count: string }>(
-        `SELECT COUNT(*)::text AS total_count,
-                COUNT(*) FILTER (WHERE status IN ('queued', 'processing'))::text AS skipped_count
-         FROM documents
-         WHERE workspace_id = $1`,
-        [workspaceId],
-      );
-      const counts = countsResult.rows[0];
+    return this.db.transaction().execute(async (trx) => {
+      const counts = await trx
+        .selectFrom("documents")
+        .select([
+          sql<string>`COUNT(*)::text`.as("total_count"),
+          sql<string>`COUNT(*) FILTER (WHERE status IN ('queued', 'processing'))::text`.as("skipped_count"),
+        ])
+        .where("workspace_id", "=", workspaceId)
+        .executeTakeFirst();
 
-      const queuedRows = (
-        await client.query<QueuedDocumentRow>(
-          `UPDATE documents
-           SET status = 'queued',
-               revision = revision + 1,
-               failed_at = NULL,
-               failure_reason = NULL,
-               updated_at = NOW()
-           WHERE workspace_id = $1
-             AND status NOT IN ('queued', 'processing')
-           RETURNING id, revision`,
-          [workspaceId],
-        )
-      ).rows;
+      const queuedRows = (await trx
+        .updateTable("documents")
+        .set({
+          status: "queued",
+          revision: sql<number>`revision + 1`,
+          failed_at: null,
+          failure_reason: null,
+          updated_at: currentTimestamp(),
+        })
+        .where("workspace_id", "=", workspaceId)
+        .where("status", "not in", ["queued", "processing"])
+        .returning(["id", "revision"])
+        .execute()) as QueuedDocumentRow[];
 
       for (const documentRow of queuedRows) {
-        await client.query(
-          `INSERT INTO document_processing_jobs (id, document_id, workspace_id, document_revision, status)
-           VALUES ($1, $2, $3, $4, 'queued')`,
-          [randomUUID(), documentRow.id, workspaceId, documentRow.revision],
-        );
+        await this.insertProcessingJob(trx, documentRow.id, workspaceId, documentRow.revision);
       }
 
       const totalCount = Number(counts?.total_count ?? "0");
@@ -578,18 +599,22 @@ export class DocumentRepository implements DocumentRepositoryPort {
     status: string;
     failureReason?: string | null;
   }): Promise<DocumentRecord> {
-    const [row] = await this.database.query<DocumentRow>(
-      `UPDATE documents
-       SET status = $3,
-           failed_at = CASE WHEN $3 = 'failed' THEN NOW() ELSE NULL END,
-           failure_reason = CASE WHEN $3 = 'failed' THEN $4 ELSE NULL END,
-           updated_at = NOW()
-       WHERE id = $1 AND workspace_id = $2
-       RETURNING ${documentSelect}`,
-      [input.documentId, input.workspaceId, input.status, input.failureReason ?? null],
-    );
+    const row = (await this.db
+      .updateTable("documents")
+      .set({
+        status: input.status,
+        failed_at: sql<Date | null>`CASE WHEN ${input.status} = 'failed' THEN NOW() ELSE NULL END`,
+        failure_reason: sql<string | null>`CASE WHEN ${input.status} = 'failed' THEN ${
+          input.failureReason ?? null
+        } ELSE NULL END`,
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", input.documentId)
+      .where("workspace_id", "=", input.workspaceId)
+      .returning(documentSelectColumns)
+      .executeTakeFirst()) as DocumentRow | undefined;
 
-    return mapDocument(row);
+    return mapDocument(row!);
   }
 
   async setStatusIfRevisionMatches(input: {
@@ -599,29 +624,32 @@ export class DocumentRepository implements DocumentRepositoryPort {
     status: string;
     failureReason?: string | null;
   }): Promise<DocumentRecord | null> {
-    const [row] = await this.database.query<DocumentRow>(
-      `UPDATE documents
-       SET status = $4,
-           failed_at = CASE WHEN $4 = 'failed' THEN NOW() ELSE NULL END,
-           failure_reason = CASE WHEN $4 = 'failed' THEN $5 ELSE NULL END,
-           updated_at = NOW()
-       WHERE id = $1
-         AND workspace_id = $2
-         AND revision = $3
-       RETURNING ${documentSelect}`,
-      [input.documentId, input.workspaceId, input.revision, input.status, input.failureReason ?? null],
-    );
+    const row = (await this.db
+      .updateTable("documents")
+      .set({
+        status: input.status,
+        failed_at: sql<Date | null>`CASE WHEN ${input.status} = 'failed' THEN NOW() ELSE NULL END`,
+        failure_reason: sql<string | null>`CASE WHEN ${input.status} = 'failed' THEN ${
+          input.failureReason ?? null
+        } ELSE NULL END`,
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", input.documentId)
+      .where("workspace_id", "=", input.workspaceId)
+      .where("revision", "=", input.revision)
+      .returning(documentSelectColumns)
+      .executeTakeFirst()) as DocumentRow | undefined;
 
     return row ? mapDocument(row) : null;
   }
 
   async deleteByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<boolean> {
-    const rows = await this.database.query<{ id: string }>(
-      `DELETE FROM documents
-       WHERE id = $1 AND workspace_id = $2
-       RETURNING id`,
-      [documentId, workspaceId],
-    );
+    const rows = await this.db
+      .deleteFrom("documents")
+      .where("id", "=", documentId)
+      .where("workspace_id", "=", workspaceId)
+      .returning("id")
+      .execute();
 
     return rows.length > 0;
   }
@@ -631,56 +659,45 @@ export class DocumentRepository implements DocumentRepositoryPort {
     sourceId: string | null,
     input: { limit: number; offset?: number; cursor?: string },
   ): Promise<{ documents: DocumentSummaryRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
-    const sourceFilter = sourceId === null
-      ? "AND source_id IS NULL"
-      : "AND source_id = $2";
-    const sourceParams: string[] = sourceId === null ? [workspaceId] : [workspaceId, sourceId];
-
     const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
-    const total = cursor?.totalSnapshot !== undefined
-      ? Number(cursor.totalSnapshot)
-      : Number((await this.database.query<{ count: string }>(
-          `SELECT COUNT(*)::text AS count
-           FROM documents
-           WHERE workspace_id = $1
-           ${sourceFilter}`,
-          sourceParams,
-        ))[0]?.count ?? "0");
+    const total =
+      cursor?.totalSnapshot !== undefined
+        ? Number(cursor.totalSnapshot)
+        : Number(
+            (
+              await this.db
+                .selectFrom("documents")
+                .select(sql<string>`COUNT(*)::text`.as("count"))
+                .where("workspace_id", "=", workspaceId)
+                // `source_id = $n` for a concrete source; `source_id IS NULL` for the manual bucket.
+                .$if(sourceId === null, (qb) => qb.where("source_id", "is", null))
+                .$if(sourceId !== null, (qb) => qb.where("source_id", "=", sourceId!))
+                .executeTakeFirst()
+            )?.count ?? "0",
+          );
 
-    const params: Array<string | number> = [...sourceParams];
-    let cursorClause = "";
-
-    if (cursor) {
-      const p1 = params.length + 1;
-      const p2 = params.length + 2;
-      params.push(cursor.keys.createdAt, cursor.keys.id);
-      cursorClause = `
-         AND (
-           created_at < $${p1}::timestamptz
-           OR (created_at = $${p1}::timestamptz AND id < $${p2}::uuid)
-         )`;
-    }
-
-    const limitParam = params.length + 1;
-    params.push(input.limit + 1);
-
-    let offsetClause = "";
-    if (!cursor) {
-      offsetClause = `OFFSET $${params.length + 1}`;
-      params.push(input.offset ?? 0);
-    }
-
-    const rows = await this.database.query<DocumentRow>(
-      `SELECT ${documentSummarySelect}
-       FROM documents
-       WHERE workspace_id = $1
-       ${sourceFilter}
-       ${cursorClause}
-       ORDER BY created_at DESC, id DESC
-       LIMIT $${limitParam}
-       ${offsetClause}`,
-      params,
-    );
+    const rows = (await this.db
+      .selectFrom("documents")
+      .select(documentSummarySelectColumns)
+      .where("workspace_id", "=", workspaceId)
+      .$if(sourceId === null, (qb) => qb.where("source_id", "is", null))
+      .$if(sourceId !== null, (qb) => qb.where("source_id", "=", sourceId!))
+      .$if(Boolean(cursor), (qb) =>
+        qb.where((eb) =>
+          eb.or([
+            eb("created_at", "<", sql<Date>`${cursor!.keys.createdAt}::timestamptz`),
+            eb.and([
+              eb("created_at", "=", sql<Date>`${cursor!.keys.createdAt}::timestamptz`),
+              eb("id", "<", sql<string>`${cursor!.keys.id}::uuid`),
+            ]),
+          ]),
+        ),
+      )
+      .orderBy("created_at", "desc")
+      .orderBy("id", "desc")
+      .limit(input.limit + 1)
+      .$if(!cursor, (qb) => qb.offset(input.offset ?? 0))
+      .execute()) as DocumentRow[];
 
     const documents = rows.slice(0, input.limit).map(mapDocumentSummary);
     const hasMore = rows.length > input.limit;
@@ -689,12 +706,16 @@ export class DocumentRepository implements DocumentRepositoryPort {
     return {
       documents,
       total,
-      nextCursor: hasMore && lastDocument
-        ? encodeCursor({
-            createdAt: lastDocument.createdAt.toISOString(),
-            id: lastDocument.id,
-          }, total)
-        : null,
+      nextCursor:
+        hasMore && lastDocument
+          ? encodeCursor(
+              {
+                createdAt: lastDocument.createdAt.toISOString(),
+                id: lastDocument.id,
+              },
+              total,
+            )
+          : null,
       hasMore,
     };
   }
@@ -703,18 +724,19 @@ export class DocumentRepository implements DocumentRepositoryPort {
     count: number;
     storageRefs: Array<{ bucket: string; objectPath: string; generation: string | null }>;
   }> {
-    const rows = await this.database.query<{
-      id: string;
-      source_kind: string;
-      source_storage_bucket: string | null;
-      source_storage_object: string | null;
-      source_storage_generation: string | null;
-    }>(
-      `DELETE FROM documents
-       WHERE source_id = $1 AND workspace_id = $2
-       RETURNING id, source_kind, source_storage_bucket, source_storage_object, source_storage_generation`,
-      [sourceId, workspaceId],
-    );
+    const rows = await this.db
+      .deleteFrom("documents")
+      .where("source_id", "=", sourceId)
+      .where("workspace_id", "=", workspaceId)
+      .returning([
+        "id",
+        "source_kind",
+        "source_storage_bucket",
+        "source_storage_object",
+        "source_storage_generation",
+      ])
+      .execute();
+
     const storageRefs: Array<{ bucket: string; objectPath: string; generation: string | null }> = [];
     for (const row of rows) {
       if (row.source_kind === "uploaded_file" && row.source_storage_bucket && row.source_storage_object) {
@@ -739,38 +761,23 @@ export class DocumentRepository implements DocumentRepositoryPort {
     contentHash: string | null;
   } | null> {
     const sourceId = input.sourceId ?? null;
-    const sourceFilter = sourceId === null
-      ? "source_id IS NULL"
-      : "source_id = $3";
-    const params: unknown[] = [input.workspaceId, input.externalDocumentId];
-    if (sourceId !== null) {
-      params.push(sourceId);
-    }
 
-    const [row] = await this.database.query<{
-      id: string;
-      revision: number;
-      content_size_bytes: number | string | null;
-      content_hash: string | null;
-    }>(
-      `SELECT id, revision, content_size_bytes, content_hash
-       FROM documents
-       WHERE workspace_id = $1
-         AND external_document_id = $2
-         AND ${sourceFilter}
-         AND status <> 'failed'
-       LIMIT 1`,
-      params,
-    );
+    let query = this.db
+      .selectFrom("documents")
+      .select(["id", "revision", "content_size_bytes", "content_hash"])
+      .where("workspace_id", "=", input.workspaceId)
+      .where("external_document_id", "=", input.externalDocumentId)
+      .where("status", "<>", "failed");
+    query = sourceId === null ? query.where("source_id", "is", null) : query.where("source_id", "=", sourceId);
+
+    const row = await query.limit(1).executeTakeFirst();
 
     if (!row) {
       return null;
     }
 
     const rawBytes = row.content_size_bytes;
-    const bytes = typeof rawBytes === "string"
-      ? Number(rawBytes)
-      : (rawBytes ?? null);
+    const bytes = typeof rawBytes === "string" ? Number(rawBytes) : rawBytes ?? null;
 
     return {
       documentId: row.id,
@@ -786,25 +793,17 @@ export class DocumentRepository implements DocumentRepositoryPort {
     keepExternalDocumentIds: string[];
   }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
     const keep = Array.from(new Set(input.keepExternalDocumentIds.filter((value) => value && value.length > 0)));
-    const params: unknown[] = [input.sourceId, input.workspaceId];
-    let keepClause = "";
+
+    let query = this.db
+      .deleteFrom("documents")
+      .where("source_id", "=", input.sourceId)
+      .where("workspace_id", "=", input.workspaceId)
+      .where("external_document_id", "is not", null);
     if (keep.length > 0) {
-      params.push(keep);
-      keepClause = `AND external_document_id <> ALL($3::text[])`;
+      query = query.where(sql<boolean>`external_document_id <> ALL(${sql.val(keep)}::text[])`);
     }
 
-    const rows = await this.database.query<{
-      id: string;
-      content_size_bytes: number | string | null;
-    }>(
-      `DELETE FROM documents
-       WHERE source_id = $1
-         AND workspace_id = $2
-         AND external_document_id IS NOT NULL
-         ${keepClause}
-       RETURNING id, content_size_bytes`,
-      params,
-    );
+    const rows = await query.returning(["id", "content_size_bytes"]).execute();
 
     let deletedContentBytes = 0;
     for (const row of rows) {
@@ -815,6 +814,24 @@ export class DocumentRepository implements DocumentRepositoryPort {
       }
     }
     return { deletedCount: rows.length, deletedContentBytes };
+  }
+
+  private async insertProcessingJob(
+    db: Db,
+    documentId: string,
+    workspaceId: string,
+    documentRevision: number,
+  ): Promise<void> {
+    await db
+      .insertInto("document_processing_jobs")
+      .values({
+        id: randomUUID(),
+        document_id: documentId,
+        workspace_id: workspaceId,
+        document_revision: documentRevision,
+        status: "queued",
+      })
+      .execute();
   }
 
   private mapDocumentConflict(error: unknown): unknown {

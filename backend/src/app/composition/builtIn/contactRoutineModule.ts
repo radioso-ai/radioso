@@ -90,7 +90,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
           mailService,
           new ConfiguredContactDeliveryResolver(
             new ConversationRepository(database.kysely),
-            new AgentRepository(database),
+            new AgentRepository(database.kysely),
             ownerFallback,
           ),
           logger,
@@ -112,7 +112,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
           mailService,
           new ConfiguredContactDeliveryResolver(
             new ConversationRepository(database.kysely),
-            new AgentRepository(database),
+            new AgentRepository(database.kysely),
             ownerFallback,
           ),
           logger,
@@ -132,7 +132,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
           mailService,
           new ConfiguredContactDeliveryResolver(
             new ConversationRepository(database.kysely),
-            new AgentRepository(database),
+            new AgentRepository(database.kysely),
             ownerFallback,
           ),
           logger,

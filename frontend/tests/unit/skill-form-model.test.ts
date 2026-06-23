@@ -12,6 +12,7 @@ const baseCapability = (input: Partial<SkillCapabilityDescriptor> = {}): SkillCa
   id: 'email',
   storedKind: 'customer_email',
   targetKind: 'customer_email_connection',
+  requiresTarget: true,
   inputSchema: { source: 'static', schema: { fields: ['to', 'subject', 'bodyText'] } },
   settingsFields: [],
   outcomeVocabulary: ['sent', 'failed'],
@@ -148,12 +149,13 @@ describe('skill form model', () => {
       id: 'notify',
       storedKind: 'notify',
       targetKind: 'notify_delivery',
+      requiresTarget: false,
       inputSchema: { source: 'static', schema: { fields: ['message', 'email'] } },
       settingsFields: [
         { key: 'delivery.recipientEmails', label: 'Recipient emails', type: 'string_list' },
         { key: 'delivery.webhook.url', label: 'Webhook URL', type: 'text' },
       ],
-      targets: [{ id: 'default', label: 'Configured delivery' }],
+      targets: [],
     })
     const draft = createInitialSkillDraft([capability], null)
     draft.name = 'contact_human'
@@ -163,7 +165,9 @@ describe('skill form model', () => {
     }
     draft.inputDrafts.message = { mode: 'expose', boundValue: '', description: '', slotBinding: 'message' }
 
-    expect(buildAgentSkillInput(capability, draft, deriveSkillFields(capability)).config).toEqual({
+    expect(buildAgentSkillInput(capability, draft, deriveSkillFields(capability))).toMatchObject({
+      target: { kind: 'notify_delivery', id: null },
+      config: {
       delivery: {
         recipientEmails: ['sales@example.com', 'support@example.com'],
         webhook: { url: 'https://hooks.example.com/contact' },
@@ -171,6 +175,7 @@ describe('skill form model', () => {
       exposedInputs: {
         message: true,
         email: true,
+      },
       },
     })
   })

@@ -48,18 +48,21 @@ export const createAgentSkillRoutes = (dependencies: AgentSkillRouteDependencies
       const { workspaceId, agentId } = await resolveAgent(req, res);
       const capabilities = await Promise.all(dependencies.skillCapabilityRegistry.list().map(async (descriptor) => {
         const targets = await descriptor.enumerateTargets({ workspaceId, agentId });
+        const requiresTarget = descriptor.requiresTarget ?? true;
+        const available = requiresTarget ? targets.length > 0 : true;
         return {
           id: descriptor.id,
           storedKind: descriptor.storedKind,
           targetKind: descriptor.targetKind,
+          requiresTarget,
           inputSchema: descriptor.inputSchema,
           settingsFields: descriptor.settingsFields,
           outcomeVocabulary: descriptor.outcomeVocabulary,
           supportedInvocationModes: descriptor.supportedInvocationModes,
           executorAdapter: descriptor.executorAdapter,
           targets,
-          available: targets.length > 0,
-          unavailableReason: targets.length > 0 ? null : "no_connection",
+          available,
+          unavailableReason: available ? null : "no_connection",
         };
       }));
       dependencies.logger.info({

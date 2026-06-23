@@ -1,7 +1,7 @@
 ---
 title: "Customer Email Connections"
 description: "Setup of workspace-owned outbound email connections and unified agent email skills for draft and send modes."
-last_updated: 2026-06-22
+last_updated: 2026-06-23
 ---
 
 # Customer Email Connections
@@ -72,9 +72,10 @@ Agent email skills are named actions over a customer email connection. They are
 allowlisted definitions, not raw provider access.
 
 Create them from the agent's **Skills** list with **Add new skill** after the
-workspace has at least one authorized customer email connection. The email
-connection remains managed in workspace settings; the skill form only binds to
-that connected target.
+workspace has at least one authorized customer email connection. The picker
+shows capability tiles; **Email** is enabled when an email connection exists.
+The email connection remains managed in workspace settings; the skill form only
+binds to that connected target.
 
 For each skill, choose:
 

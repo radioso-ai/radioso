@@ -164,4 +164,34 @@ describe("AgentSkillsService", () => {
       message: "A default-answer skill already exists for this agent",
     });
   });
+
+  it("creates notify skills without binding a connection target", async () => {
+    const { service } = makeService();
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+
+    const created = await service.create(workspaceId, agentId, {
+      name: "contact_human",
+      capability: "notify",
+      target: { kind: "notify_delivery", id: null },
+      config: {
+        delivery: {
+          recipientEmails: ["sales@example.com"],
+          webhook: { url: "https://hooks.example.com/contact" },
+        },
+        exposedInputs: { message: true, email: true },
+      },
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+
+    expect(created).toMatchObject({
+      name: "contact_human",
+      capability: "notify",
+      storedKind: "notify",
+      target: { kind: "notify_delivery", id: null },
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+  });
 });

@@ -49,7 +49,7 @@ If an agent has `retrievalEnabled: true`, assistant chat may use retrieval and r
 
 ## Agent skills
 
-`GET /api/v1/agents/{agentId}/skill-capabilities` returns the capability registry projection for the agent. Each capability includes its targets, input schema, outcomes, supported invocation modes, and availability.
+`GET /api/v1/agents/{agentId}/skill-capabilities` returns the capability registry projection for the agent. Each capability includes its targets, whether it requires a target, input schema, outcomes, supported invocation modes, and availability.
 
 `GET /api/v1/agents/{agentId}/skills` returns the agent's named skills in one envelope:
 
@@ -60,11 +60,13 @@ If an agent has `retrievalEnabled: true`, assistant chat may use retrieval and r
 - `invocationMode`
 - `enabled`
 
-Create skills with `POST /api/v1/agents/{agentId}/skills`. The form and API use the same model for `retrieve`, `mcp_tool`, `email`, `slack_post`, `webhook_call`, and `notify`.
+Create skills with `POST /api/v1/agents/{agentId}/skills`. In the dashboard, **Add new skill** first opens a capability picker; enabled tiles then open the configuration form for that capability. The form and API use the same model for `retrieve`, `mcp_tool`, `email`, `slack_post`, `webhook_call`, and `notify`.
 
 ## Contact requests
 
 An agent can offer a "contact a human" option in chat. This is backed by a `notify` skill, commonly named `contact_human`. When the skill is enabled, the assistant can collect the visitor's email and message, then deliver the request out of band.
+
+`notify` is config-only. It does not bind to a connection target, so create it with `target.kind` set to `notify_delivery` and `target.id` set to `null`.
 
 Configure delivery in the notify skill config:
 

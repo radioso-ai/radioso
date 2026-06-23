@@ -71,6 +71,7 @@ export type SkillCapabilityDescriptor = {
   id: AgentSkillCapabilityId
   storedKind: string
   targetKind: string
+  requiresTarget: boolean
   inputSchema: SkillCapabilityInputSchema
   settingsFields: SkillCapabilitySettingsField[]
   outcomeVocabulary: string[]

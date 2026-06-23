@@ -132,6 +132,7 @@ export type SkillCapabilityFixture = {
   id: AgentSkillFixture["capability"];
   storedKind: string;
   targetKind: string;
+  requiresTarget: boolean;
   inputSchema: { source: "discovered" } | { source: "static"; schema: Record<string, unknown> };
   settingsFields: Array<{
     key: string;
@@ -496,6 +497,7 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
     id: "retrieve",
     storedKind: "retrieve",
     targetKind: "source_scope",
+    requiresTarget: true,
     inputSchema: { source: "static", schema: { fields: ["query"] } },
     settingsFields: [
       { key: "sourceScope", label: "Source scope", type: "source_scope", group: "Scope" },
@@ -535,6 +537,7 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
     id: "mcp_tool",
     storedKind: "external_mcp",
     targetKind: "mcp_connection",
+    requiresTarget: true,
     inputSchema: { source: "discovered" },
     settingsFields: [],
     outcomeVocabulary: ["completed", "failed"],
@@ -548,6 +551,7 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
     id: "email",
     storedKind: "customer_email",
     targetKind: "customer_email_connection",
+    requiresTarget: true,
     inputSchema: { source: "static", schema: { fields: ["to", "cc", "subject", "bodyText", "bodyHtml", "replyTo"] } },
     settingsFields: [
       {
@@ -571,6 +575,7 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
     id: "slack_post",
     storedKind: "slack",
     targetKind: "slack_installation",
+    requiresTarget: true,
     inputSchema: { source: "static", schema: { fields: ["channelId", "text", "threadTs"] } },
     settingsFields: [],
     outcomeVocabulary: ["enqueued", "missing_input", "failed"],
@@ -584,6 +589,7 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
     id: "webhook_call",
     storedKind: "webhook",
     targetKind: "webhook_destination",
+    requiresTarget: true,
     inputSchema: { source: "static", schema: { fields: ["payload"] } },
     settingsFields: [],
     outcomeVocabulary: ["delivered", "failed"],
@@ -597,6 +603,7 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
     id: "notify",
     storedKind: "notify",
     targetKind: "notify_delivery",
+    requiresTarget: false,
     inputSchema: { source: "static", schema: { fields: ["message", "email"] } },
     settingsFields: [
       { key: "delivery.recipientEmails", label: "Recipient emails", type: "string_list", group: "Delivery" },
@@ -605,7 +612,7 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
     outcomeVocabulary: ["delivered", "failed"],
     supportedInvocationModes: ["routine_named", "agent_selectable"],
     executorAdapter: "notify",
-    targets: [{ id: "default", label: "Configured delivery", status: "available" }],
+    targets: [],
     available: true,
     unavailableReason: null,
   },

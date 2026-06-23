@@ -54,12 +54,16 @@ describe("SkillCapabilityRegistry", () => {
     expect(descriptors.map((descriptor) => descriptor.id)).toEqual([...skillCapabilityIds]);
     for (const descriptor of descriptors) {
       expect(descriptor.targetKind).toEqual(expect.any(String));
+      expect(descriptor.requiresTarget).toEqual(expect.any(Boolean));
       expect(descriptor.inputSchema).toBeDefined();
       expect(descriptor.outcomeVocabulary.length).toBeGreaterThan(0);
       expect(descriptor.supportedInvocationModes).toContain("routine_named");
       expect(descriptor.supportedInvocationModes).toContain("agent_selectable");
       expect(descriptor.executorAdapter).toEqual(expect.any(String));
     }
+    expect(registry.get("notify")?.requiresTarget).toBe(false);
+    expect(registry.get("retrieve")?.requiresTarget).toBe(true);
+    expect(registry.get("email")?.requiresTarget).toBe(true);
   });
 
   it("enforces supported invocation modes by capability", () => {

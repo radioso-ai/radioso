@@ -25,6 +25,7 @@ export const notifyCapability: SkillCapabilityDescriptor<"notify", "notify"> = {
   id: "notify",
   storedKind: "notify",
   targetKind: "notify_delivery",
+  requiresTarget: false,
   enumerateTargets: async () => [],
   inputSchema: {
     source: "static",

@@ -26,8 +26,12 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await expect(page.getByRole("heading", { name: "Retrieval answers" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Add new skill" }).click();
-  await page.getByRole("combobox").first().click();
-  await page.getByRole("option", { name: /Email/ }).click();
+  await expect(page.getByRole("dialog", { name: "Add new skill" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Mcp Tool/i })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /Slack Post/i })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /Notify/i })).toBeEnabled();
+  await page.getByRole("button", { name: /Email/i }).click();
+  await expect(page.getByRole("dialog", { name: "Configure Email" })).toBeVisible();
   await page.getByLabel("Skill name").fill("send_followup_email");
   await page.locator("#skill-setting-mode").click();
   await page.getByRole("option", { name: "Send" }).click();
@@ -43,6 +47,7 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await expect(page.getByText("@send_followup_email")).toBeVisible();
 
   await page.getByRole("button", { name: "Add new skill" }).click();
+  await page.getByRole("button", { name: /Retrieve/i }).click();
   await page.getByLabel("Skill name").fill("retrieve_events");
   await page.getByRole("button", { name: "Selected sources" }).click();
   await page.getByLabel(/Course guide/).check();
@@ -62,8 +67,9 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await expect(page.getByText("@retrieve_events")).toBeVisible();
 
   await page.getByRole("button", { name: "Add new skill" }).click();
-  await page.getByRole("combobox").first().click();
-  await page.getByRole("option", { name: /Notify/ }).click();
+  await expect(page.getByRole("button", { name: /Notify/i })).toBeEnabled();
+  await page.getByRole("button", { name: /Notify/i }).click();
+  await expect(page.getByText("This capability is configured inline and does not bind to a connection.")).toBeVisible();
   await page.getByLabel("Skill name").fill("contact_human");
   await page.getByLabel("Recipient emails 1").fill("sales@example.com");
   await page.getByLabel("Recipient emails 2").fill("support@example.com");
@@ -128,7 +134,7 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   expect(createBodies[2]).toMatchObject({
     name: "contact_human",
     capability: "notify",
-    target: { kind: "notify_delivery", id: "default" },
+    target: { kind: "notify_delivery", id: null },
     config: {
       delivery: {
         recipientEmails: ["sales@example.com", "support@example.com"],

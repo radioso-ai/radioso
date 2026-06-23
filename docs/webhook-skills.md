@@ -1,7 +1,7 @@
 ---
 title: "Webhook Skills"
 description: "API and contract for defining unified agent webhook skills that routines can call to deliver payloads to workspace destinations."
-last_updated: 2026-06-22
+last_updated: 2026-06-23
 ---
 
 # Webhook Skills
@@ -25,9 +25,10 @@ Webhook deliveries are signed with `X-Radioso-Signature` and include
 ## 2. Define an agent webhook skill
 
 Open the agent's **Skills** list and choose **Add new skill**. Pick the
-**Webhook call** capability and select a workspace webhook destination. The
-destination owns the URL and secret; the skill form only controls the name,
-target, invocation mode, enabled state, and payload inputs.
+**Webhook call** tile, which is enabled when at least one workspace webhook
+destination exists, then select a destination. The destination owns the URL and
+secret; the skill form only controls the name, target, invocation mode, enabled
+state, and payload inputs.
 
 The unified endpoints are:
 

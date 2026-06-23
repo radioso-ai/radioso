@@ -68,6 +68,7 @@ const CapabilitySchema = z.object({
   id: CapabilityIdSchema,
   storedKind: z.string(),
   targetKind: z.string(),
+  requiresTarget: z.boolean(),
   inputSchema: z.union([
     z.object({ source: z.literal("discovered") }),
     z.object({ source: z.literal("static"), schema: z.record(z.unknown()) }),

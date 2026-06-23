@@ -1,7 +1,7 @@
 ---
 title: "Slack Skills"
 description: "How to configure Slack as a connection target and define Slack post skills through the unified skill form."
-last_updated: 2026-06-22
+last_updated: 2026-06-23
 ---
 
 # Slack Skills
@@ -26,9 +26,9 @@ the agent posts there when a Slack question has no grounded answer.
 ## 2. Define an agent Slack skill
 
 Open the agent's **Skills** list and choose **Add new skill**. Pick the
-**Slack post** capability, choose the connected Slack installation as the target,
-then choose which inputs are bound by the author and which are exposed to the
-routine.
+**Slack post** tile, which is enabled when the workspace has a connected Slack
+installation. Choose the installation as the target, then choose which inputs are
+bound by the author and which are exposed to the routine.
 
 The unified endpoints are:
 

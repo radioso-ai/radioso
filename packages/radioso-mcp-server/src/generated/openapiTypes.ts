@@ -11817,6 +11817,7 @@ export interface operations {
                             id: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
                             storedKind: string;
                             targetKind: string;
+                            requiresTarget: boolean;
                             inputSchema: {
                                 /** @enum {string} */
                                 source: "discovered";

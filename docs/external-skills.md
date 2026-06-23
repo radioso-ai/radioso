@@ -1,7 +1,7 @@
 ---
 title: "External Skills via MCP"
 description: "Configuration of external MCP server connections and unified named skill definitions for agent routines with encrypted credential storage."
-last_updated: 2026-06-22
+last_updated: 2026-06-23
 ---
 
 # External Skills via MCP
@@ -72,9 +72,11 @@ Authorizing requires `APP_BASE_URL` to be set, since it forms the redirect URL.
 
 ## 2. Define a skill
 
-Open the same agent's **Skills** list and choose **Add new skill**:
+Open the same agent's **Skills** list and choose **Add new skill**. The picker
+shows capability tiles. **MCP tool** is enabled after at least one MCP connection
+exists:
 
-1. Pick **MCP tool** as the capability.
+1. Pick the **MCP tool** tile.
 2. Pick the connected MCP server as the target.
 3. Enter the tool name. When discovery is available, inputs come from the tool's
    own schema.

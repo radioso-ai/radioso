@@ -49,6 +49,7 @@ export interface SkillCapabilityDescriptor<
   id: Id;
   storedKind: StoredKind;
   targetKind: string;
+  requiresTarget?: boolean;
   enumerateTargets(context: SkillCapabilityTargetContext): Promise<SkillCapabilityTarget[]>;
   inputSchema: SkillCapabilityInputSchema;
   settingsFields: readonly SkillCapabilitySettingsField[];
@@ -66,6 +67,7 @@ export const createSkillCapabilityDescriptor = <
   descriptor: Omit<SkillCapabilityDescriptor<Id, StoredKind>, "validateConfig">,
 ): SkillCapabilityDescriptor<Id, StoredKind> => ({
   ...descriptor,
+  requiresTarget: descriptor.requiresTarget ?? true,
   validateConfig(config: unknown) {
     return descriptor.configSchema.safeParse(config);
   },
@@ -118,6 +120,7 @@ const withEnumerators = (
 ): SkillCapabilityDescriptor[] =>
   descriptors.map((descriptor) => ({
     ...descriptor,
+    requiresTarget: descriptor.requiresTarget ?? true,
     enumerateTargets: enumerators[descriptor.id] ?? descriptor.enumerateTargets,
   }));
 

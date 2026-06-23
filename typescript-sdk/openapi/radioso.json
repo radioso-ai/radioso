@@ -22795,6 +22795,9 @@
                           "targetKind": {
                             "type": "string"
                           },
+                          "requiresTarget": {
+                            "type": "boolean"
+                          },
                           "inputSchema": {
                             "anyOf": [
                               {
@@ -22951,6 +22954,7 @@
                           "id",
                           "storedKind",
                           "targetKind",
+                          "requiresTarget",
                           "inputSchema",
                           "settingsFields",
                           "outcomeVocabulary",

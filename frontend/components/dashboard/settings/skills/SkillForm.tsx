@@ -27,12 +27,11 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { AssistantSourceScopeSelector } from '@/components/dashboard/settings/assistant-source-scope-selector'
 import type { AgentSourceScope, DocumentSourceListItem } from '@/lib/api'
-import type { AgentSkill, AgentSkillCreateInput, SkillCapabilityDescriptor, SkillCapabilitySettingsField } from '@/lib/api-skills'
+import type { AgentSkill, AgentSkillCapabilityId, AgentSkillCreateInput, SkillCapabilityDescriptor, SkillCapabilitySettingsField } from '@/lib/api-skills'
 import { cn } from '@/lib/utils'
 import {
   buildAgentSkillInput,
   createInitialSkillDraft,
-  createInputDrafts,
   deriveSkillFields,
   formatCapabilityLabel,
   formatInvocationMode,
@@ -41,13 +40,6 @@ import {
   type SkillInputMode,
   type SkillSettingDraftValue,
 } from './skill-form-model'
-
-const unavailableReasonLabel = (reason: string | null) => {
-  if (reason === 'no_connection') {
-    return 'Connect first'
-  }
-  return reason ?? 'Unavailable'
-}
 
 const modeLabel: Record<SkillInputMode, string> = {
   expose: 'Expose',
@@ -217,6 +209,7 @@ export function SkillForm({
   capabilities,
   skills,
   editingSkill = null,
+  capabilityId = null,
   isSaving = false,
   error = null,
   onOpenChange,
@@ -226,50 +219,39 @@ export function SkillForm({
   capabilities: SkillCapabilityDescriptor[]
   skills: AgentSkill[]
   editingSkill?: AgentSkill | null
+  capabilityId?: AgentSkillCapabilityId | null
   isSaving?: boolean
   error?: string | null
   onOpenChange: (open: boolean) => void
   onSubmit: (input: AgentSkillCreateInput) => Promise<void>
 }) {
-  const [draft, setDraft] = useState<SkillFormDraft>(() => createInitialSkillDraft(capabilities, editingSkill))
+  const scopedCapabilities = useMemo(() => {
+    if (editingSkill) {
+      return capabilities
+    }
+    return capabilityId ? capabilities.filter((item) => item.id === capabilityId) : capabilities
+  }, [capabilities, capabilityId, editingSkill])
+  const [draft, setDraft] = useState<SkillFormDraft>(() => createInitialSkillDraft(scopedCapabilities, editingSkill))
   const capability = useMemo(
-    () => capabilities.find((item) => item.id === draft.capabilityId) ?? null,
-    [capabilities, draft.capabilityId],
+    () => scopedCapabilities.find((item) => item.id === draft.capabilityId) ?? null,
+    [scopedCapabilities, draft.capabilityId],
   )
   const fields = useMemo(() => capability ? deriveSkillFields(capability) : [], [capability])
   const nameError = validateSkillName(draft.name, skills, editingSkill?.id)
   const selectedCapabilityAvailable = Boolean(capability?.available)
   const selectedTarget = capability?.targets.find((target) => target.id === draft.targetId) ?? null
-  const canSubmit = Boolean(capability && selectedCapabilityAvailable && !nameError && draft.invocationMode && !isSaving)
+  const targetReady = Boolean(capability && (!(capability.requiresTarget ?? true) || draft.targetId))
+  const canSubmit = Boolean(capability && selectedCapabilityAvailable && targetReady && !nameError && draft.invocationMode && !isSaving)
 
   useEffect(() => {
     if (!open) return
     queueMicrotask(() => {
-      setDraft(createInitialSkillDraft(capabilities, editingSkill))
+      setDraft(createInitialSkillDraft(scopedCapabilities, editingSkill))
     })
-  }, [capabilities, editingSkill, open])
+  }, [editingSkill, open, scopedCapabilities])
 
   const updateDraft = (patch: Partial<SkillFormDraft>) => {
     setDraft((current) => ({ ...current, ...patch }))
-  }
-
-  const selectCapability = (capabilityId: string) => {
-    const nextCapability = capabilities.find((item) => item.id === capabilityId)
-    if (!nextCapability || !nextCapability.available) {
-      return
-    }
-    const nextFields = deriveSkillFields(nextCapability)
-    setDraft((current) => ({
-      ...current,
-      capabilityId: nextCapability.id,
-      targetId: nextCapability.targets[0]?.id ?? '',
-      invocationMode: nextCapability.supportedInvocationModes[0] ?? 'routine_named',
-      toolName: '',
-      inputDrafts: createInputDrafts(nextFields),
-      selectedOutcomes: [...nextCapability.outcomeVocabulary],
-      extraConfigJson: '{}',
-      settingDrafts: createInitialSkillDraft([nextCapability], null).settingDrafts,
-    }))
   }
 
   const updateInput = (name: string, patch: Partial<SkillFormDraft['inputDrafts'][string]>) => {
@@ -318,7 +300,7 @@ export function SkillForm({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>{editingSkill ? 'Edit skill' : 'Add new skill'}</DialogTitle>
+          <DialogTitle>{editingSkill ? 'Edit skill' : `Configure ${capability ? formatCapabilityLabel(capability.id) : 'skill'}`}</DialogTitle>
           <DialogDescription>
             Configure a named capability instance for this agent. Connections and credentials are managed separately.
           </DialogDescription>
@@ -334,40 +316,14 @@ export function SkillForm({
 
           <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <div className="space-y-2">
-              <Label>Capability</Label>
-              <Select value={draft.capabilityId} onValueChange={selectCapability} disabled={Boolean(editingSkill)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Choose capability" />
-                </SelectTrigger>
-                <SelectContent>
-                  {capabilities.map((candidate) => (
-                    <SelectItem key={candidate.id} value={candidate.id} disabled={!candidate.available}>
-                      <span className="inline-flex items-center gap-2">
-                        {formatCapabilityLabel(candidate.id)}
-                        {!candidate.available ? (
-                          <span className="text-muted-foreground">({unavailableReasonLabel(candidate.unavailableReason)})</span>
-                        ) : null}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {capability && !capability.available ? (
-                <p className="text-xs text-muted-foreground">
-                  Connect a {formatCapabilityLabel(capability.targetKind)} before creating this skill.
-                </p>
-              ) : null}
-            </div>
-
-            <div className="space-y-2">
               <Label>Target</Label>
               <Select
                 value={draft.targetId}
                 onValueChange={(targetId) => updateDraft({ targetId })}
-                disabled={!capability || !capability.available || capability.targets.length === 0}
+                disabled={!capability || !capability.available || !(capability.requiresTarget ?? true) || capability.targets.length === 0}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Choose target" />
+                  <SelectValue placeholder={(capability?.requiresTarget ?? true) ? 'Choose target' : 'Inline configuration'} />
                 </SelectTrigger>
                 <SelectContent>
                   {capability?.targets.map((target) => (
@@ -377,7 +333,9 @@ export function SkillForm({
                   ))}
                 </SelectContent>
               </Select>
-              {selectedTarget?.status ? (
+              {!(capability?.requiresTarget ?? true) ? (
+                <p className="text-xs text-muted-foreground">This capability is configured inline and does not bind to a connection.</p>
+              ) : selectedTarget?.status ? (
                 <p className="text-xs text-muted-foreground">{selectedTarget.status}</p>
               ) : null}
             </div>

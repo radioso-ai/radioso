@@ -14707,6 +14707,8 @@ paths:
                           type: string
                         targetKind:
                           type: string
+                        requiresTarget:
+                          type: boolean
                         inputSchema:
                           anyOf:
                             - type: object
@@ -14812,6 +14814,7 @@ paths:
                         - id
                         - storedKind
                         - targetKind
+                        - requiresTarget
                         - inputSchema
                         - settingsFields
                         - outcomeVocabulary

@@ -79,7 +79,7 @@ describeIfDatabase("customer email connection repository (postgres)", () => {
       [oauthConnectionId, workspaceId],
     );
 
-    repository = new CustomerEmailConnectionRepository(clientBackedDatabase(client));
+    repository = new CustomerEmailConnectionRepository(clientBackedDatabase(client).kysely);
   });
 
   afterAll(async () => {

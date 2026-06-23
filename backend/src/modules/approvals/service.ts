@@ -2,7 +2,7 @@ import type {
   PendingDecisionRecord,
   PendingDecisionRepository,
 } from "../../db/repositories/pendingDecisionRepository.js";
-import type { DatabaseExecutor } from "../../shared/infra/database.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 import {
   ApprovalDecisionDomainError,
   satisfiesDeciderScope,
@@ -37,7 +37,7 @@ export interface ResumeRunner {
     outcome: ResolvedApprovalDecision["outcome"];
     payload?: unknown;
     decidedBy: string;
-    executor: DatabaseExecutor;
+    transaction: Db;
   }): Promise<{ conversationId: string; resumed: boolean; assistantMessageId?: string }>;
 }
 
@@ -125,14 +125,14 @@ export class ApprovalDecisionService {
       decision: resolved.decision,
       decidedBy: input.caller.accountId,
       contentHash: input.contentHash,
-    }, async (resolvedRecord, executor) =>
+    }, async (resolvedRecord, transaction) =>
       this.resumeRunner.resume({
         record: resolvedRecord,
         optionId: resolved.decision.optionId,
         outcome: resolved.outcome,
         payload: input.payload,
         decidedBy: input.caller.accountId,
-        executor,
+        transaction,
       })
     );
 

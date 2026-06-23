@@ -74,7 +74,7 @@ describeIfDatabase("usage trends integration", () => {
     const userId = randomUUID();
     const membershipRepository = new InMemoryAccountMembershipRepository();
     await membershipRepository.create({ accountId: account.id, userId, role: "member" });
-    const service = new UsageTrendsService(database, new AccountAccessService(membershipRepository, createAuditService()));
+    const service = new UsageTrendsService(database.kysely, new AccountAccessService(membershipRepository, createAuditService()));
 
     const conversationA = randomUUID();
     const conversationB = randomUUID();
@@ -138,5 +138,54 @@ describeIfDatabase("usage trends integration", () => {
       messages: { total: 2, user: 1, assistant: 1 },
       tokens: { input: 10, output: 20, total: 30 },
     });
+  });
+
+  it("rejects a workspace filter that belongs to another account via the ownership query", async () => {
+    const owner = await accountRepository.create({
+      email: `usage-trends-owner-${randomUUID()}@example.com`,
+      name: "Owner",
+      passwordHash: "hash",
+    });
+    accountIds.push(owner.id);
+    const otherAccount = await accountRepository.create({
+      email: `usage-trends-other-${randomUUID()}@example.com`,
+      name: "Other",
+      passwordHash: "hash",
+    });
+    accountIds.push(otherAccount.id);
+
+    // The workspace and agent belong to `otherAccount`, not to `owner`.
+    const foreignWorkspace = await workspaceRepository.create(otherAccount.id, "Foreign Workspace");
+    const foreignAgent = await agentRepository.create(foreignWorkspace.id, { name: "Foreign Agent" });
+
+    const userId = randomUUID();
+    const membershipRepository = new InMemoryAccountMembershipRepository();
+    await membershipRepository.create({ accountId: owner.id, userId, role: "member" });
+    const service = new UsageTrendsService(
+      database.kysely,
+      new AccountAccessService(membershipRepository, createAuditService()),
+    );
+
+    await expect(
+      service.getUsageTrends({
+        accountId: owner.id,
+        userId,
+        from: "2026-06-01",
+        to: "2026-06-02",
+        granularity: "day",
+        workspaceId: foreignWorkspace.id,
+      }),
+    ).rejects.toMatchObject({ statusCode: 400, code: "bad_request" });
+
+    await expect(
+      service.getUsageTrends({
+        accountId: owner.id,
+        userId,
+        from: "2026-06-01",
+        to: "2026-06-02",
+        granularity: "day",
+        agentId: foreignAgent.id,
+      }),
+    ).rejects.toMatchObject({ statusCode: 400, code: "bad_request" });
   });
 });

@@ -196,10 +196,7 @@ import type { RetrievalDefaultsProvider, SkillSettingsResolver } from "../../mod
 import { ProductAnalyticsService } from "../../shared/analytics/productAnalyticsService.js";
 import type { OrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
 import { NoopUsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
-import {
-  DurableUsageEventRecorder,
-  requireTransactionalUsageEventDatabase,
-} from "../../shared/infra/usage/durableUsageEventRecorder.js";
+import { DurableUsageEventRecorder } from "../../shared/infra/usage/durableUsageEventRecorder.js";
 import { ErrorReportingService } from "../../shared/errors/errorReportingService.js";
 import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
 import { Database } from "../../shared/infra/database.js";
@@ -280,7 +277,7 @@ export const buildInfrastructure = (input: {
   // OSS default: durable usage accounting out of the box (FR-027). A module may
   // still override the recorder by registering its own.
   const usageEventRecorder = !composition.usageEventRecorderRegistration
-    ? new DurableUsageEventRecorder(requireTransactionalUsageEventDatabase(database), logger)
+    ? new DurableUsageEventRecorder(database.kysely, logger)
     : typeof composition.usageEventRecorderRegistration === "function"
       ? composition.usageEventRecorderRegistration({ database, logger })
       : composition.usageEventRecorderRegistration;
@@ -314,7 +311,7 @@ export const buildRepositories = (
   bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database.kysely),
   chunkRepository: new ChunkRepository(database, new PgVectorChunkStorage()),
   conversationRepository: new ConversationRepository(database.kysely),
-  conversationOwnershipRepository: new ConversationOwnershipRepository(database),
+  conversationOwnershipRepository: new ConversationOwnershipRepository(database.kysely),
   documentProcessingJobRepository: new DocumentProcessingJobRepository(database.kysely),
   documentRepository: new DocumentRepository(database.kysely),
   documentSourceRepository: new DocumentSourceRepository(database.kysely),
@@ -338,14 +335,14 @@ export const buildRepositories = (
   // customer-email connections moved onto the integration_connections spine (#751) after
   // this Kysely migration began; that repo still targets the spine via raw SQL and will be
   // migrated to Kysely in a later pass, so it keeps the raw Database here.
-  customerEmailConnectionRepository: new CustomerEmailConnectionRepository(database),
-  integrationConnectionRepository: new IntegrationConnectionRepository(database),
-  slackInstallationRepository: new SlackInstallationRepository(database),
-  slackChannelBindingRepository: new SlackChannelBindingRepository(database),
+  customerEmailConnectionRepository: new CustomerEmailConnectionRepository(database.kysely),
+  integrationConnectionRepository: new IntegrationConnectionRepository(database.kysely),
+  slackInstallationRepository: new SlackInstallationRepository(database.kysely),
+  slackChannelBindingRepository: new SlackChannelBindingRepository(database.kysely),
   emailSkillDefinitionRepository: new EmailSkillDefinitionRepository(database.kysely),
   emailSkillActivityRepository: new EmailSkillActivityRepository(database.kysely),
   webhookSkillDefinitionRepository: new WebhookSkillDefinitionRepository(database.kysely),
-  slackSkillDefinitionRepository: new SlackSkillDefinitionRepository(database),
+  slackSkillDefinitionRepository: new SlackSkillDefinitionRepository(database.kysely),
 });
 
 export const buildAccessServices = (input: {
@@ -971,7 +968,7 @@ export const buildChatServices = (input: {
     ? new NoopAnswerFeedbackHistoryProvider()
     : typeof input.composition.answerFeedbackHistoryProviderRegistration === "function"
       ? input.composition.answerFeedbackHistoryProviderRegistration({
-          database: input.database,
+          database: input.database.kysely,
           logger: input.logger,
         })
       : input.composition.answerFeedbackHistoryProviderRegistration;
@@ -1247,7 +1244,7 @@ export const buildChatServices = (input: {
   const clarificationStore = new ClarificationStateRepository(input.database.kysely);
   const retrievalSenseDetector = new SenseGroupingService({
     policy: retrievalSensePolicy,
-    embeddingReader: new PostgresSenseEmbeddingReader(input.database),
+    embeddingReader: new PostgresSenseEmbeddingReader(input.database.kysely),
     labelGateway: new ModelSenseLabelGateway(
       input.llmRegistry.createChatInferencePipeline(input.usageEventRecorder),
       loadPromptTemplate("chat/clarification-sense-labels.md"),
@@ -1303,7 +1300,7 @@ export const buildChatServices = (input: {
     // dispatched out of band by `actionDispatchWorker` in the worker process.
     actionOutbox,
     assistantTurnPersistence: new PostgresAssistantTurnPersistence(
-      input.database,
+      input.database.kysely,
       undefined,
       input.conversationOwnershipRepository,
     ),
@@ -1378,7 +1375,7 @@ export const buildChatServices = (input: {
     turnRouter,
   });
   const approvalDecisionService = new ApprovalDecisionService(
-    new PendingDecisionRepository(input.database),
+    new PendingDecisionRepository(input.database.kysely),
     chatService.asApprovalResumeRunner(),
     {
       resolveWorkspaceRole: (caller) => input.accountAccessService.resolveWorkspaceRole(caller),

@@ -101,7 +101,7 @@ describeIfDatabase("email skill definition repository (postgres)", () => {
     );
 
     const db = clientBackedDatabase(client);
-    connectionRepository = new CustomerEmailConnectionRepository(db);
+    connectionRepository = new CustomerEmailConnectionRepository(db.kysely);
     repository = new EmailSkillDefinitionRepository(db.kysely);
     connectionId = (await connectionRepository.create({
       workspaceId,

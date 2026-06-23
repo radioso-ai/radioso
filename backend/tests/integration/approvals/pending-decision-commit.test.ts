@@ -98,8 +98,8 @@ describeIfDatabase("pending decision assistant-turn commit fence", () => {
     accounts = new AccountRepository(database.kysely);
     workspaces = new WorkspaceRepository(database.kysely);
     conversations = new ConversationRepository(database.kysely);
-    pendingDecisions = new PendingDecisionRepository(database);
-    persistence = new PostgresAssistantTurnPersistence(database, 60_000);
+    pendingDecisions = new PendingDecisionRepository(database.kysely);
+    persistence = new PostgresAssistantTurnPersistence(database.kysely, 60_000);
   });
 
   afterAll(async () => {

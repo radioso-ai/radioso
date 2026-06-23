@@ -6,6 +6,7 @@ import type {
 } from "@radioso/connector-api";
 
 import { WhatsAppClient, WhatsAppClientError } from "./whatsappClient.js";
+import { connectorKyselyDb } from "../../services/connectorKyselyDb.js";
 import { PostgresWhatsAppPersistence, type WhatsAppPersistencePort } from "./whatsappPersistence.js";
 
 interface WhatsAppMessageHandlerOptions {
@@ -55,7 +56,7 @@ export class WhatsAppMessageHandler {
   private readonly retryTimers = new Set<NodeJS.Timeout>();
 
   constructor(private readonly options: WhatsAppMessageHandlerOptions) {
-    this.persistence = options.persistence ?? new PostgresWhatsAppPersistence(options.db);
+    this.persistence = options.persistence ?? new PostgresWhatsAppPersistence(connectorKyselyDb(options.db));
     this.debounceMs = options.debounceMs ?? 3000;
     this.retryBaseDelayMs = options.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS;
     this.maxRetryAttempts = options.maxRetryAttempts ?? DEFAULT_MAX_RETRY_ATTEMPTS;

@@ -467,7 +467,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     buildStepScopeTag: scopeTag.step,
   });
 
-  const evalRepository = new EvalRepository(infrastructure.database);
+  const evalRepository = new EvalRepository(infrastructure.database.kysely);
   const evalSnapshotService = new EvalSnapshotService(
     repositories.conversationRepository,
     repositories.messageRepository,

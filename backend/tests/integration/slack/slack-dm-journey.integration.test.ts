@@ -119,9 +119,9 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
 
   it("creates a Slack conversation on first DM, posts a reply, and reuses it on the second DM", async () => {
     const oauthConnections = new OauthConnectionRepository(database.kysely);
-    const integrationConnections = new IntegrationConnectionRepository(database);
-    const installations = new SlackInstallationRepository(database);
-    const bindings = new SlackChannelBindingRepository(database);
+    const integrationConnections = new IntegrationConnectionRepository(database.kysely);
+    const installations = new SlackInstallationRepository(database.kysely);
+    const bindings = new SlackChannelBindingRepository(database.kysely);
     const installationService = new SlackInstallationService({
       oauthConnections,
       integrationConnections,
@@ -151,7 +151,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       installations,
       bindings,
       installationService,
-      persistence: new PostgresSlackPersistence(database),
+      persistence: new PostgresSlackPersistence(database.kysely),
       chat: {
         answer: async (input) => {
           chatInputs.push({
@@ -232,9 +232,9 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
 
   it("maps a channel mention thread to one conversation and escalates no-context mention turns", async () => {
     const oauthConnections = new OauthConnectionRepository(database.kysely);
-    const integrationConnections = new IntegrationConnectionRepository(database);
-    const installations = new SlackInstallationRepository(database);
-    const bindings = new SlackChannelBindingRepository(database);
+    const integrationConnections = new IntegrationConnectionRepository(database.kysely);
+    const installations = new SlackInstallationRepository(database.kysely);
+    const bindings = new SlackChannelBindingRepository(database.kysely);
     const installationService = new SlackInstallationService({
       oauthConnections,
       integrationConnections,
@@ -265,7 +265,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       installations,
       bindings,
       installationService,
-      persistence: new PostgresSlackPersistence(database),
+      persistence: new PostgresSlackPersistence(database.kysely),
       slackPostOutbox: new ActionRequestRepository(database.kysely),
       chat: {
         answer: async (input) => {
@@ -372,9 +372,9 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
 
   it("enqueues a gap escalation from a typed no_context outcome and skips grounded turns", async () => {
     const oauthConnections = new OauthConnectionRepository(database.kysely);
-    const integrationConnections = new IntegrationConnectionRepository(database);
-    const installations = new SlackInstallationRepository(database);
-    const bindings = new SlackChannelBindingRepository(database);
+    const integrationConnections = new IntegrationConnectionRepository(database.kysely);
+    const installations = new SlackInstallationRepository(database.kysely);
+    const bindings = new SlackChannelBindingRepository(database.kysely);
     const installationService = new SlackInstallationService({
       oauthConnections,
       integrationConnections,
@@ -403,7 +403,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       installations,
       bindings,
       installationService,
-      persistence: new PostgresSlackPersistence(database),
+      persistence: new PostgresSlackPersistence(database.kysely),
       slackPostOutbox: new ActionRequestRepository(database.kysely),
       chat: {
         answer: async (input) => {

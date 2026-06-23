@@ -1,8 +1,7 @@
-import {
-  databaseExecutorFromClient,
-  type Database,
-  type DatabaseExecutor,
-} from "../../shared/infra/database.js";
+import { sql } from "kysely";
+
+import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 
 export type PendingDecisionStatus = "pending" | "approved" | "rejected" | "cancelled";
 export type PendingDecisionOutcome = "approved" | "rejected";
@@ -85,7 +84,11 @@ interface PendingDecisionRow {
   updated_at: Date;
 }
 
-const pendingDecisionColumns = `
+// The full pending_decisions projection. Kept as a single `sql` fragment spliced into each
+// SELECT/RETURNING so the column list (and therefore `mapRecord`) stays identical to the
+// raw-SQL original; the builder's `.selectAll()` would not guarantee column ordering parity
+// the way an explicit list does.
+const pendingDecisionColumns = sql`
   id,
   handle,
   conversation_id,
@@ -152,84 +155,81 @@ const mapRecord = (row: PendingDecisionRow): PendingDecisionRecord => ({
 });
 
 export class PendingDecisionRepository {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async create(input: PendingDecisionCreateInput): Promise<PendingDecisionRecord> {
-    const row = await this.database.queryOne<PendingDecisionRow>(
-      `INSERT INTO pending_decisions (
-          handle,
-          conversation_id,
-          session_id,
-          workspace_id,
-          agent_id,
-          routine_id,
-          step_id,
-          reason,
-          options,
-          decider_scope,
-          content_hash,
-          deadline
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11, $12)
-        RETURNING ${pendingDecisionColumns}`,
-      [
-        input.handle,
-        input.conversationId,
-        input.sessionId,
-        input.workspaceId,
-        input.agentId,
-        input.routineId,
-        input.stepId,
-        input.reason ?? null,
-        JSON.stringify(input.options),
-        JSON.stringify(input.deciderScope),
-        input.contentHash,
-        input.deadline ?? null,
-      ],
-    );
+    const result = await sql<PendingDecisionRow>`
+      INSERT INTO pending_decisions (
+        handle,
+        conversation_id,
+        session_id,
+        workspace_id,
+        agent_id,
+        routine_id,
+        step_id,
+        reason,
+        options,
+        decider_scope,
+        content_hash,
+        deadline
+      )
+      VALUES (
+        ${input.handle},
+        ${input.conversationId},
+        ${input.sessionId},
+        ${input.workspaceId},
+        ${input.agentId},
+        ${input.routineId},
+        ${input.stepId},
+        ${input.reason ?? null},
+        ${toJsonb(input.options)},
+        ${toJsonb(input.deciderScope)},
+        ${input.contentHash},
+        ${input.deadline ?? null}
+      )
+      RETURNING ${pendingDecisionColumns}
+    `.execute(this.db);
 
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error("Expected created pending decision");
+    }
     return mapRecord(row);
   }
 
   async loadByHandle(handle: string): Promise<PendingDecisionRecord | null> {
-    const row = await this.database.queryOptional<PendingDecisionRow>(
-      `SELECT ${pendingDecisionColumns}
-         FROM pending_decisions
-        WHERE handle = $1`,
-      [handle],
-    );
+    const result = await sql<PendingDecisionRow>`
+      SELECT ${pendingDecisionColumns}
+        FROM pending_decisions
+       WHERE handle = ${handle}
+    `.execute(this.db);
 
+    const row = result.rows[0];
     return row ? mapRecord(row) : null;
   }
 
-  // `executor` lets the caller run the CAS inside an open transaction (the turn-commit
+  // `db` lets the caller run the CAS inside an open transaction (the turn-commit
   // fence) so the decision flip, the routine resume, and the assistant-turn persistence
   // all commit or roll back together. A crash before COMMIT leaves the row `pending`, so
   // a retried resolve re-runs cleanly (crash-safe; spec 091 review finding P1(b)).
   async resolve(
     input: PendingDecisionResolveInput,
-    executor: Pick<DatabaseExecutor, "queryOptional"> = this.database,
+    db: Db = this.db,
   ): Promise<PendingDecisionRecord | null> {
-    const row = await executor.queryOptional<PendingDecisionRow>(
-      `UPDATE pending_decisions
-          SET status = $2,
-              decision = $3::jsonb,
-              decided_by = $4,
-              decided_at = now(),
-              updated_at = now()
-        WHERE handle = $1
-          AND status = 'pending'
-          AND content_hash = $5
-        RETURNING ${pendingDecisionColumns}`,
-      [
-        input.handle,
-        input.outcome,
-        JSON.stringify(input.decision),
-        input.decidedBy,
-        input.contentHash,
-      ],
-    );
+    const result = await sql<PendingDecisionRow>`
+      UPDATE pending_decisions
+         SET status = ${input.outcome},
+             decision = ${toJsonb(input.decision)},
+             decided_by = ${input.decidedBy},
+             decided_at = ${currentTimestamp()},
+             updated_at = ${currentTimestamp()}
+       WHERE handle = ${input.handle}
+         AND status = 'pending'
+         AND content_hash = ${input.contentHash}
+      RETURNING ${pendingDecisionColumns}
+    `.execute(db);
 
+    const row = result.rows[0];
     return row ? mapRecord(row) : null;
   }
 
@@ -237,29 +237,27 @@ export class PendingDecisionRepository {
     input: PendingDecisionResolveInput,
     onResolved: (
       record: PendingDecisionRecord,
-      executor: DatabaseExecutor,
+      db: Db,
     ) => Promise<T>,
   ): Promise<T | null> {
-    return this.database.withTransaction(async (client) => {
-      const executor = databaseExecutorFromClient(client);
-      const resolved = await this.resolve(input, executor);
+    return this.db.transaction().execute(async (trx) => {
+      const resolved = await this.resolve(input, trx);
       if (!resolved) {
         return null;
       }
-      return onResolved(resolved, executor);
+      return onResolved(resolved, trx);
     });
   }
 
   async listPending(input: PendingDecisionListInput): Promise<PendingDecisionRecord[]> {
-    const rows = await this.database.query<PendingDecisionRow>(
-      `SELECT ${pendingDecisionColumns}
-         FROM pending_decisions
-        WHERE workspace_id = $1
-          AND status = 'pending'
-        ORDER BY created_at DESC`,
-      [input.workspaceId],
-    );
+    const result = await sql<PendingDecisionRow>`
+      SELECT ${pendingDecisionColumns}
+        FROM pending_decisions
+       WHERE workspace_id = ${input.workspaceId}
+         AND status = 'pending'
+       ORDER BY created_at DESC
+    `.execute(this.db);
 
-    return rows.map(mapRecord);
+    return result.rows.map(mapRecord);
   }
 }

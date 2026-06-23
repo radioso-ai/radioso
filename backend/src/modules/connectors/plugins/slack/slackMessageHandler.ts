@@ -17,6 +17,7 @@ import {
   enqueueSlackPostAction,
   slackPostIdempotencyKey,
   type SlackPostOutboxPort,
+  buildOwnershipMessage,
 } from "../../../slack/public.js";
 import type { SlackPersistencePort } from "./slackPersistence.js";
 
@@ -222,6 +223,13 @@ export class SlackMessageHandler {
     if (input.outcome !== "no_context" || !input.escalationChannelId || !this.options.slackPostOutbox) {
       return;
     }
+    const message = buildOwnershipMessage({
+      conversationId: input.conversationId,
+      workspaceId: input.installation.workspaceId,
+      state: "ai_owned",
+      contextText: input.query,
+      dashboardPath: `/conversations/${input.conversationId}`,
+    });
     await enqueueSlackPostAction(this.options.slackPostOutbox, {
       workspaceId: input.installation.workspaceId,
       conversationId: input.conversationId,
@@ -232,7 +240,8 @@ export class SlackMessageHandler {
       payload: {
         installationId: input.installation.id,
         channelId: input.escalationChannelId,
-        text: `Slack question needs human follow-up:\n\n${input.query}\n\nConversation: ${input.conversationId}`,
+        text: message.text,
+        blocks: message.blocks,
         conversationRef: input.conversationId,
         kind: "gap_escalation",
       },

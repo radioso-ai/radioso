@@ -3,6 +3,7 @@ export {
 } from "./operatorNotificationDispatcher.js";
 export type {
   ApprovalOperatorNotification,
+  HandoffOperatorNotification,
   OperatorNotification,
   OperatorNotificationContext,
   OperatorNotificationSink,

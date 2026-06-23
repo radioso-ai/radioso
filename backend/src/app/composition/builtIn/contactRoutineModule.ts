@@ -29,7 +29,9 @@ import {
   SlackInstallationRepository,
   SlackOperatorNotificationSink,
 } from "../../../modules/slack/public.js";
-import type { ApplicationModule } from "../applicationModule.js";
+import type { AppLogger } from "../../../shared/observability/logger.js";
+import type { Database } from "../../../shared/infra/database.js";
+import type { ApplicationModule, MailTransportPort } from "../applicationModule.js";
 
 /** Reads the per-agent contact-requests flag for the advertiser. */
 interface AgentContactFlagLookup {
@@ -62,6 +64,37 @@ const isContactIntentClick = (metadata: Record<string, unknown> | undefined): bo
     typeof intent === "object" &&
     !Array.isArray(intent) &&
     (intent as { skillName?: unknown }).skillName === CONTACT_INTENT_SKILL_NAME;
+};
+
+const buildOperatorNotificationDispatcher = (input: {
+  database: Database;
+  logger: AppLogger;
+  mailService: MailTransportPort;
+  assertPublicWebsiteUrl: (url: string) => Promise<void>;
+}): OperatorNotificationDispatcher => {
+  const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
+    new WorkspaceRepository(input.database.kysely),
+    new AccountMembershipRepository(input.database.kysely),
+  );
+  const recipients = new ConfiguredContactDeliveryResolver(
+    new ConversationRepository(input.database.kysely),
+    new AgentRepository(input.database.kysely),
+    ownerFallback,
+  );
+  return new OperatorNotificationDispatcher([
+    new EmailWebhookOperatorNotificationSink(
+      input.mailService,
+      recipients,
+      input.logger,
+      new FetchContactWebhookHttpClient(input.assertPublicWebsiteUrl),
+    ),
+    new SlackOperatorNotificationSink({
+      installations: new SlackInstallationRepository(input.database.kysely),
+      bindings: new SlackChannelBindingRepository(input.database.kysely),
+      pendingDecisions: new PendingDecisionRepository(input.database.kysely),
+      outbox: new ActionRequestRepository(input.database.kysely),
+    }),
+  ], input.logger);
 };
 
 /**
@@ -113,19 +146,8 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
       type: HANDOFF_NOTIFY_ACTION_TYPE,
       requiredCapabilities: [capabilityNames.humanContact.request],
       handler: ({ database, logger, mailService, assertPublicWebsiteUrl }) => {
-        const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
-          new WorkspaceRepository(database.kysely),
-          new AccountMembershipRepository(database.kysely),
-        );
         return new HandoffNotifyActionHandler(
-          mailService,
-          new ConfiguredContactDeliveryResolver(
-            new ConversationRepository(database.kysely),
-            new AgentRepository(database.kysely),
-            ownerFallback,
-          ),
-          logger,
-          new FetchContactWebhookHttpClient(assertPublicWebsiteUrl),
+          buildOperatorNotificationDispatcher({ database, logger, mailService, assertPublicWebsiteUrl }),
         );
       },
     });
@@ -133,31 +155,8 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
       type: APPROVAL_REQUEST_ACTION_TYPE,
       requiredCapabilities: [capabilityNames.humanContact.request],
       handler: ({ database, logger, mailService, assertPublicWebsiteUrl }) => {
-        const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
-          new WorkspaceRepository(database.kysely),
-          new AccountMembershipRepository(database.kysely),
-        );
-        const recipients = new ConfiguredContactDeliveryResolver(
-          new ConversationRepository(database.kysely),
-          new AgentRepository(database.kysely),
-          ownerFallback,
-        );
-        const dispatcher = new OperatorNotificationDispatcher([
-          new EmailWebhookOperatorNotificationSink(
-            mailService,
-            recipients,
-            logger,
-            new FetchContactWebhookHttpClient(assertPublicWebsiteUrl),
-          ),
-          new SlackOperatorNotificationSink({
-            installations: new SlackInstallationRepository(database.kysely),
-            bindings: new SlackChannelBindingRepository(database.kysely),
-            pendingDecisions: new PendingDecisionRepository(database.kysely),
-            outbox: new ActionRequestRepository(database.kysely),
-          }),
-        ], logger);
         return new ApprovalRequestActionHandler(
-          dispatcher,
+          buildOperatorNotificationDispatcher({ database, logger, mailService, assertPublicWebsiteUrl }),
         );
       },
     });

@@ -26,9 +26,6 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
   ) {}
 
   async deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<void> {
-    if (notification.kind !== "approval") {
-      return;
-    }
     const recipientContext = {
       requestId: context.requestId,
       workspaceId: context.workspaceId ?? notification.workspaceId,
@@ -39,43 +36,72 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
     };
     const target = await this.recipients.resolve(recipientContext);
     if (target.emails.length === 0 && !target.webhook) {
+      const actionType = notification.kind === "approval" ? "approval.request" : "handoff.notify";
       this.logger?.warn(
         { workspaceId: context.workspaceId ?? notification.workspaceId, conversationId: context.conversationId ?? notification.conversationId },
-        "approval.request: no recipient configured for workspace; skipping",
+        `${actionType}: no recipient configured for workspace; skipping`,
       );
       return;
     }
 
     const baseIdempotencyKey = context.idempotencyKey ?? context.requestId;
-    const text = [
-      "A conversation is waiting for an approval decision.",
-      "",
-      `Conversation: ${notification.conversationId}`,
-      `Workspace: ${notification.workspaceId}`,
-      `Agent: ${notification.agentId}`,
-      `Decision: ${notification.handle}`,
-      `Open: ${notification.dashboardPath}`,
-    ].join("\n");
+    const delivery = notification.kind === "approval"
+      ? {
+          subject: "Conversation needs an approval",
+          text: [
+            "A conversation is waiting for an approval decision.",
+            "",
+            `Conversation: ${notification.conversationId}`,
+            `Workspace: ${notification.workspaceId}`,
+            `Agent: ${notification.agentId}`,
+            `Decision: ${notification.handle}`,
+            `Open: ${notification.dashboardPath}`,
+          ].join("\n"),
+          webhookPayload: {
+            workspaceId: notification.workspaceId,
+            agentId: notification.agentId,
+            conversationId: notification.conversationId,
+            handle: notification.handle,
+            dashboardPath: notification.dashboardPath,
+            requestId: context.requestId,
+          },
+        }
+      : {
+          subject: "Conversation needs a human",
+          text: [
+            "A conversation needs a human operator.",
+            "",
+            `Conversation: ${notification.conversationId}`,
+            `Workspace: ${notification.workspaceId}`,
+            `Agent: ${notification.agentId}`,
+            `Reason: ${notification.reason}`,
+            `Open: ${notification.dashboardPath}`,
+          ].join("\n"),
+          webhookPayload: {
+            workspaceId: notification.workspaceId,
+            agentId: notification.agentId,
+            conversationId: notification.conversationId,
+            reason: notification.reason,
+            dashboardPath: notification.dashboardPath,
+            requestId: context.requestId,
+          },
+        };
 
     await Promise.all([
       ...target.emails.map((to) =>
         this.mailer.send({
           to,
-          subject: "Conversation needs an approval",
-          text,
+          subject: delivery.subject,
+          text: delivery.text,
           idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(to)}`,
         })),
       target.webhook ? this.postWebhook({
         webhook: target.webhook,
-        payload: {
-          workspaceId: notification.workspaceId,
-          agentId: notification.agentId,
-          conversationId: notification.conversationId,
-          handle: notification.handle,
-          dashboardPath: notification.dashboardPath,
-          requestId: context.requestId,
-        },
+        payload: delivery.webhookPayload,
         idempotencyKey: `${baseIdempotencyKey}:webhook`,
+        missingClientMessage: notification.kind === "approval"
+          ? "Approval request webhook delivery is not configured"
+          : "Handoff webhook delivery is not configured",
       }) : Promise.resolve(),
     ]);
   }
@@ -84,9 +110,10 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
     webhook: AgentContactWebhook;
     payload: Record<string, unknown>;
     idempotencyKey: string;
+    missingClientMessage: string;
   }): Promise<void> {
     if (!this.webhookClient) {
-      throw new Error("Approval request webhook delivery is not configured");
+      throw new Error(input.missingClientMessage);
     }
     await this.webhookClient.post({
       url: input.webhook.url,

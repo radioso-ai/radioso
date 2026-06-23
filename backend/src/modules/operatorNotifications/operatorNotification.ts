@@ -7,7 +7,16 @@ export type ApprovalOperatorNotification = {
   dashboardPath: string;
 };
 
-export type OperatorNotification = ApprovalOperatorNotification;
+export type HandoffOperatorNotification = {
+  kind: "handoff";
+  workspaceId: string;
+  conversationId: string;
+  agentId: string;
+  reason: string;
+  dashboardPath: string;
+};
+
+export type OperatorNotification = ApprovalOperatorNotification | HandoffOperatorNotification;
 
 export interface OperatorNotificationContext {
   requestId: string;

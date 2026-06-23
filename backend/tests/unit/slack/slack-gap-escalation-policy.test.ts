@@ -137,8 +137,21 @@ describe("Slack gap escalation policy", () => {
         kind: "gap_escalation",
         installationId: installation.id,
         channelId: "CSUPPORT",
+        conversationRef: "44444444-4444-4444-4444-444444444444",
+        text: "Unsupported question",
       }),
     }));
+    const payload = vi.mocked(outbox.enqueue).mock.calls[0]?.[0].payload as { blocks: Array<Record<string, unknown>> };
+    const actions = payload.blocks.find((block) => block.type === "actions") as { elements: Array<Record<string, unknown>> };
+    expect(actions.elements).toHaveLength(1);
+    expect(actions.elements[0]).toMatchObject({
+      action_id: "ownership_takeover",
+      text: { text: "Take over" },
+    });
+    expect(JSON.parse(actions.elements[0]!.value as string)).toEqual({
+      conversationId: "44444444-4444-4444-4444-444444444444",
+      workspaceId: installation.workspaceId,
+    });
   });
 
   it("does not escalate a grounded turn even when answer text looks like a gap", async () => {

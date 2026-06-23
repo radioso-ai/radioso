@@ -12,7 +12,7 @@ import {
   enqueueSlackPostAction,
   slackPostIdempotencyKey,
 } from "../outbox/slackPostAction.js";
-import { buildDecisionMessage } from "./slackBlockKitBuilder.js";
+import { buildDecisionMessage, buildOwnershipMessage } from "./slackBlockKitBuilder.js";
 
 const isPendingApproval = (decision: PendingDecisionRecord, notification: OperatorNotification): boolean =>
   notification.kind === "approval" &&
@@ -30,9 +30,6 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
   }) {}
 
   async deliver(notification: OperatorNotification, _context: OperatorNotificationContext): Promise<void> {
-    if (notification.kind !== "approval") {
-      return;
-    }
     const installation = await this.options.installations.findByWorkspaceId(notification.workspaceId);
     if (!installation) {
       return;
@@ -41,6 +38,34 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
     if (!binding?.escalationChannelId) {
       return;
     }
+    if (notification.kind === "handoff") {
+      const message = buildOwnershipMessage({
+        conversationId: notification.conversationId,
+        workspaceId: notification.workspaceId,
+        state: "ai_owned",
+        contextText: notification.reason,
+        dashboardPath: notification.dashboardPath,
+      });
+
+      await enqueueSlackPostAction(this.options.outbox, {
+        workspaceId: notification.workspaceId,
+        conversationId: notification.conversationId,
+        idempotencyKey: slackPostIdempotencyKey({
+          kind: "operator_notification",
+          sourceId: `handoff:${notification.conversationId}`,
+        }),
+        payload: {
+          installationId: installation.id,
+          channelId: binding.escalationChannelId,
+          kind: "operator_notification",
+          conversationRef: notification.conversationId,
+          text: message.text,
+          blocks: message.blocks,
+        },
+      });
+      return;
+    }
+
     const decision = await this.options.pendingDecisions.loadByHandle(notification.handle);
     if (!decision || !isPendingApproval(decision, notification)) {
       return;

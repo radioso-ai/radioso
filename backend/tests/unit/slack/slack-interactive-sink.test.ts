@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { EmailWebhookOperatorNotificationSink } from "../../../src/modules/chat/services/actions/emailWebhookSink.js";
+import type { ContactNotificationMailer } from "../../../src/modules/chat/services/actions/contactSendActionHandler.js";
+import { OperatorNotificationDispatcher } from "../../../src/modules/operatorNotifications/public.js";
 import { SlackOperatorNotificationSink } from "../../../src/modules/slack/public.js";
 import type {
   SlackChannelBindingRecord,
@@ -61,6 +64,15 @@ const notification = {
   conversationId: "conv_1",
   agentId: "agent_1",
   handle: "pd_1",
+  dashboardPath: "/conversations/conv_1",
+};
+
+const handoffNotification = {
+  kind: "handoff" as const,
+  workspaceId: "ws_1",
+  conversationId: "conv_1",
+  agentId: "agent_1",
+  reason: "Customer asked for a human",
   dashboardPath: "/conversations/conv_1",
 };
 
@@ -148,5 +160,76 @@ describe("SlackOperatorNotificationSink", () => {
     const resolved = createSink({ decision: decision({ status: "resolved" }) });
     await resolved.sink.deliver(notification, { requestId: "request_1" });
     expect(resolved.enqueued).toHaveLength(0);
+  });
+
+  it("enqueues an ownership Slack post for handoff notifications", async () => {
+    const { sink, enqueued } = createSink();
+
+    await sink.deliver(handoffNotification, {
+      requestId: "request_1",
+      workspaceId: "ws_1",
+      conversationId: "conv_1",
+      idempotencyKey: "routine-action:conv_1:handoff.notify",
+    });
+
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]).toMatchObject({
+      type: "slack.post",
+      workspaceId: "ws_1",
+      conversationId: "conv_1",
+      idempotencyKey: "slack:operator_notification:handoff:conv_1",
+      payload: {
+        installationId: installation.id,
+        channelId: "COPS",
+        kind: "operator_notification",
+        conversationRef: "conv_1",
+        text: "Customer asked for a human",
+      },
+    });
+    const payload = enqueued[0]!.payload as { blocks: Array<Record<string, unknown>> };
+    const actions = payload.blocks.find((block) => block.type === "actions") as { elements: Array<Record<string, unknown>> };
+    expect(actions.elements).toHaveLength(1);
+    expect(actions.elements[0]).toMatchObject({
+      action_id: "ownership_takeover",
+      text: { text: "Take over" },
+    });
+    expect(JSON.parse(actions.elements[0]!.value as string)).toEqual({
+      conversationId: "conv_1",
+      workspaceId: "ws_1",
+    });
+  });
+
+  it("skips handoff Slack delivery when the workspace has no installation or operator channel", async () => {
+    const missing = createSink({ installation: null });
+    await missing.sink.deliver(handoffNotification, { requestId: "request_1" });
+    expect(missing.enqueued).toHaveLength(0);
+
+    const noChannel = createSink({ binding: { ...binding, escalationChannelId: null } });
+    await noChannel.sink.deliver(handoffNotification, { requestId: "request_1" });
+    expect(noChannel.enqueued).toHaveLength(0);
+  });
+
+  it("keeps email delivery when the workspace has no Slack installation", async () => {
+    const sent: Array<Parameters<ContactNotificationMailer["send"]>[0]> = [];
+    const emailSink = new EmailWebhookOperatorNotificationSink(
+      { send: async (message) => { sent.push(message); } },
+      { resolve: async () => ({ emails: ["owner@business.example"], webhook: null }) },
+    );
+    const slack = createSink({ installation: null });
+    const dispatcher = new OperatorNotificationDispatcher([emailSink, slack.sink]);
+
+    await dispatcher.dispatch(handoffNotification, {
+      requestId: "request_1",
+      workspaceId: "ws_1",
+      conversationId: "conv_1",
+      idempotencyKey: "routine-action:conv_1:handoff.notify",
+    });
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      to: "owner@business.example",
+      subject: "Conversation needs a human",
+    });
+    expect(slack.enqueued).toHaveLength(0);
   });
 });

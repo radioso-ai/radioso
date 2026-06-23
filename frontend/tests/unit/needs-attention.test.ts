@@ -32,6 +32,7 @@ const conversation = (
   agentName: 'Marta',
   sourceChannel: 'authenticated_chat',
   sourceOrigin: null,
+  channelContext: null,
   anonymousSessionId: null,
   createdAt: '2026-06-19T10:00:00.000Z',
   updatedAt: '2026-06-19T10:00:00.000Z',

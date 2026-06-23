@@ -19,6 +19,7 @@ import { LogoSpinner } from '@/components/ui/spinner'
 import { editionController } from '@/lib/edition-controller'
 import type { ChatConversationSummary, ContactHistorySummary, DocumentSearchHistoryEntry } from '@/lib/api'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
+import { formatConversationSource, getConversationSourceBadge } from '@/lib/history-source'
 import type { WorkspaceOnboardingState } from '@/lib/onboarding'
 
 const formatter = new Intl.DateTimeFormat(undefined, {
@@ -51,7 +52,13 @@ const formatHost = (origin: string | null) => {
   }
 }
 
-const getConversationAuthLabel = (sourceChannel: string | null) => {
+const getConversationAuthLabel = (conversation: Pick<ChatConversationSummary, 'sourceChannel' | 'sourceOrigin' | 'channelContext'>) => {
+  const badge = getConversationSourceBadge(conversation)
+  if (badge) {
+    return badge.label
+  }
+
+  const { sourceChannel } = conversation
   if (sourceChannel === 'anonymous') {
     return 'Anonymous'
   }
@@ -67,7 +74,12 @@ const getConversationAuthLabel = (sourceChannel: string | null) => {
   return 'Authenticated'
 }
 
-const getConversationSourceLabel = (conversation: Pick<ChatConversationSummary, 'sourceChannel' | 'sourceOrigin'>) => {
+const getConversationSourceLabel = (conversation: Pick<ChatConversationSummary, 'sourceChannel' | 'sourceOrigin' | 'channelContext'>) => {
+  const channelContextLabel = formatConversationSource(conversation)
+  if (channelContextLabel) {
+    return channelContextLabel
+  }
+
   const host = formatHost(conversation.sourceOrigin)
   if (host) {
     return host
@@ -182,6 +194,8 @@ function ConversationRow({
   onSelect: (item: SelectedHistoryItem) => void
 }) {
   const sourceLabel = getConversationSourceLabel(conversation)
+  const sourceBadge = getConversationSourceBadge(conversation)
+  const authLabel = sourceBadge ? null : getConversationAuthLabel(conversation)
 
   return (
     <DashboardTableRow>
@@ -201,8 +215,13 @@ function ConversationRow({
         <span className="block truncate">{sourceLabel}</span>
       </DashboardTableCell>
       <DashboardTableCell className="w-48 text-sm text-muted-foreground">
-        <span className="block truncate">
-          {getConversationAuthLabel(conversation.sourceChannel)} - {formatMessageCount(conversation.messageCount)}
+        <span className="flex min-w-0 items-center gap-2">
+          {sourceBadge ? (
+            <span className={`${sourceBadge.className} shrink-0 text-xs font-medium`}>{sourceBadge.label}</span>
+          ) : null}
+          <span className="block truncate">
+            {authLabel ? `${authLabel} - ` : ''}{formatMessageCount(conversation.messageCount)}
+          </span>
         </span>
       </DashboardTableCell>
       <DashboardTableCell className="w-48 text-sm text-muted-foreground">

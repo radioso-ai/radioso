@@ -24,11 +24,55 @@ the knowledge base.
   Radioso posts a human follow-up message to that channel.
 - Routines can also use allowlisted Slack skills to post deliberate handoff or
   lead messages.
+- Approval gates, handoffs, and unanswered questions arrive as interactive
+  messages. Operators approve, deny, take over, reply to the customer, or hand
+  back from Slack.
 
 Answers still come from the agent's curated Radioso knowledge. If the curated
 knowledge does not cover the question, the agent must decline safely or
 escalate. The Slack channel does not make uncurated Slack content available to
 the answer.
+
+## Operator Actions in Slack
+
+When the agent needs a person, Radioso posts an interactive message to the
+operator channel. Operators act on it from Slack, without opening the dashboard.
+
+Three kinds of events arrive in the operator channel:
+
+- An approval gate posts the decision with one button per option. The options
+  come from the routine, not a fixed approve or deny pair.
+- A handoff, and an unanswered question (a gap), each post a card with a
+  **Take over** button.
+
+From these messages an operator can:
+
+- Approve or deny a decision. The routine resumes with the chosen option.
+- Take over a conversation. The agent stops answering it.
+- Talk to the customer. A short Slack form opens, and the reply goes to the
+  customer where the conversation started: back in their Slack direct message,
+  or in the website chat.
+- Hand the conversation back to the agent.
+
+Only Radioso workspace members can act. Radioso matches the Slack user to a
+member by email, so the Slack user's email must match their Radioso account. A
+Slack user who is not a member, or who lacks the takeover permission, gets a
+private message and the action does not run.
+
+Each action is resolved by the same Radioso services the dashboard uses, and is
+recorded with the operator who performed it. A button that is already out of
+date, because someone resolved it first, is rejected without changing the
+result.
+
+These actions need the app's interactivity and user lookup scopes. If the Slack
+app was installed before these were added, reinstall or re-consent it.
+
+## Slack in the Activity View
+
+A Slack conversation shows its real Slack context in the Activity view. The
+conversation list and the detail view show the Slack workspace, whether it is a
+direct message or a channel, the thread, and the Slack user. A Slack
+conversation is no longer shown as a plain authenticated chat.
 
 ## Cloud Setup
 
@@ -119,6 +163,11 @@ complete.
    token.
 7. If the typed turn outcome is `no_context`, the Slack connector can enqueue a
    `slack.post` escalation to the configured human channel.
+8. Operators act on interactive messages in Slack. Slack sends the button click
+   or form submission to `/api/connectors/slack/interactivity`. Radioso verifies
+   the signature, identifies the operator by email, and resolves the action
+   through the same approval and conversation-ownership services the dashboard
+   uses. A human reply is delivered to the customer's original channel.
 
 Logs and telemetry must use identifiers and counts only. They must not include
 Slack tokens, signing secrets, message text, prompts, completions, retrieved

@@ -4669,6 +4669,28 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        ConversationChannelContext: {
+            /** @enum {string} */
+            provider: "slack";
+            team: {
+                id: string;
+                name?: string;
+            };
+            channel: {
+                id: string;
+                /** @enum {string} */
+                type: "im" | "channel";
+            };
+            threadTs?: string;
+            user: {
+                id: string;
+                displayName?: string;
+            };
+        } | {
+            /** @enum {string} */
+            provider: "web";
+            origin?: string;
+        };
         ChatConversationSummary: {
             /** Format: uuid */
             id: string;
@@ -4677,6 +4699,28 @@ export interface components {
             agentName: string | null;
             sourceChannel: string | null;
             sourceOrigin: string | null;
+            channelContext: components["schemas"]["ConversationChannelContext"] & ({
+                /** @enum {string} */
+                provider: "slack";
+                team: {
+                    id: string;
+                    name?: string;
+                };
+                channel: {
+                    id: string;
+                    /** @enum {string} */
+                    type: "im" | "channel";
+                };
+                threadTs?: string;
+                user: {
+                    id: string;
+                    displayName?: string;
+                };
+            } | {
+                /** @enum {string} */
+                provider: "web";
+                origin?: string;
+            } | null);
             anonymousSessionId: string | null;
             /** Format: date-time */
             createdAt: string;
@@ -4873,6 +4917,28 @@ export interface components {
             agentId: string | null;
             sourceChannel: string | null;
             sourceOrigin: string | null;
+            channelContext: components["schemas"]["ConversationChannelContext"] & ({
+                /** @enum {string} */
+                provider: "slack";
+                team: {
+                    id: string;
+                    name?: string;
+                };
+                channel: {
+                    id: string;
+                    /** @enum {string} */
+                    type: "im" | "channel";
+                };
+                threadTs?: string;
+                user: {
+                    id: string;
+                    displayName?: string;
+                };
+            } | {
+                /** @enum {string} */
+                provider: "web";
+                origin?: string;
+            } | null);
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */

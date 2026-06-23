@@ -406,7 +406,22 @@ export interface ChatStreamCompletion {
   skill?: SkillStreamPayload
 }
 
-export type ChatConversationSummary = ApiSchemas['ChatConversationSummary']
+export type ConversationChannelContext =
+  | {
+      provider: 'slack'
+      team: { id: string; name?: string }
+      channel: { id: string; type: 'im' | 'channel' }
+      threadTs?: string
+      user: { id: string; displayName?: string }
+    }
+  | {
+      provider: 'web'
+      origin?: string
+    }
+
+export type ChatConversationSummary = ApiSchemas['ChatConversationSummary'] & {
+  channelContext?: ConversationChannelContext | null
+}
 export type ConversationOwnership = ApiSchemas['ConversationOwnership']
 export type ChatConversationMessage = ApiSchemas['ChatConversationMessage']
 export type ChatConversationTail = ApiSchemas['ChatConversationTail']
@@ -442,6 +457,7 @@ export type ChatConversationTurn = ApiSchemas['ChatConversationMessage'] & {
 export type ChatConversationDetail = Omit<ApiSchemas['ChatConversationDetail'], 'messages'> & {
   messages: ChatConversationTurn[]
   tailCursor: string | null
+  channelContext?: ConversationChannelContext | null
 }
 
 export interface ContactHistorySummary {

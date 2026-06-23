@@ -9810,6 +9810,94 @@
           "updatedAt"
         ]
       },
+      "ConversationChannelContext": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "slack"
+                ]
+              },
+              "team": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              },
+              "channel": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "im",
+                      "channel"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "type"
+                ]
+              },
+              "threadTs": {
+                "type": "string"
+              },
+              "user": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "displayName": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            },
+            "required": [
+              "provider",
+              "team",
+              "channel",
+              "user"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "web"
+                ]
+              },
+              "origin": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "provider"
+            ]
+          }
+        ]
+      },
       "ChatConversationSummary": {
         "type": "object",
         "properties": {
@@ -9840,6 +9928,104 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "channelContext": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConversationChannelContext"
+              },
+              {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "enum": [
+                          "slack"
+                        ]
+                      },
+                      "team": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id"
+                        ]
+                      },
+                      "channel": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "im",
+                              "channel"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "type"
+                        ]
+                      },
+                      "threadTs": {
+                        "type": "string"
+                      },
+                      "user": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "provider",
+                      "team",
+                      "channel",
+                      "user"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "enum": [
+                          "web"
+                        ]
+                      },
+                      "origin": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "provider"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
             ]
           },
           "anonymousSessionId": {
@@ -9884,6 +10070,7 @@
           "agentName",
           "sourceChannel",
           "sourceOrigin",
+          "channelContext",
           "anonymousSessionId",
           "createdAt",
           "updatedAt",
@@ -10591,6 +10778,104 @@
               "null"
             ]
           },
+          "channelContext": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConversationChannelContext"
+              },
+              {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "enum": [
+                          "slack"
+                        ]
+                      },
+                      "team": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id"
+                        ]
+                      },
+                      "channel": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "im",
+                              "channel"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "type"
+                        ]
+                      },
+                      "threadTs": {
+                        "type": "string"
+                      },
+                      "user": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "provider",
+                      "team",
+                      "channel",
+                      "user"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "enum": [
+                          "web"
+                        ]
+                      },
+                      "origin": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "provider"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            ]
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -10655,6 +10940,7 @@
           "agentId",
           "sourceChannel",
           "sourceOrigin",
+          "channelContext",
           "createdAt",
           "updatedAt",
           "messageCount",

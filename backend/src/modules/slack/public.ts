@@ -76,6 +76,19 @@ export {
   type SlackInteractivityPayload,
 } from "./operator/slackInteractivityHandler.js";
 export {
+  buildDecisionMessage,
+  buildResolvedDecisionMessage,
+  type SlackBlockKitMessage,
+} from "./operator/slackBlockKitBuilder.js";
+export {
+  FetchSlackResponseUrlClient,
+  type SlackResponseUrlClient,
+  type SlackResponseUrlFetchLike,
+} from "./operator/slackResponseUrlClient.js";
+export {
+  SlackOperatorNotificationSink,
+} from "./operator/slackOperatorNotificationSink.js";
+export {
   createSlackInteractivityRouter,
   type SlackInteractivityRouterOptions,
 } from "./operator/slackInteractivityRouter.js";

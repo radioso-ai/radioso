@@ -7,9 +7,14 @@ import type {
 
 import { OauthConnectionRepository } from "../../../../db/repositories/oauthConnectionRepository.js";
 import { ActionRequestRepository } from "../../../../db/repositories/actionRequestRepository.js";
+import { PendingDecisionRepository } from "../../../../db/repositories/pendingDecisionRepository.js";
+import type { ApprovalDecisionService } from "../../../approvals/public.js";
+import type { AuditPort } from "../../../audit/contracts/index.js";
+import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 import { IntegrationConnectionRepository } from "../../../integrationConnections/public.js";
 import {
   createSlackInteractivityRouter,
+  FetchSlackResponseUrlClient,
   PostgresSlackOperatorPermission,
   PostgresWorkspaceMemberLookup,
   SlackChannelBindingRepository,
@@ -29,6 +34,13 @@ export interface SlackPluginOptions {
   encryptionKey?: string;
   clientFactory?: SlackWebApiClientFactory;
 }
+
+type SlackConnectorContext = ConnectorContext & {
+  approvalDecisionService?: Pick<ApprovalDecisionService, "resolve">;
+  auditService?: Pick<AuditPort, "record">;
+  metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
+  assertPublicUrl?: (url: string) => Promise<void>;
+};
 
 export class SlackPlugin implements ConnectorPlugin {
   readonly id = "slack";
@@ -67,6 +79,7 @@ export class SlackPlugin implements ConnectorPlugin {
       );
     }
     const slackPostOutbox = new ActionRequestRepository(db);
+    const extendedContext = context as SlackConnectorContext;
     const installationService = new SlackInstallationService({
       oauthConnections,
       integrationConnections,
@@ -119,6 +132,14 @@ export class SlackPlugin implements ConnectorPlugin {
         handler: new SlackInteractivityHandler({
           installations,
           identityResolver: operatorIdentityResolver,
+          approvalDecisions: extendedContext.approvalDecisionService,
+          pendingDecisions: new PendingDecisionRepository(db),
+          responseUrlClient: new FetchSlackResponseUrlClient({
+            assertPublicUrl: extendedContext.assertPublicUrl,
+          }),
+          audit: extendedContext.auditService,
+          metrics: extendedContext.metricsRegistry ?? undefined,
+          logger: context.logger,
         }),
       }),
     );

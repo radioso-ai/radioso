@@ -16,6 +16,9 @@ import type {
 } from "@radioso/connector-api";
 import { randomBytes } from "node:crypto";
 
+import type { ApprovalDecisionService } from "../../approvals/public.js";
+import type { AuditPort } from "../../audit/contracts/index.js";
+import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import {
   decryptField,
   encryptField,
@@ -115,6 +118,10 @@ export class ConnectorRegistry {
     logger: ConnectorLogger;
     chat: ConnectorChatPort;
     ingestion: ConnectorIngestionPort;
+    approvalDecisionService?: Pick<ApprovalDecisionService, "resolve">;
+    auditService?: Pick<AuditPort, "record">;
+    metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
+    assertPublicUrl?: (url: string) => Promise<void>;
   }): Promise<void> {
     for (const plugin of this.plugins.values()) {
       try {
@@ -123,9 +130,13 @@ export class ConnectorRegistry {
           logger: context.logger,
           chat: context.chat,
           ingestion: context.ingestion,
+          approvalDecisionService: context.approvalDecisionService,
+          auditService: context.auditService,
+          metricsRegistry: context.metricsRegistry,
+          assertPublicUrl: context.assertPublicUrl,
           state: this.createPluginState(context.db, plugin.id),
           http: this.createHttpHost(plugin.id),
-        });
+        } as Parameters<ConnectorPlugin["initialize"]>[0]);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         context.logger.error({ connectorId: plugin.id, err: message }, `Connector "${plugin.id}" failed to initialize`);

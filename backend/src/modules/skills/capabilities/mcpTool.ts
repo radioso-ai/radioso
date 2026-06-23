@@ -40,6 +40,7 @@ export const mcpToolCapability: SkillCapabilityDescriptor<"mcp_tool", "external_
   settingsFields: [],
   outcomeVocabulary: ["completed", "failed"],
   supportedInvocationModes: ["routine_named", "agent_selectable"],
+  defaultInvocationMode: "routine_named",
   executorAdapter: EXTERNAL_SKILLS_ADAPTER,
   configSchema: mcpToolConfigSchema,
   validateConfig: (config) => mcpToolConfigSchema.safeParse(config),

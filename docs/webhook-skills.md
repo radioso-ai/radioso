@@ -27,8 +27,10 @@ Webhook deliveries are signed with `X-Radioso-Signature` and include
 Open the agent's **Skills** list and choose **Add new skill**. Pick the
 **Webhook call** tile, which is enabled when at least one workspace webhook
 destination exists, then select a destination. The destination owns the URL and
-secret; the skill form only controls the name, target, invocation mode, enabled
-state, and payload inputs.
+secret; the skill form only asks for the name and target by default. The payload
+input is exposed to routines automatically. Open **Advanced** to bind a fixed
+payload value, change invocation behavior, narrow outcomes, edit raw config, or
+disable the skill.
 
 The unified endpoints are:
 

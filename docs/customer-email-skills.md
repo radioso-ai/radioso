@@ -82,13 +82,14 @@ For each skill, choose:
 - the **Email** capability
 - a customer email connection
 - a skill name, such as `support_email_customer`
-- `draft` or `send` mode in additional settings
-- which inputs are bound by the author
-- which inputs are exposed for routine slot filling
-- an invocation mode supported by email skills
-- whether the skill is enabled
+- `draft` or `send` mode
 
-Required logical inputs must be covered before the skill can be saved:
+The form exposes required inputs to the routine by default and skips optional
+inputs. Open **Advanced** only when you need to bind a fixed input value, include
+an optional input, change invocation behavior, narrow outcomes, edit raw config,
+or disable the skill.
+
+Required logical inputs are:
 
 - `to`
 - `subject`

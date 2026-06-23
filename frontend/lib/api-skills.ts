@@ -65,6 +65,7 @@ export type SkillCapabilitySettingsField = {
   min?: number
   max?: number
   group?: string
+  advanced?: boolean
 }
 
 export type SkillCapabilityDescriptor = {
@@ -76,6 +77,7 @@ export type SkillCapabilityDescriptor = {
   settingsFields: SkillCapabilitySettingsField[]
   outcomeVocabulary: string[]
   supportedInvocationModes: AgentSkillInvocationMode[]
+  defaultInvocationMode?: AgentSkillInvocationMode
   executorAdapter: string
   targets: SkillCapabilityTarget[]
   available: boolean

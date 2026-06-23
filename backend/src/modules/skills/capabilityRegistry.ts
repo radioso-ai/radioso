@@ -40,6 +40,7 @@ export interface SkillCapabilitySettingsField {
   min?: number;
   max?: number;
   group?: string;
+  advanced?: boolean;
 }
 
 export interface SkillCapabilityDescriptor<
@@ -55,6 +56,7 @@ export interface SkillCapabilityDescriptor<
   settingsFields: readonly SkillCapabilitySettingsField[];
   outcomeVocabulary: readonly string[];
   supportedInvocationModes: readonly AgentSkillInvocationMode[];
+  defaultInvocationMode?: AgentSkillInvocationMode;
   executorAdapter: string;
   configSchema: ZodType<unknown>;
   validateConfig(config: unknown): SafeParseReturnType<unknown, unknown>;

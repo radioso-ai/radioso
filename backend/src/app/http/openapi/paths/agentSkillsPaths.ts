@@ -62,6 +62,7 @@ const CapabilitySettingsFieldSchema = z.object({
   min: z.number().optional(),
   max: z.number().optional(),
   group: z.string().optional(),
+  advanced: z.boolean().optional(),
 });
 
 const CapabilitySchema = z.object({
@@ -76,6 +77,7 @@ const CapabilitySchema = z.object({
   settingsFields: z.array(CapabilitySettingsFieldSchema),
   outcomeVocabulary: z.array(z.string()),
   supportedInvocationModes: z.array(InvocationModeSchema),
+  defaultInvocationMode: InvocationModeSchema.optional(),
   executorAdapter: z.string(),
   targets: z.array(CapabilityTargetSchema),
   available: z.boolean(),

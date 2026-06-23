@@ -37,11 +37,13 @@ export const slackPostCapability: SkillCapabilityDescriptor<"slack_post", "slack
     source: "static",
     schema: {
       fields: [...slackSkillInputKeys],
+      required: ["channelId", "text"],
     },
   },
   settingsFields: [],
   outcomeVocabulary: slackSkillOutcomes,
   supportedInvocationModes: ["routine_named", "agent_selectable"],
+  defaultInvocationMode: "routine_named",
   executorAdapter: SLACK_SKILLS_ADAPTER,
   configSchema: slackConfigSchema,
   validateConfig: (config) => slackConfigSchema.safeParse(config),

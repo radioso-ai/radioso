@@ -60,7 +60,7 @@ If an agent has `retrievalEnabled: true`, assistant chat may use retrieval and r
 - `invocationMode`
 - `enabled`
 
-Create skills with `POST /api/v1/agents/{agentId}/skills`. In the dashboard, **Add new skill** first opens a capability picker; enabled tiles then open the configuration form for that capability. The form and API use the same model for `retrieve`, `mcp_tool`, `email`, `slack_post`, `webhook_call`, and `notify`.
+Create skills with `POST /api/v1/agents/{agentId}/skills`. In the dashboard, **Add new skill** first opens a capability picker; enabled tiles then open the configuration form for that capability. The form shows only the skill name, required target or tool fields, and essential capability settings by default. Invocation mode, input binding, outcomes, enabled state, advanced JSON, and tuning settings live under **Advanced** and have working defaults. The form and API use the same model for `retrieve`, `mcp_tool`, `email`, `slack_post`, `webhook_call`, and `notify`.
 
 ## Contact requests
 

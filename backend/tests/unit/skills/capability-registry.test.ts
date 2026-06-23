@@ -59,6 +59,7 @@ describe("SkillCapabilityRegistry", () => {
       expect(descriptor.outcomeVocabulary.length).toBeGreaterThan(0);
       expect(descriptor.supportedInvocationModes).toContain("routine_named");
       expect(descriptor.supportedInvocationModes).toContain("agent_selectable");
+      expect(descriptor.defaultInvocationMode ?? descriptor.supportedInvocationModes[0]).toBeTypeOf("string");
       expect(descriptor.executorAdapter).toEqual(expect.any(String));
     }
     expect(registry.get("notify")?.requiresTarget).toBe(false);
@@ -146,5 +147,23 @@ describe("SkillCapabilityRegistry", () => {
     expect(retrieveSettings).toContain("instruction");
     expect(retrieveSettings).toContain("suggestedQuestionsCount");
     expect(retrieveSettings).not.toContain("similarityThreshold");
+    expect(registry.get("retrieve")?.defaultInvocationMode).toBe("default_answer");
+    expect(registry.get("email")?.defaultInvocationMode).toBe("routine_named");
+    const retrieveEssentialSettings = registry.get("retrieve")?.settingsFields
+      .filter((field) => field.advanced !== true)
+      .map((field) => field.key) ?? [];
+    const retrieveAdvancedSettings = registry.get("retrieve")?.settingsFields
+      .filter((field) => field.advanced === true)
+      .map((field) => field.key) ?? [];
+    expect(retrieveEssentialSettings).toEqual(["sourceScope", "instruction", "suggestedQuestionsEnabled"]);
+    expect(retrieveAdvancedSettings).toEqual(expect.arrayContaining([
+      "vectorTopK",
+      "rerankEnabled",
+      "rerankTopK",
+      "queryRewriteEnabled",
+      "semanticRewriteInstructions",
+      "lexicalRewriteInstructions",
+      "suggestedQuestionsCount",
+    ]));
   });
 });

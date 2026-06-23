@@ -56,6 +56,7 @@ export const emailCapability: SkillCapabilityDescriptor<"email", "customer_email
     source: "static",
     schema: {
       fields: ["to", "cc", "subject", "bodyText", "bodyHtml", "replyTo"],
+      required: ["to", "subject", "bodyText"],
     },
   },
   settingsFields: [
@@ -72,6 +73,7 @@ export const emailCapability: SkillCapabilityDescriptor<"email", "customer_email
   ],
   outcomeVocabulary: customerEmailSkillOutcomes,
   supportedInvocationModes: ["routine_named", "agent_selectable"],
+  defaultInvocationMode: "routine_named",
   executorAdapter: CUSTOMER_EMAIL_SKILLS_ADAPTER,
   configSchema: emailConfigSchema,
   validateConfig: (config) => emailConfigSchema.safeParse(config),

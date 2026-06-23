@@ -11841,9 +11841,12 @@ export interface operations {
                                 min?: number;
                                 max?: number;
                                 group?: string;
+                                advanced?: boolean;
                             }[];
                             outcomeVocabulary: string[];
                             supportedInvocationModes: ("default_answer" | "routine_named" | "agent_selectable")[];
+                            /** @enum {string} */
+                            defaultInvocationMode?: "default_answer" | "routine_named" | "agent_selectable";
                             executorAdapter: string;
                             targets: {
                                 id: string;

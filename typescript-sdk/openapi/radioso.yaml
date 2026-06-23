@@ -14672,7 +14672,7 @@ paths:
         - Agent Skills
       summary: List agent skill capabilities
       operationId: listAgentSkillCapabilities
-      security: &a68
+      security: &a69
         - bearerAuth: []
       parameters:
         - schema:
@@ -14696,7 +14696,7 @@ paths:
                       properties:
                         id:
                           type: string
-                          enum: &a69
+                          enum: &a70
                             - retrieve
                             - mcp_tool
                             - email
@@ -14770,6 +14770,8 @@ paths:
                                 type: number
                               group:
                                 type: string
+                              advanced:
+                                type: boolean
                             required:
                               - key
                               - label
@@ -14782,10 +14784,13 @@ paths:
                           type: array
                           items:
                             type: string
-                            enum: &a70
+                            enum: &a68
                               - default_answer
                               - routine_named
                               - agent_selectable
+                        defaultInvocationMode:
+                          type: string
+                          enum: *a68
                         executorAdapter:
                           type: string
                         targets:
@@ -14849,7 +14854,7 @@ paths:
         - Agent Skills
       summary: List agent skills
       operationId: listAgentSkills
-      security: *a68
+      security: *a69
       parameters:
         - schema:
             type: string
@@ -14883,7 +14888,7 @@ paths:
                           type: string
                         capability:
                           type: string
-                          enum: *a69
+                          enum: *a70
                         storedKind:
                           type: string
                         target:
@@ -14904,7 +14909,7 @@ paths:
                           additionalProperties: {}
                         invocationMode:
                           type: string
-                          enum: *a70
+                          enum: *a68
                         enabled:
                           type: boolean
                         createdAt:
@@ -14949,7 +14954,7 @@ paths:
         - Agent Skills
       summary: Create an agent skill
       operationId: createAgentSkill
-      security: *a68
+      security: *a69
       parameters:
         - schema:
             type: string
@@ -14968,7 +14973,7 @@ paths:
                   type: string
                 capability:
                   type: string
-                  enum: *a69
+                  enum: *a70
                 target:
                   type: object
                   properties:
@@ -14988,7 +14993,7 @@ paths:
                   default: {}
                 invocationMode:
                   type: string
-                  enum: *a70
+                  enum: *a68
                   default: routine_named
                 enabled:
                   type: boolean
@@ -15021,7 +15026,7 @@ paths:
                         type: string
                       capability:
                         type: string
-                        enum: *a69
+                        enum: *a70
                       storedKind:
                         type: string
                       target:
@@ -15042,7 +15047,7 @@ paths:
                         additionalProperties: {}
                       invocationMode:
                         type: string
-                        enum: *a70
+                        enum: *a68
                       enabled:
                         type: boolean
                       createdAt:
@@ -15100,7 +15105,7 @@ paths:
         - Agent Skills
       summary: Update an agent skill
       operationId: updateAgentSkill
-      security: *a68
+      security: *a69
       parameters:
         - schema:
             type: string
@@ -15139,7 +15144,7 @@ paths:
                   additionalProperties: {}
                 invocationMode:
                   type: string
-                  enum: *a70
+                  enum: *a68
                 enabled:
                   type: boolean
       responses:
@@ -15166,7 +15171,7 @@ paths:
                         type: string
                       capability:
                         type: string
-                        enum: *a69
+                        enum: *a70
                       storedKind:
                         type: string
                       target:
@@ -15187,7 +15192,7 @@ paths:
                         additionalProperties: {}
                       invocationMode:
                         type: string
-                        enum: *a70
+                        enum: *a68
                       enabled:
                         type: boolean
                       createdAt:
@@ -15244,7 +15249,7 @@ paths:
         - Agent Skills
       summary: Delete an agent skill
       operationId: deleteAgentSkill
-      security: *a68
+      security: *a69
       parameters:
         - schema:
             type: string

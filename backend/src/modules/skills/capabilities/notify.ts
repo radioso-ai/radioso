@@ -29,7 +29,7 @@ export const notifyCapability: SkillCapabilityDescriptor<"notify", "notify"> = {
   enumerateTargets: async () => [],
   inputSchema: {
     source: "static",
-    schema: { fields: ["message", "email"] },
+    schema: { fields: ["message", "email"], required: ["message"] },
   },
   settingsFields: [
     {
@@ -49,6 +49,7 @@ export const notifyCapability: SkillCapabilityDescriptor<"notify", "notify"> = {
   ],
   outcomeVocabulary: ["delivered", "failed"],
   supportedInvocationModes: ["routine_named", "agent_selectable"],
+  defaultInvocationMode: "routine_named",
   executorAdapter: NOTIFY_SKILLS_ADAPTER,
   configSchema: notifyConfigSchema,
   validateConfig: (config) => notifyConfigSchema.safeParse(config),

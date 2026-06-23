@@ -22887,6 +22887,9 @@
                                 },
                                 "group": {
                                   "type": "string"
+                                },
+                                "advanced": {
+                                  "type": "boolean"
                                 }
                               },
                               "required": [
@@ -22912,6 +22915,14 @@
                                 "agent_selectable"
                               ]
                             }
+                          },
+                          "defaultInvocationMode": {
+                            "type": "string",
+                            "enum": [
+                              "default_answer",
+                              "routine_named",
+                              "agent_selectable"
+                            ]
                           },
                           "executorAdapter": {
                             "type": "string"

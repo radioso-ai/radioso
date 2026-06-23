@@ -27,8 +27,10 @@ the agent posts there when a Slack question has no grounded answer.
 
 Open the agent's **Skills** list and choose **Add new skill**. Pick the
 **Slack post** tile, which is enabled when the workspace has a connected Slack
-installation. Choose the installation as the target, then choose which inputs are
-bound by the author and which are exposed to the routine.
+installation. Choose the installation as the target and keep or edit the
+suggested skill name. Required inputs are exposed to the routine by default.
+Open **Advanced** to bind fixed values, include optional inputs, change
+invocation behavior, narrow outcomes, or disable the skill.
 
 The unified endpoints are:
 

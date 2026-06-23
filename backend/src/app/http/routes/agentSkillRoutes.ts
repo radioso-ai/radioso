@@ -59,6 +59,7 @@ export const createAgentSkillRoutes = (dependencies: AgentSkillRouteDependencies
           settingsFields: descriptor.settingsFields,
           outcomeVocabulary: descriptor.outcomeVocabulary,
           supportedInvocationModes: descriptor.supportedInvocationModes,
+          defaultInvocationMode: descriptor.defaultInvocationMode ?? descriptor.supportedInvocationModes[0],
           executorAdapter: descriptor.executorAdapter,
           targets,
           available,

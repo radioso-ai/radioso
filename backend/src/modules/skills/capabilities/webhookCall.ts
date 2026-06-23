@@ -36,11 +36,13 @@ export const webhookCallCapability: SkillCapabilityDescriptor<"webhook_call", "w
     source: "static",
     schema: {
       fields: ["payload"],
+      required: ["payload"],
     },
   },
   settingsFields: [],
   outcomeVocabulary: webhookSkillOutcomes,
   supportedInvocationModes: ["routine_named", "agent_selectable"],
+  defaultInvocationMode: "routine_named",
   executorAdapter: WEBHOOK_SKILLS_ADAPTER,
   configSchema: webhookConfigSchema,
   validateConfig: (config) => webhookConfigSchema.safeParse(config),

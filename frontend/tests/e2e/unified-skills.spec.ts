@@ -9,6 +9,8 @@ import {
 } from "./dashboard-fixtures";
 
 test("unified Skills surface creates skills with descriptor-owned settings controls", async ({ page }) => {
+  test.setTimeout(60_000);
+
   const agentSkillRequests: Array<{ method: string; path: string; body?: unknown }> = [];
   const agentSkills: AgentSkillFixture[] = [];
 
@@ -32,26 +34,38 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await expect(page.getByRole("button", { name: /Notify/i })).toBeEnabled();
   await page.getByRole("button", { name: /Email/i }).click();
   await expect(page.getByRole("dialog", { name: "Configure Email" })).toBeVisible();
+  await expect(page.getByLabel("Skill name")).toHaveValue("send_support_outbound_email");
+  await expect(page.getByLabel("Target")).toBeVisible();
+  await expect(page.getByLabel("Mode")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "subject" })).toHaveCount(0);
   await page.getByLabel("Skill name").fill("send_followup_email");
   await page.locator("#skill-setting-mode").click();
   await page.getByRole("option", { name: "Send" }).click();
+  await page.getByRole("button", { name: "Advanced" }).click();
+  await page.getByLabel("When to use").click();
+  await page.getByRole("option", { name: "Agent decides when to use it" }).click();
   await page.getByRole("combobox", { name: "subject" }).click();
-  await page.getByRole("option", { name: "Bind" }).click();
+  await page.getByRole("option", { name: "Use a fixed value" }).click();
   await page.locator("input[placeholder='subject']").fill("Follow up");
-  await page.getByRole("combobox", { name: "bodyText" }).click();
-  await page.getByRole("option", { name: "Expose" }).click();
   await page.getByLabel("bodyText slot").fill("message");
-  await expect(page.locator("#skill-extra-config")).toHaveCount(0);
+  await page.getByRole("button", { name: "failed" }).click();
+  await expect(page.locator("#skill-extra-config")).toBeVisible();
   await page.getByRole("button", { name: "Create skill" }).click();
 
   await expect(page.getByText("@send_followup_email")).toBeVisible();
 
   await page.getByRole("button", { name: "Add new skill" }).click();
   await page.getByRole("button", { name: /Retrieve/i }).click();
+  await expect(page.getByLabel("Skill name")).toHaveValue("retrieve_answer");
+  await expect(page.getByLabel("Vector top K")).toHaveCount(0);
   await page.getByLabel("Skill name").fill("retrieve_events");
   await page.getByRole("button", { name: "Selected sources" }).click();
   await page.getByLabel(/Course guide/).check();
   await page.getByRole("textbox", { name: "Instruction", exact: true }).fill("Use event-specific sources only.");
+  await expect(page.getByLabel("Suggested questions")).toBeVisible();
+  await page.getByRole("button", { name: "Advanced" }).click();
+  await page.getByLabel("When to use").click();
+  await page.getByRole("option", { name: "Only when a routine calls it (@name)" }).click();
   await page.locator("#skill-setting-retrievalStrategy").click();
   await page.getByRole("option", { name: "Reasoning" }).click();
   await page.getByLabel("Vector top K").fill("12");
@@ -69,7 +83,9 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await page.getByRole("button", { name: "Add new skill" }).click();
   await expect(page.getByRole("button", { name: /Notify/i })).toBeEnabled();
   await page.getByRole("button", { name: /Notify/i }).click();
-  await expect(page.getByText("This capability is configured inline and does not bind to a connection.")).toBeVisible();
+  await expect(page.getByLabel("Skill name")).toHaveValue("notify_human");
+  await expect(page.getByLabel("Target")).toHaveCount(0);
+  await expect(page.getByRole("combobox", { name: "message" })).toHaveCount(0);
   await page.getByLabel("Skill name").fill("contact_human");
   await page.getByLabel("Recipient emails 1").fill("sales@example.com");
   await page.getByLabel("Recipient emails 2").fill("support@example.com");
@@ -96,14 +112,11 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
         mode: "send",
         boundInputs: { subject: "Follow up" },
         exposedInputs: {
-          to: { slotBinding: "to", required: true },
-          cc: { slotBinding: "cc", required: true },
-          bodyText: { slotBinding: "message", required: true },
-          bodyHtml: { slotBinding: "bodyhtml", required: true },
-          replyTo: { slotBinding: "replyto", required: true },
+          to: { description: "To", slotBinding: "to", required: true },
+          bodyText: { description: "Body Text", slotBinding: "message", required: true },
         },
       },
-      invocationMode: "routine_named",
+      invocationMode: "agent_selectable",
       enabled: true,
   });
 
@@ -125,6 +138,7 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
       suggestedQuestionsCount: 3,
       exposedInputs: { query: true },
     },
+    invocationMode: "routine_named",
   });
 
   expect(createBodies[1]).not.toMatchObject({
@@ -142,7 +156,6 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
       },
       exposedInputs: {
         message: true,
-        email: true,
       },
     },
   });

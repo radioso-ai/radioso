@@ -80,11 +80,12 @@ exists:
 2. Pick the connected MCP server as the target.
 3. Enter the tool name. When discovery is available, inputs come from the tool's
    own schema.
-4. For each input, choose **Bind** (the author fixes it now) or **Expose** (a
-   routine supplies it at run time).
-5. Give the skill a name. The name is a lower-case identifier (for example
+4. Give the skill a name. The name is a lower-case identifier (for example
    `handoff_slack`) and must be unique within the agent.
-6. Choose an invocation mode supported by the capability.
+
+Required tool inputs are exposed to the routine by default. Open **Advanced** to
+bind fixed values, include optional inputs, change invocation behavior, or edit
+declared outcomes.
 
 The skill is validated against the tool before it is saved: the tool must still
 exist, and the tool's required inputs must each be bound or exposed.

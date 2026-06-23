@@ -6,7 +6,7 @@ import type {
   SkillCapabilityDescriptor,
   SkillCapabilitySettingsField,
 } from '@/lib/api-skills'
-import { getToolInputFields, normalizeSkillName, parseBoundParamValue, type ToolInputField } from '@/lib/external-skills'
+import { getToolInputFields, normalizeSkillName, parseBoundParamValue, type ToolInputField, type ToolInputFieldType } from '@/lib/external-skills'
 import type { AgentSourceScope } from '@/lib/api'
 
 export type SkillInputMode = 'bind' | 'expose' | 'ignore'
@@ -39,12 +39,37 @@ const DEFAULT_OUTCOMES = ['completed', 'failed']
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 
-const stringFieldsFromDescriptor = (capability: SkillCapabilityDescriptor): string[] => {
+const stringFieldsFromDescriptor = (capability: SkillCapabilityDescriptor): DerivedSkillField[] => {
   if (capability.inputSchema.source !== 'static') {
     return []
   }
-  const rawFields = capability.inputSchema.schema.fields
-  return Array.isArray(rawFields) ? rawFields.filter((field): field is string => typeof field === 'string') : []
+  const schema = capability.inputSchema.schema
+  const rawFields = schema.fields
+  const required = new Set(Array.isArray(schema.required) ? schema.required.filter((field): field is string => typeof field === 'string') : [])
+  if (!Array.isArray(rawFields)) {
+    return []
+  }
+  return rawFields.flatMap((field): DerivedSkillField[] => {
+    if (typeof field === 'string') {
+      return [{
+        name: field,
+        type: 'string',
+        description: null,
+        required: required.size > 0 ? required.has(field) : true,
+      }]
+    }
+    if (isRecord(field) && typeof field.name === 'string') {
+      return [{
+        name: field.name,
+        type: parseToolInputFieldType(field.type),
+        description: typeof field.description === 'string' ? field.description : null,
+        required: typeof field.required === 'boolean'
+          ? field.required
+          : required.size > 0 ? required.has(field.name) : true,
+      }]
+    }
+    return []
+  })
 }
 
 export const deriveSkillFields = (capability: SkillCapabilityDescriptor, discoveredSchema?: unknown): DerivedSkillField[] => {
@@ -52,12 +77,7 @@ export const deriveSkillFields = (capability: SkillCapabilityDescriptor, discove
     return getToolInputFields(discoveredSchema)
   }
 
-  return stringFieldsFromDescriptor(capability).map((name) => ({
-    name,
-    type: 'string',
-    description: null,
-    required: true,
-  }))
+  return stringFieldsFromDescriptor(capability)
 }
 
 export const createInputDrafts = (
@@ -76,7 +96,7 @@ export const createInputDrafts = (
     return [field.name, {
       mode: hasBound ? 'bind' : hasExposed || field.required ? 'expose' : 'ignore',
       boundValue: hasBound ? stringifyBoundValue(bound[field.name]) : defaultBoundValue(field),
-      description: typeof exposedRecord.description === 'string' ? exposedRecord.description : '',
+      description: typeof exposedRecord.description === 'string' ? exposedRecord.description : field.description ?? formatFieldLabel(field.name),
       slotBinding: typeof exposedRecord.slotBinding === 'string' ? exposedRecord.slotBinding : field.name,
     }]
   }))
@@ -85,6 +105,7 @@ export const createInputDrafts = (
 export const createInitialSkillDraft = (
   capabilities: readonly SkillCapabilityDescriptor[],
   existingSkill?: AgentSkill | null,
+  existingSkills: readonly AgentSkill[] = [],
 ): SkillFormDraft => {
   const availableCapability = capabilities.find((capability) => capability.available) ?? capabilities[0]
   const capability = existingSkill
@@ -97,8 +118,11 @@ export const createInitialSkillDraft = (
   return {
     capabilityId: capability?.id ?? '',
     targetId,
-    name: existingSkill?.name ?? '',
-    invocationMode: existingSkill?.invocationMode ?? capability?.supportedInvocationModes[0] ?? 'routine_named',
+    name: existingSkill?.name ?? suggestSkillName(capability, targetId, existingSkills),
+    invocationMode: existingSkill?.invocationMode ??
+      capability?.defaultInvocationMode ??
+      capability?.supportedInvocationModes[0] ??
+      'routine_named',
     enabled: existingSkill?.enabled ?? true,
     toolName: typeof existingSkill?.config.toolName === 'string' ? existingSkill.config.toolName : '',
     inputDrafts: createInputDrafts(fields, existingSkill?.config),
@@ -163,7 +187,18 @@ export const formatCapabilityLabel = (value: string): string =>
   value.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
 
 export const formatInvocationMode = (value: AgentSkillInvocationMode): string =>
-  value.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
+  ({
+    default_answer: 'Answer the user automatically',
+    routine_named: 'Only when a routine calls it (@name)',
+    agent_selectable: 'Agent decides when to use it',
+  })[value]
+
+export const formatInputMode = (value: SkillInputMode): string =>
+  ({
+    expose: 'Ask at runtime',
+    bind: 'Use a fixed value',
+    ignore: "Don't include",
+  })[value]
 
 const findFirstRecord = (config: Record<string, unknown> | undefined, keys: readonly string[]): Record<string, unknown> => {
   for (const key of keys) {
@@ -173,6 +208,62 @@ const findFirstRecord = (config: Record<string, unknown> | undefined, keys: read
     }
   }
   return {}
+}
+
+const parseToolInputFieldType = (value: unknown): ToolInputFieldType => {
+  if (value === 'string' || value === 'number' || value === 'boolean' || value === 'object' || value === 'array' || value === 'unknown') {
+    return value
+  }
+  return 'string'
+}
+
+const formatFieldLabel = (value: string): string =>
+  value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+
+const suggestSkillName = (
+  capability: SkillCapabilityDescriptor | undefined,
+  targetId: string,
+  existingSkills: readonly AgentSkill[],
+): string => {
+  if (!capability) {
+    return ''
+  }
+  const base = normalizeSkillName(suggestSkillNameBase(capability.id, capability.targets.find((target) => target.id === targetId)?.label))
+  const existingNames = new Set(existingSkills.map((skill) => skill.name))
+  if (!existingNames.has(base)) {
+    return base
+  }
+  for (let suffix = 2; suffix < 1000; suffix += 1) {
+    const candidate = `${base}_${suffix}`
+    if (!existingNames.has(candidate)) {
+      return candidate
+    }
+  }
+  return `${base}_${Date.now()}`
+}
+
+const suggestSkillNameBase = (capabilityId: AgentSkillCapabilityId, targetLabel?: string): string => {
+  const targetSlug = targetLabel ? normalizeSkillName(targetLabel) : ''
+  if (capabilityId === 'email') {
+    return targetSlug ? `send_${targetSlug}_email` : 'send_email'
+  }
+  if (capabilityId === 'slack_post') {
+    return targetSlug ? `post_${targetSlug}` : 'post_slack'
+  }
+  if (capabilityId === 'webhook_call') {
+    return targetSlug ? `call_${targetSlug}` : 'call_webhook'
+  }
+  if (capabilityId === 'notify') {
+    return 'notify_human'
+  }
+  if (capabilityId === 'retrieve') {
+    return targetSlug && targetSlug !== 'all_sources' ? `retrieve_${targetSlug}` : 'retrieve_answer'
+  }
+  return targetSlug ? `${capabilityId}_${targetSlug}` : capabilityId
 }
 
 const stringifyBoundValue = (value: unknown): string => {

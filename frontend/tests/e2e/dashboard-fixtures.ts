@@ -143,9 +143,11 @@ export type SkillCapabilityFixture = {
     min?: number;
     max?: number;
     group?: string;
+    advanced?: boolean;
   }>;
   outcomeVocabulary: string[];
   supportedInvocationModes: AgentSkillFixture["invocationMode"][];
+  defaultInvocationMode?: AgentSkillFixture["invocationMode"];
   executorAdapter: string;
   targets: Array<{ id: string; label: string; status?: string }>;
   available: boolean;
@@ -498,7 +500,7 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
     storedKind: "retrieve",
     targetKind: "source_scope",
     requiresTarget: true,
-    inputSchema: { source: "static", schema: { fields: ["query"] } },
+    inputSchema: { source: "static", schema: { fields: ["query"], required: ["query"] } },
     settingsFields: [
       { key: "sourceScope", label: "Source scope", type: "source_scope", group: "Scope" },
       { key: "instruction", label: "Instruction", type: "textarea", group: "Scope" },
@@ -512,18 +514,20 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
           { value: "auto", label: "Auto" },
         ],
         group: "Retrieval tuning",
+        advanced: true,
       },
-      { key: "vectorTopK", label: "Vector top K", type: "number", min: 1, max: 300, group: "Retrieval tuning" },
-      { key: "rerankEnabled", label: "Rerank results", type: "boolean", group: "Retrieval tuning" },
-      { key: "rerankTopK", label: "Rerank top K", type: "number", min: 1, max: 100, group: "Retrieval tuning" },
-      { key: "queryRewriteEnabled", label: "Query rewrite", type: "boolean", group: "Query rewrite" },
-      { key: "semanticRewriteInstructions", label: "Semantic rewrite instructions", type: "textarea", group: "Query rewrite" },
-      { key: "lexicalRewriteInstructions", label: "Lexical rewrite instructions", type: "textarea", group: "Query rewrite" },
+      { key: "vectorTopK", label: "Vector top K", type: "number", min: 1, max: 300, group: "Retrieval tuning", advanced: true },
+      { key: "rerankEnabled", label: "Rerank results", type: "boolean", group: "Retrieval tuning", advanced: true },
+      { key: "rerankTopK", label: "Rerank top K", type: "number", min: 1, max: 100, group: "Retrieval tuning", advanced: true },
+      { key: "queryRewriteEnabled", label: "Query rewrite", type: "boolean", group: "Query rewrite", advanced: true },
+      { key: "semanticRewriteInstructions", label: "Semantic rewrite instructions", type: "textarea", group: "Query rewrite", advanced: true },
+      { key: "lexicalRewriteInstructions", label: "Lexical rewrite instructions", type: "textarea", group: "Query rewrite", advanced: true },
       { key: "suggestedQuestionsEnabled", label: "Suggested questions", type: "boolean", group: "Suggested questions" },
-      { key: "suggestedQuestionsCount", label: "Suggested questions count", type: "number", min: 1, max: 4, group: "Suggested questions" },
+      { key: "suggestedQuestionsCount", label: "Suggested questions count", type: "number", min: 1, max: 4, group: "Suggested questions", advanced: true },
     ],
     outcomeVocabulary: ["found", "empty"],
     supportedInvocationModes: ["default_answer", "routine_named", "agent_selectable"],
+    defaultInvocationMode: "default_answer",
     executorAdapter: "retrieval.answer",
     targets: [
       { id: "all", label: "All sources", status: "available" },
@@ -542,6 +546,7 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
     settingsFields: [],
     outcomeVocabulary: ["completed", "failed"],
     supportedInvocationModes: ["routine_named", "agent_selectable"],
+    defaultInvocationMode: "routine_named",
     executorAdapter: "external_mcp",
     targets: [],
     available: false,
@@ -552,7 +557,7 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
     storedKind: "customer_email",
     targetKind: "customer_email_connection",
     requiresTarget: true,
-    inputSchema: { source: "static", schema: { fields: ["to", "cc", "subject", "bodyText", "bodyHtml", "replyTo"] } },
+    inputSchema: { source: "static", schema: { fields: ["to", "cc", "subject", "bodyText", "bodyHtml", "replyTo"], required: ["to", "subject", "bodyText"] } },
     settingsFields: [
       {
         key: "mode",
@@ -566,6 +571,7 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
     ],
     outcomeVocabulary: ["drafted", "sent", "missing_input", "disabled_connection", "needs_reauth", "provider_rejected", "failed"],
     supportedInvocationModes: ["routine_named", "agent_selectable"],
+    defaultInvocationMode: "routine_named",
     executorAdapter: "customer_email",
     targets: [{ id: "99999999-9999-4999-8999-000000000001", label: "Support outbound", status: "authorized" }],
     available: true,
@@ -576,10 +582,11 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
     storedKind: "slack",
     targetKind: "slack_installation",
     requiresTarget: true,
-    inputSchema: { source: "static", schema: { fields: ["channelId", "text", "threadTs"] } },
+    inputSchema: { source: "static", schema: { fields: ["channelId", "text", "threadTs"], required: ["channelId", "text"] } },
     settingsFields: [],
     outcomeVocabulary: ["enqueued", "missing_input", "failed"],
     supportedInvocationModes: ["routine_named", "agent_selectable"],
+    defaultInvocationMode: "routine_named",
     executorAdapter: "slack",
     targets: [],
     available: false,
@@ -590,10 +597,11 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
     storedKind: "webhook",
     targetKind: "webhook_destination",
     requiresTarget: true,
-    inputSchema: { source: "static", schema: { fields: ["payload"] } },
+    inputSchema: { source: "static", schema: { fields: ["payload"], required: ["payload"] } },
     settingsFields: [],
     outcomeVocabulary: ["delivered", "failed"],
     supportedInvocationModes: ["routine_named", "agent_selectable"],
+    defaultInvocationMode: "routine_named",
     executorAdapter: "webhook",
     targets: [{ id: "33333333-3333-4333-8333-333333333333", label: "crm-leads", status: "available" }],
     available: true,
@@ -604,13 +612,14 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
     storedKind: "notify",
     targetKind: "notify_delivery",
     requiresTarget: false,
-    inputSchema: { source: "static", schema: { fields: ["message", "email"] } },
+    inputSchema: { source: "static", schema: { fields: ["message", "email"], required: ["message"] } },
     settingsFields: [
       { key: "delivery.recipientEmails", label: "Recipient emails", type: "string_list", group: "Delivery" },
       { key: "delivery.webhook.url", label: "Webhook URL", type: "text", group: "Delivery" },
     ],
     outcomeVocabulary: ["delivered", "failed"],
     supportedInvocationModes: ["routine_named", "agent_selectable"],
+    defaultInvocationMode: "routine_named",
     executorAdapter: "notify",
     targets: [],
     available: true,

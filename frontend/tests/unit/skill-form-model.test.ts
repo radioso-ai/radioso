@@ -69,6 +69,31 @@ describe('skill form model', () => {
     })
   })
 
+  it('creates a defaulted draft for new skills', () => {
+    const capability = baseCapability({
+      inputSchema: { source: 'static', schema: { fields: ['to', 'cc', 'subject', 'bodyText'], required: ['to', 'subject', 'bodyText'] } },
+      outcomeVocabulary: ['sent', 'failed'],
+      defaultInvocationMode: 'agent_selectable',
+    })
+    const draft = createInitialSkillDraft([capability], null, [
+      baseSkill({ id: 'skill-2', name: 'send_support_outbound_email' }),
+    ])
+
+    expect(draft).toMatchObject({
+      name: 'send_support_outbound_email_2',
+      targetId: 'target-1',
+      invocationMode: 'agent_selectable',
+      enabled: true,
+      selectedOutcomes: ['sent', 'failed'],
+      inputDrafts: {
+        to: { mode: 'expose', slotBinding: 'to' },
+        cc: { mode: 'ignore', slotBinding: 'cc' },
+        subject: { mode: 'expose', slotBinding: 'subject' },
+        bodyText: { mode: 'expose', slotBinding: 'bodyText' },
+      },
+    })
+  })
+
   it('validates skill names against routine identifier and agent uniqueness rules', () => {
     expect(validateSkillName('', [], null)).toBe('Enter a skill name.')
     expect(validateSkillName('Bad Name', [], null)).toContain('lowercase routine identifier')
@@ -150,7 +175,7 @@ describe('skill form model', () => {
       storedKind: 'notify',
       targetKind: 'notify_delivery',
       requiresTarget: false,
-      inputSchema: { source: 'static', schema: { fields: ['message', 'email'] } },
+      inputSchema: { source: 'static', schema: { fields: ['message', 'email'], required: ['message'] } },
       settingsFields: [
         { key: 'delivery.recipientEmails', label: 'Recipient emails', type: 'string_list' },
         { key: 'delivery.webhook.url', label: 'Webhook URL', type: 'text' },
@@ -168,14 +193,13 @@ describe('skill form model', () => {
     expect(buildAgentSkillInput(capability, draft, deriveSkillFields(capability))).toMatchObject({
       target: { kind: 'notify_delivery', id: null },
       config: {
-      delivery: {
-        recipientEmails: ['sales@example.com', 'support@example.com'],
-        webhook: { url: 'https://hooks.example.com/contact' },
-      },
-      exposedInputs: {
-        message: true,
-        email: true,
-      },
+        delivery: {
+          recipientEmails: ['sales@example.com', 'support@example.com'],
+          webhook: { url: 'https://hooks.example.com/contact' },
+        },
+        exposedInputs: {
+          message: true,
+        },
       },
     })
   })

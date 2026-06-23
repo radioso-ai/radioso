@@ -12,6 +12,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
     source: "static",
     schema: {
       fields: ["query"],
+      required: ["query"],
     },
   },
   settingsFields: [
@@ -39,6 +40,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
         { value: "auto", label: "Auto" },
       ],
       group: "Retrieval tuning",
+      advanced: true,
     },
     {
       key: "vectorTopK",
@@ -47,12 +49,14 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       min: 1,
       max: 300,
       group: "Retrieval tuning",
+      advanced: true,
     },
     {
       key: "rerankEnabled",
       label: "Rerank results",
       type: "boolean",
       group: "Retrieval tuning",
+      advanced: true,
     },
     {
       key: "rerankTopK",
@@ -61,24 +65,28 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       min: 1,
       max: 100,
       group: "Retrieval tuning",
+      advanced: true,
     },
     {
       key: "queryRewriteEnabled",
       label: "Query rewrite",
       type: "boolean",
       group: "Query rewrite",
+      advanced: true,
     },
     {
       key: "semanticRewriteInstructions",
       label: "Semantic rewrite instructions",
       type: "textarea",
       group: "Query rewrite",
+      advanced: true,
     },
     {
       key: "lexicalRewriteInstructions",
       label: "Lexical rewrite instructions",
       type: "textarea",
       group: "Query rewrite",
+      advanced: true,
     },
     {
       key: "suggestedQuestionsEnabled",
@@ -93,10 +101,12 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       min: 1,
       max: 4,
       group: "Suggested questions",
+      advanced: true,
     },
   ],
   outcomeVocabulary: ["found", "empty"],
   supportedInvocationModes: ["default_answer", "routine_named", "agent_selectable"],
+  defaultInvocationMode: "default_answer",
   executorAdapter: RETRIEVAL_ANSWER_ADAPTER,
   configSchema: retrieveSkillConfigSchema,
   validateConfig: (config) => retrieveSkillConfigSchema.safeParse(config),

@@ -18,6 +18,7 @@ import { randomBytes } from "node:crypto";
 
 import type { ApprovalDecisionService } from "../../approvals/public.js";
 import type { AuditPort } from "../../audit/contracts/index.js";
+import type { OperatorReplyService } from "../../handoff/public.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import {
   decryptField,
@@ -119,6 +120,7 @@ export class ConnectorRegistry {
     chat: ConnectorChatPort;
     ingestion: ConnectorIngestionPort;
     approvalDecisionService?: Pick<ApprovalDecisionService, "resolve">;
+    operatorReplyService?: Pick<OperatorReplyService, "reply">;
     auditService?: Pick<AuditPort, "record">;
     metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
     assertPublicUrl?: (url: string) => Promise<void>;
@@ -131,6 +133,7 @@ export class ConnectorRegistry {
           chat: context.chat,
           ingestion: context.ingestion,
           approvalDecisionService: context.approvalDecisionService,
+          operatorReplyService: context.operatorReplyService,
           auditService: context.auditService,
           metricsRegistry: context.metricsRegistry,
           assertPublicUrl: context.assertPublicUrl,

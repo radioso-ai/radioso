@@ -66,13 +66,14 @@ export const createSlackInteractivityRouter = (options: SlackInteractivityRouter
 
       if (payload.type === "block_actions") {
         await options.handler.handleBlockActions(payload);
+        res.sendStatus(200);
       } else if (payload.type === "view_submission") {
-        await options.handler.handleViewSubmission(payload);
+        const result = await options.handler.handleViewSubmission(payload);
+        res.status(200).json(result ?? {});
       } else {
         await options.handler.handleViewClosed(payload);
+        res.sendStatus(200);
       }
-
-      res.sendStatus(200);
     } catch (error) {
       next(error);
     }

@@ -74,9 +74,14 @@ export {
   type SlackInteractivityCallbackType,
   type SlackInteractivityHandlerPort,
   type SlackInteractivityPayload,
+  type SlackViewSubmissionResponse,
 } from "./operator/slackInteractivityHandler.js";
 export {
+  OWNERSHIP_REPLY_ACTION_ID,
+  OWNERSHIP_REPLY_BLOCK_ID,
   buildDecisionMessage,
+  buildOwnershipMessage,
+  buildReplyModal,
   buildResolvedDecisionMessage,
   type SlackBlockKitMessage,
 } from "./operator/slackBlockKitBuilder.js";

@@ -10,6 +10,7 @@ import { ActionRequestRepository } from "../../../../db/repositories/actionReque
 import { PendingDecisionRepository } from "../../../../db/repositories/pendingDecisionRepository.js";
 import type { ApprovalDecisionService } from "../../../approvals/public.js";
 import type { AuditPort } from "../../../audit/contracts/index.js";
+import { ConversationOwnershipRepository, type OperatorReplyService } from "../../../handoff/public.js";
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 import { IntegrationConnectionRepository } from "../../../integrationConnections/public.js";
 import {
@@ -37,6 +38,7 @@ export interface SlackPluginOptions {
 
 type SlackConnectorContext = ConnectorContext & {
   approvalDecisionService?: Pick<ApprovalDecisionService, "resolve">;
+  operatorReplyService?: Pick<OperatorReplyService, "reply">;
   auditService?: Pick<AuditPort, "record">;
   metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
   assertPublicUrl?: (url: string) => Promise<void>;
@@ -134,6 +136,17 @@ export class SlackPlugin implements ConnectorPlugin {
           identityResolver: operatorIdentityResolver,
           approvalDecisions: extendedContext.approvalDecisionService,
           pendingDecisions: new PendingDecisionRepository(db),
+          conversationOwnership: new ConversationOwnershipRepository(db),
+          operatorReplyService: extendedContext.operatorReplyService,
+          slackViews: {
+            open: async ({ installation, triggerId, view }) => {
+              const botToken = await installationService.resolveBotTokenForInstallation(installation);
+              if (!botToken) {
+                throw new Error("slack_bot_token_not_found");
+              }
+              await new SlackWebApiClient({ botToken }).viewsOpen({ triggerId, view });
+            },
+          },
           responseUrlClient: new FetchSlackResponseUrlClient({
             assertPublicUrl: extendedContext.assertPublicUrl,
           }),

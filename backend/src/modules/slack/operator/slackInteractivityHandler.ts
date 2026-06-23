@@ -3,7 +3,14 @@ import type { AuditPort } from "../../audit/contracts/index.js";
 import type { PendingDecisionRepository } from "../../../db/repositories/pendingDecisionRepository.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { SlackInstallationRecord, SlackInstallationRepositoryPort } from "../public.js";
-import { buildResolvedDecisionMessage } from "./slackBlockKitBuilder.js";
+import type { OperatorReplyService, ConversationOwnershipRecord } from "../../handoff/public.js";
+import {
+  OWNERSHIP_REPLY_ACTION_ID,
+  OWNERSHIP_REPLY_BLOCK_ID,
+  buildOwnershipMessage,
+  buildReplyModal,
+  buildResolvedDecisionMessage,
+} from "./slackBlockKitBuilder.js";
 import type { SlackOperatorIdentityResolver } from "./slackOperatorIdentityResolver.js";
 import type { SlackResponseUrlClient } from "./slackResponseUrlClient.js";
 
@@ -18,9 +25,20 @@ export type SlackInteractivityPayload = Record<string, unknown> & {
 
 export interface SlackInteractivityHandlerPort {
   handleBlockActions(payload: SlackInteractivityPayload): Promise<void>;
-  handleViewSubmission(payload: SlackInteractivityPayload): Promise<void>;
+  handleViewSubmission(payload: SlackInteractivityPayload): Promise<SlackViewSubmissionResponse | undefined>;
   handleViewClosed(payload: SlackInteractivityPayload): Promise<void>;
 }
+
+export type SlackViewSubmissionResponse = {
+  response_action: "errors";
+  errors: Record<string, string>;
+};
+
+type SlackOperatorIdentity = {
+  accountId: string;
+  userId?: string | null;
+  displayName: string | null;
+};
 
 const readNestedString = (value: unknown, key: string): string | null =>
   value && typeof value === "object" && !Array.isArray(value) && typeof (value as Record<string, unknown>)[key] === "string"
@@ -71,6 +89,40 @@ const findDecisionResolveAction = (payload: SlackInteractivityPayload): ReturnTy
   return null;
 };
 
+const parseOwnershipValue = (value: unknown): Record<string, string | number> | null => {
+  const raw = readString(value);
+  if (!raw) {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) {
+      return null;
+    }
+    return parsed as Record<string, string | number>;
+  } catch {
+    return null;
+  }
+};
+
+const findAction = (payload: SlackInteractivityPayload, actionId: string): Record<string, string | number> | null => {
+  const actions = Array.isArray(payload.actions) ? payload.actions : [];
+  for (const action of actions) {
+    if (!isRecord(action) || action.action_id !== actionId) {
+      continue;
+    }
+    return parseOwnershipValue(action.value);
+  }
+  return null;
+};
+
+const readNumber = (value: unknown): number | null =>
+  typeof value === "number" && Number.isInteger(value) ? value : null;
+
+const ownershipContextText = (conversationId: string): string => `Conversation ${conversationId}`;
+
+const dashboardPath = (conversationId: string): string => `/conversations/${conversationId}`;
+
 const decisionErrorOutcome = (error: ApprovalDecisionServiceError): "stale" | "forbidden" | "invalid" => {
   switch (error.reason) {
     case "stale_proposal":
@@ -91,6 +143,27 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     identityResolver?: Pick<SlackOperatorIdentityResolver, "resolve">;
     approvalDecisions?: Pick<ApprovalDecisionService, "resolve">;
     pendingDecisions?: Pick<PendingDecisionRepository, "loadByHandle">;
+    conversationOwnership?: {
+      load(conversationId: string): Promise<ConversationOwnershipRecord | null>;
+      takeOver(input: {
+        conversationId: string;
+        workspaceId: string;
+        accountId: string;
+        displayName: string;
+      }): Promise<{ ok: true; record: ConversationOwnershipRecord } | { ok: false; record: ConversationOwnershipRecord | null }>;
+      handBack(input: {
+        conversationId: string;
+        expectedVersion: number;
+      }): Promise<{ ok: true; record: ConversationOwnershipRecord } | { ok: false; record: ConversationOwnershipRecord | null }>;
+    };
+    operatorReplyService?: Pick<OperatorReplyService, "reply">;
+    slackViews?: {
+      open(input: {
+        installation: SlackInstallationRecord;
+        triggerId: string;
+        view: Record<string, unknown>;
+      }): Promise<void>;
+    };
     responseUrlClient?: SlackResponseUrlClient;
     audit?: Pick<AuditPort, "record">;
     metrics?: Pick<MetricsRegistry, "incrementCounter">;
@@ -99,16 +172,23 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
 
   async handleBlockActions(payload: SlackInteractivityPayload): Promise<void> {
     const decisionAction = findDecisionResolveAction(payload);
-    if (!decisionAction) {
-      await this.resolveIdentityForPayload(payload);
+    if (decisionAction) {
+      await this.handleDecisionResolve(payload, decisionAction);
       return;
     }
-    await this.handleDecisionResolve(payload, decisionAction);
+    if (await this.handleOwnershipBlockAction(payload)) {
+      return;
+    }
+    await this.resolveIdentityForPayload(payload);
   }
 
-  async handleViewSubmission(payload: SlackInteractivityPayload): Promise<void> {
-    await this.resolveIdentityForPayload(payload);
-    // TODO(095 Phase C): dispatch ownership_reply modal submissions.
+  async handleViewSubmission(payload: SlackInteractivityPayload): Promise<SlackViewSubmissionResponse | undefined> {
+    const view = isRecord(payload.view) ? payload.view : null;
+    if (view?.callback_id !== "ownership_reply") {
+      await this.resolveIdentityForPayload(payload);
+      return undefined;
+    }
+    return this.handleOwnershipReplySubmission(payload, view);
   }
 
   async handleViewClosed(_payload: SlackInteractivityPayload): Promise<void> {
@@ -210,6 +290,237 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     }
   }
 
+  private async handleOwnershipBlockAction(payload: SlackInteractivityPayload): Promise<boolean> {
+    const takeover = findAction(payload, "ownership_takeover");
+    if (takeover) {
+      const conversationId = readString(takeover.conversationId);
+      const workspaceId = readString(takeover.workspaceId);
+      if (!conversationId || !workspaceId) {
+        return true;
+      }
+      await this.handleOwnershipTakeover(payload, { conversationId, workspaceId });
+      return true;
+    }
+
+    const handback = findAction(payload, "ownership_handback");
+    if (handback) {
+      const conversationId = readString(handback.conversationId);
+      const version = readNumber(handback.version);
+      if (!conversationId || version === null) {
+        return true;
+      }
+      await this.handleOwnershipHandback(payload, { conversationId, version });
+      return true;
+    }
+
+    const talk = findAction(payload, "ownership_talk");
+    if (talk) {
+      const conversationId = readString(talk.conversationId);
+      const workspaceId = readString(talk.workspaceId);
+      const version = readNumber(talk.version);
+      if (!conversationId || !workspaceId || version === null) {
+        return true;
+      }
+      await this.handleOwnershipTalk(payload, { conversationId, workspaceId, version });
+      return true;
+    }
+
+    return false;
+  }
+
+  private async resolveOperator(payload: SlackInteractivityPayload): Promise<{
+    installation: SlackInstallationRecord;
+    slackUserId: string;
+    identity: SlackOperatorIdentity;
+  } | { rejected: true } | null> {
+    if (!this.options.identityResolver) {
+      return null;
+    }
+    const teamId = readNestedString(payload.team, "id");
+    const slackUserId = readNestedString(payload.user, "id");
+    if (!teamId || !slackUserId) {
+      return null;
+    }
+    const installation = await this.options.installations.findByTeamId(teamId);
+    if (!installation) {
+      return null;
+    }
+    const identity = await this.options.identityResolver.resolve({ installation, slackUserId });
+    if ("rejected" in identity) {
+      return { rejected: true };
+    }
+    return { installation, slackUserId, identity };
+  }
+
+  private async handleOwnershipTakeover(payload: SlackInteractivityPayload, input: {
+    conversationId: string;
+    workspaceId: string;
+  }): Promise<void> {
+    if (!this.options.conversationOwnership) {
+      return;
+    }
+    const resolved = await this.resolveOperator(payload);
+    if (!resolved || "rejected" in resolved) {
+      await this.postEphemeral(payload, "You're not a Radioso operator on this workspace.");
+      return;
+    }
+    const displayName = resolved.identity.displayName ?? "Operator";
+    const result = await this.options.conversationOwnership.takeOver({
+      conversationId: input.conversationId,
+      workspaceId: input.workspaceId,
+      accountId: resolved.identity.accountId,
+      displayName,
+    });
+    if (!result.ok) {
+      await this.postEphemeral(payload, "Conversation ownership changed. Refreshing.");
+      return;
+    }
+    await this.recordOwnershipAudit({
+      accountId: resolved.identity.accountId,
+      workspaceId: input.workspaceId,
+      action: "taken_over",
+      conversationId: input.conversationId,
+      slackUserId: resolved.slackUserId,
+      slackDisplayName: resolved.identity.displayName,
+    });
+    const message = buildOwnershipMessage({
+      conversationId: input.conversationId,
+      workspaceId: input.workspaceId,
+      state: "human_owned",
+      contextText: ownershipContextText(input.conversationId),
+      dashboardPath: dashboardPath(input.conversationId),
+      ownerName: result.record.ownerDisplayName ?? displayName,
+      version: result.record.version,
+    });
+    await this.postResponseUrl(payload, {
+      replace_original: true,
+      text: message.text,
+      blocks: message.blocks,
+    });
+  }
+
+  private async handleOwnershipHandback(payload: SlackInteractivityPayload, input: {
+    conversationId: string;
+    version: number;
+  }): Promise<void> {
+    if (!this.options.conversationOwnership) {
+      return;
+    }
+    const resolved = await this.resolveOperator(payload);
+    if (!resolved || "rejected" in resolved) {
+      await this.postEphemeral(payload, "You're not a Radioso operator on this workspace.");
+      return;
+    }
+    const result = await this.options.conversationOwnership.handBack({
+      conversationId: input.conversationId,
+      expectedVersion: input.version,
+    });
+    if (!result.ok) {
+      await this.postEphemeral(payload, "Conversation ownership changed. Refreshing.");
+      return;
+    }
+    const workspaceId = result.record.workspaceId;
+    await this.recordOwnershipAudit({
+      accountId: resolved.identity.accountId,
+      workspaceId,
+      action: "handed_back",
+      conversationId: input.conversationId,
+      slackUserId: resolved.slackUserId,
+      slackDisplayName: resolved.identity.displayName,
+    });
+    const message = buildOwnershipMessage({
+      conversationId: input.conversationId,
+      workspaceId,
+      state: "ai_owned",
+      contextText: ownershipContextText(input.conversationId),
+      dashboardPath: dashboardPath(input.conversationId),
+    });
+    await this.postResponseUrl(payload, {
+      replace_original: true,
+      text: message.text,
+      blocks: message.blocks,
+    });
+  }
+
+  private async handleOwnershipTalk(payload: SlackInteractivityPayload, input: {
+    conversationId: string;
+    workspaceId: string;
+    version: number;
+  }): Promise<void> {
+    if (!this.options.conversationOwnership || !this.options.slackViews) {
+      return;
+    }
+    const resolved = await this.resolveOperator(payload);
+    if (!resolved || "rejected" in resolved) {
+      await this.postEphemeral(payload, "You're not a Radioso operator on this workspace.");
+      return;
+    }
+    const ownership = await this.options.conversationOwnership.load(input.conversationId);
+    if (ownership?.state !== "human_owned") {
+      await this.postEphemeral(payload, "Take over the conversation before replying.");
+      return;
+    }
+    const triggerId = readString(payload.trigger_id);
+    if (!triggerId) {
+      return;
+    }
+    await this.options.slackViews.open({
+      installation: resolved.installation,
+      triggerId,
+      view: buildReplyModal(input),
+    });
+  }
+
+  private async handleOwnershipReplySubmission(
+    payload: SlackInteractivityPayload,
+    view: Record<string, unknown>,
+  ): Promise<SlackViewSubmissionResponse | undefined> {
+    if (!this.options.conversationOwnership || !this.options.operatorReplyService) {
+      return undefined;
+    }
+    const metadata = parseOwnershipValue(view.private_metadata);
+    const conversationId = readString(metadata?.conversationId);
+    const workspaceId = readString(metadata?.workspaceId);
+    if (!conversationId || !workspaceId) {
+      return this.replyModalError("This reply can’t be sent.");
+    }
+    const message = this.readReplyModalMessage(view);
+    if (!message) {
+      return this.replyModalError("Enter a reply.");
+    }
+    const resolved = await this.resolveOperator(payload);
+    if (!resolved || "rejected" in resolved) {
+      return this.replyModalError("Take over the conversation before replying.");
+    }
+    const ownership = await this.options.conversationOwnership.load(conversationId);
+    if (ownership?.state !== "human_owned") {
+      return this.replyModalError("Take over the conversation before replying.");
+    }
+    await this.options.operatorReplyService.reply({
+      conversationId,
+      workspaceId,
+      accountId: resolved.identity.accountId,
+      displayName: resolved.identity.displayName ?? "Operator",
+      message,
+    });
+    return undefined;
+  }
+
+  private readReplyModalMessage(view: Record<string, unknown>): string | null {
+    const state = isRecord(view.state) ? view.state : null;
+    const values = isRecord(state?.values) ? state.values : null;
+    const block = isRecord(values?.[OWNERSHIP_REPLY_BLOCK_ID]) ? values[OWNERSHIP_REPLY_BLOCK_ID] : null;
+    const action = isRecord(block?.[OWNERSHIP_REPLY_ACTION_ID]) ? block[OWNERSHIP_REPLY_ACTION_ID] : null;
+    return readString(action?.value);
+  }
+
+  private replyModalError(message: string): SlackViewSubmissionResponse {
+    return {
+      response_action: "errors",
+      errors: { [OWNERSHIP_REPLY_BLOCK_ID]: message },
+    };
+  }
+
   private messageForDecisionError(outcome: "stale" | "forbidden" | "invalid"): string {
     switch (outcome) {
       case "stale":
@@ -285,6 +596,39 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
         handle: input.handle,
         err: error instanceof Error ? error.message : String(error),
       }, "Slack decision audit failed");
+    }
+  }
+
+  private async recordOwnershipAudit(input: {
+    accountId: string;
+    workspaceId: string;
+    action: "taken_over" | "handed_back";
+    conversationId: string;
+    slackUserId: string;
+    slackDisplayName: string | null;
+  }): Promise<void> {
+    try {
+      await this.options.audit?.record({
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        eventType: "hitl.ownership",
+        eventStatus: "success",
+        metadata: {
+          action: input.action,
+          conversationId: input.conversationId,
+          slackOperator: {
+            slackUserId: input.slackUserId,
+            displayName: input.slackDisplayName,
+          },
+        },
+      });
+    } catch (error) {
+      this.options.logger?.warn({
+        event: "slack_ownership_audit_failed",
+        workspaceId: input.workspaceId,
+        conversationId: input.conversationId,
+        err: error instanceof Error ? error.message : String(error),
+      }, "Slack ownership audit failed");
     }
   }
 }

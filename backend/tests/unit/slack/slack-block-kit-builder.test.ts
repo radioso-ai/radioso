@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildDecisionMessage,
+  buildOwnershipMessage,
+  buildReplyModal,
   buildResolvedDecisionMessage,
 } from "../../../src/modules/slack/public.js";
 
@@ -54,5 +56,61 @@ describe("slackBlockKitBuilder", () => {
     expect(rendered).toContain("Ship it");
     expect(rendered).toContain("Dana");
     expect(rendered).not.toContain("decision_resolve");
+  });
+
+  it("renders pre-takeover ownership with only the takeover action", () => {
+    const message = buildOwnershipMessage({
+      conversationId: "conv_1",
+      workspaceId: "ws_1",
+      state: "ai_owned",
+      contextText: "Customer needs help with billing.",
+      dashboardPath: "/conversations/conv_1",
+    });
+
+    expect(JSON.stringify(message.blocks)).toContain("Customer needs help with billing.");
+    expect(JSON.stringify(message.blocks)).toContain("/conversations/conv_1");
+    const actions = message.blocks.find((block) => block.type === "actions") as { elements: Array<Record<string, unknown>> };
+    expect(actions.elements.map((element) => element.action_id)).toEqual(["ownership_takeover"]);
+    expect(JSON.parse(actions.elements[0]!.value as string)).toEqual({
+      conversationId: "conv_1",
+      workspaceId: "ws_1",
+    });
+  });
+
+  it("renders post-takeover ownership with talk and handback actions carrying the version", () => {
+    const message = buildOwnershipMessage({
+      conversationId: "conv_1",
+      workspaceId: "ws_1",
+      state: "human_owned",
+      contextText: "Customer needs help with billing.",
+      dashboardPath: "/conversations/conv_1",
+      ownerName: "Dana",
+      version: 3,
+    });
+
+    const rendered = JSON.stringify(message.blocks);
+    expect(rendered).toContain("Handled by Dana");
+    const actions = message.blocks.find((block) => block.type === "actions") as { elements: Array<Record<string, unknown>> };
+    expect(actions.elements.map((element) => element.action_id)).toEqual(["ownership_talk", "ownership_handback"]);
+    expect(actions.elements.map((element) => JSON.parse(element.value as string))).toEqual([
+      { conversationId: "conv_1", workspaceId: "ws_1", version: 3 },
+      { conversationId: "conv_1", version: 3 },
+    ]);
+  });
+
+  it("renders the ownership reply modal with callback metadata and input block", () => {
+    const modal = buildReplyModal({
+      conversationId: "conv_1",
+      workspaceId: "ws_1",
+      version: 3,
+    });
+
+    expect(modal).toMatchObject({
+      type: "modal",
+      callback_id: "ownership_reply",
+      private_metadata: JSON.stringify({ conversationId: "conv_1", workspaceId: "ws_1", version: 3 }),
+    });
+    expect(JSON.stringify(modal.blocks)).toContain("ownership_reply_message");
+    expect(JSON.stringify(modal.blocks)).toContain("ownership_reply_text");
   });
 });

@@ -56,6 +56,13 @@ export const createApp = (dependencies: AppDependencies) => {
         return;
       }
 
+      const contentType = req.headers["content-type"] ?? "";
+      if (typeof contentType === "string" && contentType.includes("application/x-www-form-urlencoded")) {
+        req.body = Object.fromEntries(new URLSearchParams(rawBody.toString("utf8")));
+        next();
+        return;
+      }
+
       req.body = JSON.parse(rawBody.toString("utf8"));
       next();
     } catch (error) {

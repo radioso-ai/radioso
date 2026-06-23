@@ -6,8 +6,10 @@ export {
   type SlackFetchLike,
   type SlackPostMessageInput,
   type SlackPostMessageResult,
+  type SlackUpdateMessageInput,
   type SlackUrlGuard,
   type SlackUserInfo,
+  type SlackViewOpenInput,
   type SlackWebApiClientOptions,
 } from "./client/slackWebApiClient.js";
 export {
@@ -55,4 +57,35 @@ export {
   type SlackInstallationRecord,
   type SlackInstallationRepositoryPort,
 } from "./install/slackInstallationService.js";
+export {
+  SlackOperatorIdentityRepository,
+  type SlackOperatorIdentityRecord,
+  type SlackOperatorIdentityRepositoryPort,
+} from "./persistence/slackOperatorIdentityRepository.js";
+export {
+  SlackOperatorIdentityResolver,
+  type SlackOperatorIdentityResolution,
+  type SlackOperatorPermissionPort,
+  type SlackUserInfoLookupPort,
+  type WorkspaceMemberLookupPort,
+  type WorkspaceMemberLookupResult,
+} from "./operator/slackOperatorIdentityResolver.js";
+export {
+  PostgresSlackOperatorPermission,
+  PostgresWorkspaceMemberLookup,
+} from "./operator/workspaceMemberLookup.js";
+export {
+  SlackInteractivityHandler,
+  type SlackInteractivityCallbackType,
+  type SlackInteractivityHandlerPort,
+  type SlackInteractivityPayload,
+} from "./operator/slackInteractivityHandler.js";
+export {
+  createSlackInteractivityRouter,
+  type SlackInteractivityRouterOptions,
+} from "./operator/slackInteractivityRouter.js";
+export {
+  SLACK_SIGNATURE_REPLAY_WINDOW_SECONDS,
+  isValidSlackSignature,
+} from "./transport/slackSignature.js";
 export { createSlackApplicationModule } from "./composition.js";

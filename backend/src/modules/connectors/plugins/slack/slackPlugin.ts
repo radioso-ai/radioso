@@ -9,10 +9,16 @@ import { OauthConnectionRepository } from "../../../../db/repositories/oauthConn
 import { ActionRequestRepository } from "../../../../db/repositories/actionRequestRepository.js";
 import { IntegrationConnectionRepository } from "../../../integrationConnections/public.js";
 import {
+  createSlackInteractivityRouter,
+  PostgresSlackOperatorPermission,
+  PostgresWorkspaceMemberLookup,
   SlackChannelBindingRepository,
   SlackInstallationRepository,
   SlackInstallationService,
-  type SlackWebApiClient,
+  SlackInteractivityHandler,
+  SlackOperatorIdentityRepository,
+  SlackOperatorIdentityResolver,
+  SlackWebApiClient,
 } from "../../../slack/public.js";
 import { SlackMessageHandler, type SlackWebApiClientFactory } from "./slackMessageHandler.js";
 import { PostgresSlackPersistence } from "./slackPersistence.js";
@@ -68,6 +74,23 @@ export class SlackPlugin implements ConnectorPlugin {
       bindings,
       encryptionKey: this.options.encryptionKey,
     });
+    const operatorIdentityResolver = new SlackOperatorIdentityResolver({
+      identities: new SlackOperatorIdentityRepository(db),
+      workspaceMembers: new PostgresWorkspaceMemberLookup(db),
+      permissions: new PostgresSlackOperatorPermission(db),
+      slack: {
+        usersInfo: async (slackUserId, installation) => {
+          if (!installation) {
+            throw new Error("slack_installation_required");
+          }
+          const botToken = await installationService.resolveBotTokenForInstallation(installation);
+          if (!botToken) {
+            throw new Error("slack_bot_token_not_found");
+          }
+          return new SlackWebApiClient({ botToken }).usersInfo(slackUserId);
+        },
+      },
+    });
     const messageHandler = new SlackMessageHandler({
       logger: context.logger,
       chat: context.chat,
@@ -87,6 +110,17 @@ export class SlackPlugin implements ConnectorPlugin {
         installations,
         persistence,
         messageHandler,
+      }),
+    );
+    context.http.mount(
+      "/",
+      createSlackInteractivityRouter({
+        logger: context.logger,
+        signingSecret: this.options.signingSecret,
+        handler: new SlackInteractivityHandler({
+          installations,
+          identityResolver: operatorIdentityResolver,
+        }),
       }),
     );
     this.initialized = true;

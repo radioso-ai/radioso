@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { ConversationChannelContext } from "@radioso/conversation-contract";
 import type { MessageRecord } from "./messageRepository.js";
 
 import type { Database } from "../../shared/infra/database.js";
@@ -11,6 +12,7 @@ export interface ConversationRecord {
   agentName: string | null;
   sourceChannel: string | null;
   sourceOrigin: string | null;
+  channelContext: ConversationChannelContext | null;
   anonymousSessionId: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -23,6 +25,7 @@ export interface ConversationRepositoryPort {
     sourceChannel?: string | null,
     anonymousSessionId?: string | null,
     sourceOrigin?: string | null,
+    channelContext?: ConversationChannelContext | null,
   ): Promise<ConversationRecord>;
   createWithInitialAssistantMessage(input: {
     workspaceId: string;
@@ -30,6 +33,7 @@ export interface ConversationRepositoryPort {
     sourceChannel?: string | null;
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
+    channelContext?: ConversationChannelContext | null;
     content: string;
   }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }>;
   listPageByWorkspaceId(
@@ -60,6 +64,7 @@ interface ConversationRow {
   agent_name?: string | null;
   source_channel: string | null;
   source_origin: string | null;
+  channel_context?: ConversationChannelContext | null;
   anonymous_session_id: string | null;
   created_at: Date;
   updated_at: Date;
@@ -81,6 +86,7 @@ const mapConversation = (row: ConversationRow): ConversationRecord => ({
   agentName: row.agent_name ?? null,
   sourceChannel: row.source_channel,
   sourceOrigin: row.source_origin ?? null,
+  channelContext: row.channel_context ?? null,
   anonymousSessionId: row.anonymous_session_id ?? null,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
@@ -95,12 +101,13 @@ export class ConversationRepository implements ConversationRepositoryPort {
     sourceChannel: string | null = null,
     anonymousSessionId: string | null = null,
     sourceOrigin: string | null = null,
+    channelContext: ConversationChannelContext | null = null,
   ): Promise<ConversationRecord> {
     const [row] = await this.database.query<ConversationRow>(
-      `INSERT INTO conversations (id, workspace_id, agent_id, source_channel, source_origin, anonymous_session_id)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, workspace_id, agent_id, source_channel, source_origin, anonymous_session_id, created_at, updated_at`,
-      [randomUUID(), workspaceId, agentId, sourceChannel, sourceOrigin, anonymousSessionId],
+      `INSERT INTO conversations (id, workspace_id, agent_id, source_channel, source_origin, anonymous_session_id, channel_context)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, workspace_id, agent_id, source_channel, source_origin, anonymous_session_id, channel_context, created_at, updated_at`,
+      [randomUUID(), workspaceId, agentId, sourceChannel, sourceOrigin, anonymousSessionId, channelContext],
     );
 
     return mapConversation(row);
@@ -112,16 +119,25 @@ export class ConversationRepository implements ConversationRepositoryPort {
     sourceChannel?: string | null;
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
+    channelContext?: ConversationChannelContext | null;
     content: string;
   }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }> {
     return this.database.withTransaction(async (client) => {
       const conversationId = randomUUID();
       const messageId = randomUUID();
       const conversationResult = await client.query<ConversationRow>(
-        `INSERT INTO conversations (id, workspace_id, agent_id, source_channel, source_origin, anonymous_session_id)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING id, workspace_id, agent_id, source_channel, source_origin, anonymous_session_id, created_at, updated_at`,
-        [conversationId, input.workspaceId, input.agentId ?? null, input.sourceChannel ?? null, input.sourceOrigin ?? null, input.anonymousSessionId ?? null],
+        `INSERT INTO conversations (id, workspace_id, agent_id, source_channel, source_origin, anonymous_session_id, channel_context)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id, workspace_id, agent_id, source_channel, source_origin, anonymous_session_id, channel_context, created_at, updated_at`,
+        [
+          conversationId,
+          input.workspaceId,
+          input.agentId ?? null,
+          input.sourceChannel ?? null,
+          input.sourceOrigin ?? null,
+          input.anonymousSessionId ?? null,
+          input.channelContext ?? null,
+        ],
       );
       const messageResult = await client.query<MessageRow>(
         `INSERT INTO messages (id, conversation_id, workspace_id, role, content)
@@ -185,7 +201,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
     }
 
     const rows = await this.database.query<ConversationRow>(
-      `SELECT c.id, c.workspace_id, c.agent_id, a.name AS agent_name, c.source_channel, c.source_origin, c.anonymous_session_id, c.created_at, c.updated_at
+      `SELECT c.id, c.workspace_id, c.agent_id, a.name AS agent_name, c.source_channel, c.source_origin, c.channel_context, c.anonymous_session_id, c.created_at, c.updated_at
        FROM conversations c
        LEFT JOIN agents a ON a.id = c.agent_id AND a.workspace_id = c.workspace_id
        WHERE c.workspace_id = $1
@@ -227,7 +243,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
 
   async findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<ConversationRecord | null> {
     const [row] = await this.database.query<ConversationRow>(
-      `SELECT c.id, c.workspace_id, c.agent_id, a.name AS agent_name, c.source_channel, c.source_origin, c.anonymous_session_id, c.created_at, c.updated_at
+      `SELECT c.id, c.workspace_id, c.agent_id, a.name AS agent_name, c.source_channel, c.source_origin, c.channel_context, c.anonymous_session_id, c.created_at, c.updated_at
        FROM conversations c
        LEFT JOIN agents a ON a.id = c.agent_id AND a.workspace_id = c.workspace_id
        WHERE c.id = $1 AND c.workspace_id = $2`,
@@ -284,7 +300,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
     }
 
     const rows = await this.database.query<ConversationRow>(
-      `SELECT c.id, c.workspace_id, c.agent_id, a.name AS agent_name, c.source_channel, c.source_origin, c.anonymous_session_id, c.created_at, c.updated_at
+      `SELECT c.id, c.workspace_id, c.agent_id, a.name AS agent_name, c.source_channel, c.source_origin, c.channel_context, c.anonymous_session_id, c.created_at, c.updated_at
        FROM conversations c
        LEFT JOIN agents a ON a.id = c.agent_id AND a.workspace_id = c.workspace_id
        WHERE c.workspace_id = $1 AND c.anonymous_session_id = $2${agentClause}
@@ -322,7 +338,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
     const params = [conversationId, workspaceId, anonymousSessionId];
     const agentClause = agentId ? ` AND c.agent_id = $${params.push(agentId)}` : "";
     const [row] = await this.database.query<ConversationRow>(
-      `SELECT c.id, c.workspace_id, c.agent_id, a.name AS agent_name, c.source_channel, c.source_origin, c.anonymous_session_id, c.created_at, c.updated_at
+      `SELECT c.id, c.workspace_id, c.agent_id, a.name AS agent_name, c.source_channel, c.source_origin, c.channel_context, c.anonymous_session_id, c.created_at, c.updated_at
        FROM conversations c
        LEFT JOIN agents a ON a.id = c.agent_id AND a.workspace_id = c.workspace_id
        WHERE c.id = $1 AND c.workspace_id = $2 AND c.anonymous_session_id = $3${agentClause}`,

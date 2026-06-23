@@ -18,11 +18,24 @@ export interface SlackPostMessageInput {
   channel: string;
   text: string;
   threadTs?: string;
+  blocks?: unknown[];
 }
 
 export interface SlackPostMessageResult {
   channel: string;
   ts: string;
+}
+
+export interface SlackUpdateMessageInput {
+  channel: string;
+  ts: string;
+  text: string;
+  blocks?: unknown[];
+}
+
+export interface SlackViewOpenInput {
+  triggerId: string;
+  view: Record<string, unknown>;
 }
 
 export interface SlackConversationSummary {
@@ -36,6 +49,7 @@ export interface SlackUserInfo {
   id: string;
   name?: string;
   realName?: string;
+  email?: string;
   isBot?: boolean;
 }
 
@@ -84,6 +98,7 @@ export class SlackWebApiClient {
         channel: input.channel,
         text: input.text,
         ...(input.threadTs ? { thread_ts: input.threadTs } : {}),
+        ...(input.blocks ? { blocks: input.blocks } : {}),
       },
     });
     const channel = readString(payload.channel);
@@ -92,6 +107,36 @@ export class SlackWebApiClient {
       throw new SlackWebApiError("invalid_response", "Slack chat.postMessage response was missing channel or timestamp");
     }
     return { channel, ts };
+  }
+
+  async updateMessage(input: SlackUpdateMessageInput): Promise<SlackPostMessageResult> {
+    const payload = await this.call("chat.update", {
+      method: "POST",
+      body: {
+        channel: input.channel,
+        ts: input.ts,
+        text: input.text,
+        ...(input.blocks ? { blocks: input.blocks } : {}),
+      },
+    });
+    const channel = readString(payload.channel);
+    const ts = readString(payload.ts);
+    if (!channel || !ts) {
+      throw new SlackWebApiError("invalid_response", "Slack chat.update response was missing channel or timestamp");
+    }
+    return { channel, ts };
+  }
+
+  async viewsOpen(input: SlackViewOpenInput): Promise<{ viewId: string | null }> {
+    const payload = await this.call("views.open", {
+      method: "POST",
+      body: {
+        trigger_id: input.triggerId,
+        view: input.view,
+      },
+    });
+    const view = isObject(payload.view) ? payload.view : {};
+    return { viewId: readString(view.id) ?? null };
   }
 
   async conversationsList(input: { cursor?: string; limit?: number; types?: string[] } = {}): Promise<{
@@ -130,6 +175,7 @@ export class SlackWebApiClient {
       id,
       ...(readString(slackUser.name) ? { name: readString(slackUser.name) } : {}),
       ...(readString(slackUser.real_name) ? { realName: readString(slackUser.real_name) } : {}),
+      ...(isObject(slackUser.profile) && readString(slackUser.profile.email) ? { email: readString(slackUser.profile.email) } : {}),
       ...(typeof slackUser.is_bot === "boolean" ? { isBot: slackUser.is_bot } : {}),
     };
   }

@@ -90,6 +90,7 @@ const ephemeralConversation = (
     agentName: null,
     sourceChannel: "workbench_replay",
     sourceOrigin: null,
+    channelContext: null,
     anonymousSessionId: null,
     createdAt: now,
     updatedAt: now,

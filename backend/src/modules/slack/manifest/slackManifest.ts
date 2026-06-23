@@ -4,6 +4,8 @@ export const slackBotScopes = [
   "im:history",
   "im:read",
   "im:write",
+  "users:read",
+  "users:read.email",
 ] as const;
 
 export const requiredSlackEnvVars = [
@@ -51,6 +53,7 @@ export interface SlackAppManifest {
     };
     interactivity: {
       is_enabled: boolean;
+      request_url?: string;
     };
     org_deploy_enabled: boolean;
     socket_mode_enabled: boolean;
@@ -84,7 +87,8 @@ export const buildSlackManifest = (appBaseUrl: string): SlackAppManifest => {
         bot_events: ["app_mention", "message.im"],
       },
       interactivity: {
-        is_enabled: false,
+        is_enabled: true,
+        request_url: `${baseUrl}/api/connectors/slack/interactivity`,
       },
       org_deploy_enabled: false,
       socket_mode_enabled: false,

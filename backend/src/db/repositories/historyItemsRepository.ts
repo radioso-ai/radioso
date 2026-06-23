@@ -152,6 +152,8 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
             agentName: row.conversation_agent_name ?? null,
             sourceChannel: row.source_channel,
             sourceOrigin: row.source_origin,
+            // Channel context is surfaced to Activity by the dedicated history query in US4 (task E03); null until then.
+            channelContext: null,
             anonymousSessionId: row.anonymous_session_id,
             createdAt: new Date(row.conversation_created_at),
             updatedAt: new Date(row.conversation_updated_at),

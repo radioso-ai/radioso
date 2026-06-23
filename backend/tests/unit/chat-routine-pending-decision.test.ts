@@ -53,7 +53,9 @@ describe("buildRoutinePendingDecisionTransition", () => {
       deciderScope: { kind: "workspace_member" },
     });
     expect(transition?.handle).toMatch(/^pd_[0-9a-f-]{36}$/);
-    expect(transition?.options[0]).not.toHaveProperty("payload");
+    // buildPendingDecisionTransition carries option payloads through so the operator's choice can
+    // be routed back into the routine (see decision-proposal.test.ts, the authoritative contract).
+    expect(transition?.options[0]).toMatchObject({ payload: { internal: "drop" } });
   });
 
   it("fails closed if the engine reports a decision without saving a suspended state", () => {

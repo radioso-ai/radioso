@@ -22742,6 +22742,993 @@
         }
       }
     },
+    "/api/v1/agents/{agentId}/skill-capabilities": {
+      "get": {
+        "tags": [
+          "Agent Skills"
+        ],
+        "summary": "List agent skill capabilities",
+        "operationId": "listAgentSkillCapabilities",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Skill capabilities",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "capabilities": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "enum": [
+                              "retrieve",
+                              "mcp_tool",
+                              "email",
+                              "slack_post",
+                              "webhook_call",
+                              "notify"
+                            ]
+                          },
+                          "storedKind": {
+                            "type": "string"
+                          },
+                          "targetKind": {
+                            "type": "string"
+                          },
+                          "requiresTarget": {
+                            "type": "boolean"
+                          },
+                          "inputSchema": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "source": {
+                                    "type": "string",
+                                    "enum": [
+                                      "discovered"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "source"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "source": {
+                                    "type": "string",
+                                    "enum": [
+                                      "static"
+                                    ]
+                                  },
+                                  "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {}
+                                  }
+                                },
+                                "required": [
+                                  "source",
+                                  "schema"
+                                ]
+                              }
+                            ]
+                          },
+                          "settingsFields": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "key": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "boolean",
+                                    "number",
+                                    "text",
+                                    "textarea",
+                                    "select",
+                                    "string_list",
+                                    "source_scope"
+                                  ]
+                                },
+                                "help": {
+                                  "type": "string"
+                                },
+                                "options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "value": {
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "value",
+                                      "label"
+                                    ]
+                                  }
+                                },
+                                "min": {
+                                  "type": "number"
+                                },
+                                "max": {
+                                  "type": "number"
+                                },
+                                "group": {
+                                  "type": "string"
+                                },
+                                "advanced": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "key",
+                                "label",
+                                "type"
+                              ]
+                            }
+                          },
+                          "outcomeVocabulary": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "supportedInvocationModes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "default_answer",
+                                "routine_named",
+                                "agent_selectable"
+                              ]
+                            }
+                          },
+                          "defaultInvocationMode": {
+                            "type": "string",
+                            "enum": [
+                              "default_answer",
+                              "routine_named",
+                              "agent_selectable"
+                            ]
+                          },
+                          "executorAdapter": {
+                            "type": "string"
+                          },
+                          "targets": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label"
+                              ]
+                            }
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "unavailableReason": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "enum": [
+                              "no_connection"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "storedKind",
+                          "targetKind",
+                          "requiresTarget",
+                          "inputSchema",
+                          "settingsFields",
+                          "outcomeVocabulary",
+                          "supportedInvocationModes",
+                          "executorAdapter",
+                          "targets",
+                          "available",
+                          "unavailableReason"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "capabilities"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent read permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/skills": {
+      "get": {
+        "tags": [
+          "Agent Skills"
+        ],
+        "summary": "List agent skills",
+        "operationId": "listAgentSkills",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent skills",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "skills": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "workspaceId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "agentId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "capability": {
+                            "type": "string",
+                            "enum": [
+                              "retrieve",
+                              "mcp_tool",
+                              "email",
+                              "slack_post",
+                              "webhook_call",
+                              "notify"
+                            ]
+                          },
+                          "storedKind": {
+                            "type": "string"
+                          },
+                          "target": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "uuid"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "id"
+                            ]
+                          },
+                          "config": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "invocationMode": {
+                            "type": "string",
+                            "enum": [
+                              "default_answer",
+                              "routine_named",
+                              "agent_selectable"
+                            ]
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "workspaceId",
+                          "agentId",
+                          "name",
+                          "capability",
+                          "storedKind",
+                          "target",
+                          "config",
+                          "invocationMode",
+                          "enabled",
+                          "createdAt",
+                          "updatedAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "skills"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent read permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Agent Skills"
+        ],
+        "summary": "Create an agent skill",
+        "operationId": "createAgentSkill",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "capability": {
+                    "type": "string",
+                    "enum": [
+                      "retrieve",
+                      "mcp_tool",
+                      "email",
+                      "slack_post",
+                      "webhook_call",
+                      "notify"
+                    ]
+                  },
+                  "target": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string"
+                      },
+                      "id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "uuid"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ]
+                  },
+                  "config": {
+                    "type": "object",
+                    "additionalProperties": {},
+                    "default": {}
+                  },
+                  "invocationMode": {
+                    "type": "string",
+                    "enum": [
+                      "default_answer",
+                      "routine_named",
+                      "agent_selectable"
+                    ],
+                    "default": "routine_named"
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "default": true
+                  }
+                },
+                "required": [
+                  "name",
+                  "capability",
+                  "target"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Agent skill",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "skill": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "workspaceId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "agentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "capability": {
+                          "type": "string",
+                          "enum": [
+                            "retrieve",
+                            "mcp_tool",
+                            "email",
+                            "slack_post",
+                            "webhook_call",
+                            "notify"
+                          ]
+                        },
+                        "storedKind": {
+                          "type": "string"
+                        },
+                        "target": {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string"
+                            },
+                            "id": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "uuid"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "id"
+                          ]
+                        },
+                        "config": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "invocationMode": {
+                          "type": "string",
+                          "enum": [
+                            "default_answer",
+                            "routine_named",
+                            "agent_selectable"
+                          ]
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "workspaceId",
+                        "agentId",
+                        "name",
+                        "capability",
+                        "storedKind",
+                        "target",
+                        "config",
+                        "invocationMode",
+                        "enabled",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "skill"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid skill definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent manage permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Skill name or default-answer already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/skills/{skillId}": {
+      "patch": {
+        "tags": [
+          "Agent Skills"
+        ],
+        "summary": "Update an agent skill",
+        "operationId": "updateAgentSkill",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "skillId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string"
+                      },
+                      "id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "uuid"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ]
+                  },
+                  "config": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  },
+                  "invocationMode": {
+                    "type": "string",
+                    "enum": [
+                      "default_answer",
+                      "routine_named",
+                      "agent_selectable"
+                    ]
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Agent skill",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "skill": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "workspaceId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "agentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "capability": {
+                          "type": "string",
+                          "enum": [
+                            "retrieve",
+                            "mcp_tool",
+                            "email",
+                            "slack_post",
+                            "webhook_call",
+                            "notify"
+                          ]
+                        },
+                        "storedKind": {
+                          "type": "string"
+                        },
+                        "target": {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string"
+                            },
+                            "id": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "uuid"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "id"
+                          ]
+                        },
+                        "config": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "invocationMode": {
+                          "type": "string",
+                          "enum": [
+                            "default_answer",
+                            "routine_named",
+                            "agent_selectable"
+                          ]
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "workspaceId",
+                        "agentId",
+                        "name",
+                        "capability",
+                        "storedKind",
+                        "target",
+                        "config",
+                        "invocationMode",
+                        "enabled",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "skill"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid skill definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent manage permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or skill not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default-answer already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Agent Skills"
+        ],
+        "summary": "Delete an agent skill",
+        "operationId": "deleteAgentSkill",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "skillId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent manage permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or skill not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/retrieval/answer": {
       "post": {
         "tags": [

@@ -7,8 +7,7 @@ import { DEFAULT_ROUTINE_STATE_TTL_MS } from "../../../db/repositories/routineSt
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { PendingDecisionCreateInput } from "../../../db/repositories/pendingDecisionRepository.js";
 import { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
-import { stringifyJsonb } from "../../../shared/infra/jsonb.js";
-import { toJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
+import { toJsonb, toSanitizedJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import {
   actionIdempotencyKey,
@@ -18,13 +17,6 @@ import type { CapturedRoutineTransition } from "../services/routines/deferredRou
 import type { CapturedClarificationTransition } from "../services/clarification/deferredClarificationStore.js";
 
 type CompleteAssistantTurnInput = Parameters<AssistantTurnPersistencePort["completeAssistantTurn"]>[0];
-
-// jsonb write that preserves the original `stringifyJsonb` sanitization (NUL bytes / lone
-// surrogates → U+FFFD). `toJsonb` in sqlHelpers uses plain `JSON.stringify`, which would
-// drop that sanitization for message/audit payloads that may carry arbitrary user/model
-// text — so these columns keep the sanitizing serializer. Same `::jsonb` cast shape as
-// `toJsonb`. TODO(US3): promote a sanitizing jsonb helper to sqlHelpers.
-const toSanitizedJsonb = (value: unknown) => sql`${stringifyJsonb(value)}::jsonb`;
 
 interface MessageRow {
   id: string;

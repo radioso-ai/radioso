@@ -63,6 +63,21 @@ describeIntegration("AuditEventRepository (Postgres)", () => {
     expect(await repository.listChatAnswerEventsByAssistantMessageIds(workspaceId, conversationId, [])).toEqual([]);
   });
 
+  it("sanitizes invalid text characters before writing metadata jsonb", async () => {
+    const event = await repository.create({
+      workspaceId,
+      eventType: "chat.answer",
+      eventStatus: "success",
+      metadata: {
+        conversationId,
+        assistantMessageId: "m-invalid-text",
+        answerPreview: `bad ${String.fromCharCode(0)} preview`,
+      },
+    });
+
+    expect(event.metadata.answerPreview).toBe("bad \uFFFD preview");
+  });
+
   it("findLatest honors optional status filter", async () => {
     await chatAnswer("m1", "failure");
     const ok = await chatAnswer("m2", "success");

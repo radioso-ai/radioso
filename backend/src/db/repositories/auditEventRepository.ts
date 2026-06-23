@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { anyOf, castText, jsonbKeyText, jsonbSet, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { anyOf, castText, jsonbKeyText, jsonbSet, toJsonb, toSanitizedJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 
@@ -94,7 +94,7 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
         workspace_id: input.workspaceId ?? null,
         event_type: input.eventType,
         event_status: input.eventStatus,
-        metadata_json: toJsonb(input.metadata ?? {}),
+        metadata_json: toSanitizedJsonb(input.metadata ?? {}),
       })
       .returning(auditEventColumns)
       .executeTakeFirstOrThrow();

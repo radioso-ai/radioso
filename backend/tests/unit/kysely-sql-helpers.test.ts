@@ -3,7 +3,7 @@ import type { Pool } from "pg";
 import { describe, expect, it } from "vitest";
 
 import type { DB } from "../../src/shared/infra/kysely/schema.js";
-import { anyOf, castText, clockTimestamp, jsonbConcat, jsonbKeyText, jsonbSet, setLocal, toJsonb } from "../../src/shared/infra/kysely/sqlHelpers.js";
+import { anyOf, castText, clockTimestamp, jsonbConcat, jsonbKeyText, jsonbSet, setLocal, toJsonb, toSanitizedJsonb } from "../../src/shared/infra/kysely/sqlHelpers.js";
 
 // Compilation is synchronous and never touches the pool, so a Kysely bound to a dummy pool
 // is enough to assert the SQL each helper emits.
@@ -25,6 +25,16 @@ describe("kysely sqlHelpers", () => {
 
     expect(compiled.sql).toContain("::jsonb");
     expect(compiled.parameters).toEqual(['[{"id":"a"}]']);
+  });
+
+  it("toSanitizedJsonb preserves the jsonb cast and replaces invalid text characters", () => {
+    const compiled = db
+      .selectFrom("sessions")
+      .select(() => toSanitizedJsonb({ value: `bad ${String.fromCharCode(0)} text` }).as("payload"))
+      .compile();
+
+    expect(compiled.sql).toContain("::jsonb");
+    expect(compiled.parameters).toEqual([`{"value":"bad ${String.fromCharCode(0xfffd)} text"}`]);
   });
 
   it("clockTimestamp emits clock_timestamp()", () => {

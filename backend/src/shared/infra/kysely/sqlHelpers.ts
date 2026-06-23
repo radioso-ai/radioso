@@ -1,5 +1,6 @@
 import { sql, type Expression, type RawBuilder } from "kysely";
 
+import { stringifyJsonb } from "../jsonb.js";
 import type { JsonValue } from "./schema.js";
 import type { Db } from "./types.js";
 
@@ -26,6 +27,12 @@ import type { Db } from "./types.js";
  * both objects and arrays. Use for every jsonb write value.
  */
 export const toJsonb = (value: unknown): RawBuilder<JsonValue> => sql`${JSON.stringify(value)}::jsonb`;
+
+/**
+ * Serialize arbitrary text-bearing payloads as `jsonb`, preserving the repository-wide
+ * sanitization for NUL bytes and lone surrogates before Postgres sees the value.
+ */
+export const toSanitizedJsonb = (value: unknown): RawBuilder<JsonValue> => sql`${stringifyJsonb(value)}::jsonb`;
 
 /**
  * jsonb `->> key` — extract a top-level key as text (NULL if absent). Use as a comparison

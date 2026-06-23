@@ -106,4 +106,27 @@ describe("mapRestPostToIngestInput", () => {
     });
     expect(result.content).toBe("<p>raw body</p>");
   });
+
+  it("captures the embedded author name into metadata so the post is findable by author", () => {
+    const result = mapRestPostToIngestInput("ws-1", {
+      ...restPost,
+      author: 3,
+      _embedded: { author: [{ id: 3, name: "Sabine Kaphingst" }] },
+    });
+    expect(result.metadata).toMatchObject({ author: "Sabine Kaphingst" });
+  });
+
+  it("omits author metadata when no embedded author is present", () => {
+    const result = mapRestPostToIngestInput("ws-1", restPost);
+    expect(result.metadata).not.toHaveProperty("author");
+  });
+
+  it("omits author metadata when the embedded author name is blank", () => {
+    const result = mapRestPostToIngestInput("ws-1", {
+      ...restPost,
+      author: 3,
+      _embedded: { author: [{ id: 3, name: "   " }] },
+    });
+    expect(result.metadata).not.toHaveProperty("author");
+  });
 });

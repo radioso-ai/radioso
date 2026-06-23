@@ -1,4 +1,5 @@
-import type { Database } from "../../shared/infra/database.js";
+import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 import type { LlmProviderName } from "../../shared/infra/llm/providerTypes.js";
 
 export interface WorkspaceProviderCredentialRecord {
@@ -28,6 +29,9 @@ interface CredentialSummaryRow {
   provider: LlmProviderName;
   updated_at: Date;
 }
+
+const credentialColumns = ["workspace_id", "provider", "ciphertext", "created_at", "updated_at"] as const;
+const credentialSummaryColumns = ["workspace_id", "provider", "updated_at"] as const;
 
 const mapRecord = (row: CredentialRow): WorkspaceProviderCredentialRecord => ({
   workspaceId: row.workspace_id,
@@ -60,32 +64,31 @@ export interface WorkspaceProviderCredentialsRepositoryPort {
 export class WorkspaceProviderCredentialsRepository
   implements WorkspaceProviderCredentialsRepositoryPort
 {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async findByWorkspaceAndProvider(
     workspaceId: string,
     provider: LlmProviderName,
   ): Promise<WorkspaceProviderCredentialRecord | null> {
-    const [row] = await this.database.query<CredentialRow>(
-      `SELECT workspace_id, provider, ciphertext, created_at, updated_at
-       FROM workspace_provider_credentials
-       WHERE workspace_id = $1 AND provider = $2`,
-      [workspaceId, provider],
-    );
+    const row = await this.db
+      .selectFrom("workspace_provider_credentials")
+      .select(credentialColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("provider", "=", provider)
+      .executeTakeFirst();
 
-    return row ? mapRecord(row) : null;
+    return row ? mapRecord(row as CredentialRow) : null;
   }
 
   async listByWorkspace(workspaceId: string): Promise<WorkspaceProviderCredentialSummary[]> {
-    const rows = await this.database.query<CredentialSummaryRow>(
-      `SELECT workspace_id, provider, updated_at
-       FROM workspace_provider_credentials
-       WHERE workspace_id = $1
-       ORDER BY provider ASC`,
-      [workspaceId],
-    );
+    const rows = await this.db
+      .selectFrom("workspace_provider_credentials")
+      .select(credentialSummaryColumns)
+      .where("workspace_id", "=", workspaceId)
+      .orderBy("provider", "asc")
+      .execute();
 
-    return rows.map(mapSummary);
+    return rows.map((row) => mapSummary(row as CredentialSummaryRow));
   }
 
   async upsert(input: {
@@ -93,25 +96,32 @@ export class WorkspaceProviderCredentialsRepository
     provider: LlmProviderName;
     ciphertext: string;
   }): Promise<WorkspaceProviderCredentialRecord> {
-    const [row] = await this.database.query<CredentialRow>(
-      `INSERT INTO workspace_provider_credentials (workspace_id, provider, ciphertext)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (workspace_id, provider)
-       DO UPDATE SET ciphertext = EXCLUDED.ciphertext,
-                     updated_at = NOW()
-       RETURNING workspace_id, provider, ciphertext, created_at, updated_at`,
-      [input.workspaceId, input.provider, input.ciphertext],
-    );
+    const row = await this.db
+      .insertInto("workspace_provider_credentials")
+      .values({
+        workspace_id: input.workspaceId,
+        provider: input.provider,
+        ciphertext: input.ciphertext,
+      })
+      .onConflict((oc) =>
+        oc.columns(["workspace_id", "provider"]).doUpdateSet((eb) => ({
+          ciphertext: eb.ref("excluded.ciphertext"),
+          updated_at: currentTimestamp(),
+        })),
+      )
+      .returning(credentialColumns)
+      .executeTakeFirstOrThrow();
 
-    return mapRecord(row);
+    return mapRecord(row as CredentialRow);
   }
 
   async remove(workspaceId: string, provider: LlmProviderName): Promise<boolean> {
-    const affected = await this.database.execute(
-      `DELETE FROM workspace_provider_credentials
-       WHERE workspace_id = $1 AND provider = $2`,
-      [workspaceId, provider],
-    );
-    return affected > 0;
+    const result = await this.db
+      .deleteFrom("workspace_provider_credentials")
+      .where("workspace_id", "=", workspaceId)
+      .where("provider", "=", provider)
+      .executeTakeFirst();
+
+    return Number(result.numDeletedRows) > 0;
   }
 }

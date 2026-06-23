@@ -1,6 +1,6 @@
-import type { QueryResultRow } from "pg";
+import { CompiledQuery } from "kysely";
 
-import type { ApplicationDatabasePort } from "../../app/composition/applicationModule.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 import { badRequest } from "../../shared/domain/errors.js";
 import type {
   UsageTrendAggregateRow,
@@ -23,13 +23,13 @@ interface AccountAccessPort {
   requireActiveMembership(accountId: string, userId: string): Promise<unknown>;
 }
 
-type ExistsRow = QueryResultRow & {
+type ExistsRow = {
   exists: boolean;
 };
 
 export class UsageTrendsService implements UsageTrendsServicePort {
   constructor(
-    private readonly database: ApplicationDatabasePort,
+    private readonly db: Db,
     private readonly accountAccessService: AccountAccessPort,
   ) {}
 
@@ -67,22 +67,29 @@ export class UsageTrendsService implements UsageTrendsServicePort {
   private async validateFilters(input: UsageTrendsInput): Promise<void> {
     if (input.workspaceId) {
       const query = buildWorkspaceOwnershipQuery(input.accountId, input.workspaceId);
-      const [row] = await this.database.query<ExistsRow>(query.text, query.params);
-      if (!row?.exists) {
+      const result = await this.db.executeQuery<ExistsRow>(
+        CompiledQuery.raw(query.text, query.params),
+      );
+      if (!result.rows[0]?.exists) {
         throw badRequest("Workspace filter does not belong to the current account");
       }
     }
 
     if (input.agentId) {
       const query = buildAgentOwnershipQuery(input.accountId, input.agentId);
-      const [row] = await this.database.query<ExistsRow>(query.text, query.params);
-      if (!row?.exists) {
+      const result = await this.db.executeQuery<ExistsRow>(
+        CompiledQuery.raw(query.text, query.params),
+      );
+      if (!result.rows[0]?.exists) {
         throw badRequest("Agent filter does not belong to the current account");
       }
     }
   }
 
   private async runAggregateQuery(query: { text: string; params: unknown[] }): Promise<UsageTrendAggregateRow[]> {
-    return this.database.query<UsageTrendAggregateRow & QueryResultRow>(query.text, query.params);
+    const result = await this.db.executeQuery<UsageTrendAggregateRow>(
+      CompiledQuery.raw(query.text, query.params),
+    );
+    return result.rows;
   }
 }

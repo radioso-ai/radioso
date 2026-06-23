@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { Database } from "../../shared/infra/database.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 import type { SessionRecord, SessionRepositoryPort } from "../../modules/auth/services/authService.js";
 
 interface SessionRow {
@@ -14,6 +14,17 @@ interface SessionRow {
   revoked_at: Date | null;
 }
 
+const sessionColumns = [
+  "id",
+  "user_id",
+  "account_id",
+  "session_token_hash",
+  "created_at",
+  "expires_at",
+  "last_seen_at",
+  "revoked_at",
+] as const;
+
 const mapSession = (row: SessionRow): SessionRecord => ({
   id: row.id,
   userId: row.user_id,
@@ -26,48 +37,52 @@ const mapSession = (row: SessionRow): SessionRecord => ({
 });
 
 export class SessionRepository implements SessionRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async create(params: { userId: string; accountId: string; sessionTokenHash: string; expiresAt: Date }): Promise<SessionRecord> {
-    const row = await this.database.queryOne<SessionRow>(
-      `INSERT INTO sessions (id, user_id, account_id, session_token_hash, expires_at)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, user_id, account_id, session_token_hash, created_at, expires_at, last_seen_at, revoked_at`,
-      [randomUUID(), params.userId, params.accountId, params.sessionTokenHash, params.expiresAt],
-    );
+    const row = await this.db
+      .insertInto("sessions")
+      .values({
+        id: randomUUID(),
+        user_id: params.userId,
+        account_id: params.accountId,
+        session_token_hash: params.sessionTokenHash,
+        expires_at: params.expiresAt,
+      })
+      .returning(sessionColumns)
+      .executeTakeFirstOrThrow();
 
     return mapSession(row);
   }
 
   async findActiveByTokenHash(sessionTokenHash: string, now: Date): Promise<SessionRecord | null> {
-    const row = await this.database.queryOptional<SessionRow>(
-      `SELECT id, user_id, account_id, session_token_hash, created_at, expires_at, last_seen_at, revoked_at
-       FROM sessions
-       WHERE session_token_hash = $1
-         AND revoked_at IS NULL
-         AND expires_at > $2`,
-      [sessionTokenHash, now],
-    );
+    const row = await this.db
+      .selectFrom("sessions")
+      .select(sessionColumns)
+      .where("session_token_hash", "=", sessionTokenHash)
+      .where("revoked_at", "is", null)
+      .where("expires_at", ">", now)
+      .executeTakeFirst();
 
     return row ? mapSession(row) : null;
   }
 
   async touch(sessionId: string, lastSeenAt: Date): Promise<void> {
-    await this.database.query(
-      `UPDATE sessions
-       SET last_seen_at = $2
-       WHERE id = $1`,
-      [sessionId, lastSeenAt],
-    );
+    await this.db
+      .updateTable("sessions")
+      .set({ last_seen_at: lastSeenAt })
+      .where("id", "=", sessionId)
+      .execute();
   }
 
   async revokeAllForUser(userId: string, revokedAt: Date): Promise<number> {
-    return this.database.execute(
-      `UPDATE sessions
-       SET revoked_at = $2
-       WHERE user_id = $1
-         AND revoked_at IS NULL`,
-      [userId, revokedAt],
-    );
+    const result = await this.db
+      .updateTable("sessions")
+      .set({ revoked_at: revokedAt })
+      .where("user_id", "=", userId)
+      .where("revoked_at", "is", null)
+      .executeTakeFirst();
+
+    return Number(result.numUpdatedRows);
   }
 }

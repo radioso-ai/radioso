@@ -36,9 +36,9 @@ describeIfDatabase("retrieve skills spine migration", () => {
 
   beforeAll(async () => {
     database = new Database(integrationDatabaseUrl!);
-    accountRepository = new AccountRepository(database);
-    workspaceRepository = new WorkspaceRepository(database);
-    agentRepository = new AgentRepository(database);
+    accountRepository = new AccountRepository(database.kysely);
+    workspaceRepository = new WorkspaceRepository(database.kysely);
+    agentRepository = new AgentRepository(database.kysely);
     // Full schema, then re-apply 110 after seeding legacy retrieval skill_settings so we exercise
     // its (idempotent) projection against the pre-migration data shape — mirrors the other
     // migration projection tests (e.g. agent-suggested-questions-skill-migration).

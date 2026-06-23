@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 
-import type { QueryResultRow } from "pg";
+import type { Updateable } from "kysely";
 
-import type { DatabaseExecutor } from "../../shared/infra/database.js";
+import { currentTimestamp, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { IntegrationConnections } from "../../shared/infra/kysely/schema.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 import type {
   CreateIntegrationConnectionInput,
   IntegrationConnectionHealthStatus,
@@ -11,7 +13,7 @@ import type {
   UpdateIntegrationConnectionInput,
 } from "./domain.js";
 
-export interface IntegrationConnectionRow extends QueryResultRow {
+export interface IntegrationConnectionRow {
   id: string;
   workspace_id: string;
   oauth_connection_id: string;
@@ -26,8 +28,20 @@ export interface IntegrationConnectionRow extends QueryResultRow {
   updated_at: Date;
 }
 
-const COLUMNS =
-  "id, workspace_id, oauth_connection_id, provider, display_name, status, last_health_status, last_health_checked_at, last_error_code, config, created_at, updated_at";
+const COLUMNS = [
+  "id",
+  "workspace_id",
+  "oauth_connection_id",
+  "provider",
+  "display_name",
+  "status",
+  "last_health_status",
+  "last_health_checked_at",
+  "last_error_code",
+  "config",
+  "created_at",
+  "updated_at",
+] as const;
 
 const mapRecord = (row: IntegrationConnectionRow): IntegrationConnectionRecord => ({
   id: row.id,
@@ -66,40 +80,32 @@ export interface IntegrationConnectionRepositoryPort {
   remove(workspaceId: string, id: string, providers?: readonly string[]): Promise<boolean>;
 }
 
-// Builds an optional `AND provider = ANY(...)` clause, appending the array param
-// and returning the SQL fragment referencing its positional index.
-const providerScopeClause = (params: unknown[], providers?: readonly string[]): string => {
-  if (!providers || providers.length === 0) {
-    return "";
-  }
-  params.push([...providers]);
-  return ` AND provider = ANY($${params.length}::text[])`;
-};
+// True only when a provider scope must be applied. An empty/absent set leaves the
+// query unconstrained, matching the raw SQL which appended no clause in that case.
+const hasScope = (providers?: readonly string[]): providers is readonly string[] =>
+  Boolean(providers && providers.length > 0);
 
 export class IntegrationConnectionRepository implements IntegrationConnectionRepositoryPort {
-  constructor(private readonly database: DatabaseExecutor) {}
+  constructor(private readonly db: Db) {}
 
   async create(input: CreateIntegrationConnectionInput): Promise<IntegrationConnectionRecord> {
-    const [row] = await this.database.query<IntegrationConnectionRow>(
-      `INSERT INTO integration_connections
-         (id, workspace_id, oauth_connection_id, provider, display_name, status,
-          last_health_status, last_health_checked_at, last_error_code, config)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
-       RETURNING ${COLUMNS}`,
-      [
-        randomUUID(),
-        input.workspaceId,
-        input.oauthConnectionId,
-        input.provider,
-        input.displayName,
-        input.status ?? "authorized",
-        input.lastHealthStatus ?? null,
-        input.lastHealthCheckedAt ?? null,
-        input.lastErrorCode ?? null,
-        JSON.stringify(input.config ?? {}),
-      ],
-    );
-    return mapRecord(row);
+    const row = await this.db
+      .insertInto("integration_connections")
+      .values({
+        id: randomUUID(),
+        workspace_id: input.workspaceId,
+        oauth_connection_id: input.oauthConnectionId,
+        provider: input.provider,
+        display_name: input.displayName,
+        status: input.status ?? "authorized",
+        last_health_status: input.lastHealthStatus ?? null,
+        last_health_checked_at: input.lastHealthCheckedAt ?? null,
+        last_error_code: input.lastErrorCode ?? null,
+        config: toJsonb(input.config ?? {}),
+      })
+      .returning(COLUMNS)
+      .executeTakeFirstOrThrow();
+    return mapRecord(row as IntegrationConnectionRow);
   }
 
   async findById(
@@ -107,35 +113,37 @@ export class IntegrationConnectionRepository implements IntegrationConnectionRep
     id: string,
     providers?: readonly string[],
   ): Promise<IntegrationConnectionRecord | null> {
-    const params: unknown[] = [workspaceId, id];
-    const scope = providerScopeClause(params, providers);
-    const [row] = await this.database.query<IntegrationConnectionRow>(
-      `SELECT ${COLUMNS} FROM integration_connections WHERE workspace_id = $1 AND id = $2${scope}`,
-      params,
-    );
-    return row ? mapRecord(row) : null;
+    let query = this.db
+      .selectFrom("integration_connections")
+      .select(COLUMNS)
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", id);
+    if (hasScope(providers)) {
+      query = query.where("provider", "in", providers);
+    }
+    const row = await query.executeTakeFirst();
+    return row ? mapRecord(row as IntegrationConnectionRow) : null;
   }
 
   async listByWorkspace(workspaceId: string): Promise<IntegrationConnectionRecord[]> {
-    const rows = await this.database.query<IntegrationConnectionRow>(
-      `SELECT ${COLUMNS}
-       FROM integration_connections
-       WHERE workspace_id = $1
-       ORDER BY created_at ASC`,
-      [workspaceId],
-    );
-    return rows.map(mapRecord);
+    const rows = await this.db
+      .selectFrom("integration_connections")
+      .select(COLUMNS)
+      .where("workspace_id", "=", workspaceId)
+      .orderBy("created_at", "asc")
+      .execute();
+    return rows.map((row) => mapRecord(row as IntegrationConnectionRow));
   }
 
   async listByWorkspaceProvider(workspaceId: string, provider: string): Promise<IntegrationConnectionRecord[]> {
-    const rows = await this.database.query<IntegrationConnectionRow>(
-      `SELECT ${COLUMNS}
-       FROM integration_connections
-       WHERE workspace_id = $1 AND provider = $2
-       ORDER BY created_at ASC`,
-      [workspaceId, provider],
-    );
-    return rows.map(mapRecord);
+    const rows = await this.db
+      .selectFrom("integration_connections")
+      .select(COLUMNS)
+      .where("workspace_id", "=", workspaceId)
+      .where("provider", "=", provider)
+      .orderBy("created_at", "asc")
+      .execute();
+    return rows.map((row) => mapRecord(row as IntegrationConnectionRow));
   }
 
   async update(
@@ -144,46 +152,45 @@ export class IntegrationConnectionRepository implements IntegrationConnectionRep
     input: UpdateIntegrationConnectionInput,
     providers?: readonly string[],
   ): Promise<IntegrationConnectionRecord | null> {
-    const assignments: string[] = [];
-    const params: unknown[] = [workspaceId, id];
-    const addAssignment = (column: string, value: unknown): void => {
-      params.push(value);
-      assignments.push(`${column} = $${params.length}`);
-    };
+    const assignments: Updateable<IntegrationConnections> = {};
+    if ("oauthConnectionId" in input) assignments.oauth_connection_id = input.oauthConnectionId;
+    if ("displayName" in input) assignments.display_name = input.displayName;
+    if ("status" in input) assignments.status = input.status;
+    if ("lastHealthStatus" in input) assignments.last_health_status = input.lastHealthStatus ?? null;
+    if ("lastHealthCheckedAt" in input) assignments.last_health_checked_at = input.lastHealthCheckedAt ?? null;
+    if ("lastErrorCode" in input) assignments.last_error_code = input.lastErrorCode ?? null;
 
-    if ("oauthConnectionId" in input) addAssignment("oauth_connection_id", input.oauthConnectionId);
-    if ("displayName" in input) addAssignment("display_name", input.displayName);
-    if ("status" in input) addAssignment("status", input.status);
-    if ("lastHealthStatus" in input) addAssignment("last_health_status", input.lastHealthStatus ?? null);
-    if ("lastHealthCheckedAt" in input) addAssignment("last_health_checked_at", input.lastHealthCheckedAt ?? null);
-    if ("lastErrorCode" in input) addAssignment("last_error_code", input.lastErrorCode ?? null);
-    if ("config" in input) {
-      params.push(JSON.stringify(input.config ?? {}));
-      assignments.push(`config = config || $${params.length}::jsonb`);
-    }
-
-    if (assignments.length === 0) {
+    const hasConfig = "config" in input;
+    if (!hasConfig && Object.keys(assignments).length === 0) {
       return this.findById(workspaceId, id, providers);
     }
 
-    const scope = providerScopeClause(params, providers);
-    const [row] = await this.database.query<IntegrationConnectionRow>(
-      `UPDATE integration_connections
-       SET ${assignments.join(", ")}, updated_at = NOW()
-       WHERE workspace_id = $1 AND id = $2${scope}
-       RETURNING ${COLUMNS}`,
-      params,
-    );
-    return row ? mapRecord(row) : null;
+    let query = this.db
+      .updateTable("integration_connections")
+      .set((eb) => ({
+        ...assignments,
+        // Shallow jsonb merge (right keys win), mirroring `config = config || $n::jsonb`.
+        ...(hasConfig ? { config: jsonbConcat(eb.ref("config"), toJsonb(input.config ?? {})) } : {}),
+        updated_at: currentTimestamp(),
+      }))
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", id);
+    if (hasScope(providers)) {
+      query = query.where("provider", "in", providers);
+    }
+    const row = await query.returning(COLUMNS).executeTakeFirst();
+    return row ? mapRecord(row as IntegrationConnectionRow) : null;
   }
 
   async remove(workspaceId: string, id: string, providers?: readonly string[]): Promise<boolean> {
-    const params: unknown[] = [workspaceId, id];
-    const scope = providerScopeClause(params, providers);
-    const affected = await this.database.execute(
-      `DELETE FROM integration_connections WHERE workspace_id = $1 AND id = $2${scope}`,
-      params,
-    );
-    return affected > 0;
+    let query = this.db
+      .deleteFrom("integration_connections")
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", id);
+    if (hasScope(providers)) {
+      query = query.where("provider", "in", providers);
+    }
+    const result = await query.executeTakeFirst();
+    return Number(result.numDeletedRows) > 0;
   }
 }

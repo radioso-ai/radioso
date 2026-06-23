@@ -13,6 +13,7 @@ import { DefaultConversationEngine } from "@radioso/conversation-engine";
 
 import { RoutineStateRepository } from "../../src/db/repositories/routineStateRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
+import { createKyselyDatabase } from "../../src/shared/infra/kysely/kyselyDatabase.js";
 import { applyTestMigration } from "../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
@@ -35,8 +36,24 @@ const canReachIntegrationDatabase = async (databaseUrl?: string): Promise<boolea
 const hasReachableIntegrationDatabase = await canReachIntegrationDatabase(integrationDatabaseUrl);
 const describeIfDatabase = hasReachableIntegrationDatabase ? describe : describe.skip;
 
-const createClientBackedDatabase = (client: PoolClient): Database => ({
-  pool: {} as Database["pool"],
+const createClientBackedDatabase = (client: PoolClient): Database => {
+  const pool = {
+    async connect() {
+      return new Proxy(client, {
+        get(target, property, receiver) {
+          if (property === "release") {
+            return () => undefined;
+          }
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      }) as PoolClient;
+    },
+  } as Database["pool"];
+
+  return {
+  pool,
+  kysely: createKyselyDatabase(pool),
   async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
     const result = await client.query<T>(text, params);
     return result.rows;
@@ -69,7 +86,8 @@ const createClientBackedDatabase = (client: PoolClient): Database => ({
     }
   },
   async close(): Promise<void> {},
-} as Database);
+  } as Database;
+};
 
 const mutableEmailSlots: RoutineSlotCorrectionCandidate["slots"] = [
   { id: "prospect_email", key: "prospect_email", type: "email", required: true, mutable: true },
@@ -122,7 +140,7 @@ describeIfDatabase("post-completion slot correction (real routine_states)", () =
     database = createClientBackedDatabase(client);
     await applyTestMigration(database, "071_routine_states.sql");
     await applyTestMigration(database, "085_structured_routine_guards.sql");
-    store = new RoutineStateRepository(database, 60_000);
+    store = new RoutineStateRepository(database.kysely, 60_000);
   });
 
   beforeEach(async () => {

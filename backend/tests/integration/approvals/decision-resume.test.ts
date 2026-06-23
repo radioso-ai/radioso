@@ -13,6 +13,7 @@ import {
   type ResumeRunner,
 } from "../../../src/modules/approvals/public.js";
 import { Database } from "../../../src/shared/infra/database.js";
+import { createKyselyDatabase } from "../../../src/shared/infra/kysely/kyselyDatabase.js";
 import { applyTestMigration } from "../../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
@@ -35,8 +36,27 @@ const canReachIntegrationDatabase = async (databaseUrl?: string): Promise<boolea
 const hasReachableIntegrationDatabase = await canReachIntegrationDatabase(integrationDatabaseUrl);
 const describeIfDatabase = hasReachableIntegrationDatabase ? describe : describe.skip;
 
-const createClientBackedDatabase = (client: PoolClient): Database => ({
-  pool: {} as Database["pool"],
+const createClientBackedDatabase = (client: PoolClient): Database => {
+  // A one-connection pool that always hands back the same open client so Kysely's
+  // `resolveInTransaction` BEGIN/COMMIT runs on the same per-test schema + client as the
+  // raw helper queries; `release` is neutered so Kysely can't return it to a real pool.
+  const pool = {
+    async connect() {
+      return new Proxy(client, {
+        get(target, property, receiver) {
+          if (property === "release") {
+            return () => undefined;
+          }
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      }) as PoolClient;
+    },
+  } as Database["pool"];
+
+  return {
+  pool,
+  kysely: createKyselyDatabase(pool),
   async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
     const result = await client.query<T>(text, params);
     return result.rows;
@@ -69,7 +89,8 @@ const createClientBackedDatabase = (client: PoolClient): Database => ({
     }
   },
   async close(): Promise<void> {},
-} as Database);
+} as Database;
+};
 
 const operatorId = randomUUID();
 const workspaceId = randomUUID();
@@ -85,7 +106,7 @@ const decisionInput = (overrides: Partial<PendingDecisionCreateInput> = {}): Pen
   stepId: "await_review",
   reason: "Needs operator review",
   options: [
-    { id: "approve", label: "Approve", payload: { outcome: "approved" } },
+    { id: "approve", label: "Approve" },
     { id: "reject", label: "Reject", description: "Send back for edits" },
   ],
   // Domain decider-scope: kind workspace_member + an explicit allow-list.
@@ -118,7 +139,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     await client.query(`SET search_path TO ${schema}, public`);
     database = createClientBackedDatabase(client);
     await applyTestMigration(database, "104_pending_decisions.sql");
-    repository = new PendingDecisionRepository(database);
+    repository = new PendingDecisionRepository(database.kysely);
   });
 
   beforeEach(async () => {
@@ -166,8 +187,8 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     }));
     await repository.resolve({
       handle: resolved.handle,
-      outcome: "approved",
-      decision: { optionId: "approve" },
+      status: "resolved",
+      decision: { optionId: "approve", label: "Approve" },
       decidedBy: operatorId,
       contentHash: resolved.contentHash,
     });
@@ -192,13 +213,12 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
       caller: { accountId: operatorId, workspaceId },
     });
 
-    expect(result).toMatchObject({ status: "resolved", decision: "approved", conversationId, resumed: true });
+    expect(result).toMatchObject({ status: "resolved", optionId: "approve", conversationId, resumed: true });
     expect(runner.resume).toHaveBeenCalledTimes(1);
-    // Resume must receive the open transaction executor (one-tx crash-safety).
-    expect(vi.mocked(runner.resume).mock.calls[0][0].executor).toBeDefined();
-    expect(vi.mocked(runner.resume).mock.calls[0][0].outcome).toBe("approved");
+    // Resume must receive the open transaction (one-tx crash-safety).
+    expect(vi.mocked(runner.resume).mock.calls[0][0].transaction).toBeDefined();
     expect(vi.mocked(runner.resume).mock.calls[0][0].optionId).toBe("approve");
-    expect(await statusOf(input.handle)).toBe("approved");
+    expect(await statusOf(input.handle)).toBe("resolved");
 
     // Exactly-once: a second submit sees a non-pending row.
     await expect(service.resolve({
@@ -211,7 +231,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     expect(runner.resume).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects via the rejection option without changing the outcome semantics", async () => {
+  it("resolves via a non-approve option: the routine branches on the chosen option id", async () => {
     const input = decisionInput();
     await repository.create(input);
     const runner = okRunner();
@@ -225,19 +245,20 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
       caller: { accountId: operatorId, workspaceId },
     });
 
-    expect(result).toMatchObject({ status: "resolved", decision: "rejected" });
-    expect(vi.mocked(runner.resume).mock.calls[0][0].outcome).toBe("rejected");
-    expect(await statusOf(input.handle)).toBe("rejected");
+    expect(result).toMatchObject({ status: "resolved", optionId: "reject" });
+    expect(vi.mocked(runner.resume).mock.calls[0][0].optionId).toBe("reject");
+    // No binary outcome model: every resolved gate lands in one generic status.
+    expect(await statusOf(input.handle)).toBe("resolved");
   });
 
-  it("threads the operator's exact option id (two options share one outcome)", async () => {
-    // Regression: resume must NOT reconstruct the option from the outcome — with two
-    // approve-mapped options the reconstruction would pick the first and branch wrong.
+  it("resolves an author-named option that maps to no approve/reject keyword", async () => {
+    // The whole point of the gate: declination and clarification paths must resolve, not
+    // just a literal "approve". These ids never matched the old binary keyword map.
     const input = decisionInput({
       options: [
-        { id: "approve_full", label: "Approve full refund", payload: { outcome: "approved" } },
-        { id: "approve_partial", label: "Approve partial refund", payload: { outcome: "approved" } },
-        { id: "reject", label: "Reject" },
+        { id: "issue_full_refund", label: "Issue full refund" },
+        { id: "issue_partial_refund", label: "Issue partial refund" },
+        { id: "ask_for_receipt", label: "Ask the customer for a receipt" },
       ],
     });
     await repository.create(input);
@@ -247,13 +268,14 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     const result = await service.resolve({
       agentId: input.agentId,
       handle: input.handle,
-      optionId: "approve_partial",
+      optionId: "ask_for_receipt",
       contentHash: input.contentHash,
       caller: { accountId: operatorId, workspaceId },
     });
 
-    expect(result.decision).toBe("approved");
-    expect(vi.mocked(runner.resume).mock.calls[0][0].optionId).toBe("approve_partial");
+    expect(result).toMatchObject({ status: "resolved", optionId: "ask_for_receipt" });
+    expect(vi.mocked(runner.resume).mock.calls[0][0].optionId).toBe("ask_for_receipt");
+    expect(await statusOf(input.handle)).toBe("resolved");
   });
 
   it("does not resolve or resume when the content hash is stale", async () => {
@@ -358,6 +380,6 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
 
     expect(result.resumed).toBe(true);
     expect(runner.resume).toHaveBeenCalledTimes(1);
-    expect(await statusOf(input.handle)).toBe("approved");
+    expect(await statusOf(input.handle)).toBe("resolved");
   });
 });

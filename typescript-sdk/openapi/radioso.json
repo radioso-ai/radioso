@@ -26686,12 +26686,8 @@
                         "resolved"
                       ]
                     },
-                    "decision": {
-                      "type": "string",
-                      "enum": [
-                        "approved",
-                        "rejected"
-                      ]
+                    "optionId": {
+                      "type": "string"
                     },
                     "conversationId": {
                       "type": "string"
@@ -26702,7 +26698,7 @@
                   },
                   "required": [
                     "status",
-                    "decision",
+                    "optionId",
                     "conversationId",
                     "resumed"
                   ]

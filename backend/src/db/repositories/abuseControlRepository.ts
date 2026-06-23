@@ -1,4 +1,5 @@
-import type { Database } from "../../shared/infra/database.js";
+import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface AbuseControlEntry {
   scope: string;
@@ -19,6 +20,16 @@ interface AbuseControlEntryRow {
   created_at: Date;
   updated_at: Date;
 }
+
+const abuseControlColumns = [
+  "scope",
+  "subject_key",
+  "attempt_count",
+  "window_started_at",
+  "blocked_until",
+  "created_at",
+  "updated_at",
+] as const;
 
 const mapEntry = (row: AbuseControlEntryRow): AbuseControlEntry => ({
   scope: row.scope,
@@ -43,15 +54,15 @@ export interface AbuseControlRepositoryPort {
 }
 
 export class AbuseControlRepository implements AbuseControlRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async find(scope: string, subjectKey: string): Promise<AbuseControlEntry | null> {
-    const [row] = await this.database.query<AbuseControlEntryRow>(
-      `SELECT scope, subject_key, attempt_count, window_started_at, blocked_until, created_at, updated_at
-       FROM abuse_control_entries
-       WHERE scope = $1 AND subject_key = $2`,
-      [scope, subjectKey],
-    );
+    const row = await this.db
+      .selectFrom("abuse_control_entries")
+      .select(abuseControlColumns)
+      .where("scope", "=", scope)
+      .where("subject_key", "=", subjectKey)
+      .executeTakeFirst();
 
     return row ? mapEntry(row) : null;
   }
@@ -63,27 +74,39 @@ export class AbuseControlRepository implements AbuseControlRepositoryPort {
     windowStartedAt: Date;
     blockedUntil: Date | null;
   }): Promise<AbuseControlEntry> {
-    const [row] = await this.database.query<AbuseControlEntryRow>(
-      `INSERT INTO abuse_control_entries (scope, subject_key, attempt_count, window_started_at, blocked_until)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (scope, subject_key)
-       DO UPDATE SET attempt_count = EXCLUDED.attempt_count,
-                     window_started_at = EXCLUDED.window_started_at,
-                     blocked_until = EXCLUDED.blocked_until,
-                     updated_at = NOW()
-       RETURNING scope, subject_key, attempt_count, window_started_at, blocked_until, created_at, updated_at`,
-      [input.scope, input.subjectKey, input.attemptCount, input.windowStartedAt, input.blockedUntil],
-    );
+    const row = await this.db
+      .insertInto("abuse_control_entries")
+      .values({
+        scope: input.scope,
+        subject_key: input.subjectKey,
+        attempt_count: input.attemptCount,
+        window_started_at: input.windowStartedAt,
+        blocked_until: input.blockedUntil,
+      })
+      .onConflict((oc) =>
+        oc.columns(["scope", "subject_key"]).doUpdateSet((eb) => ({
+          attempt_count: eb.ref("excluded.attempt_count"),
+          window_started_at: eb.ref("excluded.window_started_at"),
+          blocked_until: eb.ref("excluded.blocked_until"),
+          updated_at: currentTimestamp(),
+        })),
+      )
+      .returning(abuseControlColumns)
+      .executeTakeFirstOrThrow();
 
     return mapEntry(row);
   }
 
   async deleteExpired(now: Date): Promise<void> {
-    await this.database.query(
-      `DELETE FROM abuse_control_entries
-       WHERE (blocked_until IS NOT NULL AND blocked_until <= $1)
-          OR (blocked_until IS NULL AND window_started_at <= $2)`,
-      [now, new Date(now.getTime() - 24 * 60 * 60 * 1000)],
-    );
+    const windowCutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    await this.db
+      .deleteFrom("abuse_control_entries")
+      .where((eb) =>
+        eb.or([
+          eb.and([eb("blocked_until", "is not", null), eb("blocked_until", "<=", now)]),
+          eb.and([eb("blocked_until", "is", null), eb("window_started_at", "<=", windowCutoff)]),
+        ]),
+      )
+      .execute();
   }
 }

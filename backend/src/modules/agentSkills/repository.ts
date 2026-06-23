@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import type { Database } from "../../shared/infra/database.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
+import { currentTimestamp, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { AgentSkillInvocationMode, AgentSkillKind, AgentSkillSpine } from "./domain.js";
 
 export interface AgentSkillCreateRecord {
@@ -33,98 +34,104 @@ export interface AgentSkillRepositoryPort {
   remove(workspaceId: string, agentId: string, id: string): Promise<boolean>;
 }
 
+// Loosely typed so the Kysely `selectAll()`/`returningAll()` row (jsonb → JsonValue,
+// enum columns → string, timestamps → Timestamp) maps in via a single cast, then
+// `mapRow` narrows back to the domain enums.
 interface AgentSkillRow {
   id: string;
   workspace_id: string;
   agent_id: string;
   skill_name: string;
-  kind: AgentSkillKind;
+  kind: string;
   target_type: string | null;
   target_id: string | null;
-  config: Record<string, unknown>;
-  invocation_mode: AgentSkillInvocationMode;
+  config: unknown;
+  invocation_mode: string;
   enabled: boolean;
-  created_at: Date;
-  updated_at: Date;
+  created_at: Date | string;
+  updated_at: Date | string;
 }
-
-const columns = `id, workspace_id, agent_id, skill_name, kind, target_type, target_id,
-  config, invocation_mode, enabled, created_at, updated_at`;
 
 const mapRow = (row: AgentSkillRow): AgentSkillSpine => ({
   id: row.id,
   workspaceId: row.workspace_id,
   agentId: row.agent_id,
   skillName: row.skill_name,
-  kind: row.kind,
+  kind: row.kind as AgentSkillKind,
   targetType: row.target_type,
   targetId: row.target_id,
-  config: row.config ?? {},
-  invocationMode: row.invocation_mode,
+  config: (row.config as Record<string, unknown> | null) ?? {},
+  invocationMode: row.invocation_mode as AgentSkillInvocationMode,
   enabled: row.enabled,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
 });
 
 export class AgentSkillRepository implements AgentSkillRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async create(input: AgentSkillCreateRecord): Promise<AgentSkillSpine> {
-    const [row] = await this.database.query<AgentSkillRow>(
-      `INSERT INTO agent_skills (
-         id, workspace_id, agent_id, skill_name, kind, target_type, target_id, config, invocation_mode, enabled
-       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10)
-       RETURNING ${columns}`,
-      [
-        randomUUID(),
-        input.workspaceId,
-        input.agentId,
-        input.skillName,
-        input.kind,
-        input.targetType ?? null,
-        input.targetId ?? null,
-        JSON.stringify(input.config ?? {}),
-        input.invocationMode,
-        input.enabled ?? true,
-      ],
-    );
-    return mapRow(row);
+    const row = await this.db
+      .insertInto("agent_skills")
+      .values({
+        id: randomUUID(),
+        workspace_id: input.workspaceId,
+        agent_id: input.agentId,
+        skill_name: input.skillName,
+        kind: input.kind,
+        target_type: input.targetType ?? null,
+        target_id: input.targetId ?? null,
+        config: toJsonb(input.config ?? {}),
+        invocation_mode: input.invocationMode,
+        enabled: input.enabled ?? true,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+    return mapRow(row as AgentSkillRow);
   }
 
   async findById(workspaceId: string, agentId: string, id: string): Promise<AgentSkillSpine | null> {
-    const [row] = await this.database.query<AgentSkillRow>(
-      `SELECT ${columns} FROM agent_skills WHERE workspace_id = $1 AND agent_id = $2 AND id = $3`,
-      [workspaceId, agentId, id],
-    );
-    return row ? mapRow(row) : null;
+    const row = await this.db
+      .selectFrom("agent_skills")
+      .selectAll()
+      .where("workspace_id", "=", workspaceId)
+      .where("agent_id", "=", agentId)
+      .where("id", "=", id)
+      .executeTakeFirst();
+    return row ? mapRow(row as AgentSkillRow) : null;
   }
 
   async findByName(workspaceId: string, agentId: string, skillName: string): Promise<AgentSkillSpine | null> {
-    const [row] = await this.database.query<AgentSkillRow>(
-      `SELECT ${columns} FROM agent_skills WHERE workspace_id = $1 AND agent_id = $2 AND skill_name = $3`,
-      [workspaceId, agentId, skillName],
-    );
-    return row ? mapRow(row) : null;
+    const row = await this.db
+      .selectFrom("agent_skills")
+      .selectAll()
+      .where("workspace_id", "=", workspaceId)
+      .where("agent_id", "=", agentId)
+      .where("skill_name", "=", skillName)
+      .executeTakeFirst();
+    return row ? mapRow(row as AgentSkillRow) : null;
   }
 
   async findDefaultAnswer(workspaceId: string, agentId: string): Promise<AgentSkillSpine | null> {
-    const [row] = await this.database.query<AgentSkillRow>(
-      `SELECT ${columns} FROM agent_skills
-       WHERE workspace_id = $1 AND agent_id = $2 AND invocation_mode = 'default_answer'`,
-      [workspaceId, agentId],
-    );
-    return row ? mapRow(row) : null;
+    const row = await this.db
+      .selectFrom("agent_skills")
+      .selectAll()
+      .where("workspace_id", "=", workspaceId)
+      .where("agent_id", "=", agentId)
+      .where("invocation_mode", "=", "default_answer")
+      .executeTakeFirst();
+    return row ? mapRow(row as AgentSkillRow) : null;
   }
 
   async listByAgent(workspaceId: string, agentId: string): Promise<AgentSkillSpine[]> {
-    const rows = await this.database.query<AgentSkillRow>(
-      `SELECT ${columns} FROM agent_skills
-       WHERE workspace_id = $1 AND agent_id = $2
-       ORDER BY skill_name ASC`,
-      [workspaceId, agentId],
-    );
-    return rows.map(mapRow);
+    const rows = await this.db
+      .selectFrom("agent_skills")
+      .selectAll()
+      .where("workspace_id", "=", workspaceId)
+      .where("agent_id", "=", agentId)
+      .orderBy("skill_name", "asc")
+      .execute();
+    return rows.map((row) => mapRow(row as AgentSkillRow));
   }
 
   async update(
@@ -133,35 +140,34 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
     id: string,
     input: AgentSkillUpdateRecord,
   ): Promise<AgentSkillSpine | null> {
-    const [row] = await this.database.query<AgentSkillRow>(
-      `UPDATE agent_skills SET
-         target_type = COALESCE($4, target_type),
-         target_id = CASE WHEN $5::boolean THEN $6 ELSE target_id END,
-         config = config || COALESCE($7::jsonb, '{}'::jsonb),
-         invocation_mode = COALESCE($8, invocation_mode),
-         enabled = COALESCE($9, enabled),
-         updated_at = NOW()
-       WHERE workspace_id = $1 AND agent_id = $2 AND id = $3
-       RETURNING ${columns}`,
-      [
-        workspaceId,
-        agentId,
-        id,
-        input.targetType ?? null,
-        "targetId" in input,
-        input.targetId ?? null,
-        input.config ? JSON.stringify(input.config) : null,
-        input.invocationMode ?? null,
-        "enabled" in input ? input.enabled ?? null : null,
-      ],
-    );
-    return row ? mapRow(row) : null;
+    const row = await this.db
+      .updateTable("agent_skills")
+      .set((eb) => ({
+        updated_at: currentTimestamp(),
+        // Mirror the prior COALESCE/CASE semantics: target_type updates only when a
+        // value is supplied; target_id distinguishes an explicit null (key present)
+        // from "leave unchanged" (key absent); config is a shallow jsonb merge.
+        ...(input.targetType != null ? { target_type: input.targetType } : {}),
+        ...("targetId" in input ? { target_id: input.targetId ?? null } : {}),
+        ...(input.config ? { config: jsonbConcat(eb.ref("config"), toJsonb(input.config)) } : {}),
+        ...(input.invocationMode != null ? { invocation_mode: input.invocationMode } : {}),
+        ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+      }))
+      .where("workspace_id", "=", workspaceId)
+      .where("agent_id", "=", agentId)
+      .where("id", "=", id)
+      .returningAll()
+      .executeTakeFirst();
+    return row ? mapRow(row as AgentSkillRow) : null;
   }
 
   async remove(workspaceId: string, agentId: string, id: string): Promise<boolean> {
-    return (await this.database.execute(
-      `DELETE FROM agent_skills WHERE workspace_id = $1 AND agent_id = $2 AND id = $3`,
-      [workspaceId, agentId, id],
-    )) > 0;
+    const result = await this.db
+      .deleteFrom("agent_skills")
+      .where("workspace_id", "=", workspaceId)
+      .where("agent_id", "=", agentId)
+      .where("id", "=", id)
+      .executeTakeFirst();
+    return (result?.numDeletedRows ?? 0n) > 0n;
   }
 }

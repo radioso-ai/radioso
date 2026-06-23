@@ -38,10 +38,10 @@ describeIfDatabase("notify and completion-export skill migration", () => {
 
   beforeAll(async () => {
     database = new Database(integrationDatabaseUrl!);
-    accountRepository = new AccountRepository(database);
-    workspaceRepository = new WorkspaceRepository(database);
-    agentRepository = new AgentRepository(database);
-    routineRepository = new RoutineDefinitionRepository(database);
+    accountRepository = new AccountRepository(database.kysely);
+    workspaceRepository = new WorkspaceRepository(database.kysely);
+    agentRepository = new AgentRepository(database.kysely);
+    routineRepository = new RoutineDefinitionRepository(database.kysely);
     // Full schema, then re-apply 111 after seeding legacy contact/webhook-export settings so we
     // exercise its (idempotent) projection — mirrors the other migration projection tests.
     await runAllTestMigrations(database);

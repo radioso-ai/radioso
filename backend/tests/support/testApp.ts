@@ -134,10 +134,10 @@ import { TelemetryService } from "../../src/shared/observability/telemetry/telem
 import type { AppDependencies } from "../../src/app/server/types.js";
 import {
   EvalCaseService,
-  EvalRepository,
   EvalRunService,
   EvalSnapshotService,
 } from "../../src/modules/eval/composition.js";
+import { createInMemoryEvalRepository } from "./inMemoryEvalRepository.js";
 import { ApplicationModuleCoordinator, createApplicationExtensionRegistry } from "../../src/app/composition/applicationModule.js";
 import {
   createDefaultAgentSkillSettingsRegistry,
@@ -1212,6 +1212,7 @@ export const createTestDependencies = (overrides: {
       resolveWorkspaceRole: (caller) => accountAccessService.resolveWorkspaceRole(caller),
     },
   );
+  const evalRepository = createInMemoryEvalRepository();
   const dependencies: AppDependencies = {
     env,
     logger,
@@ -1328,11 +1329,11 @@ export const createTestDependencies = (overrides: {
       agentRepository,
       retrievalDefaultsProvider,
       createRetrievalSkillSettingsResolver(),
-      new EvalRepository(connectorDb as any),
+      evalRepository,
     ),
-    evalCaseService: new EvalCaseService(new EvalRepository(connectorDb as any)),
+    evalCaseService: new EvalCaseService(evalRepository),
     evalRunService: new EvalRunService(
-      new EvalRepository(connectorDb as any),
+      evalRepository,
       {
         async retrieve(_input: { history: unknown[] }) { return { chunks: [] }; },
         async answer(_input: { history: unknown[]; runId: string }) {

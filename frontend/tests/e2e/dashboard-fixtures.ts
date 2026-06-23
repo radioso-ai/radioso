@@ -1081,7 +1081,7 @@ export const installDashboardApiMocks = async (
       pendingDecisions = pendingDecisions.filter((decision) => !path.includes(`/decisions/${decision.handle}/`));
       await json(route, options.resolveDecisionResponse ?? {
         status: "resolved",
-        decision: "approved",
+        optionId: "approve",
         conversationId: null,
         resumed: true,
       });

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import type { Database } from "../../shared/infra/database.js";
+import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 import type { AccountRecord, AccountRepositoryPort } from "../../modules/auth/services/authService.js";
 
 interface AccountRow {
@@ -12,6 +13,8 @@ interface AccountRow {
   updated_at: Date;
 }
 
+const accountColumns = ["id", "name", "email", "password_hash", "created_at", "updated_at"] as const;
+
 const mapAccount = (row: AccountRow): AccountRecord => ({
   id: row.id,
   name: row.name,
@@ -22,55 +25,57 @@ const mapAccount = (row: AccountRow): AccountRecord => ({
 });
 
 export class AccountRepository implements AccountRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async create(params: { name: string; email: string; passwordHash: string }): Promise<AccountRecord> {
-    const row = await this.database.queryOne<AccountRow>(
-      `INSERT INTO accounts (id, name, email, password_hash)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, name, email, password_hash, created_at, updated_at`,
-      [randomUUID(), params.name, params.email, params.passwordHash],
-    );
+    const row = await this.db
+      .insertInto("accounts")
+      .values({
+        id: randomUUID(),
+        name: params.name,
+        email: params.email,
+        password_hash: params.passwordHash,
+      })
+      .returning(accountColumns)
+      .executeTakeFirstOrThrow();
 
     return mapAccount(row);
   }
 
   async findByEmail(email: string): Promise<AccountRecord | null> {
-    const row = await this.database.queryOptional<AccountRow>(
-      `SELECT id, name, email, password_hash, created_at, updated_at
-       FROM accounts
-       WHERE email = $1`,
-      [email],
-    );
+    const row = await this.db
+      .selectFrom("accounts")
+      .select(accountColumns)
+      .where("email", "=", email)
+      .executeTakeFirst();
 
     return row ? mapAccount(row) : null;
   }
 
   async findById(id: string): Promise<AccountRecord | null> {
-    const row = await this.database.queryOptional<AccountRow>(
-      `SELECT id, name, email, password_hash, created_at, updated_at
-       FROM accounts
-       WHERE id = $1`,
-      [id],
-    );
+    const row = await this.db
+      .selectFrom("accounts")
+      .select(accountColumns)
+      .where("id", "=", id)
+      .executeTakeFirst();
 
     return row ? mapAccount(row) : null;
   }
 
   async updateName(id: string, name: string): Promise<AccountRecord> {
-    const row = await this.database.queryOne<AccountRow>(
-      `UPDATE accounts
-       SET name = $2,
-           updated_at = NOW()
-       WHERE id = $1
-       RETURNING id, name, email, password_hash, created_at, updated_at`,
-      [id, name],
-    );
+    const row = await this.db
+      .updateTable("accounts")
+      .set({ name, updated_at: currentTimestamp() })
+      .where("id", "=", id)
+      .returning(accountColumns)
+      .executeTakeFirstOrThrow();
 
     return mapAccount(row);
   }
 
   async deleteById(id: string): Promise<boolean> {
-    return (await this.database.execute("DELETE FROM accounts WHERE id = $1", [id])) > 0;
+    const result = await this.db.deleteFrom("accounts").where("id", "=", id).executeTakeFirst();
+
+    return Number(result.numDeletedRows) > 0;
   }
 }

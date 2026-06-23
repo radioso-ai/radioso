@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto";
 
-import type { PoolClient, QueryResultRow } from "pg";
+import { sql } from "kysely";
 
-import type { Database } from "../../shared/infra/database.js";
 import {
   routineDefinitionDraftInputSchema,
   routineReentryModes,
   type RoutineDefinition,
   type RoutineDefinitionDraftInput,
   type RoutineDefinitionPublishOptions,
+  type RoutineApprovalOption,
   type RoutineFieldGuardOp,
   type RoutineFieldGuardUnit,
   type RoutineGuardKind,
@@ -17,8 +17,10 @@ import {
   type RoutineStepKind,
   type RoutineTerminalKind,
 } from "../../modules/routines/public.js";
+import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 
-interface RoutineDefinitionRow extends QueryResultRow {
+interface RoutineDefinitionRow {
   id: string;
   agent_id: string;
   lineage_id: string;
@@ -79,6 +81,24 @@ const readFieldValues = (record: Record<string, unknown>, key: string): (string 
 const asArray = (value: unknown): Record<string, unknown>[] =>
   Array.isArray(value) ? value.map(asRecord) : [];
 
+// An approval step's options ride in a jsonb column. Read back the {id,label,description?}
+// shape the domain expects, dropping anything malformed. Absent for non-approval steps.
+const readApprovalOptions = (record: Record<string, unknown>, key: string): RoutineApprovalOption[] | null => {
+  const value = record[key];
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const options = value
+    .map(asRecord)
+    .filter((option) => typeof option.id === "string" && typeof option.label === "string")
+    .map((option) => ({
+      id: option.id as string,
+      label: option.label as string,
+      description: typeof option.description === "string" ? option.description : null,
+    }));
+  return options.length > 0 ? options : null;
+};
+
 const normalizeStepKind = (kind: string): RoutineStepKind =>
   kind === "fork" ? "chat" : kind as RoutineStepKind;
 
@@ -88,7 +108,13 @@ const normalizeGuardKind = (kind: string): RoutineGuardKind =>
 const isUniqueViolation = (error: unknown): boolean =>
   Boolean(error && typeof error === "object" && "code" in error && error.code === "23505");
 
-const definitionSelect = `
+// The full definition projection: a routine plus its children rolled up via json_agg in
+// LATERAL subqueries. Expressed with the Kysely `sql` tag (the sanctioned escape hatch for
+// complex read SQL) rather than the builder — the LATERAL/json_build_object shape would be
+// far noisier in the query builder, and `mapRow` depends on these exact object keys. Runs
+// through Kysely on the shared pool, so it counts as migrated. The trailing WHERE/ORDER BY
+// is appended per call site as a `sql` fragment.
+const definitionSelect = sql`
   SELECT
     d.id::text,
     d.agent_id::text,
@@ -128,6 +154,8 @@ const definitionSelect = `
       'instruction', st.instruction,
       'toolRef', st.tool_ref,
       'actionType', st.action_type,
+      'captureKey', st.capture_key,
+      'options', st.options,
       'ordinal', st.ordinal,
       'metadata', st.metadata
     ) ORDER BY st.ordinal ASC, st.stable_step_id ASC) AS items
@@ -197,15 +225,23 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
     ordinal: readNumber(slot, "ordinal"),
     ...(readBoolean(slot, "mutable") ? { mutable: true } : {}),
   })),
-  steps: asArray(row.steps).map((step) => ({
-    stableStepId: readString(step, "stableStepId"),
-    kind: normalizeStepKind(readString(step, "kind")),
-    instruction: readString(step, "instruction"),
-    toolRef: readNullableString(step, "toolRef"),
-    actionType: readNullableString(step, "actionType"),
-    ordinal: readNumber(step, "ordinal"),
-    metadata: readMetadata(step, "metadata"),
-  })),
+  steps: asArray(row.steps).map((step) => {
+    // captureKey/options are only valid on approval steps; the domain rejects them on any
+    // other kind, so include them only when present (NULL columns on every other step).
+    const captureKey = readNullableString(step, "captureKey");
+    const options = readApprovalOptions(step, "options");
+    return {
+      stableStepId: readString(step, "stableStepId"),
+      kind: normalizeStepKind(readString(step, "kind")),
+      instruction: readString(step, "instruction"),
+      toolRef: readNullableString(step, "toolRef"),
+      actionType: readNullableString(step, "actionType"),
+      ...(captureKey !== null ? { captureKey } : {}),
+      ...(options !== null ? { options } : {}),
+      ordinal: readNumber(step, "ordinal"),
+      metadata: readMetadata(step, "metadata"),
+    };
+  }),
   transitions: asArray(row.transitions).map((transition) => ({
     fromStep: readString(transition, "fromStep"),
     toRef: readString(transition, "toRef"),
@@ -243,71 +279,66 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
 });
 
 export class RoutineDefinitionRepository {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async listPublishedByAgent(agentId: string): Promise<RoutineDefinition[]> {
-    const rows = await this.database.query<RoutineDefinitionRow>(
-      `${definitionSelect}
-       WHERE d.agent_id = $1 AND d.status = 'published'
-       ORDER BY d.activation_priority DESC, d.created_at ASC, d.id ASC`,
-      [agentId],
-    );
-    return rows.map(mapRow);
+    const result = await sql<RoutineDefinitionRow>`
+      ${definitionSelect}
+      WHERE d.agent_id = ${agentId} AND d.status = 'published'
+      ORDER BY d.activation_priority DESC, d.created_at ASC, d.id ASC
+    `.execute(this.db);
+    return result.rows.map(mapRow);
   }
 
   async listByAgent(agentId: string): Promise<RoutineDefinition[]> {
-    const rows = await this.database.query<RoutineDefinitionRow>(
-      `${definitionSelect}
-       WHERE d.agent_id = $1
-       ORDER BY d.status ASC, d.name ASC, d.version ASC, d.created_at ASC, d.id ASC`,
-      [agentId],
-    );
-    return rows.map(mapRow);
+    const result = await sql<RoutineDefinitionRow>`
+      ${definitionSelect}
+      WHERE d.agent_id = ${agentId}
+      ORDER BY d.status ASC, d.name ASC, d.version ASC, d.created_at ASC, d.id ASC
+    `.execute(this.db);
+    return result.rows.map(mapRow);
   }
 
   async findById(agentId: string, id: string): Promise<RoutineDefinition | null> {
-    const row = await this.database.queryOptional<RoutineDefinitionRow>(
-      `${definitionSelect}
-       WHERE d.agent_id = $1 AND d.id = $2`,
-      [agentId, id],
-    );
+    const result = await sql<RoutineDefinitionRow>`
+      ${definitionSelect}
+      WHERE d.agent_id = ${agentId} AND d.id = ${id}
+    `.execute(this.db);
+    const row = result.rows[0];
     return row ? mapRow(row) : null;
   }
 
   // Resume-only lookup for routine_states pins: a pinned id can reference any
   // lifecycle status except draft (drafts never run).
   async findPinnedById(agentId: string, id: string): Promise<RoutineDefinition | null> {
-    const row = await this.database.queryOptional<RoutineDefinitionRow>(
-      `${definitionSelect}
-       WHERE d.agent_id = $1 AND d.id = $2 AND d.status <> 'draft'`,
-      [agentId, id],
-    );
+    const result = await sql<RoutineDefinitionRow>`
+      ${definitionSelect}
+      WHERE d.agent_id = ${agentId} AND d.id = ${id} AND d.status <> 'draft'
+    `.execute(this.db);
+    const row = result.rows[0];
     return row ? mapRow(row) : null;
   }
 
   async createDraft(agentId: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition> {
     const draft = routineDefinitionDraftInputSchema.parse(input);
     const id = randomUUID();
-    await this.database.withTransaction(async (client) => {
-      await client.query<{ id: string }>(
-        `INSERT INTO routine_definition (
-           id, agent_id, version, name, status, activation_trigger_description,
-           activation_gate_ref, activation_priority, activation_reentry_mode, lineage_id
-         )
-         VALUES ($1, $2, 1, $3, 'draft', $4, $5, $6, $7, $8)
-         RETURNING id::text`,
-        [
+    await this.db.transaction().execute(async (trx) => {
+      await trx
+        .insertInto("routine_definition")
+        .values({
           id,
-          agentId,
-          draft.name,
-          draft.activation.triggerDescription,
-          draft.activation.gateRef,
-          draft.activation.priority,
-          draft.activation.reentryMode,
-          randomUUID(),
-        ],
-      );
-      await this.replaceChildren(client, id, draft);
+          agent_id: agentId,
+          version: 1,
+          name: draft.name,
+          status: "draft",
+          activation_trigger_description: draft.activation.triggerDescription,
+          activation_gate_ref: draft.activation.gateRef,
+          activation_priority: draft.activation.priority,
+          activation_reentry_mode: draft.activation.reentryMode,
+          lineage_id: randomUUID(),
+        })
+        .execute();
+      await this.replaceChildren(trx, id, draft);
     });
     const loaded = await this.findById(agentId, id);
     if (!loaded) {
@@ -318,26 +349,29 @@ export class RoutineDefinitionRepository {
 
   async updateDraft(agentId: string, id: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition> {
     const draft = routineDefinitionDraftInputSchema.parse(input);
-    await this.database.withTransaction(async (client) => {
-      const updated = await client.query<{ id: string }>(
-        `UPDATE routine_definition
-         SET name = $3,
-             activation_trigger_description = $4,
-             activation_gate_ref = $5,
-             activation_priority = $6,
-             activation_reentry_mode = $7,
-             updated_at = NOW()
-         WHERE agent_id = $1 AND id = $2 AND status = 'draft'
-         RETURNING id::text`,
-        [agentId, id, draft.name, draft.activation.triggerDescription, draft.activation.gateRef, draft.activation.priority, draft.activation.reentryMode],
-      );
+    await this.db.transaction().execute(async (trx) => {
+      const updated = await trx
+        .updateTable("routine_definition")
+        .set({
+          name: draft.name,
+          activation_trigger_description: draft.activation.triggerDescription,
+          activation_gate_ref: draft.activation.gateRef,
+          activation_priority: draft.activation.priority,
+          activation_reentry_mode: draft.activation.reentryMode,
+          updated_at: currentTimestamp(),
+        })
+        .where("agent_id", "=", agentId)
+        .where("id", "=", id)
+        .where("status", "=", "draft")
+        .returning("id")
+        .execute();
       // A save racing publish (which flips the draft row to published in place)
       // matches zero rows here; replacing children then would silently mutate
       // the published version. Abort before touching children.
-      if (updated.rows.length === 0) {
+      if (updated.length === 0) {
         throw new Error(`routine_definition_update_conflict:${id}`);
       }
-      await this.replaceChildren(client, id, draft);
+      await this.replaceChildren(trx, id, draft);
     });
     const loaded = await this.findById(agentId, id);
     if (!loaded) {
@@ -351,38 +385,33 @@ export class RoutineDefinitionRepository {
     if (!draft) {
       throw new Error(`routine_definition_not_found:${draftId}`);
     }
-    await this.database.withTransaction(async (client) => {
-      await client.query(
-        `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
-        [`routine_definition_publish:${draft.lineageId}`],
-      );
-      const superseded = await client.query<{ id: string }>(
-        `UPDATE routine_definition
-         SET status = 'superseded',
-             updated_at = NOW()
-         WHERE lineage_id = $1
-           AND status = 'published'
-         RETURNING id::text`,
-        [draft.lineageId],
-      );
-      const published = await client.query<{ id: string }>(
-        `UPDATE routine_definition
-         SET status = 'published',
-             updated_at = NOW()
-         WHERE agent_id = $1
-           AND id = $2
-           AND status = 'draft'
-         RETURNING id::text`,
-        [agentId, draftId],
-      );
-      if (published.rows.length === 0) {
+    await this.db.transaction().execute(async (trx) => {
+      // Serialize concurrent publishes of the same lineage before any supersede/flip,
+      // so the supersede→publish pair below is atomic per lineage. Order matters.
+      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`routine_definition_publish:${draft.lineageId}`}, 0))`.execute(trx);
+      const superseded = await trx
+        .updateTable("routine_definition")
+        .set({ status: "superseded", updated_at: currentTimestamp() })
+        .where("lineage_id", "=", draft.lineageId)
+        .where("status", "=", "published")
+        .returning("id")
+        .execute();
+      const published = await trx
+        .updateTable("routine_definition")
+        .set({ status: "published", updated_at: currentTimestamp() })
+        .where("agent_id", "=", agentId)
+        .where("id", "=", draftId)
+        .where("status", "=", "draft")
+        .returning("id")
+        .execute();
+      if (published.length === 0) {
         throw new Error(`routine_definition_publish_conflict:${draftId}`);
       }
-      await this.touchCompletionExportDestinationRef(client, draftId);
+      await this.touchCompletionExportDestinationRef(trx, draftId);
       await options.onPublished?.({
-        previousPublishedId: superseded.rows[0]?.id ?? null,
+        previousPublishedId: superseded[0]?.id ?? null,
         newDefinitionId: draftId,
-        transaction: client,
+        transaction: trx,
       });
     });
     const loaded = await this.findById(agentId, draftId);
@@ -397,63 +426,44 @@ export class RoutineDefinitionRepository {
     if (!published || published.status !== "published") {
       return null;
     }
-    const existingDraft = await this.database.queryOptional<RoutineDefinitionRow>(
-      `${definitionSelect}
-       WHERE d.agent_id = $1 AND d.lineage_id = $2 AND d.status = 'draft'`,
-      [agentId, published.lineageId],
-    );
+    const existingDraft = await this.findDraftByLineage(agentId, published.lineageId);
     if (existingDraft) {
-      return mapRow(existingDraft);
+      return existingDraft;
     }
 
     const id = randomUUID();
     try {
-      await this.database.withTransaction(async (client) => {
-        await client.query(
-          `INSERT INTO routine_definition (
-             id, agent_id, version, name, status, activation_trigger_description,
-             activation_gate_ref, activation_priority, activation_reentry_mode, lineage_id
-           )
-           VALUES (
-             $1,
-             $2,
-             (
-               SELECT COALESCE(MAX(version), 0) + 1
-               FROM routine_definition
-               WHERE lineage_id = $8
-             ),
-             $3,
-             'draft',
-             $4,
-             $5,
-             $6,
-             $7,
-             $8
-           )`,
-          [
+      await this.db.transaction().execute(async (trx) => {
+        await trx
+          .insertInto("routine_definition")
+          .values({
             id,
-            agentId,
-            published.name,
-            published.activation.triggerDescription,
-            published.activation.gateRef,
-            published.activation.priority,
-            published.activation.reentryMode,
-            published.lineageId,
-          ],
-        );
-        await this.replaceChildren(client, id, published);
+            agent_id: agentId,
+            // Next version for this lineage, computed in-statement to stay correct under
+            // the unique (lineage_id, version) constraint that drives the retry below.
+            version: sql<number>`(
+              SELECT COALESCE(MAX(version), 0) + 1
+              FROM routine_definition
+              WHERE lineage_id = ${published.lineageId}
+            )`,
+            name: published.name,
+            status: "draft",
+            activation_trigger_description: published.activation.triggerDescription,
+            activation_gate_ref: published.activation.gateRef,
+            activation_priority: published.activation.priority,
+            activation_reentry_mode: published.activation.reentryMode,
+            lineage_id: published.lineageId,
+          })
+          .execute();
+        await this.replaceChildren(trx, id, published);
       });
     } catch (error) {
       if (!isUniqueViolation(error)) {
         throw error;
       }
-      const racedDraft = await this.database.queryOptional<RoutineDefinitionRow>(
-        `${definitionSelect}
-         WHERE d.agent_id = $1 AND d.lineage_id = $2 AND d.status = 'draft'`,
-        [agentId, published.lineageId],
-      );
+      const racedDraft = await this.findDraftByLineage(agentId, published.lineageId);
       if (racedDraft) {
-        return mapRow(racedDraft);
+        return racedDraft;
       }
       throw error;
     }
@@ -465,156 +475,181 @@ export class RoutineDefinitionRepository {
   }
 
   async archive(agentId: string, id: string): Promise<boolean> {
-    const row = await this.database.queryOptional<{ id: string }>(
-      `UPDATE routine_definition
-       SET status = 'archived',
-           updated_at = NOW()
-       WHERE agent_id = $1 AND id = $2 AND status = 'published'
-       RETURNING id::text`,
-      [agentId, id],
-    );
+    const row = await this.db
+      .updateTable("routine_definition")
+      .set({ status: "archived", updated_at: currentTimestamp() })
+      .where("agent_id", "=", agentId)
+      .where("id", "=", id)
+      .where("status", "=", "published")
+      .returning("id")
+      .executeTakeFirst();
     return Boolean(row);
   }
 
   async restore(agentId: string, id: string): Promise<boolean> {
-    return this.database.withTransaction(async (client) => {
-      const row = await client.query<{ id: string }>(
-        `UPDATE routine_definition target
-         SET status = 'published',
-             updated_at = NOW()
-         WHERE target.agent_id = $1
-           AND target.id = $2
-           AND target.status = 'archived'
-           AND NOT EXISTS (
-             SELECT 1
-             FROM routine_definition other
-             WHERE other.lineage_id = target.lineage_id
-               AND other.status = 'published'
-               AND other.id <> target.id
-           )
-         RETURNING target.id::text`,
-        [agentId, id],
-      );
-      if (row.rows.length === 0) {
+    return this.db.transaction().execute(async (trx) => {
+      // NOT EXISTS guards the lineage invariant of at most one published row: restore is a
+      // no-op if another version of this lineage is already published.
+      const row = await trx
+        .updateTable("routine_definition as target")
+        .set({ status: "published", updated_at: currentTimestamp() })
+        .where("target.agent_id", "=", agentId)
+        .where("target.id", "=", id)
+        .where("target.status", "=", "archived")
+        .where((eb) =>
+          eb.not(
+            eb.exists(
+              eb
+                .selectFrom("routine_definition as other")
+                .select(sql`1`.as("one"))
+                .whereRef("other.lineage_id", "=", "target.lineage_id")
+                .where("other.status", "=", "published")
+                .whereRef("other.id", "<>", "target.id"),
+            ),
+          ),
+        )
+        .returning("target.id as id")
+        .execute();
+      if (row.length === 0) {
         return false;
       }
-      await this.touchCompletionExportDestinationRef(client, id);
+      await this.touchCompletionExportDestinationRef(trx, id);
       return true;
     });
   }
 
   async deleteDraft(agentId: string, id: string): Promise<boolean> {
-    const row = await this.database.queryOptional<{ id: string }>(
-      `DELETE FROM routine_definition
-       WHERE agent_id = $1 AND id = $2 AND status = 'draft'
-       RETURNING id::text`,
-      [agentId, id],
-    );
+    const row = await this.db
+      .deleteFrom("routine_definition")
+      .where("agent_id", "=", agentId)
+      .where("id", "=", id)
+      .where("status", "=", "draft")
+      .returning("id")
+      .executeTakeFirst();
     return Boolean(row);
   }
 
   async listPublishedRoutineNamesReferencingDestination(workspaceId: string, destinationId: string): Promise<string[]> {
-    const rows = await this.database.query<{ name: string }>(
-      `SELECT d.name
-       FROM routine_completion_export ce
-       JOIN routine_definition d ON d.id = ce.definition_id
-       JOIN agents a ON a.id = d.agent_id
-       WHERE a.workspace_id = $1
-         AND ce.enabled = TRUE
-         AND lower(ce.destination_ref) = lower($2)
-         AND d.status = 'published'
-       ORDER BY d.name ASC, d.version ASC, d.id ASC`,
-      [workspaceId, destinationId],
-    );
+    const rows = await this.db
+      .selectFrom("routine_completion_export as ce")
+      .innerJoin("routine_definition as d", "d.id", "ce.definition_id")
+      .innerJoin("agents as a", "a.id", "d.agent_id")
+      .select("d.name")
+      .where("a.workspace_id", "=", workspaceId)
+      .where("ce.enabled", "=", true)
+      .where(sql<boolean>`lower(ce.destination_ref) = lower(${destinationId})`)
+      .where("d.status", "=", "published")
+      .orderBy("d.name", "asc")
+      .orderBy("d.version", "asc")
+      .orderBy("d.id", "asc")
+      .execute();
     return rows.map((row) => row.name);
   }
 
-  private async touchCompletionExportDestinationRef(client: Pick<PoolClient, "query">, definitionId: string): Promise<void> {
-    await client.query(
-      `UPDATE routine_completion_export
-       SET destination_ref = destination_ref
-       WHERE definition_id = $1
-         AND enabled = TRUE`,
-      [definitionId],
-    );
+  private async findDraftByLineage(agentId: string, lineageId: string): Promise<RoutineDefinition | null> {
+    const result = await sql<RoutineDefinitionRow>`
+      ${definitionSelect}
+      WHERE d.agent_id = ${agentId} AND d.lineage_id = ${lineageId} AND d.status = 'draft'
+    `.execute(this.db);
+    const row = result.rows[0];
+    return row ? mapRow(row) : null;
   }
 
-  private async replaceChildren(client: Pick<PoolClient, "query">, definitionId: string, input: RoutineDefinitionDraftInput): Promise<void> {
-    await client.query(`DELETE FROM routine_slot WHERE definition_id = $1`, [definitionId]);
-    await client.query(`DELETE FROM routine_step WHERE definition_id = $1`, [definitionId]);
-    await client.query(`DELETE FROM routine_transition WHERE definition_id = $1`, [definitionId]);
-    await client.query(`DELETE FROM routine_terminal WHERE definition_id = $1`, [definitionId]);
-    await client.query(`DELETE FROM routine_completion_export WHERE definition_id = $1`, [definitionId]);
+  private async touchCompletionExportDestinationRef(db: Db, definitionId: string): Promise<void> {
+    await db
+      .updateTable("routine_completion_export")
+      .set((eb) => ({ destination_ref: eb.ref("destination_ref") }))
+      .where("definition_id", "=", definitionId)
+      .where("enabled", "=", true)
+      .execute();
+  }
+
+  private async replaceChildren(db: Db, definitionId: string, input: RoutineDefinitionDraftInput): Promise<void> {
+    await db.deleteFrom("routine_slot").where("definition_id", "=", definitionId).execute();
+    await db.deleteFrom("routine_step").where("definition_id", "=", definitionId).execute();
+    await db.deleteFrom("routine_transition").where("definition_id", "=", definitionId).execute();
+    await db.deleteFrom("routine_terminal").where("definition_id", "=", definitionId).execute();
+    await db.deleteFrom("routine_completion_export").where("definition_id", "=", definitionId).execute();
 
     for (const slot of input.slots) {
-      await client.query(
-        `INSERT INTO routine_slot (definition_id, stable_slot_id, key, type, required, description, ordinal, mutable)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [definitionId, slot.stableSlotId, slot.key, slot.type, slot.required, slot.description, slot.ordinal, slot.mutable ?? false],
-      );
+      await db
+        .insertInto("routine_slot")
+        .values({
+          definition_id: definitionId,
+          stable_slot_id: slot.stableSlotId,
+          key: slot.key,
+          type: slot.type,
+          required: slot.required,
+          description: slot.description,
+          ordinal: slot.ordinal,
+          mutable: slot.mutable ?? false,
+        })
+        .execute();
     }
     for (const step of input.steps) {
-      await client.query(
-        `INSERT INTO routine_step (definition_id, stable_step_id, kind, instruction, tool_ref, action_type, ordinal, metadata)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
-        [
-          definitionId,
-          step.stableStepId,
-          step.kind,
-          step.instruction,
-          step.toolRef,
-          step.actionType,
-          step.ordinal,
-          JSON.stringify(step.metadata),
-        ],
-      );
+      await db
+        .insertInto("routine_step")
+        .values({
+          definition_id: definitionId,
+          stable_step_id: step.stableStepId,
+          kind: step.kind,
+          instruction: step.instruction,
+          tool_ref: step.toolRef,
+          action_type: step.actionType,
+          capture_key: step.captureKey ?? null,
+          options: step.options ? toJsonb(step.options) : null,
+          ordinal: step.ordinal,
+          metadata: toJsonb(step.metadata),
+        })
+        .execute();
     }
     for (const transition of input.transitions) {
-      await client.query(
-        `INSERT INTO routine_transition (
-           definition_id, from_step, to_ref, guard_kind, guard_text, outcome_status, counter_limit,
-           field_ref, field_op, field_value, field_values, field_unit, ordinal
-         )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12, $13)`,
-        [
-          definitionId,
-          transition.fromStep,
-          transition.toRef,
-          transition.guardKind,
-          transition.guardText,
-          transition.outcomeStatus,
-          transition.counterLimit,
-          transition.fieldRef ?? null,
-          transition.fieldOp ?? null,
+      await db
+        .insertInto("routine_transition")
+        .values({
+          definition_id: definitionId,
+          from_step: transition.fromStep,
+          to_ref: transition.toRef,
+          guard_kind: transition.guardKind,
+          guard_text: transition.guardText,
+          outcome_status: transition.outcomeStatus,
+          counter_limit: transition.counterLimit,
+          field_ref: transition.fieldRef ?? null,
+          field_op: transition.fieldOp ?? null,
           // Explicit null/undefined check (not a truthy shortcut): a field guard value of
           // `0` or `false` is meaningful and must survive serialization, not collapse to NULL.
-          transition.fieldValue === null || transition.fieldValue === undefined
-            ? null
-            : JSON.stringify(transition.fieldValue),
-          transition.fieldValues ? JSON.stringify(transition.fieldValues) : null,
-          transition.fieldUnit ?? null,
-          transition.ordinal,
-        ],
-      );
+          field_value:
+            transition.fieldValue === null || transition.fieldValue === undefined
+              ? null
+              : toJsonb(transition.fieldValue),
+          field_values: transition.fieldValues ? toJsonb(transition.fieldValues) : null,
+          field_unit: transition.fieldUnit ?? null,
+          ordinal: transition.ordinal,
+        })
+        .execute();
     }
     for (const terminal of input.terminals) {
-      await client.query(
-        `INSERT INTO routine_terminal (definition_id, stable_step_id, kind, instruction, ordinal)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [definitionId, terminal.stableStepId, terminal.kind, terminal.instruction, terminal.ordinal],
-      );
+      await db
+        .insertInto("routine_terminal")
+        .values({
+          definition_id: definitionId,
+          stable_step_id: terminal.stableStepId,
+          kind: terminal.kind,
+          instruction: terminal.instruction,
+          ordinal: terminal.ordinal,
+        })
+        .execute();
     }
     if (input.completionExport?.enabled) {
-      await client.query(
-        `INSERT INTO routine_completion_export (definition_id, enabled, trigger_kinds, destination_ref)
-         VALUES ($1, $2, $3, $4)`,
-        [
-          definitionId,
-          input.completionExport.enabled,
-          input.completionExport.triggerKinds,
-          input.completionExport.destinationRef,
-        ],
-      );
+      await db
+        .insertInto("routine_completion_export")
+        .values({
+          definition_id: definitionId,
+          enabled: input.completionExport.enabled,
+          trigger_kinds: input.completionExport.triggerKinds,
+          destination_ref: input.completionExport.destinationRef,
+        })
+        .execute();
     }
   }
 }

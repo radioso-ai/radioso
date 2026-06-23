@@ -141,14 +141,14 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repositories,
   });
   const slackInstallationService = new SlackInstallationService({
-    oauthConnections: new OauthConnectionRepository(infrastructure.database),
+    oauthConnections: new OauthConnectionRepository(infrastructure.database.kysely),
     integrationConnections: repositories.integrationConnectionRepository,
     installations: repositories.slackInstallationRepository,
     bindings: repositories.slackChannelBindingRepository,
     encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
   });
   const oauthConnectionService = new OauthConnectionService({
-    repository: new OauthConnectionRepository(infrastructure.database),
+    repository: new OauthConnectionRepository(infrastructure.database.kysely),
     providers: new StaticOauthProviderRegistry(composition.oauthProviders),
     encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
     appBaseUrl: env.APP_BASE_URL,
@@ -182,8 +182,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       customerEmailOauthProviderIds.map((provider) => new MockCustomerEmailProviderAdapter(provider)),
     ),
   });
-  const mcpConnectionRepository = new McpConnectionRepository(infrastructure.database);
-  const externalSkillDefinitionRepository = new ExternalSkillDefinitionRepository(infrastructure.database);
+  const mcpConnectionRepository = new McpConnectionRepository(infrastructure.database.kysely);
+  const externalSkillDefinitionRepository = new ExternalSkillDefinitionRepository(infrastructure.database.kysely);
   const mcpConnectionService = new McpConnectionService({
     repository: mcpConnectionRepository,
     toolServiceFactory: createMcpToolServiceFactory(assertPublicWebsiteUrl),
@@ -266,7 +266,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     },
   });
   const agentSkillsService = new AgentSkillsService({
-    repository: new AgentSkillRepository(infrastructure.database),
+    repository: new AgentSkillRepository(infrastructure.database.kysely),
     capabilities: skillCapabilityRegistry,
     logger,
   });
@@ -356,7 +356,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       logger,
     }),
     access.accessGrantService,
-    new AgentSkillRepository(infrastructure.database),
+    new AgentSkillRepository(infrastructure.database.kysely),
   );
   const chat = buildChatServices({
     accountAccessService: access.accountAccessService,
@@ -549,7 +549,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     buildStepScopeTag: scopeTag.step,
   });
 
-  const evalRepository = new EvalRepository(infrastructure.database);
+  const evalRepository = new EvalRepository(infrastructure.database.kysely);
   const evalSnapshotService = new EvalSnapshotService(
     repositories.conversationRepository,
     repositories.messageRepository,

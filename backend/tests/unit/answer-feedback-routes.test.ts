@@ -1,23 +1,26 @@
+import { randomUUID } from "node:crypto";
+
 import express from "express";
-import type { QueryResultRow } from "pg";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
 import { createAnswerFeedbackRoutes, type AnswerFeedbackRouteDependencies } from "../../src/modules/chat/routes/answerFeedbackRoutes.js";
-import { AnswerFeedbackService } from "../../src/modules/chat/services/answerFeedbackService.js";
-import type { ApplicationDatabasePort } from "../../src/app/composition/applicationModule.js";
+import type { AnswerFeedbackService } from "../../src/modules/chat/services/answerFeedbackService.js";
+import type { ChatAnswerFeedbackEntry } from "../../src/modules/chat/services/answerFeedbackHistoryProvider.js";
+import { notFound } from "../../src/shared/domain/errors.js";
 import { issuePublicChatSession } from "../../src/modules/settings/contracts/publicChatSession.js";
 
-type FeedbackRow = QueryResultRow & {
-  id: string;
-  assistant_message_id: string;
-  actor_type: string;
-  actor_id: string;
-  value: string;
-  comment: string | null;
-};
+interface FeedbackRow extends ChatAnswerFeedbackEntry {
+  workspaceId: string;
+  conversationId: string;
+  assistantMessageId: string;
+}
 
-class FakeAnswerFeedbackRouteDatabase implements ApplicationDatabasePort {
+// In-memory stand-in for the Kysely-backed AnswerFeedbackService. These route tests
+// characterize auth/session wiring, not SQL, so the fake reproduces the service's
+// message-scope rule (assistant role, workspace, optional anonymous session / agent)
+// and one-active-entry-per-actor upsert/clear semantics without a database.
+class InMemoryAnswerFeedbackService {
   readonly assistantMessages = new Map<string, {
     workspaceId: string;
     conversationId: string;
@@ -27,58 +30,87 @@ class FakeAnswerFeedbackRouteDatabase implements ApplicationDatabasePort {
   }>();
   readonly feedback = new Map<string, FeedbackRow>();
 
-  async query<T extends QueryResultRow = QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
-    if (text.includes("SELECT m.conversation_id")) {
-      const workspaceId = String(params[0]);
-      const messageId = String(params[1]);
-      let nextParamIndex = 2;
-      const anonymousSessionId = text.includes("c.anonymous_session_id")
-        ? String(params[nextParamIndex++])
-        : undefined;
-      const agentId = text.includes("c.agent_id")
-        ? String(params[nextParamIndex++])
-        : undefined;
-      const message = this.assistantMessages.get(messageId);
-      if (
-        !message ||
-        message.workspaceId !== workspaceId ||
-        message.role !== "assistant" ||
-        (anonymousSessionId !== undefined && message.anonymousSessionId !== anonymousSessionId) ||
-        (agentId !== undefined && message.agentId !== agentId)
-      ) {
-        return [] as T[];
-      }
-      return [{ conversation_id: message.conversationId }] as unknown as T[];
+  private resolveConversationId(input: {
+    workspaceId: string;
+    agentId?: string | null;
+    assistantMessageId: string;
+    anonymousSessionId?: string | null;
+  }): string {
+    const message = this.assistantMessages.get(input.assistantMessageId);
+    if (
+      !message ||
+      message.workspaceId !== input.workspaceId ||
+      message.role !== "assistant" ||
+      (input.anonymousSessionId != null && message.anonymousSessionId !== input.anonymousSessionId) ||
+      (input.agentId != null && message.agentId !== input.agentId)
+    ) {
+      throw notFound("Assistant message not found");
     }
+    return message.conversationId;
+  }
 
-    if (text.includes("INSERT INTO assistant_answer_feedback")) {
-      const row = {
-        id: String(params[0]),
-        workspace_id: String(params[1]),
-        conversation_id: String(params[2]),
-        assistant_message_id: String(params[3]),
-        account_id: params[4] === null ? null : String(params[4]),
-        user_id: params[5] === null ? null : String(params[5]),
-        anonymous_session_id: params[6] === null ? null : String(params[6]),
-        actor_type: String(params[7]),
-        actor_id: String(params[8]),
-        value: String(params[9]),
-        comment: params[10] === null ? null : String(params[10]),
-        created_at: new Date("2026-05-07T11:00:00.000Z"),
-        updated_at: new Date("2026-05-07T11:00:00.000Z"),
-      };
-      this.feedback.set(`${row.assistant_message_id}:${row.actor_type}:${row.actor_id}`, row);
-      return [row] as unknown as T[];
-    }
+  async upsert(input: {
+    workspaceId: string;
+    agentId?: string | null;
+    assistantMessageId: string;
+    value: "up" | "down";
+    comment?: string | null;
+    actor: {
+      type: "authenticated_user" | "api_token" | "anonymous_user";
+      id: string;
+      accountId?: string | null;
+      userId?: string | null;
+      anonymousSessionId?: string | null;
+    };
+  }): Promise<ChatAnswerFeedbackEntry> {
+    const conversationId = this.resolveConversationId({
+      workspaceId: input.workspaceId,
+      agentId: input.agentId,
+      assistantMessageId: input.assistantMessageId,
+      anonymousSessionId: input.actor.type === "anonymous_user" ? input.actor.anonymousSessionId : null,
+    });
+    const comment = input.value === "down" ? (input.comment?.trim() || null) : null;
+    const key = `${input.assistantMessageId}:${input.actor.type}:${input.actor.id}`;
+    const existing = this.feedback.get(key);
+    const row: FeedbackRow = {
+      id: existing?.id ?? randomUUID(),
+      workspaceId: input.workspaceId,
+      conversationId,
+      assistantMessageId: input.assistantMessageId,
+      value: input.value,
+      comment,
+      actorType: input.actor.type,
+      actorId: input.actor.id,
+      accountId: input.actor.accountId ?? null,
+      userId: input.actor.userId ?? null,
+      anonymousSessionId: input.actor.anonymousSessionId ?? null,
+      createdAt: existing?.createdAt ?? new Date("2026-05-07T11:00:00.000Z").toISOString(),
+      updatedAt: new Date("2026-05-07T11:00:00.000Z").toISOString(),
+    };
+    this.feedback.set(key, row);
+    const { workspaceId: _w, conversationId: _c, assistantMessageId: _m, ...entry } = row;
+    return entry;
+  }
 
-    if (text.includes("DELETE FROM assistant_answer_feedback")) {
-      const key = `${String(params[1])}:${String(params[2])}:${String(params[3])}`;
-      const row = this.feedback.get(key);
-      this.feedback.delete(key);
-      return (row ? [{ id: "feedback-1" }] : []) as unknown as T[];
-    }
-
-    return [] as T[];
+  async clear(input: {
+    workspaceId: string;
+    agentId?: string | null;
+    assistantMessageId: string;
+    actor: {
+      type: "authenticated_user" | "api_token" | "anonymous_user";
+      id: string;
+      anonymousSessionId?: string | null;
+    };
+  }): Promise<{ cleared: boolean }> {
+    this.resolveConversationId({
+      workspaceId: input.workspaceId,
+      agentId: input.agentId,
+      assistantMessageId: input.assistantMessageId,
+      anonymousSessionId: input.actor.type === "anonymous_user" ? input.actor.anonymousSessionId : null,
+    });
+    const key = `${input.assistantMessageId}:${input.actor.type}:${input.actor.id}`;
+    const had = this.feedback.delete(key);
+    return { cleared: had };
   }
 }
 
@@ -214,7 +246,7 @@ const createDependencies = (
 });
 
 const createApp = (
-  database: FakeAnswerFeedbackRouteDatabase,
+  database: InMemoryAnswerFeedbackService,
   overrides: Partial<AnswerFeedbackRouteDependencies> = {},
 ) => {
   const app = express();
@@ -231,7 +263,7 @@ const createApp = (
   });
   app.use(
     "/api/v1/answer-feedback",
-    createAnswerFeedbackRoutes(createDependencies(overrides), new AnswerFeedbackService(database)),
+    createAnswerFeedbackRoutes(createDependencies(overrides), database as unknown as AnswerFeedbackService),
   );
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     const payload = error as { statusCode?: number; code?: string; message?: string };
@@ -246,7 +278,7 @@ const createApp = (
 };
 
 const seedMessage = (
-  database: FakeAnswerFeedbackRouteDatabase,
+  database: InMemoryAnswerFeedbackService,
   anonymousSessionId: string | null = null,
   agentId: string | null = null,
 ) => {
@@ -261,7 +293,7 @@ const seedMessage = (
 
 describe("answer feedback routes", () => {
   it("accepts signed-in feedback for an assistant message", async () => {
-    const database = new FakeAnswerFeedbackRouteDatabase();
+    const database = new InMemoryAnswerFeedbackService();
     seedMessage(database);
 
     const response = await request(createApp(database))
@@ -279,7 +311,7 @@ describe("answer feedback routes", () => {
   });
 
   it("accepts API token feedback for an assistant message", async () => {
-    const database = new FakeAnswerFeedbackRouteDatabase();
+    const database = new InMemoryAnswerFeedbackService();
     seedMessage(database);
 
     const response = await request(createApp(database))
@@ -297,7 +329,7 @@ describe("answer feedback routes", () => {
   });
 
   it("accepts public chat session feedback for the same anonymous session", async () => {
-    const database = new FakeAnswerFeedbackRouteDatabase();
+    const database = new InMemoryAnswerFeedbackService();
     seedMessage(database, PUBLIC_SESSION_ID, AGENT_ID);
     const app = createApp(database);
 
@@ -323,7 +355,7 @@ describe("answer feedback routes", () => {
   });
 
   it("checks the public feedback permission before writing public feedback", async () => {
-    const database = new FakeAnswerFeedbackRouteDatabase();
+    const database = new InMemoryAnswerFeedbackService();
     seedMessage(database, PUBLIC_SESSION_ID, AGENT_ID);
     const requirePermission = vi.fn().mockResolvedValue(undefined);
     const app = createApp(database, {
@@ -350,7 +382,7 @@ describe("answer feedback routes", () => {
   });
 
   it("accepts public chat session feedback for agent-owned website embed tokens", async () => {
-    const database = new FakeAnswerFeedbackRouteDatabase();
+    const database = new InMemoryAnswerFeedbackService();
     const embedToken = "agent-embed-token";
     seedMessage(database, PUBLIC_SESSION_ID, AGENT_ID);
     const app = createApp(database, {
@@ -398,7 +430,7 @@ describe("answer feedback routes", () => {
   });
 
   it("rejects invalid public sessions and cross-session messages", async () => {
-    const database = new FakeAnswerFeedbackRouteDatabase();
+    const database = new InMemoryAnswerFeedbackService();
     seedMessage(database, "other-session", AGENT_ID);
 
     await request(createApp(database))

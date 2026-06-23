@@ -11,7 +11,7 @@ export const createQualityApplicationModule = (): ApplicationModule => ({
     context.registerRouteMount({
       path: "/api/v1/quality",
       createRouter(dependencies) {
-        const service = new QualityTurnsService(dependencies.connectorDb);
+        const service = new QualityTurnsService(dependencies.connectorDb.kysely);
         return createQualityRoutes(dependencies, service);
       },
     });

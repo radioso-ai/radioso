@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { Database } from "../../shared/infra/database.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface EmailVerificationTokenRecord {
   id: string;
@@ -19,6 +19,15 @@ interface EmailVerificationTokenRow {
   used_at: Date | null;
   created_at: Date;
 }
+
+const emailVerificationTokenColumns = [
+  "id",
+  "user_id",
+  "token_hash",
+  "expires_at",
+  "used_at",
+  "created_at",
+] as const;
 
 const mapEmailVerificationToken = (row: EmailVerificationTokenRow): EmailVerificationTokenRecord => ({
   id: row.id,
@@ -44,7 +53,7 @@ export interface EmailVerificationTokenRepositoryPort {
 }
 
 export class EmailVerificationTokenRepository implements EmailVerificationTokenRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async create(params: {
     userId: string;
@@ -53,73 +62,66 @@ export class EmailVerificationTokenRepository implements EmailVerificationTokenR
     requestIp?: string | null;
     requestUserAgent?: string | null;
   }): Promise<EmailVerificationTokenRecord> {
-    const row = await this.database.queryOne<EmailVerificationTokenRow>(
-      `INSERT INTO email_verification_tokens (
-         id,
-         user_id,
-         token_hash,
-         expires_at,
-         request_ip,
-         request_user_agent
-       )
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, user_id, token_hash, expires_at, used_at, created_at`,
-      [
-        randomUUID(),
-        params.userId,
-        params.tokenHash,
-        params.expiresAt,
-        params.requestIp ?? null,
-        params.requestUserAgent ?? null,
-      ],
-    );
+    const row = await this.db
+      .insertInto("email_verification_tokens")
+      .values({
+        id: randomUUID(),
+        user_id: params.userId,
+        token_hash: params.tokenHash,
+        expires_at: params.expiresAt,
+        request_ip: params.requestIp ?? null,
+        request_user_agent: params.requestUserAgent ?? null,
+      })
+      .returning(emailVerificationTokenColumns)
+      .executeTakeFirstOrThrow();
 
     return mapEmailVerificationToken(row);
   }
 
   async findByTokenHash(tokenHash: string): Promise<EmailVerificationTokenRecord | null> {
-    const row = await this.database.queryOptional<EmailVerificationTokenRow>(
-      `SELECT id, user_id, token_hash, expires_at, used_at, created_at
-       FROM email_verification_tokens
-       WHERE token_hash = $1`,
-      [tokenHash],
-    );
+    const row = await this.db
+      .selectFrom("email_verification_tokens")
+      .select(emailVerificationTokenColumns)
+      .where("token_hash", "=", tokenHash)
+      .executeTakeFirst();
 
     return row ? mapEmailVerificationToken(row) : null;
   }
 
   async findLatestActiveForUser(userId: string, now: Date): Promise<EmailVerificationTokenRecord | null> {
-    const row = await this.database.queryOptional<EmailVerificationTokenRow>(
-      `SELECT id, user_id, token_hash, expires_at, used_at, created_at
-       FROM email_verification_tokens
-       WHERE user_id = $1
-         AND used_at IS NULL
-         AND expires_at > $2
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [userId, now],
-    );
+    const row = await this.db
+      .selectFrom("email_verification_tokens")
+      .select(emailVerificationTokenColumns)
+      .where("user_id", "=", userId)
+      .where("used_at", "is", null)
+      .where("expires_at", ">", now)
+      .orderBy("created_at", "desc")
+      .limit(1)
+      .executeTakeFirst();
 
     return row ? mapEmailVerificationToken(row) : null;
   }
 
+  // Idempotent: only stamps used_at when not already set, mirroring the prior
+  // COALESCE(used_at, $2) write. The persisted value and the void return are identical.
   async markUsed(id: string, usedAt: Date): Promise<void> {
-    await this.database.query(
-      `UPDATE email_verification_tokens
-       SET used_at = COALESCE(used_at, $2)
-       WHERE id = $1`,
-      [id, usedAt],
-    );
+    await this.db
+      .updateTable("email_verification_tokens")
+      .set({ used_at: usedAt })
+      .where("id", "=", id)
+      .where("used_at", "is", null)
+      .execute();
   }
 
   async markAllActiveUsedForUser(userId: string, usedAt: Date): Promise<number> {
-    return this.database.execute(
-      `UPDATE email_verification_tokens
-       SET used_at = COALESCE(used_at, $2)
-       WHERE user_id = $1
-         AND used_at IS NULL
-         AND expires_at > $2`,
-      [userId, usedAt],
-    );
+    const result = await this.db
+      .updateTable("email_verification_tokens")
+      .set({ used_at: usedAt })
+      .where("user_id", "=", userId)
+      .where("used_at", "is", null)
+      .where("expires_at", ">", usedAt)
+      .executeTakeFirst();
+
+    return Number(result.numUpdatedRows);
   }
 }

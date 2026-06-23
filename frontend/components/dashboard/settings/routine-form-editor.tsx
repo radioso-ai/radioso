@@ -203,7 +203,7 @@ function ApprovalStepOptions({
               type="button"
               variant="ghost"
               size="sm"
-              disabled={isPublished}
+              disabled={isPublished || step.options.length <= 2}
               onClick={() => patchStep({ options: step.options.filter((_, candidateIndex) => candidateIndex !== optionIndex) })}
               aria-label={`Remove option ${optionIndex + 1}`}
             >
@@ -219,8 +219,8 @@ function ApprovalStepOptions({
             />
           </div>
         ))}
-        {step.options.length === 0 ? (
-          <p className="text-xs text-muted-foreground">Add at least one choice the person can pick from.</p>
+        {step.options.length < 2 ? (
+          <p className="text-xs text-muted-foreground">Add at least two choices the person can pick from.</p>
         ) : null}
         <RoutineDiagnosticList diagnostics={diagnosticsForTarget(diagnostics, { scope: 'step', id: step.stableStepId })} />
       </div>

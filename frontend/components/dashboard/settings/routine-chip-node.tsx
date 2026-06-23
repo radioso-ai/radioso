@@ -151,7 +151,7 @@ function ApprovalDialogBody({
   const addOption = () => setOptions((prev) => [...prev, { id: `option_${prev.length + 1}`, label: '', target: '' }])
   const removeOption = (index: number) => setOptions((prev) => prev.filter((_, candidate) => candidate !== index))
 
-  const canConfirm = options.length > 0
+  const canConfirm = options.length >= 2
     && options.every((option) => option.label.trim().length > 0 && (option.target ?? '').length > 0)
 
   const confirm = () => {
@@ -214,7 +214,7 @@ function ApprovalDialogBody({
                 size="sm"
                 onClick={() => removeOption(index)}
                 aria-label={`Remove option ${index + 1}`}
-                disabled={options.length <= 1}
+                disabled={options.length <= 2}
               >
                 <Trash2 className="h-4 w-4" />
               </Button>

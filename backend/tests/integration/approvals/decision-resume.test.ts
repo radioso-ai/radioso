@@ -359,6 +359,6 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
 
     expect(result.resumed).toBe(true);
     expect(runner.resume).toHaveBeenCalledTimes(1);
-    expect(await statusOf(input.handle)).toBe("approved");
+    expect(await statusOf(input.handle)).toBe("resolved");
   });
 });

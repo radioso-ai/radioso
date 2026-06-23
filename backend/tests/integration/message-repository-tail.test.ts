@@ -9,6 +9,7 @@ import { MessageRepository } from "../../src/db/repositories/messageRepository.j
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../src/shared/domain/cursorPagination.js";
 import { Database } from "../../src/shared/infra/database.js";
+import { createKyselyDatabase } from "../../src/shared/infra/kysely/kyselyDatabase.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
@@ -31,8 +32,8 @@ const canReachIntegrationDatabase = async (databaseUrl?: string): Promise<boolea
 const hasReachableIntegrationDatabase = await canReachIntegrationDatabase(integrationDatabaseUrl);
 const describeIfDatabase = hasReachableIntegrationDatabase ? describe : describe.skip;
 
-const createClientBackedDatabase = (client: PoolClient): Database => ({
-  pool: {
+const createClientBackedDatabase = (client: PoolClient): Database => {
+  const pool = {
     async connect() {
       return new Proxy(client, {
         get(target, property, receiver) {
@@ -44,7 +45,13 @@ const createClientBackedDatabase = (client: PoolClient): Database => ({
         },
       }) as PoolClient;
     },
-  } as Database["pool"],
+  } as Database["pool"];
+
+  return {
+  pool,
+  // Kysely over the same single client, so migrated repos used for seeding share this
+  // test's dedicated schema/search_path.
+  kysely: createKyselyDatabase(pool),
   async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
     const result = await client.query<T>(text, params);
     return result.rows;
@@ -77,7 +84,8 @@ const createClientBackedDatabase = (client: PoolClient): Database => ({
     }
   },
   async close(): Promise<void> {},
-} as Database);
+  } as Database;
+};
 
 describeIfDatabase("MessageRepository forward tail cursor", () => {
   let backingDatabase: Database;
@@ -97,10 +105,10 @@ describeIfDatabase("MessageRepository forward tail cursor", () => {
     await client.query(`SET search_path TO ${schema}, public`);
     database = createClientBackedDatabase(client);
     await runAllTestMigrations(database);
-    accounts = new AccountRepository(database);
-    workspaces = new WorkspaceRepository(database);
-    conversations = new ConversationRepository(database);
-    messages = new MessageRepository(database);
+    accounts = new AccountRepository(database.kysely);
+    workspaces = new WorkspaceRepository(database.kysely);
+    conversations = new ConversationRepository(database.kysely);
+    messages = new MessageRepository(database.kysely);
   });
 
   beforeEach(async () => {

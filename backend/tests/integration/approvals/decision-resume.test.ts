@@ -13,6 +13,7 @@ import {
   type ResumeRunner,
 } from "../../../src/modules/approvals/public.js";
 import { Database } from "../../../src/shared/infra/database.js";
+import { createKyselyDatabase } from "../../../src/shared/infra/kysely/kyselyDatabase.js";
 import { applyTestMigration } from "../../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
@@ -35,8 +36,27 @@ const canReachIntegrationDatabase = async (databaseUrl?: string): Promise<boolea
 const hasReachableIntegrationDatabase = await canReachIntegrationDatabase(integrationDatabaseUrl);
 const describeIfDatabase = hasReachableIntegrationDatabase ? describe : describe.skip;
 
-const createClientBackedDatabase = (client: PoolClient): Database => ({
-  pool: {} as Database["pool"],
+const createClientBackedDatabase = (client: PoolClient): Database => {
+  // A one-connection pool that always hands back the same open client so Kysely's
+  // `resolveInTransaction` BEGIN/COMMIT runs on the same per-test schema + client as the
+  // raw helper queries; `release` is neutered so Kysely can't return it to a real pool.
+  const pool = {
+    async connect() {
+      return new Proxy(client, {
+        get(target, property, receiver) {
+          if (property === "release") {
+            return () => undefined;
+          }
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      }) as PoolClient;
+    },
+  } as Database["pool"];
+
+  return {
+  pool,
+  kysely: createKyselyDatabase(pool),
   async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
     const result = await client.query<T>(text, params);
     return result.rows;
@@ -69,7 +89,8 @@ const createClientBackedDatabase = (client: PoolClient): Database => ({
     }
   },
   async close(): Promise<void> {},
-} as Database);
+} as Database;
+};
 
 const operatorId = randomUUID();
 const workspaceId = randomUUID();
@@ -118,7 +139,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     await client.query(`SET search_path TO ${schema}, public`);
     database = createClientBackedDatabase(client);
     await applyTestMigration(database, "104_pending_decisions.sql");
-    repository = new PendingDecisionRepository(database);
+    repository = new PendingDecisionRepository(database.kysely);
   });
 
   beforeEach(async () => {
@@ -194,8 +215,8 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
 
     expect(result).toMatchObject({ status: "resolved", optionId: "approve", conversationId, resumed: true });
     expect(runner.resume).toHaveBeenCalledTimes(1);
-    // Resume must receive the open transaction executor (one-tx crash-safety).
-    expect(vi.mocked(runner.resume).mock.calls[0][0].executor).toBeDefined();
+    // Resume must receive the open transaction (one-tx crash-safety).
+    expect(vi.mocked(runner.resume).mock.calls[0][0].transaction).toBeDefined();
     expect(vi.mocked(runner.resume).mock.calls[0][0].optionId).toBe("approve");
     expect(await statusOf(input.handle)).toBe("resolved");
 

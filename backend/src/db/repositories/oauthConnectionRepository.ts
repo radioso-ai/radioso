@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 
+import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 import type { OauthConnectionStatus } from "../../modules/integrationOauth/public.js";
-import type { Database } from "../../shared/infra/database.js";
 
 export interface OauthConnectionRecord {
   id: string;
@@ -63,8 +64,23 @@ interface OauthConnectionRow {
   updated_at: Date;
 }
 
-const COLUMNS =
-  "id, workspace_id, provider, provider_account_id, display_name, status, granted_scopes, credential_ciphertext, encryption_key_id, oauth_client_ciphertext, oauth_flow_ciphertext, last_refresh_at, last_error_code, created_at, updated_at";
+const oauthColumns = [
+  "id",
+  "workspace_id",
+  "provider",
+  "provider_account_id",
+  "display_name",
+  "status",
+  "granted_scopes",
+  "credential_ciphertext",
+  "encryption_key_id",
+  "oauth_client_ciphertext",
+  "oauth_flow_ciphertext",
+  "last_refresh_at",
+  "last_error_code",
+  "created_at",
+  "updated_at",
+] as const;
 
 const mapRecord = (row: OauthConnectionRow): OauthConnectionRecord => ({
   id: row.id,
@@ -103,48 +119,46 @@ export interface OauthConnectionRepositoryPort {
 }
 
 export class OauthConnectionRepository implements OauthConnectionRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async create(input: CreateOauthConnectionInput): Promise<OauthConnectionRecord> {
-    const [row] = await this.database.query<OauthConnectionRow>(
-      `INSERT INTO integration_oauth_connections
-         (id, workspace_id, provider, provider_account_id, display_name, status, granted_scopes,
-          credential_ciphertext, encryption_key_id, oauth_client_ciphertext)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       RETURNING ${COLUMNS}`,
-      [
-        randomUUID(),
-        input.workspaceId,
-        input.provider,
-        input.providerAccountId ?? null,
-        input.displayName,
-        input.status ?? "pending",
-        input.grantedScopes ?? [],
-        input.credentialCiphertext ?? null,
-        input.encryptionKeyId ?? null,
-        input.oauthClientCiphertext ?? null,
-      ],
-    );
-    return mapRecord(row);
+    const row = await this.db
+      .insertInto("integration_oauth_connections")
+      .values({
+        id: randomUUID(),
+        workspace_id: input.workspaceId,
+        provider: input.provider,
+        provider_account_id: input.providerAccountId ?? null,
+        display_name: input.displayName,
+        status: input.status ?? "pending",
+        granted_scopes: input.grantedScopes ?? [],
+        credential_ciphertext: input.credentialCiphertext ?? null,
+        encryption_key_id: input.encryptionKeyId ?? null,
+        oauth_client_ciphertext: input.oauthClientCiphertext ?? null,
+      })
+      .returning(oauthColumns)
+      .executeTakeFirstOrThrow();
+    return mapRecord(row as OauthConnectionRow);
   }
 
   async findById(workspaceId: string, id: string): Promise<OauthConnectionRecord | null> {
-    const [row] = await this.database.query<OauthConnectionRow>(
-      `SELECT ${COLUMNS} FROM integration_oauth_connections WHERE workspace_id = $1 AND id = $2`,
-      [workspaceId, id],
-    );
-    return row ? mapRecord(row) : null;
+    const row = await this.db
+      .selectFrom("integration_oauth_connections")
+      .select(oauthColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", id)
+      .executeTakeFirst();
+    return row ? mapRecord(row as OauthConnectionRow) : null;
   }
 
   async listByWorkspace(workspaceId: string): Promise<OauthConnectionRecord[]> {
-    const rows = await this.database.query<OauthConnectionRow>(
-      `SELECT ${COLUMNS}
-       FROM integration_oauth_connections
-       WHERE workspace_id = $1
-       ORDER BY created_at ASC`,
-      [workspaceId],
-    );
-    return rows.map(mapRecord);
+    const rows = await this.db
+      .selectFrom("integration_oauth_connections")
+      .select(oauthColumns)
+      .where("workspace_id", "=", workspaceId)
+      .orderBy("created_at", "asc")
+      .execute();
+    return rows.map((row) => mapRecord(row as OauthConnectionRow));
   }
 
   async updateStatus(
@@ -152,14 +166,14 @@ export class OauthConnectionRepository implements OauthConnectionRepositoryPort 
     id: string,
     status: OauthConnectionStatus,
   ): Promise<OauthConnectionRecord | null> {
-    const [row] = await this.database.query<OauthConnectionRow>(
-      `UPDATE integration_oauth_connections
-       SET status = $3, updated_at = NOW()
-       WHERE workspace_id = $1 AND id = $2
-       RETURNING ${COLUMNS}`,
-      [workspaceId, id, status],
-    );
-    return row ? mapRecord(row) : null;
+    const row = await this.db
+      .updateTable("integration_oauth_connections")
+      .set({ status, updated_at: currentTimestamp() })
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", id)
+      .returning(oauthColumns)
+      .executeTakeFirst();
+    return row ? mapRecord(row as OauthConnectionRow) : null;
   }
 
   async update(
@@ -167,53 +181,59 @@ export class OauthConnectionRepository implements OauthConnectionRepositoryPort 
     id: string,
     input: UpdateOauthConnectionInput,
   ): Promise<OauthConnectionRecord | null> {
-    const assignments: string[] = [];
-    const params: unknown[] = [workspaceId, id];
-    const addAssignment = (column: string, value: unknown): void => {
-      params.push(value);
-      assignments.push(`${column} = $${params.length}`);
-    };
+    // Property presence (`"x" in input`) is the signal for which columns to write, matching
+    // the original. Kysely merges chained .set() calls, so each is statically typed.
+    let query = this.db.updateTable("integration_oauth_connections");
+    let hasAssignment = false;
 
     if ("displayName" in input) {
-      addAssignment("display_name", input.displayName);
+      query = query.set({ display_name: input.displayName! });
+      hasAssignment = true;
     }
     if ("providerAccountId" in input) {
-      addAssignment("provider_account_id", input.providerAccountId ?? null);
+      query = query.set({ provider_account_id: input.providerAccountId ?? null });
+      hasAssignment = true;
     }
     if ("grantedScopes" in input) {
-      addAssignment("granted_scopes", input.grantedScopes ?? []);
+      query = query.set({ granted_scopes: input.grantedScopes ?? [] });
+      hasAssignment = true;
     }
     if ("status" in input) {
-      addAssignment("status", input.status);
+      query = query.set({ status: input.status! });
+      hasAssignment = true;
     }
     if ("credentialCiphertext" in input) {
-      addAssignment("credential_ciphertext", input.credentialCiphertext ?? null);
+      query = query.set({ credential_ciphertext: input.credentialCiphertext ?? null });
+      hasAssignment = true;
     }
     if ("encryptionKeyId" in input) {
-      addAssignment("encryption_key_id", input.encryptionKeyId ?? null);
+      query = query.set({ encryption_key_id: input.encryptionKeyId ?? null });
+      hasAssignment = true;
     }
     if ("oauthClientCiphertext" in input) {
-      addAssignment("oauth_client_ciphertext", input.oauthClientCiphertext ?? null);
+      query = query.set({ oauth_client_ciphertext: input.oauthClientCiphertext ?? null });
+      hasAssignment = true;
     }
     if ("oauthFlowCiphertext" in input) {
-      addAssignment("oauth_flow_ciphertext", input.oauthFlowCiphertext ?? null);
+      query = query.set({ oauth_flow_ciphertext: input.oauthFlowCiphertext ?? null });
+      hasAssignment = true;
     }
     if ("lastErrorCode" in input) {
-      addAssignment("last_error_code", input.lastErrorCode ?? null);
+      query = query.set({ last_error_code: input.lastErrorCode ?? null });
+      hasAssignment = true;
     }
 
-    if (assignments.length === 0) {
+    if (!hasAssignment) {
       return this.findById(workspaceId, id);
     }
 
-    const [row] = await this.database.query<OauthConnectionRow>(
-      `UPDATE integration_oauth_connections
-       SET ${assignments.join(", ")}, updated_at = NOW()
-       WHERE workspace_id = $1 AND id = $2
-       RETURNING ${COLUMNS}`,
-      params,
-    );
-    return row ? mapRecord(row) : null;
+    const row = await query
+      .set({ updated_at: currentTimestamp() })
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", id)
+      .returning(oauthColumns)
+      .executeTakeFirst();
+    return row ? mapRecord(row as OauthConnectionRow) : null;
   }
 
   async setOauthFlow(
@@ -221,14 +241,19 @@ export class OauthConnectionRepository implements OauthConnectionRepositoryPort 
     id: string,
     oauthFlowCiphertext: string,
   ): Promise<OauthConnectionRecord | null> {
-    const [row] = await this.database.query<OauthConnectionRow>(
-      `UPDATE integration_oauth_connections
-       SET oauth_flow_ciphertext = $3, status = 'pending', last_error_code = NULL, updated_at = NOW()
-       WHERE workspace_id = $1 AND id = $2
-       RETURNING ${COLUMNS}`,
-      [workspaceId, id, oauthFlowCiphertext],
-    );
-    return row ? mapRecord(row) : null;
+    const row = await this.db
+      .updateTable("integration_oauth_connections")
+      .set({
+        oauth_flow_ciphertext: oauthFlowCiphertext,
+        status: "pending",
+        last_error_code: null,
+        updated_at: currentTimestamp(),
+      })
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", id)
+      .returning(oauthColumns)
+      .executeTakeFirst();
+    return row ? mapRecord(row as OauthConnectionRow) : null;
   }
 
   async setOauthTokens(
@@ -239,29 +264,33 @@ export class OauthConnectionRepository implements OauthConnectionRepositoryPort 
     grantedScopes?: string[],
     providerAccountId?: string | null,
   ): Promise<OauthConnectionRecord | null> {
-    const [row] = await this.database.query<OauthConnectionRow>(
-      `UPDATE integration_oauth_connections
-       SET credential_ciphertext = $3,
-           encryption_key_id = $4,
-           granted_scopes = COALESCE($5::text[], granted_scopes),
-           provider_account_id = COALESCE($6, provider_account_id),
-           oauth_flow_ciphertext = NULL,
-           status = 'authorized',
-           last_refresh_at = NOW(),
-           last_error_code = NULL,
-           updated_at = NOW()
-       WHERE workspace_id = $1 AND id = $2
-       RETURNING ${COLUMNS}`,
-      [workspaceId, id, credentialCiphertext, encryptionKeyId, grantedScopes ?? null, providerAccountId ?? null],
-    );
-    return row ? mapRecord(row) : null;
+    const row = await this.db
+      .updateTable("integration_oauth_connections")
+      .set((eb) => ({
+        credential_ciphertext: credentialCiphertext,
+        encryption_key_id: encryptionKeyId,
+        // COALESCE(provided, existing): keep current value when the arg is null/undefined.
+        granted_scopes: grantedScopes != null ? grantedScopes : eb.ref("granted_scopes"),
+        provider_account_id: providerAccountId != null ? providerAccountId : eb.ref("provider_account_id"),
+        oauth_flow_ciphertext: null,
+        status: "authorized",
+        last_refresh_at: currentTimestamp(),
+        last_error_code: null,
+        updated_at: currentTimestamp(),
+      }))
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", id)
+      .returning(oauthColumns)
+      .executeTakeFirst();
+    return row ? mapRecord(row as OauthConnectionRow) : null;
   }
 
   async remove(workspaceId: string, id: string): Promise<boolean> {
-    const affected = await this.database.execute(
-      `DELETE FROM integration_oauth_connections WHERE workspace_id = $1 AND id = $2`,
-      [workspaceId, id],
-    );
-    return affected > 0;
+    const result = await this.db
+      .deleteFrom("integration_oauth_connections")
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", id)
+      .executeTakeFirst();
+    return Number(result.numDeletedRows) > 0;
   }
 }

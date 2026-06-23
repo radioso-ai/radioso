@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import type { Database } from "../../shared/infra/database.js";
-import { stringifyJsonb } from "../../shared/infra/jsonb.js";
+import { anyOf, castText, jsonbKeyText, jsonbSet, toJsonb, toSanitizedJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 
 export interface AuditEventRecord {
@@ -56,6 +56,16 @@ interface AuditEventRow {
   created_at: Date;
 }
 
+const auditEventColumns = [
+  "id",
+  "account_id",
+  "workspace_id",
+  "event_type",
+  "event_status",
+  "metadata_json",
+  "created_at",
+] as const;
+
 const mapAuditEvent = (row: AuditEventRow): AuditEventRecord => ({
   id: row.id,
   accountId: row.account_id,
@@ -67,7 +77,7 @@ const mapAuditEvent = (row: AuditEventRow): AuditEventRecord => ({
 });
 
 export class AuditEventRepository implements AuditEventRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async create(input: {
     accountId?: string | null;
@@ -76,28 +86,33 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
     eventStatus: string;
     metadata?: Record<string, unknown>;
   }): Promise<AuditEventRecord> {
-    const [row] = await this.database.query<AuditEventRow>(
-      `INSERT INTO audit_events (id, account_id, workspace_id, event_type, event_status, metadata_json)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb)
-       RETURNING id, account_id, workspace_id, event_type, event_status, metadata_json, created_at`,
-      [randomUUID(), input.accountId ?? null, input.workspaceId ?? null, input.eventType, input.eventStatus, stringifyJsonb(input.metadata ?? {})],
-    );
+    const row = await this.db
+      .insertInto("audit_events")
+      .values({
+        id: randomUUID(),
+        account_id: input.accountId ?? null,
+        workspace_id: input.workspaceId ?? null,
+        event_type: input.eventType,
+        event_status: input.eventStatus,
+        metadata_json: toSanitizedJsonb(input.metadata ?? {}),
+      })
+      .returning(auditEventColumns)
+      .executeTakeFirstOrThrow();
 
-    return mapAuditEvent(row);
+    return mapAuditEvent(row as AuditEventRow);
   }
 
   async listChatAnswerEventsByConversationId(workspaceId: string, conversationId: string): Promise<AuditEventRecord[]> {
-    const rows = await this.database.query<AuditEventRow>(
-      `SELECT id, account_id, workspace_id, event_type, event_status, metadata_json, created_at
-       FROM audit_events
-       WHERE workspace_id = $1
-         AND event_type = 'chat.answer'
-         AND metadata_json ->> 'conversationId' = $2
-       ORDER BY created_at ASC`,
-      [workspaceId, conversationId],
-    );
+    const rows = await this.db
+      .selectFrom("audit_events")
+      .select(auditEventColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("event_type", "=", "chat.answer")
+      .where((eb) => eb(jsonbKeyText(eb.ref("metadata_json"), "conversationId"), "=", conversationId))
+      .orderBy("created_at", "asc")
+      .execute();
 
-    return rows.map(mapAuditEvent);
+    return rows.map((row) => mapAuditEvent(row as AuditEventRow));
   }
 
   async listChatAnswerEventsByAssistantMessageIds(
@@ -109,18 +124,17 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
       return [];
     }
 
-    const rows = await this.database.query<AuditEventRow>(
-      `SELECT id, account_id, workspace_id, event_type, event_status, metadata_json, created_at
-       FROM audit_events
-       WHERE workspace_id = $1
-         AND event_type = 'chat.answer'
-         AND metadata_json ->> 'conversationId' = $2
-         AND metadata_json ->> 'assistantMessageId' = ANY($3::text[])
-       ORDER BY created_at ASC`,
-      [workspaceId, conversationId, assistantMessageIds],
-    );
+    const rows = await this.db
+      .selectFrom("audit_events")
+      .select(auditEventColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("event_type", "=", "chat.answer")
+      .where((eb) => eb(jsonbKeyText(eb.ref("metadata_json"), "conversationId"), "=", conversationId))
+      .where((eb) => anyOf(jsonbKeyText(eb.ref("metadata_json"), "assistantMessageId"), assistantMessageIds, "text[]"))
+      .orderBy("created_at", "asc")
+      .execute();
 
-    return rows.map(mapAuditEvent);
+    return rows.map((row) => mapAuditEvent(row as AuditEventRow));
   }
 
   async findLatestChatAnswerEventByConversationId(
@@ -128,26 +142,19 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
     conversationId: string,
     status?: "success" | "failure",
   ): Promise<AuditEventRecord | null> {
-    const params: unknown[] = [workspaceId, conversationId];
-    const statusClause = status ? `AND event_status = $3` : "";
+    const row = await this.db
+      .selectFrom("audit_events")
+      .select(auditEventColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("event_type", "=", "chat.answer")
+      .where((eb) => eb(jsonbKeyText(eb.ref("metadata_json"), "conversationId"), "=", conversationId))
+      .$if(status !== undefined, (qb) => qb.where("event_status", "=", status!))
+      .orderBy("created_at", "desc")
+      .orderBy("id", "desc")
+      .limit(1)
+      .executeTakeFirst();
 
-    if (status) {
-      params.push(status);
-    }
-
-    const [row] = await this.database.query<AuditEventRow>(
-      `SELECT id, account_id, workspace_id, event_type, event_status, metadata_json, created_at
-       FROM audit_events
-       WHERE workspace_id = $1
-         AND event_type = 'chat.answer'
-         AND metadata_json ->> 'conversationId' = $2
-         ${statusClause}
-       ORDER BY created_at DESC, id DESC
-       LIMIT 1`,
-      params,
-    );
-
-    return row ? mapAuditEvent(row) : null;
+    return row ? mapAuditEvent(row as AuditEventRow) : null;
   }
 
   async updateChatAnswerSuggestions(input: {
@@ -156,35 +163,28 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
     assistantMessageId: string;
     suggestions: unknown[];
   }): Promise<boolean> {
-    const result = await this.database.query<{ id: string }>(
-      `UPDATE audit_events
-       SET metadata_json = jsonb_set(
-         coalesce(metadata_json, '{}'::jsonb),
-         '{suggestions}',
-         $4::jsonb,
-         true
-       )
-       WHERE id = (
-         SELECT id
-         FROM audit_events
-         WHERE workspace_id = $1
-           AND event_type = 'chat.answer'
-           AND event_status = 'success'
-           AND metadata_json ->> 'conversationId' = $2
-           AND metadata_json ->> 'assistantMessageId' = $3
-         ORDER BY created_at DESC, id DESC
-         LIMIT 1
-       )
-       RETURNING id`,
-      [
-        input.workspaceId,
-        input.conversationId,
-        input.assistantMessageId,
-        stringifyJsonb(input.suggestions),
-      ],
-    );
+    const rows = await this.db
+      .updateTable("audit_events")
+      .set((eb) => ({
+        metadata_json: jsonbSet(eb.ref("metadata_json"), ["suggestions"], toJsonb(input.suggestions)),
+      }))
+      .where("id", "=", (eb) =>
+        eb
+          .selectFrom("audit_events")
+          .select("id")
+          .where("workspace_id", "=", input.workspaceId)
+          .where("event_type", "=", "chat.answer")
+          .where("event_status", "=", "success")
+          .where(eb(jsonbKeyText(eb.ref("metadata_json"), "conversationId"), "=", input.conversationId))
+          .where(eb(jsonbKeyText(eb.ref("metadata_json"), "assistantMessageId"), "=", input.assistantMessageId))
+          .orderBy("created_at", "desc")
+          .orderBy("id", "desc")
+          .limit(1),
+      )
+      .returning("id")
+      .execute();
 
-    return result.length > 0;
+    return rows.length > 0;
   }
 
   async listDocumentSearchEventPageByWorkspaceId(
@@ -194,47 +194,34 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
     const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
     const total = cursor?.totalSnapshot !== undefined
       ? Number(cursor.totalSnapshot)
-      : Number((await this.database.query<{ count: string }>(
-          `SELECT COUNT(*)::text AS count
-           FROM audit_events
-           WHERE workspace_id = $1
-             AND event_type = 'document.search'`,
-          [workspaceId],
-        ))[0]?.count ?? "0");
-    const params: Array<string | number> = [workspaceId];
-    let cursorClause = "";
+      : Number((await this.db
+          .selectFrom("audit_events")
+          .select((eb) => eb.fn.countAll<string>().as("count"))
+          .where("workspace_id", "=", workspaceId)
+          .where("event_type", "=", "document.search")
+          .executeTakeFirst())?.count ?? "0");
 
-    if (cursor) {
-      params.push(cursor.keys.createdAt, cursor.keys.id);
-      cursorClause = `
-         AND (
-           created_at < $2::timestamptz
-           OR (created_at = $2::timestamptz AND id < $3::uuid)
-         )`;
-    }
+    const cursorCreatedAt = cursor ? new Date(cursor.keys.createdAt) : null;
+    const rows = await this.db
+      .selectFrom("audit_events")
+      .select(auditEventColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("event_type", "=", "document.search")
+      .$if(Boolean(cursor), (qb) =>
+        qb.where((eb) =>
+          eb.or([
+            eb("created_at", "<", cursorCreatedAt!),
+            eb.and([eb("created_at", "=", cursorCreatedAt!), eb("id", "<", cursor!.keys.id)]),
+          ]),
+        ),
+      )
+      .orderBy("created_at", "desc")
+      .orderBy("id", "desc")
+      .limit(input.limit + 1)
+      .$if(!cursor, (qb) => qb.offset(input.offset ?? 0))
+      .execute();
 
-    const limitParam = params.length + 1;
-    params.push(input.limit + 1);
-
-    let offsetClause = "";
-    if (!cursor) {
-      offsetClause = `OFFSET $${params.length + 1}`;
-      params.push(input.offset ?? 0);
-    }
-
-    const rows = await this.database.query<AuditEventRow>(
-      `SELECT id, account_id, workspace_id, event_type, event_status, metadata_json, created_at
-       FROM audit_events
-       WHERE workspace_id = $1
-         AND event_type = 'document.search'
-       ${cursorClause}
-       ORDER BY created_at DESC, id DESC
-       LIMIT $${limitParam}
-       ${offsetClause}`,
-      params,
-    );
-
-    const events = rows.slice(0, input.limit).map(mapAuditEvent);
+    const events = rows.slice(0, input.limit).map((row) => mapAuditEvent(row as AuditEventRow));
     const hasMore = rows.length > input.limit;
     const lastEvent = events.at(-1);
 
@@ -252,17 +239,21 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
   }
 
   async findDocumentSearchEventBySearchId(workspaceId: string, searchId: string): Promise<AuditEventRecord | null> {
-    const [row] = await this.database.query<AuditEventRow>(
-      `SELECT id, account_id, workspace_id, event_type, event_status, metadata_json, created_at
-       FROM audit_events
-       WHERE workspace_id = $1
-         AND event_type = 'document.search'
-         AND (metadata_json ->> 'searchId' = $2 OR id::text = $2)
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [workspaceId, searchId],
-    );
+    const row = await this.db
+      .selectFrom("audit_events")
+      .select(auditEventColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("event_type", "=", "document.search")
+      .where((eb) =>
+        eb.or([
+          eb(jsonbKeyText(eb.ref("metadata_json"), "searchId"), "=", searchId),
+          eb(castText(eb.ref("id")), "=", searchId),
+        ]),
+      )
+      .orderBy("created_at", "desc")
+      .limit(1)
+      .executeTakeFirst();
 
-    return row ? mapAuditEvent(row) : null;
+    return row ? mapAuditEvent(row as AuditEventRow) : null;
   }
 }

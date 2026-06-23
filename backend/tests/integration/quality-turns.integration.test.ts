@@ -104,7 +104,7 @@ describeIfDatabase("quality turns integration", () => {
       [randomUUID(), workspaceId, groundedConversationId, groundedAssistantMessageId],
     );
 
-    const service = new QualityTurnsService(database);
+    const service = new QualityTurnsService(database.kysely);
     const page = await service.listLowQualityTurns(workspaceId, { limit: 25 });
 
     const ids = page.items.map((item) => item.assistantMessageId);
@@ -182,7 +182,7 @@ describeIfDatabase("quality turns integration", () => {
       ],
     );
 
-    const service = new QualityTurnsService(database);
+    const service = new QualityTurnsService(database.kysely);
     const page = await service.listLowQualityTurns(workspaceA, {
       limit: 25,
       actions: [{ skillName: "retrieval.answer", outcome: "no_context" }],
@@ -233,7 +233,7 @@ describeIfDatabase("quality turns integration", () => {
       ],
     );
 
-    const service = new QualityTurnsService(database);
+    const service = new QualityTurnsService(database.kysely);
 
     const initial = await service.listLowQualityTurns(workspaceId, { limit: 25 });
     const openTurn = initial.items.find((item) => item.assistantMessageId === openMessageId);
@@ -279,7 +279,7 @@ describeIfDatabase("quality turns integration", () => {
       [workspaceId, accountId, "No Turn WS", `nt-${workspaceId.slice(0, 8)}`],
     );
 
-    const service = new QualityTurnsService(database);
+    const service = new QualityTurnsService(database.kysely);
     const result = await service.setTriageState(workspaceId, {
       assistantMessageId: randomUUID(),
       state: "acknowledged",

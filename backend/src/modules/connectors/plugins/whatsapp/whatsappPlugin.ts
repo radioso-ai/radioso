@@ -9,6 +9,7 @@ import type {
 
 import { WhatsAppClient } from "./whatsappClient.js";
 import { WhatsAppMessageHandler } from "./whatsappMessageHandler.js";
+import { connectorKyselyDb } from "../../services/connectorKyselyDb.js";
 import { PostgresWhatsAppPersistence } from "./whatsappPersistence.js";
 import { createWhatsAppWebhookRouter, findInboundMessageInPayload } from "./whatsappWebhook.js";
 
@@ -121,7 +122,7 @@ export class WhatsAppPlugin implements ConnectorPlugin {
       fetch: this.fetchImpl,
       sleep: this.sleep,
     });
-    const persistence = new PostgresWhatsAppPersistence(context.db);
+    const persistence = new PostgresWhatsAppPersistence(connectorKyselyDb(context.db));
     this.messageHandler = new WhatsAppMessageHandler({
       db: context.db,
       logger: context.logger,

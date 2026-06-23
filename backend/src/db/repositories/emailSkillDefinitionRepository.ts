@@ -4,7 +4,8 @@ import type {
   CustomerEmailSkillMode,
   CustomerEmailSkillDefinitionSummary,
 } from "../../modules/customerEmail/domain.js";
-import type { Database } from "../../shared/infra/database.js";
+import { currentTimestamp, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface EmailSkillDefinitionRecord {
   id: string;
@@ -56,10 +57,20 @@ interface EmailSkillDefinitionRow {
 
 // Customer email skills live on the shared `agent_skills` spine. Email-specific
 // service validation owns the target/config shape.
-const SELECT_BASE = `SELECT s.id, s.workspace_id, s.agent_id, s.target_id, s.skill_name,
-         s.config, s.enabled, s.created_at, s.updated_at
-   FROM agent_skills s
-   WHERE s.kind = 'customer_email'`;
+const emailSkillColumns = [
+  "id",
+  "workspace_id",
+  "agent_id",
+  "target_id",
+  "skill_name",
+  "config",
+  "enabled",
+  "created_at",
+  "updated_at",
+] as const;
+
+const selectEmailSkills = (db: Db) =>
+  db.selectFrom("agent_skills").select(emailSkillColumns).where("kind", "=", "customer_email");
 
 const mapRecord = (row: EmailSkillDefinitionRow): EmailSkillDefinitionRecord => ({
   id: row.id,
@@ -91,7 +102,7 @@ export interface EmailSkillDefinitionRepositoryPort {
 }
 
 export class EmailSkillDefinitionRepository implements EmailSkillDefinitionRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async create(input: CreateEmailSkillDefinitionInput): Promise<EmailSkillDefinitionRecord> {
     const config = {
@@ -99,31 +110,31 @@ export class EmailSkillDefinitionRepository implements EmailSkillDefinitionRepos
       boundInputs: input.boundInputs ?? {},
       exposedInputs: input.exposedInputs ?? {},
     };
-    const [row] = await this.database.query<EmailSkillDefinitionRow>(
-      `INSERT INTO agent_skills (
-         id, agent_id, workspace_id, skill_name, kind, enabled, target_type, target_id, config
-       )
-       VALUES ($1, $3, $2, $5, 'customer_email', $7, 'customer_email_connection', $4, $6::jsonb)
-       RETURNING id, workspace_id, agent_id, target_id, skill_name, config, enabled, created_at, updated_at`,
-      [
-        randomUUID(),
-        input.workspaceId,
-        input.agentId,
-        input.connectionId,
-        input.skillName,
-        JSON.stringify(config),
-        input.enabled ?? true,
-      ],
-    );
-    return mapRecord(row);
+    const row = await this.db
+      .insertInto("agent_skills")
+      .values({
+        id: randomUUID(),
+        agent_id: input.agentId,
+        workspace_id: input.workspaceId,
+        skill_name: input.skillName,
+        kind: "customer_email",
+        enabled: input.enabled ?? true,
+        target_type: "customer_email_connection",
+        target_id: input.connectionId,
+        config: toJsonb(config),
+      })
+      .returning(emailSkillColumns)
+      .executeTakeFirstOrThrow();
+    return mapRecord(row as EmailSkillDefinitionRow);
   }
 
   async findById(workspaceId: string, agentId: string, id: string): Promise<EmailSkillDefinitionRecord | null> {
-    const [row] = await this.database.query<EmailSkillDefinitionRow>(
-      `${SELECT_BASE} AND s.workspace_id = $1 AND s.agent_id = $2 AND s.id = $3`,
-      [workspaceId, agentId, id],
-    );
-    return row ? mapRecord(row) : null;
+    const row = await selectEmailSkills(this.db)
+      .where("workspace_id", "=", workspaceId)
+      .where("agent_id", "=", agentId)
+      .where("id", "=", id)
+      .executeTakeFirst();
+    return row ? mapRecord(row as EmailSkillDefinitionRow) : null;
   }
 
   async findEnabledByName(
@@ -131,19 +142,22 @@ export class EmailSkillDefinitionRepository implements EmailSkillDefinitionRepos
     agentId: string,
     skillName: string,
   ): Promise<EmailSkillDefinitionRecord | null> {
-    const [row] = await this.database.query<EmailSkillDefinitionRow>(
-      `${SELECT_BASE} AND s.workspace_id = $1 AND s.agent_id = $2 AND s.skill_name = $3 AND s.enabled = TRUE`,
-      [workspaceId, agentId, skillName],
-    );
-    return row ? mapRecord(row) : null;
+    const row = await selectEmailSkills(this.db)
+      .where("workspace_id", "=", workspaceId)
+      .where("agent_id", "=", agentId)
+      .where("skill_name", "=", skillName)
+      .where("enabled", "=", true)
+      .executeTakeFirst();
+    return row ? mapRecord(row as EmailSkillDefinitionRow) : null;
   }
 
   async listByAgent(workspaceId: string, agentId: string): Promise<EmailSkillDefinitionRecord[]> {
-    const rows = await this.database.query<EmailSkillDefinitionRow>(
-      `${SELECT_BASE} AND s.workspace_id = $1 AND s.agent_id = $2 ORDER BY s.skill_name ASC`,
-      [workspaceId, agentId],
-    );
-    return rows.map(mapRecord);
+    const rows = await selectEmailSkills(this.db)
+      .where("workspace_id", "=", workspaceId)
+      .where("agent_id", "=", agentId)
+      .orderBy("skill_name", "asc")
+      .execute();
+    return rows.map((row) => mapRecord(row as EmailSkillDefinitionRow));
   }
 
   async update(
@@ -157,42 +171,42 @@ export class EmailSkillDefinitionRepository implements EmailSkillDefinitionRepos
       ...("boundInputs" in input ? { boundInputs: input.boundInputs ?? {} } : {}),
       ...("exposedInputs" in input ? { exposedInputs: input.exposedInputs ?? {} } : {}),
     };
-    const [row] = await this.database.query<EmailSkillDefinitionRow>(
-      `UPDATE agent_skills SET
-         enabled = COALESCE($4, enabled),
-         config = config || COALESCE($5::jsonb, '{}'::jsonb),
-         updated_at = NOW()
-       WHERE workspace_id = $1 AND agent_id = $2 AND id = $3 AND kind = 'customer_email'
-       RETURNING id, workspace_id, agent_id, target_id, skill_name, config, enabled, created_at, updated_at`,
-      [
-        workspaceId,
-        agentId,
-        id,
-        "enabled" in input ? input.enabled ?? null : null,
-        Object.keys(config).length > 0 ? JSON.stringify(config) : null,
-      ],
-    );
-    return row ? mapRecord(row) : null;
+    const row = await this.db
+      .updateTable("agent_skills")
+      .set((eb) => ({
+        ...(input.enabled != null ? { enabled: input.enabled } : {}),
+        config: jsonbConcat(eb.ref("config"), toJsonb(config)),
+        updated_at: currentTimestamp(),
+      }))
+      .where("workspace_id", "=", workspaceId)
+      .where("agent_id", "=", agentId)
+      .where("id", "=", id)
+      .where("kind", "=", "customer_email")
+      .returning(emailSkillColumns)
+      .executeTakeFirst();
+    return row ? mapRecord(row as EmailSkillDefinitionRow) : null;
   }
 
   async remove(workspaceId: string, agentId: string, id: string): Promise<boolean> {
-    const affected = await this.database.execute(
-      `DELETE FROM agent_skills WHERE workspace_id = $1 AND agent_id = $2 AND id = $3 AND kind = 'customer_email'`,
-      [workspaceId, agentId, id],
-    );
-    return affected > 0;
+    const result = await this.db
+      .deleteFrom("agent_skills")
+      .where("workspace_id", "=", workspaceId)
+      .where("agent_id", "=", agentId)
+      .where("id", "=", id)
+      .where("kind", "=", "customer_email")
+      .executeTakeFirst();
+    return Number(result.numDeletedRows) > 0;
   }
 
   async countByConnection(workspaceId: string, connectionId: string): Promise<number> {
-    const [row] = await this.database.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count
-       FROM agent_skills s
-       WHERE s.kind = 'customer_email'
-         AND s.workspace_id = $1
-         AND s.target_type = 'customer_email_connection'
-         AND s.target_id = $2`,
-      [workspaceId, connectionId],
-    );
+    const row = await this.db
+      .selectFrom("agent_skills")
+      .select((eb) => eb.fn.countAll<string>().as("count"))
+      .where("kind", "=", "customer_email")
+      .where("workspace_id", "=", workspaceId)
+      .where("target_type", "=", "customer_email_connection")
+      .where("target_id", "=", connectionId)
+      .executeTakeFirst();
     return Number(row?.count ?? 0);
   }
 }

@@ -1,6 +1,6 @@
-import type { QueryResultRow } from "pg";
+import { CompiledQuery } from "kysely";
 
-import type { ApplicationDatabasePort } from "../../app/composition/applicationModule.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 import type {
   ListLowQualityTurnsInput,
   LowQualityTurn,
@@ -12,7 +12,7 @@ import type {
   SetTriageStateInput,
 } from "./contracts/index.js";
 
-type TurnRow = QueryResultRow & {
+type TurnRow = {
   assistant_message_id: string;
   conversation_id: string;
   agent_id: string | null;
@@ -32,7 +32,7 @@ type TurnRow = QueryResultRow & {
   triage_updated_at: Date | string | null;
 };
 
-type CommentRow = QueryResultRow & {
+type CommentRow = {
   assistant_message_id: string;
   value: QualityFeedbackValue;
   comment: string;
@@ -69,7 +69,7 @@ const clampOffset = (offset: number | undefined): number => {
 };
 
 export class QualityTurnsService implements QualityTurnsServicePort {
-  constructor(private readonly database: ApplicationDatabasePort) {}
+  constructor(private readonly db: Db) {}
 
   async listLowQualityTurns(workspaceId: string, input: ListLowQualityTurnsInput): Promise<LowQualityTurnsPage> {
     const limit = clampLimit(input.limit);
@@ -199,24 +199,29 @@ export class QualityTurnsService implements QualityTurnsServicePort {
          ON tr.workspace_id = m.workspace_id AND tr.assistant_message_id = m.id`;
     const countTriageJoin = triageStates.length > 0 ? triageJoin : "";
 
-    const [totalRow] = await this.database.query<{ total: string }>(
-      `SELECT COUNT(*)::text AS total
+    const totalResult = await this.db.executeQuery<{ total: string }>(
+      CompiledQuery.raw(
+        `SELECT COUNT(*)::text AS total
        FROM messages m
        JOIN conversations c ON c.id = m.conversation_id AND c.workspace_id = m.workspace_id
        ${countLatencyJoin}
        ${countTriageJoin}
        WHERE ${whereClause}`,
-      params,
+        // Pass a copy: CompiledQuery.raw freezes the parameter array, and the
+        // list query below extends `params` with limit/offset.
+        [...params],
+      ),
     );
-    const total = Number(totalRow?.total ?? 0);
+    const total = Number(totalResult.rows[0]?.total ?? 0);
 
     params.push(limit);
     const limitParamIndex = params.length;
     params.push(offset);
     const offsetParamIndex = params.length;
 
-    const rows = await this.database.query<TurnRow>(
-      `SELECT
+    const rowsResult = await this.db.executeQuery<TurnRow>(
+      CompiledQuery.raw(
+        `SELECT
          m.id AS assistant_message_id,
          m.conversation_id,
          c.agent_id,
@@ -272,8 +277,10 @@ export class QualityTurnsService implements QualityTurnsServicePort {
        ORDER BY m.created_at DESC, m.id DESC
        LIMIT $${limitParamIndex}
        OFFSET $${offsetParamIndex}`,
-      params,
+        params,
+      ),
     );
+    const rows = rowsResult.rows;
 
     const commentsByMessageId = await this.fetchComments(workspaceId, rows.map((row) => row.assistant_message_id));
 
@@ -321,12 +328,13 @@ export class QualityTurnsService implements QualityTurnsServicePort {
     // Scope the upsert to assistant turns in this workspace: the SELECT yields
     // no row (and the insert is a no-op) when the turn is missing or foreign,
     // which we surface as a 404 at the route.
-    const rows = await this.database.query<{
+    const result = await this.db.executeQuery<{
       state: string;
       reason: string | null;
       updated_at: Date | string;
     }>(
-      `INSERT INTO assistant_answer_triage (workspace_id, assistant_message_id, state, reason, updated_by, updated_at)
+      CompiledQuery.raw(
+        `INSERT INTO assistant_answer_triage (workspace_id, assistant_message_id, state, reason, updated_by, updated_at)
        SELECT m.workspace_id, m.id, $3, $4, $5, NOW()
        FROM messages m
        WHERE m.id = $2 AND m.workspace_id = $1 AND m.role = 'assistant'
@@ -337,10 +345,11 @@ export class QualityTurnsService implements QualityTurnsServicePort {
          updated_by = EXCLUDED.updated_by,
          updated_at = NOW()
        RETURNING state, reason, updated_at`,
-      [workspaceId, input.assistantMessageId, input.state, input.reason ?? null, input.updatedBy ?? null],
+        [workspaceId, input.assistantMessageId, input.state, input.reason ?? null, input.updatedBy ?? null],
+      ),
     );
 
-    const row = rows[0];
+    const row = result.rows[0];
     if (!row) {
       return null;
     }
@@ -361,17 +370,19 @@ export class QualityTurnsService implements QualityTurnsServicePort {
       return grouped;
     }
 
-    const rows = await this.database.query<CommentRow>(
-      `SELECT assistant_message_id, value, comment, created_at
+    const result = await this.db.executeQuery<CommentRow>(
+      CompiledQuery.raw(
+        `SELECT assistant_message_id, value, comment, created_at
        FROM assistant_answer_feedback
        WHERE workspace_id = $1
          AND assistant_message_id = ANY($2::uuid[])
          AND comment IS NOT NULL
        ORDER BY created_at ASC, id ASC`,
-      [workspaceId, assistantMessageIds],
+        [workspaceId, assistantMessageIds],
+      ),
     );
 
-    for (const row of rows) {
+    for (const row of result.rows) {
       const entries = grouped.get(row.assistant_message_id) ?? [];
       entries.push({
         value: row.value,

@@ -58,11 +58,6 @@ export {
   type SlackInstallationRepositoryPort,
 } from "./install/slackInstallationService.js";
 export {
-  SlackOperatorIdentityRepository,
-  type SlackOperatorIdentityRecord,
-  type SlackOperatorIdentityRepositoryPort,
-} from "./persistence/slackOperatorIdentityRepository.js";
-export {
   SlackOperatorIdentityResolver,
   type SlackOperatorIdentityResolution,
   type SlackOperatorPermissionPort,

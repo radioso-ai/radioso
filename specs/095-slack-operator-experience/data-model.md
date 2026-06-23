@@ -1,23 +1,14 @@
 # Data Model: Slack operator experience (095)
 
-## New table: `slack_operator_identities`
+## Operator identity: NO new table (resolve fresh)
 
-Links a Slack user to a Radioso account within an installation's workspace. Established lazily by email match.
-
-| column | type | notes |
-|--------|------|-------|
-| `id` | uuid pk | |
-| `workspace_id` | uuid not null | FK workspaces |
-| `installation_id` | uuid not null | FK `slack_installations` |
-| `slack_user_id` | text not null | e.g. `U123` |
-| `account_id` | uuid not null | FK accounts (resolved operator) |
-| `slack_display_name` | text | for provenance/UI; refreshed opportunistically |
-| `created_at` / `updated_at` | timestamptz | |
-
-- **Unique** `(installation_id, slack_user_id)`.
-- Index `(workspace_id, account_id)`.
-- Rows are a **cache + provenance record**, not authorization: the resolver re-checks current workspace
-  membership + `workspace.conversation.takeover` permission on every use (a removed member must not keep acting).
+A Slack interactivity callback gives only `team_id + slack_user_id`. We resolve the acting operator
+**fresh on every action** — `users.info` → email → active workspace member → takeover permission — and
+persist **nothing**. (An earlier draft added a `slack_operator_identities` cache table; dropped, because the
+resolver re-checks authorization on every use anyway, so the table only ever saved one `users.info` round-trip
+on human-paced operator clicks — not worth a Slack-specific schema.) If caching is ever justified, the right
+shape is a **provider-neutral** `connector_operator_identities` table, not a Slack-specific one. Display name
+(audit provenance) comes from the same live `users.info` call.
 
 ## Conversations: typed channel context
 
@@ -82,12 +73,13 @@ plain-text input → `view_submission` → ownership `reply` (source=human_agent
 
 `SlackOperatorIdentityResolver.resolve({ installation, slackUserId }) → { accountId, displayName } | { rejected }`
 
-1. cache hit + member still authorized → return.
-2. else `users.info(slackUserId)` → email → workspace-member lookup by email → authorized? upsert + return.
-3. else `rejected` (caller posts ephemeral reply; nothing resolves).
+1. `users.info(slackUserId)` → email (rejected if no email).
+2. workspace-member lookup by email (rejected if no member).
+3. `workspace.conversation.takeover` permission check (rejected if not authorized).
+4. else `{ accountId, displayName }`. No persistence; rejected → caller posts an ephemeral reply.
 
-Narrow ports consumed: `WorkspaceMemberLookupPort.findByEmail(workspaceId, email)`, the existing permission
-check for `workspace.conversation.takeover`, and `SlackWebApiClient.usersInfo`.
+Narrow ports consumed: `SlackUserInfoLookupPort.usersInfo`, `WorkspaceMemberLookupPort.findByEmail(workspaceId,
+email)`, and `SlackOperatorPermissionPort.hasPermission` (for `workspace.conversation.takeover`).
 
 ## Audit
 

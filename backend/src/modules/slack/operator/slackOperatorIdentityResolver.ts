@@ -1,5 +1,4 @@
 import type { SlackInstallationRecord, SlackUserInfo } from "../public.js";
-import type { SlackOperatorIdentityRepositoryPort } from "../persistence/slackOperatorIdentityRepository.js";
 
 export interface WorkspaceMemberLookupResult {
   accountId: string;
@@ -30,9 +29,16 @@ export type SlackOperatorIdentityResolution =
 const displayNameForSlackUser = (user: SlackUserInfo): string | null =>
   user.realName?.trim() || user.name?.trim() || null;
 
+/**
+ * Resolve a Slack interactivity actor to an authorized Radioso operator account, fresh on every
+ * action: look up the Slack user's email, match an active workspace member, and confirm the
+ * takeover permission. Nothing is persisted — operator actions are human-paced, so a single
+ * `users.info` call per action is cheaper than a cache that would still have to re-check
+ * authorization on every use. The display name is taken from the same live call for audit
+ * provenance.
+ */
 export class SlackOperatorIdentityResolver {
   constructor(private readonly options: {
-    identities: SlackOperatorIdentityRepositoryPort;
     slack: SlackUserInfoLookupPort;
     workspaceMembers: WorkspaceMemberLookupPort;
     permissions: SlackOperatorPermissionPort;
@@ -42,21 +48,6 @@ export class SlackOperatorIdentityResolver {
     installation: SlackInstallationRecord;
     slackUserId: string;
   }): Promise<SlackOperatorIdentityResolution> {
-    const cached = await this.options.identities.findByInstallationAndSlackUser({
-      installationId: input.installation.id,
-      slackUserId: input.slackUserId,
-    });
-    if (cached) {
-      const authorized = await this.options.permissions.hasPermission({
-        accountId: cached.accountId,
-        workspaceId: input.installation.workspaceId,
-        permission: "workspace.conversation.takeover",
-      });
-      return authorized
-        ? { accountId: cached.accountId, displayName: cached.slackDisplayName }
-        : { rejected: true };
-    }
-
     const slackUser = await this.options.slack.usersInfo(input.slackUserId, input.installation);
     if (!slackUser.email) {
       return { rejected: true };
@@ -74,15 +65,6 @@ export class SlackOperatorIdentityResolver {
     if (!authorized) {
       return { rejected: true };
     }
-
-    const displayName = displayNameForSlackUser(slackUser);
-    await this.options.identities.upsert({
-      workspaceId: input.installation.workspaceId,
-      installationId: input.installation.id,
-      slackUserId: input.slackUserId,
-      accountId: member.accountId,
-      slackDisplayName: displayName,
-    });
-    return { accountId: member.accountId, displayName };
+    return { accountId: member.accountId, displayName: displayNameForSlackUser(slackUser) };
   }
 }

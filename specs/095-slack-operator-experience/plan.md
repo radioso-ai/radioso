@@ -23,9 +23,10 @@ the conversation's channel origin. No HITL decision/ownership rule is duplicated
 **Primary Dependencies**: Express, Zod, Pino; existing `SlackWebApiClient`, Slack OAuth/install substrate,
 approvals (`ApprovalDecisionService`), handoff/conversation-ownership service, conversation-actions outbox
 (`routine_action_requests`), accounts/workspace-membership + permissions, conversation engine
-**Storage**: PostgreSQL 16. New table `slack_operator_identities`; new typed `channel_context` JSONB on
-`conversations`; reuse `slack_installations`, `slack_channel_bindings` (escalation_channel_id = operator
-channel), `slack_conversation_links`, `routine_action_requests`, `conversation_ownership`, `pending_decisions`
+**Storage**: PostgreSQL 16. New typed `channel_context` JSONB on `conversations` (only schema change). Operator
+identity is resolved fresh per action (no table). Reuse `slack_installations`, `slack_channel_bindings`
+(escalation_channel_id = operator channel), `slack_conversation_links`, `routine_action_requests`,
+`conversation_ownership`, `pending_decisions`
 **Testing**: Vitest (unit/integration/contract), Supertest, Playwright; mock Slack (signed interactivity
 payloads, stubbed Slack Web API incl. `users.info`, `views.open`, `chat.update`)
 **Target Platform**: Linux server (Cloud + self-host)
@@ -99,11 +100,10 @@ backend/
 │   │   │   │   ├── slackInteractivityRouter.ts        # NEW transport: sig+replay verify, parse `payload`, route by type
 │   │   │   │   ├── slackInteractivityHandler.ts       # NEW orchestration: dispatch block_actions/view_submission
 │   │   │   │   ├── slackOperatorActionResolver.ts     # NEW orchestration: identity → HITL service ports
-│   │   │   │   ├── slackOperatorIdentityResolver.ts   # NEW: (team,user) → account via email match + authz + cache
+│   │   │   │   ├── slackOperatorIdentityResolver.ts   # NEW: (team,user) → account via email match + authz, resolved fresh (no persistence)
 │   │   │   │   └── slackBlockKitBuilder.ts            # NEW presentation: decision/ownership messages + reply modal + resolved update
 │   │   │   ├── outbox/slackPostAction.ts              # EXTEND: interactive (blocks) variant + chat.update support
-│   │   │   ├── manifest/slackManifest.ts              # EXTEND: interactivity.is_enabled + request_url; +users:read,users:read.email
-│   │   │   └── persistence/slackOperatorIdentityRepository.ts  # NEW
+│   │   │   └── manifest/slackManifest.ts              # EXTEND: interactivity.is_enabled + request_url; +users:read,users:read.email
 │   │   ├── connectors/plugins/slack/                 # inbound channel (extend)
 │   │   │   ├── slackPlugin.ts                          # EXTEND: mount interactivity router; supply channel context to chat.answer
 │   │   │   └── slackMessageHandler.ts                 # EXTEND: pass ConversationChannelContext via sourceContext
@@ -117,8 +117,7 @@ backend/
 │   │   ├── chat/services/actions/                     # existing approval.request/handoff.notify handlers → call dispatcher
 │   │   └── chat/services/chatHistoryService.ts        # EXTEND: map conversations.channel_context into summary/detail
 │   ├── db/migrations/
-│   │   ├── 1xx_slack_operator_identities.sql          # NEW
-│   │   └── 1xx_conversation_channel_context.sql       # NEW (channel_context JSONB on conversations)
+│   │   └── 110_conversation_channel_context.sql       # NEW (channel_context JSONB on conversations)
 │   └── app/composition/                               # wire router, dispatchers, sinks, identity resolver
 └── tests/ (contract|integration|unit)/slack + approvals + handoff + history
 
@@ -146,8 +145,8 @@ composition assembles the concrete sinks/resolvers. No existing god-file absorbs
 - **Domain Layer**: `ApprovalDecisionService` (approvals), conversation-ownership service (handoff),
   decision/ownership invariants — **unchanged**. New domain types: `OperatorNotification`,
   `ConversationChannelContext`, customer-reply provider routing.
-- **Persistence/Integration Layer**: `slackOperatorIdentityRepository.ts`; `conversations.channel_context`
-  read/write via the conversation repository; interactive posting + `chat.update` via `SlackWebApiClient`;
+- **Persistence/Integration Layer**: `conversations.channel_context` read/write via the conversation
+  repository (Kysely; operator identity has no persistence); interactive posting + `chat.update` via `SlackWebApiClient`;
   `users.info`/`views.open` via `SlackWebApiClient` extensions.
 - **Application Composition**: registers the interactivity router on the connector host, the operator-notification
   dispatcher + email/webhook + slack sinks, the customer-reply delivery dispatcher + provider sinks, the identity
@@ -162,8 +161,7 @@ composition assembles the concrete sinks/resolvers. No existing god-file absorbs
 
 ## Implementation Phases (map to spec user stories)
 
-- **Phase A — Foundations** (serves US1/US2/US3/US4): migrations (`slack_operator_identities`,
-  `conversations.channel_context`); manifest interactivity + scopes; interactivity router (sig+replay+parse+
+- **Phase A — Foundations** (serves US1/US2/US3/US4): migration (`conversations.channel_context`); manifest interactivity + scopes; interactivity router (sig+replay+parse+
   route skeleton, 401 on bad sig); `SlackOperatorIdentityResolver` (+ `users.info`); `ConversationChannelContext`
   contract + connector populates it via `sourceContext` + conversation persistence (needed by US2 reply routing);
   interactive `slack.post` payload variant + handler + `chat.update`; composition wiring. **TDD throughout.**

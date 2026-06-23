@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { SlackOperatorIdentityResolver } from "../../../src/modules/slack/operator/slackOperatorIdentityResolver.js";
+import type { WorkspaceMemberLookupResult } from "../../../src/modules/slack/operator/slackOperatorIdentityResolver.js";
 import type { SlackInstallationRecord, SlackUserInfo } from "../../../src/modules/slack/public.js";
-import type { SlackOperatorIdentityRecord } from "../../../src/modules/slack/persistence/slackOperatorIdentityRepository.js";
 
 const installation: SlackInstallationRecord = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -15,22 +15,7 @@ const installation: SlackInstallationRecord = {
   updatedAt: new Date("2026-06-23T12:00:00.000Z"),
 };
 
-const cachedIdentity = {
-  id: "identity-1",
-  workspaceId: installation.workspaceId,
-  installationId: installation.id,
-  slackUserId: "U123",
-  accountId: "account-1",
-  slackDisplayName: "Cached Dana",
-  createdAt: new Date(),
-  updatedAt: new Date(),
-};
-
-const createResolver = (overrides: Partial<ConstructorParameters<typeof SlackOperatorIdentityResolver>[0]> = {}) => {
-  const identities = {
-    findByInstallationAndSlackUser: vi.fn(async (): Promise<SlackOperatorIdentityRecord | null> => null),
-    upsert: vi.fn(async () => cachedIdentity),
-  };
+const createResolver = () => {
   const slack = {
     usersInfo: vi.fn(async (): Promise<SlackUserInfo> => ({
       id: "U123",
@@ -40,40 +25,20 @@ const createResolver = (overrides: Partial<ConstructorParameters<typeof SlackOpe
     })),
   };
   const workspaceMembers = {
-    findByEmail: vi.fn(async () => ({ accountId: "account-1", userId: "user-1" })),
+    findByEmail: vi.fn(
+      async (): Promise<WorkspaceMemberLookupResult | null> => ({ accountId: "account-1", userId: "user-1" }),
+    ),
   };
   const permissions = {
     hasPermission: vi.fn(async () => true),
   };
-  const resolver = new SlackOperatorIdentityResolver({
-    identities,
-    slack,
-    workspaceMembers,
-    permissions,
-    ...overrides,
-  });
-  return { resolver, identities, slack, workspaceMembers, permissions };
+  const resolver = new SlackOperatorIdentityResolver({ slack, workspaceMembers, permissions });
+  return { resolver, slack, workspaceMembers, permissions };
 };
 
 describe("SlackOperatorIdentityResolver", () => {
-  it("returns a cached identity after re-checking current authorization", async () => {
-    const { resolver, identities, slack, permissions } = createResolver();
-    identities.findByInstallationAndSlackUser.mockResolvedValueOnce(cachedIdentity);
-
-    await expect(resolver.resolve({ installation, slackUserId: "U123" })).resolves.toEqual({
-      accountId: "account-1",
-      displayName: "Cached Dana",
-    });
-    expect(permissions.hasPermission).toHaveBeenCalledWith({
-      accountId: "account-1",
-      workspaceId: installation.workspaceId,
-      permission: "workspace.conversation.takeover",
-    });
-    expect(slack.usersInfo).not.toHaveBeenCalled();
-  });
-
-  it("looks up Slack email, matches a workspace member, checks permission, and caches the identity", async () => {
-    const { resolver, identities, slack, workspaceMembers } = createResolver();
+  it("matches a workspace member by Slack email and checks the takeover permission", async () => {
+    const { resolver, slack, workspaceMembers, permissions } = createResolver();
 
     await expect(resolver.resolve({ installation, slackUserId: "U123" })).resolves.toEqual({
       accountId: "account-1",
@@ -81,22 +46,12 @@ describe("SlackOperatorIdentityResolver", () => {
     });
     expect(slack.usersInfo).toHaveBeenCalledWith("U123", installation);
     expect(workspaceMembers.findByEmail).toHaveBeenCalledWith(installation.workspaceId, "dana@example.com");
-    expect(identities.upsert).toHaveBeenCalledWith({
-      workspaceId: installation.workspaceId,
-      installationId: installation.id,
-      slackUserId: "U123",
+    expect(permissions.hasPermission).toHaveBeenCalledWith({
       accountId: "account-1",
-      slackDisplayName: "Dana Scully",
+      userId: "user-1",
+      workspaceId: installation.workspaceId,
+      permission: "workspace.conversation.takeover",
     });
-  });
-
-  it("rejects a cached identity when the account no longer has takeover permission", async () => {
-    const { resolver, identities, slack, permissions } = createResolver();
-    identities.findByInstallationAndSlackUser.mockResolvedValueOnce(cachedIdentity);
-    permissions.hasPermission.mockResolvedValue(false);
-
-    await expect(resolver.resolve({ installation, slackUserId: "U123" })).resolves.toEqual({ rejected: true });
-    expect(slack.usersInfo).not.toHaveBeenCalled();
   });
 
   it("rejects when Slack does not expose an email", async () => {
@@ -107,12 +62,18 @@ describe("SlackOperatorIdentityResolver", () => {
     expect(workspaceMembers.findByEmail).not.toHaveBeenCalled();
   });
 
-  it("rejects when the email is not an authorized workspace member", async () => {
-    const { resolver, workspaceMembers, permissions, identities } = createResolver();
-    workspaceMembers.findByEmail.mockResolvedValueOnce({ accountId: "account-1", userId: "user-1" });
+  it("rejects when the email is not a workspace member", async () => {
+    const { resolver, workspaceMembers, permissions } = createResolver();
+    workspaceMembers.findByEmail.mockResolvedValueOnce(null);
+
+    await expect(resolver.resolve({ installation, slackUserId: "U123" })).resolves.toEqual({ rejected: true });
+    expect(permissions.hasPermission).not.toHaveBeenCalled();
+  });
+
+  it("rejects when the member lacks the takeover permission", async () => {
+    const { resolver, permissions } = createResolver();
     permissions.hasPermission.mockResolvedValueOnce(false);
 
     await expect(resolver.resolve({ installation, slackUserId: "U123" })).resolves.toEqual({ rejected: true });
-    expect(identities.upsert).not.toHaveBeenCalled();
   });
 });

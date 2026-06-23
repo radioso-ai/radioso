@@ -721,16 +721,6 @@ export interface SlackInstallations {
   updated_at: Generated<Timestamp>;
   workspace_id: string;
 }
-export interface SlackOperatorIdentities {
-  account_id: string;
-  created_at: Generated<Timestamp>;
-  id: string;
-  installation_id: string;
-  slack_display_name: string | null;
-  slack_user_id: string;
-  updated_at: Generated<Timestamp>;
-  workspace_id: string;
-}
 
 export interface UsageDailyRollups {
   account_id: string;
@@ -925,7 +915,6 @@ export interface DB {
   slack_conversation_links: SlackConversationLinks;
   slack_inbound_events: SlackInboundEvents;
   slack_installations: SlackInstallations;
-  slack_operator_identities: SlackOperatorIdentities;
   usage_daily_rollups: UsageDailyRollups;
   usage_events: UsageEvents;
   users: Users;

@@ -16,7 +16,6 @@ import {
   SlackInstallationRepository,
   SlackInstallationService,
   SlackInteractivityHandler,
-  SlackOperatorIdentityRepository,
   SlackOperatorIdentityResolver,
   SlackWebApiClient,
 } from "../../../slack/public.js";
@@ -76,7 +75,6 @@ export class SlackPlugin implements ConnectorPlugin {
       encryptionKey: this.options.encryptionKey,
     });
     const operatorIdentityResolver = new SlackOperatorIdentityResolver({
-      identities: new SlackOperatorIdentityRepository(db),
       workspaceMembers: new PostgresWorkspaceMemberLookup(db),
       permissions: new PostgresSlackOperatorPermission(db),
       slack: {

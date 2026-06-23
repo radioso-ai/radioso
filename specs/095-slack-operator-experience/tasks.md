@@ -9,7 +9,7 @@
 
 ## Phase A — Foundations (blocking; serves US1–US4)
 
-- [ ] A01 [P] Migration `slack_operator_identities` (`backend/src/db/migrations/1xx_slack_operator_identities.sql`) + repository `slackOperatorIdentityRepository.ts` + repo unit test.
+- [ ] A01 [P] (revised) Operator identity is resolved **fresh per action** (no table/repository) — `SlackOperatorIdentityResolver` only (see A04/A05). Owner decision: avoid a Slack-specific table.
 - [ ] A02 [P] Migration `conversations.channel_context JSONB` (`1xx_conversation_channel_context.sql`); extend conversation repository read/write + unit test (round-trip + null back-compat).
 - [ ] A03 [P] `ConversationChannelContext` discriminated union in `packages/conversation-contract` (+ export); type-only.
 - [ ] A04 TEST: `slackOperatorIdentityResolver` — cache hit, email-match upsert, member-removed re-check, unauthorized → rejected, no-email → rejected (`backend/tests/unit/slack/operator-identity-resolver.test.ts`).

@@ -135,7 +135,7 @@ In the dashboard Activity view, a conversation that came from Slack shows a **Sl
 - **New Seams Required**:
   - `OperatorNotificationChannel` port (sinks: existing email + webhook, plus a new **Slack interactive** sink) so `approval.request` / `handoff.notify` / gap delivery fan out without each handler knowing Slack. The Slack sink owns Block Kit construction.
   - Slack **interactivity router** + `SlackInteractivityHandler` (inbound adapter).
-  - `SlackOperatorIdentityResolver` + `slack_operator_identities` persistence (team_id + slack_user_id → account_id, lazily linked by email).
+  - `SlackOperatorIdentityResolver` — maps a Slack user (team_id + slack_user_id) → authorized Radioso account by email match, **resolved fresh per action with no persistence** (no Slack-specific table).
   - Block Kit **message builder** keyed by event type + action set (presentation, Slack-module-owned).
   - Typed `ConversationChannelContext` (discriminated union) in `@radioso/conversation-contract`, supplied by connectors via the chat `sourceContext` and persisted on the conversation; consumed by the history presenter and frontend.
   - Channel-aware **customer reply delivery** for human-agent replies (Slack-origin → customer DM/thread post; web-origin → existing web path).

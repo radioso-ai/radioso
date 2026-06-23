@@ -462,6 +462,63 @@ describe("document ingestion", () => {
     expect(current?.sourceContent).toBe("Second content");
   });
 
+  it("skips reprocessing when both content and searchable metadata are unchanged", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(documentRepository, auditService, () => jobRepository.getQueueSnapshot());
+
+    const metadata = { sourceUrl: "https://example.com/p", author: "Sabine Kaphingst" };
+    const first = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Synced doc",
+      content: "Same body",
+      externalDocumentId: "wp_post_42",
+      metadata,
+    } as any);
+
+    await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Synced doc",
+      content: "Same body",
+      externalDocumentId: "wp_post_42",
+      metadata: { ...metadata },
+    } as any);
+
+    const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
+    expect(current?.revision).toBe(1);
+  });
+
+  it("re-ingests a synced document when only searchable metadata changes (e.g. author becomes available)", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(documentRepository, auditService, () => jobRepository.getQueueSnapshot());
+
+    const first = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Synced doc",
+      content: "Same body",
+      externalDocumentId: "wp_post_42",
+      metadata: { sourceUrl: "https://example.com/p" },
+    } as any);
+
+    const second = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Synced doc",
+      content: "Same body",
+      externalDocumentId: "wp_post_42",
+      metadata: { sourceUrl: "https://example.com/p", author: "Sabine Kaphingst" },
+    } as any);
+
+    expect(second.documentId).toBe(first.documentId);
+    const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
+    expect(current?.revision).toBe(2);
+    expect(current?.metadata).toMatchObject({ author: "Sabine Kaphingst" });
+  });
+
   it("allows first assignment of externalDocumentId on update and rejects later reassignment", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);

@@ -22,6 +22,11 @@ const REST_BASE_BY_POST_TYPE: Record<string, string> = {
 
 const restBaseFor = (postType: string): string => REST_BASE_BY_POST_TYPE[postType] ?? postType;
 
+// `_embedded.author` carries the author's display name (the post object only has
+// a numeric id). `_links.author` must survive `_fields` for `_embed` to resolve.
+const POST_FIELDS =
+  "id,type,status,slug,link,modified_gmt,title,content,excerpt,author,_links.author,_embedded.author";
+
 export interface WordpressClientConfig {
   siteUrl: string;
   username?: string;
@@ -40,7 +45,16 @@ export interface WordpressRestPost {
   title: { rendered: string };
   content: { rendered: string; raw?: string };
   excerpt?: { rendered: string };
+  /** Numeric author id; the display name only arrives via `_embedded.author`. */
   author?: number;
+  /**
+   * Populated when the request asks for `_embed`. The author's display name is
+   * not part of the post object itself, so we embed the author relation to keep
+   * the byline (otherwise theme-rendered chrome the REST API never returns).
+   */
+  _embedded?: {
+    author?: Array<{ id?: number; name?: string }>;
+  };
 }
 
 export interface FetchPostsOptions {
@@ -76,7 +90,8 @@ export class WordpressClient {
       orderby: "modified",
       order: "asc",
       status: "publish",
-      _fields: "id,type,status,slug,link,modified_gmt,title,content,excerpt,author",
+      _fields: POST_FIELDS,
+      _embed: "author",
     });
     if (options.modifiedAfter) {
       params.set("modified_after", options.modifiedAfter);
@@ -111,7 +126,7 @@ export class WordpressClient {
   }
 
   async fetchPostById(type: string, postId: number): Promise<WordpressRestPost | null> {
-    const url = `${this.baseUrl}/wp-json/wp/v2/${encodeURIComponent(restBaseFor(type))}/${postId}?_fields=id,type,status,slug,link,modified_gmt,title,content,excerpt,author`;
+    const url = `${this.baseUrl}/wp-json/wp/v2/${encodeURIComponent(restBaseFor(type))}/${postId}?_fields=${encodeURIComponent(POST_FIELDS)}&_embed=author`;
     const response = await this.fetchImpl(url, {
       headers: this.authHeader ? { Authorization: this.authHeader, Accept: "application/json" } : { Accept: "application/json" },
     });

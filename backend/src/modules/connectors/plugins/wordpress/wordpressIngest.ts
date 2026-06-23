@@ -54,6 +54,14 @@ const pickHtml = (raw: string | undefined, rendered: string | undefined): string
   return "";
 };
 
+// The author name is theme-rendered chrome the post body never contains, so we
+// surface it as metadata. The REST API only exposes it under the embedded
+// author relation (see WordpressClient `_embed=author`).
+const extractRestAuthorName = (post: WordpressRestPost): string | undefined => {
+  const name = post._embedded?.author?.[0]?.name;
+  return typeof name === "string" && name.trim().length > 0 ? name.trim() : undefined;
+};
+
 export const mapWebhookPostToIngestInput = (
   workspaceId: string,
   post: WebhookPostPayload,
@@ -81,6 +89,7 @@ export const mapRestPostToIngestInput = (
   workspaceId: string,
   post: WordpressRestPost,
 ): IngestInput => {
+  const authorName = extractRestAuthorName(post);
   return {
     workspaceId,
     title: post.title.rendered || post.slug,
@@ -95,6 +104,7 @@ export const mapRestPostToIngestInput = (
       wp_slug: post.slug,
       sourceUrl: post.link,
       modified_at: post.modified_gmt,
+      ...(authorName ? { author: authorName } : {}),
     },
   };
 };

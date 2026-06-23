@@ -28,6 +28,7 @@ export const renderMetadataSearchText = (metadata: Record<string, unknown>): str
   const dateFrom = normalizeIsoDay(metadata.dateFrom);
   const dateTo = normalizeIsoDay(metadata.dateTo);
   const url = pickMetadataUrl(metadata);
+  const author = typeof metadata.author === "string" ? normalizeWhitespace(metadata.author) : "";
   const monthKeys = collectMonthKeys(dateFrom, dateTo);
   const monthLabels = monthKeys.flatMap((monthKey) => renderMonthLabels(monthKey));
 
@@ -37,6 +38,7 @@ export const renderMetadataSearchText = (metadata: Record<string, unknown>): str
     ...monthKeys.map((monthKey) => `Month key: ${monthKey}`),
     ...monthLabels.map((label) => `Month label: ${label}`),
     url ? `URL: ${url}` : "",
+    author ? `Author: ${author}` : "",
   ].filter((part) => part.length > 0);
 
   return parts.join(" | ");

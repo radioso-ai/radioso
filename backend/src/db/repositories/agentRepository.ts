@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import type { Database } from "../../shared/infra/database.js";
+import { sql } from "kysely";
+
 import type { RoutineDirectiveScopeOrphan } from "../../modules/routines/public.js";
 import { conflict, notFound } from "../../shared/domain/errors.js";
 import {
@@ -25,6 +26,8 @@ import {
   type NormalizedAuthoredDirectiveInput,
 } from "../../modules/agents/public.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../modules/documents/contracts/index.js";
+import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 import type { LlmProviderName } from "../../shared/infra/llm/providerTypes.js";
 
 interface AgentRow {
@@ -87,10 +90,6 @@ interface DirectiveScopeTagRow {
   scope_tags: string[];
 }
 
-interface QueryRunner {
-  query(text: string, params?: unknown[]): Promise<unknown[] | { rows: unknown[] }>;
-}
-
 export interface RepointRoutineScopeTagsInput {
   agentId: string;
   fromDefinitionId: string;
@@ -129,7 +128,15 @@ const isAgentDirectiveNameUniqueViolation = (error: unknown): boolean => {
 const directiveNameConflict = (name: string) =>
   conflict(`A directive named "${name}" already exists for this agent.`);
 
-const agentColumns = `
+/**
+ * The agent projection: the agents row plus two correlated subqueries that aggregate the
+ * normalized `agent_document_sources` (manual-source NULL → the sentinel id) and the child
+ * `agent_directives` as a JSON array. The aggregation/ordering shape is load-bearing for
+ * `mapAgent`, so it stays a single `sql` fragment (the builder can't model the COALESCE'd
+ * ARRAY_AGG / json_agg correlated subqueries without more noise than the SQL itself) and is
+ * spliced into each agent SELECT. The sentinel id is a trusted constant, never user input.
+ */
+const agentColumns = sql`
   id,
   workspace_id,
   name,
@@ -138,7 +145,7 @@ const agentColumns = `
   COALESCE(
     (
       SELECT ARRAY_AGG(
-        COALESCE(source_id::text, '${MANUALLY_ADDED_DOCUMENTS_SOURCE_ID}')
+        COALESCE(source_id::text, ${sql.lit(MANUALLY_ADDED_DOCUMENTS_SOURCE_ID)})
         ORDER BY source_id IS NOT NULL, source_id::text
       )
       FROM agent_document_sources
@@ -280,21 +287,6 @@ const mapDirectiveRow = (row: AgentDirectiveRow): AuthoredDirective => ({
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
 });
-
-const queryRows = <T>(result: unknown[] | { rows: unknown[] }): T[] =>
-  (Array.isArray(result) ? result : result.rows) as T[];
-
-const queryPort = (database: Database, transaction: unknown): QueryRunner => {
-  if (
-    transaction &&
-    typeof transaction === "object" &&
-    "query" in transaction &&
-    typeof (transaction as { query?: unknown }).query === "function"
-  ) {
-    return transaction as QueryRunner;
-  }
-  return database;
-};
 
 const hasOwn = <K extends PropertyKey>(value: object, key: K): value is object & Record<K, unknown> =>
   Object.prototype.hasOwnProperty.call(value, key);
@@ -472,7 +464,7 @@ export interface AgentRepositoryPort {
 
 export class AgentRepository implements AgentRepositoryPort {
   constructor(
-    private readonly database: Database,
+    private readonly db: Db,
     private readonly surfaceExtensions?: AgentSurfaceExtensionRegistry,
     private readonly skillSettings?: AgentSkillSettingsRegistry,
   ) {}
@@ -482,39 +474,38 @@ export class AgentRepository implements AgentRepositoryPort {
       extensions: this.surfaceExtensions,
       skillSettings: this.skillSettings,
     });
-    return this.database.withTransaction(async (client) => {
+    return this.db.transaction().execute(async (trx) => {
       const agentId = randomUUID();
-      const result = await client.query<AgentRow>(
-        `INSERT INTO agents (
-           id,
-           workspace_id,
-           name,
-           retrieval_enabled,
-           source_scope_mode,
-           behavior_settings,
-           greeting_settings,
-           output_modes,
-           skill_settings,
-           chat_provider,
-           chat_model
-         )
-         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11)
-         RETURNING ${agentColumns}`,
-        [
-          agentId,
-          workspaceId,
-          normalized.name,
-          normalized.retrievalEnabled,
-          normalized.sourceScope.mode,
-          JSON.stringify(toBehaviorSettings(normalized)),
-          JSON.stringify(toGreetingSettings(normalized)),
-          JSON.stringify(toOutputModes(normalized)),
-          JSON.stringify(toSkillSettings(normalized)),
-          normalized.chatModelOverride?.provider ?? null,
-          normalized.chatModelOverride?.model ?? null,
-        ],
-      );
-      await this.replaceSourceScope(client, agentId, normalized.sourceScope);
+      const result = await sql<AgentRow>`
+        INSERT INTO agents (
+          id,
+          workspace_id,
+          name,
+          retrieval_enabled,
+          source_scope_mode,
+          behavior_settings,
+          greeting_settings,
+          output_modes,
+          skill_settings,
+          chat_provider,
+          chat_model
+        )
+        VALUES (
+          ${agentId},
+          ${workspaceId},
+          ${normalized.name},
+          ${normalized.retrievalEnabled},
+          ${normalized.sourceScope.mode},
+          ${toJsonb(toBehaviorSettings(normalized))},
+          ${toJsonb(toGreetingSettings(normalized))},
+          ${toJsonb(toOutputModes(normalized))},
+          ${toJsonb(toSkillSettings(normalized))},
+          ${normalized.chatModelOverride?.provider ?? null},
+          ${normalized.chatModelOverride?.model ?? null}
+        )
+        RETURNING ${agentColumns}
+      `.execute(trx);
+      await this.replaceSourceScope(trx, agentId, normalized.sourceScope);
       const row = result.rows[0];
       if (!row) {
         throw new Error("Expected created agent");
@@ -527,53 +518,52 @@ export class AgentRepository implements AgentRepositoryPort {
   }
 
   async findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<AgentRecord | null> {
-    const row = await this.database.queryOptional<AgentRow>(
-      `SELECT ${agentColumns} FROM agents WHERE id = $1 AND workspace_id = $2`,
-      [agentId, workspaceId],
-    );
+    const result = await sql<AgentRow>`
+      SELECT ${agentColumns} FROM agents WHERE id = ${agentId} AND workspace_id = ${workspaceId}
+    `.execute(this.db);
+    const row = result.rows[0];
     return row ? mapAgent(row, this.surfaceExtensions, this.skillSettings) : null;
   }
 
   async findDefaultByWorkspaceId(workspaceId: string): Promise<AgentRecord | null> {
-    const row = await this.database.queryOptional<AgentRow>(
-      `SELECT ${agentColumns}
-       FROM agents
-       WHERE id = (SELECT default_agent_id FROM workspaces WHERE id = $1)
-         AND workspace_id = $1`,
-      [workspaceId],
-    );
+    const result = await sql<AgentRow>`
+      SELECT ${agentColumns}
+      FROM agents
+      WHERE id = (SELECT default_agent_id FROM workspaces WHERE id = ${workspaceId})
+        AND workspace_id = ${workspaceId}
+    `.execute(this.db);
+    const row = result.rows[0];
     return row ? mapAgent(row, this.surfaceExtensions, this.skillSettings) : null;
   }
 
   async findByAnonymousChatToken(token: string): Promise<AgentRecord | null> {
-    const row = await this.database.queryOptional<AgentRow>(
-      `SELECT ${agentColumns}
-       FROM agents
-       WHERE output_modes #>> '{anonymousChat,token}' = $1`,
-      [token],
-    );
+    const result = await sql<AgentRow>`
+      SELECT ${agentColumns}
+      FROM agents
+      WHERE output_modes #>> '{anonymousChat,token}' = ${token}
+    `.execute(this.db);
+    const row = result.rows[0];
     return row ? mapAgent(row, this.surfaceExtensions, this.skillSettings) : null;
   }
 
   async findByWebsiteEmbedToken(token: string): Promise<AgentRecord | null> {
-    const row = await this.database.queryOptional<AgentRow>(
-      `SELECT ${agentColumns}
-       FROM agents
-       WHERE output_modes #>> '{websiteEmbed,token}' = $1`,
-      [token],
-    );
+    const result = await sql<AgentRow>`
+      SELECT ${agentColumns}
+      FROM agents
+      WHERE output_modes #>> '{websiteEmbed,token}' = ${token}
+    `.execute(this.db);
+    const row = result.rows[0];
     return row ? mapAgent(row, this.surfaceExtensions, this.skillSettings) : null;
   }
 
   async listByWorkspaceId(workspaceId: string): Promise<AgentRecord[]> {
-    const rows = await this.database.query<AgentRow>(
-      `SELECT ${agentColumns}
-       FROM agents
-       WHERE workspace_id = $1
-       ORDER BY created_at ASC, id ASC`,
-      [workspaceId],
-    );
-    return rows.map((row) => mapAgent(row, this.surfaceExtensions, this.skillSettings));
+    const result = await sql<AgentRow>`
+      SELECT ${agentColumns}
+      FROM agents
+      WHERE workspace_id = ${workspaceId}
+      ORDER BY created_at ASC, id ASC
+    `.execute(this.db);
+    return result.rows.map((row) => mapAgent(row, this.surfaceExtensions, this.skillSettings));
   }
 
   async update(agentId: string, workspaceId: string, input: AgentInput, options: AgentUpdateOptions = {}): Promise<AgentRecord> {
@@ -591,43 +581,29 @@ export class AgentRepository implements AgentRepositoryPort {
       { extensions: this.surfaceExtensions, skillSettings: this.skillSettings },
     );
     const expectedUpdatedAt = options.expectedUpdatedAt ?? current.updatedAt;
-    return this.database.withTransaction(async (client) => {
-      const result = await client.query<AgentRow>(
-        `UPDATE agents
-         SET name = $1,
-             retrieval_enabled = $2,
-             source_scope_mode = $3,
-             behavior_settings = $4::jsonb,
-             greeting_settings = $5::jsonb,
-             output_modes = $6::jsonb,
-             skill_settings = $7::jsonb,
-             chat_provider = $8,
-             chat_model = $9,
-             updated_at = NOW()
-         WHERE id = $10
-           AND workspace_id = $11
-           AND date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', $12::timestamptz)
-         RETURNING ${agentColumns}`,
-        [
-          normalized.name,
-          normalized.retrievalEnabled,
-          normalized.sourceScope.mode,
-          JSON.stringify(toBehaviorSettings(normalized)),
-          JSON.stringify(toGreetingSettings(normalized)),
-          JSON.stringify(toOutputModes(normalized)),
-          JSON.stringify(toSkillSettings(normalized)),
-          normalized.chatModelOverride?.provider ?? null,
-          normalized.chatModelOverride?.model ?? null,
-          agentId,
-          workspaceId,
-          expectedUpdatedAt,
-        ],
-      );
+    return this.db.transaction().execute(async (trx) => {
+      const result = await sql<AgentRow>`
+        UPDATE agents
+        SET name = ${normalized.name},
+            retrieval_enabled = ${normalized.retrievalEnabled},
+            source_scope_mode = ${normalized.sourceScope.mode},
+            behavior_settings = ${toJsonb(toBehaviorSettings(normalized))},
+            greeting_settings = ${toJsonb(toGreetingSettings(normalized))},
+            output_modes = ${toJsonb(toOutputModes(normalized))},
+            skill_settings = ${toJsonb(toSkillSettings(normalized))},
+            chat_provider = ${normalized.chatModelOverride?.provider ?? null},
+            chat_model = ${normalized.chatModelOverride?.model ?? null},
+            updated_at = ${currentTimestamp()}
+        WHERE id = ${agentId}
+          AND workspace_id = ${workspaceId}
+          AND date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', ${expectedUpdatedAt}::timestamptz)
+        RETURNING ${agentColumns}
+      `.execute(trx);
       const row = result.rows[0];
       if (!row) {
         throw conflict("Agent was updated by another writer; reload before saving again");
       }
-      await this.replaceSourceScope(client, agentId, normalized.sourceScope);
+      await this.replaceSourceScope(trx, agentId, normalized.sourceScope);
       return mapAgent({
         ...row,
         source_ids: normalized.sourceScope.mode === "selected" ? normalized.sourceScope.sourceIds : [],
@@ -636,73 +612,57 @@ export class AgentRepository implements AgentRepositoryPort {
   }
 
   async listDirectives(agentId: string, workspaceId: string): Promise<AuthoredDirective[]> {
-    const rows = await this.database.query<AgentDirectiveRow>(
-      `SELECT agent_directives.*
-       FROM agent_directives
-       INNER JOIN agents ON agents.id = agent_directives.agent_id
-       WHERE agent_directives.agent_id = $1
-         AND agents.workspace_id = $2
-       ORDER BY agent_directives.created_at ASC, agent_directives.id ASC`,
-      [agentId, workspaceId],
-    );
-    return rows.map(mapDirectiveRow);
+    const result = await sql<AgentDirectiveRow>`
+      SELECT agent_directives.*
+      FROM agent_directives
+      INNER JOIN agents ON agents.id = agent_directives.agent_id
+      WHERE agent_directives.agent_id = ${agentId}
+        AND agents.workspace_id = ${workspaceId}
+      ORDER BY agent_directives.created_at ASC, agent_directives.id ASC
+    `.execute(this.db);
+    return result.rows.map(mapDirectiveRow);
   }
 
   async createDirective(agentId: string, workspaceId: string, input: AuthoredDirectiveInput): Promise<AuthoredDirective> {
     const directive: NormalizedAuthoredDirectiveInput = authoredDirectiveInputSchema.parse(input);
-    return this.database.withTransaction(async (client) => {
+    return this.db.transaction().execute(async (trx) => {
       let result: { rows: AgentDirectiveRow[] };
       try {
-        result = await client.query<AgentDirectiveRow>(
-          `INSERT INTO agent_directives (
-             agent_id,
-             name,
-             condition_kind,
-             condition_description,
-             action,
-             priority,
-             required_capabilities,
-             depends_on,
-             excludes,
-             routes,
-             scope_tags,
-             description,
-             metadata
-           )
-           SELECT
-             agents.id,
-             $3,
-             $4,
-             $5,
-             $6,
-             NULL,
-             $7::text[],
-             $8::text[],
-             $9::text[],
-             $10::text[],
-             $11::text[],
-             $12,
-             $13::jsonb
-           FROM agents
-           WHERE agents.id = $1
-             AND agents.workspace_id = $2
-           RETURNING *`,
-          [
-            agentId,
-            workspaceId,
-            directive.name,
-            directive.condition.kind,
-            directive.condition.kind === "contextual" ? directive.condition.description : null,
-            directive.action,
-            directive.requiredCapabilities,
-            directive.dependsOn,
-            directive.excludes,
-            directive.routes,
-            directive.tags,
-            directive.description,
-            JSON.stringify(directive.metadata),
-          ],
-        );
+        result = await sql<AgentDirectiveRow>`
+          INSERT INTO agent_directives (
+            agent_id,
+            name,
+            condition_kind,
+            condition_description,
+            action,
+            priority,
+            required_capabilities,
+            depends_on,
+            excludes,
+            routes,
+            scope_tags,
+            description,
+            metadata
+          )
+          SELECT
+            agents.id,
+            ${directive.name},
+            ${directive.condition.kind},
+            ${directive.condition.kind === "contextual" ? directive.condition.description : null},
+            ${directive.action},
+            NULL,
+            ${sql.val(directive.requiredCapabilities)}::text[],
+            ${sql.val(directive.dependsOn)}::text[],
+            ${sql.val(directive.excludes)}::text[],
+            ${sql.val(directive.routes)}::text[],
+            ${sql.val(directive.tags)}::text[],
+            ${directive.description},
+            ${toJsonb(directive.metadata)}
+          FROM agents
+          WHERE agents.id = ${agentId}
+            AND agents.workspace_id = ${workspaceId}
+          RETURNING *
+        `.execute(trx);
       } catch (error) {
         if (isAgentDirectiveNameUniqueViolation(error)) {
           throw directiveNameConflict(directive.name);
@@ -741,43 +701,28 @@ export class AgentRepository implements AgentRepositoryPort {
     });
     let rows: AgentDirectiveRow[];
     try {
-      rows = await this.database.query<AgentDirectiveRow>(
-        `UPDATE agent_directives
-         SET name = $4,
-             condition_kind = $5,
-             condition_description = $6,
-             action = $7,
-             required_capabilities = $8::text[],
-             depends_on = $9::text[],
-             excludes = $10::text[],
-             routes = $11::text[],
-             scope_tags = $12::text[],
-             description = $13,
-             metadata = $14::jsonb,
-             updated_at = NOW()
-         FROM agents
-         WHERE agent_directives.id = $1
-           AND agent_directives.agent_id = $2
-           AND agents.id = agent_directives.agent_id
-           AND agents.workspace_id = $3
-         RETURNING agent_directives.*`,
-        [
-          directiveId,
-          agentId,
-          workspaceId,
-          directive.name,
-          directive.condition.kind,
-          directive.condition.kind === "contextual" ? directive.condition.description : null,
-          directive.action,
-          directive.requiredCapabilities,
-          directive.dependsOn,
-          directive.excludes,
-          directive.routes,
-          directive.tags,
-          directive.description,
-          JSON.stringify(directive.metadata),
-        ],
-      );
+      const result = await sql<AgentDirectiveRow>`
+        UPDATE agent_directives
+        SET name = ${directive.name},
+            condition_kind = ${directive.condition.kind},
+            condition_description = ${directive.condition.kind === "contextual" ? directive.condition.description : null},
+            action = ${directive.action},
+            required_capabilities = ${sql.val(directive.requiredCapabilities)}::text[],
+            depends_on = ${sql.val(directive.dependsOn)}::text[],
+            excludes = ${sql.val(directive.excludes)}::text[],
+            routes = ${sql.val(directive.routes)}::text[],
+            scope_tags = ${sql.val(directive.tags)}::text[],
+            description = ${directive.description},
+            metadata = ${toJsonb(directive.metadata)},
+            updated_at = ${currentTimestamp()}
+        FROM agents
+        WHERE agent_directives.id = ${directiveId}
+          AND agent_directives.agent_id = ${agentId}
+          AND agents.id = agent_directives.agent_id
+          AND agents.workspace_id = ${workspaceId}
+        RETURNING agent_directives.*
+      `.execute(this.db);
+      rows = result.rows;
     } catch (error) {
       if (isAgentDirectiveNameUniqueViolation(error)) {
         throw directiveNameConflict(directive.name);
@@ -792,37 +737,39 @@ export class AgentRepository implements AgentRepositoryPort {
   }
 
   async deleteDirective(agentId: string, workspaceId: string, directiveId: string): Promise<boolean> {
-    const affected = await this.database.execute(
-      `DELETE FROM agent_directives
-       USING agents
-       WHERE agent_directives.id = $1
-         AND agent_directives.agent_id = $2
-         AND agents.id = agent_directives.agent_id
-         AND agents.workspace_id = $3`,
-      [directiveId, agentId, workspaceId],
-    );
-    return affected > 0;
+    const result = await sql`
+      DELETE FROM agent_directives
+      USING agents
+      WHERE agent_directives.id = ${directiveId}
+        AND agent_directives.agent_id = ${agentId}
+        AND agents.id = agent_directives.agent_id
+        AND agents.workspace_id = ${workspaceId}
+    `.execute(this.db);
+    return (result.numAffectedRows ?? 0n) > 0n;
   }
 
   async repointRoutineScopeTags(input: RepointRoutineScopeTagsInput): Promise<RepointRoutineScopeTagsResult> {
-    const query = queryPort(this.database, input.transaction);
+    // A threaded transaction (when present) is a Kysely `Transaction<DB>`, assignable to
+    // `Db`; otherwise run on the shared executor. This is the shared-transaction contract
+    // the routine-definition repository threads its `Transaction<DB>` through.
+    const db = (input.transaction as Db | undefined) ?? this.db;
     const routineTag = `routine:${input.fromDefinitionId}`;
     const stepTagPrefix = `step:${input.fromDefinitionId}:`;
-    const rows = queryRows<DirectiveScopeTagRow>(await query.query(
-      `SELECT id::text, scope_tags
-       FROM agent_directives
-       WHERE agent_id = $1
-         AND (
-           $2 = ANY(scope_tags)
-           OR EXISTS (
-             SELECT 1
-             FROM unnest(scope_tags) AS scope_tag
-             WHERE scope_tag LIKE $3
-           )
-         )
-       ORDER BY created_at ASC, id ASC`,
-      [input.agentId, routineTag, `${stepTagPrefix}%`],
-    ));
+    const selected = await sql<DirectiveScopeTagRow>`
+      SELECT id::text, scope_tags
+      FROM agent_directives
+      WHERE agent_id = ${input.agentId}
+        AND (
+          ${routineTag} = ANY(scope_tags)
+          OR EXISTS (
+            SELECT 1
+            FROM unnest(scope_tags) AS scope_tag
+            WHERE scope_tag LIKE ${`${stepTagPrefix}%`}
+          )
+        )
+      ORDER BY created_at ASC, id ASC
+    `.execute(db);
+    const rows = selected.rows;
 
     let repointed = 0;
     const orphans: RoutineDirectiveScopeOrphan[] = [];
@@ -853,61 +800,61 @@ export class AgentRepository implements AgentRepositoryPort {
       if (!changed) {
         continue;
       }
-      await query.query(
-        `UPDATE agent_directives
-         SET scope_tags = $1::text[],
-             updated_at = NOW()
-         WHERE id = $2
-           AND agent_id = $3`,
-        [nextTags, row.id, input.agentId],
-      );
+      await sql`
+        UPDATE agent_directives
+        SET scope_tags = ${sql.val(nextTags)}::text[],
+            updated_at = ${currentTimestamp()}
+        WHERE id = ${row.id}
+          AND agent_id = ${input.agentId}
+      `.execute(db);
     }
 
     return { repointed, orphans };
   }
 
   async setDefault(workspaceId: string, agentId: string): Promise<void> {
-    await this.database.execute(
-      `UPDATE workspaces SET default_agent_id = $1, updated_at = NOW() WHERE id = $2`,
-      [agentId, workspaceId],
-    );
+    await this.db
+      .updateTable("workspaces")
+      .set({ default_agent_id: agentId, updated_at: currentTimestamp() })
+      .where("id", "=", workspaceId)
+      .execute();
   }
 
   async deleteByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<boolean> {
-    const affected = await this.database.execute(
-      `DELETE FROM agents WHERE id = $1 AND workspace_id = $2`,
-      [agentId, workspaceId],
-    );
-    return affected > 0;
+    const result = await this.db
+      .deleteFrom("agents")
+      .where("id", "=", agentId)
+      .where("workspace_id", "=", workspaceId)
+      .executeTakeFirst();
+    return (result.numDeletedRows ?? 0n) > 0n;
   }
 
   async countByWorkspaceId(workspaceId: string): Promise<number> {
-    const row = await this.database.queryOptional<{ count: string }>(
-      `SELECT COUNT(*)::text AS count FROM agents WHERE workspace_id = $1`,
-      [workspaceId],
-    );
+    const row = await this.db
+      .selectFrom("agents")
+      .select((eb) => eb.fn.countAll<string>().as("count"))
+      .where("workspace_id", "=", workspaceId)
+      .executeTakeFirst();
     return row ? Number(row.count) : 0;
   }
 
   private async replaceSourceScope(
-    client: { query: (text: string, params?: unknown[]) => Promise<unknown> },
+    db: Db,
     agentId: string,
     sourceScope: NormalizedAgentInput["sourceScope"],
   ): Promise<void> {
-    await client.query(
-      `DELETE FROM agent_document_sources
-       WHERE agent_id = $1`,
-      [agentId],
-    );
+    await db
+      .deleteFrom("agent_document_sources")
+      .where("agent_id", "=", agentId)
+      .execute();
     const sourceIds = persistableSourceIds(sourceScope);
     if (sourceScope.mode !== "selected" || sourceIds.length === 0) {
       return;
     }
-    await client.query(
-      `INSERT INTO agent_document_sources (agent_id, source_id)
-       SELECT $1::uuid, UNNEST($2::uuid[])
-       ON CONFLICT DO NOTHING`,
-      [agentId, sourceIds],
-    );
+    await sql`
+      INSERT INTO agent_document_sources (agent_id, source_id)
+      SELECT ${agentId}::uuid, UNNEST(${sql.val(sourceIds)}::uuid[])
+      ON CONFLICT DO NOTHING
+    `.execute(db);
   }
 }

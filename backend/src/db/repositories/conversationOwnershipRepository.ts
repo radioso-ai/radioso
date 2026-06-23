@@ -1,7 +1,6 @@
-import {
-  type Database,
-  type DatabaseExecutor,
-} from "../../shared/infra/database.js";
+import { sql } from "kysely";
+
+import type { Db } from "../../shared/infra/kysely/types.js";
 // The domain module owns the ownership record shape; this repository is its
 // persistence adapter and imports the canonical types rather than redefining them
 // (db/repositories importing from modules/ is the established pattern here).
@@ -60,7 +59,10 @@ interface ConversationOwnershipRow {
   updated_at: Date;
 }
 
-const conversationOwnershipColumns = `
+// The full conversation_ownership projection. Kept as a single `sql` fragment spliced into
+// each SELECT/RETURNING so the column list (and `mapRecord`) stays identical to the raw-SQL
+// original.
+const conversationOwnershipColumns = sql`
   conversation_id,
   workspace_id,
   state,
@@ -87,19 +89,19 @@ const mapRecord = (row: ConversationOwnershipRow): ConversationOwnershipRecord =
 });
 
 export class ConversationOwnershipRepository {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async load(
     conversationId: string,
-    executor: Pick<DatabaseExecutor, "queryOptional"> = this.database,
+    db: Db = this.db,
   ): Promise<ConversationOwnershipRecord | null> {
-    const row = await executor.queryOptional<ConversationOwnershipRow>(
-      `SELECT ${conversationOwnershipColumns}
-         FROM conversation_ownership
-        WHERE conversation_id = $1`,
-      [conversationId],
-    );
+    const result = await sql<ConversationOwnershipRow>`
+      SELECT ${conversationOwnershipColumns}
+        FROM conversation_ownership
+       WHERE conversation_id = ${conversationId}
+    `.execute(db);
 
+    const row = result.rows[0];
     return row ? mapRecord(row) : null;
   }
 
@@ -107,31 +109,30 @@ export class ConversationOwnershipRepository {
   // map keyed by conversationId; a missing key means AI-owned (the table is lazy, no row).
   async loadByConversationIds(
     conversationIds: string[],
-    executor: Pick<DatabaseExecutor, "query"> = this.database,
+    db: Db = this.db,
   ): Promise<Map<string, ConversationOwnershipRecord>> {
     if (conversationIds.length === 0) {
       return new Map();
     }
-    const rows = await executor.query<ConversationOwnershipRow>(
-      `SELECT ${conversationOwnershipColumns}
-         FROM conversation_ownership
-        WHERE conversation_id = ANY($1::uuid[])`,
-      [conversationIds],
-    );
-    return new Map(rows.map((row) => [row.conversation_id, mapRecord(row)]));
+    const result = await sql<ConversationOwnershipRow>`
+      SELECT ${conversationOwnershipColumns}
+        FROM conversation_ownership
+       WHERE conversation_id = ANY(${sql.val(conversationIds)}::uuid[])
+    `.execute(db);
+    return new Map(result.rows.map((row) => [row.conversation_id, mapRecord(row)]));
   }
 
   async requestHandoff(
     input: ConversationOwnershipRequestHandoffInput,
-    executor: Pick<DatabaseExecutor, "queryOptional"> = this.database,
+    db: Db = this.db,
   ): Promise<ConversationOwnershipRecord> {
     // Request human ownership when none exists yet, OR re-request it after a prior
     // hand-back left the row ai_owned (a later routine/retrieval handoff must be able
     // to re-enter human ownership). An already human_owned row is left untouched so a
     // present operator is never clobbered — the conditional upsert returns no row in
     // that case and we read back the current record.
-    const row = await executor.queryOptional<ConversationOwnershipRow>(
-      `INSERT INTO conversation_ownership (
+    const result = await sql<ConversationOwnershipRow>`
+      INSERT INTO conversation_ownership (
           conversation_id,
           workspace_id,
           state,
@@ -142,7 +143,7 @@ export class ConversationOwnershipRepository {
           taken_over_at,
           updated_at
         )
-        VALUES ($1, $2, 'human_owned', NULL, NULL, $3, 1, NULL, now())
+        VALUES (${input.conversationId}, ${input.workspaceId}, 'human_owned', NULL, NULL, ${input.reason}, 1, NULL, now())
         ON CONFLICT (conversation_id) DO UPDATE
           SET state = 'human_owned',
               owner_account_id = NULL,
@@ -152,15 +153,15 @@ export class ConversationOwnershipRepository {
               version = conversation_ownership.version + 1,
               updated_at = now()
           WHERE conversation_ownership.state = 'ai_owned'
-        RETURNING ${conversationOwnershipColumns}`,
-      [input.conversationId, input.workspaceId, input.reason],
-    );
+        RETURNING ${conversationOwnershipColumns}
+    `.execute(db);
 
+    const row = result.rows[0];
     if (row) {
       return mapRecord(row);
     }
 
-    const existing = await this.load(input.conversationId, executor);
+    const existing = await this.load(input.conversationId, db);
     if (existing) {
       return existing;
     }
@@ -170,10 +171,10 @@ export class ConversationOwnershipRepository {
 
   async takeOver(
     input: ConversationOwnershipTakeOverInput,
-    executor: Pick<DatabaseExecutor, "queryOptional"> = this.database,
+    db: Db = this.db,
   ): Promise<ConversationOwnershipMutationResult> {
-    const inserted = await executor.queryOptional<ConversationOwnershipRow>(
-      `INSERT INTO conversation_ownership (
+    const insertedResult = await sql<ConversationOwnershipRow>`
+      INSERT INTO conversation_ownership (
           conversation_id,
           workspace_id,
           state,
@@ -184,95 +185,91 @@ export class ConversationOwnershipRepository {
           taken_over_at,
           updated_at
         )
-        VALUES ($1, $2, 'human_owned', $3, $4, 'operator_takeover', 1, now(), now())
+        VALUES (${input.conversationId}, ${input.workspaceId}, 'human_owned', ${input.accountId}, ${input.displayName}, 'operator_takeover', 1, now(), now())
         ON CONFLICT (conversation_id) DO NOTHING
-        RETURNING ${conversationOwnershipColumns}`,
-      [input.conversationId, input.workspaceId, input.accountId, input.displayName],
-    );
+        RETURNING ${conversationOwnershipColumns}
+    `.execute(db);
 
+    const inserted = insertedResult.rows[0];
     if (inserted) {
       return { ok: true, record: mapRecord(inserted) };
     }
 
-    const versionPredicate = input.expectedVersion === undefined ? "" : "AND version = $5";
-    const params = input.expectedVersion === undefined
-      ? [input.conversationId, input.accountId, input.displayName, input.workspaceId]
-      : [
-          input.conversationId,
-          input.accountId,
-          input.displayName,
-          input.workspaceId,
-          input.expectedVersion,
-        ];
-    const updated = await executor.queryOptional<ConversationOwnershipRow>(
-      `UPDATE conversation_ownership
+    // CAS on the version only when an expected version is supplied; otherwise claim any
+    // ai-owned / unowned row. The predicate is spliced as a trusted `sql` fragment so the
+    // optional `AND version = ...` clause matches the original conditional exactly.
+    const versionPredicate = input.expectedVersion === undefined
+      ? sql``
+      : sql`AND version = ${input.expectedVersion}`;
+    const updatedResult = await sql<ConversationOwnershipRow>`
+      UPDATE conversation_ownership
           SET state = 'human_owned',
-              workspace_id = $4,
-              owner_account_id = $2,
-              owner_display_name = $3,
+              workspace_id = ${input.workspaceId},
+              owner_account_id = ${input.accountId},
+              owner_display_name = ${input.displayName},
               reason = 'operator_takeover',
               version = version + 1,
               taken_over_at = now(),
               updated_at = now()
-        WHERE conversation_id = $1
+        WHERE conversation_id = ${input.conversationId}
           AND (state = 'ai_owned' OR owner_account_id IS NULL)
           ${versionPredicate}
-        RETURNING ${conversationOwnershipColumns}`,
-      params,
-    );
+        RETURNING ${conversationOwnershipColumns}
+    `.execute(db);
 
+    const updated = updatedResult.rows[0];
     if (updated) {
       return { ok: true, record: mapRecord(updated) };
     }
 
-    return { ok: false, record: await this.load(input.conversationId, executor) };
+    return { ok: false, record: await this.load(input.conversationId, db) };
   }
 
   async transfer(
     input: ConversationOwnershipTransferInput,
-    executor: Pick<DatabaseExecutor, "queryOptional"> = this.database,
+    db: Db = this.db,
   ): Promise<ConversationOwnershipMutationResult> {
-    const row = await executor.queryOptional<ConversationOwnershipRow>(
-      `UPDATE conversation_ownership
-          SET owner_account_id = $2,
-              owner_display_name = $3,
+    const result = await sql<ConversationOwnershipRow>`
+      UPDATE conversation_ownership
+          SET owner_account_id = ${input.accountId},
+              owner_display_name = ${input.displayName},
               version = version + 1,
               updated_at = now()
-        WHERE conversation_id = $1
+        WHERE conversation_id = ${input.conversationId}
           AND state = 'human_owned'
-          AND version = $4
-        RETURNING ${conversationOwnershipColumns}`,
-      [input.conversationId, input.accountId, input.displayName, input.expectedVersion],
-    );
+          AND version = ${input.expectedVersion}
+        RETURNING ${conversationOwnershipColumns}
+    `.execute(db);
 
+    const row = result.rows[0];
     if (row) {
       return { ok: true, record: mapRecord(row) };
     }
 
-    return { ok: false, record: await this.load(input.conversationId, executor) };
+    return { ok: false, record: await this.load(input.conversationId, db) };
   }
 
   async handBack(
     input: ConversationOwnershipHandBackInput,
-    executor: Pick<DatabaseExecutor, "queryOptional"> = this.database,
+    db: Db = this.db,
   ): Promise<ConversationOwnershipMutationResult> {
-    const row = await executor.queryOptional<ConversationOwnershipRow>(
-      `UPDATE conversation_ownership
+    const result = await sql<ConversationOwnershipRow>`
+      UPDATE conversation_ownership
           SET state = 'ai_owned',
               owner_account_id = NULL,
               owner_display_name = NULL,
               version = version + 1,
               updated_at = now()
-        WHERE conversation_id = $1
-          AND version = $2
-        RETURNING ${conversationOwnershipColumns}`,
-      [input.conversationId, input.expectedVersion],
-    );
+        WHERE conversation_id = ${input.conversationId}
+          AND version = ${input.expectedVersion}
+        RETURNING ${conversationOwnershipColumns}
+    `.execute(db);
 
+    const row = result.rows[0];
     if (row) {
       return { ok: true, record: mapRecord(row) };
     }
 
-    return { ok: false, record: await this.load(input.conversationId, executor) };
+    return { ok: false, record: await this.load(input.conversationId, db) };
   }
 }

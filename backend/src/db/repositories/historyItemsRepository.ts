@@ -1,6 +1,8 @@
+import { sql } from "kysely";
+
 import type { AuditEventRecord } from "./auditEventRepository.js";
 import type { ConversationRecord } from "./conversationRepository.js";
-import type { Database } from "../../shared/infra/database.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 
 export type HistoryItemsSourceRecord =
   | {
@@ -47,7 +49,7 @@ interface HistoryItemsRow {
 }
 
 export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async listPageByWorkspaceId(
     workspaceId: string,
@@ -55,8 +57,11 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
   ): Promise<{ items: HistoryItemsSourceRecord[]; total: number; hasMore: boolean }> {
     const offset = input.offset ?? 0;
     const sourceLimit = offset + input.limit;
-    const rows = await this.database.query<HistoryItemsRow>(
-      `WITH conversation_source AS (
+    // A multi-CTE UNION ALL analytical query: expressed with the Kysely `sql` tag (which
+    // parameterizes the interpolated values) rather than the builder, which cannot model the
+    // NULL-padded union of two heterogeneous sources without more noise than the SQL itself.
+    const result = await sql<HistoryItemsRow>`
+       WITH conversation_source AS (
          SELECT
            'chat'::text AS kind,
            c.id::text AS item_id,
@@ -81,9 +86,9 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
            NULL::timestamptz AS audit_created_at
          FROM conversations c
          LEFT JOIN agents ag ON ag.id = c.agent_id AND ag.workspace_id = c.workspace_id
-         WHERE c.workspace_id = $1
+         WHERE c.workspace_id = ${workspaceId}
          ORDER BY c.updated_at DESC, c.created_at DESC, c.id DESC
-         LIMIT $3
+         LIMIT ${sourceLimit}
        ),
        search_source AS (
          SELECT
@@ -109,10 +114,10 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
            a.metadata_json,
            a.created_at AS audit_created_at
          FROM audit_events a
-         WHERE a.workspace_id = $1
+         WHERE a.workspace_id = ${workspaceId}
            AND a.event_type = 'document.search'
          ORDER BY a.created_at DESC, a.id DESC
-         LIMIT $3
+         LIMIT ${sourceLimit}
        ),
        history_items AS (
          SELECT * FROM conversation_source
@@ -121,22 +126,21 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
        ),
        counted AS (
          SELECT (
-           (SELECT COUNT(*) FROM conversations WHERE workspace_id = $1) +
-           (SELECT COUNT(*) FROM audit_events WHERE workspace_id = $1 AND event_type = 'document.search')
+           (SELECT COUNT(*) FROM conversations WHERE workspace_id = ${workspaceId}) +
+           (SELECT COUNT(*) FROM audit_events WHERE workspace_id = ${workspaceId} AND event_type = 'document.search')
          )::text AS total_count
        ),
        paged AS (
          SELECT *
          FROM history_items
          ORDER BY sort_at DESC, secondary_sort_at DESC, stable_id DESC
-         LIMIT $2
-         OFFSET $4
+         LIMIT ${input.limit}
+         OFFSET ${offset}
        )
        SELECT counted.total_count, paged.*
        FROM counted
-       LEFT JOIN paged ON TRUE`,
-      [workspaceId, input.limit, sourceLimit, offset],
-    );
+       LEFT JOIN paged ON TRUE`.execute(this.db);
+    const rows = result.rows;
 
     const total = Number(rows[0]?.total_count ?? "0");
     const items = rows.flatMap((row): HistoryItemsSourceRecord[] => {

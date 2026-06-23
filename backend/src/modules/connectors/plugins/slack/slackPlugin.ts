@@ -21,6 +21,7 @@ import {
   SlackWebApiClient,
 } from "../../../slack/public.js";
 import { SlackMessageHandler, type SlackWebApiClientFactory } from "./slackMessageHandler.js";
+import { connectorKyselyDb } from "../../services/connectorKyselyDb.js";
 import { PostgresSlackPersistence } from "./slackPersistence.js";
 import { createSlackWebhookRouter } from "./slackWebhook.js";
 
@@ -51,12 +52,12 @@ export class SlackPlugin implements ConnectorPlugin {
     if (this.initialized) {
       return;
     }
-    const db = context.db as never;
+    const db = connectorKyselyDb(context.db);
     const oauthConnections = new OauthConnectionRepository(db);
     const integrationConnections = new IntegrationConnectionRepository(db);
-    const installations = new SlackInstallationRepository(context.db);
-    const bindings = new SlackChannelBindingRepository(context.db);
-    const persistence = new PostgresSlackPersistence(context.db);
+    const installations = new SlackInstallationRepository(db);
+    const bindings = new SlackChannelBindingRepository(db);
+    const persistence = new PostgresSlackPersistence(db);
     const staleFailures = await persistence.markStaleInboundEventsFailed({
       olderThan: new Date(Date.now() - 10 * 60 * 1000),
     });

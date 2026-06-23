@@ -168,9 +168,9 @@ export class SlackPostActionCredentialResolver implements SlackPostCredentialRes
     database: Database;
     encryptionKey?: string;
   }) {
-    const oauthConnections = new OauthConnectionRepository(input.database);
-    const integrationConnections = new IntegrationConnectionRepository(input.database);
-    this.installations = new SlackInstallationRepository(input.database);
+    const oauthConnections = new OauthConnectionRepository(input.database.kysely);
+    const integrationConnections = new IntegrationConnectionRepository(input.database.kysely);
+    this.installations = new SlackInstallationRepository(input.database.kysely);
     this.installationService = new SlackInstallationService({
       oauthConnections,
       integrationConnections,

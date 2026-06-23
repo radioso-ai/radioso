@@ -1,41 +1,46 @@
-import type { DatabaseExecutor } from "../../../shared/infra/database.js";
+import type { Db } from "../../../shared/infra/kysely/types.js";
 import type {
   SlackOperatorPermissionPort,
   WorkspaceMemberLookupPort,
   WorkspaceMemberLookupResult,
 } from "./slackOperatorIdentityResolver.js";
 
-interface WorkspaceMemberRow {
-  account_id: string;
-  user_id: string;
-}
-
+/**
+ * Resolve a workspace member by email and check operator authorization. A member is anyone
+ * who owns the workspace (`workspaces.account_id`) or holds a grant on it (`workspace_grants`)
+ * via an active account membership. Mirrors the access model used elsewhere; expressed with
+ * the Kysely builder so it stays inside the no-raw-SQL boundary.
+ */
 export class PostgresWorkspaceMemberLookup implements WorkspaceMemberLookupPort {
-  constructor(private readonly database: DatabaseExecutor) {}
+  constructor(private readonly db: Db) {}
 
   async findByEmail(workspaceId: string, email: string): Promise<WorkspaceMemberLookupResult | null> {
-    const row = await this.database.queryOptional<WorkspaceMemberRow>(
-      `SELECT DISTINCT a.id AS account_id, m.user_id
-       FROM accounts a
-       JOIN account_memberships m ON m.account_id = a.id AND m.status = 'active'
-       LEFT JOIN workspaces w ON w.account_id = a.id AND w.id = $1
-       LEFT JOIN workspace_grants wg ON wg.account_id = a.id AND wg.user_id = m.user_id AND wg.workspace_id = $1
-       WHERE lower(a.email) = lower($2)
-         AND (w.id IS NOT NULL OR wg.id IS NOT NULL)
-       ORDER BY a.id ASC
-       LIMIT 1`,
-      [workspaceId, email],
-    );
+    const row = await this.db
+      .selectFrom("accounts as a")
+      .innerJoin("account_memberships as m", (join) =>
+        join.onRef("m.account_id", "=", "a.id").on("m.status", "=", "active"),
+      )
+      .leftJoin("workspaces as w", (join) =>
+        join.onRef("w.account_id", "=", "a.id").on("w.id", "=", workspaceId),
+      )
+      .leftJoin("workspace_grants as wg", (join) =>
+        join
+          .onRef("wg.account_id", "=", "a.id")
+          .onRef("wg.user_id", "=", "m.user_id")
+          .on("wg.workspace_id", "=", workspaceId),
+      )
+      .select(["a.id as account_id", "m.user_id as user_id"])
+      .where((eb) => eb(eb.fn<string>("lower", ["a.email"]), "=", email.toLowerCase()))
+      .where((eb) => eb.or([eb("w.id", "is not", null), eb("wg.id", "is not", null)]))
+      .orderBy("a.id", "asc")
+      .limit(1)
+      .executeTakeFirst();
     return row ? { accountId: row.account_id, userId: row.user_id } : null;
   }
 }
 
-interface PermissionRow {
-  allowed: boolean;
-}
-
 export class PostgresSlackOperatorPermission implements SlackOperatorPermissionPort {
-  constructor(private readonly database: DatabaseExecutor) {}
+  constructor(private readonly db: Db) {}
 
   async hasPermission(input: {
     accountId: string;
@@ -43,21 +48,24 @@ export class PostgresSlackOperatorPermission implements SlackOperatorPermissionP
     workspaceId: string;
     permission: "workspace.conversation.takeover";
   }): Promise<boolean> {
-    const row = await this.database.queryOptional<PermissionRow>(
-      `SELECT EXISTS (
-         SELECT 1
-         FROM account_memberships m
-         LEFT JOIN workspaces w ON w.account_id = m.account_id AND w.id = $2
-         LEFT JOIN workspace_grants wg ON wg.account_id = m.account_id
-           AND wg.user_id = m.user_id
-           AND wg.workspace_id = $2
-         WHERE m.account_id = $1
-           AND m.status = 'active'
-           AND ($3::uuid IS NULL OR m.user_id = $3::uuid)
-           AND (w.id IS NOT NULL OR wg.id IS NOT NULL)
-       ) AS allowed`,
-      [input.accountId, input.workspaceId, input.userId ?? null],
-    );
-    return row?.allowed === true;
+    const row = await this.db
+      .selectFrom("account_memberships as m")
+      .leftJoin("workspaces as w", (join) =>
+        join.onRef("w.account_id", "=", "m.account_id").on("w.id", "=", input.workspaceId),
+      )
+      .leftJoin("workspace_grants as wg", (join) =>
+        join
+          .onRef("wg.account_id", "=", "m.account_id")
+          .onRef("wg.user_id", "=", "m.user_id")
+          .on("wg.workspace_id", "=", input.workspaceId),
+      )
+      .select("m.account_id as account_id")
+      .where("m.account_id", "=", input.accountId)
+      .where("m.status", "=", "active")
+      .$if(input.userId != null, (qb) => qb.where("m.user_id", "=", input.userId!))
+      .where((eb) => eb.or([eb("w.id", "is not", null), eb("wg.id", "is not", null)]))
+      .limit(1)
+      .executeTakeFirst();
+    return Boolean(row);
   }
 }

@@ -8,6 +8,7 @@ import {
   type PendingDecisionCreateInput,
 } from "../../../src/db/repositories/pendingDecisionRepository.js";
 import { Database } from "../../../src/shared/infra/database.js";
+import { createKyselyDatabase } from "../../../src/shared/infra/kysely/kyselyDatabase.js";
 import { applyTestMigration } from "../../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
@@ -30,8 +31,27 @@ const canReachIntegrationDatabase = async (databaseUrl?: string): Promise<boolea
 const hasReachableIntegrationDatabase = await canReachIntegrationDatabase(integrationDatabaseUrl);
 const describeIfDatabase = hasReachableIntegrationDatabase ? describe : describe.skip;
 
-const createClientBackedDatabase = (client: PoolClient): Database => ({
-  pool: {} as Database["pool"],
+const createClientBackedDatabase = (client: PoolClient): Database => {
+  // A one-connection pool that always hands back the same open client so Kysely runs every
+  // statement (and its BEGIN/COMMIT) on the same per-test schema + transaction as the raw
+  // helper queries; `release` is neutered so Kysely can't return the client to a real pool.
+  const pool = {
+    async connect() {
+      return new Proxy(client, {
+        get(target, property, receiver) {
+          if (property === "release") {
+            return () => undefined;
+          }
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      }) as PoolClient;
+    },
+  } as Database["pool"];
+
+  return {
+  pool,
+  kysely: createKyselyDatabase(pool),
   async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
     const result = await client.query<T>(text, params);
     return result.rows;
@@ -64,7 +84,8 @@ const createClientBackedDatabase = (client: PoolClient): Database => ({
     }
   },
   async close(): Promise<void> {},
-} as Database);
+} as Database;
+};
 
 const decisionInput = (overrides: Partial<PendingDecisionCreateInput> = {}): PendingDecisionCreateInput => ({
   handle: `decision_${randomUUID()}`,
@@ -76,7 +97,7 @@ const decisionInput = (overrides: Partial<PendingDecisionCreateInput> = {}): Pen
   stepId: "step_review",
   reason: "Needs operator review",
   options: [
-    { id: "approve", label: "Approve", payload: { outcome: "approved" } },
+    { id: "approve", label: "Approve" },
     { id: "reject", label: "Reject", description: "Send back for edits" },
   ],
   deciderScope: { kind: "workspace_role", role: "owner" },
@@ -100,7 +121,7 @@ describeIfDatabase("PendingDecisionRepository Postgres integration", () => {
     await client.query(`SET search_path TO ${schema}, public`);
     database = createClientBackedDatabase(client);
     await applyTestMigration(database, "104_pending_decisions.sql");
-    repository = new PendingDecisionRepository(database);
+    repository = new PendingDecisionRepository(database.kysely);
   });
 
   beforeEach(async () => {
@@ -154,7 +175,7 @@ describeIfDatabase("PendingDecisionRepository Postgres integration", () => {
     const decidedBy = randomUUID();
     const resolved = await repository.resolve({
       handle: input.handle,
-      outcome: "approved",
+      status: "resolved",
       decision: { optionId: "approve", payload: { note: "Looks correct" } },
       decidedBy,
       contentHash: input.contentHash,
@@ -162,7 +183,7 @@ describeIfDatabase("PendingDecisionRepository Postgres integration", () => {
 
     expect(resolved).toMatchObject({
       handle: input.handle,
-      status: "approved",
+      status: "resolved",
       decision: { optionId: "approve", payload: { note: "Looks correct" } },
       decidedBy,
     });
@@ -170,7 +191,7 @@ describeIfDatabase("PendingDecisionRepository Postgres integration", () => {
 
     await expect(repository.resolve({
       handle: input.handle,
-      outcome: "rejected",
+      status: "resolved",
       decision: { optionId: "reject" },
       decidedBy,
       contentHash: input.contentHash,
@@ -183,7 +204,7 @@ describeIfDatabase("PendingDecisionRepository Postgres integration", () => {
 
     await expect(repository.resolve({
       handle: input.handle,
-      outcome: "approved",
+      status: "resolved",
       decision: { optionId: "approve" },
       decidedBy: randomUUID(),
       contentHash: "sha256:stale",
@@ -223,7 +244,7 @@ describeIfDatabase("PendingDecisionRepository Postgres integration", () => {
     await repository.create(decisionInput({ workspaceId: otherWorkspaceId, handle: "other_workspace" }));
     await repository.resolve({
       handle: approved.handle,
-      outcome: "approved",
+      status: "resolved",
       decision: { optionId: "approve" },
       decidedBy: null,
       contentHash: approved.contentHash,

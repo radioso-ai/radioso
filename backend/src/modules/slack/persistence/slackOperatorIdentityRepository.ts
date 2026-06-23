@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import type { DatabaseExecutor } from "../../../shared/infra/database.js";
+import { currentTimestamp } from "../../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../../shared/infra/kysely/types.js";
 
 export interface SlackOperatorIdentityRecord {
   id: string;
@@ -27,6 +28,17 @@ export interface SlackOperatorIdentityRepositoryPort {
   }): Promise<SlackOperatorIdentityRecord>;
 }
 
+const identityColumns = [
+  "id",
+  "workspace_id",
+  "installation_id",
+  "slack_user_id",
+  "account_id",
+  "slack_display_name",
+  "created_at",
+  "updated_at",
+] as const;
+
 interface SlackOperatorIdentityRow {
   id: string;
   workspace_id: string;
@@ -50,18 +62,18 @@ const mapIdentity = (row: SlackOperatorIdentityRow): SlackOperatorIdentityRecord
 });
 
 export class SlackOperatorIdentityRepository implements SlackOperatorIdentityRepositoryPort {
-  constructor(private readonly database: DatabaseExecutor) {}
+  constructor(private readonly db: Db) {}
 
   async findByInstallationAndSlackUser(input: {
     installationId: string;
     slackUserId: string;
   }): Promise<SlackOperatorIdentityRecord | null> {
-    const row = await this.database.queryOptional<SlackOperatorIdentityRow>(
-      `SELECT id, workspace_id, installation_id, slack_user_id, account_id, slack_display_name, created_at, updated_at
-       FROM slack_operator_identities
-       WHERE installation_id = $1 AND slack_user_id = $2`,
-      [input.installationId, input.slackUserId],
-    );
+    const row = await this.db
+      .selectFrom("slack_operator_identities")
+      .select(identityColumns)
+      .where("installation_id", "=", input.installationId)
+      .where("slack_user_id", "=", input.slackUserId)
+      .executeTakeFirst();
     return row ? mapIdentity(row) : null;
   }
 
@@ -72,27 +84,26 @@ export class SlackOperatorIdentityRepository implements SlackOperatorIdentityRep
     accountId: string;
     slackDisplayName?: string | null;
   }): Promise<SlackOperatorIdentityRecord> {
-    const row = await this.database.queryOne<SlackOperatorIdentityRow>(
-      `INSERT INTO slack_operator_identities (
-         id, workspace_id, installation_id, slack_user_id, account_id, slack_display_name
-       )
-       VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (installation_id, slack_user_id)
-       DO UPDATE SET
-         workspace_id = EXCLUDED.workspace_id,
-         account_id = EXCLUDED.account_id,
-         slack_display_name = EXCLUDED.slack_display_name,
-         updated_at = NOW()
-       RETURNING id, workspace_id, installation_id, slack_user_id, account_id, slack_display_name, created_at, updated_at`,
-      [
-        randomUUID(),
-        input.workspaceId,
-        input.installationId,
-        input.slackUserId,
-        input.accountId,
-        input.slackDisplayName ?? null,
-      ],
-    );
+    const row = await this.db
+      .insertInto("slack_operator_identities")
+      .values({
+        id: randomUUID(),
+        workspace_id: input.workspaceId,
+        installation_id: input.installationId,
+        slack_user_id: input.slackUserId,
+        account_id: input.accountId,
+        slack_display_name: input.slackDisplayName ?? null,
+      })
+      .onConflict((oc) =>
+        oc.columns(["installation_id", "slack_user_id"]).doUpdateSet({
+          workspace_id: input.workspaceId,
+          account_id: input.accountId,
+          slack_display_name: input.slackDisplayName ?? null,
+          updated_at: currentTimestamp(),
+        }),
+      )
+      .returning(identityColumns)
+      .executeTakeFirstOrThrow();
     return mapIdentity(row);
   }
 }

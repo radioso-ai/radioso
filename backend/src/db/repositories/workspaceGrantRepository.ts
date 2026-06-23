@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import type { Database } from "../../shared/infra/database.js";
+import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 import { notFound } from "../../shared/domain/errors.js";
 
 export type WorkspaceGrantRole = "admin" | "member";
@@ -24,6 +25,8 @@ interface WorkspaceGrantRow {
   created_at: Date;
   updated_at: Date;
 }
+
+const grantColumns = ["id", "workspace_id", "account_id", "user_id", "role", "created_at", "updated_at"] as const;
 
 const mapGrant = (row: WorkspaceGrantRow): WorkspaceGrantRecord => ({
   id: row.id,
@@ -50,7 +53,7 @@ export interface WorkspaceGrantRepositoryPort {
 }
 
 export class WorkspaceGrantRepository implements WorkspaceGrantRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async upsert(input: {
     workspaceId: string;
@@ -58,81 +61,91 @@ export class WorkspaceGrantRepository implements WorkspaceGrantRepositoryPort {
     userId: string;
     role: WorkspaceGrantRole;
   }): Promise<WorkspaceGrantRecord> {
-    const row = await this.database.queryOptional<WorkspaceGrantRow>(
-      `INSERT INTO workspace_grants (id, workspace_id, account_id, user_id, role)
-       SELECT $1, w.id, w.account_id, $4, $5
-       FROM workspaces w
-       WHERE w.id = $2 AND w.account_id = $3
-       ON CONFLICT (workspace_id, user_id)
-       DO UPDATE SET role = EXCLUDED.role, updated_at = NOW()
-       RETURNING id, workspace_id, account_id, user_id, role, created_at, updated_at`,
-      [randomUUID(), input.workspaceId, input.accountId, input.userId, input.role],
-    );
+    // INSERT ... SELECT FROM workspaces both derives account_id and verifies the workspace
+    // belongs to the account; no matching workspace → zero rows inserted → notFound.
+    const row = await this.db
+      .insertInto("workspace_grants")
+      .columns(["id", "workspace_id", "account_id", "user_id", "role"])
+      .expression((eb) =>
+        eb
+          .selectFrom("workspaces as w")
+          .select([
+            eb.val(randomUUID()).as("id"),
+            "w.id as workspace_id",
+            "w.account_id",
+            eb.val(input.userId).as("user_id"),
+            eb.val(input.role).as("role"),
+          ])
+          .where("w.id", "=", input.workspaceId)
+          .where("w.account_id", "=", input.accountId),
+      )
+      .onConflict((oc) =>
+        oc.columns(["workspace_id", "user_id"]).doUpdateSet((eb) => ({
+          role: eb.ref("excluded.role"),
+          updated_at: currentTimestamp(),
+        })),
+      )
+      .returning(grantColumns)
+      .executeTakeFirst();
 
     if (!row) {
       throw notFound("Workspace not found");
     }
 
-    return mapGrant(row);
+    return mapGrant(row as WorkspaceGrantRow);
   }
 
   async findByWorkspaceAndUser(workspaceId: string, userId: string): Promise<WorkspaceGrantRecord | null> {
-    const row = await this.database.queryOptional<WorkspaceGrantRow>(
-      `SELECT id, workspace_id, account_id, user_id, role, created_at, updated_at
-       FROM workspace_grants
-       WHERE workspace_id = $1 AND user_id = $2`,
-      [workspaceId, userId],
-    );
+    const row = await this.db
+      .selectFrom("workspace_grants")
+      .select(grantColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("user_id", "=", userId)
+      .executeTakeFirst();
 
-    return row ? mapGrant(row) : null;
+    return row ? mapGrant(row as WorkspaceGrantRow) : null;
   }
 
   async listByAccount(accountId: string): Promise<WorkspaceGrantRecord[]> {
-    const rows = await this.database.query<WorkspaceGrantRow>(
-      `SELECT id, workspace_id, account_id, user_id, role, created_at, updated_at
-       FROM workspace_grants
-       WHERE account_id = $1
-       ORDER BY created_at ASC`,
-      [accountId],
-    );
+    const rows = await this.db
+      .selectFrom("workspace_grants")
+      .select(grantColumns)
+      .where("account_id", "=", accountId)
+      .orderBy("created_at", "asc")
+      .execute();
 
-    return rows.map(mapGrant);
+    return rows.map((row) => mapGrant(row as WorkspaceGrantRow));
   }
 
   async listByWorkspace(workspaceId: string): Promise<WorkspaceGrantRecord[]> {
-    const rows = await this.database.query<WorkspaceGrantRow>(
-      `SELECT id, workspace_id, account_id, user_id, role, created_at, updated_at
-       FROM workspace_grants
-       WHERE workspace_id = $1
-       ORDER BY created_at ASC`,
-      [workspaceId],
-    );
+    const rows = await this.db
+      .selectFrom("workspace_grants")
+      .select(grantColumns)
+      .where("workspace_id", "=", workspaceId)
+      .orderBy("created_at", "asc")
+      .execute();
 
-    return rows.map(mapGrant);
+    return rows.map((row) => mapGrant(row as WorkspaceGrantRow));
   }
 
   async deleteByAccountAndUser(accountId: string, userId: string): Promise<number> {
-    const rows = await this.database.query<{ id: string }>(
-      `DELETE FROM workspace_grants
-       WHERE account_id = $1
-         AND user_id = $2
-       RETURNING id`,
-      [accountId, userId],
-    );
+    const result = await this.db
+      .deleteFrom("workspace_grants")
+      .where("account_id", "=", accountId)
+      .where("user_id", "=", userId)
+      .executeTakeFirst();
 
-    return rows.length;
+    return Number(result.numDeletedRows);
   }
 
   async deleteByWorkspaceAndUser(workspaceId: string, accountId: string, userId: string): Promise<boolean> {
-    const rows = await this.database.query<{ id: string }>(
-      `DELETE FROM workspace_grants
-       WHERE workspace_id = $1
-         AND account_id = $2
-         AND user_id = $3
-       RETURNING id`,
-      [workspaceId, accountId, userId],
-    );
+    const result = await this.db
+      .deleteFrom("workspace_grants")
+      .where("workspace_id", "=", workspaceId)
+      .where("account_id", "=", accountId)
+      .where("user_id", "=", userId)
+      .executeTakeFirst();
 
-    return rows.length > 0;
+    return Number(result.numDeletedRows) > 0;
   }
 }

@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto";
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
 import type { MessageRecord } from "./messageRepository.js";
 
-import type { Database } from "../../shared/infra/database.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
+import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface ConversationRecord {
   id: string;
@@ -79,6 +80,40 @@ interface MessageRow {
   created_at: Date;
 }
 
+const conversationColumns = [
+  "id",
+  "workspace_id",
+  "agent_id",
+  "source_channel",
+  "source_origin",
+  "channel_context",
+  "anonymous_session_id",
+  "created_at",
+  "updated_at",
+] as const;
+
+const conversationSelectColumns = [
+  "c.id as id",
+  "c.workspace_id as workspace_id",
+  "c.agent_id as agent_id",
+  "a.name as agent_name",
+  "c.source_channel as source_channel",
+  "c.source_origin as source_origin",
+  "c.channel_context as channel_context",
+  "c.anonymous_session_id as anonymous_session_id",
+  "c.created_at as created_at",
+  "c.updated_at as updated_at",
+] as const;
+
+const initialAssistantMessageColumns = [
+  "id",
+  "conversation_id",
+  "workspace_id",
+  "role",
+  "content",
+  "created_at",
+] as const;
+
 const mapConversation = (row: ConversationRow): ConversationRecord => ({
   id: row.id,
   workspaceId: row.workspace_id,
@@ -86,14 +121,14 @@ const mapConversation = (row: ConversationRow): ConversationRecord => ({
   agentName: row.agent_name ?? null,
   sourceChannel: row.source_channel,
   sourceOrigin: row.source_origin ?? null,
-  channelContext: row.channel_context ?? null,
+  channelContext: (row.channel_context as ConversationChannelContext | null) ?? null,
   anonymousSessionId: row.anonymous_session_id ?? null,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
 });
 
 export class ConversationRepository implements ConversationRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async create(
     workspaceId: string,
@@ -103,14 +138,21 @@ export class ConversationRepository implements ConversationRepositoryPort {
     sourceOrigin: string | null = null,
     channelContext: ConversationChannelContext | null = null,
   ): Promise<ConversationRecord> {
-    const [row] = await this.database.query<ConversationRow>(
-      `INSERT INTO conversations (id, workspace_id, agent_id, source_channel, source_origin, anonymous_session_id, channel_context)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, workspace_id, agent_id, source_channel, source_origin, anonymous_session_id, channel_context, created_at, updated_at`,
-      [randomUUID(), workspaceId, agentId, sourceChannel, sourceOrigin, anonymousSessionId, channelContext],
-    );
+    const row = await this.db
+      .insertInto("conversations")
+      .values({
+        id: randomUUID(),
+        workspace_id: workspaceId,
+        agent_id: agentId,
+        source_channel: sourceChannel,
+        source_origin: sourceOrigin,
+        channel_context: channelContext ? toJsonb(channelContext) : null,
+        anonymous_session_id: anonymousSessionId,
+      })
+      .returning(conversationColumns)
+      .executeTakeFirstOrThrow();
 
-    return mapConversation(row);
+    return mapConversation(row as ConversationRow);
   }
 
   async createWithInitialAssistantMessage(input: {
@@ -122,39 +164,43 @@ export class ConversationRepository implements ConversationRepositoryPort {
     channelContext?: ConversationChannelContext | null;
     content: string;
   }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }> {
-    return this.database.withTransaction(async (client) => {
+    return this.db.transaction().execute(async (trx) => {
       const conversationId = randomUUID();
       const messageId = randomUUID();
-      const conversationResult = await client.query<ConversationRow>(
-        `INSERT INTO conversations (id, workspace_id, agent_id, source_channel, source_origin, anonymous_session_id, channel_context)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING id, workspace_id, agent_id, source_channel, source_origin, anonymous_session_id, channel_context, created_at, updated_at`,
-        [
-          conversationId,
-          input.workspaceId,
-          input.agentId ?? null,
-          input.sourceChannel ?? null,
-          input.sourceOrigin ?? null,
-          input.anonymousSessionId ?? null,
-          input.channelContext ?? null,
-        ],
-      );
-      const messageResult = await client.query<MessageRow>(
-        `INSERT INTO messages (id, conversation_id, workspace_id, role, content)
-         VALUES ($1, $2, $3, 'assistant', $4)
-         RETURNING id, conversation_id, workspace_id, role, content, created_at`,
-        [messageId, conversationId, input.workspaceId, input.content],
-      );
+      const conversationRow = await trx
+        .insertInto("conversations")
+        .values({
+          id: conversationId,
+          workspace_id: input.workspaceId,
+          agent_id: input.agentId ?? null,
+          source_channel: input.sourceChannel ?? null,
+          source_origin: input.sourceOrigin ?? null,
+          channel_context: input.channelContext ? toJsonb(input.channelContext) : null,
+          anonymous_session_id: input.anonymousSessionId ?? null,
+        })
+        .returning(conversationColumns)
+        .executeTakeFirstOrThrow();
+      const messageRow = await trx
+        .insertInto("messages")
+        .values({
+          id: messageId,
+          conversation_id: conversationId,
+          workspace_id: input.workspaceId,
+          role: "assistant",
+          content: input.content,
+        })
+        .returning(initialAssistantMessageColumns)
+        .executeTakeFirstOrThrow() as MessageRow;
 
       return {
-        conversation: mapConversation(conversationResult.rows[0]),
+        conversation: mapConversation(conversationRow as ConversationRow),
         assistantMessage: {
-          id: messageResult.rows[0].id,
-          conversationId: messageResult.rows[0].conversation_id,
-          workspaceId: messageResult.rows[0].workspace_id,
-          role: messageResult.rows[0].role,
-          content: messageResult.rows[0].content,
-          createdAt: new Date(messageResult.rows[0].created_at),
+          id: messageRow.id,
+          conversationId: messageRow.conversation_id,
+          workspaceId: messageRow.workspace_id,
+          role: messageRow.role,
+          content: messageRow.content,
+          createdAt: new Date(messageRow.created_at),
         },
       };
     });
@@ -167,50 +213,42 @@ export class ConversationRepository implements ConversationRepositoryPort {
     const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["updatedAt", "createdAt", "id"]) : null;
     const total = cursor?.totalSnapshot !== undefined
       ? Number(cursor.totalSnapshot)
-      : Number((await this.database.query<{ count: string }>(
-          `SELECT COUNT(*)::text AS count
-           FROM conversations
-           WHERE workspace_id = $1`,
-          [workspaceId],
-        ))[0]?.count ?? "0");
-    const params: Array<string | number> = [workspaceId];
-    let cursorClause = "";
+      : Number((await this.db
+          .selectFrom("conversations")
+          .select((eb) => eb.fn.countAll<string>().as("count"))
+          .where("workspace_id", "=", workspaceId)
+          .executeTakeFirst())?.count ?? "0");
+    const query = this.db
+      .selectFrom("conversations as c")
+      .leftJoin("agents as a", (join) =>
+        join.onRef("a.id", "=", "c.agent_id").onRef("a.workspace_id", "=", "c.workspace_id"),
+      )
+      .select(conversationSelectColumns)
+      .where("c.workspace_id", "=", workspaceId)
+      .$if(Boolean(cursor), (qb) =>
+        qb.where((eb) =>
+          eb.or([
+            eb("c.updated_at", "<", new Date(cursor!.keys.updatedAt)),
+            eb.and([
+              eb("c.updated_at", "=", new Date(cursor!.keys.updatedAt)),
+              eb.or([
+                eb("c.created_at", "<", new Date(cursor!.keys.createdAt)),
+                eb.and([
+                  eb("c.created_at", "=", new Date(cursor!.keys.createdAt)),
+                  eb("c.id", "<", cursor!.keys.id),
+                ]),
+              ]),
+            ]),
+          ]),
+        ),
+      )
+      .orderBy("c.updated_at", "desc")
+      .orderBy("c.created_at", "desc")
+      .orderBy("c.id", "desc")
+      .limit(input.limit + 1)
+      .$if(!cursor, (qb) => qb.offset(input.offset ?? 0));
 
-    if (cursor) {
-      params.push(cursor.keys.updatedAt, cursor.keys.createdAt, cursor.keys.id);
-      cursorClause = `
-         AND (
-           c.updated_at < $2::timestamptz
-           OR (
-             c.updated_at = $2::timestamptz
-             AND (
-               c.created_at < $3::timestamptz
-               OR (c.created_at = $3::timestamptz AND c.id < $4::uuid)
-             )
-           )
-         )`;
-    }
-
-    const limitParam = params.length + 1;
-    params.push(input.limit + 1);
-
-    let offsetClause = "";
-    if (!cursor) {
-      offsetClause = `OFFSET $${params.length + 1}`;
-      params.push(input.offset ?? 0);
-    }
-
-    const rows = await this.database.query<ConversationRow>(
-      `SELECT c.id, c.workspace_id, c.agent_id, a.name AS agent_name, c.source_channel, c.source_origin, c.channel_context, c.anonymous_session_id, c.created_at, c.updated_at
-       FROM conversations c
-       LEFT JOIN agents a ON a.id = c.agent_id AND a.workspace_id = c.workspace_id
-       WHERE c.workspace_id = $1
-       ${cursorClause}
-       ORDER BY c.updated_at DESC, c.created_at DESC, c.id DESC
-       LIMIT $${limitParam}
-       ${offsetClause}`,
-      params,
-    );
+    const rows = await query.execute() as ConversationRow[];
 
     const conversations = rows.slice(0, input.limit).map(mapConversation);
     const hasMore = rows.length > input.limit;
@@ -231,24 +269,25 @@ export class ConversationRepository implements ConversationRepositoryPort {
   }
 
   async countByWorkspaceId(workspaceId: string): Promise<number> {
-    const [row] = await this.database.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count
-       FROM conversations
-       WHERE workspace_id = $1`,
-      [workspaceId],
-    );
+    const row = await this.db
+      .selectFrom("conversations")
+      .select((eb) => eb.fn.countAll<string>().as("count"))
+      .where("workspace_id", "=", workspaceId)
+      .executeTakeFirst();
 
     return Number(row?.count ?? "0");
   }
 
   async findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<ConversationRecord | null> {
-    const [row] = await this.database.query<ConversationRow>(
-      `SELECT c.id, c.workspace_id, c.agent_id, a.name AS agent_name, c.source_channel, c.source_origin, c.channel_context, c.anonymous_session_id, c.created_at, c.updated_at
-       FROM conversations c
-       LEFT JOIN agents a ON a.id = c.agent_id AND a.workspace_id = c.workspace_id
-       WHERE c.id = $1 AND c.workspace_id = $2`,
-      [conversationId, workspaceId],
-    );
+    const row = await this.db
+      .selectFrom("conversations as c")
+      .leftJoin("agents as a", (join) =>
+        join.onRef("a.id", "=", "c.agent_id").onRef("a.workspace_id", "=", "c.workspace_id"),
+      )
+      .select(conversationSelectColumns)
+      .where("c.id", "=", conversationId)
+      .where("c.workspace_id", "=", workspaceId)
+      .executeTakeFirst() as ConversationRow | undefined;
 
     return row ? mapConversation(row) : null;
   }
@@ -259,57 +298,48 @@ export class ConversationRepository implements ConversationRepositoryPort {
     input: { limit: number; offset?: number; cursor?: string; agentId?: string | null },
   ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
     const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["updatedAt", "createdAt", "id"]) : null;
-    const params: Array<string | number> = [workspaceId, anonymousSessionId];
-    const agentClause = input.agentId
-      ? ` AND c.agent_id = $${params.push(input.agentId)}`
-      : "";
     const total = cursor?.totalSnapshot !== undefined
       ? Number(cursor.totalSnapshot)
-      : Number((await this.database.query<{ count: string }>(
-          `SELECT COUNT(*)::text AS count
-           FROM conversations c
-           WHERE c.workspace_id = $1 AND c.anonymous_session_id = $2${agentClause}`,
-          params,
-        ))[0]?.count ?? "0");
-    let cursorClause = "";
+      : Number((await this.db
+          .selectFrom("conversations as c")
+          .select((eb) => eb.fn.countAll<string>().as("count"))
+          .where("c.workspace_id", "=", workspaceId)
+          .where("c.anonymous_session_id", "=", anonymousSessionId)
+          .$if(Boolean(input.agentId), (qb) => qb.where("c.agent_id", "=", input.agentId!))
+          .executeTakeFirst())?.count ?? "0");
+    const query = this.db
+      .selectFrom("conversations as c")
+      .leftJoin("agents as a", (join) =>
+        join.onRef("a.id", "=", "c.agent_id").onRef("a.workspace_id", "=", "c.workspace_id"),
+      )
+      .select(conversationSelectColumns)
+      .where("c.workspace_id", "=", workspaceId)
+      .where("c.anonymous_session_id", "=", anonymousSessionId)
+      .$if(Boolean(input.agentId), (qb) => qb.where("c.agent_id", "=", input.agentId!))
+      .$if(Boolean(cursor), (qb) =>
+        qb.where((eb) =>
+          eb.or([
+            eb("c.updated_at", "<", new Date(cursor!.keys.updatedAt)),
+            eb.and([
+              eb("c.updated_at", "=", new Date(cursor!.keys.updatedAt)),
+              eb.or([
+                eb("c.created_at", "<", new Date(cursor!.keys.createdAt)),
+                eb.and([
+                  eb("c.created_at", "=", new Date(cursor!.keys.createdAt)),
+                  eb("c.id", "<", cursor!.keys.id),
+                ]),
+              ]),
+            ]),
+          ]),
+        ),
+      )
+      .orderBy("c.updated_at", "desc")
+      .orderBy("c.created_at", "desc")
+      .orderBy("c.id", "desc")
+      .limit(input.limit + 1)
+      .$if(!cursor, (qb) => qb.offset(input.offset ?? 0));
 
-    if (cursor) {
-      const updatedAtParam = params.push(cursor.keys.updatedAt);
-      const createdAtParam = params.push(cursor.keys.createdAt);
-      const idParam = params.push(cursor.keys.id);
-      cursorClause = `
-         AND (
-           c.updated_at < $${updatedAtParam}::timestamptz
-           OR (
-             c.updated_at = $${updatedAtParam}::timestamptz
-             AND (
-               c.created_at < $${createdAtParam}::timestamptz
-               OR (c.created_at = $${createdAtParam}::timestamptz AND c.id < $${idParam}::uuid)
-             )
-           )
-         )`;
-    }
-
-    const limitParam = params.length + 1;
-    params.push(input.limit + 1);
-
-    let offsetClause = "";
-    if (!cursor) {
-      offsetClause = `OFFSET $${params.length + 1}`;
-      params.push(input.offset ?? 0);
-    }
-
-    const rows = await this.database.query<ConversationRow>(
-      `SELECT c.id, c.workspace_id, c.agent_id, a.name AS agent_name, c.source_channel, c.source_origin, c.channel_context, c.anonymous_session_id, c.created_at, c.updated_at
-       FROM conversations c
-       LEFT JOIN agents a ON a.id = c.agent_id AND a.workspace_id = c.workspace_id
-       WHERE c.workspace_id = $1 AND c.anonymous_session_id = $2${agentClause}
-       ${cursorClause}
-       ORDER BY c.updated_at DESC, c.created_at DESC, c.id DESC
-       LIMIT $${limitParam}
-       ${offsetClause}`,
-      params,
-    );
+    const rows = await query.execute() as ConversationRow[];
 
     const conversations = rows.slice(0, input.limit).map(mapConversation);
     const hasMore = rows.length > input.limit;
@@ -335,26 +365,27 @@ export class ConversationRepository implements ConversationRepositoryPort {
     anonymousSessionId: string,
     agentId?: string | null,
   ): Promise<ConversationRecord | null> {
-    const params = [conversationId, workspaceId, anonymousSessionId];
-    const agentClause = agentId ? ` AND c.agent_id = $${params.push(agentId)}` : "";
-    const [row] = await this.database.query<ConversationRow>(
-      `SELECT c.id, c.workspace_id, c.agent_id, a.name AS agent_name, c.source_channel, c.source_origin, c.channel_context, c.anonymous_session_id, c.created_at, c.updated_at
-       FROM conversations c
-       LEFT JOIN agents a ON a.id = c.agent_id AND a.workspace_id = c.workspace_id
-       WHERE c.id = $1 AND c.workspace_id = $2 AND c.anonymous_session_id = $3${agentClause}`,
-      params,
-    );
+    const row = await this.db
+      .selectFrom("conversations as c")
+      .leftJoin("agents as a", (join) =>
+        join.onRef("a.id", "=", "c.agent_id").onRef("a.workspace_id", "=", "c.workspace_id"),
+      )
+      .select(conversationSelectColumns)
+      .where("c.id", "=", conversationId)
+      .where("c.workspace_id", "=", workspaceId)
+      .where("c.anonymous_session_id", "=", anonymousSessionId)
+      .$if(Boolean(agentId), (qb) => qb.where("c.agent_id", "=", agentId!))
+      .executeTakeFirst() as ConversationRow | undefined;
 
     return row ? mapConversation(row) : null;
   }
 
   async touch(conversationId: string, workspaceId: string): Promise<void> {
-    await this.database.query(
-      `UPDATE conversations
-       SET updated_at = NOW()
-       WHERE id = $1
-         AND workspace_id = $2`,
-      [conversationId, workspaceId],
-    );
+    await this.db
+      .updateTable("conversations")
+      .set({ updated_at: currentTimestamp() })
+      .where("id", "=", conversationId)
+      .where("workspace_id", "=", workspaceId)
+      .execute();
   }
 }

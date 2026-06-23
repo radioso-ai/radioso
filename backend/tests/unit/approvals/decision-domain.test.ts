@@ -17,8 +17,8 @@ const record = (overrides: Partial<PendingDecisionRecord> = {}): PendingDecision
   stepId: "gate",
   reason: null,
   options: [
-    { id: "approve", label: "Approve", payload: { outcome: "approved" } },
-    { id: "reject", label: "Reject", payload: { outcome: "rejected" } },
+    { id: "approve", label: "Approve" },
+    { id: "issue_partial_refund", label: "Issue a partial refund" },
   ],
   deciderScope: { kind: "workspace_member" },
   contentHash: "hash_1",
@@ -33,25 +33,25 @@ const record = (overrides: Partial<PendingDecisionRecord> = {}): PendingDecision
 });
 
 describe("approval decision domain", () => {
-  it("resolves the selected option to its approved or rejected outcome", () => {
+  it("resolves any declared option to the operator's exact choice (no binary outcome)", () => {
     expect(resolveDecisionDomain({
       record: record(),
       optionId: "approve",
       contentHash: "hash_1",
       caller: { accountId: "account_1", workspaceId: "workspace_1" },
-    })).toMatchObject({
-      outcome: "approved",
-      decision: { optionId: "approve", outcome: "approved" },
+    })).toEqual({
+      decision: { optionId: "approve", label: "Approve" },
     });
 
+    // An author-named option that never matched the old approve/reject keyword map still
+    // resolves — the routine branches on this id.
     expect(resolveDecisionDomain({
       record: record(),
-      optionId: "reject",
+      optionId: "issue_partial_refund",
       contentHash: "hash_1",
       caller: { accountId: "account_1", workspaceId: "workspace_1" },
-    })).toMatchObject({
-      outcome: "rejected",
-      decision: { optionId: "reject", outcome: "rejected" },
+    })).toEqual({
+      decision: { optionId: "issue_partial_refund", label: "Issue a partial refund" },
     });
   });
 

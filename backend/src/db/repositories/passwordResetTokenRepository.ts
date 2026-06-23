@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { Database } from "../../shared/infra/database.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface PasswordResetTokenRecord {
   id: string;
@@ -19,6 +19,15 @@ interface PasswordResetTokenRow {
   used_at: Date | null;
   created_at: Date;
 }
+
+const passwordResetTokenColumns = [
+  "id",
+  "user_id",
+  "token_hash",
+  "expires_at",
+  "used_at",
+  "created_at",
+] as const;
 
 const mapPasswordResetToken = (row: PasswordResetTokenRow): PasswordResetTokenRecord => ({
   id: row.id,
@@ -44,7 +53,7 @@ export interface PasswordResetTokenRepositoryPort {
 }
 
 export class PasswordResetTokenRepository implements PasswordResetTokenRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async create(params: {
     userId: string;
@@ -53,74 +62,66 @@ export class PasswordResetTokenRepository implements PasswordResetTokenRepositor
     requestIp?: string | null;
     requestUserAgent?: string | null;
   }): Promise<PasswordResetTokenRecord> {
-    const row = await this.database.queryOne<PasswordResetTokenRow>(
-      `INSERT INTO password_reset_tokens (
-         id,
-         user_id,
-         token_hash,
-         expires_at,
-         request_ip,
-         request_user_agent
-       )
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, user_id, token_hash, expires_at, used_at, created_at`,
-      [
-        randomUUID(),
-        params.userId,
-        params.tokenHash,
-        params.expiresAt,
-        params.requestIp ?? null,
-        params.requestUserAgent ?? null,
-      ],
-    );
+    const row = await this.db
+      .insertInto("password_reset_tokens")
+      .values({
+        id: randomUUID(),
+        user_id: params.userId,
+        token_hash: params.tokenHash,
+        expires_at: params.expiresAt,
+        request_ip: params.requestIp ?? null,
+        request_user_agent: params.requestUserAgent ?? null,
+      })
+      .returning(passwordResetTokenColumns)
+      .executeTakeFirstOrThrow();
 
     return mapPasswordResetToken(row);
   }
 
   async findByTokenHash(tokenHash: string): Promise<PasswordResetTokenRecord | null> {
-    const row = await this.database.queryOptional<PasswordResetTokenRow>(
-      `SELECT id, user_id, token_hash, expires_at, used_at, created_at
-       FROM password_reset_tokens
-       WHERE token_hash = $1`,
-      [tokenHash],
-    );
+    const row = await this.db
+      .selectFrom("password_reset_tokens")
+      .select(passwordResetTokenColumns)
+      .where("token_hash", "=", tokenHash)
+      .executeTakeFirst();
 
     return row ? mapPasswordResetToken(row) : null;
   }
 
   async findLatestActiveForUser(userId: string, now: Date): Promise<PasswordResetTokenRecord | null> {
-    const row = await this.database.queryOptional<PasswordResetTokenRow>(
-      `SELECT id, user_id, token_hash, expires_at, used_at, created_at
-       FROM password_reset_tokens
-       WHERE user_id = $1
-         AND used_at IS NULL
-         AND expires_at > $2
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [userId, now],
-    );
+    const row = await this.db
+      .selectFrom("password_reset_tokens")
+      .select(passwordResetTokenColumns)
+      .where("user_id", "=", userId)
+      .where("used_at", "is", null)
+      .where("expires_at", ">", now)
+      .orderBy("created_at", "desc")
+      .limit(1)
+      .executeTakeFirst();
 
     return row ? mapPasswordResetToken(row) : null;
   }
 
   async markUsed(id: string, usedAt: Date): Promise<number> {
-    return this.database.execute(
-      `UPDATE password_reset_tokens
-       SET used_at = $2
-       WHERE id = $1
-         AND used_at IS NULL`,
-      [id, usedAt],
-    );
+    const result = await this.db
+      .updateTable("password_reset_tokens")
+      .set({ used_at: usedAt })
+      .where("id", "=", id)
+      .where("used_at", "is", null)
+      .executeTakeFirst();
+
+    return Number(result.numUpdatedRows);
   }
 
   async markAllActiveUsedForUser(userId: string, usedAt: Date): Promise<number> {
-    return this.database.execute(
-      `UPDATE password_reset_tokens
-       SET used_at = COALESCE(used_at, $2)
-       WHERE user_id = $1
-         AND used_at IS NULL
-         AND expires_at > $2`,
-      [userId, usedAt],
-    );
+    const result = await this.db
+      .updateTable("password_reset_tokens")
+      .set({ used_at: usedAt })
+      .where("user_id", "=", userId)
+      .where("used_at", "is", null)
+      .where("expires_at", ">", usedAt)
+      .executeTakeFirst();
+
+    return Number(result.numUpdatedRows);
   }
 }

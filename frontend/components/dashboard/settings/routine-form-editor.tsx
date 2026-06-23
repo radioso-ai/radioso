@@ -20,6 +20,7 @@ import { Textarea } from '@/components/ui/textarea'
 import type {
   RoutineGuardKind,
   RoutineSlotType,
+  RoutineStepKind,
   RoutineTerminalKind,
   RoutineValidationDiagnostic,
   WebhookDestination,
@@ -31,6 +32,8 @@ import {
 import type { CustomerEmailSkillDefinition, CustomerEmailSkillOutcome } from '@/lib/api-customer-email'
 import {
   buildCompletionExportPayloadPreview,
+  createApprovalOptionForm,
+  createDefaultApprovalOptions,
   createSlotForm,
   createStepForm,
   createTerminalForm,
@@ -39,11 +42,12 @@ import {
   type RoutineFormState,
   type RoutineStepForm,
 } from '@/lib/routine-form'
+import { APPROVAL_OPTION_LIMIT } from '@/lib/routine-approval'
 import type { RoutineSkillBindingState } from '@/lib/routine-prose'
 
 const slotTypes: RoutineSlotType[] = ['text', 'number', 'boolean', 'email', 'date']
 const guardKinds: RoutineGuardKind[] = ['llm', 'slot_filled', 'outcome', 'counter', 'default']
-const stepKinds: Array<'chat' | 'tool' | 'action'> = ['chat', 'tool', 'action']
+const stepKinds: RoutineStepKind[] = ['chat', 'tool', 'action', 'approval']
 const terminalKinds: RoutineTerminalKind[] = ['complete', 'handoff']
 
 const optionLabel = (value: string) => value.replace(/_/gu, ' ')
@@ -112,6 +116,127 @@ function ToolReferenceField({
           unknown skill
         </p>
       ) : null}
+    </div>
+  )
+}
+
+// Approval steps route only through their options, so they get a dedicated sub-editor
+// (captureKey + one row per option with a branch-target picker) in place of the generic
+// transitions list. Each per-option target is synthesized into a deterministic field guard
+// on save, so the author can't mis-author the branch.
+function ApprovalStepOptions({
+  step,
+  stepIndex,
+  targets,
+  diagnostics,
+  isPublished,
+  onChange,
+}: {
+  step: RoutineStepForm
+  stepIndex: number
+  targets: string[]
+  diagnostics: RoutineValidationDiagnostic[]
+  isPublished: boolean
+  onChange: (updater: (current: RoutineFormState) => RoutineFormState) => void
+}) {
+  const patchStep = (patch: Partial<RoutineStepForm>) => onChange((current) => ({
+    ...current,
+    steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? { ...item, ...patch } : item),
+  }))
+  const updateOption = (optionIndex: number, patch: Partial<RoutineStepForm['options'][number]>) => onChange((current) => ({
+    ...current,
+    steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? {
+      ...item,
+      options: item.options.map((option, candidateIndex) => candidateIndex === optionIndex ? { ...option, ...patch } : option),
+    } : item),
+  }))
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        This step pauses the routine and waits for a person to pick one choice. Each choice continues to the step or terminal you point it at.
+      </p>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-medium uppercase text-muted-foreground">Choices</p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={isPublished || step.options.length >= APPROVAL_OPTION_LIMIT}
+            onClick={() => patchStep({ options: [...step.options, createApprovalOptionForm(step.options.length)] })}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Add choice
+          </Button>
+        </div>
+        {step.options.map((option, optionIndex) => (
+          <div key={`${step.stableStepId}-option-${optionIndex}`} className="grid gap-2 rounded-md border border-border p-2 sm:grid-cols-[1fr_140px_150px_auto]">
+            <Input
+              aria-label={`Step ${stepIndex + 1} option ${optionIndex + 1} label`}
+              placeholder="Label (e.g. Approve)"
+              value={option.label}
+              disabled={isPublished}
+              onChange={(event) => updateOption(optionIndex, { label: event.target.value, id: option.id || event.target.value })}
+            />
+            <Input
+              aria-label={`Step ${stepIndex + 1} option ${optionIndex + 1} id`}
+              placeholder="id"
+              value={option.id}
+              disabled={isPublished}
+              onChange={(event) => updateOption(optionIndex, { id: event.target.value })}
+            />
+            <Select
+              value={option.target}
+              disabled={isPublished}
+              onValueChange={(value) => updateOption(optionIndex, { target: value })}
+            >
+              <SelectTrigger aria-label={`Step ${stepIndex + 1} option ${optionIndex + 1} target`}>
+                <SelectValue placeholder="Continue to…" />
+              </SelectTrigger>
+              <SelectContent>
+                {targets.map((id) => <SelectItem key={id} value={id}>{id}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={isPublished || step.options.length <= 2}
+              onClick={() => patchStep({ options: step.options.filter((_, candidateIndex) => candidateIndex !== optionIndex) })}
+              aria-label={`Remove option ${optionIndex + 1}`}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+            <Input
+              aria-label={`Step ${stepIndex + 1} option ${optionIndex + 1} description`}
+              placeholder="Extra detail for the person deciding (optional)"
+              value={option.description}
+              disabled={isPublished}
+              onChange={(event) => updateOption(optionIndex, { description: event.target.value })}
+              className="sm:col-span-4"
+            />
+          </div>
+        ))}
+        {step.options.length < 2 ? (
+          <p className="text-xs text-muted-foreground">Add at least two choices the person can pick from.</p>
+        ) : null}
+        <RoutineDiagnosticList diagnostics={diagnosticsForTarget(diagnostics, { scope: 'step', id: step.stableStepId })} />
+      </div>
+
+      <div className="space-y-1">
+        <Label htmlFor={`approvalCaptureKey${stepIndex}`} className="text-xs text-muted-foreground">Decision name</Label>
+        <Input
+          id={`approvalCaptureKey${stepIndex}`}
+          aria-label={`Step ${stepIndex + 1} decision name`}
+          placeholder="decision"
+          value={step.captureKey}
+          disabled={isPublished}
+          onChange={(event) => patchStep({ captureKey: event.target.value })}
+        />
+        <p className="text-xs text-muted-foreground">Records which choice was made. Change it only if a later step needs to read the result (e.g. refund_decision).</p>
+      </div>
     </div>
   )
 }
@@ -253,7 +378,14 @@ export function RoutineFormEditor({
               }))} />
               <Select value={step.kind} disabled={isPublished} onValueChange={(value) => onChange((current) => ({
                 ...current,
-                steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? { ...item, kind: value as 'chat' | 'tool' | 'action' } : item),
+                steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? {
+                  ...item,
+                  kind: value as RoutineStepKind,
+                  // Seed an approval step with Approve + Decline + a default decision name so the
+                  // sub-editor is a usable, savable decision without the author hunting for jargon.
+                  ...(value === 'approval' && item.options.length === 0 ? { options: createDefaultApprovalOptions() } : {}),
+                  ...(value === 'approval' && !item.captureKey.trim() ? { captureKey: 'decision' } : {}),
+                } : item),
               }))}>
                 <SelectTrigger aria-label={`Step ${stepIndex + 1} kind`}>
                   <SelectValue />
@@ -301,6 +433,8 @@ export function RoutineFormEditor({
                   ...current,
                   steps: current.steps.map((item, itemIndex) => itemIndex === stepIndex ? { ...item, actionType: event.target.value } : item),
                 }))} />
+              ) : step.kind === 'approval' ? (
+                <div className="flex items-center text-xs text-muted-foreground">Pauses for a human decision.</div>
               ) : <div />}
               <Button type="button" variant="ghost" size="sm" disabled={isPublished} onClick={() => onChange((current) => ({
                 ...current,
@@ -333,6 +467,16 @@ export function RoutineFormEditor({
             </div>
             <RoutineDiagnosticList diagnostics={diagnosticsForTarget(diagnostics, { scope: 'step', id: step.stableStepId })} />
 
+            {step.kind === 'approval' ? (
+              <ApprovalStepOptions
+                step={step}
+                stepIndex={stepIndex}
+                targets={[...form.steps.map((candidate) => candidate.stableStepId), ...form.terminals.map((candidate) => candidate.stableStepId)]}
+                diagnostics={diagnostics}
+                isPublished={isPublished}
+                onChange={onChange}
+              />
+            ) : (
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs font-medium uppercase text-muted-foreground">Transitions</p>
@@ -449,6 +593,7 @@ export function RoutineFormEditor({
                 )
               })}
             </div>
+            )}
           </div>
         ))}
       </div>

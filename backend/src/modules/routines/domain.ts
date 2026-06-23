@@ -119,11 +119,13 @@ export const routineStepSchema = z.object({
         message: "approval step requires captureKey",
       });
     }
-    if (!options || options.length === 0) {
+    // An approval is a decision: one choice is not a decision, it's a speed bump. Require at
+    // least two so a human can always decline or branch elsewhere, not just rubber-stamp.
+    if (!options || options.length < 2) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["options"],
-        message: "approval step requires at least one option",
+        message: "approval step requires at least two options",
       });
     }
     if (step.toolRef !== undefined && step.toolRef !== null) {

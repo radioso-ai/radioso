@@ -89,12 +89,17 @@ Related docs:
 
 ## Persistence And Data Access
 
-Owns the Postgres implementations of persistence ports: SQL, row→record mapping,
-migrations, and the generated schema snapshot. No ORM; raw SQL via `pg` lives in
-repository adapters behind per-module ports.
+Owns the Postgres implementations of persistence ports: queries, row→record mapping,
+migrations, and the generated schema snapshot. Data access goes through **Kysely** (the
+typed query builder) on the shared `pg.Pool`; Postgres-specific fragments live in
+`shared/infra/kysely/sqlHelpers.ts`, and the `DB` type is generated from the migrations
+(`pnpm run db:types`). Raw `pg` SQL is confined to a small allowlist — the migration runner,
+the `Database` pool wrapper, the pgvector/full-text adapters, and the connector files bound to
+the published `@radioso/connector-api` contract — enforced by `pnpm run lint:no-raw-sql`
+(`scripts/checkNoRawSql.mjs`). Migrations themselves stay raw `.sql`.
 
 Should not own product rules. Domain modules depend on a `*RepositoryPort` (a
-type) and never import `pg`, the `Database` class, or a concrete repository.
+type) and never import `pg`, Kysely, the `Database` class, or a concrete repository.
 
 Primary paths:
 
@@ -103,13 +108,18 @@ Primary paths:
 - `backend/src/db/repositories/` — repository adapters and row mappers
 - `backend/src/db/migrations/` — schema; system of record, applied in order
 - `backend/src/db/schema.sql` — generated read-only snapshot of the full schema
-- `backend/src/shared/infra/database.ts` — `query`/`queryOne`/`withTransaction`
-- `backend/src/app/server/dependencyBuilders.ts` — where repositories are wired
+- `backend/src/shared/infra/database.ts` — the pg Pool wrapper; exposes `.kysely` (the
+  shared `Kysely<DB>`) plus the legacy `query`/`queryOne`/`withTransaction` used by the
+  migration runner and allowlisted raw-SQL adapters
+- `backend/src/shared/infra/kysely/` — `kyselyDatabase.ts` (builds Kysely on the pool),
+  generated `schema.ts` (the `DB` type), and `sqlHelpers.ts` (the only home for
+  Postgres-specific fragments: pgvector, jsonb, `now()`, etc.)
+- `backend/src/app/server/dependencyBuilders.ts` — where repositories are wired (`database.kysely`)
 
 Useful searches:
 
 - `rg "implements .*RepositoryPort" backend/src/db/repositories`
-- `rg "new .*Repository\(database" backend/src/app/server/dependencyBuilders.ts`
+- `rg "new .*Repository\(database.kysely" backend/src/app/server/dependencyBuilders.ts`
 
 Focused checks:
 

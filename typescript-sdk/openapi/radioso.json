@@ -31,6 +31,9 @@
       "name": "History"
     },
     {
+      "name": "Context Variables"
+    },
+    {
       "name": "Retrieval"
     },
     {
@@ -11566,6 +11569,445 @@
           "buckets"
         ]
       },
+      "ContextVariable": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "valueType": {
+            "type": "string",
+            "enum": [
+              "string",
+              "json"
+            ]
+          },
+          "trustTier": {
+            "type": "string",
+            "enum": [
+              "unverified",
+              "signed"
+            ]
+          },
+          "sensitivity": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "sensitive"
+            ]
+          },
+          "defaultSurfacing": {
+            "type": "string",
+            "enum": [
+              "always",
+              "on_reference",
+              "operator_only"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "workspaceId",
+          "name",
+          "description",
+          "valueType",
+          "trustTier",
+          "sensitivity",
+          "defaultSurfacing",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "ContextVariableCreateRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "valueType": {
+            "type": "string",
+            "enum": [
+              "string",
+              "json"
+            ]
+          },
+          "trustTier": {
+            "type": "string",
+            "enum": [
+              "unverified",
+              "signed"
+            ]
+          },
+          "sensitivity": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "sensitive"
+            ]
+          },
+          "defaultSurfacing": {
+            "type": "string",
+            "enum": [
+              "always",
+              "on_reference",
+              "operator_only"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "valueType",
+          "trustTier",
+          "sensitivity",
+          "defaultSurfacing"
+        ]
+      },
+      "ContextVariableUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "valueType": {
+            "type": "string",
+            "enum": [
+              "string",
+              "json"
+            ]
+          },
+          "trustTier": {
+            "type": "string",
+            "enum": [
+              "unverified",
+              "signed"
+            ]
+          },
+          "sensitivity": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "sensitive"
+            ]
+          },
+          "defaultSurfacing": {
+            "type": "string",
+            "enum": [
+              "always",
+              "on_reference",
+              "operator_only"
+            ]
+          }
+        }
+      },
+      "ContextVariableResponse": {
+        "type": "object",
+        "properties": {
+          "contextVariable": {
+            "$ref": "#/components/schemas/ContextVariable"
+          }
+        },
+        "required": [
+          "contextVariable"
+        ]
+      },
+      "ContextVariableListResponse": {
+        "type": "object",
+        "properties": {
+          "contextVariables": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContextVariable"
+            }
+          }
+        },
+        "required": [
+          "contextVariables"
+        ]
+      },
+      "AgentContextVariableEnablement": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "variableId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "pushed",
+              "browser",
+              "resolver"
+            ]
+          },
+          "resolverSkillId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "maxAgeSeconds": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "resolverTimeoutMs": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "surfacing": {
+            "type": "string",
+            "enum": [
+              "always",
+              "on_reference",
+              "operator_only"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "variable": {
+            "$ref": "#/components/schemas/ContextVariable"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "variableId",
+          "source",
+          "resolverSkillId",
+          "maxAgeSeconds",
+          "resolverTimeoutMs",
+          "surfacing",
+          "enabled",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "AgentContextVariableEnablementRequest": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "pushed",
+              "browser",
+              "resolver"
+            ]
+          },
+          "resolverSkillId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "maxAgeSeconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "resolverTimeoutMs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "exclusiveMinimum": 0
+          },
+          "surfacing": {
+            "type": "string",
+            "enum": [
+              "always",
+              "on_reference",
+              "operator_only"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "surfacing"
+        ]
+      },
+      "AgentContextVariableEnablementResponse": {
+        "type": "object",
+        "properties": {
+          "enablement": {
+            "$ref": "#/components/schemas/AgentContextVariableEnablement"
+          }
+        },
+        "required": [
+          "enablement"
+        ]
+      },
+      "AgentContextVariableEnablementListResponse": {
+        "type": "object",
+        "properties": {
+          "enablements": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentContextVariableEnablement"
+            }
+          }
+        },
+        "required": [
+          "enablements"
+        ]
+      },
+      "ContextVariableScope": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "session",
+              "customer",
+              "agent",
+              "workspace"
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ]
+      },
+      "ContextVariableValue": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "variableId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ContextVariableScope"
+          },
+          "data": {
+            "description": "Arbitrary JSON value. The HTTP API rejects values above the serialized size limit."
+          },
+          "lastModified": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "workspaceId",
+          "variableId",
+          "scope",
+          "lastModified"
+        ]
+      },
+      "ContextVariableValueUpsertRequest": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/ContextVariableScope"
+          },
+          "data": {
+            "description": "Arbitrary JSON value. The HTTP API rejects values above the serialized size limit."
+          }
+        },
+        "required": [
+          "scope"
+        ]
+      },
+      "ContextVariableValueDeleteRequest": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/ContextVariableScope"
+          }
+        },
+        "required": [
+          "scope"
+        ]
+      },
+      "ContextVariableValueResponse": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "$ref": "#/components/schemas/ContextVariableValue"
+          }
+        },
+        "required": [
+          "value"
+        ]
+      },
       "PendingApprovalDecisionOption": {
         "type": "object",
         "properties": {
@@ -16138,6 +16580,708 @@
           },
           "404": {
             "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/context-variables": {
+      "post": {
+        "tags": [
+          "Context Variables"
+        ],
+        "summary": "Create a workspace context variable declaration",
+        "operationId": "createContextVariable",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContextVariableCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Context variable created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContextVariableResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Context Variables"
+        ],
+        "summary": "List workspace context variable declarations",
+        "operationId": "listContextVariables",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Context variables returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContextVariableListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/context-variables/{id}": {
+      "get": {
+        "tags": [
+          "Context Variables"
+        ],
+        "summary": "Get a workspace context variable declaration",
+        "operationId": "getContextVariable",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Context variable returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContextVariableResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Context variable not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Context Variables"
+        ],
+        "summary": "Update a workspace context variable declaration",
+        "operationId": "updateContextVariable",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContextVariableUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Context variable updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContextVariableResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Context variable not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Context Variables"
+        ],
+        "summary": "Delete a workspace context variable declaration",
+        "operationId": "deleteContextVariable",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Context variable deleted"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Context variable not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/context-variables": {
+      "get": {
+        "tags": [
+          "Context Variables"
+        ],
+        "summary": "List context variable enablements for an agent",
+        "operationId": "listAgentContextVariables",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Context variable enablements returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentContextVariableEnablementListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/context-variables/{variableId}": {
+      "put": {
+        "tags": [
+          "Context Variables"
+        ],
+        "summary": "Upsert a context variable enablement for an agent",
+        "operationId": "upsertAgentContextVariable",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "variableId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentContextVariableEnablementRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Context variable enablement saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentContextVariableEnablementResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or context variable not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Context Variables"
+        ],
+        "summary": "Delete a context variable enablement for an agent",
+        "operationId": "deleteAgentContextVariable",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "variableId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Context variable enablement deleted"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent, context variable, or enablement not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/context-variables/{id}/values": {
+      "put": {
+        "tags": [
+          "Context Variables"
+        ],
+        "summary": "Upsert a pushed context variable value",
+        "operationId": "upsertContextVariableValue",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContextVariableValueUpsertRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Context variable value saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContextVariableValueResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Context variable not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Context Variables"
+        ],
+        "summary": "Read a pushed context variable value",
+        "operationId": "getContextVariableValue",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "session",
+                "customer",
+                "agent",
+                "workspace"
+              ]
+            },
+            "required": true,
+            "name": "scopeType",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "scopeId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Context variable value returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContextVariableValueResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Context variable or value not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Context Variables"
+        ],
+        "summary": "Delete a pushed context variable value",
+        "operationId": "deleteContextVariableValue",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContextVariableValueDeleteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Context variable value deleted"
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Context variable or value not found",
             "content": {
               "application/json": {
                 "schema": {

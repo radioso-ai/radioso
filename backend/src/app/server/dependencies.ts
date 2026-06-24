@@ -84,6 +84,7 @@ import {
 import { WebhookSkillDefinitionService } from "../../modules/webhookSkills/public.js";
 import { SlackSkillDefinitionService } from "../../modules/slackSkills/public.js";
 import { ActionRequestRepository } from "../../db/repositories/actionRequestRepository.js";
+import { ContextVariableRepository } from "../../db/repositories/contextVariableRepository.js";
 import { CustomerReplyDeliveryDispatcher } from "../../modules/customerReplyDelivery/public.js";
 import { OperatorReplyService } from "../../modules/handoff/public.js";
 import { SlackCustomerReplyDeliverer } from "../../modules/slack/public.js";
@@ -475,6 +476,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repositories,
   });
   const connectorRegistry = buildConnectorRegistry({ composition, env, logger });
+  const contextVariableRepository = new ContextVariableRepository(infrastructure.database.kysely);
 
   // Lazy-loaded crawler utility provider for EE agent wizard, also reused by
   // the connector ingestion port for HTML-to-text normalisation.
@@ -691,6 +693,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     userRepository: repositories.userRepository,
     workspaceRepository: repositories.workspaceRepository,
     agentRepository: repositories.agentRepository,
+    contextVariableRepository,
     bootstrapGreetingCacheRepository: repositories.bootstrapGreetingCacheRepository,
     conversationRepository: repositories.conversationRepository,
     conversationOwnershipRepository: repositories.conversationOwnershipRepository,

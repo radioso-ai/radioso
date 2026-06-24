@@ -13,6 +13,7 @@ import { registerAssistantHistorySchemas } from "./schemas/assistantHistorySchem
 import { registerConnectorSchemas } from "./schemas/connectorSchemas.js";
 import { registerQualitySchemas } from "./schemas/qualitySchemas.js";
 import { registerUsageTrendSchemas } from "./schemas/usageTrendSchemas.js";
+import { registerContextVariableSchemas } from "./schemas/contextVariableSchemas.js";
 
 extendZodWithOpenApi(z);
 
@@ -35,6 +36,10 @@ export interface OpenApiSchemaCatalog {
   AgentChannelsLifecycleResponseSchema: z.ZodTypeAny;
   AgentParamsSchema: RouteParameterSchema;
   AgentSchema: z.ZodTypeAny;
+  AgentContextVariableEnablementListResponseSchema: z.ZodTypeAny;
+  AgentContextVariableEnablementRequestSchema: z.ZodTypeAny;
+  AgentContextVariableEnablementResponseSchema: z.ZodTypeAny;
+  AgentContextVariableParamsSchema: RouteParameterSchema;
   AuthoredDirectiveConditionSchema: z.ZodTypeAny;
   AuthoredDirectiveCreateRequestSchema: z.ZodTypeAny;
   AuthoredDirectiveListResponseSchema: z.ZodTypeAny;
@@ -90,6 +95,15 @@ export interface OpenApiSchemaCatalog {
   ChatSuggestionSchema: z.ZodTypeAny;
   ConversationOwnershipResponseSchema: z.ZodTypeAny;
   ConversationOwnershipSchema: z.ZodTypeAny;
+  ContextVariableCreateRequestSchema: z.ZodTypeAny;
+  ContextVariableListResponseSchema: z.ZodTypeAny;
+  ContextVariableParamsSchema: RouteParameterSchema;
+  ContextVariableResponseSchema: z.ZodTypeAny;
+  ContextVariableUpdateRequestSchema: z.ZodTypeAny;
+  ContextVariableValueDeleteRequestSchema: z.ZodTypeAny;
+  ContextVariableValueQuerySchema: RouteParameterSchema;
+  ContextVariableValueResponseSchema: z.ZodTypeAny;
+  ContextVariableValueUpsertRequestSchema: z.ZodTypeAny;
   CitationSchema: z.ZodTypeAny;
   ConnectorConfigUpdateSchema: z.ZodTypeAny;
   ConnectorConflictSchema: z.ZodTypeAny;
@@ -284,6 +298,7 @@ export const createOpenApiRegistry = () => {
   registerConnectorSchemas(registry, schemas);
   registerQualitySchemas(registry, schemas);
   registerUsageTrendSchemas(registry, schemas);
+  registerContextVariableSchemas(registry, schemas);
 
   return {
     registry,

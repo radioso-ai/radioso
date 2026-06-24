@@ -133,6 +133,19 @@ import { createPublishedRoutineRegistrationSource } from "../../src/app/composit
 import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/buildTelemetrySinks.js";
 import { TelemetryService } from "../../src/shared/observability/telemetry/telemetryService.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
+import type {
+  AgentContextVariableEnablementRecord,
+  ContextVariableCreateRecord,
+  ContextVariableRepositoryPort,
+  ContextVariableUpdateRecord,
+} from "../../src/db/repositories/contextVariableRepository.js";
+import type {
+  AgentContextVariableEnablement,
+  ContextVariable,
+  ContextVariableScope,
+  ContextVariableValue,
+  ResolvedVariableInput,
+} from "../../src/modules/context-variables/public.js";
 import {
   EvalCaseService,
   EvalRunService,
@@ -331,6 +344,150 @@ class InMemoryRoutineStateStore implements ConversationRoutineStore {
 
   async clear({ sessionId }: { sessionId: string }): Promise<void> {
     this.states.delete(sessionId);
+  }
+}
+
+class InMemoryContextVariableRepository implements ContextVariableRepositoryPort {
+  readonly variables = new Map<string, ContextVariable>();
+  readonly enablements = new Map<string, AgentContextVariableEnablement>();
+  readonly values = new Map<string, ContextVariableValue>();
+
+  async create(input: ContextVariableCreateRecord): Promise<ContextVariable> {
+    const now = new Date();
+    const variable: ContextVariable = {
+      id: randomUUID(),
+      workspaceId: input.workspaceId,
+      name: input.name,
+      description: input.description ?? null,
+      valueType: input.valueType,
+      trustTier: input.trustTier,
+      sensitivity: input.sensitivity,
+      defaultSurfacing: input.defaultSurfacing,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.variables.set(variable.id, variable);
+    return variable;
+  }
+
+  async update(workspaceId: string, id: string, input: ContextVariableUpdateRecord): Promise<ContextVariable | null> {
+    const current = await this.get(workspaceId, id);
+    if (!current) {
+      return null;
+    }
+    const updated: ContextVariable = {
+      ...current,
+      ...input,
+      description: "description" in input ? input.description ?? null : current.description,
+      updatedAt: new Date(),
+    };
+    this.variables.set(id, updated);
+    return updated;
+  }
+
+  async delete(workspaceId: string, id: string): Promise<boolean> {
+    const current = await this.get(workspaceId, id);
+    if (!current) {
+      return false;
+    }
+    this.variables.delete(id);
+    for (const key of this.enablements.keys()) {
+      if (key.endsWith(`:${id}`)) {
+        this.enablements.delete(key);
+      }
+    }
+    for (const key of this.values.keys()) {
+      if (key.startsWith(`${id}:`)) {
+        this.values.delete(key);
+      }
+    }
+    return true;
+  }
+
+  async listByWorkspace(workspaceId: string): Promise<ContextVariable[]> {
+    return [...this.variables.values()]
+      .filter((variable) => variable.workspaceId === workspaceId)
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  async get(workspaceId: string, id: string): Promise<ContextVariable | null> {
+    const variable = this.variables.get(id);
+    return variable && variable.workspaceId === workspaceId ? variable : null;
+  }
+
+  async upsertEnablement(input: AgentContextVariableEnablementRecord): Promise<AgentContextVariableEnablement> {
+    const key = this.enablementKey(input.agentId, input.variableId);
+    const existing = this.enablements.get(key);
+    const now = new Date();
+    const enablement: AgentContextVariableEnablement = {
+      id: existing?.id ?? randomUUID(),
+      agentId: input.agentId,
+      variableId: input.variableId,
+      source: input.source,
+      resolverSkillId: input.resolverSkillId ?? null,
+      maxAgeSeconds: input.maxAgeSeconds ?? null,
+      resolverTimeoutMs: input.resolverTimeoutMs ?? null,
+      surfacing: input.surfacing,
+      enabled: input.enabled ?? true,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
+    this.enablements.set(key, enablement);
+    return enablement;
+  }
+
+  async deleteEnablement(agentId: string, variableId: string): Promise<boolean> {
+    return this.enablements.delete(this.enablementKey(agentId, variableId));
+  }
+
+  async listByAgent(workspaceId: string, agentId: string): Promise<AgentContextVariableEnablement[]> {
+    return [...this.enablements.values()]
+      .filter((enablement) => enablement.agentId === agentId)
+      .map((enablement) => ({
+        ...enablement,
+        variable: this.variables.get(enablement.variableId),
+      }))
+      .filter((enablement) => enablement.variable?.workspaceId === workspaceId)
+      .sort((left, right) => (left.variable?.name ?? "").localeCompare(right.variable?.name ?? ""));
+  }
+
+  async upsertValue(variableId: string, scope: ContextVariableScope, data: unknown): Promise<ContextVariableValue> {
+    const variable = this.variables.get(variableId);
+    if (!variable) {
+      throw new Error(`Context variable ${variableId} not found`);
+    }
+    const key = this.valueKey(variableId, scope);
+    const existing = this.values.get(key);
+    const value: ContextVariableValue = {
+      id: existing?.id ?? randomUUID(),
+      workspaceId: variable.workspaceId,
+      variableId,
+      scope,
+      data,
+      lastModified: new Date(),
+    };
+    this.values.set(key, value);
+    return value;
+  }
+
+  async readValue(variableId: string, scope: ContextVariableScope): Promise<ContextVariableValue | null> {
+    return this.values.get(this.valueKey(variableId, scope)) ?? null;
+  }
+
+  async deleteValue(variableId: string, scope: ContextVariableScope): Promise<boolean> {
+    return this.values.delete(this.valueKey(variableId, scope));
+  }
+
+  async resolveForAgent(): Promise<ResolvedVariableInput[]> {
+    return [];
+  }
+
+  private enablementKey(agentId: string, variableId: string): string {
+    return `${agentId}:${variableId}`;
+  }
+
+  private valueKey(variableId: string, scope: ContextVariableScope): string {
+    return `${variableId}:${scope.type}:${scope.id}`;
   }
 }
 
@@ -889,6 +1046,7 @@ export const createTestDependencies = (overrides: {
   connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY!);
   const connectorDb = new InMemoryConnectorDatabase();
   const agentRepository = new InMemoryAgentRepository(createDefaultAgentSkillSettingsRegistry());
+  const contextVariableRepository = new InMemoryContextVariableRepository();
   const routineDefinitionRepository = new InMemoryRoutineDefinitionRepository();
   const webhookDestinationRepository = new InMemoryWebhookDestinationRepository();
   const webhookDestinations = new DefaultWebhookDestinationAdapter(new WebhookDestinationService({
@@ -1372,6 +1530,7 @@ export const createTestDependencies = (overrides: {
     userRepository,
     workspaceRepository,
     agentRepository,
+    contextVariableRepository,
     bootstrapGreetingCacheRepository,
     conversationRepository,
     conversationOwnershipRepository,

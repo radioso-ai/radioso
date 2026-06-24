@@ -88,6 +88,20 @@ export interface AgentAccessGrants {
   workspace_id: string;
 }
 
+export interface AgentContextVariables {
+  agent_id: string;
+  created_at: Generated<Timestamp>;
+  enabled: Generated<boolean>;
+  id: Generated<string>;
+  max_age_seconds: number | null;
+  resolver_skill_id: string | null;
+  resolver_timeout_ms: number | null;
+  source: string;
+  surfacing: string;
+  updated_at: Generated<Timestamp>;
+  variable_id: string;
+}
+
 export interface AgentDirectives {
   action: string;
   agent_id: string;
@@ -270,6 +284,29 @@ export interface ConnectorWhatsappMessageLog {
   status: string;
   wa_id: string;
   wamid: string;
+  workspace_id: string;
+}
+
+export interface ContextVariables {
+  created_at: Generated<Timestamp>;
+  default_surfacing: string;
+  description: string | null;
+  id: Generated<string>;
+  name: string;
+  sensitivity: string;
+  trust_tier: string;
+  updated_at: Generated<Timestamp>;
+  value_type: string;
+  workspace_id: string;
+}
+
+export interface ContextVariableValues {
+  data: Json;
+  id: Generated<string>;
+  last_modified: Generated<Timestamp>;
+  scope_id: string;
+  scope_type: string;
+  variable_id: string;
   workspace_id: string;
 }
 
@@ -868,6 +905,7 @@ export interface DB {
   account_memberships: AccountMemberships;
   accounts: Accounts;
   agent_access_grants: AgentAccessGrants;
+  agent_context_variables: AgentContextVariables;
   agent_directives: AgentDirectives;
   agent_document_sources: AgentDocumentSources;
   agent_skills: AgentSkills;
@@ -883,6 +921,8 @@ export interface DB {
   connector_sync_state: ConnectorSyncState;
   connector_whatsapp_contacts: ConnectorWhatsappContacts;
   connector_whatsapp_message_log: ConnectorWhatsappMessageLog;
+  context_variable_values: ContextVariableValues;
+  context_variables: ContextVariables;
   conversation_ownership: ConversationOwnership;
   conversations: Conversations;
   document_processing_jobs: DocumentProcessingJobs;

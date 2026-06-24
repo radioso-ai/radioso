@@ -20,3 +20,19 @@ export type {
 } from "./contextResolutionService.js";
 export { redactSnapshot, REDACTED_VALUE } from "./redaction.js";
 export type { ContextVariableSnapshot, SnapshotEntry } from "./redaction.js";
+export {
+  BUILT_IN_CONTEXT_VARIABLES,
+  BUILT_IN_CONTEXT_VARIABLE_BY_NAME,
+} from "./registry.js";
+export type { BuiltInContextVariableDescriptor } from "./registry.js";
+export type {
+  AgentContextVariableEnablement,
+  ContextVariable,
+  ContextVariableScope,
+  ContextVariableScopeType,
+  ContextVariableSensitivity,
+  ContextVariableSource,
+  ContextVariableTrustTier,
+  ContextVariableValue,
+  ContextVariableValueType,
+} from "./domain.js";

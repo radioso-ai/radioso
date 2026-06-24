@@ -177,7 +177,9 @@ describe("SlackOperatorNotificationSink", () => {
       type: "slack.post",
       workspaceId: "ws_1",
       conversationId: "conv_1",
-      idempotencyKey: "slack:operator_notification:handoff:conv_1",
+      // Scoped to this handoff event (the per-action idempotency key), so a re-escalation after
+      // a hand-back posts again instead of being deduped against the conversation.
+      idempotencyKey: "slack:operator_notification:handoff:conv_1:routine-action:conv_1:handoff.notify",
       payload: {
         installationId: installation.id,
         channelId: "COPS",

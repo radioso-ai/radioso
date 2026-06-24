@@ -29,7 +29,7 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
     outbox: SlackPostOutboxPort;
   }) {}
 
-  async deliver(notification: OperatorNotification, _context: OperatorNotificationContext): Promise<void> {
+  async deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<void> {
     const installation = await this.options.installations.findByWorkspaceId(notification.workspaceId);
     if (!installation) {
       return;
@@ -52,7 +52,10 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
         conversationId: notification.conversationId,
         idempotencyKey: slackPostIdempotencyKey({
           kind: "operator_notification",
-          sourceId: `handoff:${notification.conversationId}`,
+          // Scope to this handoff event, not the conversation: a conversation can re-enter human
+          // ownership after a hand-back, and each re-escalation must post again. The per-action
+          // idempotency key still dedupes a retry of the same handoff.
+          sourceId: `handoff:${notification.conversationId}:${context.idempotencyKey ?? context.requestId}`,
         }),
         payload: {
           installationId: installation.id,

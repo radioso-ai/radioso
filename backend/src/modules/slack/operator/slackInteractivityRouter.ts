@@ -65,9 +65,24 @@ export const createSlackInteractivityRouter = (options: SlackInteractivityRouter
       }
 
       if (payload.type === "block_actions") {
-        await options.handler.handleBlockActions(payload);
+        // Ack within Slack's ~3s window BEFORE the work: a decision click resumes a routine
+        // (model/provider calls) that can exceed the window. The handler reports its outcome via
+        // response_url (valid ~30 min), so the ack does not depend on the work finishing. Mirrors
+        // the events webhook's ack-then-process pattern.
         res.sendStatus(200);
+        void options.handler.handleBlockActions(payload).catch((error) => {
+          options.logger.error(
+            {
+              event: "slack_interactivity",
+              phase: "block_actions_failed",
+              err: error instanceof Error ? error.message : String(error),
+            },
+            "Slack block action processing failed",
+          );
+        });
       } else if (payload.type === "view_submission") {
+        // Synchronous: the response body carries the modal acknowledgement (close or field
+        // errors) and the work (persist reply + enqueue delivery) is fast — no routine resume.
         const result = await options.handler.handleViewSubmission(payload);
         res.status(200).json(result ?? {});
       } else {

@@ -126,6 +126,38 @@ describe("Slack interactivity contract", () => {
     expect(handler.handleBlockActions).toHaveBeenCalledWith(payload);
   });
 
+  it("acks a block action before the (possibly slow) handler completes", async () => {
+    // A decision click resumes a routine (model calls) that can exceed Slack's ~3s ack window.
+    // The route must ack BEFORE awaiting the handler — guard against a re-introduced await.
+    let releaseHandler: () => void = () => {};
+    const blocked = new Promise<void>((resolve) => {
+      releaseHandler = resolve;
+    });
+    const handler = {
+      handleBlockActions: vi.fn(() => blocked),
+      handleViewSubmission: vi.fn(async () => undefined),
+      handleViewClosed: vi.fn(async () => undefined),
+    };
+    const router = createSlackInteractivityRouter({
+      signingSecret,
+      now: () => nowMs,
+      logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() },
+      handler,
+    });
+    const body = formBody({
+      type: "block_actions",
+      team: { id: "T1" },
+      user: { id: "U1" },
+      actions: [{ action_id: "decision_resolve", value: "{}" }],
+    });
+
+    const response = await invokeRouter(router, body, createSignedHeaders(body));
+
+    expect(response.status).toBe(200);
+    expect(handler.handleBlockActions).toHaveBeenCalled();
+    releaseHandler();
+  });
+
   it("routes view submissions with the handler response body and view closed callbacks", async () => {
     const { router, handler } = createRouter();
     handler.handleViewSubmission.mockResolvedValueOnce({

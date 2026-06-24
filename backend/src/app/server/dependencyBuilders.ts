@@ -145,6 +145,8 @@ import {
   WebhookDestinationService,
   FetchWebhookHttpClient,
   type WebhookDestinationPublicAdapter,
+  type WebhookDestinationRepositoryPort,
+  type WebhookDestinationRoutineReferencePort,
   type WebhookDestinationRuntimePort,
 } from "../../modules/webhooks/public.js";
 import { WorkspaceLlmCapabilitySettingsService } from "../../modules/settings/composition.js";
@@ -416,11 +418,11 @@ export const buildWorkspaceProviderCredentialsService = (input: {
 
 export const buildWebhookDestinationAdapter = (input: {
   auditService: AuditPort;
-  env: Pick<Env, "CONNECTOR_ENCRYPTION_KEY" | "NODE_ENV">;
+  env: Pick<Env, "CONNECTOR_ENCRYPTION_KEY" | "NODE_ENV" | "WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK">;
   logger: Pick<AppLogger, "warn">;
   repositories: {
-    webhookDestinationRepository: WebhookDestinationRepository;
-    routineDefinitionRepository: Pick<RoutineDefinitionRepository, "listPublishedRoutineNamesReferencingDestination">;
+    webhookDestinationRepository: WebhookDestinationRepositoryPort;
+    routineDefinitionRepository: WebhookDestinationRoutineReferencePort;
     webhookSkillDefinitionRepository?: Pick<WebhookSkillDefinitionRepository, "listSkillNamesByDestination">;
   };
   assertPublicUrl: (url: string) => Promise<void>;
@@ -430,7 +432,7 @@ export const buildWebhookDestinationAdapter = (input: {
     auditService: input.auditService,
     encryption: { key: input.env.CONNECTOR_ENCRYPTION_KEY },
     assertPublicUrl: input.assertPublicUrl,
-    allowHttpLoopback: false,
+    allowHttpLoopback: input.env.NODE_ENV !== "production" && input.env.WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK === true,
     routineReferences: input.repositories.routineDefinitionRepository,
     skillReferences: input.repositories.webhookSkillDefinitionRepository
       ? {
@@ -936,7 +938,9 @@ export const buildChatServices = (input: {
       executor: new WebhookSkillExecutor({
         skills: input.webhookSkillDefinitionRepository,
         destinations: input.webhookDestinations,
-        httpClient: new FetchWebhookHttpClient(input.assertPublicWebsiteUrl),
+        httpClient: new FetchWebhookHttpClient(input.assertPublicWebsiteUrl, {
+          allowHttpLoopback: input.env.NODE_ENV !== "production" && input.env.WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK === true,
+        }),
         logger: input.logger,
       }),
     });

@@ -128,7 +128,7 @@ export class ApprovalDecisionService {
       this.resumeRunner.resume({
         record: resolvedRecord,
         optionId: resolved.decision.optionId,
-        payload: input.payload,
+        payload: resolved.decision.payload,
         decidedBy: input.caller.accountId,
         transaction,
       })

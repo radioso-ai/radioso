@@ -1857,7 +1857,7 @@ CREATE TABLE public.workspace_webhook_destinations (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT workspace_webhook_destinations_name_check CHECK ((NULLIF(btrim(name), ''::text) IS NOT NULL)),
     CONSTRAINT workspace_webhook_destinations_url_check CHECK ((NULLIF(btrim(url), ''::text) IS NOT NULL)),
-    CONSTRAINT workspace_webhook_destinations_url_check1 CHECK (((url ~* '^https://'::text) OR (url ~* '^http://(localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?(/|$)'::text)))
+    CONSTRAINT workspace_webhook_destinations_url_check1 CHECK (((url ~* '^https://'::text) OR (url ~* '^http://(([a-z0-9-]+\.)*localhost|127\.0\.0\.1|\[::1\]|host\.docker\.internal)(:[0-9]+)?(/|$)'::text)))
 );
 
 

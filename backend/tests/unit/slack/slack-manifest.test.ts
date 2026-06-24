@@ -12,7 +12,12 @@ describe("slack manifest", () => {
     expect(manifest.settings.event_subscriptions.request_url).toBe(
       "https://radioso.example.com/api/connectors/slack/events",
     );
+    expect(manifest.settings.interactivity).toEqual({
+      is_enabled: true,
+      request_url: "https://radioso.example.com/api/connectors/slack/interactivity",
+    });
     expect(manifest.oauth_config.scopes.bot).toEqual(slackBotScopes);
+    expect(manifest.oauth_config.scopes.bot).toEqual(expect.arrayContaining(["users:read", "users:read.email"]));
     expect(manifest.oauth_config.scopes.bot).not.toContain("search:read");
     expect(manifest.oauth_config.scopes.bot).not.toContain("search.messages");
   });

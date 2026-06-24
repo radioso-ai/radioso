@@ -3,6 +3,7 @@ import { sql } from "kysely";
 import type { AuditEventRecord } from "./auditEventRepository.js";
 import type { ConversationRecord } from "./conversationRepository.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
 export type HistoryItemsSourceRecord =
   | {
@@ -36,6 +37,7 @@ interface HistoryItemsRow {
   conversation_agent_name: string | null;
   source_channel: string | null;
   source_origin: string | null;
+  channel_context: ConversationChannelContext | null;
   anonymous_session_id: string | null;
   conversation_created_at: Date | null;
   conversation_updated_at: Date | null;
@@ -74,6 +76,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
            ag.name AS conversation_agent_name,
            c.source_channel,
            c.source_origin,
+           c.channel_context,
            c.anonymous_session_id,
            c.created_at AS conversation_created_at,
            c.updated_at AS conversation_updated_at,
@@ -103,6 +106,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
            NULL::text AS conversation_agent_name,
            NULL::text AS source_channel,
            NULL::text AS source_origin,
+           NULL::jsonb AS channel_context,
            NULL::text AS anonymous_session_id,
            NULL::timestamptz AS conversation_created_at,
            NULL::timestamptz AS conversation_updated_at,
@@ -156,6 +160,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
             agentName: row.conversation_agent_name ?? null,
             sourceChannel: row.source_channel,
             sourceOrigin: row.source_origin,
+            channelContext: (row.channel_context as ConversationChannelContext | null) ?? null,
             anonymousSessionId: row.anonymous_session_id,
             createdAt: new Date(row.conversation_created_at),
             updatedAt: new Date(row.conversation_updated_at),

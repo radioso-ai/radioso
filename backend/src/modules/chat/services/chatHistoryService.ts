@@ -12,6 +12,7 @@ import type {
 import { deriveMessageSourceFromRole } from "../../../db/repositories/messageRepository.js";
 import type { HistoryItemsRepositoryPort } from "../../../db/repositories/historyItemsRepository.js";
 import type { DocumentSearchHistoryEntry } from "../../documents/contracts/index.js";
+import type { ConversationChannelContext } from "@radioso/conversation-contract";
 import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
 import {
   ActivitySummaryPresenter,
@@ -97,6 +98,7 @@ export interface ChatConversationSummary {
   agentName: string | null;
   sourceChannel: string | null;
   sourceOrigin: string | null;
+  channelContext: ConversationChannelContext | null;
   anonymousSessionId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -163,6 +165,7 @@ export interface ChatConversationDetail {
   agentId: string | null;
   sourceChannel: string | null;
   sourceOrigin: string | null;
+  channelContext: ConversationChannelContext | null;
   createdAt: string;
   updatedAt: string;
   messageCount: number;
@@ -893,6 +896,7 @@ export class ChatHistoryService {
       agentId: conversation.agentId,
       sourceChannel: conversation.sourceChannel,
       sourceOrigin: conversation.sourceOrigin,
+      channelContext: conversation.channelContext,
       createdAt: toIsoString(conversation.createdAt),
       updatedAt: toIsoString(conversation.updatedAt),
       messageCount: messageSummary?.messageCount ?? total,

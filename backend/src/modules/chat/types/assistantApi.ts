@@ -1,5 +1,6 @@
 import type { ChatStreamEvent } from "../contracts/streamEvents.js";
 import type { ChatBootstrapResponse, ChatResponse } from "./chatResponses.js";
+import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
 export type AssistantRouteType = "direct" | "retrieval";
 export type AssistantRouteReason =
@@ -23,6 +24,7 @@ export interface AssistantRouteDiagnostics {
 export interface AssistantSourceContext {
   surface?: "authenticated_chat" | "public_chat" | "website_embed";
   sourceOrigin?: string | null;
+  channelContext?: ConversationChannelContext | null;
 }
 
 export interface AssistantPageContext {
@@ -47,6 +49,7 @@ export interface AssistantChatRequest {
   sourceContext?: AssistantSourceContext;
   metadataFilter?: Record<string, unknown>;
   sourceChannel?: string | null;
+  channelContext?: ConversationChannelContext | null;
   anonymousSessionId?: string | null;
   sourceOrigin?: string | null;
   pageContext?: AssistantPageContext | null;

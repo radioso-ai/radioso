@@ -1,4 +1,9 @@
-import type { ClarificationCandidate, ConversationTrace, StagedContext } from "@radioso/conversation-contract";
+import type {
+  ClarificationCandidate,
+  ConversationChannelContext,
+  ConversationTrace,
+  StagedContext,
+} from "@radioso/conversation-contract";
 
 import { notFound } from "../../../shared/domain/errors.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
@@ -75,6 +80,7 @@ export interface PrepareChatSessionInput {
   documentScope?: string[];
   pageContext?: AssistantPageContext | null;
   sourceChannel?: string | null;
+  channelContext?: ConversationChannelContext | null;
   anonymousSessionId?: string | null;
   sourceOrigin?: string | null;
 }
@@ -123,6 +129,7 @@ export class ChatSessionPreparer {
         input.sourceChannel ?? null,
         input.anonymousSessionId ?? null,
         input.sourceOrigin ?? null,
+        input.channelContext ?? null,
       );
     const promotedBootstrapGreeting = conversation
       ? null

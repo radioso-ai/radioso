@@ -114,6 +114,7 @@ import { InMemoryWebhookSkillDefinitionRepository } from "./inMemoryWebhookSkill
 import { InMemorySlackSkillDefinitionRepository } from "./inMemorySlackSkillDefinitions.js";
 import { InMemoryAgentSkillRepository } from "./inMemoryAgentSkills.js";
 import { SlackSkillDefinitionService } from "../../src/modules/slackSkills/public.js";
+import { OperatorReplyService } from "../../src/modules/handoff/public.js";
 import { AgentSkillsService } from "../../src/modules/agentSkills/public.js";
 import { createDefaultSkillCapabilityRegistry } from "../../src/modules/skills/capabilityRegistry.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../src/modules/documents/contracts/index.js";
@@ -1183,6 +1184,13 @@ export const createTestDependencies = (overrides: {
   );
   const assistantHistoryService = new AssistantHistoryService(chatHistoryService);
   const publicConversationEventBus = new InMemoryPublicConversationEventBus();
+  const operatorReplyService = new OperatorReplyService({
+    conversationRepository,
+    messageRepository,
+    auditService,
+    publicConversationEventBus,
+    customerReplyDelivery: { deliver: async () => {} },
+  });
   const retrievalSearchService = new RetrievalSearchService(retrievalPipeline);
   const retrievalAnswerService = new RetrievalAnswerService({
     retrievalPipeline,
@@ -1315,6 +1323,7 @@ export const createTestDependencies = (overrides: {
     documentStorage,
     chatService,
     approvalDecisionService,
+    operatorReplyService,
     workbenchReplayRunner: workbenchReplayRunner as any,
     actionDispatchWorker,
     chatBootstrapService,

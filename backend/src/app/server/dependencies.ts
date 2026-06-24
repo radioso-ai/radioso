@@ -68,7 +68,9 @@ import type { ConversationModelGateway } from "@radioso/conversation-contract";
 import type { ModelInferencePipeline } from "../../shared/infra/llm/modelInferencePipeline.js";
 import { OauthConnectionService, StaticOauthProviderRegistry } from "../../modules/integrationOauth/public.js";
 import {
+  PostgresSlackConversationLinkLookup,
   SlackInstallationService,
+  SlackWebApiClient,
   type SlackOauthMetadata,
 } from "../../modules/slack/public.js";
 import {
@@ -81,6 +83,10 @@ import {
 } from "../../modules/customerEmail/public.js";
 import { WebhookSkillDefinitionService } from "../../modules/webhookSkills/public.js";
 import { SlackSkillDefinitionService } from "../../modules/slackSkills/public.js";
+import { ActionRequestRepository } from "../../db/repositories/actionRequestRepository.js";
+import { CustomerReplyDeliveryDispatcher } from "../../modules/customerReplyDelivery/public.js";
+import { OperatorReplyService } from "../../modules/handoff/public.js";
+import { SlackCustomerReplyDeliverer } from "../../modules/slack/public.js";
 import { AgentSkillRepository, AgentSkillsService } from "../../modules/agentSkills/public.js";
 import { createDefaultSkillCapabilityRegistry } from "../../modules/skills/public.js";
 import { bindSkillCapabilityExecutors } from "../composition/skillCapabilityRegistry.js";
@@ -577,6 +583,26 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     chat.workbenchReplayRunner,
     logger,
   );
+  const customerReplyDelivery = new CustomerReplyDeliveryDispatcher({
+    slack: new SlackCustomerReplyDeliverer({
+      installations: repositories.slackInstallationRepository,
+      installationService: slackInstallationService,
+      persistence: new PostgresSlackConversationLinkLookup(infrastructure.database.kysely),
+      slack: {
+        conversationsOpen: async ({ users, botToken }) =>
+          new SlackWebApiClient({ botToken }).conversationsOpen({ users }),
+      },
+      outbox: new ActionRequestRepository(infrastructure.database.kysely),
+      logger,
+    }),
+  });
+  const operatorReplyService = new OperatorReplyService({
+    conversationRepository: repositories.conversationRepository,
+    messageRepository: repositories.messageRepository,
+    auditService: infrastructure.auditService,
+    publicConversationEventBus,
+    customerReplyDelivery,
+  });
 
   return {
     env,
@@ -637,6 +663,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentStorage: documents.documentStorage,
     chatService: chat.chatService,
     approvalDecisionService: chat.approvalDecisionService,
+    operatorReplyService,
     workbenchReplayRunner: chat.workbenchReplayRunner,
     chatBootstrapService: chat.chatBootstrapService,
     chatHistoryService: chat.chatHistoryService,

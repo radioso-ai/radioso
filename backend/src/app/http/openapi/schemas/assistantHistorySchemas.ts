@@ -247,6 +247,32 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
+  const ConversationChannelContextSchema = registry.register(
+    "ConversationChannelContext",
+    z.discriminatedUnion("provider", [
+      z.object({
+        provider: z.literal("slack"),
+        team: z.object({
+          id: z.string(),
+          name: z.string().optional(),
+        }),
+        channel: z.object({
+          id: z.string(),
+          type: z.enum(["im", "channel"]),
+        }),
+        threadTs: z.string().optional(),
+        user: z.object({
+          id: z.string(),
+          displayName: z.string().optional(),
+        }),
+      }),
+      z.object({
+        provider: z.literal("web"),
+        origin: z.string().optional(),
+      }),
+    ]),
+  );
+
   const ChatConversationSummarySchema = registry.register(
     "ChatConversationSummary",
     z.object({
@@ -255,6 +281,10 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       agentName: z.string().nullable(),
       sourceChannel: z.string().nullable(),
       sourceOrigin: z.string().nullable(),
+      // Union-with-null rather than `.nullable()`: `.nullable()` on a registered $ref emits a
+      // contradictory `allOf: [$ref, null]` under OpenAPI 3.1, so `channelContext: null` (every
+      // non-Slack conversation) would be invalid against the published schema.
+      channelContext: z.union([ConversationChannelContextSchema, z.null()]),
       anonymousSessionId: z.string().nullable(),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
@@ -458,6 +488,10 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       agentId: z.string().uuid().nullable(),
       sourceChannel: z.string().nullable(),
       sourceOrigin: z.string().nullable(),
+      // Union-with-null rather than `.nullable()`: `.nullable()` on a registered $ref emits a
+      // contradictory `allOf: [$ref, null]` under OpenAPI 3.1, so `channelContext: null` (every
+      // non-Slack conversation) would be invalid against the published schema.
+      channelContext: z.union([ConversationChannelContextSchema, z.null()]),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
       messageCount: z.number().int().min(0),

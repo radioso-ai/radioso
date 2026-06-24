@@ -184,6 +184,10 @@ describe("runtime configuration", () => {
     expect(env.OTEL_EXPORTER_OTLP_ENDPOINT).toBeUndefined();
     expect(env.OTEL_TRACES_SAMPLER).toBeUndefined();
     expect(env.OTEL_TRACES_SAMPLER_ARG).toBeUndefined();
+    expect(env.OTEL_LOGS_ENABLED).toBe(false);
+    expect(env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT).toBeUndefined();
+    expect(env.OTEL_EXPORTER_OTLP_LOGS_AUTH_BEARER).toBeUndefined();
+    expect(env.OTEL_LOGS_MIN_LEVEL).toBeUndefined();
     expect(env.PRODUCT_ANALYTICS_SINKS).toBe("audit");
     expect(env.ERROR_SINKS).toBe("audit");
     expect(env.RADIOSO_EDITION).toBe("oss");
@@ -225,6 +229,28 @@ describe("runtime configuration", () => {
     expect(env.OTEL_EXPORTER_OTLP_ENDPOINT).toBe("http://localhost:4318/v1/traces");
     expect(env.OTEL_TRACES_SAMPLER).toBe("parentbased_traceidratio");
     expect(env.OTEL_TRACES_SAMPLER_ARG).toBe("0.25");
+  });
+
+  it("requires an OTLP logs endpoint when OpenTelemetry logs are enabled", () => {
+    expect(() => getEnv({
+      ...baseEnv,
+      OTEL_LOGS_ENABLED: "true",
+    })).toThrow(/OTEL_EXPORTER_OTLP_LOGS_ENDPOINT/);
+  });
+
+  it("accepts OpenTelemetry logs export settings", () => {
+    const env = getEnv({
+      ...baseEnv,
+      OTEL_LOGS_ENABLED: "true",
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: "https://eu.i.posthog.com/i/v1/logs",
+      OTEL_EXPORTER_OTLP_LOGS_AUTH_BEARER: "phc_project_token",
+      OTEL_LOGS_MIN_LEVEL: "warn",
+    });
+
+    expect(env.OTEL_LOGS_ENABLED).toBe(true);
+    expect(env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT).toBe("https://eu.i.posthog.com/i/v1/logs");
+    expect(env.OTEL_EXPORTER_OTLP_LOGS_AUTH_BEARER).toBe("phc_project_token");
+    expect(env.OTEL_LOGS_MIN_LEVEL).toBe("warn");
   });
 
   it("rejects invalid sampler arguments when tracing is enabled", () => {

@@ -3,11 +3,20 @@ import pino from "pino";
 import { pinoHttp } from "pino-http";
 import type { ProductAnalyticsEvent } from "../analytics/productAnalyticsTypes.js";
 import type { ErrorEvent } from "../errors/errorTypes.js";
+import { emitPinoLogRecordForOpenTelemetry } from "./logging/index.js";
 import type { CorrelationFields } from "./telemetry/correlation.js";
 import { redactedValue, shouldRedactKey } from "./telemetry/redactionPolicy.js";
 
 export const createLogger = (level = process.env.NODE_ENV === "production" ? "info" : "debug") =>
-  pino({ level });
+  pino({
+    level,
+    hooks: {
+      logMethod(args, method, pinoLevel) {
+        emitPinoLogRecordForOpenTelemetry(pinoLevel, args);
+        method.apply(this, args);
+      },
+    },
+  });
 
 export type AppLogger = ReturnType<typeof createLogger>;
 

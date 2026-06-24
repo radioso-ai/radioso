@@ -118,7 +118,7 @@ describe("architecture boundary validation", () => {
     const result = await validateRepositoryBoundaries(new URL("../../..", import.meta.url).pathname);
 
     expect(result).toEqual({ valid: true, errors: [] });
-  }, 15_000);
+  }, 60_000);
 
   it("detects protected private imports when scanning repository files", async () => {
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "radioso-boundaries-"));

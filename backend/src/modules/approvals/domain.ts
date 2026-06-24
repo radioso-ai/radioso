@@ -109,12 +109,13 @@ export const resolveDecisionDomain = (input: {
   if (!option) {
     throw new ApprovalDecisionDomainError("invalid_option");
   }
+  const payload = input.payload !== undefined ? input.payload : option.payload;
 
   return {
     decision: {
       optionId: option.id,
       label: option.label,
-      ...(input.payload !== undefined ? { payload: input.payload } : {}),
+      ...(payload !== undefined ? { payload } : {}),
     },
   };
 };

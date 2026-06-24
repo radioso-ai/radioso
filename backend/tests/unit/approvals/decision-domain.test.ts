@@ -55,6 +55,25 @@ describe("approval decision domain", () => {
     });
   });
 
+  it("uses the stored option payload when the resolver receives only an option id", () => {
+    expect(resolveDecisionDomain({
+      record: record({
+        options: [
+          { id: "approve", label: "Approve", payload: { internalCode: "approve_refund" } },
+        ],
+      }),
+      optionId: "approve",
+      contentHash: "hash_1",
+      caller: { accountId: "account_1", workspaceId: "workspace_1" },
+    })).toEqual({
+      decision: {
+        optionId: "approve",
+        label: "Approve",
+        payload: { internalCode: "approve_refund" },
+      },
+    });
+  });
+
   it("rejects an option that is not in the pending decision option set", () => {
     expect(() => resolveDecisionDomain({
       record: record(),

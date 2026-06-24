@@ -89,9 +89,12 @@ const isDuplicateNameError = (error: unknown): boolean => {
     return false;
   }
   const record = error as { code?: unknown; constraint?: unknown; message?: unknown };
-  return record.code === "23505" ||
-    (typeof record.constraint === "string" && record.constraint.includes("workspace_webhook_destinations")) ||
-    (typeof record.message === "string" && /duplicate key|unique constraint/i.test(record.message));
+  if (record.constraint === "idx_workspace_webhook_destinations_workspace_lower_name") {
+    return true;
+  }
+  const hasDuplicateMessage =
+    typeof record.message === "string" && /duplicate key|unique constraint/i.test(record.message);
+  return record.code === "23505" || hasDuplicateMessage;
 };
 
 const isPublishedRoutineReferenceError = (error: unknown): boolean => {
@@ -106,7 +109,7 @@ const isPublishedRoutineReferenceError = (error: unknown): boolean => {
     );
 };
 
-const isLoopbackHttpUrl = (value: string): boolean => {
+const isLocalDevelopmentHttpUrl = (value: string): boolean => {
   try {
     const url = new URL(value);
     if (url.protocol !== "http:") {
@@ -115,6 +118,7 @@ const isLoopbackHttpUrl = (value: string): boolean => {
     const hostname = url.hostname.toLowerCase();
     return hostname === "localhost" ||
       hostname.endsWith(".localhost") ||
+      hostname === "host.docker.internal" ||
       hostname === "127.0.0.1" ||
       hostname === "::1" ||
       hostname === "[::1]";
@@ -348,7 +352,7 @@ export class WebhookDestinationService implements WebhookDestinationExistencePor
     }
 
     const normalized = value.replace(/^[A-Za-z][A-Za-z0-9+.-]*:/u, url.protocol);
-    if (url.protocol === "http:" && this.options.allowHttpLoopback === true && isLoopbackHttpUrl(value)) {
+    if (url.protocol === "http:" && this.options.allowHttpLoopback === true && isLocalDevelopmentHttpUrl(value)) {
       return normalized;
     }
     if (url.protocol !== "https:") {

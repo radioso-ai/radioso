@@ -246,6 +246,7 @@ export const createTestEnv = (): Env => ({
   PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 10,
   PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 600,
   CONNECTOR_ENCRYPTION_KEY: Buffer.from("0123456789abcdef0123456789abcdef").toString("base64"),
+  WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK: false,
   DOCUMENT_STORAGE_DRIVER: "local",
   DOCUMENT_STORAGE_LOCAL_PATH: "../.context/test-document-storage",
   DOCUMENT_STORAGE_BUCKET: "test-document-imports",

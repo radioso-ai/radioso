@@ -117,4 +117,30 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
       createdAt: expect.any(String),
     });
   });
+
+  it("passes the stored option payload into routine resume", async () => {
+    const pending = decision({
+      options: [
+        { id: "approve", label: "Approve", payload: { internalCode: "approve_refund" } },
+      ],
+    });
+    const repository = createRepository(pending);
+    const resumeRunner = runner();
+    const service = new ApprovalDecisionService(repository, resumeRunner, {
+      resolveWorkspaceRole: vi.fn(async () => "admin" as const),
+    });
+
+    await service.resolve({
+      agentId: pending.agentId,
+      handle: pending.handle,
+      optionId: "approve",
+      contentHash: pending.contentHash,
+      caller: { accountId: "account_1", workspaceId: pending.workspaceId },
+    });
+
+    expect(resumeRunner.resume).toHaveBeenCalledWith(expect.objectContaining({
+      optionId: "approve",
+      payload: { internalCode: "approve_refund" },
+    }));
+  });
 });

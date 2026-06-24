@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { afterEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it } from "vitest";
 
 import { ActionRequestRepository } from "../../src/db/repositories/actionRequestRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
@@ -18,6 +18,11 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
     created.push(r.id);
     return r;
   };
+
+  beforeEach(async () => {
+    await database.query(`DELETE FROM routine_action_requests`);
+    created.splice(0);
+  });
 
   afterEach(async () => {
     for (const id of created.splice(0)) {

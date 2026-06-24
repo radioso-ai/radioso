@@ -101,6 +101,7 @@ const envSchema = z.object({
       ),
   ),
   CONNECTOR_PUBLIC_BASE_URL: emptyStringToUndefined(z.string().url()),
+  WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK: booleanish(false),
   AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
   PASSWORD_RESET_TOKEN_TTL_MINUTES: z.coerce.number().int().positive().default(30),
@@ -260,6 +261,14 @@ const envSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ["RADIOSO_MCP_SIGNING_SECRET"],
       message: "RADIOSO_MCP_SIGNING_SECRET is required when backend MCP is enabled",
+    });
+  }
+
+  if (value.NODE_ENV === "production" && value.WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK"],
+      message: "WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK cannot be enabled in production",
     });
   }
 

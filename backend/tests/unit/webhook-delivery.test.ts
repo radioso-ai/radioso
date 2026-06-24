@@ -91,6 +91,42 @@ describe("FetchWebhookHttpClient", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("allows explicit local loopback delivery without running the public-url guard", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const assertPublicUrl = vi.fn(async () => {
+      throw new Error("loopback should bypass the public-url guard when explicitly allowed");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new FetchWebhookHttpClient(assertPublicUrl, { allowHttpLoopback: true });
+    await client.post({
+      url: "http://127.0.0.1:3001/api/radioso/commerce",
+      rawBody: "{}",
+      headers: { "X-Test": "1" },
+    });
+
+    expect(assertPublicUrl).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows explicit Docker host delivery without running the public-url guard", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const assertPublicUrl = vi.fn(async () => {
+      throw new Error("Docker host alias should bypass the public-url guard when explicitly allowed");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new FetchWebhookHttpClient(assertPublicUrl, { allowHttpLoopback: true });
+    await client.post({
+      url: "http://host.docker.internal:3001/api/radioso/commerce",
+      rawBody: "{}",
+      headers: { "X-Test": "1" },
+    });
+
+    expect(assertPublicUrl).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("blocks redirects to private addresses on the next hop", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(redirect("http://127.0.0.1/internal"));
     const assertPublicUrl = vi.fn(async (url: string) => {

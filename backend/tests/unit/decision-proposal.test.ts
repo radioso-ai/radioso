@@ -114,6 +114,8 @@ describe("decision proposal helper", () => {
     });
     expect(pendingDecision.handle).toMatch(/^pd_[0-9a-f-]{36}$/);
     expect(pendingDecision.handle).not.toEqual("conv_123");
+    expect(pendingDecision.options[0]).toMatchObject({ payload: { internalCode: "approve_refund" } });
+    expect(pendingDecision.options[1]).toMatchObject({ payload: { internalCode: "reject_refund" } });
     expect(pendingDecision.contentHash).toEqual(
       computeProposalContentHash({
         routineId: "routine_refund",

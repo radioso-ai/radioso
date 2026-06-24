@@ -42,7 +42,8 @@ export interface OpenTelemetryLoggingConfig {
 
 interface ActiveOpenTelemetryLogging {
   enabled: true;
-  logger: OpenTelemetryLogger;
+  logger?: LoggingLogger;
+  otelLogger: OpenTelemetryLogger;
   provider: LoggerProvider;
   serviceName: string;
 }
@@ -177,7 +178,8 @@ export const initializeOpenTelemetryLogging = (config: OpenTelemetryLoggingConfi
     logs.setGlobalLoggerProvider(provider);
     activeLogging = {
       enabled: true,
-      logger: logs.getLogger("radioso-pino", config.version),
+      logger: config.logger,
+      otelLogger: logs.getLogger("radioso-pino", config.version),
       provider,
       serviceName: config.serviceName,
     };
@@ -210,6 +212,42 @@ const messageFromArgs = (args: unknown[]): string | undefined => {
   return undefined;
 };
 
+const errorAttributesFromField = (key: string, error: Error): Record<string, string> => {
+  if (key === "err") {
+    return {
+      err: error.message,
+      errorClass: error.name,
+    };
+  }
+
+  if (key === "error") {
+    return {
+      errorClass: error.name,
+      errorMessage: error.message,
+    };
+  }
+
+  return {
+    [`${key}Class`]: error.name,
+    [`${key}Message`]: error.message,
+  };
+};
+
+const attributesFromRecord = (record: Record<string, unknown>): Record<string, unknown> => {
+  const attributes: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(record)) {
+    if (value instanceof Error) {
+      Object.assign(attributes, errorAttributesFromField(key, value));
+      continue;
+    }
+
+    attributes[key] = value;
+  }
+
+  return attributes;
+};
+
 const attributesFromArgs = (args: unknown[]): Record<string, unknown> => {
   const [firstArg] = args;
   if (firstArg instanceof Error) {
@@ -221,7 +259,7 @@ const attributesFromArgs = (args: unknown[]): Record<string, unknown> => {
   if (!isRecord(firstArg)) {
     return {};
   }
-  return firstArg;
+  return attributesFromRecord(firstArg);
 };
 
 export const emitPinoLogRecordForOpenTelemetry = (level: number, args: unknown[]): void => {
@@ -235,7 +273,7 @@ export const emitPinoLogRecordForOpenTelemetry = (level: number, args: unknown[]
   }
 
   const levelName = pinoLevelToName(level);
-  activeLogging.logger.emit({
+  activeLogging.otelLogger.emit({
     body: message,
     context: context.active(),
     severityNumber: levelToSeverityNumber[levelName],
@@ -257,18 +295,22 @@ export const shutdownOpenTelemetryLogging = async (): Promise<void> => {
   activeLogging = disabledLogging;
   logs.disable();
 
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<"timeout">((resolve) => {
+    timeoutHandle = setTimeout(() => resolve("timeout"), SHUTDOWN_TIMEOUT_MS);
+    timeoutHandle.unref?.();
+  });
+
   try {
-    await Promise.race([
-      logging.provider.shutdown(),
-      new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error("otel logging shutdown timed out")), SHUTDOWN_TIMEOUT_MS);
-      }),
-    ]);
-  } catch (error) {
-    if (error instanceof Error && error.message === "otel logging shutdown timed out") {
-      // The runtime is already shutting down; stdout still has the timeout signal.
-      return;
+    const result = await Promise.race([logging.provider.shutdown(), timeout]);
+    if (result === "timeout") {
+      logging.logger?.error({ timeoutMs: SHUTDOWN_TIMEOUT_MS }, "otel_logging_shutdown_timeout");
     }
-    throw error;
+  } catch (error) {
+    logging.logger?.error(errorFields(error), "otel_logging_shutdown_failed");
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
   }
 };

@@ -1160,6 +1160,7 @@ export const createTestDependencies = (overrides: {
     agentRepository,
     repository: routineDefinitionRepository,
     skillAuthoringCatalog,
+    contextVariableReader: contextVariableRepository,
     webhookDestinations: {
       existsByIdAndWorkspace: async (inputWorkspaceId, destinationId) =>
         webhookDestinations.existsByIdAndWorkspace(inputWorkspaceId, destinationId),

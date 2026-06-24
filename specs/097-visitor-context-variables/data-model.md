@@ -197,7 +197,7 @@ slot/skill-output `ref` (`validator.ts:300-325`, `skillArgumentResolver.ts:9-16`
 |---|---|---|---|
 | `literal` (existing) | `{ kind:"literal", value }` | type/enum match | inline value |
 | `ref` (existing) | `{ kind:"ref", ref }` | `ref` ∈ declared slots / skill outputs | `state.variables[ref]` |
-| `contextVariableRef` (NEW) | `{ kind:"contextVariableRef", variableId }` | variable enabled on agent; `value_type` compatible with input type | resolved staged context value for `variableId` |
+| `contextVariableRef` (NEW) | `{ kind:"contextVariableRef", contextVariable }` | variable name enabled on agent; `value_type` compatible with input type | resolved staged context value for `contextVariable` name |
 
 **Guarantee semantics:** a `contextVariableRef` binding is *optional* by default — the value
 may be absent at runtime — so it does NOT satisfy a required input's entry guarantee on its

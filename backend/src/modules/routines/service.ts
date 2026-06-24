@@ -4,6 +4,8 @@ import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 import { DefaultAllowCapabilityPolicy, type CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../shared/domain/actionCapabilities.js";
 import type { AuditEventInput, AuditPort } from "../audit/contracts/index.js";
+import type { AgentContextVariableEnablement } from "../context-variables/public.js";
+import { BUILT_IN_CONTEXT_VARIABLES } from "../context-variables/public.js";
 import type { SkillAuthoringCatalog } from "../skills/public.js";
 import {
   routineDefinitionDraftInputSchema,
@@ -74,6 +76,9 @@ export interface RoutineDefinitionServiceOptions {
     existsByIdAndWorkspace(workspaceId: string, destinationId: string): Promise<boolean>;
   };
   skillAuthoringCatalog?: SkillAuthoringCatalog;
+  contextVariableReader?: {
+    listByAgent(workspaceId: string, agentId: string): Promise<AgentContextVariableEnablement[]>;
+  };
   /**
    * Names of routine-dispatchable skills that the authoring catalog does not
    * enumerate but the runtime resolver still routes (customer-email, webhook).
@@ -380,9 +385,10 @@ export class RoutineDefinitionService {
     if (!this.options.skillAuthoringCatalog) {
       return validateRoutineDefinition(routine);
     }
-    const [descriptors, additionalNames] = await Promise.all([
+    const [descriptors, additionalNames, contextVariables] = await Promise.all([
       this.options.skillAuthoringCatalog.listForAgent({ workspaceId, agentId: routine.agentId }),
       this.options.additionalRoutineSkillNames?.({ workspaceId, agentId: routine.agentId }) ?? Promise.resolve([]),
+      this.options.contextVariableReader?.listByAgent(workspaceId, routine.agentId) ?? Promise.resolve([]),
     ]);
     return validateRoutineDefinition(routine, {
       // The catalog covers built-in + external skills (which also carry typed
@@ -394,6 +400,17 @@ export class RoutineDefinitionService {
         ...additionalNames,
       ]),
       skillDescriptors: new Map(descriptors.map((descriptor) => [descriptor.skillName, descriptor])),
+      availableContextVariables: new Map([
+        ...BUILT_IN_CONTEXT_VARIABLES.map((variable) => [variable.name, { valueType: variable.valueType }] as const),
+        ...contextVariables
+          .filter((enablement): enablement is AgentContextVariableEnablement & { variable: NonNullable<AgentContextVariableEnablement["variable"]> } =>
+            enablement.enabled && enablement.variable !== undefined
+          )
+          .map((enablement) => [
+            enablement.variable.name,
+            { valueType: enablement.variable.valueType },
+          ] as const),
+      ]),
     });
   }
 

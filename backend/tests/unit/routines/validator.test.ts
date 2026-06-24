@@ -276,6 +276,107 @@ describe("validateRoutineDefinition authoring catalog context", () => {
     ]);
   });
 
+  it("flags an unknown context variable when the optional context catalog is supplied", () => {
+    const result = validateRoutineDefinition({
+      ...definitionWithTool("order.lookup"),
+      steps: [{
+        ...definitionWithTool("order.lookup").steps[0]!,
+        metadata: {
+          inputBindings: {
+            cart: { kind: "contextVariableRef", contextVariable: "missing_cart" },
+          },
+        },
+      }],
+    }, {
+      skillDescriptors: descriptors(descriptor("order.lookup", [
+        { key: "cart", type: "text", required: false },
+      ])),
+      availableContextVariables: new Map([["cart", { valueType: "json" }]]),
+    });
+
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: "unknown_context_variable",
+      location: "step:lookup.inputBindings.cart",
+    }));
+  });
+
+  it("skips context-variable existence validation when no context catalog is supplied", () => {
+    const result = validateRoutineDefinition({
+      ...definitionWithTool("order.lookup"),
+      steps: [{
+        ...definitionWithTool("order.lookup").steps[0]!,
+        metadata: {
+          inputBindings: {
+            cart: { kind: "contextVariableRef", contextVariable: "cart" },
+          },
+        },
+      }],
+    }, {
+      skillDescriptors: descriptors(descriptor("order.lookup", [
+        { key: "cart", type: "text", required: false },
+      ])),
+    });
+
+    expect(result.diagnostics.find((diagnostic) => diagnostic.code === "unknown_context_variable")).toBeUndefined();
+  });
+
+  it("validates context-variable type compatibility", () => {
+    const result = validateRoutineDefinition({
+      ...definitionWithTool("order.lookup"),
+      steps: [{
+        ...definitionWithTool("order.lookup").steps[0]!,
+        metadata: {
+          inputBindings: {
+            jsonToString: { kind: "contextVariableRef", contextVariable: "cart" },
+            stringToEnum: { kind: "contextVariableRef", contextVariable: "customer_note" },
+            stringToNumber: { kind: "contextVariableRef", contextVariable: "customer_note" },
+          },
+        },
+      }],
+    }, {
+      skillDescriptors: descriptors(descriptor("order.lookup", [
+        { key: "jsonToString", type: "text", required: false },
+        { key: "stringToEnum", type: "enum", required: false, enumValues: ["vip", "standard"] },
+        { key: "stringToNumber", type: "number", required: false },
+      ])),
+      availableContextVariables: new Map([
+        ["cart", { valueType: "json" }],
+        ["customer_note", { valueType: "string" }],
+      ]),
+    });
+
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        code: "input_type_mismatch",
+        location: "step:lookup.inputBindings.stringToNumber",
+      }),
+    ]);
+  });
+
+  it("does not treat a required contextVariableRef as guaranteed on entry", () => {
+    const result = validateRoutineDefinition({
+      ...definitionWithTool("order.lookup"),
+      steps: [{
+        ...definitionWithTool("order.lookup").steps[0]!,
+        metadata: {
+          inputBindings: {
+            cart: { kind: "contextVariableRef", contextVariable: "cart" },
+          },
+        },
+      }],
+    }, {
+      skillDescriptors: descriptors(descriptor("order.lookup", [
+        { key: "cart", type: "text", required: true },
+      ])),
+      availableContextVariables: new Map([["cart", { valueType: "json" }]]),
+    });
+
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: "unsatisfiable_required_input",
+      location: "step:lookup.inputBindings.cart",
+    }));
+  });
+
   it("flags output-assignment target names that collide with slot keys or other output targets", () => {
     const result = validateRoutineDefinition(definitionWithSteps([
       {

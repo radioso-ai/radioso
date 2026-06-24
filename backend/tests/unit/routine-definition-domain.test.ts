@@ -153,6 +153,7 @@ describe("routine definition compiler and validator", () => {
         authorNote: "shown in authoring",
         inputBindings: {
           email: { kind: "variableRef", ref: "email" },
+          cart: { kind: "contextVariableRef", contextVariable: "cart" },
           includeHistory: { kind: "literal", value: true },
           retryCount: { kind: "literal", value: 2 },
           locale: { kind: "literal", value: "en-US" },
@@ -169,6 +170,7 @@ describe("routine definition compiler and validator", () => {
       authorNote: "shown in authoring",
       inputBindings: {
         email: { kind: "variableRef", ref: "email" },
+        cart: { kind: "contextVariableRef", contextVariable: "cart" },
         includeHistory: { kind: "literal", value: true },
         retryCount: { kind: "literal", value: 2 },
         locale: { kind: "literal", value: "en-US" },

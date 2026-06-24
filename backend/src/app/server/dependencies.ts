@@ -505,6 +505,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     actionCapabilities: composition.actionCapabilityMap,
     capabilityPolicy: composition.capabilityPolicy,
     skillAuthoringCatalog,
+    contextVariableReader: contextVariableRepository,
     // Mirror the runtime routine-skill resolver's name set (enabled webhook +
     // customer-email skills) so publish validation accepts what runtime routes.
     additionalRoutineSkillNames: async ({ workspaceId, agentId }) => {

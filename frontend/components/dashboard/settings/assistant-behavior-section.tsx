@@ -232,7 +232,7 @@ export function AssistantBehaviorSection({
       id="assistant-behavior"
       icon={<Bot className="h-5 w-5 text-primary" />}
       title="Assistant behavior"
-      description="How the assistant answers and starts conversations."
+      description="The agent's always-on persona and instructions — how it answers and opens every conversation. For rules that should only apply in specific situations, use Directives."
     >
       <div className="space-y-6">
         <div className="space-y-2">

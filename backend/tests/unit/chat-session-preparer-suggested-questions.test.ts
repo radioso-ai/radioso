@@ -275,4 +275,75 @@ describe("ChatSessionPreparer suggested-question settings", () => {
     expect(capturedRequest?.responseLanguage).toBe("English");
     expect(session.retrieval.responseSettings.responseLanguage).toBe("English");
   });
+
+  it("adds page context as structured staged context alongside retrieval", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const agentRepository = new InMemoryAgentRepository();
+    const agent = await agentRepository.create("ws-1", {
+      name: "Support Bot",
+      customInstruction: "Answer from docs.",
+    });
+    const retrievalTurn: RetrievalTurnPort = {
+      async interpret(request: RetrievalPipelineRequest) {
+        return {
+          request,
+          traceStartedAtMs: Date.now(),
+          context: { result: {} as never, startedAt: Date.now(), durationMs: 0 },
+          interpretation: {
+            result: {},
+            startedAt: Date.now(),
+            durationMs: 0,
+          },
+        };
+      },
+      async dispatch(input) {
+        return fixedRetrievalResult(input.interpreted.request);
+      },
+    };
+    const preparer = new ChatSessionPreparer(
+      conversationRepository,
+      messageRepository,
+      retrievalTurn,
+      createAuditService(),
+      undefined,
+      {
+        async resolve() {
+          return agent;
+        },
+      },
+    );
+
+    const session = await preparer.prepare({
+      workspaceId: "ws-1",
+      agentId: agent.id,
+      query: "What am I reading?",
+      pageContext: {
+        pageUrl: "https://example.test/docs",
+        pageTitle: "Docs",
+        pageLocale: "en-US",
+        browserLocale: "en",
+        content: "Visible page text.",
+      },
+    });
+
+    expect(session.stagedContext).toHaveLength(2);
+    expect(session.stagedContext[0]?.kind).toBe("retrieval");
+    expect(session.stagedContext[1]).toEqual({
+      kind: "context_variable",
+      id: "page_context",
+      data: {
+        kind: "page_context",
+        pageUrl: "https://example.test/docs",
+        pageTitle: "Docs",
+        pageLocale: "en-US",
+        browserLocale: "en",
+        content: "Visible page text.",
+      },
+      metadata: {
+        variableName: "page_context",
+        trustTier: "unverified",
+      },
+    });
+  });
 });

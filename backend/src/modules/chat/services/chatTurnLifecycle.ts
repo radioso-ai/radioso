@@ -47,6 +47,7 @@ import {
 } from "./chatTraceLeaves.js";
 import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
 import type { CapturedClarificationTransition } from "./clarification/deferredClarificationStore.js";
+import { resolveContextForTurn } from "../../context-variables/public.js";
 
 const DISPATCH_STAGE_ID_PREFIX = "dispatch:";
 
@@ -256,6 +257,8 @@ export const buildTurnTraceForPresentation = (
     : undefined;
 
   const assistantMessageId = randomUUID();
+  const contextVariablesSnapshot = resolveContextForTurn(input.session.pageContext).snapshot;
+  const hasContextVariablesSnapshot = Object.keys(contextVariablesSnapshot).length > 0;
   const assistantMessage: MessageCreateInput = {
     id: assistantMessageId,
     conversationId: input.session.conversation.id,
@@ -289,6 +292,9 @@ export const buildTurnTraceForPresentation = (
       modelId: input.session.agent.chatModelOverride?.model,
       citations: input.presentation.citations ?? [],
       answerSegments: input.presentation.answerSegments,
+      ...(hasContextVariablesSnapshot
+        ? { contextVariables: contextVariablesSnapshot }
+        : {}),
       // Raw model grounding verdict, retained for observability even when the
       // grounded-miss path reclassifies the skill outcome.
       groundingVerdict: input.presentation.grounding,

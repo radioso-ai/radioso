@@ -19,6 +19,7 @@ import type {
   RetrievalPipelineService,
   RewriteContinuityState,
 } from "../../retrieval/public.js";
+import { resolveContextForTurn } from "../../context-variables/public.js";
 import type { AgentRecord, AgentService } from "../../agents/public.js";
 import { DEFAULT_CONTACT_REQUEST_DELIVERY, defaultAgentBrandingSettings, isAgentRetrievalEnabled } from "../../agents/public.js";
 import { defaultWebsiteEmbedSettings } from "../../settings/contracts/websiteEmbed.js";
@@ -166,7 +167,7 @@ export class ChatSessionPreparer {
           priorRewriteContinuityState: rewriteContinuityState,
           // Only present to satisfy the PreparedSession shape; prepareRetrieval
           // recomputes the spine from the real retrieval result.
-          ...this.stagedSpineFor(directOnlyTurn.retrieval),
+          ...this.stagedSpineFor(directOnlyTurn.retrieval, input.pageContext),
         });
 
     return {
@@ -180,7 +181,7 @@ export class ChatSessionPreparer {
       effectiveQuery: input.query,
       pageContext: input.pageContext ?? null,
       priorRewriteContinuityState: rewriteContinuityState,
-      ...this.stagedSpineFor(retrieval),
+      ...this.stagedSpineFor(retrieval, input.pageContext),
     };
   }
 
@@ -220,9 +221,11 @@ export class ChatSessionPreparer {
    */
   private stagedSpineFor(
     retrieval: PreparedSession["retrieval"],
+    pageContext?: AssistantPageContext | null,
   ): Pick<PreparedSession, "stagedContext" | "turnTrace"> {
+    const resolvedContext = resolveContextForTurn(pageContext);
     return {
-      stagedContext: [toPreparedStagedContext(retrieval)],
+      stagedContext: [toPreparedStagedContext(retrieval), ...resolvedContext.staged],
       turnTrace: toConversationTrace(retrieval.trace),
     };
   }
@@ -250,7 +253,7 @@ export class ChatSessionPreparer {
       turnRoute,
       turnFraming: framing,
       effectiveQuery: input.query,
-      ...this.stagedSpineFor(retrieval),
+      ...this.stagedSpineFor(retrieval, input.pageContext),
     };
   }
 
@@ -285,7 +288,7 @@ export class ChatSessionPreparer {
         turnRoute,
         turnFraming: framing,
         effectiveQuery: input.query,
-        ...this.stagedSpineFor(retrieval),
+        ...this.stagedSpineFor(retrieval, input.pageContext),
       };
     }
     const interpretation = await this.retrievalTurn.interpret(pipelineInput);
@@ -307,7 +310,7 @@ export class ChatSessionPreparer {
       turnRoute: CHAT_TURN_ROUTE.DIRECT,
       turnFraming: framing,
       effectiveQuery: input.query,
-      ...this.stagedSpineFor(retrieval),
+      ...this.stagedSpineFor(retrieval, input.pageContext),
     };
   }
 

@@ -319,9 +319,14 @@ The default flow ends at a normal completion, so a simple linear routine needs
 no end chip. Use end and handoff chips on branch lines when a condition should
 finish or escalate early.
 
-The prose editor regenerates the completion and handoff messages from defaults.
-If you need custom completion or handoff wording, edit the routine in the
-**Form** view, which keeps that copy.
+The **Completion message** field below the editor sets what the agent says when
+the routine finishes; leave it blank to use the default. When the routine can
+hand off, a **Handoff message** field sets what it says as it escalates. The Form
+view edits the same messages in its terminal rows.
+
+The key point: routines that branch to several distinct endings — more than one
+completion or more than one handoff — are still authored in the **Form** view.
+Prose collapses to one completion and at most one handoff.
 
 ## Validate and publish
 
@@ -360,7 +365,10 @@ chips:
 - a decided-in-code check is `[if amount >= 100]`
 
 To restore the routine, paste the text back into the prose editor. The markers
-become chips again, and the name and trigger fill in from the text.
+become chips again, and the name and trigger fill in from the text. The text
+carries the body, the name, the trigger, and each variable's type and flags, but
+not routine-level settings such as priority, reentry, or the completion and
+handoff messages — set those again after pasting.
 
 The text carries names, not internal ids. Pasting into the same agent resolves
 every skill cleanly. Pasting into a different agent that does not have a referenced
@@ -383,9 +391,11 @@ The form exposes:
 - completion export through a `webhook_call` skill
 
 A routine that uses any of these advanced shapes - an action (outbox) step, a
-counter or outcome branch, a custom terminal message, a non-required slot, or a
-completion export - opens in **Form** automatically. The **Prose** tab shows a
-short note pointing you to **Form** for that routine.
+counter, outcome, or slot-filled branch, more than one completion or handoff, an
+activation gate, or a completion export - opens in **Form** automatically. The
+**Prose** tab shows a short note pointing you to **Form** for that routine.
+(Optional and editable-after-completion slots, custom completion or handoff
+messages, and custom terminal ids are all authored in **Prose** too.)
 
 ### Completion export
 

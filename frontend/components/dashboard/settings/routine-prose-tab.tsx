@@ -4,10 +4,11 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { RoutineChipEditor, type RoutineEditorVariable } from '@/components/dashboard/settings/routine-chip-editor'
 import type { RoutineChipKind } from '@/components/dashboard/settings/routine-chip-node'
+import { RoutineTerminalMessages } from '@/components/dashboard/settings/routine-terminal-messages'
 import type { RoutineDefinitionDraft } from '@/lib/api'
 import type { RoutineSlotType } from '@/lib/api-types'
 import type { RoutineDraftHeader } from '@/lib/routine-form'
-import { draftFromChipDoc, routineToChipDoc, type ChipDocVariable, type RoutineDocBlock } from '@/lib/routine-prose'
+import { draftFromChipDoc, readProseTerminals, routineToChipDoc, type ChipDocVariable, type RoutineDocBlock } from '@/lib/routine-prose'
 
 // The prose view of the routine editor. It loads an existing routine into inline chips
 // (via routineToChipDoc), owns the chip-document state, and emits a draft up whenever the
@@ -30,6 +31,17 @@ export function RoutineProseTab({
   const loaded = useMemo(() => routineToChipDoc(source), [source])
   const [variables, setVariables] = useState<ChipDocVariable[]>(loaded?.variables ?? [])
   const [blocks, setBlocks] = useState<RoutineDocBlock[]>([])
+
+  // The complete/handoff terminal ids + messages are preserved outside the chip body. Seed
+  // them from the loaded routine so a custom id or message round-trips; the message inputs
+  // edit the copy, the ids ride along untouched.
+  const initialTerminals = useMemo(() => readProseTerminals(source), [source])
+  const [completionMessage, setCompletionMessage] = useState(initialTerminals.complete.instruction ?? '')
+  const [handoffMessage, setHandoffMessage] = useState(initialTerminals.handoff?.instruction ?? '')
+
+  // The handoff message only applies when the routine actually hands off — show its input
+  // when a handoff branch exists in the body or the loaded routine already had one.
+  const usesHandoff = blocks.some((block) => block.chips.some((chip) => chip.kind === 'handoff')) || Boolean(initialTerminals.handoff)
 
   const reservedRefKinds = useMemo(() => {
     const reserved: Record<string, RoutineChipKind> = {}
@@ -55,6 +67,10 @@ export function RoutineProseTab({
       trigger: header.activation.triggerDescription,
       blocks,
       variables,
+      terminals: {
+        complete: { id: initialTerminals.complete.id, instruction: completionMessage },
+        handoff: { id: initialTerminals.handoff?.id, instruction: handoffMessage },
+      },
     })
     onDraftChange({
       ...draft,
@@ -66,7 +82,7 @@ export function RoutineProseTab({
         reentryMode: header.activation.reentryMode,
       },
     })
-  }, [loaded, blocks, variables, header, onDraftChange])
+  }, [loaded, blocks, variables, header, initialTerminals, completionMessage, handoffMessage, onDraftChange])
 
   const addVariable = (variable: RoutineEditorVariable) => {
     setVariables((current) =>
@@ -124,6 +140,14 @@ export function RoutineProseTab({
       <p className="text-xs text-muted-foreground">
         Type <kbd className="rounded border border-border px-1">@</kbd> or use the toolbar to insert a variable. Click a chip to set its type.
       </p>
+      <RoutineTerminalMessages
+        idPrefix="routineProseTab"
+        completionMessage={completionMessage}
+        onCompletionMessageChange={setCompletionMessage}
+        handoffMessage={handoffMessage}
+        onHandoffMessageChange={setHandoffMessage}
+        showHandoff={usesHandoff}
+      />
     </div>
   )
 }

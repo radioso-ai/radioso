@@ -5,6 +5,7 @@ import {
   createEmptyRoutineProseDraft,
   draftFromChipDoc,
   formatConditionLabel,
+  readProseTerminals,
   routineToChipDoc,
   slugifyVariableKey,
   type ChipDocVariable,
@@ -463,16 +464,82 @@ describe('routineToChipDoc (inverse serializer)', () => {
     expect(routineToChipDoc({ ...base, activation: { ...base.activation, gateRef: 'gate_1' } })).toBeNull()
     // Completion export would be silently dropped on a prose round-trip.
     expect(routineToChipDoc({ ...base, completionExport: { enabled: true, triggerKinds: ['complete'], destinationRef: 'dest_1' } })).toBeNull()
-    // More than one complete terminal isn't a prose shape.
+    // More than one complete terminal isn't a prose shape (branches target distinct endings).
     expect(routineToChipDoc({ ...base, terminals: [...base.terminals, { stableStepId: 'done2', kind: 'complete', instruction: 'x', ordinal: 1 }] })).toBeNull()
-    // Legacy prose completion copy still loads, but new prose drafts emit a null
-    // completion instruction so routines do not say "All set." as an extra final step.
-    expect(routineToChipDoc({ ...base, terminals: [{ ...base.terminals[0]!, instruction: 'All set.' }] })).not.toBeNull()
+    // More than one handoff terminal isn't a prose shape either.
+    expect(routineToChipDoc({ ...base, terminals: [
+      ...base.terminals,
+      { stableStepId: 'handoff1', kind: 'handoff', instruction: 'a', ordinal: 1 },
+      { stableStepId: 'handoff2', kind: 'handoff', instruction: 'b', ordinal: 2 },
+    ] })).toBeNull()
+    // A new prose draft emits a null completion instruction so routines do not say "All set."
+    // as an extra final step.
     expect(base.terminals[0]?.instruction).toBeNull()
-    // A custom completion message can't be shown in prose — would be silently overwritten.
-    expect(routineToChipDoc({ ...base, terminals: [{ ...base.terminals[0]!, instruction: 'Thanks, all done!' }] })).toBeNull()
-    // A non-default terminal id would be renamed on a prose round-trip.
-    expect(routineToChipDoc({ ...base, terminals: [{ ...base.terminals[0]!, stableStepId: 'complete_1' }] })).toBeNull()
+  })
+
+  it('reads and round-trips a custom completion message and terminal id', () => {
+    const draft = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: [{ text: 'Do a thing.', chips: [] }],
+      variables: [],
+      terminals: { complete: { id: 'complete_1', instruction: 'Thanks, all done!' } },
+    })
+    expect(draft.terminals).toEqual([
+      { stableStepId: 'complete_1', kind: 'complete', instruction: 'Thanks, all done!', ordinal: 0 },
+    ])
+    // The single-step chain completes into the configured terminal id.
+    expect(draft.transitions.at(-1)).toMatchObject({ toRef: 'complete_1', guardKind: 'default' })
+
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    const config = readProseTerminals(draft)
+    expect(config.complete).toEqual({ id: 'complete_1', instruction: 'Thanks, all done!' })
+
+    const redraft = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: paragraphsToBlocks(doc!.paragraphs),
+      variables: doc!.variables,
+      terminals: config,
+    })
+    expect(redraft.terminals).toEqual(draft.terminals)
+  })
+
+  it('reads and round-trips a custom handoff message and terminal id', () => {
+    const draft = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: [
+        { text: 'Check the order.', chips: [] },
+        { text: '', chips: [{ kind: 'handoff', refId: 'handoff' }] },
+      ],
+      variables: [],
+      terminals: { handoff: { id: 'escalate', instruction: 'Let me get a teammate.' } },
+    })
+    const handoff = draft.terminals.find((terminal) => terminal.kind === 'handoff')
+    expect(handoff).toEqual({ stableStepId: 'escalate', kind: 'handoff', instruction: 'Let me get a teammate.', ordinal: 1 })
+    // The handoff branch targets the configured terminal id.
+    expect(draft.transitions.some((transition) => transition.toRef === 'escalate')).toBe(true)
+
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    const config = readProseTerminals(draft)
+    expect(config.handoff).toEqual({ id: 'escalate', instruction: 'Let me get a teammate.' })
+
+    const redraft = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: paragraphsToBlocks(doc!.paragraphs),
+      variables: doc!.variables,
+      terminals: config,
+    })
+    expect(redraft.terminals.find((terminal) => terminal.kind === 'handoff')).toEqual(handoff)
+  })
+
+  it('defaults to a done terminal with null instruction when no terminal config is given', () => {
+    const draft = draftFromChipDoc({ name: 'x', trigger: 'y', blocks: [{ text: 'Do a thing.', chips: [] }], variables: [] })
+    expect(draft.terminals).toEqual([{ stableStepId: 'done', kind: 'complete', instruction: null, ordinal: 0 }])
   })
 
   it('round-trips an optional (non-required) slot through prose', () => {

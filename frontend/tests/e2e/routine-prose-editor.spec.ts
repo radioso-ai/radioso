@@ -59,6 +59,10 @@ test("author a routine with variable and skill chips, set a type, and save", asy
   // The new type is reflected on the chip face.
   await expect(variableChip).toContainText("date");
 
+  // The completion message is a terminal-level field the prose view now owns (parity with the
+  // Form composer's terminal rows).
+  await page.getByLabel("Completion message").fill("Thanks, your refund is on the way.");
+
   await page.screenshot({ path: "demo-screenshots/routine-chip-editor-demo.png", fullPage: true });
 
   await page.getByRole("button", { name: "Save routine" }).click();
@@ -71,6 +75,9 @@ test("author a routine with variable and skill chips, set a type, and save", asy
   // The slot flags persist through prose save (no Form fallback).
   expect(orderSlot?.required).toBe(false);
   expect(orderSlot?.mutable).toBe(true);
+  // The completion message persists on the complete terminal.
+  const completeTerminal = (created?.body?.terminals ?? []).find((terminal: { kind: string; instruction?: string | null }) => terminal.kind === "complete");
+  expect(completeTerminal?.instruction).toBe("Thanks, your refund is on the way.");
 });
 
 test("a blank form draft can switch back to prose without advanced fallback", async ({ page }) => {

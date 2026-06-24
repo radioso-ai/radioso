@@ -6,6 +6,7 @@ import { ArrowLeft, Route } from 'lucide-react'
 import { RoutineChipEditor, type RoutineEditorVariable } from '@/components/dashboard/settings/routine-chip-editor'
 import type { RoutineChipKind } from '@/components/dashboard/settings/routine-chip-node'
 import { RoutineSkillCatalogProvider } from '@/components/dashboard/settings/routine-skill-catalog-popover'
+import { RoutineTerminalMessages } from '@/components/dashboard/settings/routine-terminal-messages'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,8 +30,13 @@ export function RoutineProseEditor({
   const [trigger, setTrigger] = useState('')
   const [variables, setVariables] = useState<ChipDocVariable[]>([])
   const [blocks, setBlocks] = useState<RoutineDocBlock[]>([])
+  const [completionMessage, setCompletionMessage] = useState('')
+  const [handoffMessage, setHandoffMessage] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Show the handoff message input only once the routine actually hands off.
+  const usesHandoff = blocks.some((block) => block.chips.some((chip) => chip.kind === 'handoff'))
 
   const addVariable = (variable: RoutineEditorVariable) => {
     setVariables((current) =>
@@ -73,7 +79,16 @@ export function RoutineProseEditor({
     setIsSaving(true)
     setError(null)
     try {
-      const draft = draftFromChipDoc({ name, trigger, blocks, variables })
+      const draft = draftFromChipDoc({
+        name,
+        trigger,
+        blocks,
+        variables,
+        terminals: {
+          complete: { instruction: completionMessage },
+          handoff: { instruction: handoffMessage },
+        },
+      })
       const response = await routinesApi.createRoutine(agentId, draft)
       onCreated(response.routine)
     } catch (saveError) {
@@ -137,6 +152,15 @@ export function RoutineProseEditor({
             Type <kbd className="rounded border border-border px-1">@</kbd> or use the toolbar to insert a variable. Click a chip to set its type.
           </p>
         </div>
+
+        <RoutineTerminalMessages
+          idPrefix="routineProseEditor"
+          completionMessage={completionMessage}
+          onCompletionMessageChange={setCompletionMessage}
+          handoffMessage={handoffMessage}
+          onHandoffMessageChange={setHandoffMessage}
+          showHandoff={usesHandoff}
+        />
 
         {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
 

@@ -140,14 +140,36 @@ export type RoutineDocChip = {
 // original one-line-one-step behavior.
 export type RoutineDocBlock = { text: string; chips: RoutineDocChip[]; headingLevel?: 1 }
 
+// Canonical terminal references the chip document always uses. The actual terminal id and
+// message live in a ProseTerminalConfig carried alongside the document (so a routine keeps
+// a custom id or completion/handoff copy across a prose round-trip); the serializers map
+// between these canonical refs and the configured ids.
 const DONE_TERMINAL_ID = 'done'
 const HANDOFF_TERMINAL_ID = 'handoff'
-// The terminal copy the prose editor regenerates. The prose surface has no field for
-// terminal messages, so draftFromChipDoc emits these defaults and routineToChipDoc
-// refuses (falls back to Form) any routine whose terminals differ — otherwise an
-// author's custom completion/handoff message would be silently overwritten on load+save.
-const LEGACY_COMPLETE_INSTRUCTION = 'All set.'
+// The default message a handoff terminal carries when the author hasn't set one.
 const DEFAULT_HANDOFF_INSTRUCTION = 'Bringing in a teammate.'
+
+// The terminal id + message the prose editor preserves outside the chip body (the body only
+// references the canonical `done`/`handoff`). Fields are optional: an omitted id defaults to
+// the canonical terminal id, and an omitted completion message defaults to null / the handoff
+// message to the default copy.
+export type ProseTerminal = { id?: string; instruction?: string | null }
+export type ProseTerminalConfig = { complete?: ProseTerminal | null; handoff?: ProseTerminal | null }
+
+// Read the complete/handoff terminal config off a routine so the prose host can edit the
+// messages and re-emit the same ids. Only meaningful for prose-representable routines (one
+// complete terminal, at most one handoff); other shapes fall back to Form before this runs.
+export function readProseTerminals(routine: RoutineDefinitionDraft): { complete: ProseTerminal; handoff: ProseTerminal | null } {
+  const complete = routine.terminals.find((terminal) => terminal.kind === 'complete')
+  const handoff = routine.terminals.find((terminal) => terminal.kind === 'handoff')
+  return {
+    complete: {
+      id: complete?.stableStepId ?? DONE_TERMINAL_ID,
+      instruction: complete?.instruction ?? null,
+    },
+    handoff: handoff ? { id: handoff.stableStepId, instruction: handoff.instruction ?? null } : null,
+  }
+}
 
 export const createEmptyRoutineProseDraft = (input: {
   name?: string
@@ -185,9 +207,23 @@ export function draftFromChipDoc(input: {
   trigger: string
   blocks: RoutineDocBlock[]
   variables: ChipDocVariable[]
+  // The terminal ids + messages to emit. The chip body only references the canonical
+  // `done`/`handoff`; these resolve those refs to the actual terminal the routine keeps.
+  terminals?: ProseTerminalConfig
 }): RoutineDefinitionDraft {
   // Keep blocks with prose or chips (a branch can be pure chips: a condition + target).
   const blocks = input.blocks.filter((block) => block.text.trim().length > 0 || block.chips.length > 0)
+
+  // Resolve the terminal config to concrete ids + messages. A canonical end/handoff ref in
+  // the body maps to these ids; a fresh draft defaults to `done` (null copy) and `handoff`
+  // (default copy).
+  const completeId = input.terminals?.complete?.id?.trim() || DONE_TERMINAL_ID
+  const completeInstruction = input.terminals?.complete?.instruction?.trim() || null
+  const handoffId = input.terminals?.handoff?.id?.trim() || HANDOFF_TERMINAL_ID
+  const handoffInstruction = input.terminals?.handoff?.instruction?.trim() || DEFAULT_HANDOFF_INSTRUCTION
+  // Map a canonical terminal ref carried on a chip to the configured terminal id.
+  const resolveTerminalRef = (ref: string): string =>
+    ref === DONE_TERMINAL_ID ? completeId : ref === HANDOFF_TERMINAL_ID ? handoffId : ref
 
   // A `decision` chip declares an approval's capture key + choices (labels), authored inline.
   // Collected up front so a branch line that conditions on the decision (`@decision is deny`)
@@ -354,7 +390,13 @@ export function draftFromChipDoc(input: {
       for (const branch of branches) {
         if (branch.target === HANDOFF_TERMINAL_ID) needHandoffTerminal = true
       }
-      transitions.push(...approvalOptionTransitions(id, captureKey, branches, () => ordinal++))
+      // Resolve canonical end/handoff refs on each option to the configured terminal ids.
+      transitions.push(...approvalOptionTransitions(
+        id,
+        captureKey,
+        branches.map((branch) => ({ ...branch, target: resolveTerminalRef(branch.target) })),
+        () => ordinal++,
+      ))
       lastStepId = id
       lastStepRoutes = true
       lastStepIsDecision = false
@@ -407,7 +449,7 @@ export function draftFromChipDoc(input: {
           branchFrom(lastStepId, stepChip.refId, block)
         } else {
           if (handoffChip) needHandoffTerminal = true
-          branchFrom(lastStepId, handoffChip ? HANDOFF_TERMINAL_ID : DONE_TERMINAL_ID, block)
+          branchFrom(lastStepId, handoffChip ? handoffId : completeId, block)
         }
       }
       continue
@@ -499,7 +541,7 @@ export function draftFromChipDoc(input: {
   if (lastStepId && !lastStepRoutes && !lastStepIsDecision) {
     transitions.push({
       fromStep: lastStepId,
-      toRef: DONE_TERMINAL_ID,
+      toRef: completeId,
       guardKind: 'default',
       guardText: null,
       outcomeStatus: null,
@@ -509,10 +551,10 @@ export function draftFromChipDoc(input: {
   }
 
   const terminals: RoutineDefinitionDraft['terminals'] = [
-    { stableStepId: DONE_TERMINAL_ID, kind: 'complete', instruction: null, ordinal: 0 },
+    { stableStepId: completeId, kind: 'complete', instruction: completeInstruction, ordinal: 0 },
   ]
   if (needHandoffTerminal) {
-    terminals.push({ stableStepId: HANDOFF_TERMINAL_ID, kind: 'handoff', instruction: DEFAULT_HANDOFF_INSTRUCTION, ordinal: 1 })
+    terminals.push({ stableStepId: handoffId, kind: 'handoff', instruction: handoffInstruction, ordinal: 1 })
   }
 
   return {
@@ -611,8 +653,12 @@ function branchParagraph(edge: RoutineTransition, nameByRef: Map<string, string>
 // inline chips) from a routine, so an existing routine can be edited in the prose editor.
 // Chat steps and skill-bound tool steps are representable; it returns null for shapes the
 // prose editor can't show — action (outbox) steps, counter/outcome/slot guards, multi-way
-// forks, a non-handoff branch target, an activation gate, or completion export — so the
-// caller falls back to the form editor rather than silently dropping that configuration.
+// forks, a non-handoff branch target, multiple complete/handoff terminals, an activation
+// gate, or completion export — so the caller falls back to the form editor rather than
+// silently dropping that configuration. The complete/handoff terminal's id and message are
+// not dropped: the host reads them with readProseTerminals and feeds them back to
+// draftFromChipDoc, so a custom id or copy round-trips even though the body only references
+// the canonical `done`/`handoff`.
 export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | null {
   if (routine.activation.gateRef) return null
   if (routine.completionExport?.enabled) return null
@@ -621,23 +667,16 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
   if (steps.some((step) => step.kind !== 'chat' && step.kind !== 'tool' && step.kind !== 'approval')) return null
   if (steps.some((step) => step.kind === 'tool' && !step.toolRef)) return null
 
+  // Prose collapses to a single complete terminal and at most one handoff. More than one of
+  // either is a real multi-ending graph that only the Form view can author.
   const completeTerminals = routine.terminals.filter((terminal) => terminal.kind === 'complete')
   const handoffTerminals = routine.terminals.filter((terminal) => terminal.kind === 'handoff')
   if (completeTerminals.length !== 1) return null
   if (handoffTerminals.length > 1) return null
   if (routine.terminals.length !== completeTerminals.length + handoffTerminals.length) return null
 
-  // The prose editor regenerates terminals from constants and can't show their copy or
-  // ids — so any routine with a custom completion/handoff message or a non-default
-  // terminal id must edit in Form, or that copy/id would be lost on a load+save.
   const complete = completeTerminals[0]!
-  if (
-    complete.stableStepId !== DONE_TERMINAL_ID ||
-    (complete.instruction !== null && complete.instruction !== LEGACY_COMPLETE_INSTRUCTION)
-  ) return null
   const handoff = handoffTerminals[0]
-  if (handoff && (handoff.stableStepId !== HANDOFF_TERMINAL_ID || (handoff.instruction ?? '') !== DEFAULT_HANDOFF_INSTRUCTION)) return null
-
   const completeId = complete.stableStepId
   const handoffId = handoff?.stableStepId ?? null
   const stepIds = new Set(steps.map((step) => step.stableStepId))

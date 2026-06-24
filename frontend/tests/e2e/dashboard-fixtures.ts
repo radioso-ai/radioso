@@ -13,6 +13,13 @@ export const nowIso = "2026-04-26T12:00:00.000Z";
 
 type AuthoredDirectiveFixture = ApiSchemas["AuthoredDirective"];
 type BuiltInDirectiveFixture = ApiSchemas["BuiltInDirective"];
+export type ContextVariableFixture = ApiSchemas["ContextVariable"];
+export type AgentContextVariableEnablementFixture = ApiSchemas["AgentContextVariableEnablement"];
+export type ContextVariableRequestFixture = {
+  method: "POST" | "PATCH" | "DELETE" | "PUT";
+  path: string;
+  body?: unknown;
+};
 type ChannelLifecycleFixture = {
   lastUsedAt: string | null;
 };
@@ -692,6 +699,9 @@ export const installDashboardApiMocks = async (
     directiveUpdates?: DirectiveMutationFixture[];
     directives?: AuthoredDirectiveFixture[];
     builtIns?: BuiltInDirectiveFixture[];
+    contextVariables?: ContextVariableFixture[];
+    contextVariableEnablements?: AgentContextVariableEnablementFixture[];
+    contextVariableRequests?: ContextVariableRequestFixture[];
     routineUpdates?: RoutineMutationFixture[];
     routines?: RoutineFixture[];
     routineDraftAssist?: RoutineDraftAssistFixture;
@@ -752,6 +762,11 @@ export const installDashboardApiMocks = async (
   const builtIns = options.builtIns ?? baseBuiltInDirectives();
   let nextDirectiveIndex = 1;
   const directiveUpdates = options.directiveUpdates;
+  let contextVariables = options.contextVariables ?? [];
+  let contextVariableEnablements = options.contextVariableEnablements ?? [];
+  let nextContextVariableIndex = contextVariables.length + 1;
+  let nextContextVariableEnablementIndex = contextVariableEnablements.length + 1;
+  const contextVariableRequests = options.contextVariableRequests;
   let routines = options.routines ?? [];
   let nextRoutineIndex = 1;
   const routineUpdates = options.routineUpdates;
@@ -1348,6 +1363,123 @@ export const installDashboardApiMocks = async (
       if (request.method() === "DELETE") {
         options.agentSkillRequests?.push({ method: request.method(), path });
         agentSkills = agentSkills.filter((item) => item.id !== skillId);
+        await route.fulfill({ status: 204 });
+        return;
+      }
+    }
+
+    if (path === "/context-variables") {
+      if (request.method() === "GET") {
+        await json(route, { contextVariables });
+        return;
+      }
+
+      if (request.method() === "POST") {
+        const body = request.postDataJSON() as ApiSchemas["ContextVariableCreateRequest"];
+        contextVariableRequests?.push({ method: "POST", path, body });
+        const contextVariable: ContextVariableFixture = {
+          id: `88888888-8888-4888-8888-${String(nextContextVariableIndex).padStart(12, "0")}`,
+          workspaceId,
+          name: body.name,
+          description: body.description ?? null,
+          valueType: body.valueType,
+          trustTier: body.trustTier,
+          sensitivity: body.sensitivity,
+          defaultSurfacing: body.defaultSurfacing,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        };
+        nextContextVariableIndex += 1;
+        contextVariables = [...contextVariables, contextVariable];
+        await json(route, { contextVariable }, 201);
+        return;
+      }
+    }
+
+    if (path.startsWith("/context-variables/")) {
+      const variableId = path.replace("/context-variables/", "");
+      const contextVariable = contextVariables.find((item) => item.id === variableId);
+      if (!contextVariable) {
+        await json(route, { error: { code: "not_found", message: "Context variable not found" } }, 404);
+        return;
+      }
+
+      if (request.method() === "PATCH") {
+        const body = request.postDataJSON() as ApiSchemas["ContextVariableUpdateRequest"];
+        contextVariableRequests?.push({ method: "PATCH", path, body });
+        contextVariables = contextVariables.map((item) =>
+          item.id === variableId
+            ? {
+                ...item,
+                ...body,
+                description: body.description === undefined ? item.description : body.description,
+                updatedAt: nowIso,
+              }
+            : item
+        );
+        await json(route, { contextVariable: contextVariables.find((item) => item.id === variableId) });
+        return;
+      }
+
+      if (request.method() === "DELETE") {
+        contextVariableRequests?.push({ method: "DELETE", path });
+        contextVariables = contextVariables.filter((item) => item.id !== variableId);
+        contextVariableEnablements = contextVariableEnablements.filter((item) => item.variableId !== variableId);
+        await route.fulfill({ status: 204 });
+        return;
+      }
+    }
+
+    if (path === `/agents/${defaultAgentId}/context-variables`) {
+      if (request.method() === "GET") {
+        await json(route, {
+          enablements: contextVariableEnablements.map((enablement) => ({
+            ...enablement,
+            variable: contextVariables.find((item) => item.id === enablement.variableId),
+          })),
+        });
+        return;
+      }
+    }
+
+    if (path.startsWith(`/agents/${defaultAgentId}/context-variables/`)) {
+      const variableId = path.replace(`/agents/${defaultAgentId}/context-variables/`, "");
+      const contextVariable = contextVariables.find((item) => item.id === variableId);
+      if (!contextVariable) {
+        await json(route, { error: { code: "not_found", message: "Context variable not found" } }, 404);
+        return;
+      }
+
+      if (request.method() === "PUT") {
+        const body = request.postDataJSON() as ApiSchemas["AgentContextVariableEnablementRequest"];
+        contextVariableRequests?.push({ method: "PUT", path, body });
+        const existing = contextVariableEnablements.find((item) => item.variableId === variableId);
+        const enablement: AgentContextVariableEnablementFixture = {
+          id: existing?.id ?? `99999999-9999-4999-9999-${String(nextContextVariableEnablementIndex).padStart(12, "0")}`,
+          agentId: defaultAgentId,
+          variableId,
+          source: body.source,
+          resolverSkillId: body.resolverSkillId ?? null,
+          maxAgeSeconds: body.maxAgeSeconds ?? null,
+          resolverTimeoutMs: body.resolverTimeoutMs ?? null,
+          surfacing: body.surfacing,
+          enabled: body.enabled ?? true,
+          createdAt: existing?.createdAt ?? nowIso,
+          updatedAt: nowIso,
+          variable: contextVariable,
+        };
+        if (!existing) nextContextVariableEnablementIndex += 1;
+        contextVariableEnablements = [
+          ...contextVariableEnablements.filter((item) => item.variableId !== variableId),
+          enablement,
+        ];
+        await json(route, { enablement });
+        return;
+      }
+
+      if (request.method() === "DELETE") {
+        contextVariableRequests?.push({ method: "DELETE", path });
+        contextVariableEnablements = contextVariableEnablements.filter((item) => item.variableId !== variableId);
         await route.fulfill({ status: 204 });
         return;
       }

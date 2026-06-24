@@ -11,6 +11,7 @@ import {
   MessageCircle,
   MessageSquare,
   Plug,
+  Braces,
   Plus,
   Route,
   ScrollText,
@@ -40,6 +41,7 @@ const AGENT_GROUPS: { label: string | null; items: AgentItem[] }[] = [
       { id: 'directives', label: 'Directives', icon: ScrollText },
       { id: 'routines', label: 'Routines', icon: Route },
       { id: 'skills', label: 'Skills', icon: Wrench },
+      { id: 'context-variables', label: 'Context', icon: Braces },
     ],
   },
   {

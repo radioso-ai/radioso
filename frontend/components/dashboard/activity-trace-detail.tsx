@@ -850,16 +850,21 @@ function StageOverview({ stage, trace }: { stage: ActivityStage; trace?: Activit
 export function ActivityTraceDetail({
   activityTrace,
   selectedStageId,
+  visitorContext,
 }: {
   activityTrace?: ActivityTrace
   selectedStageId?: string
+  visitorContext?: unknown
 }) {
   const [chunkInspectorRequest, setChunkInspectorRequest] = useState<ChunkInspectorRequest>(null)
 
   if (!activityTrace) {
     return (
-      <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
-        Detailed activity trace unavailable for this answer.
+      <div className="space-y-4 select-text">
+        <RawBlock label="Visitor context" value={visitorContext} />
+        <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
+          Detailed activity trace unavailable for this answer.
+        </div>
       </div>
     )
   }
@@ -878,6 +883,7 @@ export function ActivityTraceDetail({
   return (
     <ChunkInspectorContext.Provider value={setChunkInspectorRequest}>
       <div className="space-y-4 select-text">
+        <RawBlock label="Visitor context" value={visitorContext} />
         <StageOverview stage={selectedStage} trace={activityTrace} />
 
       <details className="group rounded-lg border border-border/70 bg-background/60 p-3 text-xs text-muted-foreground">

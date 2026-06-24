@@ -50,6 +50,16 @@ export type DirectiveDraftRequest = ApiSchemas['DirectiveDraftRequest']
 export type DirectiveDraftResponse = ApiSchemas['DirectiveDraftResponse']
 export type DirectiveDraftDirective = ApiSchemas['DirectiveDraftDirective']
 
+export type ContextVariable = ApiSchemas['ContextVariable']
+export type ContextVariableCreateRequest = ApiSchemas['ContextVariableCreateRequest']
+export type ContextVariableUpdateRequest = ApiSchemas['ContextVariableUpdateRequest']
+export type ContextVariableResponse = ApiSchemas['ContextVariableResponse']
+export type ContextVariableListResponse = ApiSchemas['ContextVariableListResponse']
+export type AgentContextVariableEnablement = ApiSchemas['AgentContextVariableEnablement']
+export type AgentContextVariableEnablementRequest = ApiSchemas['AgentContextVariableEnablementRequest']
+export type AgentContextVariableEnablementResponse = ApiSchemas['AgentContextVariableEnablementResponse']
+export type AgentContextVariableEnablementListResponse = ApiSchemas['AgentContextVariableEnablementListResponse']
+
 export type RoutineDefinitionStatus = ApiSchemas['RoutineDefinition']['status']
 export type RoutineSlotType = 'text' | 'number' | 'boolean' | 'email' | 'date'
 export type RoutineStepKind = 'chat' | 'tool' | 'action' | 'approval'

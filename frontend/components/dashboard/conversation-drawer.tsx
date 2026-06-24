@@ -192,6 +192,10 @@ function ChatDiagnosticsPanel({
 
   const diagnosticsDebug =
     diagnosticsMessage?.role === 'assistant' ? diagnosticsMessage.debug : undefined
+  const diagnosticsMetadata = diagnosticsMessage && typeof diagnosticsMessage === 'object'
+    ? diagnosticsMessage as ChatConversationTurn & { metadataJson?: Record<string, unknown>; metadata_json?: Record<string, unknown> }
+    : null
+  const visitorContext = diagnosticsMetadata?.metadataJson?.contextVariables ?? diagnosticsMetadata?.metadata_json?.contextVariables
   const resolvedActivityTrace = activityTrace ?? diagnosticsDebug?.activityTrace
   // The outcome summary reads from the turn spine — which knows a routine drove
   // the reply or that a clarification was asked — so it can be specific instead
@@ -247,7 +251,11 @@ function ChatDiagnosticsPanel({
             )}
           </div>
           <div className="min-h-0">
-            <ActivityTraceDetail activityTrace={resolvedActivityTrace} selectedStageId={selectedStageId} />
+            <ActivityTraceDetail
+              activityTrace={resolvedActivityTrace}
+              selectedStageId={selectedStageId}
+              visitorContext={visitorContext}
+            />
           </div>
         </div>
       )}

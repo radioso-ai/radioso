@@ -65,6 +65,11 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
     logger: dependencies.logger,
     chat: createConnectorChatPort(dependencies.chatService),
     ingestion: dependencies.connectorIngestionPort,
+    approvalDecisionService: dependencies.approvalDecisionService,
+    operatorReplyService: dependencies.operatorReplyService,
+    auditService: dependencies.auditService,
+    metricsRegistry: dependencies.metricsRegistry,
+    assertPublicUrl: dependencies.assertPublicWebsiteUrl,
   });
   await dependencies.applicationModules.initializeAll();
 

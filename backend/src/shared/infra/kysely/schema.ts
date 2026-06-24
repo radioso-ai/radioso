@@ -289,6 +289,7 @@ export interface ConversationOwnership {
 export interface Conversations {
   agent_id: string | null;
   anonymous_session_id: string | null;
+  channel_context: Json | null;
   created_at: Generated<Timestamp>;
   id: string;
   source_channel: string | null;

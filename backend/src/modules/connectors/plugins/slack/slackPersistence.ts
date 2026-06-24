@@ -16,6 +16,10 @@ export interface SlackPersistencePort {
   markInboundEventStatus(eventId: string, status: "processed" | "skipped" | "failed"): Promise<void>;
   markStaleInboundEventsFailed(input: { olderThan: Date }): Promise<number>;
   findConversationLink(input: { workspaceId: string; slackKey: string }): Promise<SlackConversationLinkRecord | null>;
+  findConversationLinkByConversationId(input: {
+    workspaceId: string;
+    conversationId: string;
+  }): Promise<Pick<SlackConversationLinkRecord, "slackKey" | "installationId"> | null>;
   upsertConversationLink(input: {
     workspaceId: string;
     installationId: string;
@@ -83,6 +87,22 @@ export class PostgresSlackPersistence implements SlackPersistencePort {
       .where("slack_key", "=", input.slackKey)
       .executeTakeFirst();
     return row ? mapLink(row) : null;
+  }
+
+  async findConversationLinkByConversationId(input: {
+    workspaceId: string;
+    conversationId: string;
+  }): Promise<Pick<SlackConversationLinkRecord, "slackKey" | "installationId"> | null> {
+    const row = await this.db
+      .selectFrom("slack_conversation_links")
+      .select(["slack_key", "installation_id"])
+      .where("workspace_id", "=", input.workspaceId)
+      .where("conversation_id", "=", input.conversationId)
+      .executeTakeFirst();
+    return row ? {
+      slackKey: row.slack_key,
+      installationId: row.installation_id,
+    } : null;
   }
 
   async upsertConversationLink(input: {

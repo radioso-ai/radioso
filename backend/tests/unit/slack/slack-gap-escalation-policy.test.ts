@@ -37,6 +37,7 @@ const basePersistence = (): SlackPersistencePort => ({
   markInboundEventStatus: vi.fn(),
   markStaleInboundEventsFailed: vi.fn(async () => 0),
   findConversationLink: vi.fn(async () => null),
+  findConversationLinkByConversationId: vi.fn(async () => null),
   upsertConversationLink: vi.fn(),
 });
 
@@ -123,6 +124,12 @@ describe("Slack gap escalation policy", () => {
       agentId: "66666666-6666-6666-6666-666666666666",
       workspaceId: installation.workspaceId,
       sourceChannel: "slack",
+      channelContext: {
+        provider: "slack",
+        team: { id: "T1", name: "Acme" },
+        channel: { id: "D1", type: "im" },
+        user: { id: "U1" },
+      },
     }));
     expect(outbox.enqueue).toHaveBeenCalledWith(expect.objectContaining({
       type: "slack.post",
@@ -131,8 +138,21 @@ describe("Slack gap escalation policy", () => {
         kind: "gap_escalation",
         installationId: installation.id,
         channelId: "CSUPPORT",
+        conversationRef: "44444444-4444-4444-4444-444444444444",
+        text: "Unsupported question",
       }),
     }));
+    const payload = vi.mocked(outbox.enqueue).mock.calls[0]?.[0].payload as { blocks: Array<Record<string, unknown>> };
+    const actions = payload.blocks.find((block) => block.type === "actions") as { elements: Array<Record<string, unknown>> };
+    expect(actions.elements).toHaveLength(1);
+    expect(actions.elements[0]).toMatchObject({
+      action_id: "ownership_takeover",
+      text: { text: "Take over" },
+    });
+    expect(JSON.parse(actions.elements[0]!.value as string)).toEqual({
+      conversationId: "44444444-4444-4444-4444-444444444444",
+      workspaceId: installation.workspaceId,
+    });
   });
 
   it("does not escalate a grounded turn even when answer text looks like a gap", async () => {
@@ -239,6 +259,13 @@ describe("Slack gap escalation policy", () => {
       conversationId: "44444444-4444-4444-4444-444444444444",
       query: "<@UBOT> follow up",
       sourceChannel: "slack",
+      channelContext: {
+        provider: "slack",
+        team: { id: "T1", name: "Acme" },
+        channel: { id: "CCHANNEL", type: "channel" },
+        threadTs: "1700000000.000100",
+        user: { id: "U1" },
+      },
     }));
     expect(posted).toHaveBeenCalledWith(expect.objectContaining({
       channel: "CCHANNEL",

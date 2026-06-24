@@ -12,6 +12,17 @@ import { createApiRouter } from "../http/routes/index.js";
 import { mountMergedMcp } from "./mcpMount.js";
 import type { AppDependencies } from "./types.js";
 
+/**
+ * Request bodies are captured (rawBody + parsed) only for the content types Radioso parses:
+ * JSON for normal APIs, and `application/x-www-form-urlencoded` for Slack interactivity
+ * callbacks (which carry a `payload` form field and need rawBody preserved for signature
+ * verification). Everything else skips body capture. Exported so the gate is unit-tested
+ * directly — narrowing it again would silently break the Slack interactivity endpoint.
+ */
+export const shouldCaptureRequestBody = (contentType: string | undefined): boolean =>
+  typeof contentType === "string"
+  && (/^application\/json\b/i.test(contentType) || /^application\/x-www-form-urlencoded\b/i.test(contentType));
+
 export const createApp = (dependencies: AppDependencies) => {
   const app = express();
 
@@ -27,8 +38,7 @@ export const createApp = (dependencies: AppDependencies) => {
   app.use(createRequestTelemetryMiddleware(dependencies.telemetryService));
   mountMergedMcp(app, dependencies);
   app.use(async (req, _res, next) => {
-    const contentType = req.headers["content-type"];
-    if (typeof contentType !== "string" || !/^application\/json\b/i.test(contentType)) {
+    if (!shouldCaptureRequestBody(req.headers["content-type"])) {
       next();
       return;
     }
@@ -52,6 +62,13 @@ export const createApp = (dependencies: AppDependencies) => {
 
       if (rawBody.length === 0) {
         req.body = {};
+        next();
+        return;
+      }
+
+      const contentType = req.headers["content-type"] ?? "";
+      if (typeof contentType === "string" && contentType.includes("application/x-www-form-urlencoded")) {
+        req.body = Object.fromEntries(new URLSearchParams(rawBody.toString("utf8")));
         next();
         return;
       }

@@ -18,6 +18,7 @@ export const buildChatConversationSummary = (
   agentName: conversation.agentName,
   sourceChannel: conversation.sourceChannel,
   sourceOrigin: conversation.sourceOrigin,
+  channelContext: conversation.channelContext,
   anonymousSessionId: conversation.anonymousSessionId ?? null,
   createdAt: toIsoString(conversation.createdAt),
   updatedAt: toIsoString(conversation.updatedAt),

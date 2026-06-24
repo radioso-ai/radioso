@@ -7,6 +7,7 @@ import {
   CONTACT_INTENT_NAME,
   ConfiguredContactDeliveryResolver,
   ContactSendActionHandler,
+  EmailWebhookOperatorNotificationSink,
   FetchContactWebhookHttpClient,
   HandoffNotifyActionHandler,
   ApprovalRequestActionHandler,
@@ -20,8 +21,18 @@ import { WorkspaceRepository } from "../../../db/repositories/workspaceRepositor
 import { AccountMembershipRepository } from "../../../db/repositories/accountMembershipRepository.js";
 import { AgentRepository } from "../../../db/repositories/agentRepository.js";
 import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
+import { ActionRequestRepository } from "../../../db/repositories/actionRequestRepository.js";
+import { PendingDecisionRepository } from "../../../db/repositories/pendingDecisionRepository.js";
 import { AgentSkillRepository } from "../../../modules/agentSkills/repository.js";
-import type { ApplicationModule } from "../applicationModule.js";
+import { OperatorNotificationDispatcher } from "../../../modules/operatorNotifications/public.js";
+import {
+  SlackChannelBindingRepository,
+  SlackInstallationRepository,
+  SlackOperatorNotificationSink,
+} from "../../../modules/slack/public.js";
+import type { AppLogger } from "../../../shared/observability/logger.js";
+import type { Database } from "../../../shared/infra/database.js";
+import type { ApplicationModule, MailTransportPort } from "../applicationModule.js";
 
 /** Reads the per-agent contact-requests flag for the advertiser. */
 interface AgentContactFlagLookup {
@@ -54,6 +65,38 @@ const isContactIntentClick = (metadata: Record<string, unknown> | undefined): bo
     typeof intent === "object" &&
     !Array.isArray(intent) &&
     (intent as { skillName?: unknown }).skillName === CONTACT_INTENT_SKILL_NAME;
+};
+
+const buildOperatorNotificationDispatcher = (input: {
+  database: Database;
+  logger: AppLogger;
+  mailService: MailTransportPort;
+  assertPublicWebsiteUrl: (url: string) => Promise<void>;
+}): OperatorNotificationDispatcher => {
+  const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
+    new WorkspaceRepository(input.database.kysely),
+    new AccountMembershipRepository(input.database.kysely),
+  );
+  const recipients = new ConfiguredContactDeliveryResolver(
+    new ConversationRepository(input.database.kysely),
+    new AgentRepository(input.database.kysely),
+    ownerFallback,
+    new AgentSkillRepository(input.database.kysely),
+  );
+  return new OperatorNotificationDispatcher([
+    new EmailWebhookOperatorNotificationSink(
+      input.mailService,
+      recipients,
+      input.logger,
+      new FetchContactWebhookHttpClient(input.assertPublicWebsiteUrl),
+    ),
+    new SlackOperatorNotificationSink({
+      installations: new SlackInstallationRepository(input.database.kysely),
+      bindings: new SlackChannelBindingRepository(input.database.kysely),
+      pendingDecisions: new PendingDecisionRepository(input.database.kysely),
+      outbox: new ActionRequestRepository(input.database.kysely),
+    }),
+  ], input.logger);
 };
 
 /**
@@ -106,20 +149,8 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
       type: HANDOFF_NOTIFY_ACTION_TYPE,
       requiredCapabilities: [capabilityNames.humanContact.request],
       handler: ({ database, logger, mailService, assertPublicWebsiteUrl }) => {
-        const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
-          new WorkspaceRepository(database.kysely),
-          new AccountMembershipRepository(database.kysely),
-        );
         return new HandoffNotifyActionHandler(
-          mailService,
-          new ConfiguredContactDeliveryResolver(
-            new ConversationRepository(database.kysely),
-            new AgentRepository(database.kysely),
-            ownerFallback,
-            new AgentSkillRepository(database.kysely),
-          ),
-          logger,
-          new FetchContactWebhookHttpClient(assertPublicWebsiteUrl),
+          buildOperatorNotificationDispatcher({ database, logger, mailService, assertPublicWebsiteUrl }),
         );
       },
     });
@@ -127,20 +158,8 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
       type: APPROVAL_REQUEST_ACTION_TYPE,
       requiredCapabilities: [capabilityNames.humanContact.request],
       handler: ({ database, logger, mailService, assertPublicWebsiteUrl }) => {
-        const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
-          new WorkspaceRepository(database.kysely),
-          new AccountMembershipRepository(database.kysely),
-        );
         return new ApprovalRequestActionHandler(
-          mailService,
-          new ConfiguredContactDeliveryResolver(
-            new ConversationRepository(database.kysely),
-            new AgentRepository(database.kysely),
-            ownerFallback,
-            new AgentSkillRepository(database.kysely),
-          ),
-          logger,
-          new FetchContactWebhookHttpClient(assertPublicWebsiteUrl),
+          buildOperatorNotificationDispatcher({ database, logger, mailService, assertPublicWebsiteUrl }),
         );
       },
     });

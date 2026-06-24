@@ -10,6 +10,7 @@ export const createConnectorChatPort = (chatService: ChatAnswerPort): ConnectorC
       query: input.query,
       stream: false,
       sourceChannel: input.sourceChannel,
+      channelContext: input.channelContext,
     });
 
     return {

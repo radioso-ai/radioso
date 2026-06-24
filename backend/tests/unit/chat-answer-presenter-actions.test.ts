@@ -35,6 +35,7 @@ const buildSession = (): PreparedSession => {
     agentName: "Agent",
     sourceChannel: "website_embed",
     sourceOrigin: "https://example.com",
+    channelContext: null,
     anonymousSessionId: null,
     createdAt: new Date(),
     updatedAt: new Date(),

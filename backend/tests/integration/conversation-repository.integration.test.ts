@@ -61,6 +61,20 @@ describeIntegration("ConversationRepository (Postgres)", () => {
     expect(await repository.findByIdAndWorkspaceId(conv.id, randomUUID())).toBeNull();
   });
 
+  it("round-trips typed Slack channel context and defaults to null", async () => {
+    const channelContext = {
+      provider: "slack" as const,
+      team: { id: "T1", name: "Acme" },
+      channel: { id: "D1", type: "im" as const },
+      user: { id: "U1", displayName: "Dana" },
+    };
+    const withCtx = await repository.create(workspaceId, null, "slack", null, null, channelContext);
+    expect((await repository.findByIdAndWorkspaceId(withCtx.id, workspaceId))?.channelContext).toEqual(channelContext);
+
+    const without = await repository.create(workspaceId);
+    expect((await repository.findByIdAndWorkspaceId(without.id, workspaceId))?.channelContext).toBeNull();
+  });
+
   it("paginates newest-first with a keyset cursor, total, and hasMore", async () => {
     const ids = await seedOrdered();
 

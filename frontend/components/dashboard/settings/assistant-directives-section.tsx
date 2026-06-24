@@ -499,7 +499,7 @@ export function AssistantDirectivesSection({
       id="assistant-directives-card"
       icon={<ScrollText className="h-5 w-5 text-primary" />}
       title="Directives"
-      description="Standing behavior rules that steer how this agent answers."
+      description={'Conditional rules that fire in specific situations — for "when X, do Y" behavior. For the agent\'s always-on persona, use Behavior; for multi-step procedures, use Routines.'}
       headerEnd={(
         <Button type="button" size="sm" onClick={openCreateDialog}>
           <Plus className="mr-2 h-4 w-4" />

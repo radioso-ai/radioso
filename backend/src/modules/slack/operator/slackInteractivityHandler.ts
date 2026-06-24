@@ -496,6 +496,13 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     if (ownership?.state !== "human_owned") {
       return this.replyModalError("Take over the conversation before replying.");
     }
+    // The modal was opened against a specific ownership version. If ownership changed since
+    // (handed back, or re-taken-over), the stale modal must not post a customer-visible reply —
+    // mirror the dashboard reply route's expectedVersion check.
+    const expectedVersion = readNumber(metadata?.version);
+    if (expectedVersion !== null && ownership.version !== expectedVersion) {
+      return this.replyModalError("This conversation changed. Take over again before replying.");
+    }
     await this.options.operatorReplyService.reply({
       conversationId,
       workspaceId,

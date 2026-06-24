@@ -283,4 +283,18 @@ describe("SlackInteractivityHandler ownership branch", () => {
     });
     expect(aiOwned.operatorReply.reply).not.toHaveBeenCalled();
   });
+
+  it("rejects a stale reply modal whose version no longer matches current ownership", async () => {
+    // Modal was opened at version 3 (viewPayload private_metadata); ownership has since moved to
+    // version 4 (handed back + re-taken-over). The stale reply must not reach the customer.
+    const stale = createHandler({ currentOwnership: ownershipRecord({ version: 4 }) });
+
+    const result = await stale.handler.handleViewSubmission(viewPayload("Stale reply"));
+
+    expect(result).toEqual({
+      response_action: "errors",
+      errors: { ownership_reply_message: "This conversation changed. Take over again before replying." },
+    });
+    expect(stale.operatorReply.reply).not.toHaveBeenCalled();
+  });
 });

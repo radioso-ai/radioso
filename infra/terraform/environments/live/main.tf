@@ -77,6 +77,8 @@ module "radioso" {
   error_sinks                           = var.error_sinks
   posthog_api_key                       = var.posthog_api_key
   posthog_host                          = var.posthog_host
+  otel_logs_enabled                     = var.otel_logs_enabled
+  otel_logs_min_level                   = var.otel_logs_min_level
   openai_chat_model                     = var.openai_chat_model
   openai_rerank_model                   = var.openai_rerank_model
   openai_vector_model                   = var.openai_vector_model

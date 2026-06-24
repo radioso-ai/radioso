@@ -368,6 +368,21 @@ document processing stages. Runtime roles are attached as trace resource
 metadata, and workers use role-specific service names unless
 `OBSERVABILITY_SERVICE_NAME` is explicitly overridden.
 
+Backend logs can also be exported through OpenTelemetry logs while keeping Pino
+stdout as the primary platform log stream:
+
+```bash
+OTEL_LOGS_ENABLED=true
+OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=https://eu.i.posthog.com/i/v1/logs
+OTEL_EXPORTER_OTLP_LOGS_AUTH_BEARER=...
+OTEL_LOGS_MIN_LEVEL=info
+```
+
+For PostHog, use the regional ingestion host for the project and append
+`/i/v1/logs`. The bearer token is the PostHog project token. Do not use a
+personal API key. The backend bridge redacts sensitive log attributes before
+export and applies `OTEL_LOGS_MIN_LEVEL` before records leave the process.
+
 The backend adds primitive OpenTelemetry correlation to debug turn traces when
 an active span exists:
 
@@ -393,6 +408,8 @@ ERROR_SINKS=audit,sentry,posthog
 SENTRY_DSN=...
 POSTHOG_API_KEY=...
 POSTHOG_HOST=...
+OTEL_LOGS_ENABLED=true
+OTEL_LOGS_MIN_LEVEL=info
 ```
 
 The OSS runtime can carry the sink list without importing vendor code. The

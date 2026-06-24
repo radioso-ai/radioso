@@ -37,6 +37,7 @@ const basePersistence = (): SlackPersistencePort => ({
   markInboundEventStatus: vi.fn(),
   markStaleInboundEventsFailed: vi.fn(async () => 0),
   findConversationLink: vi.fn(async () => null),
+  findConversationLinkByConversationId: vi.fn(async () => null),
   upsertConversationLink: vi.fn(),
 });
 

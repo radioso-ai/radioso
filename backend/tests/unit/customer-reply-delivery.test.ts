@@ -62,20 +62,22 @@ describe("CustomerReplyDeliveryDispatcher", () => {
 });
 
 describe("SlackCustomerReplyDeliverer", () => {
+  const installation = {
+    id: "11111111-1111-1111-1111-111111111111",
+    connectionId: "connection-1",
+    workspaceId: "workspace-1",
+    teamId: "T1",
+    teamName: "Acme",
+    botUserId: "UBOT",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
   it("enqueues a human_reply slack.post to the customer channel and thread", async () => {
     const outbox = { enqueue: vi.fn(async () => ({ id: "action-1", duplicate: false })) };
     const deliverer = new SlackCustomerReplyDeliverer({
       installations: {
-        findByWorkspaceId: vi.fn(async () => ({
-          id: "11111111-1111-1111-1111-111111111111",
-          connectionId: "connection-1",
-          workspaceId: "workspace-1",
-          teamId: "T1",
-          teamName: "Acme",
-          botUserId: "UBOT",
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        })),
+        findByWorkspaceId: vi.fn(async () => installation),
       },
       outbox,
     });
@@ -106,10 +108,16 @@ describe("SlackCustomerReplyDeliverer", () => {
     }));
   });
 
-  it("no-ops without Slack channel context", async () => {
+  it("enqueues a legacy mention reply using the conversation link channel and thread", async () => {
     const outbox = { enqueue: vi.fn(async () => ({ id: "action-1", duplicate: false })) };
     const deliverer = new SlackCustomerReplyDeliverer({
-      installations: { findByWorkspaceId: vi.fn() },
+      installations: { findByWorkspaceId: vi.fn(async () => installation) },
+      persistence: {
+        findConversationLinkByConversationId: vi.fn(async () => ({
+          slackKey: "mention:T1:CMENTION:1700000000.000200",
+          installationId: installation.id,
+        })),
+      },
       outbox,
     });
 
@@ -123,6 +131,85 @@ describe("SlackCustomerReplyDeliverer", () => {
       message: { id: "message-1", content: "Human reply" },
     });
 
+    expect(outbox.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      payload: expect.objectContaining({
+        installationId: installation.id,
+        channelId: "CMENTION",
+        threadTs: "1700000000.000200",
+        kind: "human_reply",
+        text: "Human reply",
+      }),
+    }));
+  });
+
+  it("opens a legacy DM channel before enqueueing the reply", async () => {
+    const outbox = { enqueue: vi.fn(async () => ({ id: "action-1", duplicate: false })) };
+    const conversationsOpen = vi.fn(async () => ({ channelId: "DOPENED" }));
+    const deliverer = new SlackCustomerReplyDeliverer({
+      installations: {
+        findByWorkspaceId: vi.fn(async () => installation),
+        findById: vi.fn(async () => installation),
+      },
+      installationService: {
+        resolveBotTokenForInstallation: vi.fn(async () => "xoxb-token"),
+      },
+      slack: { conversationsOpen },
+      persistence: {
+        findConversationLinkByConversationId: vi.fn(async () => ({
+          slackKey: "dm:T1:UUSER",
+          installationId: installation.id,
+        })),
+      },
+      outbox,
+    });
+
+    await deliverer.deliver({
+      conversation: {
+        id: "conversation-1",
+        workspaceId: "workspace-1",
+        sourceChannel: "slack",
+        channelContext: null,
+      },
+      message: { id: "message-1", content: "Human reply" },
+    });
+
+    expect(conversationsOpen).toHaveBeenCalledWith({ users: "UUSER", botToken: "xoxb-token" });
+    expect(outbox.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      payload: expect.objectContaining({
+        installationId: installation.id,
+        channelId: "DOPENED",
+        kind: "human_reply",
+        text: "Human reply",
+      }),
+    }));
+  });
+
+  it("warns and no-ops when a legacy Slack conversation has no resolvable link", async () => {
+    const outbox = { enqueue: vi.fn(async () => ({ id: "action-1", duplicate: false })) };
+    const logger = { warn: vi.fn() };
+    const deliverer = new SlackCustomerReplyDeliverer({
+      installations: { findByWorkspaceId: vi.fn(async () => installation) },
+      persistence: {
+        findConversationLinkByConversationId: vi.fn(async () => null),
+      },
+      outbox,
+      logger,
+    });
+
+    await deliverer.deliver({
+      conversation: {
+        id: "conversation-1",
+        workspaceId: "workspace-1",
+        sourceChannel: "slack",
+        channelContext: null,
+      },
+      message: { id: "message-1", content: "Human reply" },
+    });
+
     expect(outbox.enqueue).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: "conversation-1", workspaceId: "workspace-1" }),
+      expect.any(String),
+    );
   });
 });

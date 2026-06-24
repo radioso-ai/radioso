@@ -68,7 +68,9 @@ import type { ConversationModelGateway } from "@radioso/conversation-contract";
 import type { ModelInferencePipeline } from "../../shared/infra/llm/modelInferencePipeline.js";
 import { OauthConnectionService, StaticOauthProviderRegistry } from "../../modules/integrationOauth/public.js";
 import {
+  PostgresSlackConversationLinkLookup,
   SlackInstallationService,
+  SlackWebApiClient,
   type SlackOauthMetadata,
 } from "../../modules/slack/public.js";
 import {
@@ -502,7 +504,14 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const customerReplyDelivery = new CustomerReplyDeliveryDispatcher({
     slack: new SlackCustomerReplyDeliverer({
       installations: repositories.slackInstallationRepository,
+      installationService: slackInstallationService,
+      persistence: new PostgresSlackConversationLinkLookup(infrastructure.database.kysely),
+      slack: {
+        conversationsOpen: async ({ users, botToken }) =>
+          new SlackWebApiClient({ botToken }).conversationsOpen({ users }),
+      },
       outbox: new ActionRequestRepository(infrastructure.database.kysely),
+      logger,
     }),
   });
   const operatorReplyService = new OperatorReplyService({

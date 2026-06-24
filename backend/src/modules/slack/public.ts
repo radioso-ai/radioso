@@ -2,6 +2,7 @@ export {
   SlackWebApiClient,
   SlackWebApiError,
   type SlackAuthTestResult,
+  type SlackConversationsOpenInput,
   type SlackConversationSummary,
   type SlackFetchLike,
   type SlackPostMessageInput,
@@ -96,6 +97,11 @@ export {
 export {
   SlackCustomerReplyDeliverer,
 } from "./operator/slackCustomerReplyDeliverer.js";
+export {
+  PostgresSlackConversationLinkLookup,
+  type SlackConversationLinkLookupPort,
+  type SlackConversationReplyLinkRecord,
+} from "./operator/slackConversationLinkLookup.js";
 export {
   createSlackInteractivityRouter,
   type SlackInteractivityRouterOptions,

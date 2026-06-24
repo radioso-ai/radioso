@@ -45,6 +45,10 @@ export interface SlackConversationSummary {
   isIm?: boolean;
 }
 
+export interface SlackConversationsOpenInput {
+  users: string;
+}
+
 export interface SlackUserInfo {
   id: string;
   name?: string;
@@ -161,6 +165,21 @@ export class SlackWebApiClient {
       })).filter((channel) => channel.id.length > 0),
       nextCursor: readString(responseMetadata.next_cursor) ?? null,
     };
+  }
+
+  async conversationsOpen(input: SlackConversationsOpenInput): Promise<{ channelId: string }> {
+    const payload = await this.call("conversations.open", {
+      method: "POST",
+      body: {
+        users: input.users,
+      },
+    });
+    const channel = isObject(payload.channel) ? payload.channel : {};
+    const channelId = readString(channel.id);
+    if (!channelId) {
+      throw new SlackWebApiError("invalid_response", "Slack conversations.open response was missing channel id");
+    }
+    return { channelId };
   }
 
   async usersInfo(user: string): Promise<SlackUserInfo> {

@@ -5,11 +5,30 @@ import {
   slackPostIdempotencyKey,
   type SlackPostOutboxPort,
 } from "../outbox/slackPostAction.js";
-import type { SlackInstallationRepositoryPort } from "../install/slackInstallationService.js";
+import type {
+  SlackInstallationRecord,
+  SlackInstallationRepositoryPort,
+  SlackInstallationService,
+} from "../install/slackInstallationService.js";
 import type {
   CustomerChannelReplyDeliverer,
   CustomerReplyDeliveryInput,
 } from "../../customerReplyDelivery/public.js";
+import type { SlackConversationLinkLookupPort } from "./slackConversationLinkLookup.js";
+
+interface SlackConversationOpenPort {
+  conversationsOpen(input: { users: string; botToken: string }): Promise<{ channelId: string }>;
+}
+
+interface SlackReplyDelivererLogger {
+  warn(payload: Record<string, unknown>, message: string): void;
+}
+
+type SlackReplyTarget = {
+  installationId: string;
+  channelId: string;
+  threadTs?: string;
+};
 
 const replySourceId = (input: CustomerReplyDeliveryInput): string => {
   if (input.message.id) {
@@ -19,21 +38,48 @@ const replySourceId = (input: CustomerReplyDeliveryInput): string => {
   return `${input.conversation.id}:content:${digest}`;
 };
 
+const parseLegacySlackKey = (slackKey: string):
+  | { kind: "mention"; channelId: string; threadTs: string }
+  | { kind: "dm"; userId: string }
+  | null => {
+  const parts = slackKey.split(":");
+  const [kind, teamId, third, fourth] = parts;
+  if (kind === "mention" && parts.length === 4 && teamId && third && fourth) {
+    return { kind, channelId: third, threadTs: fourth };
+  }
+  if (kind === "dm" && parts.length === 3 && teamId && third) {
+    return { kind, userId: third };
+  }
+  return null;
+};
+
 export class SlackCustomerReplyDeliverer implements CustomerChannelReplyDeliverer {
   constructor(private readonly dependencies: {
-    installations: Pick<SlackInstallationRepositoryPort, "findByWorkspaceId">;
+    installations: Pick<SlackInstallationRepositoryPort, "findByWorkspaceId"> & Partial<Pick<SlackInstallationRepositoryPort, "findById">>;
+    installationService?: Pick<SlackInstallationService, "resolveBotTokenForInstallation">;
+    persistence?: SlackConversationLinkLookupPort;
+    slack?: SlackConversationOpenPort;
     outbox: SlackPostOutboxPort;
+    logger?: SlackReplyDelivererLogger;
   }) {}
 
   async deliver(input: CustomerReplyDeliveryInput): Promise<void> {
-    const channelContext = input.conversation.channelContext;
-    if (channelContext?.provider !== "slack") {
+    if (input.conversation.sourceChannel !== "slack") {
       return;
     }
-    const installation = await this.dependencies.installations.findByWorkspaceId(input.conversation.workspaceId);
-    if (!installation) {
+
+    const target = await this.resolveReplyTarget(input);
+    if (!target) {
+      this.dependencies.logger?.warn(
+        {
+          workspaceId: input.conversation.workspaceId,
+          conversationId: input.conversation.id,
+        },
+        "Unable to resolve Slack customer reply target",
+      );
       return;
     }
+
     await enqueueSlackPostAction(this.dependencies.outbox, {
       workspaceId: input.conversation.workspaceId,
       conversationId: input.conversation.id,
@@ -42,13 +88,75 @@ export class SlackCustomerReplyDeliverer implements CustomerChannelReplyDelivere
         sourceId: replySourceId(input),
       }),
       payload: {
-        installationId: installation.id,
-        channelId: channelContext.channel.id,
+        installationId: target.installationId,
+        channelId: target.channelId,
         text: input.message.content,
-        ...(channelContext.threadTs ? { threadTs: channelContext.threadTs } : {}),
+        ...(target.threadTs ? { threadTs: target.threadTs } : {}),
         conversationRef: input.conversation.id,
         kind: "human_reply",
       },
     });
+  }
+
+  private async resolveReplyTarget(input: CustomerReplyDeliveryInput): Promise<SlackReplyTarget | null> {
+    const channelContext = input.conversation.channelContext;
+    if (channelContext?.provider === "slack") {
+      const installation = await this.dependencies.installations.findByWorkspaceId(input.conversation.workspaceId);
+      if (!installation) {
+        return null;
+      }
+      return {
+        installationId: installation.id,
+        channelId: channelContext.channel.id,
+        ...(channelContext.threadTs ? { threadTs: channelContext.threadTs } : {}),
+      };
+    }
+
+    const link = await this.dependencies.persistence?.findConversationLinkByConversationId({
+      workspaceId: input.conversation.workspaceId,
+      conversationId: input.conversation.id,
+    });
+    if (!link) {
+      return null;
+    }
+
+    const legacyTarget = parseLegacySlackKey(link.slackKey);
+    if (!legacyTarget) {
+      return null;
+    }
+
+    if (legacyTarget.kind === "mention") {
+      return {
+        installationId: link.installationId,
+        channelId: legacyTarget.channelId,
+        threadTs: legacyTarget.threadTs,
+      };
+    }
+
+    const installation = await this.findInstallationForLegacyLink(input.conversation.workspaceId, link.installationId);
+    const botToken = installation
+      ? await this.dependencies.installationService?.resolveBotTokenForInstallation(installation)
+      : null;
+    if (!botToken || !this.dependencies.slack) {
+      return null;
+    }
+    const opened = await this.dependencies.slack.conversationsOpen({
+      users: legacyTarget.userId,
+      botToken,
+    });
+    return {
+      installationId: link.installationId,
+      channelId: opened.channelId,
+    };
+  }
+
+  private async findInstallationForLegacyLink(
+    workspaceId: string,
+    installationId: string,
+  ): Promise<SlackInstallationRecord | null> {
+    if (this.dependencies.installations.findById) {
+      return this.dependencies.installations.findById(installationId);
+    }
+    return this.dependencies.installations.findByWorkspaceId(workspaceId);
   }
 }

@@ -8,9 +8,31 @@ export interface SlackBlockKitMessage {
 export const OWNERSHIP_REPLY_BLOCK_ID = "ownership_reply_message";
 export const OWNERSHIP_REPLY_ACTION_ID = "ownership_reply_text";
 
+const SECTION_TEXT_LIMIT = 3_000;
+const BUTTON_LABEL_LIMIT = 75;
+const PLAIN_TEXT_LABEL_LIMIT = 2_000;
+const MODAL_TITLE_LIMIT = 24;
+const ACTIONS_ELEMENTS_LIMIT = 25;
+const ELLIPSIS = "…";
+
+const clampText = (text: string, limit: number): string => {
+  if (text.length <= limit) {
+    return text;
+  }
+  if (limit <= ELLIPSIS.length) {
+    return ELLIPSIS.slice(0, limit);
+  }
+  return `${text.slice(0, limit - ELLIPSIS.length)}${ELLIPSIS}`;
+};
+
+const clampSectionText = (text: string): string => clampText(text, SECTION_TEXT_LIMIT);
+const clampButtonLabel = (text: string): string => clampText(text, BUTTON_LABEL_LIMIT);
+const clampPlainTextLabel = (text: string): string => clampText(text, PLAIN_TEXT_LABEL_LIMIT);
+const clampModalTitle = (text: string): string => clampText(text, MODAL_TITLE_LIMIT);
+
 const plainText = (text: string): Record<string, unknown> => ({
   type: "plain_text",
-  text,
+  text: clampPlainTextLabel(text),
   emoji: true,
 });
 
@@ -18,7 +40,7 @@ const mrkdwnSection = (text: string): Record<string, unknown> => ({
   type: "section",
   text: {
     type: "mrkdwn",
-    text,
+    text: clampSectionText(text),
   },
 });
 
@@ -52,8 +74,10 @@ export const buildDecisionMessage = (input: {
   dashboardPath: string;
 }): SlackBlockKitMessage => {
   const prompt = input.reason?.trim() || input.handle;
+  const visibleOptions = input.options.slice(0, ACTIONS_ELEMENTS_LIMIT);
+  const hiddenOptionCount = input.options.length - visibleOptions.length;
   return {
-    text: prompt,
+    text: clampSectionText(prompt),
     blocks: [
       mrkdwnSection(prompt),
       {
@@ -63,12 +87,21 @@ export const buildDecisionMessage = (input: {
           text: `<${input.dashboardPath}|${input.dashboardPath}>`,
         }],
       },
+      ...(hiddenOptionCount > 0
+        ? [{
+            type: "context",
+            elements: [{
+              type: "mrkdwn",
+              text: `<${input.dashboardPath}|${input.dashboardPath}> ${ELLIPSIS}`,
+            }],
+          }]
+        : []),
       {
         type: "actions",
-        elements: input.options.map((option) => ({
+        elements: visibleOptions.map((option) => ({
           type: "button",
           action_id: "decision_resolve",
-          text: plainText(option.label),
+          text: plainText(clampButtonLabel(option.label)),
           value: encodeDecisionValue({
             handle: input.handle,
             optionId: option.id,
@@ -89,9 +122,9 @@ export const buildResolvedDecisionMessage = (input: {
 }): SlackBlockKitMessage => {
   const prompt = input.reason?.trim() || input.chosenLabel;
   const actor = input.operatorName?.trim() || "operator";
-  const outcome = `✅ ${input.chosenLabel} — chosen by ${actor}${input.resumed ? "; resumed" : ""}`;
+  const outcome = `✅ ${clampButtonLabel(input.chosenLabel)} — chosen by ${actor}${input.resumed ? "; resumed" : ""}`;
   return {
-    text: outcome,
+    text: clampSectionText(outcome),
     blocks: [
       mrkdwnSection(prompt),
       mrkdwnSection(outcome),
@@ -152,7 +185,7 @@ export const buildOwnershipMessage = (input: {
   }
 
   return {
-    text: contextText,
+    text: clampSectionText(contextText),
     blocks: [
       mrkdwnSection(contextText),
       {
@@ -187,9 +220,9 @@ export const buildReplyModal = (input: {
     workspaceId: input.workspaceId,
     version: input.version,
   }),
-  title: plainText("Reply"),
-  submit: plainText("Send"),
-  close: plainText("Cancel"),
+  title: plainText(clampModalTitle("Reply")),
+  submit: plainText(clampModalTitle("Send")),
+  close: plainText(clampModalTitle("Cancel")),
   blocks: [
     {
       type: "input",
@@ -199,7 +232,7 @@ export const buildReplyModal = (input: {
         action_id: OWNERSHIP_REPLY_ACTION_ID,
         multiline: true,
       },
-      label: plainText("Message"),
+      label: plainText(clampPlainTextLabel("Message")),
     },
   ],
 });

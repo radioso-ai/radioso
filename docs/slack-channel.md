@@ -1,7 +1,7 @@
 ---
 title: "Slack Channel"
 description: "Connect a Radioso agent to Slack direct messages, mentions, human escalation posts, and operator callbacks."
-last_updated: 2026-06-23
+last_updated: 2026-06-24
 ---
 
 # Slack Channel
@@ -18,6 +18,9 @@ the knowledge base.
 
 - Direct messages to the Slack bot are routed to the bound Radioso agent.
 - `@mention` events in Slack channels are answered in the originating thread.
+- While the agent works on a message, Radioso adds an `eyes` reaction to it. Once
+  the reply is posted, the `eyes` reaction is replaced with a check mark, or with
+  an `x` if the reply could not be delivered.
 - Each DM user and each mentioned channel thread maps to one Radioso
   conversation.
 - When the turn outcome is `no_context` and an escalation channel is configured,
@@ -139,7 +142,8 @@ It fills, using `CONNECTOR_PUBLIC_BASE_URL` when set and otherwise `APP_BASE_URL
   `{backend host}/api/connectors/slack/events`
 - `settings.interactivity.request_url` with
   `{backend host}/api/connectors/slack/interactivity`
-- bot scopes for mentions, chat posting, direct messages, and Slack user lookup
+- bot scopes for mentions, chat posting, message reactions, direct messages, and
+  Slack user lookup
   (`users:read`, `users:read.email`)
 
 If an existing Slack app was installed before interactive operator actions were

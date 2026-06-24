@@ -49,7 +49,15 @@ export interface SlackInboundEventEnvelope {
 
 export type SlackWebApiClientFactory = (
   options: Pick<SlackWebApiClientOptions, "botToken">,
-) => Pick<SlackWebApiClientInstance, "postMessage">;
+) => Pick<SlackWebApiClientInstance, "postMessage" | "addReaction" | "removeReaction">;
+
+type SlackReactionClient = Pick<SlackWebApiClientInstance, "addReaction" | "removeReaction">;
+
+// Lifecycle indicator on the originating Slack message: "eyes" while the turn is in
+// flight, swapped for a terminal marker once the reply is delivered (or fails).
+const SLACK_PROCESSING_REACTION = "eyes";
+const SLACK_ANSWERED_REACTION = "white_check_mark";
+const SLACK_FAILED_REACTION = "x";
 
 export interface SlackMessageHandlerOptions {
   logger: ConnectorLogger;
@@ -145,6 +153,24 @@ export class SlackMessageHandler {
       return;
     }
 
+    // Resolve the bot token up front so we can acknowledge the message before generating an
+    // answer and never burn an answer we cannot deliver.
+    const botToken = await this.options.installationService.resolveBotTokenForInstallation(installation);
+    if (!botToken) {
+      await this.options.installationService.markNeedsReauthForInstallation(installation, "slack_bot_token_not_found");
+      await this.options.persistence.markInboundEventStatus(envelope.eventId, "skipped");
+      this.options.logger.warn(
+        { workspaceId: installation.workspaceId, installationId: installation.id, eventId: envelope.eventId },
+        "Slack reply skipped without bot token",
+      );
+      return;
+    }
+    const client = this.clientFactory({ botToken });
+    const reactionTarget = envelope.event.ts
+      ? { channel: envelope.event.channel, timestamp: envelope.event.ts }
+      : null;
+    await this.markProcessingReaction(client, reactionTarget, envelope.eventId);
+
     const slackKey = input.getSlackKey(installation);
     const existingLink = await this.options.persistence.findConversationLink({
       workspaceId: installation.workspaceId,
@@ -179,24 +205,14 @@ export class SlackMessageHandler {
       outcome: response.outcome,
     });
 
-    const botToken = await this.options.installationService.resolveBotTokenForInstallation(installation);
-    if (!botToken) {
-      await this.options.installationService.markNeedsReauthForInstallation(installation, "slack_bot_token_not_found");
-      await this.options.persistence.markInboundEventStatus(envelope.eventId, "skipped");
-      this.options.logger.warn(
-        { workspaceId: installation.workspaceId, installationId: installation.id, eventId: envelope.eventId },
-        "Slack reply skipped without bot token",
-      );
-      return;
-    }
-
     try {
-      await postSlackText(this.clientFactory({ botToken }), {
+      await postSlackText(client, {
         channel: envelope.event.channel,
         text: response.answer,
         threadTs: input.getReplyThreadTs(),
       });
     } catch (error) {
+      await this.settleReaction(client, reactionTarget, SLACK_FAILED_REACTION, envelope.eventId);
       const authErrorCode = slackAuthErrorCode(error);
       if (authErrorCode) {
         await this.options.installationService.markNeedsReauthForInstallation(
@@ -206,11 +222,61 @@ export class SlackMessageHandler {
       }
       throw error;
     }
+    await this.settleReaction(client, reactionTarget, SLACK_ANSWERED_REACTION, envelope.eventId);
     await this.options.persistence.markInboundEventStatus(envelope.eventId, "processed");
     this.options.logger.info(
       { workspaceId: installation.workspaceId, installationId: installation.id, eventId: envelope.eventId },
       "Slack reply delivered",
     );
+  }
+
+  private async markProcessingReaction(
+    client: SlackReactionClient,
+    target: { channel: string; timestamp: string } | null,
+    eventId: string,
+  ): Promise<void> {
+    if (!target) {
+      return;
+    }
+    await this.safeReaction(
+      () => client.addReaction({ ...target, name: SLACK_PROCESSING_REACTION }),
+      eventId,
+      "add_processing",
+    );
+  }
+
+  private async settleReaction(
+    client: SlackReactionClient,
+    target: { channel: string; timestamp: string } | null,
+    outcomeReaction: string,
+    eventId: string,
+  ): Promise<void> {
+    if (!target) {
+      return;
+    }
+    await this.safeReaction(
+      () => client.removeReaction({ ...target, name: SLACK_PROCESSING_REACTION }),
+      eventId,
+      "remove_processing",
+    );
+    await this.safeReaction(
+      () => client.addReaction({ ...target, name: outcomeReaction }),
+      eventId,
+      "add_outcome",
+    );
+  }
+
+  // Reactions are a best-effort lifecycle indicator: a failure here must never block or fail
+  // the actual answer delivery.
+  private async safeReaction(op: () => Promise<void>, eventId: string, action: string): Promise<void> {
+    try {
+      await op();
+    } catch (error) {
+      this.options.logger.warn(
+        { eventId, action, err: error instanceof Error ? error.message : String(error) },
+        "Slack reaction update failed",
+      );
+    }
   }
 
   private async enqueueGapEscalationIfNeeded(input: {

@@ -75,6 +75,7 @@ describe("Slack admin REST contract", () => {
               "im:history",
               "im:read",
               "im:write",
+              "reactions:write",
               "users:read",
               "users:read.email",
             ]),

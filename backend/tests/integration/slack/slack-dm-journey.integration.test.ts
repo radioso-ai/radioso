@@ -180,6 +180,8 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
           });
           return { channel: input.channel, ts: "1720000000.000100" };
         },
+        addReaction: async () => undefined,
+        removeReaction: async () => undefined,
       }),
     });
 
@@ -300,6 +302,8 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
           });
           return { channel: input.channel, ts: "1720000000.000300" };
         },
+        addReaction: async () => undefined,
+        removeReaction: async () => undefined,
       }),
     });
 
@@ -424,6 +428,8 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       },
       clientFactory: () => ({
         postMessage: async (input) => ({ channel: input.channel, ts: "1720000000.000200" }),
+        addReaction: async () => undefined,
+        removeReaction: async () => undefined,
       }),
     });
 

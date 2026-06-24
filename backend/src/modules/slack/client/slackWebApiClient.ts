@@ -33,6 +33,12 @@ export interface SlackUpdateMessageInput {
   blocks?: unknown[];
 }
 
+export interface SlackReactionInput {
+  channel: string;
+  timestamp: string;
+  name: string;
+}
+
 export interface SlackViewOpenInput {
   triggerId: string;
   view: Record<string, unknown>;
@@ -129,6 +135,20 @@ export class SlackWebApiClient {
       throw new SlackWebApiError("invalid_response", "Slack chat.update response was missing channel or timestamp");
     }
     return { channel, ts };
+  }
+
+  async addReaction(input: SlackReactionInput): Promise<void> {
+    await this.call("reactions.add", {
+      method: "POST",
+      body: { channel: input.channel, timestamp: input.timestamp, name: input.name },
+    });
+  }
+
+  async removeReaction(input: SlackReactionInput): Promise<void> {
+    await this.call("reactions.remove", {
+      method: "POST",
+      body: { channel: input.channel, timestamp: input.timestamp, name: input.name },
+    });
   }
 
   async viewsOpen(input: SlackViewOpenInput): Promise<{ viewId: string | null }> {

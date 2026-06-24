@@ -95,7 +95,7 @@ const makeHandler = (input: {
       installationService,
       persistence: basePersistence(),
       slackPostOutbox: outbox,
-      clientFactory: () => ({ postMessage: posted }),
+      clientFactory: () => ({ postMessage: posted, addReaction: vi.fn(), removeReaction: vi.fn() }),
     }),
     installationService,
   };
@@ -240,7 +240,7 @@ describe("Slack gap escalation policy", () => {
       bindings,
       installationService,
       persistence,
-      clientFactory: () => ({ postMessage: posted }),
+      clientFactory: () => ({ postMessage: posted, addReaction: vi.fn(), removeReaction: vi.fn() }),
     });
     const mentionEvent = {
       eventId: "EvMentionOne",

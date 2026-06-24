@@ -173,6 +173,7 @@ export class SlackMessageHandler {
       envelope,
       installation,
       escalationChannelId: binding.escalationChannelId,
+      gapEscalationEnabled: binding.gapEscalationEnabled,
       query,
       conversationId: response.conversationId,
       outcome: response.outcome,
@@ -216,11 +217,17 @@ export class SlackMessageHandler {
     envelope: SlackInboundEventEnvelope;
     installation: SlackInstallationRecord;
     escalationChannelId: string | null;
+    gapEscalationEnabled: boolean;
     query: string;
     conversationId: string;
     outcome: "answered" | "no_context";
   }): Promise<void> {
-    if (input.outcome !== "no_context" || !input.escalationChannelId || !this.options.slackPostOutbox) {
+    if (
+      input.outcome !== "no_context" ||
+      !input.gapEscalationEnabled ||
+      !input.escalationChannelId ||
+      !this.options.slackPostOutbox
+    ) {
       return;
     }
     const message = buildOwnershipMessage({

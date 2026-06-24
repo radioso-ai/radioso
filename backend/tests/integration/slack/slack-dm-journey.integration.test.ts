@@ -251,6 +251,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       grantedScopes: ["app_mentions:read", "chat:write", "im:read", "im:write"],
       answeringAgentId: agentId,
       escalationChannelId: "CSUPPORT",
+      gapEscalationEnabled: true,
     });
 
     const posts: Array<{ channel: string; text: string; threadTs?: string }> = [];
@@ -391,6 +392,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       grantedScopes: ["chat:write", "im:read"],
       answeringAgentId: agentId,
       escalationChannelId: "CSUPPORT",
+      gapEscalationEnabled: true,
     });
 
     let nextOutcome: "answered" | "no_context" = "no_context";

@@ -58,15 +58,18 @@ describe('slackApi', () => {
     const fetchMock = vi.fn().mockResolvedValue(createJsonResponse({
       answeringAgentId: 'agent-1',
       escalationChannelId: null,
+      gapEscalationEnabled: true,
     }))
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(slackApi.updateBinding('workspace-1', 'agent-1', {
       answeringAgentId: 'agent-1',
       escalationChannelId: null,
+      gapEscalationEnabled: true,
     })).resolves.toEqual({
       answeringAgentId: 'agent-1',
       escalationChannelId: null,
+      gapEscalationEnabled: true,
     })
 
     const [requestUrl, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit]
@@ -75,6 +78,7 @@ describe('slackApi', () => {
     expect(requestInit.body).toBe(JSON.stringify({
       answeringAgentId: 'agent-1',
       escalationChannelId: null,
+      gapEscalationEnabled: true,
     }))
     expect(new Headers(requestInit.headers).get('Content-Type')).toBe('application/json')
   })

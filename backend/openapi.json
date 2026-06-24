@@ -20824,11 +20824,15 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "gapEscalationEnabled": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "answeringAgentId",
-                    "escalationChannelId"
+                    "escalationChannelId",
+                    "gapEscalationEnabled"
                   ]
                 }
               }
@@ -20894,6 +20898,9 @@
                       "string",
                       "null"
                     ]
+                  },
+                  "gapEscalationEnabled": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -20923,11 +20930,15 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "gapEscalationEnabled": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "answeringAgentId",
-                    "escalationChannelId"
+                    "escalationChannelId",
+                    "gapEscalationEnabled"
                   ]
                 }
               }

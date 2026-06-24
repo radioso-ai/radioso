@@ -201,6 +201,7 @@ class InMemorySlackBindings implements SlackBindingRepositoryPort {
       workspaceId: input.workspaceId,
       answeringAgentId: input.answeringAgentId,
       escalationChannelId: input.escalationChannelId ?? null,
+      gapEscalationEnabled: input.gapEscalationEnabled ?? false,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     };
@@ -244,12 +245,17 @@ describe("SlackInstallationService", () => {
       grantedScopes: ["chat:write", "im:read"],
       answeringAgentId: "agent-1",
       escalationChannelId: "C_ESC",
+      gapEscalationEnabled: true,
     });
 
     expect(result.installation).toMatchObject({ teamId: "T123", teamName: "Acme", botUserId: "U_BOT" });
     expect(oauthConnections.created).toMatchObject([{ provider: "slack", displayName: "Acme" }]);
     expect(integrationConnections.created).toMatchObject([{ provider: "slack", status: "authorized" }]);
-    expect(bindings.upserts).toMatchObject([{ answeringAgentId: "agent-1", escalationChannelId: "C_ESC" }]);
+    expect(bindings.upserts).toMatchObject([{
+      answeringAgentId: "agent-1",
+      escalationChannelId: "C_ESC",
+      gapEscalationEnabled: true,
+    }]);
     const ciphertext = oauthConnections.tokenWrites[0]?.credentialCiphertext;
     expect(ciphertext).toBeTypeOf("string");
     expect(JSON.stringify(oauthConnections.rows)).not.toContain("xoxb-token");

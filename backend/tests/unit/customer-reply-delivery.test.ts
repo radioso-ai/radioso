@@ -77,7 +77,8 @@ describe("SlackCustomerReplyDeliverer", () => {
     const outbox = { enqueue: vi.fn(async () => ({ id: "action-1", duplicate: false })) };
     const deliverer = new SlackCustomerReplyDeliverer({
       installations: {
-        findByWorkspaceId: vi.fn(async () => installation),
+        findByTeamId: vi.fn(async () => installation),
+        findById: vi.fn(async () => installation),
       },
       outbox,
     });
@@ -111,7 +112,7 @@ describe("SlackCustomerReplyDeliverer", () => {
   it("enqueues a legacy mention reply using the conversation link channel and thread", async () => {
     const outbox = { enqueue: vi.fn(async () => ({ id: "action-1", duplicate: false })) };
     const deliverer = new SlackCustomerReplyDeliverer({
-      installations: { findByWorkspaceId: vi.fn(async () => installation) },
+      installations: { findByTeamId: vi.fn(async () => installation), findById: vi.fn(async () => installation) },
       persistence: {
         findConversationLinkByConversationId: vi.fn(async () => ({
           slackKey: "mention:T1:CMENTION:1700000000.000200",
@@ -147,7 +148,7 @@ describe("SlackCustomerReplyDeliverer", () => {
     const conversationsOpen = vi.fn(async () => ({ channelId: "DOPENED" }));
     const deliverer = new SlackCustomerReplyDeliverer({
       installations: {
-        findByWorkspaceId: vi.fn(async () => installation),
+        findByTeamId: vi.fn(async () => installation),
         findById: vi.fn(async () => installation),
       },
       installationService: {
@@ -188,7 +189,7 @@ describe("SlackCustomerReplyDeliverer", () => {
     const outbox = { enqueue: vi.fn(async () => ({ id: "action-1", duplicate: false })) };
     const logger = { warn: vi.fn() };
     const deliverer = new SlackCustomerReplyDeliverer({
-      installations: { findByWorkspaceId: vi.fn(async () => installation) },
+      installations: { findByTeamId: vi.fn(async () => installation), findById: vi.fn(async () => installation) },
       persistence: {
         findConversationLinkByConversationId: vi.fn(async () => null),
       },

@@ -6,7 +6,6 @@ import {
   type SlackPostOutboxPort,
 } from "../outbox/slackPostAction.js";
 import type {
-  SlackInstallationRecord,
   SlackInstallationRepositoryPort,
   SlackInstallationService,
 } from "../install/slackInstallationService.js";
@@ -55,7 +54,10 @@ const parseLegacySlackKey = (slackKey: string):
 
 export class SlackCustomerReplyDeliverer implements CustomerChannelReplyDeliverer {
   constructor(private readonly dependencies: {
-    installations: Pick<SlackInstallationRepositoryPort, "findByWorkspaceId"> & Partial<Pick<SlackInstallationRepositoryPort, "findById">>;
+    // Resolve the installation that OWNS the conversation (by team / link id), never the
+    // workspace's latest install — a workspace can reinstall or connect a different team, and a
+    // reply sent with the wrong bot token could land in a same-ID channel in another Slack team.
+    installations: Pick<SlackInstallationRepositoryPort, "findByTeamId" | "findById">;
     installationService?: Pick<SlackInstallationService, "resolveBotTokenForInstallation">;
     persistence?: SlackConversationLinkLookupPort;
     slack?: SlackConversationOpenPort;
@@ -101,7 +103,8 @@ export class SlackCustomerReplyDeliverer implements CustomerChannelReplyDelivere
   private async resolveReplyTarget(input: CustomerReplyDeliveryInput): Promise<SlackReplyTarget | null> {
     const channelContext = input.conversation.channelContext;
     if (channelContext?.provider === "slack") {
-      const installation = await this.dependencies.installations.findByWorkspaceId(input.conversation.workspaceId);
+      // Resolve by the conversation's team (one installation per team_id), not the workspace.
+      const installation = await this.dependencies.installations.findByTeamId(channelContext.team.id);
       if (!installation) {
         return null;
       }
@@ -133,7 +136,9 @@ export class SlackCustomerReplyDeliverer implements CustomerChannelReplyDelivere
       };
     }
 
-    const installation = await this.findInstallationForLegacyLink(input.conversation.workspaceId, link.installationId);
+    // The legacy link records the exact installation that created the conversation; use it
+    // directly (not the workspace's latest) so the DM opens with the correct team's bot token.
+    const installation = await this.dependencies.installations.findById(link.installationId);
     const botToken = installation
       ? await this.dependencies.installationService?.resolveBotTokenForInstallation(installation)
       : null;
@@ -148,15 +153,5 @@ export class SlackCustomerReplyDeliverer implements CustomerChannelReplyDelivere
       installationId: link.installationId,
       channelId: opened.channelId,
     };
-  }
-
-  private async findInstallationForLegacyLink(
-    workspaceId: string,
-    installationId: string,
-  ): Promise<SlackInstallationRecord | null> {
-    if (this.dependencies.installations.findById) {
-      return this.dependencies.installations.findById(installationId);
-    }
-    return this.dependencies.installations.findByWorkspaceId(workspaceId);
   }
 }

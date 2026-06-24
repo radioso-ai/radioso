@@ -20,7 +20,12 @@ import type {
   RewriteContinuityState,
 } from "../../retrieval/public.js";
 import { resolveContextForTurn } from "../../context-variables/public.js";
-import type { ResolvedTurnContext } from "../../context-variables/public.js";
+import type {
+  ResolvedTurnContext,
+  ResolvedVariableInput,
+  ContextVariableScope,
+} from "../../context-variables/public.js";
+import type { ContextVariableRepositoryPort } from "../../../db/repositories/contextVariableRepository.js";
 import type { AgentRecord, AgentService } from "../../agents/public.js";
 import { DEFAULT_CONTACT_REQUEST_DELIVERY, defaultAgentBrandingSettings, isAgentRetrievalEnabled } from "../../agents/public.js";
 import { defaultWebsiteEmbedSettings } from "../../settings/contracts/websiteEmbed.js";
@@ -108,6 +113,7 @@ export class ChatSessionPreparer {
     private readonly workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">,
     private readonly agentService?: Pick<AgentService, "resolve">,
     private readonly bootstrapGreetingCacheRepository?: BootstrapGreetingCacheRepositoryPort,
+    private readonly contextVariableRepository?: Pick<ContextVariableRepositoryPort, "resolveForAgent">,
   ) {}
 
   async prepare(input: PrepareChatSessionInput, options: PrepareChatSessionOptions = {}): Promise<PreparedSession> {
@@ -155,6 +161,7 @@ export class ChatSessionPreparer {
     });
     // The direct-only (non-grounded) base turn. Used as-is when retrieval is
     // skipped, otherwise as the throwaway base `prepareRetrieval` recomputes from.
+    const hostVariables = await this.resolveHostVariables(input, agent);
     const directOnlyTurn = this.prepareDirectOnlyTurn(
       this.buildPipelineInput(input, agent, turnHistory, persistedConversation, userMessage),
       agent,
@@ -174,8 +181,8 @@ export class ChatSessionPreparer {
           priorRewriteContinuityState: rewriteContinuityState,
           // Only present to satisfy the PreparedSession shape; prepareRetrieval
           // recomputes the spine from the real retrieval result.
-          ...this.stagedSpineFor(directOnlyTurn.retrieval, input.pageContext),
-        });
+          ...this.stagedSpineFor(directOnlyTurn.retrieval, input.pageContext, hostVariables),
+        }, defaultTurnFraming(), hostVariables);
 
     return {
       agent,
@@ -188,7 +195,7 @@ export class ChatSessionPreparer {
       effectiveQuery: input.query,
       pageContext: input.pageContext ?? null,
       priorRewriteContinuityState: rewriteContinuityState,
-      ...this.stagedSpineFor(retrieval, input.pageContext),
+      ...this.stagedSpineFor(retrieval, input.pageContext, hostVariables),
     };
   }
 
@@ -229,9 +236,9 @@ export class ChatSessionPreparer {
   private stagedSpineFor(
     retrieval: PreparedSession["retrieval"],
     pageContext?: AssistantPageContext | null,
+    variables: readonly ResolvedVariableInput[] = [],
   ): Pick<PreparedSession, "stagedContext" | "resolvedContext" | "turnTrace"> {
-    // Slice 1: only page context is resolved (no store-backed variables yet).
-    const resolvedContext = resolveContextForTurn(pageContext);
+    const resolvedContext = resolveContextForTurn(pageContext, variables);
     return {
       stagedContext: [toPreparedStagedContext(retrieval), ...resolvedContext.staged],
       resolvedContext,
@@ -239,11 +246,39 @@ export class ChatSessionPreparer {
     };
   }
 
+  /**
+   * Resolve the agent's enabled host-defined context variables for this turn, walking the
+   * scope ladder (session → agent → workspace; customer scope arrives with verified identity).
+   * Best-effort: a missing repository or a read failure degrades to no host variables so the
+   * turn always proceeds (page context still renders).
+   */
+  private async resolveHostVariables(
+    input: PrepareChatSessionInput,
+    agent: AgentRecord,
+  ): Promise<ResolvedVariableInput[]> {
+    if (!this.contextVariableRepository) {
+      return [];
+    }
+    const scopes: ContextVariableScope[] = [];
+    if (input.anonymousSessionId) {
+      scopes.push({ type: "session", id: input.anonymousSessionId });
+    }
+    scopes.push({ type: "agent", id: agent.id });
+    scopes.push({ type: "workspace", id: input.workspaceId });
+    try {
+      return await this.contextVariableRepository.resolveForAgent(input.workspaceId, agent.id, scopes);
+    } catch {
+      return [];
+    }
+  }
+
   async prepareRetrieval(
     input: PrepareChatSessionInput,
     session: PreparedSession,
     framing: TurnRouting["framing"] = defaultTurnFraming(),
+    hostVariables?: readonly ResolvedVariableInput[],
   ): Promise<PreparedSession> {
+    const variables = hostVariables ?? (await this.resolveHostVariables(input, session.agent));
     const pipelineInput = this.buildPipelineInput(
       input,
       session.agent,
@@ -262,7 +297,7 @@ export class ChatSessionPreparer {
       turnRoute,
       turnFraming: framing,
       effectiveQuery: input.query,
-      ...this.stagedSpineFor(retrieval, input.pageContext),
+      ...this.stagedSpineFor(retrieval, input.pageContext, variables),
     };
   }
 
@@ -277,7 +312,9 @@ export class ChatSessionPreparer {
     input: PrepareChatSessionInput,
     session: PreparedSession,
     framing: TurnRouting["framing"] = defaultTurnFraming(),
+    hostVariables?: readonly ResolvedVariableInput[],
   ): Promise<PreparedSession> {
+    const variables = hostVariables ?? (await this.resolveHostVariables(input, session.agent));
     const pipelineInput = {
       ...this.buildPipelineInput(
         input,
@@ -297,7 +334,7 @@ export class ChatSessionPreparer {
         turnRoute,
         turnFraming: framing,
         effectiveQuery: input.query,
-        ...this.stagedSpineFor(retrieval, input.pageContext),
+        ...this.stagedSpineFor(retrieval, input.pageContext, variables),
       };
     }
     const interpretation = await this.retrievalTurn.interpret(pipelineInput);
@@ -319,7 +356,7 @@ export class ChatSessionPreparer {
       turnRoute: CHAT_TURN_ROUTE.DIRECT,
       turnFraming: framing,
       effectiveQuery: input.query,
-      ...this.stagedSpineFor(retrieval, input.pageContext),
+      ...this.stagedSpineFor(retrieval, input.pageContext, variables),
     };
   }
 

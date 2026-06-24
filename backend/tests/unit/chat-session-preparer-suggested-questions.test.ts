@@ -346,4 +346,69 @@ describe("ChatSessionPreparer suggested-question settings", () => {
       },
     });
   });
+
+  it("resolves host context variables from the repository into the prepared turn", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const agentRepository = new InMemoryAgentRepository();
+    const agent = await agentRepository.create("ws-1", { name: "Shop Bot" });
+    const retrievalTurn: RetrievalTurnPort = {
+      async interpret(request: RetrievalPipelineRequest) {
+        return {
+          request,
+          traceStartedAtMs: Date.now(),
+          context: { result: {} as never, startedAt: Date.now(), durationMs: 0 },
+          interpretation: { result: {}, startedAt: Date.now(), durationMs: 0 },
+        };
+      },
+      async dispatch(input) {
+        return fixedRetrievalResult(input.interpreted.request);
+      },
+    };
+    const resolveForAgent = vi.fn(async () => [
+      {
+        name: "cart",
+        description: "the cart",
+        value: { items: 2 },
+        surfacing: "always" as const,
+        sensitive: false,
+        trust: "unverified" as const,
+      },
+    ]);
+    const preparer = new ChatSessionPreparer(
+      conversationRepository,
+      messageRepository,
+      retrievalTurn,
+      createAuditService(),
+      undefined,
+      { async resolve() { return agent; } },
+      undefined,
+      { resolveForAgent },
+    );
+
+    const session = await preparer.prepare({
+      workspaceId: "ws-1",
+      agentId: agent.id,
+      query: "Can I get a discount?",
+      anonymousSessionId: "sess-1",
+    });
+
+    // resolved once, with scopes most-specific first
+    expect(resolveForAgent).toHaveBeenCalledTimes(1);
+    expect(resolveForAgent).toHaveBeenCalledWith("ws-1", agent.id, [
+      { type: "session", id: "sess-1" },
+      { type: "agent", id: agent.id },
+      { type: "workspace", id: "ws-1" },
+    ]);
+    const cartStaged = session.stagedContext.find((entry) => entry.id === "cart");
+    expect(cartStaged?.kind).toBe("context_variable");
+    expect(session.resolvedContext.renderFragments).toContainEqual({
+      kind: "variable",
+      name: "cart",
+      description: "the cart",
+      value: { items: 2 },
+      trust: "unverified",
+    });
+    expect(session.resolvedContext.snapshot).toMatchObject({ cart: { items: 2 } });
+  });
 });

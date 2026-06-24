@@ -4,6 +4,7 @@ import { AccountRepository } from "../../db/repositories/accountRepository.js";
 import { ActionRequestRepository } from "../../db/repositories/actionRequestRepository.js";
 import { AccessGrantRepository } from "../../db/repositories/accessGrantRepository.js";
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
+import { ContextVariableRepository } from "../../db/repositories/contextVariableRepository.js";
 import { RoutineDefinitionRepository } from "../../db/repositories/routineDefinitionRepository.js";
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
 import { PendingDecisionRepository } from "../../db/repositories/pendingDecisionRepository.js";
@@ -1354,6 +1355,7 @@ export const buildChatServices = (input: {
     bootstrapGreetingCacheRepository: input.bootstrapGreetingCacheRepository,
     usageLimitPolicy: input.usageLimitPolicy,
     agentService: input.agentService,
+    contextVariableRepository: new ContextVariableRepository(input.database.kysely),
     // 067: behavioral steering. The standing set is supplied by application
     // composition; default answer behavior is registered by a built-in module.
     // Contextual matching is created per turn so the model call carries the

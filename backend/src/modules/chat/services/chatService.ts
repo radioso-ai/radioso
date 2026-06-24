@@ -28,6 +28,7 @@ import type { CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.j
 import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilities.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
+import type { ContextVariableRepositoryPort } from "../../../db/repositories/contextVariableRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
@@ -372,6 +373,8 @@ export interface ChatServiceOptions {
   bootstrapGreetingCacheRepository?: BootstrapGreetingCacheRepositoryPort;
   usageLimitPolicy?: UsageLimitPolicy;
   agentService?: Pick<AgentService, "resolve">;
+  /** Optional: resolves the agent's enabled host context variables per turn. */
+  contextVariableRepository?: Pick<ContextVariableRepositoryPort, "resolveForAgent">;
   directiveSteering?: RouteScopedDirectiveRuntime;
   selectionStrategy?: TurnSelectionStrategy;
   turnRouter: TurnRouter;
@@ -447,6 +450,7 @@ export class ChatService {
       bootstrapGreetingCacheRepository,
       usageLimitPolicy = new NoopUsageLimitPolicy(),
       agentService,
+      contextVariableRepository,
       directiveSteering = noopRouteScopedDirectiveRuntime,
       selectionStrategy = new DefaultTurnSelectionStrategy(),
       turnRouter,
@@ -520,6 +524,7 @@ export class ChatService {
       workspaceRepository,
       agentService,
       bootstrapGreetingCacheRepository,
+      contextVariableRepository,
     );
     // One selection seam shared by the engine turn and the host streaming path, so
     // streamed and non-streamed turns resolve the terminal skill identically.

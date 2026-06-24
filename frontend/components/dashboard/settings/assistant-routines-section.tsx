@@ -331,7 +331,7 @@ function RoutineListScreen({
       id="assistant-routines-card"
       icon={<Route className="h-5 w-5 text-primary" />}
       title="Routines"
-      description="Structured multi-step routines this agent can validate and publish."
+      description="Multi-step procedures the agent runs to complete a task — collect details, call a skill, then finish or hand off. Reach for a routine when a single directive isn't enough. Validate and publish before it goes live."
       headerEnd={(
         <div className="flex items-center gap-2">
           <Button type="button" variant="outline" size="sm" onClick={() => setProseOpen(true)}>

@@ -33,9 +33,11 @@ import {
   type CustomerEmailSkillDraft,
 } from '@/lib/customer-email-skills'
 
+// Keep these labels in sync with the external-skills section so the bind/expose/ignore
+// vocabulary reads identically across every skill type.
 const modeLabel: Record<CustomerEmailFieldMode, string> = {
-  bind: 'Fixed',
-  expose: 'Collect',
+  bind: 'Fixed value',
+  expose: 'Ask in chat',
   ignore: 'Skip',
 }
 

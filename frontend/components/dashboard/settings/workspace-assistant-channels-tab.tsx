@@ -1123,6 +1123,12 @@ export function WorkspaceAssistantChannelsTab({
 
           {mode === 'assistant' && showSection('skills') ? (
           <section id="assistant-skills" className="space-y-6 scroll-mt-24">
+            <div className="space-y-1">
+              <h2 className="text-base font-medium text-foreground">Skills</h2>
+              <p className="text-sm text-muted-foreground">
+                Actions this agent can take beyond answering — call an external tool, draft an email, hand off to a human, or ground its answers in your knowledge. Directives and routines decide when a skill runs; the skill is what actually happens.
+              </p>
+            </div>
             {agentId ? <AssistantExternalSkillsSection agentId={agentId} /> : null}
             {agentId ? <AssistantEmailSkillsSection agentId={agentId} workspaceId={activeWorkspaceId} /> : null}
             <SettingsCard

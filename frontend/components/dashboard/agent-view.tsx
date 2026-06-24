@@ -6,6 +6,7 @@ import { Globe2, RefreshCw, X } from 'lucide-react'
 
 import { WorkbenchView } from '@/components/dashboard/workbench/workbench-view'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
+import { AddSkillHeaderButton, SkillsHeaderActionProvider } from '@/components/dashboard/shared/skills-header-action'
 import { SaveStateIndicator } from '@/components/dashboard/shared/save-state-indicator'
 import { WorkspaceAssistantChannelsTab } from '@/components/dashboard/settings/workspace-assistant-channels-tab'
 import { Button } from '@/components/ui/button'
@@ -45,6 +46,8 @@ interface AgentCreationHandoff {
   title: string
   description: string
   items: AgentCreationHandoffItem[]
+  detectedLocale?: string | null
+  detectedPrivacyPolicyUrl?: string | null
   createdAt: number
 }
 
@@ -61,16 +64,21 @@ const clearAgentCreationHandoff: () => void = agentCreationExtensionsEnabled
   : () => {}
 
 /** Each non-chat agent section maps to a content mode and a column-3 title. */
-const AGENT_SECTION_META: Record<Exclude<AgentSectionId, 'chat'>, { title: string; mode: 'assistant' | 'channels' }> = {
+const AGENT_SECTION_META: Record<Exclude<AgentSectionId, 'chat'>, { title: string; mode: 'assistant' | 'channels'; description?: string }> = {
   identity: { title: 'Identity & appearance', mode: 'assistant' },
   behavior: { title: 'Behavior', mode: 'assistant' },
-  skills: { title: 'Skills', mode: 'assistant' },
+  skills: {
+    title: 'Skills',
+    mode: 'assistant',
+    description: 'Named actions this agent can take — answer from knowledge, send email, post to Slack, call a webhook, or notify a human — usable in routines.',
+  },
   directives: { title: 'Directives', mode: 'assistant' },
   routines: { title: 'Routines', mode: 'assistant' },
   'public-chat-link': { title: 'Public chat link', mode: 'channels' },
   'website-embed': { title: 'Website widget', mode: 'channels' },
   'api-channel': { title: 'API', mode: 'channels' },
   'mcp-channel': { title: 'MCP', mode: 'channels' },
+  'slack-channel': { title: 'Slack', mode: 'channels' },
   'whatsapp-channel': { title: 'WhatsApp', mode: 'channels' },
   danger: { title: 'Danger zone', mode: 'assistant' },
 }
@@ -419,10 +427,12 @@ export function AgentView({
 
   const meta = AGENT_SECTION_META[section]
   return (
-    <>
+    <SkillsHeaderActionProvider>
       <DashboardPage
         title={meta.title}
+        description={meta.description}
         titleAccessory={saveStateAccessory}
+        actions={section === 'skills' ? <AddSkillHeaderButton /> : undefined}
         contentClassName="flex flex-col overflow-hidden p-0"
         contentScroll={false}
       >
@@ -440,6 +450,6 @@ export function AgentView({
         />
       </DashboardPage>
       {wizard}
-    </>
+    </SkillsHeaderActionProvider>
   )
 }

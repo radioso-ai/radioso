@@ -5,6 +5,7 @@ import { ArrowLeft, Route } from 'lucide-react'
 
 import { RoutineChipEditor, type RoutineEditorVariable } from '@/components/dashboard/settings/routine-chip-editor'
 import type { RoutineChipKind } from '@/components/dashboard/settings/routine-chip-node'
+import { RoutineSkillCatalogProvider } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -87,7 +88,8 @@ export function RoutineProseEditor({
         </Button>
       )}
     >
-      <div className="space-y-4">
+      <RoutineSkillCatalogProvider agentId={agentId}>
+        <div className="space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="routineProseName">Name</Label>
           <Input
@@ -111,9 +113,15 @@ export function RoutineProseEditor({
           <RoutineChipEditor
             variables={variables}
             reservedRefKinds={reservedRefKinds}
+            name={name}
+            trigger={trigger}
             onCreateVariable={addVariable}
             onDocChange={setBlocks}
             onSetVariableType={setVariableType}
+            onPasteFrontmatter={({ name: pastedName, trigger: pastedTrigger }) => {
+              if (pastedName !== null) setName(pastedName)
+              if (pastedTrigger !== null) setTrigger(pastedTrigger)
+            }}
           />
           <p className="text-xs text-muted-foreground">
             Type <kbd className="rounded border border-border px-1">@</kbd> or use the toolbar to insert a variable. Click a chip to set its type.
@@ -128,7 +136,8 @@ export function RoutineProseEditor({
             {isSaving ? 'Saving…' : 'Save routine'}
           </Button>
         </div>
-      </div>
+        </div>
+      </RoutineSkillCatalogProvider>
     </SettingsCard>
   )
 }

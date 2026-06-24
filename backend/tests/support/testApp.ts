@@ -10,6 +10,7 @@ import type { ConversationRoutineStore, RoutineState } from "@radioso/conversati
 import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
 import { AccessGrantService, DefaultOriginMatcher } from "../../src/modules/accessGrants/public.js";
 import { AccountInvitationService } from "../../src/modules/account/services/accountInvitationService.js";
+import { ApprovalDecisionService } from "../../src/modules/approvals/public.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { EmailVerificationService } from "../../src/modules/auth/services/emailVerificationService.js";
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
@@ -91,15 +92,31 @@ import {
 } from "../../src/modules/customerEmail/public.js";
 import { WebhookSkillDefinitionService } from "../../src/modules/webhookSkills/public.js";
 import {
+  SlackInstallationService,
+  buildSlackOauthProviderDefinition,
+  type SlackOauthMetadata,
+} from "../../src/modules/slack/public.js";
+import {
   InMemoryMcpConnectionRepository,
   InMemoryExternalSkillDefinitionRepository,
   createMockToolServiceFactory,
 } from "./inMemoryExternalSkills.js";
 import { InMemoryOauthConnectionRepository } from "./inMemoryOauthConnections.js";
 import { InMemoryCustomerEmailConnectionRepository } from "./inMemoryCustomerEmailConnections.js";
+import { InMemoryIntegrationConnectionRepository } from "./inMemoryIntegrationConnections.js";
+import {
+  InMemorySlackBindingRepository,
+  InMemorySlackInstallationRepository,
+} from "./inMemorySlack.js";
 import { InMemoryEmailSkillDefinitionRepository } from "./inMemoryEmailSkillDefinitions.js";
 import { InMemoryEmailSkillActivityRepository } from "./inMemoryEmailSkillActivity.js";
 import { InMemoryWebhookSkillDefinitionRepository } from "./inMemoryWebhookSkillDefinitions.js";
+import { InMemorySlackSkillDefinitionRepository } from "./inMemorySlackSkillDefinitions.js";
+import { InMemoryAgentSkillRepository } from "./inMemoryAgentSkills.js";
+import { SlackSkillDefinitionService } from "../../src/modules/slackSkills/public.js";
+import { AgentSkillsService } from "../../src/modules/agentSkills/public.js";
+import { createDefaultSkillCapabilityRegistry } from "../../src/modules/skills/capabilityRegistry.js";
+import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../src/modules/documents/contracts/index.js";
 import {
   DefaultWebhookDestinationAdapter,
   WebhookDestinationService,
@@ -117,10 +134,10 @@ import { TelemetryService } from "../../src/shared/observability/telemetry/telem
 import type { AppDependencies } from "../../src/app/server/types.js";
 import {
   EvalCaseService,
-  EvalRepository,
   EvalRunService,
   EvalSnapshotService,
 } from "../../src/modules/eval/composition.js";
+import { createInMemoryEvalRepository } from "./inMemoryEvalRepository.js";
 import { ApplicationModuleCoordinator, createApplicationExtensionRegistry } from "../../src/app/composition/applicationModule.js";
 import {
   createDefaultAgentSkillSettingsRegistry,
@@ -138,10 +155,12 @@ import {
   NoopPublicChatActionAdvertiser,
   type PublicChatActionAdvertiserPort,
 } from "../../src/modules/chat/services/publicChatActionAdvertiser.js";
+import { InMemoryPublicConversationEventBus } from "../../src/modules/chat/composition.js";
 import { NoopContactHistoryProvider } from "../../src/modules/chat/services/contactHistoryProvider.js";
 import type { AnswerFeedbackHistoryProviderPort } from "../../src/modules/chat/services/answerFeedbackHistoryProvider.js";
 import {
   createDefaultSkillCatalogRegistry,
+  SkillAuthoringCatalogService,
   SkillCatalogService,
 } from "../../src/modules/skills/public.js";
 import type { ApplicationRouteMount } from "../../src/app/composition/applicationModule.js";
@@ -165,6 +184,7 @@ import {
   InMemoryIngestionSettingsRepository,
   InMemoryHistoryItemsRepository,
   InMemoryMessageRepository,
+  InMemoryConversationOwnershipRepository,
   InMemoryRetrievalSettingsRepository,
   InMemorySessionRepository,
   InMemoryEmailVerificationTokenRepository,
@@ -245,6 +265,9 @@ export const createTestEnv = (): Env => ({
   WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS: 5_000,
   WEBSITE_CRAWLER_ENABLED: true,
   APP_BASE_URL: undefined,
+  SLACK_OAUTH_CLIENT_ID: undefined,
+  SLACK_OAUTH_CLIENT_SECRET: undefined,
+  SLACK_SIGNING_SECRET: undefined,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
   RADIOSO_BASE_URL: undefined,
   RADIOSO_MCP_ENABLED: false,
@@ -277,6 +300,7 @@ interface TestRepositories {
   chunkRepository: InMemoryChunkRepository;
   documentProcessingJobRepository: InMemoryDocumentProcessingJobRepository;
   conversationRepository: InMemoryConversationRepository;
+  conversationOwnershipRepository: InMemoryConversationOwnershipRepository;
   messageRepository: InMemoryMessageRepository;
   agentRepository: InMemoryAgentRepository;
   routineDefinitionRepository: InMemoryRoutineDefinitionRepository;
@@ -396,6 +420,7 @@ export const createTestDependencies = (overrides: {
   const chunkRepository = new InMemoryChunkRepository(documentRepository);
   const documentStorage = new InMemoryDocumentStorage();
   const conversationRepository = new InMemoryConversationRepository();
+  const conversationOwnershipRepository = new InMemoryConversationOwnershipRepository();
   const messageRepository = new InMemoryMessageRepository();
   conversationRepository.setMessageRepository(messageRepository);
   const bootstrapGreetingCacheRepository = new InMemoryBootstrapGreetingCacheRepository();
@@ -714,8 +739,23 @@ export const createTestDependencies = (overrides: {
     auditService,
     { key: env.CONNECTOR_ENCRYPTION_KEY },
   );
+  const oauthConnectionRepository = new InMemoryOauthConnectionRepository();
+  const integrationConnectionRepository = new InMemoryIntegrationConnectionRepository();
+  const slackInstallationRepository = new InMemorySlackInstallationRepository();
+  const slackBindingRepository = new InMemorySlackBindingRepository();
+  const slackInstallationService = new SlackInstallationService({
+    oauthConnections: oauthConnectionRepository,
+    integrationConnections: integrationConnectionRepository,
+    installations: slackInstallationRepository,
+    bindings: slackBindingRepository,
+    encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
+  });
+  const slackProvider = buildSlackOauthProviderDefinition({
+    clientId: "test-slack-client",
+    clientSecret: "test-slack-secret",
+  });
   const oauthConnectionService = new OauthConnectionService({
-    repository: new InMemoryOauthConnectionRepository(),
+    repository: oauthConnectionRepository,
     providers: new StaticOauthProviderRegistry([
       {
         id: "google_mail",
@@ -750,22 +790,54 @@ export const createTestDependencies = (overrides: {
         defaultScopes: ["mail.send"],
         allowedScopes: ["mail.send", "mail.read"],
       },
+      ...(slackProvider ? [slackProvider] : []),
     ]),
     encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
     appBaseUrl: env.APP_BASE_URL,
+    apiBaseUrl: env.CONNECTOR_PUBLIC_BASE_URL ?? env.APP_BASE_URL,
     assertPublicUrl: () => undefined,
-    fetchImpl: async () => ({
+    fetchImpl: async (url) => ({
       ok: true,
       status: 200,
-      json: async () => ({ access_token: "test-access-token", refresh_token: "test-refresh", expires_in: 3600 }),
+      json: async () => url.includes("slack.com")
+        ? {
+            ok: true,
+            access_token: "xoxb-test-slack-token",
+            token_type: "bot",
+            scope: "chat:write,im:history,im:read,im:write",
+            team: { id: "TTEST", name: "Test Slack" },
+            bot_user_id: "UTESTBOT",
+            authed_user: { id: "UINSTALLER" },
+          }
+        : { access_token: "test-access-token", refresh_token: "test-refresh", expires_in: 3600 },
     }),
     logger,
+    onAuthorized: async ({ connection, tokens, metadata }) => {
+      if (connection.provider !== "slack") {
+        return;
+      }
+      const slackMetadata = metadata as Partial<SlackOauthMetadata>;
+      if (!slackMetadata.teamId || !slackMetadata.botUserId) {
+        throw new Error("Slack OAuth metadata was missing team or bot identity");
+      }
+      await slackInstallationService.saveInstallation({
+        workspaceId: connection.workspaceId,
+        oauthConnectionId: connection.id,
+        teamId: slackMetadata.teamId,
+        teamName: slackMetadata.teamName ?? null,
+        botUserId: slackMetadata.botUserId,
+        botAccessToken: tokens.accessToken,
+        grantedScopes: connection.grantedScopes,
+      });
+    },
   });
   const customerEmailOAuthService = new CustomerEmailOAuthService(oauthConnectionService);
   const customerEmailConnectionRepository = new InMemoryCustomerEmailConnectionRepository();
   const emailSkillDefinitionRepository = new InMemoryEmailSkillDefinitionRepository();
   const emailSkillActivityRepository = new InMemoryEmailSkillActivityRepository();
   const webhookSkillDefinitionRepository = new InMemoryWebhookSkillDefinitionRepository();
+  const slackSkillDefinitionRepository = new InMemorySlackSkillDefinitionRepository();
+  const agentSkillRepository = new InMemoryAgentSkillRepository();
   customerEmailConnectionRepository.setReferenceChecker((connectionId) =>
     emailSkillDefinitionRepository.countByConnection("", connectionId),
   );
@@ -832,6 +904,61 @@ export const createTestDependencies = (overrides: {
     repository: webhookSkillDefinitionRepository,
     destinations: webhookDestinations,
   });
+  const slackSkillDefinitionService = new SlackSkillDefinitionService({
+    repository: slackSkillDefinitionRepository,
+    installations: slackInstallationRepository,
+  });
+  const skillCapabilityRegistry = createDefaultSkillCapabilityRegistry({
+    mcp_tool: async ({ agentId }) =>
+      (await mcpConnectionService.list(agentId)).map((connection) => ({
+        id: connection.id,
+        label: connection.displayName,
+        status: connection.status,
+      })),
+    email: async ({ workspaceId }) =>
+      (await customerEmailConnectionService.list(workspaceId)).map((connection) => ({
+        id: connection.id,
+        label: connection.displayName,
+        status: connection.status,
+      })),
+    slack_post: async ({ workspaceId }) => {
+      const status = await slackInstallationService.getStatus(workspaceId);
+      return status.installationId
+        ? [{ id: status.installationId, label: status.teamName ?? "Slack", status: status.status }]
+        : [];
+    },
+    webhook_call: async ({ workspaceId }) =>
+      (await webhookDestinations.list(workspaceId)).map((destination) => ({
+        id: destination.id,
+        label: destination.name,
+        status: destination.lastDeliveryStatus ?? undefined,
+      })),
+    retrieve: async ({ workspaceId }) => {
+      const [sources, manualDocumentCount] = await Promise.all([
+        documentSourceRepository.listByWorkspaceIdWithDocumentCounts(workspaceId),
+        documentSourceRepository.countDocumentsWithoutSource(workspaceId),
+      ]);
+      return [
+        ...sources.map((source) => ({
+          id: source.id,
+          label: source.name,
+          status: source.lastSyncStatus ?? undefined,
+        })),
+        ...(manualDocumentCount > 0
+          ? [{
+              id: MANUALLY_ADDED_DOCUMENTS_SOURCE_ID,
+              label: "Manually added documents",
+              status: "available",
+            }]
+          : []),
+      ];
+    },
+  });
+  const agentSkillsService = new AgentSkillsService({
+    repository: agentSkillRepository,
+    capabilities: skillCapabilityRegistry,
+    logger,
+  });
   const accessGrantService = new AccessGrantService({
     repository: accessGrantRepository,
     originMatcher: new DefaultOriginMatcher(),
@@ -858,9 +985,20 @@ export const createTestDependencies = (overrides: {
     },
     registeredCapabilityNames,
   });
+  const skillCatalogRegistry = createDefaultSkillCatalogRegistry();
+  const capabilityPolicy = new DefaultAllowCapabilityPolicy();
+  const skillCatalogService = new SkillCatalogService({
+    capabilityPolicy,
+    registry: skillCatalogRegistry,
+  });
+  const skillAuthoringCatalog = new SkillAuthoringCatalogService({
+    skillCatalog: skillCatalogService,
+    externalSkills: externalSkillDefinitionService,
+  });
   const routineDefinitionService = new RoutineDefinitionService({
     agentRepository,
     repository: routineDefinitionRepository,
+    skillAuthoringCatalog,
     webhookDestinations: {
       existsByIdAndWorkspace: async (inputWorkspaceId, destinationId) =>
         webhookDestinations.existsByIdAndWorkspace(inputWorkspaceId, destinationId),
@@ -912,6 +1050,7 @@ export const createTestDependencies = (overrides: {
     new InMemoryHistoryItemsRepository(conversationRepository, auditEventRepository),
     new NoopContactHistoryProvider(),
     overrides.answerFeedbackHistoryProvider,
+    conversationOwnershipRepository,
   );
   const publicChatActionAdvertisers = [
     ...(overrides.publicChatActionAdvertiser ? [overrides.publicChatActionAdvertiser] : []),
@@ -921,7 +1060,6 @@ export const createTestDependencies = (overrides: {
     : publicChatActionAdvertisers.length === 1
       ? publicChatActionAdvertisers[0]!
       : new ChainedPublicChatActionAdvertiser(publicChatActionAdvertisers);
-  const skillCatalogRegistry = createDefaultSkillCatalogRegistry();
   const fallbackReplyComposer = overrides.fallbackReplyComposer ?? new TestFallbackReplyComposer();
   const publishedRoutineSource = createPublishedRoutineRegistrationSource(routineDefinitionRepository, {
     onDefinitionError: ({ agentId, definitionId, error }) => {
@@ -1043,17 +1181,13 @@ export const createTestDependencies = (overrides: {
     { logger },
   );
   const assistantHistoryService = new AssistantHistoryService(chatHistoryService);
+  const publicConversationEventBus = new InMemoryPublicConversationEventBus();
   const retrievalSearchService = new RetrievalSearchService(retrievalPipeline);
   const retrievalAnswerService = new RetrievalAnswerService({
     retrievalPipeline,
     chatGateway,
     usageLimitPolicy,
     auditService,
-  });
-  const capabilityPolicy = new DefaultAllowCapabilityPolicy();
-  const skillCatalogService = new SkillCatalogService({
-    capabilityPolicy,
-    registry: skillCatalogRegistry,
   });
   const platformSettingsService = new PlatformSettingsService({
     workspaceRepository,
@@ -1063,6 +1197,22 @@ export const createTestDependencies = (overrides: {
     publicChatBaseUrl: env.PUBLIC_CHAT_BASE_URL,
   });
   const retrievalDefaultsProvider = createSystemRetrievalDefaultsProvider();
+  const approvalDecisionService = new ApprovalDecisionService(
+    {
+      listPending: async () => [],
+      loadByHandle: async () => null,
+      resolveInTransaction: async () => null,
+    },
+    {
+      resume: async () => {
+        throw new Error("approval_resume_not_configured");
+      },
+    },
+    {
+      resolveWorkspaceRole: (caller) => accountAccessService.resolveWorkspaceRole(caller),
+    },
+  );
+  const evalRepository = createInMemoryEvalRepository();
   const dependencies: AppDependencies = {
     env,
     logger,
@@ -1074,6 +1224,7 @@ export const createTestDependencies = (overrides: {
     usageLimitPolicy,
     organizationCreationGuard,
     publicChatActionAdvertiser,
+    publicConversationEventBus,
     contactHistoryProvider: new NoopContactHistoryProvider(),
     applicationRouteMounts: overrides.applicationRouteMounts ?? [],
     applicationModules: new ApplicationModuleCoordinator({
@@ -1088,10 +1239,14 @@ export const createTestDependencies = (overrides: {
     abuseControlService,
     workspaceProviderCredentialsService,
     oauthConnectionService,
+    slackInstallationService,
     customerEmailOAuthService,
     customerEmailConnectionService,
     emailSkillDefinitionService,
     webhookSkillDefinitionService,
+    slackSkillDefinitionService,
+    skillCapabilityRegistry,
+    agentSkillsService,
     emailSkillActivityRepository,
     mcpConnectionService,
     externalSkillDefinitionService,
@@ -1158,6 +1313,7 @@ export const createTestDependencies = (overrides: {
     documentDeletionService,
     documentStorage,
     chatService,
+    approvalDecisionService,
     workbenchReplayRunner: workbenchReplayRunner as any,
     actionDispatchWorker,
     chatBootstrapService,
@@ -1173,11 +1329,11 @@ export const createTestDependencies = (overrides: {
       agentRepository,
       retrievalDefaultsProvider,
       createRetrievalSkillSettingsResolver(),
-      new EvalRepository(connectorDb as any),
+      evalRepository,
     ),
-    evalCaseService: new EvalCaseService(new EvalRepository(connectorDb as any)),
+    evalCaseService: new EvalCaseService(evalRepository),
     evalRunService: new EvalRunService(
-      new EvalRepository(connectorDb as any),
+      evalRepository,
       {
         async retrieve(_input: { history: unknown[] }) { return { chunks: [] }; },
         async answer(_input: { history: unknown[]; runId: string }) {
@@ -1200,12 +1356,14 @@ export const createTestDependencies = (overrides: {
     directiveAuthorService,
     agentSurfaceExtensions,
     skillCatalogService,
+    skillAuthoringCatalog,
     accountRepository,
     userRepository,
     workspaceRepository,
     agentRepository,
     bootstrapGreetingCacheRepository,
     conversationRepository,
+    conversationOwnershipRepository,
     messageRepository,
     connectorRegistry,
     connectorIngestionPort: {
@@ -1245,6 +1403,7 @@ export const createTestDependencies = (overrides: {
       chunkRepository,
       documentProcessingJobRepository,
       conversationRepository,
+      conversationOwnershipRepository,
       messageRepository,
       agentRepository,
       routineDefinitionRepository,

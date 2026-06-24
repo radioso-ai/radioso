@@ -3781,6 +3781,15 @@
               },
               "priority": {
                 "type": "integer"
+              },
+              "reentryMode": {
+                "type": "string",
+                "enum": [
+                  "once_per_conversation",
+                  "always",
+                  "semantic"
+                ],
+                "default": "once_per_conversation"
               }
             },
             "required": [
@@ -3830,6 +3839,9 @@
                 "ordinal": {
                   "type": "integer",
                   "minimum": 0
+                },
+                "mutable": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -3859,7 +3871,8 @@
                   "enum": [
                     "chat",
                     "tool",
-                    "action"
+                    "action",
+                    "approval"
                   ]
                 },
                 "instruction": {
@@ -3883,13 +3896,130 @@
                   "minLength": 1,
                   "maxLength": 300
                 },
+                "captureKey": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 500
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "label"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 8
+                },
                 "ordinal": {
                   "type": "integer",
                   "minimum": 0
                 },
                 "metadata": {
                   "type": "object",
-                  "additionalProperties": {},
+                  "properties": {
+                    "inputBindings": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "literal"
+                                ]
+                              },
+                              "value": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "boolean"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "value"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "variableRef"
+                                ]
+                              },
+                              "ref": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120,
+                                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "ref"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "outputAssignments": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                      }
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "typed",
+                        "untyped"
+                      ]
+                    }
+                  },
                   "default": {}
                 }
               },
@@ -4151,6 +4281,15 @@
               },
               "priority": {
                 "type": "integer"
+              },
+              "reentryMode": {
+                "type": "string",
+                "enum": [
+                  "once_per_conversation",
+                  "always",
+                  "semantic"
+                ],
+                "default": "once_per_conversation"
               }
             },
             "required": [
@@ -4200,6 +4339,9 @@
                 "ordinal": {
                   "type": "integer",
                   "minimum": 0
+                },
+                "mutable": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -4229,7 +4371,8 @@
                   "enum": [
                     "chat",
                     "tool",
-                    "action"
+                    "action",
+                    "approval"
                   ]
                 },
                 "instruction": {
@@ -4253,13 +4396,130 @@
                   "minLength": 1,
                   "maxLength": 300
                 },
+                "captureKey": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 500
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "label"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 8
+                },
                 "ordinal": {
                   "type": "integer",
                   "minimum": 0
                 },
                 "metadata": {
                   "type": "object",
-                  "additionalProperties": {},
+                  "properties": {
+                    "inputBindings": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "literal"
+                                ]
+                              },
+                              "value": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "boolean"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "value"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "variableRef"
+                                ]
+                              },
+                              "ref": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120,
+                                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "ref"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "outputAssignments": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                      }
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "typed",
+                        "untyped"
+                      ]
+                    }
+                  },
                   "default": {}
                 }
               },
@@ -4532,6 +4792,7 @@
                     "declared_unused_slot",
                     "referenced_undeclared_slot",
                     "unregistered_action_type",
+                    "unknown_skill",
                     "action_capability_denied",
                     "invalid_webhook_destination_ref",
                     "unknown_webhook_destination",
@@ -4540,7 +4801,16 @@
                     "structured_guard_missing_parameter",
                     "field_guard_unknown_reference",
                     "field_guard_incompatible_type",
-                    "completion_export_missing_destination"
+                    "completion_export_missing_destination",
+                    "approval_step_llm_edge",
+                    "approval_step_no_decision_edge",
+                    "approval_step_unknown_option",
+                    "approval_step_unreachable_option",
+                    "unsatisfiable_required_input",
+                    "input_type_mismatch",
+                    "unknown_input_binding",
+                    "unknown_variable_ref",
+                    "variable_name_collision"
                   ]
                 },
                 "location": {
@@ -4589,6 +4859,15 @@
               },
               "priority": {
                 "type": "integer"
+              },
+              "reentryMode": {
+                "type": "string",
+                "enum": [
+                  "once_per_conversation",
+                  "always",
+                  "semantic"
+                ],
+                "default": "once_per_conversation"
               }
             },
             "required": [
@@ -4638,6 +4917,9 @@
                 "ordinal": {
                   "type": "integer",
                   "minimum": 0
+                },
+                "mutable": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -4667,7 +4949,8 @@
                   "enum": [
                     "chat",
                     "tool",
-                    "action"
+                    "action",
+                    "approval"
                   ]
                 },
                 "instruction": {
@@ -4691,13 +4974,130 @@
                   "minLength": 1,
                   "maxLength": 300
                 },
+                "captureKey": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 500
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "label"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 8
+                },
                 "ordinal": {
                   "type": "integer",
                   "minimum": 0
                 },
                 "metadata": {
                   "type": "object",
-                  "additionalProperties": {},
+                  "properties": {
+                    "inputBindings": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "literal"
+                                ]
+                              },
+                              "value": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "boolean"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "value"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "variableRef"
+                                ]
+                              },
+                              "ref": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120,
+                                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "ref"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "outputAssignments": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                      }
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "typed",
+                        "untyped"
+                      ]
+                    }
+                  },
                   "default": {}
                 }
               },
@@ -5108,6 +5508,15 @@
                   },
                   "priority": {
                     "type": "integer"
+                  },
+                  "reentryMode": {
+                    "type": "string",
+                    "enum": [
+                      "once_per_conversation",
+                      "always",
+                      "semantic"
+                    ],
+                    "default": "once_per_conversation"
                   }
                 },
                 "required": [
@@ -5157,6 +5566,9 @@
                     "ordinal": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "mutable": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -5186,7 +5598,8 @@
                       "enum": [
                         "chat",
                         "tool",
-                        "action"
+                        "action",
+                        "approval"
                       ]
                     },
                     "instruction": {
@@ -5210,13 +5623,130 @@
                       "minLength": 1,
                       "maxLength": 300
                     },
+                    "captureKey": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                    },
+                    "options": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120,
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          },
+                          "description": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "minLength": 1,
+                            "maxLength": 500
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 8
+                    },
                     "ordinal": {
                       "type": "integer",
                       "minimum": 0
                     },
                     "metadata": {
                       "type": "object",
-                      "additionalProperties": {},
+                      "properties": {
+                        "inputBindings": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "literal"
+                                    ]
+                                  },
+                                  "value": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "boolean"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "value"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "variableRef"
+                                    ]
+                                  },
+                                  "ref": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 120,
+                                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "ref"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          }
+                        },
+                        "outputAssignments": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120,
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                          }
+                        },
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "typed",
+                            "untyped"
+                          ]
+                        }
+                      },
                       "default": {}
                     }
                   },
@@ -5477,6 +6007,135 @@
         "required": [
           "error",
           "validation"
+        ]
+      },
+      "SkillAuthoringInput": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "number",
+              "boolean",
+              "email",
+              "date",
+              "phone",
+              "enum"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "enumValues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "key",
+          "type",
+          "required"
+        ]
+      },
+      "SkillAuthoringOutcome": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "paused",
+              "awaiting_confirmation",
+              "awaiting_tool",
+              "completed",
+              "cancelled",
+              "expired",
+              "failed"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "displayName",
+          "status"
+        ]
+      },
+      "SkillAuthoringDescriptor": {
+        "type": "object",
+        "properties": {
+          "skillName": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "retrieval",
+              "built_in",
+              "external_mcp",
+              "customer_email"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillAuthoringInput"
+            }
+          },
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillAuthoringOutcome"
+            }
+          },
+          "hasDataOutputs": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "skillName",
+          "displayName",
+          "category",
+          "inputs",
+          "outcomes",
+          "hasDataOutputs"
+        ]
+      },
+      "RoutineSkillCatalogResponse": {
+        "type": "object",
+        "properties": {
+          "skills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillAuthoringDescriptor"
+            }
+          }
+        },
+        "required": [
+          "skills"
         ]
       },
       "PublicChatSessionResponse": {
@@ -8736,8 +9395,7 @@
             "format": "uuid"
           },
           "assistantMessageId": {
-            "type": "string",
-            "format": "uuid"
+            "type": "string"
           },
           "agentId": {
             "type": "string",
@@ -8766,6 +9424,25 @@
             "items": {
               "$ref": "#/components/schemas/ChatSuggestion"
             }
+          },
+          "ownership": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "ai_owned",
+                  "human_owned"
+                ]
+              },
+              "suppressed": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "state",
+              "suppressed"
+            ]
           },
           "debug": {
             "$ref": "#/components/schemas/AssistantChatDebug"
@@ -8815,6 +9492,25 @@
             "items": {
               "$ref": "#/components/schemas/ChatSuggestion"
             }
+          },
+          "ownership": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "ai_owned",
+                  "human_owned"
+                ]
+              },
+              "suppressed": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "state",
+              "suppressed"
+            ]
           },
           "debug": {
             "$ref": "#/components/schemas/AssistantChatDebug"
@@ -9044,6 +9740,76 @@
         },
         "description": "`message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`."
       },
+      "ConversationOwnership": {
+        "type": "object",
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ai_owned",
+              "human_owned"
+            ]
+          },
+          "ownerAccountId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "ownerDisplayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "takenOverAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "conversationId",
+          "workspaceId",
+          "state",
+          "ownerAccountId",
+          "ownerDisplayName",
+          "reason",
+          "version",
+          "takenOverAt",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
       "ChatConversationSummary": {
         "type": "object",
         "properties": {
@@ -9107,6 +9873,9 @@
               "string",
               "null"
             ]
+          },
+          "ownership": {
+            "$ref": "#/components/schemas/ConversationOwnership"
           }
         },
         "required": [
@@ -9583,6 +10352,16 @@
               "system"
             ]
           },
+          "source": {
+            "type": "string",
+            "enum": [
+              "customer",
+              "ai_agent",
+              "human_agent",
+              "human_agent_on_behalf_of_ai_agent",
+              "system"
+            ]
+          },
           "content": {
             "type": "string"
           },
@@ -9650,13 +10429,136 @@
           },
           "debug": {
             "$ref": "#/components/schemas/ChatConversationMessageDebug"
+          },
+          "operatorDisplayName": {
+            "type": "string"
           }
         },
         "required": [
           "id",
           "role",
+          "source",
           "content",
           "createdAt"
+        ]
+      },
+      "ConversationOwnershipResponse": {
+        "type": "object",
+        "properties": {
+          "ownership": {
+            "$ref": "#/components/schemas/ConversationOwnership"
+          }
+        },
+        "required": [
+          "ownership"
+        ]
+      },
+      "HumanReplyMessage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant",
+              "system"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "customer",
+              "ai_agent",
+              "human_agent",
+              "human_agent_on_behalf_of_ai_agent",
+              "system"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {}
+          },
+          "inputMetadata": {
+            "type": "object",
+            "properties": {
+              "method": {
+                "type": "string",
+                "enum": [
+                  "typed",
+                  "suggestion_click",
+                  "intent_click"
+                ]
+              },
+              "suggestionSourceMessageId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "intent": {
+                "type": "object",
+                "properties": {
+                  "skillName": {
+                    "type": "string"
+                  },
+                  "intentName": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "skillName"
+                ]
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "skillName": {
+            "type": "string"
+          },
+          "skillOutcome": {
+            "type": "string"
+          },
+          "skillStatus": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "conversationId",
+          "workspaceId",
+          "role",
+          "content",
+          "createdAt"
+        ]
+      },
+      "HumanReplyMessageResponse": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "$ref": "#/components/schemas/HumanReplyMessage"
+          }
+        },
+        "required": [
+          "message"
         ]
       },
       "ChatConversationDetail": {
@@ -9730,11 +10632,21 @@
               "null"
             ]
           },
+          "tailCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Cursor for subsequent tail requests. It marks the newest message included when this detail response was produced."
+          },
           "messages": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ChatConversationMessage"
             }
+          },
+          "ownership": {
+            "$ref": "#/components/schemas/ConversationOwnership"
           }
         },
         "required": [
@@ -9753,7 +10665,53 @@
           "messageWindowLimit",
           "hasOlderMessages",
           "nextCursor",
+          "tailCursor",
           "messages"
+        ]
+      },
+      "ChatConversationTail": {
+        "type": "object",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatConversationMessage"
+            }
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ownership": {
+            "$ref": "#/components/schemas/ConversationOwnership"
+          }
+        },
+        "required": [
+          "messages",
+          "cursor"
+        ]
+      },
+      "PublicChatConversationTail": {
+        "type": "object",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatConversationMessage"
+            }
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "messages",
+          "cursor"
         ]
       },
       "PublicConversationSummary": {
@@ -10490,6 +11448,100 @@
           "to",
           "filters",
           "buckets"
+        ]
+      },
+      "PendingApprovalDecisionOption": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ]
+      },
+      "PendingApprovalDecision": {
+        "type": "object",
+        "properties": {
+          "handle": {
+            "type": "string"
+          },
+          "conversationId": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "routineId": {
+            "type": "string"
+          },
+          "stepId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PendingApprovalDecisionOption"
+            }
+          },
+          "contentHash": {
+            "type": "string"
+          },
+          "canResolve": {
+            "type": "boolean"
+          },
+          "deadline": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "handle",
+          "conversationId",
+          "agentId",
+          "routineId",
+          "stepId",
+          "reason",
+          "options",
+          "contentHash",
+          "canResolve",
+          "deadline",
+          "createdAt"
+        ]
+      },
+      "PendingApprovalDecisionListResponse": {
+        "type": "object",
+        "properties": {
+          "decisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PendingApprovalDecision"
+            }
+          }
+        },
+        "required": [
+          "decisions"
         ]
       },
       "AssistantChatSseStream": {
@@ -13918,6 +14970,63 @@
           },
           "404": {
             "description": "Agent or directive not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/routine-skill-catalog": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "List routine-authoring skills for an agent",
+        "operationId": "listAgentRoutineSkillCatalog",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Routine skill catalog returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutineSkillCatalogResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -19152,6 +20261,655 @@
         }
       }
     },
+    "/api/v1/workspaces/{workspaceId}/slack/install/start": {
+      "post": {
+        "tags": [
+          "Slack"
+        ],
+        "summary": "Start Slack OAuth installation",
+        "operationId": "startWorkspaceSlackInstall",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Slack authorization started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "authorizationUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "connectionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "authorizationUrl",
+                    "connectionId",
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or Slack OAuth is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent manage permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Slack install is not fully configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/slack/install/status": {
+      "get": {
+        "tags": [
+          "Slack"
+        ],
+        "summary": "Get Slack installation status",
+        "operationId": "getWorkspaceSlackInstallStatus",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Slack installation status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "connected",
+                        "needs_reauth",
+                        "disabled",
+                        "not_configured"
+                      ]
+                    },
+                    "readiness": {
+                      "type": "object",
+                      "properties": {
+                        "configured": {
+                          "type": "boolean"
+                        },
+                        "missingEnvVars": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "SLACK_OAUTH_CLIENT_ID",
+                              "SLACK_OAUTH_CLIENT_SECRET",
+                              "SLACK_SIGNING_SECRET"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "configured",
+                        "missingEnvVars"
+                      ]
+                    },
+                    "installationId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "teamName": {
+                      "type": "string"
+                    },
+                    "answeringAgentId": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "readiness"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent read permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/slack/manifest": {
+      "get": {
+        "tags": [
+          "Slack"
+        ],
+        "summary": "Get self-host Slack app manifest",
+        "operationId": "getWorkspaceSlackManifest",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Generated Slack app manifest",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "manifest": {
+                      "type": "object",
+                      "properties": {
+                        "display_information": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "name"
+                          ]
+                        },
+                        "features": {
+                          "type": "object",
+                          "properties": {
+                            "bot_user": {
+                              "type": "object",
+                              "properties": {
+                                "display_name": {
+                                  "type": "string"
+                                },
+                                "always_online": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "display_name",
+                                "always_online"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "bot_user"
+                          ]
+                        },
+                        "oauth_config": {
+                          "type": "object",
+                          "properties": {
+                            "redirect_urls": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "format": "uri"
+                              }
+                            },
+                            "scopes": {
+                              "type": "object",
+                              "properties": {
+                                "bot": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "required": [
+                                "bot"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "redirect_urls",
+                            "scopes"
+                          ]
+                        },
+                        "settings": {
+                          "type": "object",
+                          "properties": {
+                            "event_subscriptions": {
+                              "type": "object",
+                              "properties": {
+                                "request_url": {
+                                  "type": "string",
+                                  "format": "uri"
+                                },
+                                "bot_events": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "required": [
+                                "request_url",
+                                "bot_events"
+                              ]
+                            },
+                            "interactivity": {
+                              "type": "object",
+                              "properties": {
+                                "is_enabled": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "is_enabled"
+                              ]
+                            },
+                            "org_deploy_enabled": {
+                              "type": "boolean"
+                            },
+                            "socket_mode_enabled": {
+                              "type": "boolean"
+                            },
+                            "token_rotation_enabled": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "event_subscriptions",
+                            "interactivity",
+                            "org_deploy_enabled",
+                            "socket_mode_enabled",
+                            "token_rotation_enabled"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "display_information",
+                        "features",
+                        "oauth_config",
+                        "settings"
+                      ]
+                    },
+                    "requiredEnvVars": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "SLACK_OAUTH_CLIENT_ID",
+                          "SLACK_OAUTH_CLIENT_SECRET",
+                          "SLACK_SIGNING_SECRET"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "manifest",
+                    "requiredEnvVars"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent read permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/slack/binding": {
+      "get": {
+        "tags": [
+          "Slack"
+        ],
+        "summary": "Get Slack answering binding",
+        "operationId": "getWorkspaceSlackBinding",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Slack binding",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "answeringAgentId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "escalationChannelId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "answeringAgentId",
+                    "escalationChannelId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent read permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Slack"
+        ],
+        "summary": "Set Slack answering binding",
+        "operationId": "setWorkspaceSlackBinding",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "answeringAgentId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "escalationChannelId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "answeringAgentId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Slack binding",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "answeringAgentId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "escalationChannelId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "answeringAgentId",
+                    "escalationChannelId"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid binding request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent manage permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Slack installation not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/slack/installation": {
+      "delete": {
+        "tags": [
+          "Slack"
+        ],
+        "summary": "Disconnect Slack installation",
+        "operationId": "disconnectWorkspaceSlackInstallation",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Disconnected"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent manage permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/agents/{agentId}/webhook-skills": {
       "get": {
         "tags": [
@@ -19951,6 +21709,2015 @@
           },
           "404": {
             "description": "Agent or webhook skill not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/slack-skills": {
+      "get": {
+        "tags": [
+          "Slack Skills"
+        ],
+        "summary": "List agent Slack skills",
+        "operationId": "listAgentSlackSkills",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Slack skill definitions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "skills": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "workspaceId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "agentId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "installationId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "skillName": {
+                            "type": "string"
+                          },
+                          "boundInputs": {
+                            "type": "object",
+                            "properties": {
+                              "channelId": {},
+                              "text": {},
+                              "threadTs": {}
+                            }
+                          },
+                          "exposedInputs": {
+                            "type": "object",
+                            "properties": {
+                              "channelId": {
+                                "type": "object",
+                                "properties": {
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "slotBinding": {
+                                    "type": "string"
+                                  },
+                                  "required": {
+                                    "type": "boolean",
+                                    "default": true
+                                  }
+                                }
+                              },
+                              "text": {
+                                "type": "object",
+                                "properties": {
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "slotBinding": {
+                                    "type": "string"
+                                  },
+                                  "required": {
+                                    "type": "boolean",
+                                    "default": true
+                                  }
+                                }
+                              },
+                              "threadTs": {
+                                "type": "object",
+                                "properties": {
+                                  "description": {
+                                    "type": "string"
+                                  },
+                                  "slotBinding": {
+                                    "type": "string"
+                                  },
+                                  "required": {
+                                    "type": "boolean",
+                                    "default": true
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "outcomes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "enqueued",
+                                "missing_input",
+                                "failed"
+                              ]
+                            }
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "workspaceId",
+                          "agentId",
+                          "installationId",
+                          "skillName",
+                          "boundInputs",
+                          "exposedInputs",
+                          "enabled",
+                          "outcomes",
+                          "createdAt",
+                          "updatedAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "skills"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent read permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Slack Skills"
+        ],
+        "summary": "Create an agent Slack skill",
+        "operationId": "createAgentSlackSkill",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "skillName": {
+                    "type": "string"
+                  },
+                  "installationId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "boundInputs": {
+                    "type": "object",
+                    "properties": {
+                      "channelId": {},
+                      "text": {},
+                      "threadTs": {}
+                    },
+                    "default": {}
+                  },
+                  "exposedInputs": {
+                    "type": "object",
+                    "properties": {
+                      "channelId": {
+                        "type": "object",
+                        "properties": {
+                          "description": {
+                            "type": "string"
+                          },
+                          "slotBinding": {
+                            "type": "string"
+                          },
+                          "required": {
+                            "type": "boolean",
+                            "default": true
+                          }
+                        }
+                      },
+                      "text": {
+                        "type": "object",
+                        "properties": {
+                          "description": {
+                            "type": "string"
+                          },
+                          "slotBinding": {
+                            "type": "string"
+                          },
+                          "required": {
+                            "type": "boolean",
+                            "default": true
+                          }
+                        }
+                      },
+                      "threadTs": {
+                        "type": "object",
+                        "properties": {
+                          "description": {
+                            "type": "string"
+                          },
+                          "slotBinding": {
+                            "type": "string"
+                          },
+                          "required": {
+                            "type": "boolean",
+                            "default": true
+                          }
+                        }
+                      }
+                    },
+                    "default": {}
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "default": true
+                  }
+                },
+                "required": [
+                  "skillName",
+                  "installationId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Slack skill definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "skill": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "workspaceId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "agentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "installationId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "skillName": {
+                          "type": "string"
+                        },
+                        "boundInputs": {
+                          "type": "object",
+                          "properties": {
+                            "channelId": {},
+                            "text": {},
+                            "threadTs": {}
+                          }
+                        },
+                        "exposedInputs": {
+                          "type": "object",
+                          "properties": {
+                            "channelId": {
+                              "type": "object",
+                              "properties": {
+                                "description": {
+                                  "type": "string"
+                                },
+                                "slotBinding": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean",
+                                  "default": true
+                                }
+                              }
+                            },
+                            "text": {
+                              "type": "object",
+                              "properties": {
+                                "description": {
+                                  "type": "string"
+                                },
+                                "slotBinding": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean",
+                                  "default": true
+                                }
+                              }
+                            },
+                            "threadTs": {
+                              "type": "object",
+                              "properties": {
+                                "description": {
+                                  "type": "string"
+                                },
+                                "slotBinding": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean",
+                                  "default": true
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "outcomes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "enqueued",
+                              "missing_input",
+                              "failed"
+                            ]
+                          }
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "workspaceId",
+                        "agentId",
+                        "installationId",
+                        "skillName",
+                        "boundInputs",
+                        "exposedInputs",
+                        "enabled",
+                        "outcomes",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "skill"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Slack skill definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent manage permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or Slack installation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Slack skill name already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/slack-skills/{skillId}": {
+      "get": {
+        "tags": [
+          "Slack Skills"
+        ],
+        "summary": "Get an agent Slack skill",
+        "operationId": "getAgentSlackSkill",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "skillId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Slack skill definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "skill": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "workspaceId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "agentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "installationId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "skillName": {
+                          "type": "string"
+                        },
+                        "boundInputs": {
+                          "type": "object",
+                          "properties": {
+                            "channelId": {},
+                            "text": {},
+                            "threadTs": {}
+                          }
+                        },
+                        "exposedInputs": {
+                          "type": "object",
+                          "properties": {
+                            "channelId": {
+                              "type": "object",
+                              "properties": {
+                                "description": {
+                                  "type": "string"
+                                },
+                                "slotBinding": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean",
+                                  "default": true
+                                }
+                              }
+                            },
+                            "text": {
+                              "type": "object",
+                              "properties": {
+                                "description": {
+                                  "type": "string"
+                                },
+                                "slotBinding": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean",
+                                  "default": true
+                                }
+                              }
+                            },
+                            "threadTs": {
+                              "type": "object",
+                              "properties": {
+                                "description": {
+                                  "type": "string"
+                                },
+                                "slotBinding": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean",
+                                  "default": true
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "outcomes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "enqueued",
+                              "missing_input",
+                              "failed"
+                            ]
+                          }
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "workspaceId",
+                        "agentId",
+                        "installationId",
+                        "skillName",
+                        "boundInputs",
+                        "exposedInputs",
+                        "enabled",
+                        "outcomes",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "skill"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent read permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or Slack skill not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Slack Skills"
+        ],
+        "summary": "Update an agent Slack skill",
+        "operationId": "updateAgentSlackSkill",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "skillId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "boundInputs": {
+                    "type": "object",
+                    "properties": {
+                      "channelId": {},
+                      "text": {},
+                      "threadTs": {}
+                    }
+                  },
+                  "exposedInputs": {
+                    "type": "object",
+                    "properties": {
+                      "channelId": {
+                        "type": "object",
+                        "properties": {
+                          "description": {
+                            "type": "string"
+                          },
+                          "slotBinding": {
+                            "type": "string"
+                          },
+                          "required": {
+                            "type": "boolean",
+                            "default": true
+                          }
+                        }
+                      },
+                      "text": {
+                        "type": "object",
+                        "properties": {
+                          "description": {
+                            "type": "string"
+                          },
+                          "slotBinding": {
+                            "type": "string"
+                          },
+                          "required": {
+                            "type": "boolean",
+                            "default": true
+                          }
+                        }
+                      },
+                      "threadTs": {
+                        "type": "object",
+                        "properties": {
+                          "description": {
+                            "type": "string"
+                          },
+                          "slotBinding": {
+                            "type": "string"
+                          },
+                          "required": {
+                            "type": "boolean",
+                            "default": true
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Slack skill definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "skill": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "workspaceId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "agentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "installationId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "skillName": {
+                          "type": "string"
+                        },
+                        "boundInputs": {
+                          "type": "object",
+                          "properties": {
+                            "channelId": {},
+                            "text": {},
+                            "threadTs": {}
+                          }
+                        },
+                        "exposedInputs": {
+                          "type": "object",
+                          "properties": {
+                            "channelId": {
+                              "type": "object",
+                              "properties": {
+                                "description": {
+                                  "type": "string"
+                                },
+                                "slotBinding": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean",
+                                  "default": true
+                                }
+                              }
+                            },
+                            "text": {
+                              "type": "object",
+                              "properties": {
+                                "description": {
+                                  "type": "string"
+                                },
+                                "slotBinding": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean",
+                                  "default": true
+                                }
+                              }
+                            },
+                            "threadTs": {
+                              "type": "object",
+                              "properties": {
+                                "description": {
+                                  "type": "string"
+                                },
+                                "slotBinding": {
+                                  "type": "string"
+                                },
+                                "required": {
+                                  "type": "boolean",
+                                  "default": true
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "outcomes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "enqueued",
+                              "missing_input",
+                              "failed"
+                            ]
+                          }
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "workspaceId",
+                        "agentId",
+                        "installationId",
+                        "skillName",
+                        "boundInputs",
+                        "exposedInputs",
+                        "enabled",
+                        "outcomes",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "skill"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Slack skill definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent manage permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or Slack skill not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Slack Skills"
+        ],
+        "summary": "Delete an agent Slack skill",
+        "operationId": "deleteAgentSlackSkill",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "skillId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent manage permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or Slack skill not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/skill-capabilities": {
+      "get": {
+        "tags": [
+          "Agent Skills"
+        ],
+        "summary": "List agent skill capabilities",
+        "operationId": "listAgentSkillCapabilities",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Skill capabilities",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "capabilities": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "enum": [
+                              "retrieve",
+                              "mcp_tool",
+                              "email",
+                              "slack_post",
+                              "webhook_call",
+                              "notify"
+                            ]
+                          },
+                          "storedKind": {
+                            "type": "string"
+                          },
+                          "targetKind": {
+                            "type": "string"
+                          },
+                          "requiresTarget": {
+                            "type": "boolean"
+                          },
+                          "inputSchema": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "source": {
+                                    "type": "string",
+                                    "enum": [
+                                      "discovered"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "source"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "source": {
+                                    "type": "string",
+                                    "enum": [
+                                      "static"
+                                    ]
+                                  },
+                                  "schema": {
+                                    "type": "object",
+                                    "additionalProperties": {}
+                                  }
+                                },
+                                "required": [
+                                  "source",
+                                  "schema"
+                                ]
+                              }
+                            ]
+                          },
+                          "settingsFields": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "key": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "boolean",
+                                    "number",
+                                    "text",
+                                    "textarea",
+                                    "select",
+                                    "string_list",
+                                    "source_scope"
+                                  ]
+                                },
+                                "help": {
+                                  "type": "string"
+                                },
+                                "options": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "value": {
+                                        "type": "string"
+                                      },
+                                      "label": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "value",
+                                      "label"
+                                    ]
+                                  }
+                                },
+                                "min": {
+                                  "type": "number"
+                                },
+                                "max": {
+                                  "type": "number"
+                                },
+                                "group": {
+                                  "type": "string"
+                                },
+                                "advanced": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "key",
+                                "label",
+                                "type"
+                              ]
+                            }
+                          },
+                          "outcomeVocabulary": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "supportedInvocationModes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "default_answer",
+                                "routine_named",
+                                "agent_selectable"
+                              ]
+                            }
+                          },
+                          "defaultInvocationMode": {
+                            "type": "string",
+                            "enum": [
+                              "default_answer",
+                              "routine_named",
+                              "agent_selectable"
+                            ]
+                          },
+                          "executorAdapter": {
+                            "type": "string"
+                          },
+                          "targets": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label"
+                              ]
+                            }
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "unavailableReason": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "enum": [
+                              "no_connection"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "storedKind",
+                          "targetKind",
+                          "requiresTarget",
+                          "inputSchema",
+                          "settingsFields",
+                          "outcomeVocabulary",
+                          "supportedInvocationModes",
+                          "executorAdapter",
+                          "targets",
+                          "available",
+                          "unavailableReason"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "capabilities"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent read permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/skills": {
+      "get": {
+        "tags": [
+          "Agent Skills"
+        ],
+        "summary": "List agent skills",
+        "operationId": "listAgentSkills",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent skills",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "skills": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "workspaceId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "agentId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "capability": {
+                            "type": "string",
+                            "enum": [
+                              "retrieve",
+                              "mcp_tool",
+                              "email",
+                              "slack_post",
+                              "webhook_call",
+                              "notify"
+                            ]
+                          },
+                          "storedKind": {
+                            "type": "string"
+                          },
+                          "target": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "uuid"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "id"
+                            ]
+                          },
+                          "config": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "invocationMode": {
+                            "type": "string",
+                            "enum": [
+                              "default_answer",
+                              "routine_named",
+                              "agent_selectable"
+                            ]
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "workspaceId",
+                          "agentId",
+                          "name",
+                          "capability",
+                          "storedKind",
+                          "target",
+                          "config",
+                          "invocationMode",
+                          "enabled",
+                          "createdAt",
+                          "updatedAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "skills"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent read permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Agent Skills"
+        ],
+        "summary": "Create an agent skill",
+        "operationId": "createAgentSkill",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "capability": {
+                    "type": "string",
+                    "enum": [
+                      "retrieve",
+                      "mcp_tool",
+                      "email",
+                      "slack_post",
+                      "webhook_call",
+                      "notify"
+                    ]
+                  },
+                  "target": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string"
+                      },
+                      "id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "uuid"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ]
+                  },
+                  "config": {
+                    "type": "object",
+                    "additionalProperties": {},
+                    "default": {}
+                  },
+                  "invocationMode": {
+                    "type": "string",
+                    "enum": [
+                      "default_answer",
+                      "routine_named",
+                      "agent_selectable"
+                    ],
+                    "default": "routine_named"
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "default": true
+                  }
+                },
+                "required": [
+                  "name",
+                  "capability",
+                  "target"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Agent skill",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "skill": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "workspaceId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "agentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "capability": {
+                          "type": "string",
+                          "enum": [
+                            "retrieve",
+                            "mcp_tool",
+                            "email",
+                            "slack_post",
+                            "webhook_call",
+                            "notify"
+                          ]
+                        },
+                        "storedKind": {
+                          "type": "string"
+                        },
+                        "target": {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string"
+                            },
+                            "id": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "uuid"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "id"
+                          ]
+                        },
+                        "config": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "invocationMode": {
+                          "type": "string",
+                          "enum": [
+                            "default_answer",
+                            "routine_named",
+                            "agent_selectable"
+                          ]
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "workspaceId",
+                        "agentId",
+                        "name",
+                        "capability",
+                        "storedKind",
+                        "target",
+                        "config",
+                        "invocationMode",
+                        "enabled",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "skill"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid skill definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent manage permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Skill name or default-answer already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/skills/{skillId}": {
+      "patch": {
+        "tags": [
+          "Agent Skills"
+        ],
+        "summary": "Update an agent skill",
+        "operationId": "updateAgentSkill",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "skillId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string"
+                      },
+                      "id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "uuid"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ]
+                  },
+                  "config": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  },
+                  "invocationMode": {
+                    "type": "string",
+                    "enum": [
+                      "default_answer",
+                      "routine_named",
+                      "agent_selectable"
+                    ]
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Agent skill",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "skill": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "workspaceId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "agentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "capability": {
+                          "type": "string",
+                          "enum": [
+                            "retrieve",
+                            "mcp_tool",
+                            "email",
+                            "slack_post",
+                            "webhook_call",
+                            "notify"
+                          ]
+                        },
+                        "storedKind": {
+                          "type": "string"
+                        },
+                        "target": {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string"
+                            },
+                            "id": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "uuid"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "id"
+                          ]
+                        },
+                        "config": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "invocationMode": {
+                          "type": "string",
+                          "enum": [
+                            "default_answer",
+                            "routine_named",
+                            "agent_selectable"
+                          ]
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "workspaceId",
+                        "agentId",
+                        "name",
+                        "capability",
+                        "storedKind",
+                        "target",
+                        "config",
+                        "invocationMode",
+                        "enabled",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "skill"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid skill definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent manage permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or skill not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default-answer already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Agent Skills"
+        ],
+        "summary": "Delete an agent skill",
+        "operationId": "deleteAgentSkill",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "skillId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent manage permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent or skill not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -22110,6 +25877,92 @@
         }
       }
     },
+    "/api/v1/history/chat/{conversationId}/tail": {
+      "get": {
+        "tags": [
+          "History"
+        ],
+        "summary": "Poll new messages for a saved assistant conversation",
+        "operationId": "tailHistoryConversation",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "New conversation messages after the supplied tail cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatConversationTail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/history/{conversationId}": {
       "get": {
         "tags": [
@@ -22271,6 +26124,640 @@
           },
           "404": {
             "description": "Search history entry not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/conversations/{conversationId}/takeover": {
+      "post": {
+        "tags": [
+          "Conversation Ownership"
+        ],
+        "summary": "Take human ownership of a conversation",
+        "operationId": "takeOverConversation",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Conversation ownership returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationOwnershipResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace conversation takeover permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conversation ownership changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/conversations/{conversationId}/reply": {
+      "post": {
+        "tags": [
+          "Conversation Ownership"
+        ],
+        "summary": "Reply to a conversation as a human operator",
+        "operationId": "replyToConversation",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 50000
+                  },
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "message",
+                  "expectedVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Human reply message created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanReplyMessageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace conversation takeover permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conversation ownership changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/conversations/{conversationId}/transfer": {
+      "post": {
+        "tags": [
+          "Conversation Ownership"
+        ],
+        "summary": "Transfer human ownership of a conversation",
+        "operationId": "transferConversationOwnership",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "toAccountId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "toAccountId",
+                  "expectedVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Conversation ownership returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationOwnershipResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace conversation takeover permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conversation ownership changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/conversations/{conversationId}/handback": {
+      "post": {
+        "tags": [
+          "Conversation Ownership"
+        ],
+        "summary": "Return a human-owned conversation to AI ownership",
+        "operationId": "handBackConversation",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "expectedVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Conversation ownership returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationOwnershipResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace conversation takeover permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conversation ownership changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/decisions": {
+      "get": {
+        "tags": [
+          "Decisions"
+        ],
+        "summary": "List pending human approval decisions",
+        "operationId": "listPendingDecisions",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pending approval decisions for the workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingApprovalDecisionListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not authorized to list decisions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/decisions/{handle}/resolve": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Resolve a pending human approval decision",
+        "operationId": "resolveDecision",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "handle",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "optionId": {
+                    "type": "string"
+                  },
+                  "payload": {},
+                  "contentHash": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "optionId",
+                  "contentHash"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Decision resolved and routine resume attempted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "resolved"
+                      ]
+                    },
+                    "optionId": {
+                      "type": "string"
+                    },
+                    "conversationId": {
+                      "type": "string"
+                    },
+                    "resumed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "optionId",
+                    "conversationId",
+                    "resumed"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not an authorized decider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Decision not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Decision already resolved, stale, or resolved concurrently",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Decision option is invalid",
             "content": {
               "application/json": {
                 "schema": {
@@ -23538,6 +28025,149 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ChatConversationDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Anonymous session continuity is maintained by an HttpOnly cookie set by the server.\n\nThe cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential."
+      }
+    },
+    "/api/v1/public/chat/{token}/tail/{conversationId}": {
+      "get": {
+        "tags": [
+          "Assistant"
+        ],
+        "summary": "Poll new public conversation messages for the current anonymous session",
+        "operationId": "tailPublicChatHistoryConversation",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "token",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "New public conversation messages after the supplied tail cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicChatConversationTail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Anonymous session continuity is maintained by an HttpOnly cookie set by the server.\n\nThe cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential."
+      }
+    },
+    "/api/v1/public/chat/{token}/events/{conversationId}": {
+      "get": {
+        "tags": [
+          "Assistant"
+        ],
+        "summary": "Stream public conversation notifications for the current anonymous session",
+        "operationId": "streamPublicChatConversationEvents",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "token",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Server-sent public conversation notifications. Events include ready and message.created.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }

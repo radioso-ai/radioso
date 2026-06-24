@@ -1,3 +1,9 @@
+---
+title: "Docs Portal Implementation Plan"
+description: "Plan for building the standalone Nextra docs portal with golden-path quickstarts, API reference, and multi-audience navigation."
+last_updated: 2026-05-21
+---
+
 # Docs Portal Implementation Plan
 
 ## Goal

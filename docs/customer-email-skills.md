@@ -1,3 +1,9 @@
+---
+title: "Customer Email Connections"
+description: "Setup of workspace-owned outbound email connections and unified agent email skills for draft and send modes."
+last_updated: 2026-06-23
+---
+
 # Customer Email Connections
 
 Customer email connections are workspace-owned outbound mail resources. They are
@@ -65,19 +71,25 @@ stopped.
 Agent email skills are named actions over a customer email connection. They are
 allowlisted definitions, not raw provider access.
 
-Create them from the assistant skills settings page after a workspace has at
-least one authorized customer email connection.
+Create them from the agent's **Skills** list with **Add new skill** after the
+workspace has at least one authorized customer email connection. The picker
+shows capability tiles; **Email** is enabled when an email connection exists.
+The email connection remains managed in workspace settings; the skill form only
+binds to that connected target.
 
 For each skill, choose:
 
+- the **Email** capability
 - a customer email connection
 - a skill name, such as `support_email_customer`
 - `draft` or `send` mode
-- which inputs are fixed by the author
-- which inputs are exposed for conversation or routine slot filling
-- whether the skill is enabled
 
-Required logical inputs must be covered before the skill can be saved:
+The form exposes required inputs to the routine by default and skips optional
+inputs. Open **Advanced** only when you need to bind a fixed input value, include
+an optional input, change invocation behavior, narrow outcomes, edit raw config,
+or disable the skill.
+
+Required logical inputs are:
 
 - `to`
 - `subject`
@@ -92,7 +104,15 @@ Bound and exposed inputs must be separate. For example, `subject` cannot be both
 fixed by the author and filled by a routine slot. `draft` is the safer default.
 Switching to `send` is explicit.
 
-Email skill definition endpoints:
+The unified skill endpoints are:
+
+- `GET /api/v1/agents/{agentId}/skill-capabilities`
+- `GET /api/v1/agents/{agentId}/skills`
+- `POST /api/v1/agents/{agentId}/skills`
+- `PATCH /api/v1/agents/{agentId}/skills/{skillId}`
+- `DELETE /api/v1/agents/{agentId}/skills/{skillId}`
+
+Legacy email skill definition endpoints may remain available during cutover:
 
 - `GET /api/v1/agents/{agentId}/email-skills`
 - `POST /api/v1/agents/{agentId}/email-skills`

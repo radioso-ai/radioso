@@ -15,6 +15,7 @@ import {
   type ApplicationModule,
 } from "../composition/index.js";
 import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../modules/agents/public.js";
+import { InMemoryPublicConversationEventBus } from "../../modules/chat/composition.js";
 import { RoutineDefinitionService, RoutineDraftAssistService } from "../../modules/routines/public.js";
 import { createDirectiveCoherenceChecker, scopeTag } from "@radioso/conversation-defaults";
 import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloudCdnEmbedConfigCacheInvalidator.js";
@@ -49,7 +50,11 @@ import { EmbeddingService } from "../../modules/retrieval/composition.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
 import { createRadiosoCrawlerUtilityProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
-import { SkillCatalogService } from "../../modules/skills/public.js";
+import {
+  SkillAuthoringCatalogService,
+  SkillCatalogService,
+  routineAuthoringBuiltInSkills,
+} from "../../modules/skills/public.js";
 import { createConnectorIngestionPort } from "../../modules/connectors/services/connectorIngestionPort.js";
 import {
   ChatGatewayLlmJudge,
@@ -63,6 +68,10 @@ import type { ConversationModelGateway } from "@radioso/conversation-contract";
 import type { ModelInferencePipeline } from "../../shared/infra/llm/modelInferencePipeline.js";
 import { OauthConnectionService, StaticOauthProviderRegistry } from "../../modules/integrationOauth/public.js";
 import {
+  SlackInstallationService,
+  type SlackOauthMetadata,
+} from "../../modules/slack/public.js";
+import {
   CustomerEmailConnectionService,
   CustomerEmailOAuthService,
   EmailSkillDefinitionService,
@@ -71,6 +80,11 @@ import {
   customerEmailOauthProviderIds,
 } from "../../modules/customerEmail/public.js";
 import { WebhookSkillDefinitionService } from "../../modules/webhookSkills/public.js";
+import { SlackSkillDefinitionService } from "../../modules/slackSkills/public.js";
+import { AgentSkillRepository, AgentSkillsService } from "../../modules/agentSkills/public.js";
+import { createDefaultSkillCapabilityRegistry } from "../../modules/skills/public.js";
+import { bindSkillCapabilityExecutors } from "../composition/skillCapabilityRegistry.js";
+import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../modules/documents/contracts/index.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -101,6 +115,7 @@ const createConversationModelGateway = (pipeline: ModelInferencePipeline): Conve
 
 export const buildDependencies = (env: Env = getEnv(), options: BuildDependenciesOptions = {}): AppDependencies => {
   const logger = buildLogger();
+  const publicConversationEventBus = new InMemoryPublicConversationEventBus();
   const composition = createDefaultApplicationComposition({
     logger,
     env,
@@ -125,13 +140,39 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     repositories,
   });
+  const slackInstallationService = new SlackInstallationService({
+    oauthConnections: new OauthConnectionRepository(infrastructure.database.kysely),
+    integrationConnections: repositories.integrationConnectionRepository,
+    installations: repositories.slackInstallationRepository,
+    bindings: repositories.slackChannelBindingRepository,
+    encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
+  });
   const oauthConnectionService = new OauthConnectionService({
-    repository: new OauthConnectionRepository(infrastructure.database),
+    repository: new OauthConnectionRepository(infrastructure.database.kysely),
     providers: new StaticOauthProviderRegistry(composition.oauthProviders),
     encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
     appBaseUrl: env.APP_BASE_URL,
+    apiBaseUrl: env.CONNECTOR_PUBLIC_BASE_URL ?? env.APP_BASE_URL,
     assertPublicUrl: assertPublicWebsiteUrl,
     logger,
+    onAuthorized: async ({ connection, tokens, metadata }) => {
+      if (connection.provider !== "slack") {
+        return;
+      }
+      const slackMetadata = metadata as Partial<SlackOauthMetadata>;
+      if (!slackMetadata.teamId || !slackMetadata.botUserId) {
+        throw new Error("Slack OAuth metadata was missing team or bot identity");
+      }
+      await slackInstallationService.saveInstallation({
+        workspaceId: connection.workspaceId,
+        oauthConnectionId: connection.id,
+        teamId: slackMetadata.teamId,
+        teamName: slackMetadata.teamName ?? null,
+        botUserId: slackMetadata.botUserId,
+        botAccessToken: tokens.accessToken,
+        grantedScopes: connection.grantedScopes,
+      });
+    },
   });
   const customerEmailOAuthService = new CustomerEmailOAuthService(oauthConnectionService);
   const customerEmailConnectionService = new CustomerEmailConnectionService({
@@ -141,8 +182,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       customerEmailOauthProviderIds.map((provider) => new MockCustomerEmailProviderAdapter(provider)),
     ),
   });
-  const mcpConnectionRepository = new McpConnectionRepository(infrastructure.database);
-  const externalSkillDefinitionRepository = new ExternalSkillDefinitionRepository(infrastructure.database);
+  const mcpConnectionRepository = new McpConnectionRepository(infrastructure.database.kysely);
+  const externalSkillDefinitionRepository = new ExternalSkillDefinitionRepository(infrastructure.database.kysely);
   const mcpConnectionService = new McpConnectionService({
     repository: mcpConnectionRepository,
     toolServiceFactory: createMcpToolServiceFactory(assertPublicWebsiteUrl),
@@ -169,6 +210,65 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const webhookSkillDefinitionService = new WebhookSkillDefinitionService({
     repository: repositories.webhookSkillDefinitionRepository,
     destinations: webhookDestinations,
+  });
+  const slackSkillDefinitionService = new SlackSkillDefinitionService({
+    repository: repositories.slackSkillDefinitionRepository,
+    installations: repositories.slackInstallationRepository,
+  });
+  const skillCapabilityRegistry = createDefaultSkillCapabilityRegistry({
+    mcp_tool: async ({ agentId }) =>
+      (await mcpConnectionService.list(agentId)).map((connection) => ({
+        id: connection.id,
+        label: connection.displayName,
+        status: connection.status,
+      })),
+    email: async ({ workspaceId }) =>
+      (await customerEmailConnectionService.list(workspaceId)).map((connection) => ({
+        id: connection.id,
+        label: connection.displayName,
+        status: connection.status,
+      })),
+    slack_post: async ({ workspaceId }) => {
+      const status = await slackInstallationService.getStatus(workspaceId);
+      return status.installationId
+        ? [{
+            id: status.installationId,
+            label: status.teamName ?? "Slack",
+            status: status.status,
+          }]
+        : [];
+    },
+    webhook_call: async ({ workspaceId }) =>
+      (await webhookDestinations.list(workspaceId)).map((destination) => ({
+        id: destination.id,
+        label: destination.name,
+        status: destination.lastDeliveryStatus ?? undefined,
+      })),
+    retrieve: async ({ workspaceId }) => {
+      const [sources, manualDocumentCount] = await Promise.all([
+        repositories.documentSourceRepository.listByWorkspaceIdWithDocumentCounts(workspaceId),
+        repositories.documentSourceRepository.countDocumentsWithoutSource(workspaceId),
+      ]);
+      return [
+        ...sources.map((source) => ({
+          id: source.id,
+          label: source.name,
+          status: source.lastSyncStatus ?? undefined,
+        })),
+        ...(manualDocumentCount > 0
+          ? [{
+              id: MANUALLY_ADDED_DOCUMENTS_SOURCE_ID,
+              label: "Manually added documents",
+              status: "available",
+            }]
+          : []),
+      ];
+    },
+  });
+  const agentSkillsService = new AgentSkillsService({
+    repository: new AgentSkillRepository(infrastructure.database.kysely),
+    capabilities: skillCapabilityRegistry,
+    logger,
   });
   // Build the registry first (no resolver yet) so we can compute supported embedding
   // models; embedding stays env-default and doesn't need the workspace-aware resolver.
@@ -256,13 +356,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       logger,
     }),
     access.accessGrantService,
+    new AgentSkillRepository(infrastructure.database.kysely),
   );
   const chat = buildChatServices({
+    accountAccessService: access.accountAccessService,
     agentService,
     auditEventRepository: infrastructure.auditEventRepository,
     auditService: infrastructure.auditService,
     bootstrapGreetingCacheRepository: repositories.bootstrapGreetingCacheRepository,
     composition,
+    conversationOwnershipRepository: repositories.conversationOwnershipRepository,
     conversationRepository: repositories.conversationRepository,
     database: infrastructure.database,
     env,
@@ -276,11 +379,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     telemetryService: infrastructure.telemetryService,
     webhookDestinations,
     productAnalyticsService: infrastructure.productAnalyticsService,
+    publicConversationEventBus,
     routineDefinitionRepository: repositories.routineDefinitionRepository,
     customerEmailConnectionRepository: repositories.customerEmailConnectionRepository,
     emailSkillDefinitionRepository: repositories.emailSkillDefinitionRepository,
     emailSkillActivityRepository: repositories.emailSkillActivityRepository,
     webhookSkillDefinitionRepository: repositories.webhookSkillDefinitionRepository,
+    slackSkillDefinitionRepository: repositories.slackSkillDefinitionRepository,
     retrievalPipeline: retrieval.retrievalPipeline,
     usageEventRecorder: infrastructure.usageEventRecorder,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
@@ -288,6 +393,28 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     assertPublicWebsiteUrl,
     errorReporter: infrastructure.errorReportingService,
   });
+  const skillCapabilityBindings = bindSkillCapabilityExecutors({
+    capabilities: skillCapabilityRegistry,
+    executors: composition.skillExecutorRegistry,
+  });
+  const unboundCapabilities = skillCapabilityBindings.filter((binding) => !binding.bound);
+  if (unboundCapabilities.length > 0) {
+    // A capability with no resolvable executor still advertises as available via
+    // GET /skill-capabilities, so an author can create+enable a skill that only
+    // fails at routine-dispatch time. This is a legitimate degraded mode (e.g.
+    // email/external skipped when CONNECTOR_ENCRYPTION_KEY is unset), so warn
+    // rather than fail boot — but make it observable instead of silent.
+    logger.warn(
+      {
+        event: "skill_capability_executor_unbound",
+        capabilities: unboundCapabilities.map((binding) => ({
+          capability: binding.capabilityId,
+          executorAdapter: binding.executorAdapter,
+        })),
+      },
+      "One or more skill capabilities have no bound executor; skills using them will fail at dispatch",
+    );
+  }
   const platformSettingsService = new PlatformSettingsService({
     workspaceRepository: repositories.workspaceRepository,
     agentService,
@@ -299,6 +426,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const skillCatalogService = new SkillCatalogService({
     capabilityPolicy: composition.capabilityPolicy,
     registry: composition.skillCatalogRegistry,
+  });
+  const skillAuthoringCatalog = new SkillAuthoringCatalogService({
+    skillCatalog: skillCatalogService,
+    externalSkills: externalSkillDefinitionService,
+    logger,
   });
   const onAccountCreated = composition.accountCreatedHooks.length === 0
     ? undefined
@@ -364,6 +496,19 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repository: repositories.routineDefinitionRepository,
     actionCapabilities: composition.actionCapabilityMap,
     capabilityPolicy: composition.capabilityPolicy,
+    skillAuthoringCatalog,
+    // Mirror the runtime routine-skill resolver's name set (enabled webhook +
+    // customer-email skills) so publish validation accepts what runtime routes.
+    additionalRoutineSkillNames: async ({ workspaceId, agentId }) => {
+      const [emails, webhooks] = await Promise.all([
+        emailSkillDefinitionService.list(workspaceId, agentId),
+        webhookSkillDefinitionService.list(workspaceId, agentId),
+      ]);
+      return [
+        ...emails.filter((skill) => skill.enabled).map((skill) => skill.skillName),
+        ...webhooks.filter((skill) => skill.enabled).map((skill) => skill.skillName),
+      ];
+    },
     webhookDestinations: {
       existsByIdAndWorkspace: async (inputWorkspaceId, destinationId) =>
         webhookDestinations.existsByIdAndWorkspace(inputWorkspaceId, destinationId),
@@ -377,10 +522,19 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       complete: async ({ signal: _signal, ...input }) =>
         (await chatInferencePipeline.complete(input)).text,
     },
-    actionCatalog: composition.actionHandlerRegistrations.map((registration) => ({
-      type: registration.type,
-      kind: "action",
-    })),
+    actionCatalog: [
+      ...routineAuthoringBuiltInSkills.map((skill) => ({
+        type: skill.name,
+        kind: "tool" as const,
+        label: skill.displayName,
+        description: skill.description,
+        outcomeStatuses: skill.outcomes?.map((outcome) => outcome.name),
+      })),
+      ...composition.actionHandlerRegistrations.map((registration) => ({
+        type: registration.type,
+        kind: "action" as const,
+      })),
+    ],
     logger,
     telemetryService: infrastructure.telemetryService,
   });
@@ -395,7 +549,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     buildStepScopeTag: scopeTag.step,
   });
 
-  const evalRepository = new EvalRepository(infrastructure.database);
+  const evalRepository = new EvalRepository(infrastructure.database.kysely);
   const evalSnapshotService = new EvalSnapshotService(
     repositories.conversationRepository,
     repositories.messageRepository,
@@ -435,6 +589,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     usageLimitPolicy: infrastructure.usageLimitPolicy,
     organizationCreationGuard,
     publicChatActionAdvertiser: chat.publicChatActionAdvertiser,
+    publicConversationEventBus,
     contactHistoryProvider: chat.contactHistoryProvider,
     applicationRouteMounts: composition.routeMounts,
     applicationModules: composition.lifecycle,
@@ -448,10 +603,12 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     abuseControlService: chat.abuseControlService,
     workspaceProviderCredentialsService,
     oauthConnectionService,
+    slackInstallationService,
     customerEmailOAuthService,
     customerEmailConnectionService,
     emailSkillDefinitionService,
     webhookSkillDefinitionService,
+    slackSkillDefinitionService,
     emailSkillActivityRepository: repositories.emailSkillActivityRepository,
     mcpConnectionService,
     externalSkillDefinitionService,
@@ -479,6 +636,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentDeletionService: documents.documentDeletionService,
     documentStorage: documents.documentStorage,
     chatService: chat.chatService,
+    approvalDecisionService: chat.approvalDecisionService,
     workbenchReplayRunner: chat.workbenchReplayRunner,
     chatBootstrapService: chat.chatBootstrapService,
     chatHistoryService: chat.chatHistoryService,
@@ -499,12 +657,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     directiveAuthorService,
     agentSurfaceExtensions,
     skillCatalogService,
+    skillAuthoringCatalog,
+    skillCapabilityRegistry,
+    agentSkillsService,
     accountRepository: repositories.accountRepository,
     userRepository: repositories.userRepository,
     workspaceRepository: repositories.workspaceRepository,
     agentRepository: repositories.agentRepository,
     bootstrapGreetingCacheRepository: repositories.bootstrapGreetingCacheRepository,
     conversationRepository: repositories.conversationRepository,
+    conversationOwnershipRepository: repositories.conversationOwnershipRepository,
     messageRepository: repositories.messageRepository,
     connectorRegistry,
     connectorIngestionPort,

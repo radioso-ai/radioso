@@ -237,6 +237,42 @@ resource "google_cloud_run_v2_service" "backend" {
         }
       }
       dynamic "env" {
+        for_each = local.slack_oauth_client_id_configured ? [google_secret_manager_secret.secrets["slack-oauth-client-id"].secret_id] : []
+        content {
+          name = "SLACK_OAUTH_CLIENT_ID"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = local.slack_oauth_client_secret_configured ? [google_secret_manager_secret.secrets["slack-oauth-client-secret"].secret_id] : []
+        content {
+          name = "SLACK_OAUTH_CLIENT_SECRET"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = local.slack_signing_secret_configured ? [google_secret_manager_secret.secrets["slack-signing-secret"].secret_id] : []
+        content {
+          name = "SLACK_SIGNING_SECRET"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
         for_each = var.resend_mail_api_key != null ? [google_secret_manager_secret.secrets["resend-mail-api-key"].secret_id] : []
         content {
           name = "RESEND_MAIL_API_KEY"

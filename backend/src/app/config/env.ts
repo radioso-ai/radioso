@@ -78,6 +78,7 @@ const envSchema = z.object({
   SESSION_COOKIE_SECRET: z.string().min(16),
   WORKSPACE_TOKEN_SECRET: emptyStringToUndefined(z.string().min(16)),
   PUBLIC_CHAT_SESSION_SECRET: emptyStringToUndefined(z.string().min(16)),
+  WEBSITE_EMBED_SECRET: emptyStringToUndefined(z.string().min(16)),
   RADIOSO_MCP_SIGNING_SECRET: emptyStringToUndefined(z.string().min(16)),
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(168),
   CONNECTOR_ENCRYPTION_KEY: emptyStringToUndefined(
@@ -136,6 +137,9 @@ const envSchema = z.object({
   GOOGLE_MAIL_OAUTH_CLIENT_SECRET: emptyStringToUndefined(z.string().min(1)),
   MICROSOFT_GRAPH_MAIL_OAUTH_CLIENT_ID: emptyStringToUndefined(z.string().min(1)),
   MICROSOFT_GRAPH_MAIL_OAUTH_CLIENT_SECRET: emptyStringToUndefined(z.string().min(1)),
+  SLACK_OAUTH_CLIENT_ID: emptyStringToUndefined(z.string().min(1)),
+  SLACK_OAUTH_CLIENT_SECRET: emptyStringToUndefined(z.string().min(1)),
+  SLACK_SIGNING_SECRET: emptyStringToUndefined(z.string().min(1)),
   PUBLIC_CHAT_BASE_URL: emptyStringToUndefined(z.string().min(1)),
   RADIOSO_WIDGET_ORIGIN: emptyStringToUndefined(z.string().min(1)),
   RADIOSO_BASE_URL: emptyStringToUndefined(z.string().url()),

@@ -6,12 +6,14 @@ import { AccessGrantRepository } from "../../db/repositories/accessGrantReposito
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
 import { RoutineDefinitionRepository } from "../../db/repositories/routineDefinitionRepository.js";
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
+import { PendingDecisionRepository } from "../../db/repositories/pendingDecisionRepository.js";
 import { ClarificationStateRepository } from "../../db/repositories/clarificationStateRepository.js";
 import { createConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
 import type { AgentSkillSettingsRegistry, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
 import { AuditEventRepository } from "../../db/repositories/auditEventRepository.js";
 import { BootstrapGreetingCacheRepository } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
 import { ConversationRepository } from "../../db/repositories/conversationRepository.js";
+import { ConversationOwnershipRepository } from "../../db/repositories/conversationOwnershipRepository.js";
 import { DocumentProcessingJobRepository } from "../../db/repositories/documentProcessingJobRepository.js";
 import { DocumentRepository } from "../../db/repositories/documentRepository.js";
 import { DocumentSourceRepository } from "../../db/repositories/documentSourceRepository.js";
@@ -28,12 +30,14 @@ import { WorkspaceGrantRepository } from "../../db/repositories/workspaceGrantRe
 import { WorkspaceRepository } from "../../db/repositories/workspaceRepository.js";
 import { WorkspaceTokenRepository } from "../../db/repositories/workspaceTokenRepository.js";
 import { LlmResponseLanguageDetector } from "../../shared/services/responseLanguageDetector.js";
+import { LlmHandoffWaitingMessageGenerator } from "../../shared/services/handoffWaitingMessageGenerator.js";
 import { PostgresAssistantTurnPersistence } from "../../modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { registeredCapabilityNames } from "../../shared/domain/capabilityPolicy.js";
 import { AccountAccessService, AccountInvitationService } from "../../modules/account/public.js";
 import { AccessGrantService, DefaultOriginMatcher } from "../../modules/accessGrants/public.js";
 import { AgentService } from "../../modules/agents/public.js";
 import { AuditService } from "../../modules/audit/composition.js";
+import { ApprovalDecisionService } from "../../modules/approvals/public.js";
 import type { AuditPort } from "../../modules/audit/contracts/index.js";
 import { AuthService } from "../../modules/auth/services/authService.js";
 import { EmailVerificationService } from "../../modules/auth/services/emailVerificationService.js";
@@ -52,6 +56,7 @@ import {
   ChatHistoryService,
   ChatService,
   type ChatRoutineProvider,
+  type PublicConversationEventBus,
   ChainedPublicChatActionAdvertiser,
   buildChatTurnRuntime,
   createRouteScopedDirectiveSteering,
@@ -67,6 +72,8 @@ import {
   RoutineChatModelGateway,
   RoutineNextStepSelector,
   RoutineStepRenderer,
+  RoutineSlotCorrector,
+  RoutineReentryGate,
   DefaultClarifier,
   type RoutineRegistration,
   SkillRetrievalTurnDispatch,
@@ -128,6 +135,11 @@ import { EmailSkillDefinitionRepository } from "../../db/repositories/emailSkill
 import { EmailSkillActivityRepository } from "../../db/repositories/emailSkillActivityRepository.js";
 import { WebhookSkillDefinitionRepository } from "../../db/repositories/webhookSkillDefinitionRepository.js";
 import { OauthConnectionRepository } from "../../db/repositories/oauthConnectionRepository.js";
+import { IntegrationConnectionRepository } from "../../modules/integrationConnections/public.js";
+import {
+  SlackChannelBindingRepository,
+  SlackInstallationRepository,
+} from "../../modules/slack/public.js";
 import {
   DefaultWebhookDestinationAdapter,
   WebhookDestinationService,
@@ -146,8 +158,13 @@ import {
   PlatformSettingsService,
 } from "../../modules/settings/composition.js";
 import type { EmbeddingModelId } from "../../modules/settings/contracts/ingestion.js";
-import { SkillCatalogService, retrievalAnswerSkillDefinition } from "../../modules/skills/public.js";
+import {
+  SkillCatalogService,
+  retrievalAnswerSkillDefinition,
+  routineDispatchableBuiltInSkills,
+} from "../../modules/skills/public.js";
 import { RETRIEVAL_ANSWER_ADAPTER, RetrievalAnswerSkillExecutor } from "../../modules/retrieval/public.js";
+import { RetrieveRoutineSkillResolver } from "../../modules/retrieval/public.js";
 import { EXTERNAL_SKILLS_ADAPTER, McpSkillExecutor } from "../../modules/externalSkills/executor/mcpSkillExecutor.js";
 import { buildExternalSkillsDeps } from "../../modules/externalSkills/composition.js";
 import { ExternalSkillRoutineSkillResolver } from "../../modules/externalSkills/routineSkillResolver.js";
@@ -165,7 +182,14 @@ import {
   WebhookRoutineSkillResolver,
   WebhookSkillExecutor,
 } from "../../modules/webhookSkills/public.js";
-import { RoutineSkillExecutorDispatcher } from "../../modules/routines/public.js";
+import {
+  SLACK_SKILLS_ADAPTER,
+  SlackEscalationExecutor,
+  SlackRoutineSkillResolver,
+  SlackSkillDefinitionRepository,
+} from "../../modules/slackSkills/public.js";
+import { NotifyExecutor, NOTIFY_SKILLS_ADAPTER } from "../../modules/notify/notifyExecutor.js";
+import { RoutineSkillExecutorDispatcher, StaticRoutineSkillResolver } from "../../modules/routines/public.js";
 import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
@@ -174,10 +198,7 @@ import type { RetrievalDefaultsProvider, SkillSettingsResolver } from "../../mod
 import { ProductAnalyticsService } from "../../shared/analytics/productAnalyticsService.js";
 import type { OrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
 import { NoopUsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
-import {
-  DurableUsageEventRecorder,
-  requireTransactionalUsageEventDatabase,
-} from "../../shared/infra/usage/durableUsageEventRecorder.js";
+import { DurableUsageEventRecorder } from "../../shared/infra/usage/durableUsageEventRecorder.js";
 import { ErrorReportingService } from "../../shared/errors/errorReportingService.js";
 import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
 import { Database } from "../../shared/infra/database.js";
@@ -186,6 +207,7 @@ import { LlmProviderRegistry } from "../../shared/infra/llm/providerRegistry.js"
 import { ContextualDirectiveMatchGatewayFactory } from "../../shared/infra/llm/contextualGateways.js";
 import { TextGenerationClientCache } from "../../shared/infra/llm/textClientFactory.js";
 import { createMailService } from "../../modules/mail/public.js";
+import { AgentSkillRepository } from "../../modules/agentSkills/public.js";
 import { createLogger, type AppLogger } from "../../shared/observability/logger.js";
 import { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
 import { createPublishedRoutineRegistrationSource } from "../composition/routineDefinitionSource.js";
@@ -213,7 +235,7 @@ export const buildInfrastructure = (input: {
     queryTimeoutMs: env.DB_QUERY_TIMEOUT_MS,
     applicationName: `radioso-${env.NODE_ENV}`,
   });
-  const auditEventRepository = new AuditEventRepository(database);
+  const auditEventRepository = new AuditEventRepository(database.kysely);
   const auditService = new AuditService(logger, auditEventRepository);
   const telemetryService = new TelemetryService({
     enabled: env.OBSERVABILITY_ENABLED,
@@ -258,7 +280,7 @@ export const buildInfrastructure = (input: {
   // OSS default: durable usage accounting out of the box (FR-027). A module may
   // still override the recorder by registering its own.
   const usageEventRecorder = !composition.usageEventRecorderRegistration
-    ? new DurableUsageEventRecorder(requireTransactionalUsageEventDatabase(database), logger)
+    ? new DurableUsageEventRecorder(database.kysely, logger)
     : typeof composition.usageEventRecorderRegistration === "function"
       ? composition.usageEventRecorderRegistration({ database, logger })
       : composition.usageEventRecorderRegistration;
@@ -285,37 +307,45 @@ export const buildRepositories = (
     agentSkillSettings?: AgentSkillSettingsRegistry;
   } = {},
 ) => ({
-  accountMembershipRepository: new AccountMembershipRepository(database),
-  accountRepository: new AccountRepository(database),
-  accessGrantRepository: new AccessGrantRepository(database),
-  agentRepository: new AgentRepository(database, options.agentSurfaceExtensions, options.agentSkillSettings),
-  bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database),
+  accountMembershipRepository: new AccountMembershipRepository(database.kysely),
+  accountRepository: new AccountRepository(database.kysely),
+  accessGrantRepository: new AccessGrantRepository(database.kysely),
+  agentRepository: new AgentRepository(database.kysely, options.agentSurfaceExtensions, options.agentSkillSettings),
+  bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database.kysely),
   chunkRepository: new ChunkRepository(database, new PgVectorChunkStorage()),
-  conversationRepository: new ConversationRepository(database),
-  documentProcessingJobRepository: new DocumentProcessingJobRepository(database),
-  documentRepository: new DocumentRepository(database),
-  documentSourceRepository: new DocumentSourceRepository(database),
-  emailVerificationTokenRepository: new EmailVerificationTokenRepository(database),
-  historyItemsRepository: new HistoryItemsRepository(database),
-  ingestionSettingsRepository: new IngestionSettingsRepository(database),
-  messageRepository: new MessageRepository(database),
-  passwordResetTokenRepository: new PasswordResetTokenRepository(database),
-  retrievalSettingsRepository: new RetrievalSettingsRepository(database),
-  routineDefinitionRepository: new RoutineDefinitionRepository(database),
-  sessionRepository: new SessionRepository(database),
-  userRepository: new UserRepository(database),
-  websiteCrawlJobRepository: new WebsiteCrawlJobRepository(database),
-  workspaceGrantRepository: new WorkspaceGrantRepository(database),
-  workspaceRepository: new WorkspaceRepository(database),
-  workspaceTokenRepository: new WorkspaceTokenRepository(database),
-  abuseControlRepository: new AbuseControlRepository(database),
-  accountInvitationRepository: new AccountInvitationRepository(database),
-  workspaceProviderCredentialsRepository: new WorkspaceProviderCredentialsRepository(database),
-  webhookDestinationRepository: new WebhookDestinationRepository(database),
-  customerEmailConnectionRepository: new CustomerEmailConnectionRepository(database),
-  emailSkillDefinitionRepository: new EmailSkillDefinitionRepository(database),
-  emailSkillActivityRepository: new EmailSkillActivityRepository(database),
-  webhookSkillDefinitionRepository: new WebhookSkillDefinitionRepository(database),
+  conversationRepository: new ConversationRepository(database.kysely),
+  conversationOwnershipRepository: new ConversationOwnershipRepository(database.kysely),
+  documentProcessingJobRepository: new DocumentProcessingJobRepository(database.kysely),
+  documentRepository: new DocumentRepository(database.kysely),
+  documentSourceRepository: new DocumentSourceRepository(database.kysely),
+  emailVerificationTokenRepository: new EmailVerificationTokenRepository(database.kysely),
+  historyItemsRepository: new HistoryItemsRepository(database.kysely),
+  ingestionSettingsRepository: new IngestionSettingsRepository(database.kysely),
+  messageRepository: new MessageRepository(database.kysely),
+  passwordResetTokenRepository: new PasswordResetTokenRepository(database.kysely),
+  retrievalSettingsRepository: new RetrievalSettingsRepository(database.kysely),
+  routineDefinitionRepository: new RoutineDefinitionRepository(database.kysely),
+  sessionRepository: new SessionRepository(database.kysely),
+  userRepository: new UserRepository(database.kysely),
+  websiteCrawlJobRepository: new WebsiteCrawlJobRepository(database.kysely),
+  workspaceGrantRepository: new WorkspaceGrantRepository(database.kysely),
+  workspaceRepository: new WorkspaceRepository(database.kysely),
+  workspaceTokenRepository: new WorkspaceTokenRepository(database.kysely),
+  abuseControlRepository: new AbuseControlRepository(database.kysely),
+  accountInvitationRepository: new AccountInvitationRepository(database.kysely),
+  workspaceProviderCredentialsRepository: new WorkspaceProviderCredentialsRepository(database.kysely),
+  webhookDestinationRepository: new WebhookDestinationRepository(database.kysely),
+  // customer-email connections moved onto the integration_connections spine (#751) after
+  // this Kysely migration began; that repo still targets the spine via raw SQL and will be
+  // migrated to Kysely in a later pass, so it keeps the raw Database here.
+  customerEmailConnectionRepository: new CustomerEmailConnectionRepository(database.kysely),
+  integrationConnectionRepository: new IntegrationConnectionRepository(database.kysely),
+  slackInstallationRepository: new SlackInstallationRepository(database.kysely),
+  slackChannelBindingRepository: new SlackChannelBindingRepository(database.kysely),
+  emailSkillDefinitionRepository: new EmailSkillDefinitionRepository(database.kysely),
+  emailSkillActivityRepository: new EmailSkillActivityRepository(database.kysely),
+  webhookSkillDefinitionRepository: new WebhookSkillDefinitionRepository(database.kysely),
+  slackSkillDefinitionRepository: new SlackSkillDefinitionRepository(database.kysely),
 });
 
 export const buildAccessServices = (input: {
@@ -742,11 +772,13 @@ export const buildWorkspaceServices = (input: {
 
 
 export const buildChatServices = (input: {
+  accountAccessService: AccountAccessService;
   agentService: AgentService;
   auditEventRepository: AuditEventRepository;
   auditService: AuditService;
   bootstrapGreetingCacheRepository: BootstrapGreetingCacheRepository;
   composition: ApplicationComposition;
+  conversationOwnershipRepository: ConversationOwnershipRepository;
   conversationRepository: ConversationRepository;
   database: Database;
   env: Env;
@@ -764,7 +796,9 @@ export const buildChatServices = (input: {
   emailSkillDefinitionRepository: EmailSkillDefinitionRepository;
   emailSkillActivityRepository: EmailSkillActivityRepository;
   webhookSkillDefinitionRepository: WebhookSkillDefinitionRepository;
+  slackSkillDefinitionRepository: SlackSkillDefinitionRepository;
   mailService: ReturnType<typeof buildInfrastructure>["mailService"];
+  publicConversationEventBus: PublicConversationEventBus;
   usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
   retrievalPipeline: RetrievalPipelinePort;
   usageLimitPolicy: ReturnType<typeof buildInfrastructure>["usageLimitPolicy"];
@@ -805,7 +839,7 @@ export const buildChatServices = (input: {
     present: answerPresentationService.present.bind(answerPresentationService),
     resolveCitationArtifacts,
   };
-  const abuseControlService = new AbuseControlService(new AbuseControlRepository(input.database));
+  const abuseControlService = new AbuseControlService(new AbuseControlRepository(input.database.kysely));
   const publicChatActionAdvertiserContext = {
     database: input.database,
     chatGateway,
@@ -832,9 +866,8 @@ export const buildChatServices = (input: {
     skillExecutorRegistry: input.composition.skillExecutorRegistry,
     agentService: input.agentService,
   };
-  // Register retrieval.answer as a dispatchable skill (spec 066 slice 1). The
-  // chat path does not consume it yet; the loop re-seam (slice 2) routes through
-  // it. Guarded so repeated dependency builds (tests) do not double-register.
+  // Register the retrieval adapter once; it serves both answer and context
+  // retrieval skills. Guarded so repeated dependency builds (tests) do not double-register.
   if (!input.composition.skillExecutorRegistry.resolve({ kind: "internal", adapter: RETRIEVAL_ANSWER_ADAPTER })) {
     input.composition.skillExecutorRegistry.register({
       kind: "internal",
@@ -864,7 +897,7 @@ export const buildChatServices = (input: {
     input.env.CONNECTOR_ENCRYPTION_KEY &&
     !input.composition.skillExecutorRegistry.resolve({ kind: "internal", adapter: CUSTOMER_EMAIL_SKILLS_ADAPTER })
   ) {
-    const oauthConnectionRepository = new OauthConnectionRepository(input.database);
+    const oauthConnectionRepository = new OauthConnectionRepository(input.database.kysely);
     // No real Gmail/Microsoft Graph adapter is wired yet (spec 089 follow-up): the
     // mock provider accepts every draft/send and returns a placeholder message id, so
     // `drafted`/`sent` outcomes do NOT mean a message was delivered. Warn loudly so
@@ -908,6 +941,26 @@ export const buildChatServices = (input: {
       }),
     });
   }
+  if (!input.composition.skillExecutorRegistry.resolve({ kind: "internal", adapter: SLACK_SKILLS_ADAPTER })) {
+    input.composition.skillExecutorRegistry.register({
+      kind: "internal",
+      adapter: SLACK_SKILLS_ADAPTER,
+      executor: new SlackEscalationExecutor({
+        skills: input.slackSkillDefinitionRepository,
+        outbox: new ActionRequestRepository(input.database.kysely),
+      }),
+    });
+  }
+  if (!input.composition.skillExecutorRegistry.resolve({ kind: "internal", adapter: NOTIFY_SKILLS_ADAPTER })) {
+    input.composition.skillExecutorRegistry.register({
+      kind: "internal",
+      adapter: NOTIFY_SKILLS_ADAPTER,
+      executor: new NotifyExecutor({
+        skills: new AgentSkillRepository(input.database.kysely),
+        outbox: new ActionRequestRepository(input.database.kysely),
+      }),
+    });
+  }
   const publicChatActionAdvertisers = input.composition.publicChatActionAdvertiserRegistrations.map((registration) =>
     typeof registration === "function" ? registration(publicChatActionAdvertiserContext) : registration,
   );
@@ -928,7 +981,7 @@ export const buildChatServices = (input: {
     ? new NoopAnswerFeedbackHistoryProvider()
     : typeof input.composition.answerFeedbackHistoryProviderRegistration === "function"
       ? input.composition.answerFeedbackHistoryProviderRegistration({
-          database: input.database,
+          database: input.database.kysely,
           logger: input.logger,
         })
       : input.composition.answerFeedbackHistoryProviderRegistration;
@@ -983,7 +1036,7 @@ export const buildChatServices = (input: {
   // the outbox during the turn (`actionOutbox`); the worker drains and routes it to a
   // registered handler out of band (`actionDispatchWorker`). The two share one repository
   // so the same table backs the enqueue and the drain.
-  const actionOutbox = new ActionRequestRepository(input.database);
+  const actionOutbox = new ActionRequestRepository(input.database.kysely);
   const actionHandlerRegistry = new ActionHandlerRegistry(
     input.composition.actionHandlerRegistrations.map((registration) => ({
       type: registration.type,
@@ -1031,6 +1084,33 @@ export const buildChatServices = (input: {
         },
         "Pinned routine definition failed to load or compile; skipping resume-only registration",
       );
+    },
+    resolveCompletionExport: async (definition) => {
+      const [skill] = await input.database.query<{
+        target_id: string | null;
+        enabled: boolean;
+      }>(
+        `SELECT target_id, enabled
+         FROM agent_skills
+         WHERE agent_id = $1
+           AND skill_name = 'completion_export'
+           AND kind = 'webhook'
+         LIMIT 1`,
+        [definition.agentId],
+      );
+      if (!skill) {
+        return null;
+      }
+      if (!skill.enabled || !skill.target_id) {
+        return { enabled: false, triggerKinds: [], destinationRef: "" };
+      }
+      return {
+        enabled: true,
+        triggerKinds: definition.completionExport?.triggerKinds?.length
+          ? definition.completionExport.triggerKinds
+          : ["complete", "handoff"],
+        destinationRef: skill.target_id,
+      };
     },
   });
   const routineProvider: ChatRoutineProvider = {
@@ -1095,6 +1175,13 @@ export const buildChatServices = (input: {
       }
       let emailSkillNames: string[] = [];
       let webhookSkillNames: string[] = [];
+      let slackSkillNames: string[] = [];
+      let retrieveSkills: Array<{
+        skillName: string;
+        enabled: boolean;
+        invocationMode: string;
+        config?: Record<string, unknown>;
+      }> = [];
       try {
         if (workspaceId && agentId) {
           emailSkillNames = (await input.emailSkillDefinitionRepository.listByAgent(workspaceId, agentId))
@@ -1125,10 +1212,56 @@ export const buildChatServices = (input: {
           "Webhook skill definitions failed to load for routine routing; continuing without webhook skills",
         );
       }
+      try {
+        if (workspaceId && agentId) {
+          slackSkillNames = (await input.slackSkillDefinitionRepository.listByAgent(workspaceId, agentId))
+            .filter((skill) => skill.enabled)
+            .map((skill) => skill.skillName);
+        }
+      } catch (error) {
+        input.logger.warn(
+          {
+            agentId,
+            err: error instanceof Error ? error.message : String(error),
+          },
+          "Slack skill definitions failed to load for routine routing; continuing without Slack skills",
+        );
+      }
+      try {
+        if (workspaceId && agentId) {
+          retrieveSkills = (await new AgentSkillRepository(input.database.kysely).listByAgent(workspaceId, agentId))
+            .filter((skill) => skill.kind === "retrieve")
+            .map((skill) => ({
+              skillName: skill.skillName,
+              enabled: skill.enabled,
+              invocationMode: skill.invocationMode,
+              config: skill.config,
+            }));
+        }
+      } catch (error) {
+        input.logger.warn(
+          {
+            agentId,
+            err: error instanceof Error ? error.message : String(error),
+          },
+          "Retrieve skill definitions failed to load for routine routing; continuing without retrieve skills",
+        );
+      }
       return {
         activator: routineRegistry.isEmpty
           ? { activate: async () => null }
           : routineRegistry.activator(modelGateway),
+        // Post-completion slot correction (issue #746): resolves the completed routine
+        // from the same per-turn routine set and runs model-driven detection/confirmation.
+        slotCorrection: new RoutineSlotCorrector(routines, modelGateway, {
+          detectPromptTemplate: loadPromptTemplate("chat/routine-slot-correction-detect.md"),
+          confirmPromptTemplate: loadPromptTemplate("chat/routine-slot-correction-confirm.md"),
+          invalidPromptTemplate: loadPromptTemplate("chat/routine-slot-correction-invalid.md"),
+        }),
+        // Semantic reentry gate (issue #746): inert unless a routine opts into semantic mode.
+        reentryGate: new RoutineReentryGate(routines, modelGateway, {
+          promptTemplate: loadPromptTemplate("chat/routine-reentry-gate.md"),
+        }),
         runner: new DefaultRoutineRunner(
           routines,
           new RoutineNextStepSelector(modelGateway, {
@@ -1136,12 +1269,22 @@ export const buildChatServices = (input: {
           }),
           new RoutineStepRenderer(modelGateway, {
             promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
+            terminalHandoffInstruction: loadPromptTemplate("chat/routine-step-terminal-handoff.md"),
             responseLanguage,
           }),
           new RoutineSkillExecutorDispatcher(
-            new WebhookRoutineSkillResolver(
-              webhookSkillNames,
-              new CustomerEmailRoutineSkillResolver(emailSkillNames, new ExternalSkillRoutineSkillResolver()),
+            new StaticRoutineSkillResolver(
+              routineDispatchableBuiltInSkills,
+              new WebhookRoutineSkillResolver(
+                webhookSkillNames,
+                new CustomerEmailRoutineSkillResolver(
+                  emailSkillNames,
+                  new SlackRoutineSkillResolver(
+                    slackSkillNames,
+                    new RetrieveRoutineSkillResolver(retrieveSkills, new ExternalSkillRoutineSkillResolver()),
+                  ),
+                ),
+              ),
             ),
             input.composition.skillExecutorRegistry,
             {
@@ -1167,10 +1310,10 @@ export const buildChatServices = (input: {
     ),
   );
   const conversationEngine = createConversationEngine();
-  const clarificationStore = new ClarificationStateRepository(input.database);
+  const clarificationStore = new ClarificationStateRepository(input.database.kysely);
   const retrievalSenseDetector = new SenseGroupingService({
     policy: retrievalSensePolicy,
-    embeddingReader: new PostgresSenseEmbeddingReader(input.database),
+    embeddingReader: new PostgresSenseEmbeddingReader(input.database.kysely),
     labelGateway: new ModelSenseLabelGateway(
       input.llmRegistry.createChatInferencePipeline(input.usageEventRecorder),
       loadPromptTemplate("chat/clarification-sense-labels.md"),
@@ -1188,6 +1331,10 @@ export const buildChatServices = (input: {
   const responseLanguageDetector = new LlmResponseLanguageDetector(
     input.llmRegistry.createRewriteInferencePipeline(input.usageEventRecorder),
   );
+  const handoffWaitingMessageGenerator = new LlmHandoffWaitingMessageGenerator(
+    input.llmRegistry.createRewriteInferencePipeline(input.usageEventRecorder),
+  );
+  const routineStateRepository = new RoutineStateRepository(input.database.kysely);
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
     messageRepository: input.messageRepository,
@@ -1213,6 +1360,7 @@ export const buildChatServices = (input: {
     selectionStrategy: input.composition.selectionStrategy,
     turnRouter,
     responseLanguageDetector,
+    handoffWaitingMessageGenerator,
     // The reusable conversation engine is the chat turn spine in every
     // environment. ChatService keeps an engine-less path for tests, but
     // composition always wires it.
@@ -1220,12 +1368,19 @@ export const buildChatServices = (input: {
     // Turn-emitted action intents land here, persisted to the outbox and
     // dispatched out of band by `actionDispatchWorker` in the worker process.
     actionOutbox,
-    assistantTurnPersistence: new PostgresAssistantTurnPersistence(input.database),
+    assistantTurnPersistence: new PostgresAssistantTurnPersistence(
+      input.database.kysely,
+      undefined,
+      input.conversationOwnershipRepository,
+    ),
     actionCapabilities: input.composition.actionCapabilityMap,
     capabilityPolicy: input.composition.capabilityPolicy,
     logger: input.logger,
+    conversationOwnershipRepository: input.conversationOwnershipRepository,
     // Routine resume/activate per turn — present only when routines are registered.
-    routineStore: new RoutineStateRepository(input.database),
+    routineStore: routineStateRepository,
+    suspendedRoutineReader: routineStateRepository,
+    conversationOwnershipReader: input.conversationOwnershipRepository,
     routineProvider,
     clarifierFactory: ({ session, accountId }) => new DefaultClarifier(
       new RoutineChatModelGateway(chatGateway, {
@@ -1270,6 +1425,7 @@ export const buildChatServices = (input: {
     input.historyItemsRepository,
     contactHistoryProvider,
     answerFeedbackHistoryProvider,
+    input.conversationOwnershipRepository,
   );
   const retrievalAnswerService = new RetrievalAnswerService({
     retrievalPipeline: input.retrievalPipeline,
@@ -1287,6 +1443,19 @@ export const buildChatServices = (input: {
     conversationEngine,
     turnRouter,
   });
+  const approvalDecisionService = new ApprovalDecisionService(
+    new PendingDecisionRepository(input.database.kysely),
+    chatService.asApprovalResumeRunner(),
+    {
+      resolveWorkspaceRole: (caller) => input.accountAccessService.resolveWorkspaceRole(caller),
+    },
+    {
+      publishMessageCreated: (event) => input.publicConversationEventBus.publish({
+        type: "message.created",
+        ...event,
+      }),
+    },
+  );
 
   return {
     abuseControlService,
@@ -1302,6 +1471,7 @@ export const buildChatServices = (input: {
     contactHistoryProvider,
     retrievalAnswerService,
     actionDispatchWorker,
+    approvalDecisionService,
   };
 };
 
@@ -1310,7 +1480,7 @@ export const buildConnectorRegistry = (input: {
   env: Env;
   logger: AppLogger;
 }) => {
-  const connectorRegistry = createDefaultConnectorRegistry(input.composition.connectors);
+  const connectorRegistry = createDefaultConnectorRegistry(input.composition.connectors, input.env);
   if (input.env.CONNECTOR_ENCRYPTION_KEY) {
     connectorRegistry.setEncryptionKey(input.env.CONNECTOR_ENCRYPTION_KEY);
   } else {

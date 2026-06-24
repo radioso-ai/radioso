@@ -12,6 +12,7 @@ const lifecycleRoutineDraft = (label: string): RoutineDefinitionDraftInput => ({
     triggerDescription: "When the user asks to start lifecycle intake.",
     gateRef: null,
     priority: 10,
+    reentryMode: "once_per_conversation",
   },
   slots: [{
     stableSlotId: "slot_topic",

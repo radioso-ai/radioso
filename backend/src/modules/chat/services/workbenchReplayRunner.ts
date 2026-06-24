@@ -131,6 +131,9 @@ const createNoopMessageRepository = (): MessageRepositoryPort => ({
   async listWindowByConversationId() {
     return { messages: [], total: 0, nextCursor: null, hasMore: false };
   },
+  async listSinceByConversationId() {
+    return { messages: [], latestCursor: null };
+  },
   async summarizeByConversationIds() {
     return new Map();
   },

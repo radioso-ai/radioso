@@ -1,3 +1,9 @@
+---
+title: "Embedding Model"
+description: "Workspace setting to choose the embedding model for creating search vectors supporting OpenAI and Google Gemini."
+last_updated: 2026-05-18
+---
+
 # Embedding Model
 
 ## Summary

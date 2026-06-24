@@ -6,7 +6,9 @@ import type {
   ConversationClarifier,
   ConversationModelGateway,
   ConversationRoutineActivator,
+  ConversationRoutineReentryGate,
   ConversationRoutineRunner,
+  ConversationRoutineSlotCorrection,
   ConversationRoutineStore,
   ConversationTrace,
   ClarificationCandidate,
@@ -14,10 +16,11 @@ import type {
   RecentClarificationReader,
   RenderableTurn,
   RoutineActionRequest,
+  RoutineAwaitingDecision,
   RoutineState,
   TurnContext,
 } from "@radioso/conversation-contract";
-import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { CHAT_BEHAVIOR, RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
@@ -27,7 +30,11 @@ import type { ConversationRepositoryPort } from "../../../db/repositories/conver
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
+import type { PendingDecisionCreateInput, PendingDecisionRecord } from "../../../db/repositories/pendingDecisionRepository.js";
+import type { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
+import type { Db } from "../../../shared/infra/kysely/types.js";
 import type { AgentService } from "../../agents/public.js";
+import { buildPendingDecisionTransition, type ResumeRunner } from "../../approvals/public.js";
 import type { ChatGateway, ChatGatewayInput } from "../contracts/chatGateway.js";
 import type { ChatStreamEvent } from "../contracts/streamEvents.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
@@ -95,9 +102,18 @@ import {
   toConversationAgentConfig,
   toConversationInputEvent,
   toConversationMessages,
+  toPreparedStagedContext,
 } from "./conversationContractMappers.js";
 import type { TurnRouter, TurnRouting } from "./turnRouter.js";
 import type { ResponseLanguageDetector } from "../../../shared/services/responseLanguageDetector.js";
+import type { HandoffWaitingMessageGenerator } from "../../../shared/services/handoffWaitingMessageGenerator.js";
+import {
+  isHumanOwned,
+  type ConversationOwnershipReader,
+} from "../../handoff/public.js";
+import { HANDOFF_NOTIFY_ACTION_TYPE } from "./routines/contactRoutine.js";
+import { APPROVAL_REQUEST_ACTION_TYPE } from "./actions/approvalRequestActionHandler.js";
+import { SKILL_TURN_OUTCOME } from "./assistantTurnOutcomeTypes.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
@@ -154,6 +170,30 @@ export class ModelChatGateway implements ChatGateway {
 
 export class OpenAIChatGateway extends ModelChatGateway {}
 
+export const buildRoutinePendingDecisionTransition = (input: {
+  session: PreparedSession;
+  awaitingDecision?: RoutineAwaitingDecision;
+  routineStateTransition?: CapturedRoutineTransition | null;
+}): PendingDecisionCreateInput | null => {
+  if (!input.awaitingDecision) {
+    return null;
+  }
+  if (
+    input.routineStateTransition?.kind !== "save" ||
+    input.routineStateTransition.state.status !== "suspended"
+  ) {
+    throw new Error("routine_awaiting_decision_without_suspended_state");
+  }
+  return buildPendingDecisionTransition({
+    conversationId: input.session.conversation.id,
+    sessionId: input.routineStateTransition.state.sessionId,
+    workspaceId: input.session.conversation.workspaceId,
+    agentId: input.session.agent.id,
+    routineId: input.routineStateTransition.state.routineId,
+    awaitingDecision: input.awaitingDecision,
+  });
+};
+
 type PreparedChatStreamTurnEvent =
   | { type: "chunk"; text: string }
   | {
@@ -180,8 +220,138 @@ export interface ChatRoutineProvider {
   }): Promise<{
     activator: ConversationRoutineActivator;
     runner: ConversationRoutineRunner;
+    slotCorrection?: ConversationRoutineSlotCorrection;
+    reentryGate?: ConversationRoutineReentryGate;
   } | null>;
 }
+
+export interface SuspendedRoutineReader {
+  loadSuspended(input: { sessionId: string }): Promise<RoutineState | null>;
+}
+
+// A teammate has engaged the thread once any message was authored by a human
+// operator (a direct reply, or one sent on behalf of the AI).
+const isHumanAgentMessage = (message: { source?: string }): boolean =>
+  message.source === "human_agent" ||
+  message.source === "human_agent_on_behalf_of_ai_agent";
+
+const suppressedHumanOwnedResponse = (
+  session: PreparedSession,
+  waitingMessage = "",
+): ChatResponse => {
+  const now = new Date().toISOString();
+  return {
+    conversationId: session.conversation.id,
+    agentId: session.agent.id,
+    agentName: session.agent.name,
+    assistantMessageId: "",
+    route: {
+      type: "direct",
+      reason: "social_only",
+    },
+    answer: waitingMessage,
+    citations: [],
+    answerSegments: [],
+    suggestions: [],
+    activitySummary: {
+      status: "skipped",
+      outcome: "human_owned_suppressed",
+      retrievalSkipped: true,
+    },
+    activityTrace: {
+      traceId: `ownership-suppressed-${session.conversation.id}`,
+      startedAt: now,
+      completedAt: now,
+      totalDurationMs: 0,
+      stages: [],
+      links: [],
+    },
+    ownership: {
+      state: "human_owned",
+      suppressed: true,
+    },
+  };
+};
+
+const buildHandoffNotifyAction = (input: {
+  conversationId: string;
+  workspaceId: string;
+  agentId: string;
+  userMessageId: string;
+  reason: "routine_handoff" | "retrieval_miss";
+  routineId?: string;
+  stepId?: string;
+}): RoutineActionRequest => ({
+  type: HANDOFF_NOTIFY_ACTION_TYPE,
+  payload: {
+    conversationId: input.conversationId,
+    workspaceId: input.workspaceId,
+    agentId: input.agentId,
+    userMessageId: input.userMessageId,
+    reason: input.reason,
+    routineId: input.routineId,
+    stepId: input.stepId,
+    dashboardPath: `/conversations/${input.conversationId}`,
+  },
+});
+
+const buildApprovalRequestAction = (input: {
+  handle: string;
+  conversationId: string;
+  workspaceId: string;
+  agentId: string;
+  routineId?: string;
+  stepId?: string;
+}): RoutineActionRequest => ({
+  type: APPROVAL_REQUEST_ACTION_TYPE,
+  payload: {
+    handle: input.handle,
+    conversationId: input.conversationId,
+    workspaceId: input.workspaceId,
+    agentId: input.agentId,
+    routineId: input.routineId,
+    stepId: input.stepId,
+    dashboardPath: `/conversations/${input.conversationId}`,
+  },
+});
+
+const shouldRequestRetrievalMissHandoff = (input: {
+  session: PreparedSession;
+  presentation: ChatPresentedAnswer;
+}): boolean =>
+  input.session.agent.handoffOnRetrievalMiss === true
+  && input.presentation.skillOutcome === SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.outcome;
+
+const retrievalMissHandoffForTurn = (input: {
+  session: PreparedSession;
+  presentation: ChatPresentedAnswer;
+  workspaceId: string;
+  actions?: RoutineActionRequest[];
+}): {
+  ownershipHandoff: { reason: "retrieval_miss" } | null;
+  actions?: RoutineActionRequest[];
+} => {
+  if (!shouldRequestRetrievalMissHandoff(input)) {
+    return {
+      ownershipHandoff: null,
+      actions: input.actions,
+    };
+  }
+
+  return {
+    ownershipHandoff: { reason: "retrieval_miss" },
+    actions: [
+      ...(input.actions ?? []),
+      buildHandoffNotifyAction({
+        conversationId: input.session.conversation.id,
+        workspaceId: input.workspaceId,
+        agentId: input.session.agent.id,
+        userMessageId: input.session.userMessage.id,
+        reason: "retrieval_miss",
+      }),
+    ],
+  };
+};
 
 /**
  * Everything ChatService needs to run a turn. The turn runtime (presenter +
@@ -211,12 +381,19 @@ export interface ChatServiceOptions {
   actionCapabilities?: ActionCapabilityMap;
   capabilityPolicy?: CapabilityPolicy;
   logger?: Pick<AppLogger, "warn">;
+  conversationOwnershipRepository?: ConversationOwnershipRepository;
   /** Optional: durable per-session routine state store (with {@link routineProvider}). */
   routineStore?: ConversationRoutineStore;
+  /** Optional: detects parked routines so fresh visitor messages answer normally. */
+  suspendedRoutineReader?: SuspendedRoutineReader;
+  /** Optional: detects human-owned conversations so visitor turns do not start AI work. */
+  conversationOwnershipReader?: ConversationOwnershipReader;
   /** Optional: registered routines + activation. Empty/absent leaves turns unchanged. */
   routineProvider?: ChatRoutineProvider;
   /** Optional shared per-turn language detector for routine, direct, and retrieval replies. */
   responseLanguageDetector?: ResponseLanguageDetector;
+  /** Optional: produces the localized "a teammate is joining" line for human-owned turns. */
+  handoffWaitingMessageGenerator?: HandoffWaitingMessageGenerator;
   clarifier?: ConversationClarifier;
   clarifierFactory?: (input: { session: PreparedSession; accountId?: string }) => ConversationClarifier;
   clarificationStore?: ConversationClarificationStore & Partial<RecentClarificationReader>;
@@ -226,6 +403,9 @@ export interface ChatServiceOptions {
 }
 
 export class ChatService {
+  private readonly conversationRepository: ConversationRepositoryPort;
+  private readonly messageRepository: MessageRepositoryPort;
+  private readonly agentService?: Pick<AgentService, "resolve">;
   private readonly chatGateway: ChatGateway;
   private readonly auditService: AuditService;
   private readonly usageLimitPolicy: UsageLimitPolicy;
@@ -239,6 +419,8 @@ export class ChatService {
   private readonly directiveRuntime: RouteScopedDirectiveRuntime;
   private readonly answerSupport = new ChatAnswerSupport();
   private readonly routineStore?: ConversationRoutineStore;
+  private readonly suspendedRoutineReader?: SuspendedRoutineReader;
+  private readonly conversationOwnershipReader?: ConversationOwnershipReader;
   private readonly routineProvider?: ChatRoutineProvider;
   private readonly clarifier?: ConversationClarifier;
   private readonly clarifierFactory?: (input: { session: PreparedSession; accountId?: string }) => ConversationClarifier;
@@ -248,6 +430,7 @@ export class ChatService {
   private readonly retrievalSenseClarificationPolicy: ClarificationPolicy;
   private readonly turnRouter: TurnRouter;
   private readonly responseLanguageDetector?: ResponseLanguageDetector;
+  private readonly handoffWaitingMessageGenerator?: HandoffWaitingMessageGenerator;
 
   constructor(options: ChatServiceOptions) {
     const {
@@ -271,9 +454,13 @@ export class ChatService {
       actionCapabilities,
       capabilityPolicy,
       logger,
+      conversationOwnershipRepository,
       routineStore,
+      suspendedRoutineReader,
+      conversationOwnershipReader,
       routineProvider,
       responseLanguageDetector,
+      handoffWaitingMessageGenerator,
       clarifier,
       clarifierFactory,
       clarificationStore,
@@ -281,9 +468,15 @@ export class ChatService {
       retrievalSenseDetector,
       retrievalSenseClarificationPolicy,
     } = options;
+    this.conversationRepository = conversationRepository;
+    this.messageRepository = messageRepository;
+    this.agentService = agentService;
     this.routineStore = routineStore;
+    this.suspendedRoutineReader = suspendedRoutineReader;
+    this.conversationOwnershipReader = conversationOwnershipReader;
     this.routineProvider = routineProvider;
     this.responseLanguageDetector = responseLanguageDetector;
+    this.handoffWaitingMessageGenerator = handoffWaitingMessageGenerator;
     this.clarifier = clarifier;
     this.clarifierFactory = clarifierFactory;
     this.clarificationStore = clarificationStore;
@@ -314,6 +507,8 @@ export class ChatService {
       actionCapabilities,
       capabilityPolicy,
       logger,
+      undefined,
+      conversationOwnershipRepository,
     );
     this.chatSessionPreparer = new ChatSessionPreparer(
       conversationRepository,
@@ -352,7 +547,10 @@ export class ChatService {
     presentation: ChatPresentedAnswer;
     engineTrace?: ConversationTrace;
     actions?: RoutineActionRequest[];
+    handoff?: { routineId: string; stepId: string };
     routineStateTransition?: CapturedRoutineTransition | null;
+    pendingDecisionTransition?: PendingDecisionCreateInput | null;
+    suspended?: boolean;
     clarificationTransition?: CapturedClarificationTransition | null;
     // Flushes the routine-state transition the engine made this turn. Called by the
     // lifecycle only after the turn's actions are durably enqueued, so a crash before
@@ -371,7 +569,7 @@ export class ChatService {
       modelGateway,
       agentId: session.agent.id,
       workspaceId: session.conversation.workspaceId,
-      pinnedRoutineIds: activeRoutine?.status === "active" ? [activeRoutine.routineId] : [],
+      pinnedRoutineIds: await this.routineCatalogPinIds(session, activeRoutine),
       responseLanguage,
     });
     if (!routineTurnPorts) {
@@ -390,6 +588,8 @@ export class ChatService {
       routineStore: deferredStore,
       routineRunner: routineTurnPorts.runner,
       routineActivator: activator,
+      routineSlotCorrection: routineTurnPorts.slotCorrection,
+      routineReentryGate: routineTurnPorts.reentryGate,
       clarifier: clarification?.clarifier ?? this.clarifier,
       clarificationStore: deferredClarificationStore,
       loopGuardCandidateIds: clarification?.resolution?.kind === "normal"
@@ -402,11 +602,36 @@ export class ChatService {
       return null;
     }
     this.recordTraceClarificationDecisions(outcome.result.trace);
+    const routineStateTransition = deferredStore.getTransition();
+    const pendingDecisionTransition = buildRoutinePendingDecisionTransition({
+      session,
+      awaitingDecision: outcome.result.awaitingDecision,
+      routineStateTransition,
+    });
+    // Suspending at an approval gate notifies an operator out-of-band; the action is
+    // enqueued in the same turn transaction as the pending_decisions row, so the
+    // notification can never outrun (or be lost relative to) the durable decision.
+    const actions = pendingDecisionTransition
+      ? [
+          ...(outcome.result.actions ?? []),
+          buildApprovalRequestAction({
+            handle: pendingDecisionTransition.handle,
+            conversationId: pendingDecisionTransition.conversationId,
+            workspaceId: pendingDecisionTransition.workspaceId,
+            agentId: pendingDecisionTransition.agentId,
+            routineId: pendingDecisionTransition.routineId,
+            stepId: pendingDecisionTransition.stepId,
+          }),
+        ]
+      : outcome.result.actions;
     return {
       presentation: outcome.presentation,
       engineTrace: outcome.result.trace,
-      actions: outcome.result.actions,
-      routineStateTransition: deferredStore.getTransition(),
+      actions,
+      handoff: outcome.result.handoff,
+      routineStateTransition,
+      pendingDecisionTransition,
+      suspended: Boolean(outcome.result.awaitingDecision),
       clarificationTransition: deferredClarificationStore?.getTransition(),
       commitRoutineState: () => deferredStore.commit(),
       commitClarificationState: deferredClarificationStore ? () => deferredClarificationStore.commit() : undefined,
@@ -477,11 +702,266 @@ export class ChatService {
     return { store, resolution, clarifier };
   }
 
+  async resumeAwaitingDecisionTurn(input: {
+    record: PendingDecisionRecord;
+    optionId: string;
+    payload?: unknown;
+    decidedBy: string;
+    transaction: Db;
+  }): Promise<{ conversationId: string; resumed: boolean; assistantMessageId?: string }> {
+    if (!this.routineProvider || !this.suspendedRoutineReader) {
+      throw new Error("approval_resume_routine_provider_missing");
+    }
+    if (!this.agentService) {
+      throw new Error("approval_resume_agent_service_missing");
+    }
+
+    let session = await this.prepareDecisionResumeSession(input.record);
+    // A resumed routine renders its own reply, so it needs the same response-language guard
+    // as every other turn — otherwise the renderer falls back to a weak hint and a routine
+    // step authored in another language leaks through (issue #755).
+    session = this.withResponseLanguage(session, await this.detectResponseLanguage({
+      workspaceId: input.record.workspaceId,
+      accountId: input.decidedBy,
+      query: session.userMessage.content,
+    }, session));
+    const modelGateway = new RoutineChatModelGateway(this.chatGateway, {
+      workspaceContext: this.answerSupport.buildChatWorkspaceContext(session),
+      usageContext: this.answerSupport.buildChatUsageContext(session, input.decidedBy, "routine_turn"),
+    });
+    const routineTurnPorts = await this.routineProvider.forTurn({
+      modelGateway,
+      agentId: session.agent.id,
+      workspaceId: session.conversation.workspaceId,
+      pinnedRoutineIds: [input.record.routineId],
+      responseLanguage: session.responseLanguage,
+    });
+    if (!routineTurnPorts) {
+      throw new Error("approval_resume_routine_ports_missing");
+    }
+
+    const result = await this.conversationEngine.resumeAwaitingDecision({
+      agent: toConversationAgentConfig(session.agent),
+      turn: this.buildClarificationTurn(session),
+      sessionId: input.record.sessionId,
+      decision: {
+        handle: input.record.handle,
+        optionId: input.optionId,
+        ...(input.payload !== undefined ? { payload: input.payload } : {}),
+      },
+      suspendedReader: {
+        loadSuspended: (query) => this.suspendedRoutineReader!.loadSuspended(query),
+      },
+      routineRunner: routineTurnPorts.runner,
+    });
+
+    if (!result.resumed) {
+      throw new Error("approval_resume_suspended_state_missing");
+    }
+
+    const routineStateTransition: CapturedRoutineTransition = result.nextState
+      ? { kind: "save", state: result.nextState }
+      : { kind: "clear", sessionId: input.record.sessionId };
+    const presentation = this.chatAnswerPresenter.presentNonRetrievalAnswer(result.response.answer);
+
+    const completed = await this.chatTurnLifecycle.completeAssistantTurn({
+      workspaceId: input.record.workspaceId,
+      accountId: input.decidedBy,
+      session,
+      presentation,
+      answerStartedAt: Date.now(),
+      stream: false,
+      engineTrace: result.trace ? this.conversationTraceWithRoutineTrace(session.turnTrace, result.trace) : session.turnTrace,
+      actions: result.actions,
+      routineStateTransition,
+      additionalAuditEvent: {
+        accountId: input.decidedBy,
+        workspaceId: input.record.workspaceId,
+        eventType: "hitl.decision",
+        eventStatus: "success",
+        metadata: {
+          handle: input.record.handle,
+          conversationId: input.record.conversationId,
+          agentId: input.record.agentId,
+          routineId: input.record.routineId,
+          stepId: input.record.stepId,
+          optionId: input.optionId,
+        },
+      },
+      transaction: input.transaction,
+    });
+
+    return {
+      conversationId: input.record.conversationId,
+      resumed: result.resumed,
+      assistantMessageId: completed.assistantMessageId,
+    };
+  }
+
+  asApprovalResumeRunner(): ResumeRunner {
+    return {
+      resume: (input) => this.resumeAwaitingDecisionTurn(input),
+    };
+  }
+
+  private conversationTraceWithRoutineTrace(
+    trace: ConversationTrace,
+    routineTrace: NonNullable<Awaited<ReturnType<ConversationEngine["resumeAwaitingDecision"]>>["trace"]>,
+  ): ConversationTrace {
+    return {
+      ...trace,
+      stages: [
+        ...trace.stages,
+        {
+          id: `routine-decision:${routineTrace.routineId}`,
+          kind: "routine",
+          status: "applied",
+          startedAt: new Date().toISOString(),
+          outputs: {
+            routineId: routineTrace.routineId,
+            filledSlotKeys: routineTrace.filledSlotKeys,
+            steps: routineTrace.steps.map((step) => ({
+              stepId: step.stepId,
+              kind: step.kind,
+              event: step.event,
+            })),
+          },
+        },
+      ],
+    };
+  }
+
+  private async prepareDecisionResumeSession(record: PendingDecisionRecord): Promise<PreparedSession> {
+    const conversation = await this.conversationRepository.findByIdAndWorkspaceId(
+      record.conversationId,
+      record.workspaceId,
+    );
+    if (!conversation || conversation.agentId !== record.agentId) {
+      throw new Error("approval_resume_conversation_not_found");
+    }
+    const agent = await this.agentService!.resolve(record.workspaceId, record.agentId);
+    const history = await this.messageRepository.listRecentByConversationId(
+      record.workspaceId,
+      record.conversationId,
+      RETRIEVAL_BEHAVIOR.rewriteConversationContextMaxMessages,
+    );
+    const userMessage = [...history].reverse().find((message) => message.role === "user");
+    if (!userMessage) {
+      throw new Error("approval_resume_user_message_missing");
+    }
+    const retrieval = this.directDecisionResumeRetrieval(record, agent);
+    return {
+      agent,
+      conversation,
+      history,
+      retrieval,
+      turnRoute: CHAT_TURN_ROUTE.DIRECT,
+      turnFraming: { isIdentityQuestion: false },
+      userMessage,
+      effectiveQuery: userMessage.content,
+      pageContext: null,
+      stagedContext: [toPreparedStagedContext(retrieval)],
+      turnTrace: {
+        traceId: `approval-resume-${record.handle}`,
+        startedAt: new Date().toISOString(),
+        stages: [],
+        links: [],
+      },
+    };
+  }
+
+  private directDecisionResumeRetrieval(
+    record: PendingDecisionRecord,
+    agent: PreparedSession["agent"],
+  ): PreparedSession["retrieval"] {
+    const now = new Date().toISOString();
+    return {
+      rewrittenQuery: "",
+      contexts: [],
+      systemPrompt: "",
+      prompt: "",
+      citations: [],
+      responseIdentity: agent.name.trim() ? { name: agent.name.trim() } : null,
+      responseSettings: {
+        citationDisplayEnabled: false,
+        suggestedQuestionsEnabled: agent.suggestedQuestionsEnabled,
+        suggestedQuestionsCount: 0,
+        customInstruction: agent.customInstruction,
+        responseLanguagePolicy: "match_user_question",
+        responseLanguage: agent.assistantDefaultLocale ?? undefined,
+      },
+      diagnostics: {
+        execution: {
+          surface: "assistant",
+          path: "assistant_direct",
+          retrievalInvoked: false,
+        },
+        rewriteStatus: "skipped",
+        rerankStatus: "skipped",
+        originalCandidateCount: 0,
+        rewrittenCandidateCount: 0,
+        lexicalCandidateCount: 0,
+        normalizedCandidateCount: 0,
+        finalContextCount: 0,
+        retrievalSkipped: true,
+        candidateFallbackApplied: false,
+        fallbackApplied: false,
+        rewriteEligible: false,
+        rewriteRan: false,
+        materialDisagreement: false,
+        rewriteProposal: {
+          rewrittenQuery: "",
+          semanticQuery: "",
+          lexicalQuery: "",
+          responseLanguagePolicy: "match_user_question",
+          turnKind: "fresh_subject",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0,
+        },
+        triggerAnalysis: {
+          status: "skipped_non_retrieval",
+          consideredRules: [],
+          matchedRuleIds: [],
+          unmatchedRuleIds: [],
+          matchCount: 0,
+          matcherVersion: "approval_resume",
+        },
+      },
+      trace: {
+        traceId: `approval-resume-${record.handle}`,
+        startedAt: now,
+        completedAt: now,
+        totalDurationMs: 0,
+        stages: [],
+        links: [],
+      },
+    };
+  }
+
   private async loadActiveRoutine(session: PreparedSession): Promise<RoutineState | null> {
     if (!this.routineStore) {
       return null;
     }
     return this.routineStore.loadActive({ sessionId: session.conversation.id });
+  }
+
+  private async routineCatalogPinIds(session: PreparedSession, activeRoutine: RoutineState | null): Promise<string[]> {
+    const pinned = new Set<string>();
+    if (activeRoutine?.status === "active") {
+      pinned.add(activeRoutine.routineId);
+    }
+    if (!activeRoutine && this.routineStore?.loadCompleted) {
+      const completed = await this.routineStore.loadCompleted({ sessionId: session.conversation.id });
+      for (const state of completed) {
+        pinned.add(state.routineId);
+      }
+    }
+    return [...pinned];
+  }
+
+  private async loadSuspendedRoutine(session: PreparedSession): Promise<RoutineState | null> {
+    return this.suspendedRoutineReader?.loadSuspended({ sessionId: session.conversation.id }) ?? null;
   }
 
   private conversationTraceWithStage(
@@ -610,6 +1090,51 @@ export class ChatService {
     }).catch(() => undefined);
   }
 
+  /**
+   * Builds the localized "a teammate is joining, please wait" line shown on a
+   * human-owned (suppressed) turn. Generation is best-effort: on any failure this
+   * returns "" and the caller renders nothing rather than failing the turn.
+   */
+  private async generateHandoffWaitingMessage(
+    input: {
+      workspaceId: string;
+      accountId?: string;
+      query: string;
+    },
+    session: PreparedSession,
+  ): Promise<string> {
+    if (!this.handoffWaitingMessageGenerator) {
+      return "";
+    }
+    // Only announce that a teammate is "joining" before one has actually replied.
+    // Once a human operator has spoken in the thread they have already joined, so
+    // further suppressed turns stay silent and let the operator handle them.
+    if (session.history.some(isHumanAgentMessage)) {
+      return "";
+    }
+    try {
+      const message = await this.handoffWaitingMessageGenerator.generate({
+        query: input.query,
+        history: session.history,
+        workspaceContext: { workspaceId: input.workspaceId },
+        usageContext: {
+          accountId: input.accountId,
+          workspaceId: input.workspaceId,
+          conversationId: session.conversation.id,
+          messageId: session.userMessage.id,
+          surface: "assistant",
+          operation: "handoff_waiting_message",
+          attemptKey: "handoff_waiting",
+        },
+      });
+      setTraceAttributes({ "chat.handoff.waiting_message_generated": message.length > 0 });
+      return message;
+    } catch {
+      setTraceAttributes({ "chat.handoff.waiting_message_generated": false });
+      return "";
+    }
+  }
+
   private withResponseLanguage(session: PreparedSession, responseLanguage: string | undefined): PreparedSession {
     return {
       ...session,
@@ -717,22 +1242,49 @@ export class ChatService {
 
     try {
       session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
+      const ownership = await this.conversationOwnershipReader?.load(session.conversation.id) ?? null;
+      if (isHumanOwned(ownership)) {
+        await usageReservation.release();
+        const waitingMessage = await this.generateHandoffWaitingMessage(input, session);
+        return suppressedHumanOwnedResponse(session, waitingMessage);
+      }
+
       const responseLanguagePromise = this.detectResponseLanguage(input, session);
       const clarification = await this.resolvePendingForTurn(session, input.accountId);
       const activeRoutine = await this.loadActiveRoutine(session);
       const activeRoutineAtTurnStart = activeRoutine?.status === "active";
+      const suspendedRoutine = await this.loadSuspendedRoutine(session);
       // A routine is a multi-turn skill: attempt it before grounding. If it claims the
       // turn, there is no retrieval — the routine renders its own reply.
       const routineStartedAt = Date.now();
-      const routineTurn = await this.attemptRoutineTurn(
-        session,
-        input.accountId,
-        responseLanguagePromise,
-        activeRoutine,
-        clarification,
-      );
+      const routineTurn = suspendedRoutine
+        ? null
+        : await this.attemptRoutineTurn(
+            session,
+            input.accountId,
+            responseLanguagePromise,
+            activeRoutine,
+            clarification,
+          );
       if (routineTurn) {
         session = this.withResponseLanguage(session, await responseLanguagePromise);
+        const ownershipHandoff = routineTurn.handoff
+          ? { reason: "routine_handoff" as const, ...routineTurn.handoff }
+          : null;
+        const actions = routineTurn.handoff
+          ? [
+              ...(routineTurn.actions ?? []),
+              buildHandoffNotifyAction({
+                conversationId: session.conversation.id,
+                workspaceId: input.workspaceId,
+                agentId: session.agent.id,
+                userMessageId: session.userMessage.id,
+                reason: "routine_handoff",
+                routineId: routineTurn.handoff.routineId,
+                stepId: routineTurn.handoff.stepId,
+              }),
+            ]
+          : routineTurn.actions;
         const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
           workspaceId: input.workspaceId,
           accountId: input.accountId,
@@ -741,8 +1293,11 @@ export class ChatService {
           answerStartedAt: routineStartedAt,
           stream: input.stream,
           engineTrace: routineTurn.engineTrace,
-          actions: routineTurn.actions,
+          actions,
           routineStateTransition: routineTurn.routineStateTransition,
+          pendingDecisionTransition: routineTurn.pendingDecisionTransition,
+          ownershipHandoff,
+          suspended: routineTurn.suspended,
           commitRoutineState: routineTurn.commitRoutineState,
           clarificationTransition: routineTurn.clarificationTransition,
           commitClarificationState: routineTurn.commitClarificationState,
@@ -792,6 +1347,12 @@ export class ChatService {
       const engineTrace = clarificationTurn?.kind === "continue" && clarificationTurn.stage && renderedTurn.engineTrace
         ? this.conversationTraceWithStage(renderedTurn.engineTrace, clarificationTurn.stage)
         : renderedTurn.engineTrace;
+      const retrievalMissHandoff = retrievalMissHandoffForTurn({
+        session,
+        presentation,
+        workspaceId: input.workspaceId,
+        actions,
+      });
       const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,
@@ -800,7 +1361,8 @@ export class ChatService {
         answerStartedAt,
         stream: input.stream,
         engineTrace,
-        actions,
+        actions: retrievalMissHandoff.actions,
+        ownershipHandoff: retrievalMissHandoff.ownershipHandoff,
         clarificationTransition: clarification.store?.getTransition(),
         commitClarificationState: clarification.store ? () => clarification.store!.commit() : undefined,
       });
@@ -878,10 +1440,19 @@ export class ChatService {
 
     try {
       session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
+      const ownership = await this.conversationOwnershipReader?.load(session.conversation.id) ?? null;
+      if (isHumanOwned(ownership)) {
+        await releaseUsageReservation();
+        const waitingMessage = await this.generateHandoffWaitingMessage(input, session);
+        yield { type: "done", ...suppressedHumanOwnedResponse(session, waitingMessage) };
+        return;
+      }
+
       const responseLanguagePromise = this.detectResponseLanguage(input, session);
       const clarification = await this.resolvePendingForTurn(session, input.accountId);
       const activeRoutine = await this.loadActiveRoutine(session);
       const activeRoutineAtTurnStart = activeRoutine?.status === "active";
+      const suspendedRoutine = await this.loadSuspendedRoutine(session);
 
       yield {
         type: "conversation",
@@ -891,15 +1462,34 @@ export class ChatService {
       // A routine is a multi-turn skill: attempt it before grounding. If it claims the
       // turn, stream its rendered reply and finish — no retrieval.
       const routineStartedAt = Date.now();
-      const routineTurn = await this.attemptRoutineTurn(
-        session,
-        input.accountId,
-        responseLanguagePromise,
-        activeRoutine,
-        clarification,
-      );
+      const routineTurn = suspendedRoutine
+        ? null
+        : await this.attemptRoutineTurn(
+            session,
+            input.accountId,
+            responseLanguagePromise,
+            activeRoutine,
+            clarification,
+          );
       if (routineTurn) {
         session = this.withResponseLanguage(session, await responseLanguagePromise);
+        const ownershipHandoff = routineTurn.handoff
+          ? { reason: "routine_handoff" as const, ...routineTurn.handoff }
+          : null;
+        const actions = routineTurn.handoff
+          ? [
+              ...(routineTurn.actions ?? []),
+              buildHandoffNotifyAction({
+                conversationId: session.conversation.id,
+                workspaceId: input.workspaceId,
+                agentId: session.agent.id,
+                userMessageId: session.userMessage.id,
+                reason: "routine_handoff",
+                routineId: routineTurn.handoff.routineId,
+                stepId: routineTurn.handoff.stepId,
+              }),
+            ]
+          : routineTurn.actions;
         // Durably enqueue the action + advance routine state + persist the reply BEFORE
         // streaming the confirmation. The routine reply is rendered whole (not token-
         // streamed), so delaying the chunk costs nothing — but it means the visitor only
@@ -913,8 +1503,11 @@ export class ChatService {
           answerStartedAt: routineStartedAt,
           stream: input.stream,
           engineTrace: routineTurn.engineTrace,
-          actions: routineTurn.actions,
+          actions,
           routineStateTransition: routineTurn.routineStateTransition,
+          pendingDecisionTransition: routineTurn.pendingDecisionTransition,
+          ownershipHandoff,
+          suspended: routineTurn.suspended,
           commitRoutineState: routineTurn.commitRoutineState,
           clarificationTransition: routineTurn.clarificationTransition,
           commitClarificationState: routineTurn.commitClarificationState,
@@ -1024,6 +1617,12 @@ export class ChatService {
         ...finalPresentation,
         suggestions: undefined,
       };
+      const retrievalMissHandoff = retrievalMissHandoffForTurn({
+        session,
+        presentation,
+        workspaceId: input.workspaceId,
+        actions,
+      });
 
       const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
         workspaceId: input.workspaceId,
@@ -1033,7 +1632,8 @@ export class ChatService {
         answerStartedAt,
         stream: input.stream,
         engineTrace,
-        actions,
+        actions: retrievalMissHandoff.actions,
+        ownershipHandoff: retrievalMissHandoff.ownershipHandoff,
         clarificationTransition: clarification.store?.getTransition(),
         commitClarificationState: clarification.store ? () => clarification.store!.commit() : undefined,
       });

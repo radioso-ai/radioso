@@ -23,6 +23,7 @@ import { RoutineDiagnosticList } from '@/components/dashboard/settings/routine-e
 import { RoutineFormEditor } from '@/components/dashboard/settings/routine-form-editor'
 import { RoutineProseEditor } from '@/components/dashboard/settings/routine-prose-editor'
 import { RoutineProseTab } from '@/components/dashboard/settings/routine-prose-tab'
+import { RoutineSkillCatalogProvider } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
 import { Badge } from '@/components/ui/badge'
@@ -30,6 +31,7 @@ import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
@@ -42,6 +44,7 @@ import {
   webhookDestinationsApi,
   type RoutineDefinition,
   type RoutineDefinitionDraft,
+  type RoutineReentryMode,
   type RoutineValidationResult,
   type WebhookDestination,
 } from '@/lib/api'
@@ -53,7 +56,7 @@ import {
   type RoutineDraftHeader,
   type RoutineFormState,
 } from '@/lib/routine-form'
-import { routineToChipDoc } from '@/lib/routine-prose'
+import { createEmptyRoutineProseDraft, routineToChipDoc } from '@/lib/routine-prose'
 
 // A blank routine for the Form tab: one empty step the author fills in, no transitions
 // yet, and a single complete terminal. The Prose tab starts from the steps-stripped
@@ -66,6 +69,13 @@ const emptyRoutineDraft = (): RoutineDefinitionDraft => ({
   transitions: [],
   terminals: [{ stableStepId: 'complete', kind: 'complete', instruction: 'Confirm completion.', ordinal: 0 }],
 })
+
+// Author-facing reentry policy options. Order puts the safe default first.
+const REENTRY_MODE_OPTIONS: { value: RoutineReentryMode; label: string; hint: string }[] = [
+  { value: 'once_per_conversation', label: 'Once per conversation', hint: 'Runs a single time; suppressed after it completes.' },
+  { value: 'always', label: 'Every time it matches', hint: 'Can run again after it completes.' },
+  { value: 'semantic', label: 'Let the assistant decide', hint: 'After it completes, the assistant decides whether to resume, restart, or skip it.' },
+]
 
 const draftError = (draft: RoutineDefinitionDraft): string | null => {
   if (!draft.name.trim()) return 'Name is required.'
@@ -105,8 +115,27 @@ const headerFromDraft = (draft: RoutineDefinitionDraft | RoutineDefinition | Rou
   activation: {
     triggerDescription: draft.activation.triggerDescription,
     priority: String(draft.activation.priority),
+    reentryMode: draft.activation.reentryMode ?? 'once_per_conversation',
   },
 })
+
+const emptyProseDraftFromHeader = (header: RoutineDraftHeader): RoutineDefinitionDraft =>
+  createEmptyRoutineProseDraft({
+    name: header.name,
+    triggerDescription: header.activation.triggerDescription,
+    priority: Number.parseInt(header.activation.priority, 10) || 0,
+    reentryMode: header.activation.reentryMode,
+  })
+
+const isBlankFormDraft = (draft: RoutineDefinitionDraft): boolean =>
+  draft.slots.length === 0 &&
+  draft.steps.length === 1 &&
+  draft.transitions.length === 0 &&
+  !draft.completionExport?.enabled &&
+  draft.steps[0]?.kind === 'chat' &&
+  !draft.steps[0]?.instruction.trim() &&
+  !draft.steps[0]?.toolRef &&
+  !draft.steps[0]?.actionType
 
 const routineStatusLabel = (status: RoutineDefinition['status']) => {
   switch (status) {
@@ -514,13 +543,14 @@ function RoutineEditorScreen({
 
       if (routineRouteId === 'new') {
         const nextDraft = emptyRoutineDraft()
+        const nextHeader = headerFromDraft(nextDraft)
         currentRoutineIdRef.current = null
         setEditingRoutineId(null)
         setEditingRoutine(null)
         setAllRoutines([])
-        setDraftHeader(headerFromDraft(nextDraft))
+        setDraftHeader(nextHeader)
         setForm(routineToForm(draftAsRoutine(nextDraft)))
-        setProseSource({ ...nextDraft, steps: [], transitions: [] })
+        setProseSource(emptyProseDraftFromHeader(nextHeader))
         setProseDraft(null)
         setProseKey((key) => key + 1)
         setViewMode('prose')
@@ -583,7 +613,8 @@ function RoutineEditorScreen({
     if (nextView === 'prose' && form) {
       // Re-seed prose from the current form draft; routineToChipDoc inside the prose tab
       // decides whether it's representable (else it shows the "edit in Form" fallback).
-      setProseSource(formToRoutineDraft(form, { header: draftHeader }))
+      const formDraft = formToRoutineDraft(form, { header: draftHeader })
+      setProseSource(isBlankFormDraft(formDraft) ? emptyProseDraftFromHeader(draftHeader) : formDraft)
       setProseDraft(null)
       setProseKey((key) => key + 1)
     }
@@ -810,7 +841,7 @@ function RoutineEditorScreen({
           Loading routine...
         </div>
       ) : (
-        <>
+        <RoutineSkillCatalogProvider agentId={agentId}>
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
             <div className="space-y-1">
               <Label htmlFor="routineName">Name</Label>
@@ -833,6 +864,29 @@ function RoutineEditorScreen({
                 }))}
                 disabled={isReadOnly}
               />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="routineReentryMode">Reentry</Label>
+              <Select
+                value={draftHeader.activation.reentryMode}
+                disabled={isReadOnly}
+                onValueChange={(value) => setDraftHeader((current) => ({
+                  ...current,
+                  activation: { ...current.activation, reentryMode: value as RoutineReentryMode },
+                }))}
+              >
+                <SelectTrigger id="routineReentryMode" aria-label="Routine reentry policy">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {REENTRY_MODE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {REENTRY_MODE_OPTIONS.find((option) => option.value === draftHeader.activation.reentryMode)?.hint}
+              </p>
             </div>
             <div className="space-y-1 sm:col-span-2">
               <Label htmlFor="routineTrigger">Activation trigger</Label>
@@ -871,6 +925,7 @@ function RoutineEditorScreen({
               source={proseSource}
               header={draftHeader}
               onDraftChange={setProseDraft}
+              onHeaderChange={setDraftHeader}
             />
           ) : null}
 
@@ -957,7 +1012,7 @@ function RoutineEditorScreen({
               </>
             ) : null}
           </div>
-        </>
+        </RoutineSkillCatalogProvider>
       )}
     </div>
   )

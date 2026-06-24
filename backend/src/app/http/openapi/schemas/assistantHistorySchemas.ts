@@ -173,6 +173,10 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     citations: z.array(schemas.CitationSchema).optional(),
     answerSegments: z.array(schemas.AnswerSegmentSchema).optional(),
     suggestions: z.array(ChatSuggestionSchema).optional(),
+    ownership: z.object({
+      state: z.enum(["ai_owned", "human_owned"]),
+      suppressed: z.boolean(),
+    }).optional(),
   };
 
   const AssistantChatDebugSchema = registry.register(
@@ -189,7 +193,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     "ChatResponse",
     z.object({
       conversationId: z.string().uuid(),
-      assistantMessageId: z.string().uuid(),
+      assistantMessageId: z.string(),
       ...chatResponseCoreShape,
       debug: AssistantChatDebugSchema.optional(),
     }),
@@ -225,6 +229,24 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
+  // Declared before the conversation summary/detail schemas so both can carry it. Absent on
+  // the response means the conversation is AI-owned (the ownership table is lazy: no row).
+  const ConversationOwnershipSchema = registry.register(
+    "ConversationOwnership",
+    z.object({
+      conversationId: z.string().uuid(),
+      workspaceId: z.string().uuid(),
+      state: z.enum(["ai_owned", "human_owned"]),
+      ownerAccountId: z.string().uuid().nullable(),
+      ownerDisplayName: z.string().nullable(),
+      reason: z.string().nullable(),
+      version: z.number().int().nonnegative(),
+      takenOverAt: z.string().datetime().nullable(),
+      createdAt: z.string().datetime(),
+      updatedAt: z.string().datetime(),
+    }),
+  );
+
   const ChatConversationSummarySchema = registry.register(
     "ChatConversationSummary",
     z.object({
@@ -240,6 +262,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       userMessageCount: z.number().int().min(0),
       assistantMessageCount: z.number().int().min(0),
       preview: z.string().nullable(),
+      ownership: ConversationOwnershipSchema.optional(),
     }),
   );
 
@@ -368,6 +391,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     z.object({
       id: z.string().uuid(),
       role: z.enum(["user", "assistant", "system"]),
+      source: z.enum(["customer", "ai_agent", "human_agent", "human_agent_on_behalf_of_ai_agent", "system"]),
       content: z.string(),
       createdAt: z.string().datetime(),
       inputMetadata: z.object({
@@ -383,6 +407,46 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       suggestions: z.array(ChatSuggestionSchema).optional(),
       answerFeedbackEntries: z.array(AnswerFeedbackEntrySchema).optional(),
       debug: ChatConversationMessageDebugSchema.optional(),
+      operatorDisplayName: z.string().optional(),
+    }),
+  );
+
+  const ConversationOwnershipResponseSchema = registry.register(
+    "ConversationOwnershipResponse",
+    z.object({
+      ownership: ConversationOwnershipSchema,
+    }),
+  );
+
+  const HumanReplyMessageSchema = registry.register(
+    "HumanReplyMessage",
+    z.object({
+      id: z.string().uuid(),
+      conversationId: z.string().uuid(),
+      workspaceId: z.string().uuid(),
+      role: z.enum(["user", "assistant", "system"]),
+      source: z.enum(["customer", "ai_agent", "human_agent", "human_agent_on_behalf_of_ai_agent", "system"]).optional(),
+      content: z.string(),
+      metadata: z.record(z.unknown()).optional(),
+      inputMetadata: z.object({
+        method: z.enum(["typed", "suggestion_click", "intent_click"]),
+        suggestionSourceMessageId: z.string().uuid().optional(),
+        intent: z.object({
+          skillName: z.string(),
+          intentName: z.string().optional(),
+        }).optional(),
+      }).optional(),
+      skillName: z.string().optional(),
+      skillOutcome: z.string().optional(),
+      skillStatus: z.string().optional(),
+      createdAt: z.string().datetime(),
+    }),
+  );
+
+  const HumanReplyMessageResponseSchema = registry.register(
+    "HumanReplyMessageResponse",
+    z.object({
+      message: HumanReplyMessageSchema,
     }),
   );
 
@@ -404,7 +468,28 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       messageWindowLimit: z.number().int().min(1),
       hasOlderMessages: z.boolean(),
       nextCursor: z.string().nullable(),
+      tailCursor: z.string().nullable().openapi({
+        description: "Cursor for subsequent tail requests. It marks the newest message included when this detail response was produced.",
+      }),
       messages: z.array(ChatConversationMessageSchema),
+      ownership: ConversationOwnershipSchema.optional(),
+    }),
+  );
+
+  const ChatConversationTailSchema = registry.register(
+    "ChatConversationTail",
+    z.object({
+      messages: z.array(ChatConversationMessageSchema),
+      cursor: z.string().nullable(),
+      ownership: ConversationOwnershipSchema.optional(),
+    }),
+  );
+
+  const PublicChatConversationTailSchema = registry.register(
+    "PublicChatConversationTail",
+    z.object({
+      messages: z.array(ChatConversationMessageSchema),
+      cursor: z.string().nullable(),
     }),
   );
 
@@ -456,6 +541,8 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     SkillParamsSchema,
     ChatSuggestionActionSchema,
     ChatSuggestionSchema,
+    ConversationOwnershipSchema,
+    ConversationOwnershipResponseSchema,
     AssistantRouteSchema,
     AssistantRouteDiagnosticsSchema,
     CapabilitySubTraceSchema,
@@ -473,6 +560,8 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     ChatHistoryListResponseSchema,
     HistoryItemSchema,
     HistoryItemsResponseSchema,
+    HumanReplyMessageSchema,
+    HumanReplyMessageResponseSchema,
     ChatConversationMessageDebugSchema,
     AnswerFeedbackEntrySchema,
     AnswerFeedbackRequestSchema,
@@ -480,6 +569,8 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     ClearAnswerFeedbackResponseSchema,
     ChatConversationMessageSchema,
     ChatConversationDetailSchema,
+    ChatConversationTailSchema,
+    PublicChatConversationTailSchema,
     PublicConversationSummarySchema,
     PublicConversationListResponseSchema,
     RateLimitExceededSchema,

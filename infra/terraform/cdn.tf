@@ -18,7 +18,7 @@
 # is a classic <script> load that sends no Origin header, so it resolves to a
 # single shared cache entry.
 #
-# Opt-in: set `frontend_cdn_domain` (e.g. "radioso.dev") to enable. Empty (the
+# Opt-in: set `frontend_cdn_domain` (e.g. "radioso.ai") to enable. Empty (the
 # default) creates nothing, so existing environments are unaffected.
 #
 # Manual DNS cutover after `apply`:

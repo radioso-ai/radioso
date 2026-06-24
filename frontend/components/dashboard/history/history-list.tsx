@@ -2,6 +2,7 @@
 
 import { Activity, FileText, MessageSquareText } from 'lucide-react'
 
+import { ActivityTabs } from '@/components/dashboard/activity-tabs'
 import { DashboardPaginatedContent } from '@/components/dashboard/shared/dashboard-paginated-content'
 import { DashboardPagination } from '@/components/dashboard/shared/dashboard-pagination'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
@@ -15,7 +16,6 @@ import {
 } from '@/components/dashboard/shared/dashboard-table'
 import { Button } from '@/components/ui/button'
 import { LogoSpinner } from '@/components/ui/spinner'
-import { cn } from '@/lib/utils'
 import { editionController } from '@/lib/edition-controller'
 import type { ChatConversationSummary, ContactHistorySummary, DocumentSearchHistoryEntry } from '@/lib/api'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
@@ -360,7 +360,6 @@ export function HistoryList({
   allTotal,
   allPage,
   allTotalPages,
-  onFilterChange,
   onSelectItem,
   onConversationPageChange,
   onSearchPageChange,
@@ -401,8 +400,9 @@ export function HistoryList({
   onAllPageChange: (page: number) => void
   onNavigate: (href: string) => void
 }) {
+  // The kind selector was removed, so All activity shows chats and searches together by
+  // default. URL-level filtering (?filter=) is still honored for deep links.
   const activeFilter = editionController.normalizeHistoryFilter(filter)
-  const filterOptions = editionController.getActivityFilterOptions()
   const visibleAllHistoryItems = editionController.filterActivityItems(allHistoryItems)
 
   return (
@@ -411,26 +411,7 @@ export function HistoryList({
       description={
         editionController.getActivityDescription()
       }
-      actions={
-        <div className="bg-muted text-muted-foreground inline-flex h-9 w-fit items-center justify-center rounded-lg p-[3px]">
-              {filterOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => onFilterChange(option.value)}
-                  className={cn(
-                    'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap text-foreground transition-[color,box-shadow,background-color] hover:text-primary focus-visible:ring-[3px] focus-visible:outline-1 dark:hover:text-secondary',
-                    activeFilter === option.value
-                      ? 'bg-background text-foreground shadow-sm dark:border-input dark:bg-input/30 dark:text-foreground'
-                      : 'dark:text-muted-foreground',
-                  )}
-                  aria-pressed={activeFilter === option.value}
-                >
-                  {option.label}
-                </button>
-              ))}
-        </div>
-      }
+      actions={<ActivityTabs accountId={accountId} routeState={routeState} />}
       actionsClassName="xl:self-start"
     >
         {isLoading && !hasAnyHistory ? (

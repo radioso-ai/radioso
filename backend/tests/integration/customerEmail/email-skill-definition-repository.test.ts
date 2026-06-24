@@ -8,6 +8,7 @@ import pg, { type PoolClient, type QueryResultRow } from "pg";
 import { CustomerEmailConnectionRepository } from "../../../src/db/repositories/customerEmailConnectionRepository.js";
 import { EmailSkillDefinitionRepository } from "../../../src/db/repositories/emailSkillDefinitionRepository.js";
 import type { Database } from "../../../src/shared/infra/database.js";
+import { createKyselyDatabase } from "../../../src/shared/infra/kysely/kyselyDatabase.js";
 import { testMigrationsPath } from "../../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
@@ -28,16 +29,29 @@ const canReach = async (url?: string): Promise<boolean> => {
 const hasDatabase = await canReach(integrationDatabaseUrl);
 const describeIfDatabase = hasDatabase ? describe : describe.skip;
 
-const clientBackedDatabase = (client: PoolClient): Database =>
-  ({
-    pool: {} as Database["pool"],
+const clientBackedDatabase = (client: PoolClient): Database => {
+  const pool = {
+    async connect() {
+      return new Proxy(client, {
+        get(target, property, receiver) {
+          if (property === "release") return () => undefined;
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      }) as PoolClient;
+    },
+  } as Database["pool"];
+  return {
+    pool,
+    kysely: createKyselyDatabase(pool),
     async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
       return (await client.query<T>(text, params)).rows;
     },
     async execute(text: string, params: unknown[] = []): Promise<number> {
       return (await client.query(text, params)).rowCount ?? 0;
     },
-  }) as Database;
+  } as Database;
+};
 
 describeIfDatabase("email skill definition repository (postgres)", () => {
   const schema = `test_email_skill_definitions_${randomUUID().replace(/-/g, "")}`;
@@ -71,6 +85,8 @@ describeIfDatabase("email skill definition repository (postgres)", () => {
     await client.query(await readFile(path.join(testMigrationsPath, "099_agent_skills_spine.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "100_email_skills_into_spine.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "101_agent_skills_generic_targets.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "105_integration_connections.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "106_customer_email_connections_to_integration_connections.sql"), "utf8"));
     await client.query(`INSERT INTO workspaces (id) VALUES ($1), ($2)`, [workspaceId, otherWorkspaceId]);
     await client.query(`INSERT INTO agents (id, workspace_id) VALUES ($1, $2), ($3, $4)`, [
       agentId,
@@ -85,8 +101,8 @@ describeIfDatabase("email skill definition repository (postgres)", () => {
     );
 
     const db = clientBackedDatabase(client);
-    connectionRepository = new CustomerEmailConnectionRepository(db);
-    repository = new EmailSkillDefinitionRepository(db);
+    connectionRepository = new CustomerEmailConnectionRepository(db.kysely);
+    repository = new EmailSkillDefinitionRepository(db.kysely);
     connectionId = (await connectionRepository.create({
       workspaceId,
       oauthConnectionId,
@@ -148,7 +164,7 @@ describeIfDatabase("email skill definition repository (postgres)", () => {
 
     expect(await connectionRepository.countSkillReferences(workspaceId, connectionId)).toBeGreaterThanOrEqual(1);
     await expect(
-      client.query(`DELETE FROM customer_email_connections WHERE workspace_id = $1 AND id = $2`, [workspaceId, connectionId]),
+      client.query(`DELETE FROM integration_connections WHERE workspace_id = $1 AND id = $2`, [workspaceId, connectionId]),
     ).rejects.toMatchObject({ code: "23503" });
 
     const updated = await repository.update(workspaceId, agentId, created.id, {
@@ -202,5 +218,33 @@ describeIfDatabase("email skill definition repository (postgres)", () => {
         [randomUUID(), agentId, workspaceId, externalConnectionId, JSON.stringify({ toolName: "t" })],
       ),
     ).rejects.toMatchObject({ code: "23505" });
+  });
+
+  it("rejects a customer_email skill targeting a non-email integration connection (db trigger isolation)", async () => {
+    // A different provider (Slack) owns a row on the shared integration_connections spine.
+    const slackConnectionId = randomUUID();
+    await client.query(
+      `INSERT INTO integration_connections
+         (id, workspace_id, oauth_connection_id, provider, display_name, status, config)
+       VALUES ($1, $2, $3, 'slack', 'Workspace Slack', 'authorized', '{}'::jsonb)`,
+      [slackConnectionId, workspaceId, oauthConnectionId],
+    );
+
+    // The target-enforcement trigger must reject a customer_email skill bound to it.
+    await expect(
+      client.query(
+        `INSERT INTO agent_skills (id, agent_id, workspace_id, skill_name, kind, target_type, target_id, config)
+         VALUES ($1, $2, $3, 'slack_hijack', 'customer_email', 'customer_email_connection', $4, '{}'::jsonb)`,
+        [randomUUID(), agentId, workspaceId, slackConnectionId],
+      ),
+    ).rejects.toMatchObject({ code: "23503" });
+
+    // ...and the delete-block trigger must not treat the Slack row as email-owned.
+    await expect(
+      client.query(`DELETE FROM integration_connections WHERE workspace_id = $1 AND id = $2`, [
+        workspaceId,
+        slackConnectionId,
+      ]),
+    ).resolves.toBeDefined();
   });
 });

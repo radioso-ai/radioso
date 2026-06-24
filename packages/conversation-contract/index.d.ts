@@ -6,10 +6,18 @@
 
 export type ConversationRole = "system" | "user" | "assistant" | "tool";
 
+export type MessageSource =
+  | "customer"
+  | "ai_agent"
+  | "human_agent"
+  | "human_agent_on_behalf_of_ai_agent"
+  | "system";
+
 export interface ConversationMessage {
   id?: string;
   role: ConversationRole;
   content: string;
+  source?: MessageSource;
   createdAt?: string;
   metadata?: Record<string, unknown>;
 }
@@ -337,6 +345,7 @@ export interface ConversationEvent {
   sessionId: string;
   kind: string;
   role?: ConversationRole;
+  source?: MessageSource;
   content?: string;
   metadata?: Record<string, unknown>;
   createdAt?: string;
@@ -502,9 +511,29 @@ export interface RoutineState {
   variables: Record<string, unknown>;
   /** Per-step entry counts, used by deterministic counter guards. */
   attempts?: Record<string, number>;
-  status: "active" | "completed" | "expired";
+  status: "active" | "suspended" | "completed" | "expired";
   metadata?: Record<string, unknown>;
 }
+
+export interface DecisionOption {
+  id: string;
+  label: string;
+  description?: string;
+  payload?: unknown;
+}
+
+export interface RoutineAwaitingDecision {
+  stepId: string;
+  options: DecisionOption[];
+  captureKey: string;
+  reason?: string;
+}
+
+export type RoutineInputBinding =
+  | { kind: "literal"; value: string | number | boolean }
+  | { kind: "variableRef"; ref: string };
+
+export type RoutineStepMode = "typed" | "untyped";
 
 /**
  * A Routine is an authored graph of steps connected by conditional transitions.
@@ -513,7 +542,7 @@ export interface RoutineState {
  */
 export interface RoutineStep {
   id: string;
-  kind: "chat" | "skill" | "action" | "terminal";
+  kind: "chat" | "skill" | "action" | "terminal" | "await";
   /** Instruction projected into steering for a `chat`/`terminal` step. */
   action?: string;
   /** The skill a `skill` step dispatches. */
@@ -525,6 +554,16 @@ export interface RoutineStep {
    * model — so an emitted action can't be redirected by user/payload text.
    */
   actionType?: string;
+  decision?: {
+    captureKey: string;
+    options: DecisionOption[];
+  };
+  /** Per skill input binding authored for a typed skill step. */
+  inputBindings?: Record<string, RoutineInputBinding>;
+  /** Per skill output field assignment to a routine variable name. */
+  outputAssignments?: Record<string, string>;
+  /** Skill-step mode. Absence is treated as typed by routine authoring. */
+  mode?: RoutineStepMode;
   metadata?: Record<string, unknown>;
 }
 
@@ -596,6 +635,8 @@ export interface RoutineSlotSchema {
   type: RoutineSlotType;
   required: boolean;
   description?: string;
+  /** When true, the captured value may be corrected after the routine completes. */
+  mutable?: boolean;
 }
 
 export interface Routine {
@@ -646,6 +687,10 @@ export interface ConversationRoutineSkillDispatcher {
     skillName: string;
     state: RoutineState;
     turn: TurnContext;
+    inputBindings?: Record<string, RoutineInputBinding>;
+    // Output→variable assignment is applied by the runner after dispatch (see
+    // DefaultRoutineRunner), not by the dispatcher — so it is intentionally not
+    // part of the dispatch input.
   }): Promise<RoutineSkillResult>;
 }
 
@@ -700,8 +745,74 @@ export interface ConversationRoutineSteeringResolver {
  */
 export interface ConversationRoutineStore {
   loadActive(input: { sessionId: string }): Promise<RoutineState | null>;
+  loadCompleted?(input: { sessionId: string }): Promise<RoutineState[]>;
   save(state: RoutineState): Promise<void>;
   clear(input: { sessionId: string }): Promise<void>;
+}
+
+export interface SuspendedRoutineReader {
+  loadSuspended(input: { sessionId: string }): Promise<RoutineState | null>;
+}
+
+/**
+ * A detected post-completion slot correction (issue #746): the routine's declared slot
+ * schema plus the slot the visitor wants to change and the proposed raw value. The host
+ * resolves the routine (it owns the catalog) and runs model-driven, multilingual detection;
+ * the engine then deterministically verifies via `verifySlotCorrection` before persisting.
+ */
+export interface RoutineSlotCorrectionCandidate {
+  slots: RoutineSlotSchema[];
+  slotKey: string;
+  rawValue: string;
+}
+
+/**
+ * Structured decision for a completed routine whose reentry mode is `semantic` (issue #746):
+ * - `suppress`: leave the completed routine suppressed (the safe default for any non-semantic
+ *   routine the gate is asked about, and for an unrelated message).
+ * - `resume_existing`: re-open the same instance, keeping its captured variables.
+ * - `start_new`: run the routine again from scratch, discarding the prior captured variables.
+ */
+export type RoutineReentryDecision =
+  | { kind: "suppress" }
+  | { kind: "resume_existing" }
+  | { kind: "start_new" };
+
+/**
+ * Host port that decides whether a completed `semantic`-reentry routine should re-activate.
+ * The host owns routine resolution + the model-driven decision; it returns `suppress` (no
+ * model call) for any routine that is not in semantic mode, so the gate is inert unless an
+ * author opted into it.
+ */
+export interface ConversationRoutineReentryGate {
+  decide(input: { turn: TurnContext; completedState: RoutineState }): Promise<RoutineReentryDecision>;
+}
+
+/**
+ * Host port for correcting a value captured by a routine that already completed, without
+ * rerunning it. `detect` returns null when the latest message is not a correction (or the
+ * completed routine has no mutable slots). `confirm` produces the user-facing reply — copy
+ * comes from the model, never hard-coded in the engine.
+ */
+export interface ConversationRoutineSlotCorrection {
+  detect(input: { turn: TurnContext; completedState: RoutineState }): Promise<RoutineSlotCorrectionCandidate | null>;
+  confirm(input: {
+    turn: TurnContext;
+    routineId: string;
+    slotKey: string;
+    value: string | number | boolean;
+  }): Promise<string>;
+  /**
+   * Reply when a detected correction's new value fails the slot's declared type — asks the
+   * visitor for a valid value. Copy comes from the model; the engine persists nothing.
+   */
+  rejectInvalid(input: { turn: TurnContext; routineId: string; slotKey: string }): Promise<string>;
+}
+
+export interface RoutineDecisionInput {
+  handle: string;
+  optionId: string;
+  payload?: unknown;
 }
 
 /**
@@ -727,7 +838,10 @@ export interface RoutineTraceStepEntry {
     | "fast_forwarded"
     | "skill_dispatched"
     | "action_emitted"
-    | "rendered";
+    | "rendered"
+    | "suspended"
+    | "decision_notified"
+    | "decision_applied";
   /** Declared slot keys captured at this step this turn (names only — never values). */
   capturedSlotKeys?: string[];
   /** Whether the LLM next-step selector ran for this step's edges. */
@@ -764,6 +878,11 @@ export interface ConversationRoutineResumeResult {
   outcomes?: TurnOutcome[];
   /** Fire-and-forget side effects the routine emitted this turn, for the host to persist. */
   actions?: RoutineActionRequest[];
+  /**
+   * The routine parked at an external decision gate. Mutually exclusive with terminal
+   * exits and yielded turns; when present, `nextState.status === "suspended"`.
+   */
+  awaitingDecision?: RoutineAwaitingDecision;
   /** Step-by-step traversal record for the debug panel (omitted on a yield). */
   trace?: RoutineRunTrace;
   /**
@@ -773,6 +892,10 @@ export interface ConversationRoutineResumeResult {
    * runner returns inert placeholders.
    */
   yielded?: boolean;
+}
+
+export interface ConversationRoutineDecisionResult extends ConversationRoutineResumeResult {
+  resumed: boolean;
 }
 
 /**
@@ -797,6 +920,7 @@ export interface ConversationRoutineActivator {
   activate(input: {
     turn: TurnContext;
     loopGuardCandidateIds?: string[];
+    suppressedRoutineIds?: string[];
     suppressClarificationAsk?: boolean;
   }): Promise<
     | {
@@ -832,6 +956,8 @@ export interface ProcessTurnInput {
   routineStore?: ConversationRoutineStore;
   routineRunner?: ConversationRoutineRunner;
   routineActivator?: ConversationRoutineActivator;
+  routineReentryGate?: ConversationRoutineReentryGate;
+  routineSlotCorrection?: ConversationRoutineSlotCorrection;
   clarifier?: ConversationClarifier;
   clarificationStore?: ConversationClarificationStore;
   loopGuardCandidateIds?: string[];
@@ -859,10 +985,23 @@ export interface AttemptRoutineInput {
   routineStore?: ConversationRoutineStore;
   routineRunner?: ConversationRoutineRunner;
   routineActivator?: ConversationRoutineActivator;
+  routineReentryGate?: ConversationRoutineReentryGate;
+  routineSlotCorrection?: ConversationRoutineSlotCorrection;
   clarifier?: ConversationClarifier;
   clarificationStore?: ConversationClarificationStore;
   loopGuardCandidateIds?: string[];
   suppressNewClarification?: boolean;
+}
+
+export interface ResumeAwaitingDecisionInput {
+  agent: ConversationAgentConfig;
+  turn: TurnContext;
+  sessionId: string;
+  decision: RoutineDecisionInput;
+  suspendedReader: SuspendedRoutineReader;
+  routineStore?: ConversationRoutineStore;
+  routineRunner: ConversationRoutineRunner;
+  steeringResolver?: ConversationRoutineSteeringResolver;
 }
 
 export interface ProcessTurnResult {
@@ -878,6 +1017,11 @@ export interface ProcessTurnResult {
    * the engine only declares them.
    */
   actions?: RoutineActionRequest[];
+  /**
+   * Present when a routine parked at an external decision gate and the host must
+   * create a pending decision row before the routine can be resumed.
+   */
+  awaitingDecision?: RoutineAwaitingDecision;
   /** True when a routine ended in a human handoff terminal. */
   handoff?: { routineId: string; stepId: string };
 }
@@ -906,4 +1050,5 @@ export interface ConversationEngine {
    * as a multi-turn skill selected before grounding, and only ground when it returns null.
    */
   attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null>;
+  resumeAwaitingDecision(input: ResumeAwaitingDecisionInput): Promise<ConversationRoutineDecisionResult>;
 }

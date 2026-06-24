@@ -1,3 +1,9 @@
+---
+title: "Radioso TypeScript SDK: Basic Usage"
+description: "SDK tutorial covering documents, settings, skills, agents, chat, streaming, history, and error handling patterns."
+last_updated: 2026-06-22
+---
+
 # Radioso TypeScript SDK: Basic Usage
 
 This guide covers the main things you are likely to do first with the SDK.
@@ -152,7 +158,10 @@ await client.settings.updateGeneral({
 
 ## Skills
 
-Skills describe the product-facing work a Radioso workspace can do. The catalog is read-only. It points to the current stable contracts instead of adding generic skill execution.
+The SDK exposes the read-only product skills catalog. Agent-authored skills use
+the agent skills REST endpoints until the generated SDK surface is promoted.
+Those agent skills are named capability instances such as `retrieve`, `email`,
+`slack_post`, `webhook_call`, `mcp_tool`, and `notify`.
 
 List skills:
 
@@ -160,12 +169,38 @@ List skills:
 const catalog = await client.skills.list();
 ```
 
-Read one skill:
+Read one catalog skill:
 
 ```ts
 const retrievalAnswer = await client.skills.get("retrieval.answer");
 console.log(retrievalAnswer.contractReferences);
 ```
+
+To author an agent skill over REST:
+
+```ts
+const capabilities = await fetch(`/api/v1/agents/${agentId}/skill-capabilities`);
+const created = await fetch(`/api/v1/agents/${agentId}/skills`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    name: "send_followup",
+    capability: "email",
+    target: { kind: "customer_email_connection", id: connectionId },
+    config: {
+      mode: "draft",
+      exposedInputs: { to: { slotBinding: "email" }, bodyText: { slotBinding: "message" } },
+      boundInputs: { subject: "Follow-up" },
+    },
+    invocationMode: "routine_named",
+    enabled: true,
+  }),
+});
+```
+
+Retrieval answer settings now live on the default-answer `retrieve` skill.
+Suggested questions are part of that skill's config. Contact escalation is a
+`notify` skill, and routine completion export is a `webhook_call` skill.
 
 Retrieval answer responses are lean by default. When you need diagnostics, pass `includeDebug: true` through the REST contract. The response then includes `debug.evidence`, `debug.activityTrace`, and `debug.activitySummary`. Check `debug.activitySummary.shapeName`, `debug.activitySummary.queryShape`, `debug.activitySummary.resolvedSteps`, and the `shape_selection` stage to see how the answer was retrieved.
 
@@ -200,7 +235,10 @@ const response = await client.chat.create({
 });
 ```
 
-Agents with `retrievalEnabled: true` can use the retrieval pipeline. Set `skillSettings["retrieval.answer"]` on an agent to configure retrieval behavior for that agent. Omitted fields inherit system/model defaults. Direct-only agents answer from their own instructions and return retrieval diagnostics with `retrievalInvoked: false`.
+Agents use the retrieval pipeline through their default-answer `retrieve` skill.
+Edit that skill to configure retrieval behavior for one agent. Omitted fields
+inherit system/model defaults. Direct-only agents answer from their own
+instructions and return retrieval diagnostics with `retrievalInvoked: false`.
 
 ## Non-Streaming Chat
 

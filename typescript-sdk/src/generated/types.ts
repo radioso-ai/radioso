@@ -789,6 +789,23 @@ export interface paths {
         patch: operations["updateAgentDirective"];
         trace?: never;
     };
+    "/api/v1/agents/{agentId}/routine-skill-catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List routine-authoring skills for an agent */
+        get: operations["listAgentRoutineSkillCatalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agentId}/routines": {
         parameters: {
             query?: never;
@@ -1315,6 +1332,92 @@ export interface paths {
         patch: operations["updateAgentEmailSkill"];
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/slack/install/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Slack OAuth installation */
+        post: operations["startWorkspaceSlackInstall"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/slack/install/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Slack installation status */
+        get: operations["getWorkspaceSlackInstallStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/slack/manifest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get self-host Slack app manifest */
+        get: operations["getWorkspaceSlackManifest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/slack/binding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Slack answering binding */
+        get: operations["getWorkspaceSlackBinding"];
+        /** Set Slack answering binding */
+        put: operations["setWorkspaceSlackBinding"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/slack/installation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Disconnect Slack installation */
+        delete: operations["disconnectWorkspaceSlackInstallation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agentId}/webhook-skills": {
         parameters: {
             query?: never;
@@ -1350,6 +1453,96 @@ export interface paths {
         head?: never;
         /** Update an agent webhook skill */
         patch: operations["updateAgentWebhookSkill"];
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/slack-skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List agent Slack skills */
+        get: operations["listAgentSlackSkills"];
+        put?: never;
+        /** Create an agent Slack skill */
+        post: operations["createAgentSlackSkill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/slack-skills/{skillId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an agent Slack skill */
+        get: operations["getAgentSlackSkill"];
+        put?: never;
+        post?: never;
+        /** Delete an agent Slack skill */
+        delete: operations["deleteAgentSlackSkill"];
+        options?: never;
+        head?: never;
+        /** Update an agent Slack skill */
+        patch: operations["updateAgentSlackSkill"];
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/skill-capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List agent skill capabilities */
+        get: operations["listAgentSkillCapabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List agent skills */
+        get: operations["listAgentSkills"];
+        put?: never;
+        /** Create an agent skill */
+        post: operations["createAgentSkill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/skills/{skillId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete an agent skill */
+        delete: operations["deleteAgentSkill"];
+        options?: never;
+        head?: never;
+        /** Update an agent skill */
+        patch: operations["updateAgentSkill"];
         trace?: never;
     };
     "/api/v1/retrieval/answer": {
@@ -1766,6 +1959,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/history/chat/{conversationId}/tail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Poll new messages for a saved assistant conversation */
+        get: operations["tailHistoryConversation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/history/{conversationId}": {
         parameters: {
             query?: never;
@@ -1798,6 +2008,108 @@ export interface paths {
         get: operations["getHistorySearch"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversationId}/takeover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Take human ownership of a conversation */
+        post: operations["takeOverConversation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversationId}/reply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reply to a conversation as a human operator */
+        post: operations["replyToConversation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversationId}/transfer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Transfer human ownership of a conversation */
+        post: operations["transferConversationOwnership"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversationId}/handback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Return a human-owned conversation to AI ownership */
+        post: operations["handBackConversation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List pending human approval decisions */
+        get: operations["listPendingDecisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/decisions/{handle}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve a pending human approval decision */
+        post: operations["resolveDecision"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1989,6 +2301,50 @@ export interface paths {
          *     The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
          */
         get: operations["getPublicChatHistoryConversation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/chat/{token}/tail/{conversationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Poll new public conversation messages for the current anonymous session
+         * @description Anonymous session continuity is maintained by an HttpOnly cookie set by the server.
+         *
+         *     The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
+         */
+        get: operations["tailPublicChatHistoryConversation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/chat/{token}/events/{conversationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream public conversation notifications for the current anonymous session
+         * @description Anonymous session continuity is maintained by an HttpOnly cookie set by the server.
+         *
+         *     The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
+         */
+        get: operations["streamPublicChatConversationEvents"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2936,6 +3292,11 @@ export interface components {
                 triggerDescription: string;
                 gateRef?: string | null;
                 priority: number;
+                /**
+                 * @default once_per_conversation
+                 * @enum {string}
+                 */
+                reentryMode: "once_per_conversation" | "always" | "semantic";
             };
             /** @default [] */
             slots: {
@@ -2946,18 +3307,40 @@ export interface components {
                 required: boolean;
                 description?: string | null;
                 ordinal: number;
+                mutable?: boolean;
             }[];
             steps: {
                 stableStepId: string;
                 /** @enum {string} */
-                kind: "chat" | "tool" | "action";
+                kind: "chat" | "tool" | "action" | "approval";
                 instruction: string;
                 toolRef?: string | null;
                 actionType?: string | null;
+                captureKey?: string | null;
+                options?: {
+                    id: string;
+                    label: string;
+                    description?: string | null;
+                }[];
                 ordinal: number;
                 /** @default {} */
                 metadata: {
-                    [key: string]: unknown;
+                    inputBindings?: {
+                        [key: string]: {
+                            /** @enum {string} */
+                            kind: "literal";
+                            value: string | number | boolean;
+                        } | {
+                            /** @enum {string} */
+                            kind: "variableRef";
+                            ref: string;
+                        };
+                    };
+                    outputAssignments?: {
+                        [key: string]: string;
+                    };
+                    /** @enum {string} */
+                    mode?: "typed" | "untyped";
                 };
             }[];
             /** @default [] */
@@ -3000,6 +3383,11 @@ export interface components {
                 triggerDescription: string;
                 gateRef?: string | null;
                 priority: number;
+                /**
+                 * @default once_per_conversation
+                 * @enum {string}
+                 */
+                reentryMode: "once_per_conversation" | "always" | "semantic";
             };
             /** @default [] */
             slots: {
@@ -3010,18 +3398,40 @@ export interface components {
                 required: boolean;
                 description?: string | null;
                 ordinal: number;
+                mutable?: boolean;
             }[];
             steps: {
                 stableStepId: string;
                 /** @enum {string} */
-                kind: "chat" | "tool" | "action";
+                kind: "chat" | "tool" | "action" | "approval";
                 instruction: string;
                 toolRef?: string | null;
                 actionType?: string | null;
+                captureKey?: string | null;
+                options?: {
+                    id: string;
+                    label: string;
+                    description?: string | null;
+                }[];
                 ordinal: number;
                 /** @default {} */
                 metadata: {
-                    [key: string]: unknown;
+                    inputBindings?: {
+                        [key: string]: {
+                            /** @enum {string} */
+                            kind: "literal";
+                            value: string | number | boolean;
+                        } | {
+                            /** @enum {string} */
+                            kind: "variableRef";
+                            ref: string;
+                        };
+                    };
+                    outputAssignments?: {
+                        [key: string]: string;
+                    };
+                    /** @enum {string} */
+                    mode?: "typed" | "untyped";
                 };
             }[];
             /** @default [] */
@@ -3065,7 +3475,7 @@ export interface components {
             ok: boolean;
             diagnostics: {
                 /** @enum {string} */
-                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination";
+                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "variable_name_collision";
                 location: string;
                 message: string;
             }[];
@@ -3076,6 +3486,11 @@ export interface components {
                 triggerDescription: string;
                 gateRef?: string | null;
                 priority: number;
+                /**
+                 * @default once_per_conversation
+                 * @enum {string}
+                 */
+                reentryMode: "once_per_conversation" | "always" | "semantic";
             };
             /** @default [] */
             slots: {
@@ -3086,18 +3501,40 @@ export interface components {
                 required: boolean;
                 description?: string | null;
                 ordinal: number;
+                mutable?: boolean;
             }[];
             steps: {
                 stableStepId: string;
                 /** @enum {string} */
-                kind: "chat" | "tool" | "action";
+                kind: "chat" | "tool" | "action" | "approval";
                 instruction: string;
                 toolRef?: string | null;
                 actionType?: string | null;
+                captureKey?: string | null;
+                options?: {
+                    id: string;
+                    label: string;
+                    description?: string | null;
+                }[];
                 ordinal: number;
                 /** @default {} */
                 metadata: {
-                    [key: string]: unknown;
+                    inputBindings?: {
+                        [key: string]: {
+                            /** @enum {string} */
+                            kind: "literal";
+                            value: string | number | boolean;
+                        } | {
+                            /** @enum {string} */
+                            kind: "variableRef";
+                            ref: string;
+                        };
+                    };
+                    outputAssignments?: {
+                        [key: string]: string;
+                    };
+                    /** @enum {string} */
+                    mode?: "typed" | "untyped";
                 };
             }[];
             /** @default [] */
@@ -3181,6 +3618,11 @@ export interface components {
                     triggerDescription: string;
                     gateRef?: string | null;
                     priority: number;
+                    /**
+                     * @default once_per_conversation
+                     * @enum {string}
+                     */
+                    reentryMode: "once_per_conversation" | "always" | "semantic";
                 };
                 /** @default [] */
                 slots: {
@@ -3191,18 +3633,40 @@ export interface components {
                     required: boolean;
                     description?: string | null;
                     ordinal: number;
+                    mutable?: boolean;
                 }[];
                 steps: {
                     stableStepId: string;
                     /** @enum {string} */
-                    kind: "chat" | "tool" | "action";
+                    kind: "chat" | "tool" | "action" | "approval";
                     instruction: string;
                     toolRef?: string | null;
                     actionType?: string | null;
+                    captureKey?: string | null;
+                    options?: {
+                        id: string;
+                        label: string;
+                        description?: string | null;
+                    }[];
                     ordinal: number;
                     /** @default {} */
                     metadata: {
-                        [key: string]: unknown;
+                        inputBindings?: {
+                            [key: string]: {
+                                /** @enum {string} */
+                                kind: "literal";
+                                value: string | number | boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "variableRef";
+                                ref: string;
+                            };
+                        };
+                        outputAssignments?: {
+                            [key: string]: string;
+                        };
+                        /** @enum {string} */
+                        mode?: "typed" | "untyped";
                     };
                 }[];
                 /** @default [] */
@@ -3245,6 +3709,34 @@ export interface components {
             /** @enum {string} */
             error: "Routine definition is invalid";
             validation: components["schemas"]["RoutineValidationResult"];
+        };
+        SkillAuthoringInput: {
+            key: string;
+            /** @enum {string} */
+            type: "text" | "number" | "boolean" | "email" | "date" | "phone" | "enum";
+            required: boolean;
+            description?: string;
+            enumValues?: string[];
+        };
+        SkillAuthoringOutcome: {
+            name: string;
+            displayName: string;
+            description?: string;
+            /** @enum {string} */
+            status: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
+        };
+        SkillAuthoringDescriptor: {
+            skillName: string;
+            displayName: string;
+            /** @enum {string} */
+            category: "retrieval" | "built_in" | "external_mcp" | "customer_email";
+            description?: string;
+            inputs: components["schemas"]["SkillAuthoringInput"][];
+            outcomes: components["schemas"]["SkillAuthoringOutcome"][];
+            hasDataOutputs: boolean;
+        };
+        RoutineSkillCatalogResponse: {
+            skills: components["schemas"]["SkillAuthoringDescriptor"][];
         };
         PublicChatSessionResponse: {
             /** Format: uuid */
@@ -4111,7 +4603,6 @@ export interface components {
         ChatResponse: {
             /** Format: uuid */
             conversationId: string;
-            /** Format: uuid */
             assistantMessageId: string;
             /** Format: uuid */
             agentId?: string;
@@ -4120,6 +4611,11 @@ export interface components {
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
             suggestions?: components["schemas"]["ChatSuggestion"][];
+            ownership?: {
+                /** @enum {string} */
+                state: "ai_owned" | "human_owned";
+                suppressed: boolean;
+            };
             debug?: components["schemas"]["AssistantChatDebug"];
         };
         /** @description Ephemeral bootstrap greeting response. Conversation id is omitted until the first persisted user turn. The optional bootstrap greeting id can be sent with the first user message to save the displayed greeting in conversation history. */
@@ -4135,6 +4631,11 @@ export interface components {
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
             suggestions?: components["schemas"]["ChatSuggestion"][];
+            ownership?: {
+                /** @enum {string} */
+                state: "ai_owned" | "human_owned";
+                suppressed: boolean;
+            };
             debug?: components["schemas"]["AssistantChatDebug"];
         };
         AssistantChatResponse: components["schemas"]["ChatResponse"] | components["schemas"]["ChatBootstrapResponse"];
@@ -4202,6 +4703,25 @@ export interface components {
                 };
             };
         };
+        ConversationOwnership: {
+            /** Format: uuid */
+            conversationId: string;
+            /** Format: uuid */
+            workspaceId: string;
+            /** @enum {string} */
+            state: "ai_owned" | "human_owned";
+            /** Format: uuid */
+            ownerAccountId: string | null;
+            ownerDisplayName: string | null;
+            reason: string | null;
+            version: number;
+            /** Format: date-time */
+            takenOverAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
         ChatConversationSummary: {
             /** Format: uuid */
             id: string;
@@ -4219,6 +4739,7 @@ export interface components {
             userMessageCount: number;
             assistantMessageCount: number;
             preview: string | null;
+            ownership?: components["schemas"]["ConversationOwnership"];
         };
         ChatHistoryListResponse: {
             workspaceName?: string;
@@ -4337,6 +4858,8 @@ export interface components {
             id: string;
             /** @enum {string} */
             role: "user" | "assistant" | "system";
+            /** @enum {string} */
+            source: "customer" | "ai_agent" | "human_agent" | "human_agent_on_behalf_of_ai_agent" | "system";
             content: string;
             /** Format: date-time */
             createdAt: string;
@@ -4355,6 +4878,44 @@ export interface components {
             suggestions?: components["schemas"]["ChatSuggestion"][];
             answerFeedbackEntries?: components["schemas"]["AnswerFeedbackEntry"][];
             debug?: components["schemas"]["ChatConversationMessageDebug"];
+            operatorDisplayName?: string;
+        };
+        ConversationOwnershipResponse: {
+            ownership: components["schemas"]["ConversationOwnership"];
+        };
+        HumanReplyMessage: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            conversationId: string;
+            /** Format: uuid */
+            workspaceId: string;
+            /** @enum {string} */
+            role: "user" | "assistant" | "system";
+            /** @enum {string} */
+            source?: "customer" | "ai_agent" | "human_agent" | "human_agent_on_behalf_of_ai_agent" | "system";
+            content: string;
+            metadata?: {
+                [key: string]: unknown;
+            };
+            inputMetadata?: {
+                /** @enum {string} */
+                method: "typed" | "suggestion_click" | "intent_click";
+                /** Format: uuid */
+                suggestionSourceMessageId?: string;
+                intent?: {
+                    skillName: string;
+                    intentName?: string;
+                };
+            };
+            skillName?: string;
+            skillOutcome?: string;
+            skillStatus?: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        HumanReplyMessageResponse: {
+            message: components["schemas"]["HumanReplyMessage"];
         };
         ChatConversationDetail: {
             /** Format: uuid */
@@ -4377,7 +4938,19 @@ export interface components {
             messageWindowLimit: number;
             hasOlderMessages: boolean;
             nextCursor: string | null;
+            /** @description Cursor for subsequent tail requests. It marks the newest message included when this detail response was produced. */
+            tailCursor: string | null;
             messages: components["schemas"]["ChatConversationMessage"][];
+            ownership?: components["schemas"]["ConversationOwnership"];
+        };
+        ChatConversationTail: {
+            messages: components["schemas"]["ChatConversationMessage"][];
+            cursor: string | null;
+            ownership?: components["schemas"]["ConversationOwnership"];
+        };
+        PublicChatConversationTail: {
+            messages: components["schemas"]["ChatConversationMessage"][];
+            cursor: string | null;
         };
         PublicConversationSummary: {
             /** Format: uuid */
@@ -4545,6 +5118,29 @@ export interface components {
                 agentId: string | null;
             };
             buckets: components["schemas"]["UsageTrendBucket"][];
+        };
+        PendingApprovalDecisionOption: {
+            id: string;
+            label: string;
+            description?: string;
+        };
+        PendingApprovalDecision: {
+            handle: string;
+            conversationId: string;
+            agentId: string;
+            routineId: string;
+            stepId: string;
+            reason: string | null;
+            options: components["schemas"]["PendingApprovalDecisionOption"][];
+            contentHash: string;
+            canResolve: boolean;
+            /** Format: date-time */
+            deadline: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        PendingApprovalDecisionListResponse: {
+            decisions: components["schemas"]["PendingApprovalDecision"][];
         };
         AssistantChatSseStream: string;
         ConnectorNotFoundResponse: {
@@ -7087,6 +7683,46 @@ export interface operations {
             };
             /** @description Directive name already exists for this agent */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentRoutineSkillCatalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Routine skill catalog returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineSkillCatalogResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9891,6 +10527,347 @@ export interface operations {
             };
         };
     };
+    startWorkspaceSlackInstall: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Slack authorization started */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uri */
+                        authorizationUrl: string;
+                        /** Format: uuid */
+                        connectionId: string;
+                        /** @enum {string} */
+                        status: "pending";
+                    };
+                };
+            };
+            /** @description Invalid request or Slack OAuth is not configured */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Slack install is not fully configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getWorkspaceSlackInstallStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Slack installation status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "connected" | "needs_reauth" | "disabled" | "not_configured";
+                        readiness: {
+                            configured: boolean;
+                            missingEnvVars: ("SLACK_OAUTH_CLIENT_ID" | "SLACK_OAUTH_CLIENT_SECRET" | "SLACK_SIGNING_SECRET")[];
+                        };
+                        /** Format: uuid */
+                        installationId?: string;
+                        teamName?: string;
+                        /** Format: uuid */
+                        answeringAgentId?: string;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getWorkspaceSlackManifest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Generated Slack app manifest */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        manifest: {
+                            display_information: {
+                                name: string;
+                            };
+                            features: {
+                                bot_user: {
+                                    display_name: string;
+                                    always_online: boolean;
+                                };
+                            };
+                            oauth_config: {
+                                redirect_urls: string[];
+                                scopes: {
+                                    bot: string[];
+                                };
+                            };
+                            settings: {
+                                event_subscriptions: {
+                                    /** Format: uri */
+                                    request_url: string;
+                                    bot_events: string[];
+                                };
+                                interactivity: {
+                                    is_enabled: boolean;
+                                };
+                                org_deploy_enabled: boolean;
+                                socket_mode_enabled: boolean;
+                                token_rotation_enabled: boolean;
+                            };
+                        };
+                        requiredEnvVars: ("SLACK_OAUTH_CLIENT_ID" | "SLACK_OAUTH_CLIENT_SECRET" | "SLACK_SIGNING_SECRET")[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getWorkspaceSlackBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Slack binding */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        answeringAgentId: string | null;
+                        escalationChannelId: string | null;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    setWorkspaceSlackBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    answeringAgentId: string;
+                    escalationChannelId?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Slack binding */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        answeringAgentId: string | null;
+                        escalationChannelId: string | null;
+                    };
+                };
+            };
+            /** @description Invalid binding request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Slack installation not configured */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    disconnectWorkspaceSlackInstallation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Disconnected */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listAgentWebhookSkills: {
         parameters: {
             query?: never;
@@ -10303,6 +11280,956 @@ export interface operations {
             };
             /** @description Agent or webhook skill not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentSlackSkills: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Slack skill definitions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skills: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            installationId: string;
+                            skillName: string;
+                            boundInputs: {
+                                channelId?: unknown;
+                                text?: unknown;
+                                threadTs?: unknown;
+                            };
+                            exposedInputs: {
+                                channelId?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                text?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                threadTs?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("enqueued" | "missing_input" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAgentSlackSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    skillName: string;
+                    /** Format: uuid */
+                    installationId: string;
+                    /** @default {} */
+                    boundInputs?: {
+                        channelId?: unknown;
+                        text?: unknown;
+                        threadTs?: unknown;
+                    };
+                    /** @default {} */
+                    exposedInputs?: {
+                        channelId?: {
+                            description?: string;
+                            slotBinding?: string;
+                            /** @default true */
+                            required?: boolean;
+                        };
+                        text?: {
+                            description?: string;
+                            slotBinding?: string;
+                            /** @default true */
+                            required?: boolean;
+                        };
+                        threadTs?: {
+                            description?: string;
+                            slotBinding?: string;
+                            /** @default true */
+                            required?: boolean;
+                        };
+                    };
+                    /** @default true */
+                    enabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Slack skill definition */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            installationId: string;
+                            skillName: string;
+                            boundInputs: {
+                                channelId?: unknown;
+                                text?: unknown;
+                                threadTs?: unknown;
+                            };
+                            exposedInputs: {
+                                channelId?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                text?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                threadTs?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("enqueued" | "missing_input" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid Slack skill definition */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or Slack installation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Slack skill name already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentSlackSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Slack skill definition */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            installationId: string;
+                            skillName: string;
+                            boundInputs: {
+                                channelId?: unknown;
+                                text?: unknown;
+                                threadTs?: unknown;
+                            };
+                            exposedInputs: {
+                                channelId?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                text?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                threadTs?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("enqueued" | "missing_input" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or Slack skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAgentSlackSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or Slack skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAgentSlackSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    boundInputs?: {
+                        channelId?: unknown;
+                        text?: unknown;
+                        threadTs?: unknown;
+                    };
+                    exposedInputs?: {
+                        channelId?: {
+                            description?: string;
+                            slotBinding?: string;
+                            /** @default true */
+                            required?: boolean;
+                        };
+                        text?: {
+                            description?: string;
+                            slotBinding?: string;
+                            /** @default true */
+                            required?: boolean;
+                        };
+                        threadTs?: {
+                            description?: string;
+                            slotBinding?: string;
+                            /** @default true */
+                            required?: boolean;
+                        };
+                    };
+                    enabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Slack skill definition */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            /** Format: uuid */
+                            installationId: string;
+                            skillName: string;
+                            boundInputs: {
+                                channelId?: unknown;
+                                text?: unknown;
+                                threadTs?: unknown;
+                            };
+                            exposedInputs: {
+                                channelId?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                text?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                                threadTs?: {
+                                    description?: string;
+                                    slotBinding?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                };
+                            };
+                            enabled: boolean;
+                            outcomes: ("enqueued" | "missing_input" | "failed")[];
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid Slack skill definition */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or Slack skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentSkillCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Skill capabilities */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        capabilities: {
+                            /** @enum {string} */
+                            id: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                            storedKind: string;
+                            targetKind: string;
+                            requiresTarget: boolean;
+                            inputSchema: {
+                                /** @enum {string} */
+                                source: "discovered";
+                            } | {
+                                /** @enum {string} */
+                                source: "static";
+                                schema: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            settingsFields: {
+                                key: string;
+                                label: string;
+                                /** @enum {string} */
+                                type: "boolean" | "number" | "text" | "textarea" | "select" | "string_list" | "source_scope";
+                                help?: string;
+                                options?: {
+                                    value: string;
+                                    label: string;
+                                }[];
+                                min?: number;
+                                max?: number;
+                                group?: string;
+                                advanced?: boolean;
+                            }[];
+                            outcomeVocabulary: string[];
+                            supportedInvocationModes: ("default_answer" | "routine_named" | "agent_selectable")[];
+                            /** @enum {string} */
+                            defaultInvocationMode?: "default_answer" | "routine_named" | "agent_selectable";
+                            executorAdapter: string;
+                            targets: {
+                                id: string;
+                                label: string;
+                                status?: string;
+                            }[];
+                            available: boolean;
+                            /** @enum {string|null} */
+                            unavailableReason: "no_connection" | null;
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentSkills: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent skills */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skills: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            name: string;
+                            /** @enum {string} */
+                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                            storedKind: string;
+                            target: {
+                                kind: string;
+                                /** Format: uuid */
+                                id: string | null;
+                            };
+                            config: {
+                                [key: string]: unknown;
+                            };
+                            /** @enum {string} */
+                            invocationMode: "default_answer" | "routine_named" | "agent_selectable";
+                            enabled: boolean;
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAgentSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    /** @enum {string} */
+                    capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                    target: {
+                        kind: string;
+                        /** Format: uuid */
+                        id: string | null;
+                    };
+                    /** @default {} */
+                    config?: {
+                        [key: string]: unknown;
+                    };
+                    /**
+                     * @default routine_named
+                     * @enum {string}
+                     */
+                    invocationMode?: "default_answer" | "routine_named" | "agent_selectable";
+                    /** @default true */
+                    enabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Agent skill */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            name: string;
+                            /** @enum {string} */
+                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                            storedKind: string;
+                            target: {
+                                kind: string;
+                                /** Format: uuid */
+                                id: string | null;
+                            };
+                            config: {
+                                [key: string]: unknown;
+                            };
+                            /** @enum {string} */
+                            invocationMode: "default_answer" | "routine_named" | "agent_selectable";
+                            enabled: boolean;
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid skill definition */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Skill name or default-answer already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAgentSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAgentSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    target?: {
+                        kind: string;
+                        /** Format: uuid */
+                        id: string | null;
+                    };
+                    config?: {
+                        [key: string]: unknown;
+                    };
+                    /** @enum {string} */
+                    invocationMode?: "default_answer" | "routine_named" | "agent_selectable";
+                    enabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Agent skill */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            name: string;
+                            /** @enum {string} */
+                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                            storedKind: string;
+                            target: {
+                                kind: string;
+                                /** Format: uuid */
+                                id: string | null;
+                            };
+                            config: {
+                                [key: string]: unknown;
+                            };
+                            /** @enum {string} */
+                            invocationMode: "default_answer" | "routine_named" | "agent_selectable";
+                            enabled: boolean;
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid skill definition */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Default-answer already exists */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11712,6 +13639,58 @@ export interface operations {
             };
         };
     };
+    tailHistoryConversation: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description New conversation messages after the supplied tail cursor */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatConversationTail"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getLegacyHistoryConversation: {
         parameters: {
             query?: {
@@ -11807,6 +13786,430 @@ export interface operations {
             };
             /** @description Search history entry not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    takeOverConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    reason?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Conversation ownership returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationOwnershipResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation ownership changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    replyToConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    message: string;
+                    expectedVersion: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Human reply message created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumanReplyMessageResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation ownership changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    transferConversationOwnership: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    toAccountId: string;
+                    expectedVersion: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Conversation ownership returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationOwnershipResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation ownership changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    handBackConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expectedVersion: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Conversation ownership returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationOwnershipResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation ownership changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listPendingDecisions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pending approval decisions for the workspace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingApprovalDecisionListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller is not authorized to list decisions */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resolveDecision: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    optionId: string;
+                    payload?: unknown;
+                    contentHash: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Decision resolved and routine resume attempted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "resolved";
+                        optionId: string;
+                        conversationId: string;
+                        resumed: boolean;
+                    };
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller is not an authorized decider */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Decision not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Decision already resolved, stale, or resolved concurrently */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Decision option is invalid */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12508,6 +14911,91 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatConversationDetail"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    tailPublicChatHistoryConversation: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                token: string;
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description New public conversation messages after the supplied tail cursor */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicChatConversationTail"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    streamPublicChatConversationEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server-sent public conversation notifications. Events include ready and message.created. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
                 };
             };
             /** @description Request validation failed */

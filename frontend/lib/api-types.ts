@@ -1,4 +1,4 @@
-import type { components } from '../../typescript-sdk/src/generated/types'
+import type { components, operations } from '../../typescript-sdk/src/generated/types'
 import { API_BASE } from './api-client'
 import {
   readRetrievalSkillSettingsOverride,
@@ -52,22 +52,31 @@ export type DirectiveDraftDirective = ApiSchemas['DirectiveDraftDirective']
 
 export type RoutineDefinitionStatus = ApiSchemas['RoutineDefinition']['status']
 export type RoutineSlotType = 'text' | 'number' | 'boolean' | 'email' | 'date'
-export type RoutineStepKind = 'chat' | 'tool' | 'action'
+export type RoutineStepKind = 'chat' | 'tool' | 'action' | 'approval'
+export type ApprovalOption = NonNullable<ApiSchemas['RoutineDefinition']['steps'][number]['options']>[number]
 export type RoutineGuardKind = 'llm' | 'default' | 'slot_filled' | 'outcome' | 'counter' | 'field'
+export type RoutineReentryMode = 'once_per_conversation' | 'always' | 'semantic'
 export type RoutineFieldGuardOp =
   | 'is_true' | 'is_false' | 'equals' | 'not_equals' | 'in' | 'is_present' | 'is_absent'
   | 'gt' | 'gte' | 'lt' | 'lte' | 'older_than' | 'within'
 export type RoutineFieldGuardUnit = 'days' | 'weeks' | 'months' | 'years'
 export type RoutineTerminalKind = 'complete' | 'handoff'
+export type RoutineStepMetadata = {
+  inputBindings?: Record<string, { kind: 'literal'; value: string | number | boolean } | { kind: 'variableRef'; ref: string }>
+  outputAssignments?: Record<string, string>
+  mode?: 'typed' | 'untyped'
+} & Record<string, unknown>
 export type RoutineValidationCode =
   | 'unreachable_step'
   | 'missing_terminal'
   | 'dangling_action_reference'
   | 'dangling_step_reference'
+  | 'unbounded_back_edge'
   | 'missing_action_follow_up'
   | 'declared_unused_slot'
   | 'referenced_undeclared_slot'
   | 'unregistered_action_type'
+  | 'unknown_skill'
   | 'action_capability_denied'
   | 'invalid_webhook_destination_ref'
   | 'unknown_webhook_destination'
@@ -77,6 +86,15 @@ export type RoutineValidationCode =
   | 'field_guard_unknown_reference'
   | 'field_guard_incompatible_type'
   | 'completion_export_missing_destination'
+  | 'approval_step_llm_edge'
+  | 'approval_step_no_decision_edge'
+  | 'approval_step_unknown_option'
+  | 'approval_step_unreachable_option'
+  | 'unsatisfiable_required_input'
+  | 'input_type_mismatch'
+  | 'unknown_input_binding'
+  | 'unknown_variable_ref'
+  | 'variable_name_collision'
 
 export type RoutineValidationDiagnostic = {
   code: RoutineValidationCode
@@ -88,7 +106,10 @@ export type RoutineValidationResult = {
   diagnostics: RoutineValidationDiagnostic[]
 }
 export type RoutineSlot = Omit<ApiSchemas['RoutineDefinition']['slots'][number], 'type'> & { type: RoutineSlotType }
-export type RoutineStep = Omit<ApiSchemas['RoutineDefinition']['steps'][number], 'kind'> & { kind: RoutineStepKind }
+export type RoutineStep = Omit<ApiSchemas['RoutineDefinition']['steps'][number], 'kind' | 'metadata'> & {
+  kind: RoutineStepKind
+  metadata: RoutineStepMetadata
+}
 export type RoutineTransition = Omit<ApiSchemas['RoutineDefinition']['transitions'][number], 'guardKind'> & {
   guardKind: RoutineGuardKind
 }
@@ -102,6 +123,7 @@ export type RoutineDefinitionDraft = {
     triggerDescription: string
     gateRef?: string | null
     priority: number
+    reentryMode?: RoutineReentryMode
   }
   slots: RoutineSlot[]
   steps: RoutineStep[]
@@ -379,17 +401,47 @@ export interface ChatStreamCompletion {
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
   suggestions?: ChatSuggestion[]
+  ownership?: ChatResponse['ownership']
   debug?: ChatResponse['debug']
   skill?: SkillStreamPayload
 }
 
 export type ChatConversationSummary = ApiSchemas['ChatConversationSummary']
+export type ConversationOwnership = ApiSchemas['ConversationOwnership']
+export type ChatConversationMessage = ApiSchemas['ChatConversationMessage']
+export type ChatConversationTail = ApiSchemas['ChatConversationTail']
+export type PublicChatConversationTail = ApiSchemas['PublicChatConversationTail']
+
+export type PublicChatConversationEvent =
+  | { type: 'ready'; conversationId: string }
+  | { type: 'message.created'; conversationId: string; messageId: string; createdAt: string }
+export type PendingApprovalDecision = ApiSchemas['PendingApprovalDecision'] & {
+  canResolve: boolean
+}
+export type PendingApprovalDecisionListResponse = Omit<ApiSchemas['PendingApprovalDecisionListResponse'], 'decisions'> & {
+  decisions: PendingApprovalDecision[]
+}
+export type ResolveDecisionRequest =
+  operations['resolveDecision']['requestBody']['content']['application/json']
+export type ResolveDecisionResponse =
+  operations['resolveDecision']['responses'][200]['content']['application/json']
+export type TakeOverConversationRequest =
+  operations['takeOverConversation']['requestBody']['content']['application/json']
+export type HumanReplyRequest =
+  operations['replyToConversation']['requestBody']['content']['application/json']
+export type HumanReplyMessageResponse = ApiSchemas['HumanReplyMessageResponse']
+export type TransferConversationOwnershipRequest =
+  operations['transferConversationOwnership']['requestBody']['content']['application/json']
+export type HandBackConversationRequest =
+  operations['handBackConversation']['requestBody']['content']['application/json']
+export type ConversationOwnershipResponse = ApiSchemas['ConversationOwnershipResponse']
 export type ChatConversationTurnDebug = ApiSchemas['ChatConversationMessageDebug']
 export type ChatConversationTurn = ApiSchemas['ChatConversationMessage'] & {
   answerFeedbackEntries?: AnswerFeedbackEntry[]
 }
 export type ChatConversationDetail = Omit<ApiSchemas['ChatConversationDetail'], 'messages'> & {
   messages: ChatConversationTurn[]
+  tailCursor: string | null
 }
 
 export interface ContactHistorySummary {

@@ -2,11 +2,15 @@ import { capabilityNames } from "../../../shared/domain/capabilityPolicy.js";
 import {
   contactRoutineDefinition,
   CONTACT_SEND_ACTION_TYPE,
+  HANDOFF_NOTIFY_ACTION_TYPE,
   CONTACT_INTENT_SKILL_NAME,
   CONTACT_INTENT_NAME,
   ConfiguredContactDeliveryResolver,
   ContactSendActionHandler,
   FetchContactWebhookHttpClient,
+  HandoffNotifyActionHandler,
+  ApprovalRequestActionHandler,
+  APPROVAL_REQUEST_ACTION_TYPE,
   WorkspaceOwnerContactRecipientResolver,
   type PublicChatActionAdvertiserPort,
   type PublicChatIntakeAction,
@@ -16,6 +20,7 @@ import { WorkspaceRepository } from "../../../db/repositories/workspaceRepositor
 import { AccountMembershipRepository } from "../../../db/repositories/accountMembershipRepository.js";
 import { AgentRepository } from "../../../db/repositories/agentRepository.js";
 import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
+import { AgentSkillRepository } from "../../../modules/agentSkills/repository.js";
 import type { ApplicationModule } from "../applicationModule.js";
 
 /** Reads the per-agent contact-requests flag for the advertiser. */
@@ -79,19 +84,62 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
       requiredCapabilities: [capabilityNames.humanContact.request],
       handler: ({ database, logger, mailService, assertPublicWebsiteUrl }) => {
         const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
-          new WorkspaceRepository(database),
-          new AccountMembershipRepository(database),
+          new WorkspaceRepository(database.kysely),
+          new AccountMembershipRepository(database.kysely),
         );
         return new ContactSendActionHandler(
           mailService,
           new ConfiguredContactDeliveryResolver(
-            new ConversationRepository(database),
-            new AgentRepository(database),
+            new ConversationRepository(database.kysely),
+            new AgentRepository(database.kysely),
             ownerFallback,
+            new AgentSkillRepository(database.kysely),
           ),
           logger,
           // SSRF guard: every webhook hop is re-validated against the public-host
           // policy before the worker sends visitor data outbound.
+          new FetchContactWebhookHttpClient(assertPublicWebsiteUrl),
+        );
+      },
+    });
+    context.registerActionHandler({
+      type: HANDOFF_NOTIFY_ACTION_TYPE,
+      requiredCapabilities: [capabilityNames.humanContact.request],
+      handler: ({ database, logger, mailService, assertPublicWebsiteUrl }) => {
+        const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
+          new WorkspaceRepository(database.kysely),
+          new AccountMembershipRepository(database.kysely),
+        );
+        return new HandoffNotifyActionHandler(
+          mailService,
+          new ConfiguredContactDeliveryResolver(
+            new ConversationRepository(database.kysely),
+            new AgentRepository(database.kysely),
+            ownerFallback,
+            new AgentSkillRepository(database.kysely),
+          ),
+          logger,
+          new FetchContactWebhookHttpClient(assertPublicWebsiteUrl),
+        );
+      },
+    });
+    context.registerActionHandler({
+      type: APPROVAL_REQUEST_ACTION_TYPE,
+      requiredCapabilities: [capabilityNames.humanContact.request],
+      handler: ({ database, logger, mailService, assertPublicWebsiteUrl }) => {
+        const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
+          new WorkspaceRepository(database.kysely),
+          new AccountMembershipRepository(database.kysely),
+        );
+        return new ApprovalRequestActionHandler(
+          mailService,
+          new ConfiguredContactDeliveryResolver(
+            new ConversationRepository(database.kysely),
+            new AgentRepository(database.kysely),
+            ownerFallback,
+            new AgentSkillRepository(database.kysely),
+          ),
+          logger,
           new FetchContactWebhookHttpClient(assertPublicWebsiteUrl),
         );
       },

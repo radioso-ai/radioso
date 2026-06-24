@@ -1,5 +1,6 @@
 import type { Page, Route } from "@playwright/test";
 import type { components } from "../../../typescript-sdk/src/generated/types";
+import type { SkillAuthoringDescriptor } from "@/lib/api-routine-skill-catalog";
 
 type ApiSchemas = components["schemas"];
 
@@ -81,6 +82,78 @@ export type CustomerEmailActivityFixture = {
   errorCode: string | null;
   createdAt: string;
 };
+export type SlackInstallStatusFixture = {
+  status: "connected" | "needs_reauth" | "disabled" | "not_configured";
+  readiness?: {
+    configured: boolean;
+    missingEnvVars: string[];
+  };
+  installationId?: string;
+  teamName?: string;
+  answeringAgentId?: string;
+};
+export type SlackBindingFixture = {
+  answeringAgentId: string | null;
+  escalationChannelId: string | null;
+};
+
+export type SlackManifestFixture = {
+  manifest: Record<string, unknown>;
+  requiredEnvVars: string[];
+};
+export type SlackSkillFixture = {
+  id: string;
+  workspaceId: string;
+  agentId: string;
+  installationId: string;
+  skillName: string;
+  boundInputs: Record<string, unknown>;
+  exposedInputs: Record<string, { slotBinding?: string; required?: boolean }>;
+  enabled: boolean;
+  outcomes: Array<"enqueued" | "missing_input" | "failed">;
+  createdAt: string;
+  updatedAt: string;
+};
+export type AgentSkillFixture = {
+  id: string;
+  workspaceId: string;
+  agentId: string;
+  name: string;
+  capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+  storedKind: string;
+  target: { kind: string; id: string | null };
+  config: Record<string, unknown>;
+  invocationMode: "default_answer" | "routine_named" | "agent_selectable";
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+export type SkillCapabilityFixture = {
+  id: AgentSkillFixture["capability"];
+  storedKind: string;
+  targetKind: string;
+  requiresTarget: boolean;
+  inputSchema: { source: "discovered" } | { source: "static"; schema: Record<string, unknown> };
+  settingsFields: Array<{
+    key: string;
+    label: string;
+    type: "boolean" | "number" | "text" | "textarea" | "select" | "string_list" | "source_scope";
+    help?: string;
+    options?: Array<{ value: string; label: string }>;
+    min?: number;
+    max?: number;
+    group?: string;
+    advanced?: boolean;
+  }>;
+  outcomeVocabulary: string[];
+  supportedInvocationModes: AgentSkillFixture["invocationMode"][];
+  defaultInvocationMode?: AgentSkillFixture["invocationMode"];
+  executorAdapter: string;
+  targets: Array<{ id: string; label: string; status?: string }>;
+  available: boolean;
+  unavailableReason: string | null;
+};
+export type RoutineSkillCatalogFixture = SkillAuthoringDescriptor[];
 export type WebhookDestinationMutationFixture = {
   method: "POST" | "PUT" | "DELETE" | "ROTATE_SECRET";
   destinationId?: string;
@@ -421,6 +494,138 @@ export const baseDocumentSources = (): ApiSchemas["DocumentSourceListResponse"] 
   ],
 });
 
+export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
+  {
+    id: "retrieve",
+    storedKind: "retrieve",
+    targetKind: "source_scope",
+    requiresTarget: false,
+    inputSchema: { source: "static", schema: { fields: ["query"], required: ["query"] } },
+    settingsFields: [
+      { key: "sourceScope", label: "Source scope", type: "source_scope", group: "Scope" },
+      { key: "instruction", label: "Instruction", type: "textarea", group: "Scope" },
+      {
+        key: "retrievalStrategy",
+        label: "Retrieval strategy",
+        type: "select",
+        options: [
+          { value: "fixed", label: "Fixed" },
+          { value: "reasoning", label: "Reasoning" },
+          { value: "auto", label: "Auto" },
+        ],
+        group: "Retrieval tuning",
+        advanced: true,
+      },
+      { key: "vectorTopK", label: "Vector top K", type: "number", min: 1, max: 300, group: "Retrieval tuning", advanced: true },
+      { key: "rerankEnabled", label: "Rerank results", type: "boolean", group: "Retrieval tuning", advanced: true },
+      { key: "rerankTopK", label: "Rerank top K", type: "number", min: 1, max: 100, group: "Retrieval tuning", advanced: true },
+      { key: "queryRewriteEnabled", label: "Query rewrite", type: "boolean", group: "Query rewrite", advanced: true },
+      { key: "semanticRewriteInstructions", label: "Semantic rewrite instructions", type: "textarea", group: "Query rewrite", advanced: true },
+      { key: "lexicalRewriteInstructions", label: "Lexical rewrite instructions", type: "textarea", group: "Query rewrite", advanced: true },
+      { key: "suggestedQuestionsEnabled", label: "Suggested questions", type: "boolean", group: "Suggested questions" },
+      { key: "suggestedQuestionsCount", label: "Suggested questions count", type: "number", min: 1, max: 4, group: "Suggested questions", advanced: true },
+    ],
+    outcomeVocabulary: ["found", "empty"],
+    supportedInvocationModes: ["default_answer", "routine_named", "agent_selectable"],
+    defaultInvocationMode: "default_answer",
+    executorAdapter: "retrieval.answer",
+    targets: [
+      { id: "11111111-1111-4111-8111-111111111111", label: "Course guide", status: "ready" },
+      { id: "22222222-2222-4222-8222-222222222222", label: "Release notes", status: "ready" },
+    ],
+    available: true,
+    unavailableReason: null,
+  },
+  {
+    id: "mcp_tool",
+    storedKind: "external_mcp",
+    targetKind: "mcp_connection",
+    requiresTarget: true,
+    inputSchema: { source: "discovered" },
+    settingsFields: [],
+    outcomeVocabulary: ["completed", "failed"],
+    supportedInvocationModes: ["routine_named", "agent_selectable"],
+    defaultInvocationMode: "routine_named",
+    executorAdapter: "external_mcp",
+    targets: [],
+    available: false,
+    unavailableReason: "no_connection",
+  },
+  {
+    id: "email",
+    storedKind: "customer_email",
+    targetKind: "customer_email_connection",
+    requiresTarget: true,
+    inputSchema: { source: "static", schema: { fields: ["to", "cc", "subject", "bodyText", "bodyHtml", "replyTo"], required: ["to", "subject", "bodyText"] } },
+    settingsFields: [
+      {
+        key: "mode",
+        label: "Mode",
+        type: "select",
+        options: [
+          { value: "draft", label: "Draft" },
+          { value: "send", label: "Send" },
+        ],
+      },
+    ],
+    outcomeVocabulary: ["drafted", "sent", "missing_input", "disabled_connection", "needs_reauth", "provider_rejected", "failed"],
+    supportedInvocationModes: ["routine_named", "agent_selectable"],
+    defaultInvocationMode: "routine_named",
+    executorAdapter: "customer_email",
+    targets: [{ id: "99999999-9999-4999-8999-000000000001", label: "Support outbound", status: "authorized" }],
+    available: true,
+    unavailableReason: null,
+  },
+  {
+    id: "slack_post",
+    storedKind: "slack",
+    targetKind: "slack_installation",
+    requiresTarget: true,
+    inputSchema: { source: "static", schema: { fields: ["channelId", "text", "threadTs"], required: ["channelId", "text"] } },
+    settingsFields: [],
+    outcomeVocabulary: ["enqueued", "missing_input", "failed"],
+    supportedInvocationModes: ["routine_named", "agent_selectable"],
+    defaultInvocationMode: "routine_named",
+    executorAdapter: "slack",
+    targets: [],
+    available: false,
+    unavailableReason: "no_connection",
+  },
+  {
+    id: "webhook_call",
+    storedKind: "webhook",
+    targetKind: "webhook_destination",
+    requiresTarget: true,
+    inputSchema: { source: "static", schema: { fields: ["payload"], required: ["payload"] } },
+    settingsFields: [],
+    outcomeVocabulary: ["delivered", "failed"],
+    supportedInvocationModes: ["routine_named", "agent_selectable"],
+    defaultInvocationMode: "routine_named",
+    executorAdapter: "webhook",
+    targets: [{ id: "33333333-3333-4333-8333-333333333333", label: "crm-leads", status: "available" }],
+    available: true,
+    unavailableReason: null,
+  },
+  {
+    id: "notify",
+    storedKind: "notify",
+    targetKind: "notify_delivery",
+    requiresTarget: false,
+    inputSchema: { source: "static", schema: { fields: ["message", "email"], required: ["message"] } },
+    settingsFields: [
+      { key: "delivery.recipientEmails", label: "Recipient emails", type: "string_list", group: "Delivery" },
+      { key: "delivery.webhook.url", label: "Webhook URL", type: "text", group: "Delivery" },
+    ],
+    outcomeVocabulary: ["delivered", "failed"],
+    supportedInvocationModes: ["routine_named", "agent_selectable"],
+    defaultInvocationMode: "routine_named",
+    executorAdapter: "notify",
+    targets: [],
+    available: true,
+    unavailableReason: null,
+  },
+];
+
 const emptyCrawlJobs = {
   jobs: [],
   total: 0,
@@ -477,6 +682,12 @@ export const installDashboardApiMocks = async (
     searchHistory?: unknown;
     documentSources?: unknown;
     conversationDetail?: unknown;
+    conversationDetails?: Record<string, unknown>;
+    pendingDecisions?: ApiSchemas["PendingApprovalDecision"][];
+    conversationTailResponses?: ApiSchemas["ChatConversationTail"][];
+    takeOverConversationResponse?: ApiSchemas["ConversationOwnershipResponse"];
+    humanReplyResponse?: ApiSchemas["HumanReplyMessageResponse"];
+    resolveDecisionResponse?: unknown;
     agentUpdates?: unknown[];
     directiveUpdates?: DirectiveMutationFixture[];
     directives?: AuthoredDirectiveFixture[];
@@ -497,6 +708,15 @@ export const installDashboardApiMocks = async (
     mcpConnectionRequests?: string[];
     emailSkills?: CustomerEmailSkillFixture[];
     emailActivity?: CustomerEmailActivityFixture[];
+    slackStatus?: SlackInstallStatusFixture;
+    slackBinding?: SlackBindingFixture;
+    slackManifest?: SlackManifestFixture;
+    slackSkills?: SlackSkillFixture[];
+    slackRequests?: Array<{ method: string; path: string; body?: unknown }>;
+    skillCapabilities?: SkillCapabilityFixture[];
+    agentSkills?: AgentSkillFixture[];
+    agentSkillRequests?: Array<{ method: string; path: string; body?: unknown }>;
+    routineSkillCatalog?: RoutineSkillCatalogFixture;
   } = {},
 ) => {
   let platformSettings = options.platformSettings ?? basePlatformSettings();
@@ -537,6 +757,33 @@ export const installDashboardApiMocks = async (
   const routineUpdates = options.routineUpdates;
   const emailSkills = options.emailSkills ?? [];
   const emailActivity = options.emailActivity ?? [];
+  const slackReady = { configured: true, missingEnvVars: [] };
+  let slackStatus = { readiness: slackReady, ...(options.slackStatus ?? { status: "not_configured" as const }) };
+  let slackBinding = options.slackBinding ?? { answeringAgentId: null, escalationChannelId: null };
+  const slackManifest = options.slackManifest ?? {
+    manifest: {
+      display_information: { name: "Radioso" },
+      oauth_config: {
+        redirect_urls: ["https://self-host.example.com/api/v1/oauth/callback/slack"],
+        scopes: {
+          bot: ["app_mentions:read", "chat:write", "im:history", "im:read", "im:write"],
+        },
+      },
+      settings: {
+        event_subscriptions: {
+          request_url: "https://self-host.example.com/api/connectors/slack/events",
+          bot_events: ["app_mention", "message.im"],
+        },
+      },
+    },
+    requiredEnvVars: ["SLACK_OAUTH_CLIENT_ID", "SLACK_OAUTH_CLIENT_SECRET", "SLACK_SIGNING_SECRET"],
+  };
+  let slackSkills = options.slackSkills ?? [];
+  let nextSlackSkillIndex = slackSkills.length + 1;
+  const skillCapabilities = options.skillCapabilities ?? baseSkillCapabilities();
+  let agentSkills = options.agentSkills ?? [];
+  let nextAgentSkillIndex = agentSkills.length + 1;
+  const routineSkillCatalog = options.routineSkillCatalog ?? [];
   let webhookDestinations = options.webhookDestinations ?? [];
   let nextWebhookDestinationIndex = webhookDestinations.length + 1;
   const mcpConnections = options.mcpConnections ?? [];
@@ -578,6 +825,19 @@ export const installDashboardApiMocks = async (
     hasMore: false,
   };
   const searchHistory = options.searchHistory ?? emptySearchHistory;
+  let conversationDetail = options.conversationDetail;
+  const conversationDetails = new Map<string, unknown>(Object.entries(options.conversationDetails ?? {}));
+  if (
+    conversationDetail &&
+    typeof conversationDetail === "object" &&
+    "conversationId" in conversationDetail &&
+    typeof conversationDetail.conversationId === "string"
+  ) {
+    conversationDetails.set(conversationDetail.conversationId, conversationDetail);
+  }
+  let pendingDecisions = options.pendingDecisions ?? [];
+  const conversationTailResponses = [...(options.conversationTailResponses ?? [])];
+  let humanReplyCreated = false;
   const documentSources = options.documentSources ?? emptyDocumentSources;
   const historyItems = options.historyItems ?? {
     items: Array.isArray((historyList as { conversations?: unknown[] }).conversations)
@@ -725,8 +985,106 @@ export const installDashboardApiMocks = async (
       return;
     }
 
-    if (request.method() === "GET" && path.startsWith("/history/chat/") && options.conversationDetail) {
-      await json(route, options.conversationDetail);
+    if (request.method() === "GET" && path.startsWith("/history/chat/") && path.endsWith("/tail")) {
+      const conversationId = path.replace("/history/chat/", "").replace("/tail", "");
+      const activeConversationDetail = conversationDetails.get(conversationId) ?? conversationDetail;
+      const tailResponse =
+        !humanReplyCreated && conversationTailResponses.length > 1
+          ? conversationTailResponses[0]
+          : conversationTailResponses.shift();
+      await json(route, tailResponse ?? {
+        messages: [],
+        cursor: null,
+        ownership: (activeConversationDetail as { ownership?: unknown } | undefined)?.ownership,
+      });
+      return;
+    }
+
+    if (request.method() === "GET" && path.startsWith("/history/chat/")) {
+      const conversationId = path.replace("/history/chat/", "");
+      const activeConversationDetail = conversationDetails.get(conversationId) ?? conversationDetail;
+      if (activeConversationDetail) {
+        await json(route, activeConversationDetail);
+        return;
+      }
+    }
+
+    if (request.method() === "GET" && path.startsWith("/history/chat/") && conversationDetail) {
+      await json(route, conversationDetail);
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/decisions") {
+      await json(route, { decisions: pendingDecisions });
+      return;
+    }
+
+    if (request.method() === "POST" && path.startsWith("/conversations/") && path.endsWith("/takeover")) {
+      const response = options.takeOverConversationResponse ?? {
+        ownership: {
+          conversationId: path.replace("/conversations/", "").replace("/takeover", ""),
+          workspaceId,
+          state: "human_owned",
+          ownerAccountId: accountId,
+          ownerDisplayName: "Test Operator",
+          reason: null,
+          version: 2,
+          takenOverAt: nowIso,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        },
+      };
+      if (conversationDetail && typeof conversationDetail === "object") {
+        conversationDetail = {
+          ...conversationDetail,
+          ownership: response.ownership,
+        };
+      }
+      const conversationId = path.replace("/conversations/", "").replace("/takeover", "");
+      const activeConversationDetail = conversationDetails.get(conversationId);
+      if (activeConversationDetail && typeof activeConversationDetail === "object") {
+        conversationDetails.set(conversationId, {
+          ...activeConversationDetail,
+          ownership: response.ownership,
+        });
+      }
+      if (conversationTailResponses[0] && conversationTailResponses[0].messages.length === 0) {
+        conversationTailResponses[0] = {
+          ...conversationTailResponses[0],
+          ownership: response.ownership,
+        };
+      }
+      await json(route, response);
+      return;
+    }
+
+    if (request.method() === "POST" && path.startsWith("/conversations/") && path.endsWith("/reply")) {
+      humanReplyCreated = true;
+      if (conversationTailResponses.length > 1 && conversationTailResponses[0]?.messages.length === 0) {
+        conversationTailResponses.shift();
+      }
+      await json(route, options.humanReplyResponse ?? {
+        message: {
+          id: "human-reply-1",
+          conversationId: path.replace("/conversations/", "").replace("/reply", ""),
+          workspaceId,
+          role: "assistant",
+          source: "human_agent",
+          content: "Human reply",
+          createdAt: nowIso,
+        },
+      }, 201);
+      return;
+    }
+
+    if (request.method() === "POST" && path.startsWith("/agents/") && path.includes("/decisions/") && path.endsWith("/resolve")) {
+      pendingDecisions = pendingDecisions.filter((decision) => !path.includes(`/decisions/${decision.handle}/`));
+      await json(route, options.resolveDecisionResponse ?? {
+        status: "resolved",
+        optionId: "approve",
+        conversationId: null,
+        resumed: true,
+      });
       return;
     }
 
@@ -738,6 +1096,122 @@ export const installDashboardApiMocks = async (
     if (request.method() === "GET" && path === `/agents/${defaultAgentId}/channels/lifecycle`) {
       await json(route, channelsLifecycle);
       return;
+    }
+
+    if (path === `/workspaces/${workspaceId}/slack/install/status` && request.method() === "GET") {
+      await json(route, slackStatus);
+      return;
+    }
+
+    if (path === `/workspaces/${workspaceId}/slack/install/start` && request.method() === "POST") {
+      options.slackRequests?.push({ method: request.method(), path });
+      slackStatus = {
+        status: "connected",
+        readiness: slackReady,
+        installationId: "99999999-9999-4999-8999-000000000003",
+        teamName: "Radioso Test",
+        answeringAgentId: defaultAgentId,
+      };
+      slackBinding = {
+        answeringAgentId: defaultAgentId,
+        escalationChannelId: null,
+      };
+      await json(route, {
+        authorizationUrl: "/oauth/connections/callback?status=authorized&provider=slack",
+        connectionId: "99999999-9999-4999-8999-000000000002",
+        status: "pending",
+      });
+      return;
+    }
+
+    if (path === `/workspaces/${workspaceId}/slack/manifest` && request.method() === "GET") {
+      await json(route, slackManifest);
+      return;
+    }
+
+    if (path === `/workspaces/${workspaceId}/slack/binding`) {
+      if (request.method() === "GET") {
+        await json(route, slackBinding);
+        return;
+      }
+
+      if (request.method() === "PUT") {
+        const body = request.postDataJSON() as SlackBindingFixture;
+        options.slackRequests?.push({ method: request.method(), path, body });
+        slackBinding = {
+          answeringAgentId: body.answeringAgentId,
+          escalationChannelId: body.escalationChannelId ?? null,
+        };
+        slackStatus = {
+          ...slackStatus,
+          readiness: slackStatus.readiness ?? slackReady,
+          answeringAgentId: slackBinding.answeringAgentId ?? undefined,
+        };
+        await json(route, slackBinding);
+        return;
+      }
+    }
+
+    if (path === `/workspaces/${workspaceId}/slack/installation` && request.method() === "DELETE") {
+      options.slackRequests?.push({ method: request.method(), path });
+      slackStatus = { status: "not_configured", readiness: slackReady };
+      slackBinding = { answeringAgentId: null, escalationChannelId: null };
+      slackSkills = [];
+      await route.fulfill({ status: 204 });
+      return;
+    }
+
+    if (path === `/agents/${defaultAgentId}/slack-skills`) {
+      if (request.method() === "GET") {
+        await json(route, { skills: slackSkills });
+        return;
+      }
+
+      if (request.method() === "POST") {
+        const body = request.postDataJSON() as Omit<SlackSkillFixture, "id" | "workspaceId" | "agentId" | "outcomes" | "createdAt" | "updatedAt">;
+        options.slackRequests?.push({ method: request.method(), path, body });
+        const skill: SlackSkillFixture = {
+          id: `77777777-7777-4777-8777-${String(nextSlackSkillIndex).padStart(12, "0")}`,
+          workspaceId,
+          agentId: defaultAgentId,
+          skillName: body.skillName,
+          installationId: body.installationId,
+          boundInputs: body.boundInputs ?? {},
+          exposedInputs: body.exposedInputs ?? {},
+          enabled: body.enabled ?? true,
+          outcomes: ["enqueued", "missing_input", "failed"],
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        };
+        nextSlackSkillIndex += 1;
+        slackSkills = [...slackSkills, skill];
+        await json(route, { skill }, 201);
+        return;
+      }
+    }
+
+    if (path.startsWith(`/agents/${defaultAgentId}/slack-skills/`)) {
+      const skillId = path.replace(`/agents/${defaultAgentId}/slack-skills/`, "");
+      const skill = slackSkills.find((item) => item.id === skillId);
+      if (!skill) {
+        await json(route, { error: { message: "Slack skill not found" } }, 404);
+        return;
+      }
+
+      if (request.method() === "PATCH") {
+        const body = request.postDataJSON() as Partial<SlackSkillFixture>;
+        options.slackRequests?.push({ method: request.method(), path, body });
+        slackSkills = slackSkills.map((item) => item.id === skillId ? { ...item, ...body, updatedAt: nowIso } : item);
+        await json(route, { skill: slackSkills.find((item) => item.id === skillId) });
+        return;
+      }
+
+      if (request.method() === "DELETE") {
+        options.slackRequests?.push({ method: request.method(), path });
+        slackSkills = slackSkills.filter((item) => item.id !== skillId);
+        await route.fulfill({ status: 204 });
+        return;
+      }
     }
 
     if (request.method() === "POST" && path === `/agents/${defaultAgentId}/anonymous-chat-token/rotate`) {
@@ -815,6 +1289,66 @@ export const installDashboardApiMocks = async (
           updatedAt: nowIso,
         };
         await json(route, agentSettings);
+        return;
+      }
+    }
+
+    if (path === `/agents/${defaultAgentId}/skill-capabilities` && request.method() === "GET") {
+      await json(route, { capabilities: skillCapabilities });
+      return;
+    }
+
+    if (path === `/agents/${defaultAgentId}/skills`) {
+      if (request.method() === "GET") {
+        await json(route, { skills: agentSkills });
+        return;
+      }
+
+      if (request.method() === "POST") {
+        const body = request.postDataJSON() as Omit<AgentSkillFixture, "id" | "workspaceId" | "agentId" | "storedKind" | "createdAt" | "updatedAt">;
+        options.agentSkillRequests?.push({ method: request.method(), path, body });
+        const capability = skillCapabilities.find((candidate) => candidate.id === body.capability);
+        const skill: AgentSkillFixture = {
+          id: `66666666-6666-4666-8666-${String(nextAgentSkillIndex).padStart(12, "0")}`,
+          workspaceId,
+          agentId: defaultAgentId,
+          name: body.name,
+          capability: body.capability,
+          storedKind: capability?.storedKind ?? body.capability,
+          target: body.target,
+          config: body.config,
+          invocationMode: body.invocationMode,
+          enabled: body.enabled,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        };
+        nextAgentSkillIndex += 1;
+        agentSkills = [skill, ...agentSkills];
+        await json(route, { skill }, 201);
+        return;
+      }
+    }
+
+    if (path.startsWith(`/agents/${defaultAgentId}/skills/`)) {
+      const skillId = path.replace(`/agents/${defaultAgentId}/skills/`, "");
+      const skill = agentSkills.find((item) => item.id === skillId);
+      if (!skill) {
+        await json(route, { error: { code: "not_found", message: "Skill not found" } }, 404);
+        return;
+      }
+
+      if (request.method() === "PATCH") {
+        const body = request.postDataJSON() as Partial<AgentSkillFixture>;
+        options.agentSkillRequests?.push({ method: request.method(), path, body });
+        agentSkills = agentSkills.map((item) => item.id === skillId ? { ...item, ...body, updatedAt: nowIso } : item);
+        await json(route, { skill: agentSkills.find((item) => item.id === skillId) });
+        return;
+      }
+
+      if (request.method() === "DELETE") {
+        options.agentSkillRequests?.push({ method: request.method(), path });
+        agentSkills = agentSkills.filter((item) => item.id !== skillId);
+        await route.fulfill({ status: 204 });
         return;
       }
     }
@@ -954,6 +1488,11 @@ export const installDashboardApiMocks = async (
 
     if (path === `/agents/${defaultAgentId}/email-skills` && request.method() === "GET") {
       await json(route, { skills: emailSkills });
+      return;
+    }
+
+    if (path === `/agents/${defaultAgentId}/routine-skill-catalog` && request.method() === "GET") {
+      await json(route, { skills: routineSkillCatalog });
       return;
     }
 

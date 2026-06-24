@@ -1,3 +1,9 @@
+---
+title: "Answering Strategy"
+description: "Choice between fixed-pipeline standard, agent-driven reasoning, or automatic strategy selection for grounded answers."
+last_updated: 2026-06-09
+---
+
 # Answering Strategy
 
 ## Summary

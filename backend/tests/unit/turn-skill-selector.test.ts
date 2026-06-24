@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import type { TurnSkill } from "../../src/modules/chat/services/turnOutcome.js";
 import type { TurnSelectionStrategy } from "../../src/modules/chat/services/turnSelectionStrategy.js";
-import { ChatTurnSkillSelector } from "../../src/modules/chat/services/turnSkillSelector.js";
+import { ChatTurnSkillSelector, filterAutonomousTurnSkills } from "../../src/modules/chat/services/turnSkillSelector.js";
 
 // The single seam that decides which terminal skill claims a prepared turn (#507
 // slice 2). Both the conversation engine (via its ConversationSkillSelector) and
@@ -61,5 +61,17 @@ describe("ChatTurnSkillSelector", () => {
   it("throws when no terminal skill is registered", () => {
     const empty = new ChatTurnSkillSelector([], strategy);
     expect(() => empty.resolveSkill(session("retrieval"))).toThrow("chat_no_turn_skill_registered");
+  });
+
+  it("only exposes agent-selectable skills for autonomous selection", () => {
+    const defaultAnswer = skillStub("answer", () => true);
+    const routineNamed = skillStub("retrieve_events", () => true);
+    const agentSelectable = skillStub("lookup_policy", () => true);
+
+    expect(filterAutonomousTurnSkills([
+      { skill: defaultAnswer, invocationMode: "default_answer" },
+      { skill: routineNamed, invocationMode: "routine_named" },
+      { skill: agentSelectable, invocationMode: "agent_selectable" },
+    ])).toEqual([agentSelectable]);
   });
 });

@@ -120,6 +120,57 @@ session-scoped endpoint:
 GET /api/v1/ee/usage-limits/me
 ```
 
+## Google sign-in
+
+The Enterprise backend module adds "Sign in with Google" to the login page,
+alongside the standard email and password form. It is disabled until you
+configure Google OAuth credentials, so OSS and unconfigured Enterprise builds
+show only the password form.
+
+The key point is that Radioso treats Google as a provider of a verified email.
+On the first sign-in for a new email, Radioso provisions a fresh account and
+default workspace, the same way self-serve registration does. An existing user
+is matched by verified email and signed in without creating a second account; an
+unverified account is marked verified, because Google has proven control of the
+mailbox. There is no email-domain restriction; any Google account can sign in.
+
+Provisioned accounts have no password. Users who later want password sign-in can
+set one through the normal "Forgot password" flow.
+
+### Setup
+
+1. In the Google Cloud console, create an OAuth 2.0 Web application client.
+2. Add the redirect URI `<APP_BASE_URL>/api/v1/ee/auth/google/callback`. This
+   must match the public URL of your deployment.
+3. Set the credentials in the backend environment:
+
+```bash
+GOOGLE_LOGIN_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_LOGIN_CLIENT_SECRET=your-client-secret
+```
+
+The redirect URI is derived from `APP_BASE_URL` by default. Override it with
+`GOOGLE_LOGIN_REDIRECT_URI` when the public host differs (for example, behind a
+reverse proxy). After a successful sign-in the browser returns to `APP_BASE_URL`;
+override the landing page with `GOOGLE_LOGIN_SUCCESS_REDIRECT`.
+
+These variables are distinct from `GOOGLE_MAIL_OAUTH_*`, which configures the
+Gmail document connector, not user sign-in.
+
+### How it works
+
+The login page probes `GET /api/v1/ee/auth/google/status` and shows the button
+only when the provider reports `{ "enabled": true }`. The sign-in flow uses two
+endpoints under the mount path `/api/v1/ee/auth/google`:
+
+```text
+GET /api/v1/ee/auth/google/start      # CSRF state cookie, redirect to Google
+GET /api/v1/ee/auth/google/callback   # exchange code, issue session, redirect back
+```
+
+The callback sets the same session cookie as password login, so the rest of the
+app is unchanged.
+
 ## Contact requests
 
 Enterprise builds use the shared backend contact request routine. Operators

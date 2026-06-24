@@ -1,3 +1,9 @@
+---
+title: "Custom Instruction"
+description: "Per-agent instruction field for answer formatting and style after retrieval evidence is selected."
+last_updated: 2026-06-09
+---
+
 # Custom Instruction
 
 ## Summary

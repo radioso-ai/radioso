@@ -9,6 +9,7 @@ import { CustomerEmailConnectionRepository } from "../../../src/db/repositories/
 import { EmailSkillActivityRepository } from "../../../src/db/repositories/emailSkillActivityRepository.js";
 import { EmailSkillDefinitionRepository } from "../../../src/db/repositories/emailSkillDefinitionRepository.js";
 import type { Database } from "../../../src/shared/infra/database.js";
+import { createKyselyDatabase } from "../../../src/shared/infra/kysely/kyselyDatabase.js";
 import { testMigrationsPath } from "../../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
@@ -29,16 +30,29 @@ const canReach = async (url?: string): Promise<boolean> => {
 const hasDatabase = await canReach(integrationDatabaseUrl);
 const describeIfDatabase = hasDatabase ? describe : describe.skip;
 
-const clientBackedDatabase = (client: PoolClient): Database =>
-  ({
-    pool: {} as Database["pool"],
+const clientBackedDatabase = (client: PoolClient): Database => {
+  const pool = {
+    async connect() {
+      return new Proxy(client, {
+        get(target, property, receiver) {
+          if (property === "release") return () => undefined;
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      }) as PoolClient;
+    },
+  } as Database["pool"];
+  return {
+    pool,
+    kysely: createKyselyDatabase(pool),
     async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
       return (await client.query<T>(text, params)).rows;
     },
     async execute(text: string, params: unknown[] = []): Promise<number> {
       return (await client.query(text, params)).rowCount ?? 0;
     },
-  }) as Database;
+  } as Database;
+};
 
 describeIfDatabase("email skill activity repository (postgres)", () => {
   const schema = `test_email_skill_activity_${randomUUID().replace(/-/g, "")}`;
@@ -71,6 +85,8 @@ describeIfDatabase("email skill activity repository (postgres)", () => {
     await client.query(await readFile(path.join(testMigrationsPath, "099_agent_skills_spine.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "100_email_skills_into_spine.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "101_agent_skills_generic_targets.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "105_integration_connections.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "106_customer_email_connections_to_integration_connections.sql"), "utf8"));
     await client.query(`INSERT INTO workspaces (id) VALUES ($1), ($2)`, [workspaceId, otherWorkspaceId]);
     await client.query(`INSERT INTO agents (id, workspace_id) VALUES ($1, $2)`, [agentId, workspaceId]);
     await client.query(
@@ -80,9 +96,9 @@ describeIfDatabase("email skill activity repository (postgres)", () => {
     );
 
     const db = clientBackedDatabase(client);
-    const connectionRepository = new CustomerEmailConnectionRepository(db);
-    const skillRepository = new EmailSkillDefinitionRepository(db);
-    repository = new EmailSkillActivityRepository(db);
+    const connectionRepository = new CustomerEmailConnectionRepository(db.kysely);
+    const skillRepository = new EmailSkillDefinitionRepository(db.kysely);
+    repository = new EmailSkillActivityRepository(db.kysely);
     connectionId = (await connectionRepository.create({
       workspaceId,
       oauthConnectionId,

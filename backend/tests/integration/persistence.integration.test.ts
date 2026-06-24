@@ -28,7 +28,7 @@ import { EmbeddingService, type EmbeddingGateway } from "../../src/modules/retri
 import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
-import { runAllTestMigrations } from "../support/databaseMigrations.js";
+import { applyTestMigration, runAllTestMigrations } from "../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -93,7 +93,7 @@ describeIfDatabase("persistence integration", () => {
 
   beforeAll(async () => {
     database = new Database(integrationDatabaseUrl!);
-    workspaceRepository = new WorkspaceRepository(database);
+    workspaceRepository = new WorkspaceRepository(database.kysely);
     await runAllTestMigrations(database);
   });
 
@@ -108,8 +108,8 @@ describeIfDatabase("persistence integration", () => {
   };
 
   it("persists records and returns workspace-scoped vector matches", async () => {
-    const accountRepository = new AccountRepository(database);
-    const documentRepository = new DocumentRepository(database);
+    const accountRepository = new AccountRepository(database.kysely);
+    const documentRepository = new DocumentRepository(database.kysely);
     const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
     const vectorSearch = new PgVectorSearch(database);
 
@@ -185,8 +185,8 @@ describeIfDatabase("persistence integration", () => {
   });
 
   it("persists and searches workspace chunks with non-1536-dimensional embeddings", async () => {
-    const accountRepository = new AccountRepository(database);
-    const documentRepository = new DocumentRepository(database);
+    const accountRepository = new AccountRepository(database.kysely);
+    const documentRepository = new DocumentRepository(database.kysely);
     const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
     const vectorSearch = new PgVectorSearch(database);
 
@@ -248,15 +248,18 @@ describeIfDatabase("persistence integration", () => {
   });
 
   it("does not create duplicate default workspaces when migrations rerun", async () => {
-    const accountRepository = new AccountRepository(database);
+    const accountRepository = new AccountRepository(database.kysely);
     const account = await accountRepository.create({
       name: "Migration Default Organization",
       email: `migration-default-${randomUUID()}@example.com`,
       passwordHash: "hash-default",
     });
 
-    await runAllTestMigrations(database);
-    await runAllTestMigrations(database);
+    // Apply the default-workspace backfill directly (twice) to assert it is idempotent. We invoke
+    // the specific migration rather than runAllTestMigrations because the shared-DB harness applies
+    // each migration once; this is the precise idempotency check this test intends.
+    await applyTestMigration(database, "005_multi_workspace.sql");
+    await applyTestMigration(database, "005_multi_workspace.sql");
 
     const workspaces = await workspaceRepository.listByAccountId(account.id);
 
@@ -268,8 +271,8 @@ describeIfDatabase("persistence integration", () => {
   });
 
   it("enforces a single open skill intake state for concurrent starts in one conversation", async () => {
-    const accountRepository = new AccountRepository(database);
-    const conversationRepository = new ConversationRepository(database);
+    const accountRepository = new AccountRepository(database.kysely);
+    const conversationRepository = new ConversationRepository(database.kysely);
     const account = await accountRepository.create({
       name: "Concurrent Intake Organization",
       email: `concurrent-intake-${randomUUID()}@example.com`,
@@ -317,8 +320,8 @@ describeIfDatabase("persistence integration", () => {
   });
 
   it("paginates conversations without skipping rows when updated_at ties", async () => {
-    const accountRepository = new AccountRepository(database);
-    const conversationRepository = new ConversationRepository(database);
+    const accountRepository = new AccountRepository(database.kysely);
+    const conversationRepository = new ConversationRepository(database.kysely);
 
     const account = await accountRepository.create({
       name: "Conversation Cursor Organization",
@@ -391,8 +394,8 @@ describeIfDatabase("persistence integration", () => {
   });
 
   it("orders merged history items by chat updates and search audit timestamps", async () => {
-    const accountRepository = new AccountRepository(database);
-    const historyItemsRepository = new HistoryItemsRepository(database);
+    const accountRepository = new AccountRepository(database.kysely);
+    const historyItemsRepository = new HistoryItemsRepository(database.kysely);
 
     const account = await accountRepository.create({
       name: "Merged History Organization",
@@ -473,10 +476,10 @@ describeIfDatabase("persistence integration", () => {
   });
 
   it("stores raw chunk content while generating title-aware retrieval embeddings", async () => {
-    const accountRepository = new AccountRepository(database);
-    const documentRepository = new DocumentRepository(database);
+    const accountRepository = new AccountRepository(database.kysely);
+    const documentRepository = new DocumentRepository(database.kysely);
     const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
-    const jobRepository = new DocumentProcessingJobRepository(database);
+    const jobRepository = new DocumentProcessingJobRepository(database.kysely);
     const vectorSearch = new PgVectorSearch(database);
 
     const capturedTexts: string[] = [];
@@ -490,7 +493,7 @@ describeIfDatabase("persistence integration", () => {
     };
 
     const auditService = new AuditService(createLogger("silent"), noopAuditRepository);
-    const ingestionSettingsService = new IngestionSettingsService(new IngestionSettingsRepository(database), auditService);
+    const ingestionSettingsService = new IngestionSettingsService(new IngestionSettingsRepository(database.kysely), auditService);
     const embeddingService = new EmbeddingService(embeddingGateway);
     const processingWorker = new DocumentProcessingWorker(
       documentRepository,
@@ -559,8 +562,8 @@ describeIfDatabase("persistence integration", () => {
   });
 
   it("deletes documents only within the matching workspace scope and cascades chunks", async () => {
-    const accountRepository = new AccountRepository(database);
-    const documentRepository = new DocumentRepository(database);
+    const accountRepository = new AccountRepository(database.kysely);
+    const documentRepository = new DocumentRepository(database.kysely);
     const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
 
     const ownerAccount = await accountRepository.create({
@@ -629,8 +632,8 @@ describeIfDatabase("persistence integration", () => {
   });
 
   it("persists uploaded document source metadata and derived content updates", async () => {
-    const accountRepository = new AccountRepository(database);
-    const documentRepository = new DocumentRepository(database);
+    const accountRepository = new AccountRepository(database.kysely);
+    const documentRepository = new DocumentRepository(database.kysely);
 
     const account = await accountRepository.create({
       name: "Imported Source Organization",
@@ -687,8 +690,8 @@ describeIfDatabase("persistence integration", () => {
   });
 
   it("enforces workspace-scoped external document identity uniqueness and supports idempotent queueing", async () => {
-    const accountRepository = new AccountRepository(database);
-    const documentRepository = new DocumentRepository(database);
+    const accountRepository = new AccountRepository(database.kysely);
+    const documentRepository = new DocumentRepository(database.kysely);
 
     const accountA = await accountRepository.create({
       name: "External Id A Organization",
@@ -801,14 +804,14 @@ describeIfDatabase("persistence integration", () => {
   });
 
   it("persists analytics and error sink events in audit storage", async () => {
-    const accountRepository = new AccountRepository(database);
+    const accountRepository = new AccountRepository(database.kysely);
     const account = await accountRepository.create({
       name: "Analytics Account",
       email: `analytics-${randomUUID()}@example.com`,
       passwordHash: "hash",
     });
     const workspace = await workspaceRepository.create(account.id, "Analytics Workspace");
-    const auditRepository = new AuditEventRepository(database);
+    const auditRepository = new AuditEventRepository(database.kysely);
     const auditService = new AuditService(createLogger("silent"), auditRepository);
     const analyticsService = new ProductAnalyticsService({
       enabled: true,

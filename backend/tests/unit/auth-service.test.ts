@@ -486,6 +486,204 @@ describe("AuthService rollback", () => {
     expect(guard.reservations).toEqual([]);
   });
 
+  it("provisions a new account and workspace on first federated sign-in", async () => {
+    const accountIds: string[] = [];
+    const { authService, userRepository } = createAuthService({
+      sessionRepository: new WorkingSessionRepository(),
+      onAccountCreated: async ({ accountId }) => {
+        accountIds.push(accountId);
+      },
+    });
+
+    const result = await authService.federatedLogin({
+      provider: "google",
+      subject: "google-sub-1",
+      email: "New.Person@Example.com",
+      emailVerified: true,
+    });
+
+    const user = await userRepository.findByEmail("new.person@example.com");
+    expect(user).not.toBeNull();
+    expect(result.userId).toBe(user?.id);
+    expect(result.accountId).toBe(user?.id);
+    expect(accountIds).toEqual([result.accountId]);
+    expect(user?.emailVerifiedAt).not.toBeNull();
+    expect(result.sessionCookie).toContain("radioso_session=");
+  });
+
+  it("logs an existing verified user in without creating a second account", async () => {
+    const { authService, userRepository } = createAuthService({
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    const registered = await authService.register({
+      email: "linkme@example.com",
+      password: "verysecurepassword",
+    });
+    await userRepository.markEmailVerified(registered.userId, new Date());
+
+    const result = await authService.federatedLogin({
+      provider: "google",
+      subject: "google-sub-2",
+      email: "linkme@example.com",
+      emailVerified: true,
+    });
+
+    expect(result.userId).toBe(registered.userId);
+    expect(result.accountId).toBe(registered.accountId);
+    expect(result.sessionCookie).toContain("radioso_session=");
+  });
+
+  it("verifies and signs in an existing unverified user on federated sign-in", async () => {
+    const { authService, userRepository } = createAuthService({
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    const registered = await authService.register({
+      email: "unverified@example.com",
+      password: "verysecurepassword",
+    });
+    expect((await userRepository.findById(registered.userId))?.emailVerifiedAt).toBeNull();
+
+    const result = await authService.federatedLogin({
+      provider: "google",
+      subject: "google-sub-3",
+      email: "unverified@example.com",
+      emailVerified: true,
+    });
+
+    expect(result.userId).toBe(registered.userId);
+    expect((await userRepository.findById(registered.userId))?.emailVerifiedAt).not.toBeNull();
+    expect(result.sessionCookie).toContain("radioso_session=");
+  });
+
+  it("rotates the password and revokes sessions when verifying a squatted account (anti pre-hijack)", async () => {
+    const revokeCalls: string[] = [];
+    const sessionRepository = new WorkingSessionRepository();
+    const originalRevoke = sessionRepository.revokeAllForUser.bind(sessionRepository);
+    sessionRepository.revokeAllForUser = async (userId: string, revokedAt: Date) => {
+      revokeCalls.push(userId);
+      return originalRevoke(userId, revokedAt);
+    };
+    const { authService, userRepository } = createAuthService({ sessionRepository });
+
+    // Attacker registers the victim's email with a password they know. The
+    // account is unverified, so password login is still blocked.
+    const squatted = await authService.register({
+      email: "victim@example.com",
+      password: "attacker-known-password",
+    });
+    const squattedHash = (await userRepository.findById(squatted.userId))?.passwordHash;
+
+    // The real owner signs in with Google.
+    await authService.federatedLogin({
+      provider: "google",
+      subject: "google-sub-victim",
+      email: "victim@example.com",
+      emailVerified: true,
+    });
+
+    // The attacker's password must no longer work, and the hash must have rotated.
+    const rotatedHash = (await userRepository.findById(squatted.userId))?.passwordHash;
+    expect(rotatedHash).not.toBe(squattedHash);
+    expect(revokeCalls).toContain(squatted.userId);
+    await expect(
+      authService.login({ email: "victim@example.com", password: "attacker-known-password" }),
+    ).rejects.toMatchObject({ statusCode: 401 });
+  });
+
+  it("does not rotate the password of an already-verified user on federated sign-in", async () => {
+    const { authService, userRepository } = createAuthService({
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    const registered = await authService.register({
+      email: "verified-pw@example.com",
+      password: "owner-password",
+    });
+    await userRepository.markEmailVerified(registered.userId, new Date());
+    const verifiedHash = (await userRepository.findById(registered.userId))?.passwordHash;
+
+    await authService.federatedLogin({
+      provider: "google",
+      subject: "google-sub-verified",
+      email: "verified-pw@example.com",
+      emailVerified: true,
+    });
+
+    expect((await userRepository.findById(registered.userId))?.passwordHash).toBe(verifiedHash);
+    await expect(
+      authService.login({ email: "verified-pw@example.com", password: "owner-password" }),
+    ).resolves.toMatchObject({ userId: registered.userId });
+  });
+
+  it("rejects a federated sign-in whose email the provider did not verify", async () => {
+    const { authService } = createAuthService({
+      sessionRepository: new WorkingSessionRepository(),
+    });
+
+    await expect(
+      authService.federatedLogin({
+        provider: "google",
+        subject: "google-sub-4",
+        email: "unverified-by-provider@example.com",
+        emailVerified: false,
+      }),
+    ).rejects.toMatchObject({ statusCode: 401 });
+  });
+
+  it("rolls back the provisioned account if federated provisioning fails", async () => {
+    const accountRepository = new TrackingAccountRepository();
+    const { authService } = createAuthService({
+      accountRepository,
+      sessionRepository: new WorkingSessionRepository(),
+      onAccountCreated: async () => {
+        throw new Error("provisioning hook failed");
+      },
+    });
+
+    await expect(
+      authService.federatedLogin({
+        provider: "google",
+        subject: "google-sub-5",
+        email: "rollback-federated@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toThrow("provisioning hook failed");
+
+    expect(accountRepository.deletedIds).toEqual(["account-1"]);
+    expect(await accountRepository.findById("account-1")).toBeNull();
+  });
+
+  it("rolls back the loser of a concurrent first sign-in when the unique email insert fails", async () => {
+    // Two simultaneous first-time federated callbacks for the same new email
+    // both miss findByEmail and both provision. In Postgres the second user
+    // insert violates the users.email UNIQUE constraint (users_email_key); this
+    // proves provisionFederatedAccount funnels that failure into the account
+    // rollback path, so the race cannot leave a duplicate/orphan account.
+    const accountRepository = new TrackingAccountRepository();
+    const userRepository = new InMemoryUserRepository();
+    userRepository.create = async () => {
+      throw Object.assign(new Error("duplicate key value violates unique constraint \"users_email_key\""), {
+        code: "23505",
+      });
+    };
+    const { authService } = createAuthService({
+      accountRepository,
+      userRepository,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+
+    await expect(
+      authService.federatedLogin({
+        provider: "google",
+        subject: "google-sub-race",
+        email: "race@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toMatchObject({ code: "23505" });
+
+    expect(accountRepository.deletedIds).toEqual(["account-1"]);
+    expect(await accountRepository.findById("account-1")).toBeNull();
+  });
+
   it("rejects login until the user email is verified", async () => {
     const { authService, userRepository } = createAuthService({
       sessionRepository: new WorkingSessionRepository(),

@@ -6,12 +6,14 @@ import type {
   OauthConnectionSummary,
   StoredOauthClientConfig,
   StoredOauthFlow,
+  StoredOauthTokens,
 } from "../domain.js";
 import {
   buildAuthorizationUrl,
   createPkcePair,
-  exchangeAuthorizationCode,
+  exchangeAuthorizationCodeWithMetadata,
   type FetchLike,
+  type OauthTokenResponseNormalizer,
 } from "./oauthClient.js";
 import {
   decryptOauthClientConfig,
@@ -35,6 +37,7 @@ export interface OauthProviderDefinition {
   clientSecret?: string;
   defaultScopes: string[];
   allowedScopes?: string[];
+  tokenResponseNormalizer?: OauthTokenResponseNormalizer;
 }
 
 export interface OauthProviderRegistryPort {
@@ -57,10 +60,26 @@ export interface OauthConnectionServiceOptions {
   repository: OauthConnectionRepositoryPort;
   providers: OauthProviderRegistryPort;
   encryptionKey?: string;
+  /**
+   * Public origin of the user-facing dashboard. Used for the post-authorization
+   * browser redirect back to the connections UI.
+   */
   appBaseUrl?: string;
+  /**
+   * Public origin where the backend serves the OAuth provider callback
+   * (`/api/v1/oauth/callback/...`). On split-host deployments this is the API
+   * host, distinct from the dashboard `appBaseUrl`. Falls back to `appBaseUrl`
+   * when unset (single-origin / local).
+   */
+  apiBaseUrl?: string;
   fetchImpl?: FetchLike;
   assertPublicUrl?: (url: string) => Promise<void> | void;
   logger?: Pick<AppLogger, "info" | "warn">;
+  onAuthorized?: (input: {
+    connection: OauthConnectionRecord;
+    tokens: StoredOauthTokens;
+    metadata: Record<string, unknown>;
+  }) => Promise<void>;
 }
 
 interface SignedStatePayload {
@@ -186,24 +205,31 @@ export class OauthConnectionService {
       throw badRequest("OAuth state mismatch");
     }
 
-    const tokens = await exchangeAuthorizationCode({
+    const tokens = await exchangeAuthorizationCodeWithMetadata({
       config,
       code: input.code,
       codeVerifier: flow.codeVerifier,
       redirectUri: flow.redirectUri,
       fetchImpl: this.options.fetchImpl ?? globalThis.fetch,
+      tokenResponseNormalizer: provider.tokenResponseNormalizer,
     });
-    const grantedScopes = tokens.scope?.split(/\s+/).filter(Boolean) ?? config.scopes ?? record.grantedScopes;
+    const grantedScopes = tokens.tokens.scope?.split(/\s+/).filter(Boolean) ?? config.scopes ?? record.grantedScopes;
     const updated = await this.options.repository.setOauthTokens(
       record.workspaceId,
       record.id,
-      encryptOauthTokens(tokens, key),
+      encryptOauthTokens(tokens.tokens, key),
       null,
       grantedScopes,
+      tokens.providerAccountId ?? null,
     );
     if (!updated) {
       throw notFound("OAuth connection not found");
     }
+    await this.options.onAuthorized?.({
+      connection: updated,
+      tokens: tokens.tokens,
+      metadata: tokens.metadata ?? {},
+    });
 
     this.options.logger?.info(
       { event: "integration_oauth", phase: "authorized", provider: provider.id, workspaceId: record.workspaceId, connectionId: record.id },
@@ -221,7 +247,7 @@ export class OauthConnectionService {
     config: StoredOauthClientConfig,
     key: string,
   ): Promise<OauthAuthorizationStartResult> {
-    const baseUrl = normalizeBaseUrl(this.options.appBaseUrl);
+    const baseUrl = normalizeBaseUrl(this.options.apiBaseUrl ?? this.options.appBaseUrl);
     if (!baseUrl) {
       throw serviceUnavailable("APP_BASE_URL must be set so OAuth connections have a redirect URI");
     }

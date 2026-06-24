@@ -7,7 +7,8 @@ import type { PoolClient, QueryResultRow } from "pg";
 
 import { RoutineDefinitionRepository } from "../../src/db/repositories/routineDefinitionRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
-import type { RoutineDefinitionDraftInput } from "../../src/modules/routines/public.js";
+import { createKyselyDatabase } from "../../src/shared/infra/kysely/kyselyDatabase.js";
+import { validateRoutineDefinition, type RoutineDefinitionDraftInput } from "../../src/modules/routines/public.js";
 import { testMigrationsPath } from "../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
@@ -30,8 +31,27 @@ const canReachIntegrationDatabase = async (databaseUrl?: string): Promise<boolea
 const hasReachableIntegrationDatabase = await canReachIntegrationDatabase(integrationDatabaseUrl);
 const describeIfDatabase = hasReachableIntegrationDatabase ? describe : describe.skip;
 
-const createClientBackedDatabase = (client: PoolClient): Database => ({
-  pool: {} as Database["pool"],
+const createClientBackedDatabase = (client: PoolClient): Database => {
+  // Back Kysely with the SAME client the raw helpers use, so Kysely queries run inside
+  // this test's per-test schema (search_path) and open transaction — a fresh pool would
+  // miss both. The pool's connect() hands back the client with release() neutered.
+  const pool = {
+    async connect() {
+      return new Proxy(client, {
+        get(target, property, receiver) {
+          if (property === "release") {
+            return () => undefined;
+          }
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      }) as PoolClient;
+    },
+  } as Database["pool"];
+
+  return {
+  pool,
+  kysely: createKyselyDatabase(pool),
   async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
     const result = await client.query<T>(text, params);
     return result.rows;
@@ -64,7 +84,8 @@ const createClientBackedDatabase = (client: PoolClient): Database => ({
     }
   },
   async close(): Promise<void> {},
-} as Database);
+  } as Database;
+};
 
 const createRoutineSchema = async (client: PoolClient, schema: string): Promise<void> => {
   await client.query(`CREATE SCHEMA ${schema}`);
@@ -89,6 +110,7 @@ const createRoutineSchema = async (client: PoolClient, schema: string): Promise<
       activation_trigger_description TEXT NOT NULL,
       activation_gate_ref TEXT NULL,
       activation_priority INTEGER NOT NULL DEFAULT 0,
+      activation_reentry_mode TEXT NOT NULL DEFAULT 'once_per_conversation',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(agent_id, name, version),
@@ -104,6 +126,7 @@ const createRoutineSchema = async (client: PoolClient, schema: string): Promise<
       required BOOLEAN NOT NULL DEFAULT TRUE,
       description TEXT NULL,
       ordinal INTEGER NOT NULL,
+      mutable BOOLEAN NOT NULL DEFAULT FALSE,
       PRIMARY KEY (definition_id, stable_slot_id),
       UNIQUE(definition_id, key),
       UNIQUE(definition_id, ordinal)
@@ -116,10 +139,13 @@ const createRoutineSchema = async (client: PoolClient, schema: string): Promise<
       instruction TEXT NOT NULL,
       tool_ref TEXT NULL,
       action_type TEXT NULL,
+      capture_key TEXT NULL,
+      options JSONB NULL,
       ordinal INTEGER NOT NULL,
       metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
       PRIMARY KEY (definition_id, stable_step_id),
-      UNIQUE(definition_id, ordinal)
+      UNIQUE(definition_id, ordinal),
+      CHECK (kind IN ('chat', 'tool', 'action', 'approval'))
     );
 
     CREATE TABLE routine_transition (
@@ -130,6 +156,11 @@ const createRoutineSchema = async (client: PoolClient, schema: string): Promise<
       guard_text TEXT NULL,
       outcome_status TEXT NULL,
       counter_limit INTEGER NULL,
+      field_ref TEXT NULL,
+      field_op TEXT NULL,
+      field_value JSONB NULL,
+      field_values JSONB NULL,
+      field_unit TEXT NULL,
       ordinal INTEGER NOT NULL,
       PRIMARY KEY (definition_id, from_step, ordinal)
     );
@@ -177,6 +208,7 @@ const draftInput = (name = "postgres-lifecycle", label = "v1"): RoutineDefinitio
     triggerDescription: `When the user asks for ${label}.`,
     gateRef: null,
     priority: 10,
+    reentryMode: "once_per_conversation",
   },
   slots: [{
     stableSlotId: "slot_topic",
@@ -243,7 +275,7 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
   });
 
   it("publishes, revises, archives, and restores against real SQL indexes", async () => {
-    const repository = new RoutineDefinitionRepository(database);
+    const repository = new RoutineDefinitionRepository(database.kysely);
     const draftV1 = await repository.createDraft(agentId, draftInput("postgres-lifecycle", "v1"));
     const publishedV1 = await repository.publish(agentId, draftV1.id);
 
@@ -308,8 +340,122 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
     expect(await repository.restore(agentId, publishedV2.id)).toBe(true);
   });
 
+  it("round-trips deterministic field guards (ref/op/value/values/unit) through real SQL", async () => {
+    const repository = new RoutineDefinitionRepository(database.kysely);
+    const draft = await repository.createDraft(agentId, {
+      name: "field-guard-roundtrip",
+      activation: { triggerDescription: "When checking eligibility.", gateRef: null, priority: 5, reentryMode: "always" },
+      slots: [
+        { stableSlotId: "slot_amount", key: "amount", type: "number", required: true, description: "Order total", ordinal: 0 },
+        { stableSlotId: "slot_tier", key: "tier", type: "text", required: true, description: "Tier", ordinal: 1 },
+      ],
+      steps: [{
+        stableStepId: "step_decide",
+        kind: "chat",
+        instruction: "Evaluate {{slot.amount}} for {{slot.tier}}.",
+        toolRef: null,
+        ordinal: 0,
+        metadata: {},
+      }],
+      transitions: [
+        {
+          fromStep: "step_decide", toRef: "terminal_big", guardKind: "field",
+          guardText: null, outcomeStatus: null, counterLimit: null,
+          fieldRef: "amount", fieldOp: "gte", fieldValue: 100, ordinal: 0,
+        },
+        {
+          fromStep: "step_decide", toRef: "terminal_member", guardKind: "field",
+          guardText: null, outcomeStatus: null, counterLimit: null,
+          fieldRef: "tier", fieldOp: "in", fieldValues: ["gold", "platinum"], ordinal: 1,
+        },
+        {
+          fromStep: "step_decide", toRef: "terminal_standard", guardKind: "default",
+          guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 2,
+        },
+      ],
+      terminals: [
+        { stableStepId: "terminal_big", kind: "complete", instruction: "Free shipping.", ordinal: 0 },
+        { stableStepId: "terminal_member", kind: "complete", instruction: "Member perk.", ordinal: 1 },
+        { stableStepId: "terminal_standard", kind: "complete", instruction: "Standard.", ordinal: 2 },
+      ],
+    });
+
+    const reloaded = await repository.findById(agentId, draft.id);
+    const numeric = reloaded?.transitions.find((transition) => transition.toRef === "terminal_big");
+    const membership = reloaded?.transitions.find((transition) => transition.toRef === "terminal_member");
+
+    expect(numeric).toMatchObject({ guardKind: "field", fieldRef: "amount", fieldOp: "gte", fieldValue: 100 });
+    expect(membership).toMatchObject({ guardKind: "field", fieldRef: "tier", fieldOp: "in", fieldValues: ["gold", "platinum"] });
+  });
+
+  it("round-trips an approval step's capture key and options through real SQL (issue #755)", async () => {
+    const repository = new RoutineDefinitionRepository(database.kysely);
+    const draft = await repository.createDraft(agentId, {
+      name: "approval-roundtrip",
+      activation: { triggerDescription: "When a refund needs a manager.", gateRef: null, priority: 0, reentryMode: "once_per_conversation" },
+      slots: [],
+      steps: [
+        {
+          stableStepId: "review",
+          kind: "approval",
+          instruction: "Approve or deny the refund.",
+          toolRef: null,
+          actionType: null,
+          captureKey: "refund_decision",
+          options: [
+            { id: "approve", label: "Approve", description: "Issue the refund" },
+            { id: "deny", label: "Deny" },
+          ],
+          ordinal: 0,
+          metadata: {},
+        },
+        {
+          stableStepId: "issue",
+          kind: "chat",
+          instruction: "Issue the refund.",
+          toolRef: null,
+          ordinal: 1,
+          metadata: {},
+        },
+      ],
+      transitions: [
+        {
+          fromStep: "review", toRef: "issue", guardKind: "field", guardText: null, outcomeStatus: null, counterLimit: null,
+          fieldRef: "refund_decision.id", fieldOp: "equals", fieldValue: "approve", ordinal: 0,
+        },
+        {
+          fromStep: "review", toRef: "terminal_done", guardKind: "field", guardText: null, outcomeStatus: null, counterLimit: null,
+          fieldRef: "refund_decision.id", fieldOp: "equals", fieldValue: "deny", ordinal: 1,
+        },
+        {
+          fromStep: "issue", toRef: "terminal_done", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 2,
+        },
+      ],
+      terminals: [{ stableStepId: "terminal_done", kind: "complete", instruction: "Done.", ordinal: 0 }],
+    });
+
+    const reloaded = await repository.findById(agentId, draft.id);
+    const approvalStep = reloaded?.steps.find((step) => step.kind === "approval");
+    expect(approvalStep).toMatchObject({
+      stableStepId: "review",
+      captureKey: "refund_decision",
+      options: [
+        { id: "approve", label: "Approve", description: "Issue the refund" },
+        { id: "deny", label: "Deny", description: null },
+      ],
+    });
+    // A non-approval step must not gain capture key / options on the round-trip.
+    const chatStep = reloaded?.steps.find((step) => step.stableStepId === "issue");
+    expect(chatStep).not.toHaveProperty("captureKey");
+    expect(chatStep).not.toHaveProperty("options");
+
+    // The persisted gate still validates clean: the decision field guards resolve against
+    // the recovered capture key (a dropped captureKey would surface field_guard_unknown_reference).
+    expect(validateRoutineDefinition(reloaded!)).toMatchObject({ ok: true });
+  });
+
   it("rejects publish when an enabled completion export destination was deleted before publish", async () => {
-    const repository = new RoutineDefinitionRepository(database);
+    const repository = new RoutineDefinitionRepository(database.kysely);
     const destinationId = randomUUID();
     await database.execute(
       `INSERT INTO workspace_webhook_destinations (
@@ -356,7 +502,7 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
   });
 
   it("rejects restore when an enabled completion export destination was deleted while archived", async () => {
-    const repository = new RoutineDefinitionRepository(database);
+    const repository = new RoutineDefinitionRepository(database.kysely);
     const destinationId = randomUUID();
     await database.execute(
       `INSERT INTO workspace_webhook_destinations (
@@ -478,7 +624,7 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
   });
 
   it("rejects a draft save that races publish without mutating the published children", async () => {
-    const repository = new RoutineDefinitionRepository(database);
+    const repository = new RoutineDefinitionRepository(database.kysely);
     const draft = await repository.createDraft(agentId, draftInput("postgres-update-race", "v1"));
     const published = await repository.publish(agentId, draft.id);
 

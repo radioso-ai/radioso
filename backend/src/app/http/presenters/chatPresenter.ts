@@ -137,6 +137,10 @@ export const sendChatSse = (
     res.write("event: done\n");
     res.write(`data: ${JSON.stringify({
       ...donePayload,
+      // Forward the ownership ack so a streamed human-owned (suppressed) turn lets the
+      // client drop the empty placeholder / render the waiting line, matching the
+      // non-streaming response. Absent on normal turns, so this is a no-op for them.
+      ...(event.ownership ? { ownership: event.ownership } : {}),
       ...(options.includeDebug && event.skill ? { skill: event.skill } : {}),
     })}\n\n`);
   };

@@ -2,12 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   createDefaultApplicationComposition,
+  createDefaultConnectorRegistry,
   createDefaultDocumentJobConsumer,
   createDefaultDocumentJobDispatcher,
   createDefaultWebsiteCrawlJobConsumer,
   createDefaultWebsiteCrawlJobDispatcher,
 } from "../../src/app/composition/defaultComposition.js";
-import { CONTACT_SEND_ACTION_TYPE, DefaultTurnSelectionStrategy, WEBHOOK_SEND_ACTION_TYPE } from "../../src/modules/chat/composition.js";
+import {
+  CONTACT_SEND_ACTION_TYPE,
+  DefaultTurnSelectionStrategy,
+  HANDOFF_NOTIFY_ACTION_TYPE,
+  WEBHOOK_SEND_ACTION_TYPE,
+} from "../../src/modules/chat/composition.js";
 import type { OrganizationCreationGuard } from "../../src/shared/domain/organizationCreationGuard.js";
 import type { DirectiveMatcherPort } from "../../src/modules/directives/public.js";
 import { capabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
@@ -61,6 +67,7 @@ describe("default application composition", () => {
       "radioso-contact-routine",
       "radioso-webhook-send",
       "radioso-customer-email",
+      "radioso-slack",
     ]);
     expect(composition.directiveRegistrations.map((registration) => registration.directive.name)).toEqual([
       "concise-readable-formatting",
@@ -76,6 +83,10 @@ describe("default application composition", () => {
     expect(composition.websiteEmbedIntegration).toBeDefined();
     expect(composition.actionCapabilityMap.has(CONTACT_SEND_ACTION_TYPE)).toBe(true);
     expect(composition.actionCapabilityMap.requiredCapabilitiesFor(CONTACT_SEND_ACTION_TYPE)).toEqual([
+      capabilityNames.humanContact.request,
+    ]);
+    expect(composition.actionCapabilityMap.has(HANDOFF_NOTIFY_ACTION_TYPE)).toBe(true);
+    expect(composition.actionCapabilityMap.requiredCapabilitiesFor(HANDOFF_NOTIFY_ACTION_TYPE)).toEqual([
       capabilityNames.humanContact.request,
     ]);
     expect(composition.actionCapabilityMap.has(WEBHOOK_SEND_ACTION_TYPE)).toBe(true);
@@ -123,6 +134,53 @@ describe("default application composition", () => {
     ]);
   });
 
+  it("registers Slack OAuth provider when Slack OAuth credentials are configured", () => {
+    const absent = createDefaultApplicationComposition({
+      logger: createLogger(),
+      env: {
+        SLACK_OAUTH_CLIENT_ID: "slack-client",
+        SLACK_OAUTH_CLIENT_SECRET: "slack-secret",
+      },
+    });
+    expect(absent.oauthProviders).toEqual([]);
+
+    const composition = createDefaultApplicationComposition({
+      logger: createLogger(),
+      env: {
+        SLACK_OAUTH_CLIENT_ID: "slack-client",
+        SLACK_OAUTH_CLIENT_SECRET: "slack-secret",
+        SLACK_SIGNING_SECRET: "signing-secret",
+      },
+    });
+
+    expect(composition.oauthProviders).toEqual([
+      expect.objectContaining({
+        id: "slack",
+        authorizationEndpoint: "https://slack.com/oauth/v2/authorize",
+        tokenEndpoint: "https://slack.com/api/oauth.v2.access",
+        clientId: "slack-client",
+        clientSecret: "slack-secret",
+        defaultScopes: ["app_mentions:read", "chat:write", "im:history", "im:read", "im:write"],
+        allowedScopes: ["app_mentions:read", "chat:write", "im:history", "im:read", "im:write"],
+      }),
+    ]);
+  });
+
+  it("registers the Slack connector only when the complete Slack env set is configured", () => {
+    expect(createDefaultConnectorRegistry([], {
+      SLACK_SIGNING_SECRET: "signing-secret",
+    }).listPlugins().map((plugin) => plugin.id)).not.toContain("slack");
+    expect(createDefaultConnectorRegistry([], {
+      SLACK_OAUTH_CLIENT_ID: "slack-client",
+      SLACK_OAUTH_CLIENT_SECRET: "slack-secret",
+    }).listPlugins().map((plugin) => plugin.id)).not.toContain("slack");
+    expect(createDefaultConnectorRegistry([], {
+      SLACK_OAUTH_CLIENT_ID: "slack-client",
+      SLACK_OAUTH_CLIENT_SECRET: "slack-secret",
+      SLACK_SIGNING_SECRET: "signing-secret",
+    }).listPlugins().map((plugin) => plugin.id)).toContain("slack");
+  });
+
   it("applies optional connector contributions through module registration", async () => {
     const connector = createConnector("test-connector");
     const composition = createDefaultApplicationComposition({
@@ -148,6 +206,7 @@ describe("default application composition", () => {
       "radioso-contact-routine",
       "radioso-webhook-send",
       "radioso-customer-email",
+      "radioso-slack",
       "connector-module",
     ]);
   });

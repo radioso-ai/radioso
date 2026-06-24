@@ -1,3 +1,9 @@
+---
+title: "Webhook Skills"
+description: "API and contract for defining unified agent webhook skills that routines can call to deliver payloads to workspace destinations."
+last_updated: 2026-06-23
+---
+
 # Webhook Skills
 
 Webhook skills let an agent's routines call a configured workspace webhook
@@ -18,7 +24,23 @@ Webhook deliveries are signed with `X-Radioso-Signature` and include
 
 ## 2. Define an agent webhook skill
 
-Create a skill under the agent:
+Open the agent's **Skills** list and choose **Add new skill**. Pick the
+**Webhook call** tile, which is enabled when at least one workspace webhook
+destination exists, then select a destination. The destination owns the URL and
+secret; the skill form only asks for the name and target by default. The payload
+input is exposed to routines automatically. Open **Advanced** to bind a fixed
+payload value, change invocation behavior, narrow outcomes, edit raw config, or
+disable the skill.
+
+The unified endpoints are:
+
+- `GET /api/v1/agents/{agentId}/skill-capabilities`
+- `GET /api/v1/agents/{agentId}/skills`
+- `POST /api/v1/agents/{agentId}/skills`
+- `PATCH /api/v1/agents/{agentId}/skills/{skillId}`
+- `DELETE /api/v1/agents/{agentId}/skills/{skillId}`
+
+Legacy webhook skill endpoints may remain available during cutover:
 
 - `GET /api/v1/agents/{agentId}/webhook-skills`
 - `POST /api/v1/agents/{agentId}/webhook-skills`
@@ -52,3 +74,7 @@ Stable outcomes are:
 The payload sent to the receiver has type `agent.webhook_skill`, workspace and
 agent identifiers, routine source metadata when available, and the configured
 `data` object. It does not include the destination secret.
+
+Routine completion export is represented as a `webhook_call` skill, commonly
+named `completion_export`. Disabling that skill disables completion export for
+the agent.

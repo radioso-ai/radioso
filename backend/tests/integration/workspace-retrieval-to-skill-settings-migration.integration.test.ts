@@ -53,9 +53,9 @@ describeIfDatabase("workspace retrieval settings to agent skill settings migrati
 
   beforeAll(async () => {
     database = new Database(integrationDatabaseUrl!);
-    accountRepository = new AccountRepository(database);
-    workspaceRepository = new WorkspaceRepository(database);
-    agentRepository = new AgentRepository(database);
+    accountRepository = new AccountRepository(database.kysely);
+    workspaceRepository = new WorkspaceRepository(database.kysely);
+    agentRepository = new AgentRepository(database.kysely);
     await runAllTestMigrations(database);
     // 081 drops the query-time columns 080 reads; re-add them so we can seed the pre-migration
     // schema and exercise 080 against it.

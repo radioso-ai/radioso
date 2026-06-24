@@ -1,3 +1,9 @@
+---
+title: "Conversational Routines"
+description: "The engine-level design of multi-turn flows with slots, steps, guards, terminals, activation ranking, and runtime slot extraction mechanics."
+last_updated: 2026-06-19
+---
+
 # Conversational Routines
 
 A Routine is a multi-step flow the assistant can run across several turns. It
@@ -194,6 +200,12 @@ The ranked activation input is the latest user message plus the full eligible
 routine list. Each routine contributes its trigger description and authored
 priority. Capability gates are applied before ranking, so a gated-off routine is
 not considered and cannot appear in a clarifying question.
+
+A routine's reentry mode is also applied before ranking. A routine that already
+completed in the conversation is dropped from the eligible list, so it cannot be
+ranked or re-started. The exception is a routine set to start every time it
+matches: that routine stays eligible after it completes. The default mode keeps
+the historical behavior of running once per conversation.
 
 The activation result is a per-routine confidence score and any activation
 variables that can already be extracted from the original message. The decision

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import type { Database } from "../../shared/infra/database.js";
+import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 import type { AccountMembershipRole } from "./accountMembershipRepository.js";
 
 export type AccountInvitationStatus = "pending" | "accepted" | "revoked" | "expired";
@@ -35,6 +36,21 @@ interface AccountInvitationRow {
   created_at: Date;
   updated_at: Date;
 }
+
+const accountInvitationColumns = [
+  "id",
+  "account_id",
+  "email",
+  "invited_by_membership_id",
+  "token_hash",
+  "status",
+  "expires_at",
+  "accepted_at",
+  "accepted_by_user_id",
+  "role",
+  "created_at",
+  "updated_at",
+] as const;
 
 const mapInvitation = (row: AccountInvitationRow): AccountInvitationRecord => ({
   id: row.id,
@@ -73,7 +89,7 @@ export interface AccountInvitationRepositoryPort {
 }
 
 export class AccountInvitationRepository implements AccountInvitationRepositoryPort {
-  constructor(private readonly database: Database) {}
+  constructor(private readonly db: Db) {}
 
   async create(params: {
     accountId: string;
@@ -84,70 +100,57 @@ export class AccountInvitationRepository implements AccountInvitationRepositoryP
     status?: AccountInvitationStatus;
     expiresAt: Date;
   }): Promise<AccountInvitationRecord> {
-    const [row] = await this.database.query<AccountInvitationRow>(
-      `INSERT INTO account_invitations (
-         id,
-         account_id,
-         email,
-         invited_by_membership_id,
-         token_hash,
-         role,
-         status,
-         expires_at
-       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, account_id, email, invited_by_membership_id, token_hash, status, expires_at, accepted_at, accepted_by_user_id, role, created_at, updated_at`,
-      [
-        randomUUID(),
-        params.accountId,
-        params.email,
-        params.invitedByMembershipId,
-        params.tokenHash,
-        params.role,
-        params.status ?? "pending",
-        params.expiresAt,
-      ],
-    );
+    const row = await this.db
+      .insertInto("account_invitations")
+      .values({
+        id: randomUUID(),
+        account_id: params.accountId,
+        email: params.email,
+        invited_by_membership_id: params.invitedByMembershipId,
+        token_hash: params.tokenHash,
+        role: params.role,
+        status: params.status ?? "pending",
+        expires_at: params.expiresAt,
+      })
+      .returning(accountInvitationColumns)
+      .executeTakeFirstOrThrow();
 
-    return mapInvitation(row);
+    return mapInvitation(row as AccountInvitationRow);
   }
 
   async findPendingByAccountAndEmail(accountId: string, email: string): Promise<AccountInvitationRecord | null> {
-    const [row] = await this.database.query<AccountInvitationRow>(
-      `SELECT id, account_id, email, invited_by_membership_id, token_hash, status, expires_at, accepted_at, accepted_by_user_id, role, created_at, updated_at
-       FROM account_invitations
-       WHERE account_id = $1
-         AND email = $2
-         AND status = 'pending'
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [accountId, email],
-    );
+    const row = await this.db
+      .selectFrom("account_invitations")
+      .select(accountInvitationColumns)
+      .where("account_id", "=", accountId)
+      .where("email", "=", email)
+      .where("status", "=", "pending")
+      .orderBy("created_at", "desc")
+      .limit(1)
+      .executeTakeFirst();
 
-    return row ? mapInvitation(row) : null;
+    return row ? mapInvitation(row as AccountInvitationRow) : null;
   }
 
   async findByTokenHash(tokenHash: string): Promise<AccountInvitationRecord | null> {
-    const [row] = await this.database.query<AccountInvitationRow>(
-      `SELECT id, account_id, email, invited_by_membership_id, token_hash, status, expires_at, accepted_at, accepted_by_user_id, role, created_at, updated_at
-       FROM account_invitations
-       WHERE token_hash = $1`,
-      [tokenHash],
-    );
+    const row = await this.db
+      .selectFrom("account_invitations")
+      .select(accountInvitationColumns)
+      .where("token_hash", "=", tokenHash)
+      .executeTakeFirst();
 
-    return row ? mapInvitation(row) : null;
+    return row ? mapInvitation(row as AccountInvitationRow) : null;
   }
 
   async listByAccount(accountId: string): Promise<AccountInvitationRecord[]> {
-    const rows = await this.database.query<AccountInvitationRow>(
-      `SELECT id, account_id, email, invited_by_membership_id, token_hash, status, expires_at, accepted_at, accepted_by_user_id, role, created_at, updated_at
-       FROM account_invitations
-       WHERE account_id = $1
-       ORDER BY created_at DESC`,
-      [accountId],
-    );
+    const rows = await this.db
+      .selectFrom("account_invitations")
+      .select(accountInvitationColumns)
+      .where("account_id", "=", accountId)
+      .orderBy("created_at", "desc")
+      .execute();
 
-    return rows.map(mapInvitation);
+    return rows.map((row) => mapInvitation(row as AccountInvitationRow));
   }
 
   async update(params: {
@@ -156,17 +159,18 @@ export class AccountInvitationRepository implements AccountInvitationRepositoryP
     acceptedAt?: Date | null;
     acceptedByUserId?: string | null;
   }): Promise<AccountInvitationRecord> {
-    const [row] = await this.database.query<AccountInvitationRow>(
-      `UPDATE account_invitations
-       SET status = $2,
-           accepted_at = $3,
-           accepted_by_user_id = $4,
-           updated_at = NOW()
-       WHERE id = $1
-       RETURNING id, account_id, email, invited_by_membership_id, token_hash, status, expires_at, accepted_at, accepted_by_user_id, role, created_at, updated_at`,
-      [params.id, params.status, params.acceptedAt ?? null, params.acceptedByUserId ?? null],
-    );
+    const row = await this.db
+      .updateTable("account_invitations")
+      .set({
+        status: params.status,
+        accepted_at: params.acceptedAt ?? null,
+        accepted_by_user_id: params.acceptedByUserId ?? null,
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", params.id)
+      .returning(accountInvitationColumns)
+      .executeTakeFirstOrThrow();
 
-    return mapInvitation(row);
+    return mapInvitation(row as AccountInvitationRow);
   }
 }

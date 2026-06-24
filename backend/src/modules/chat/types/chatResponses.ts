@@ -28,6 +28,11 @@ export interface ChatRoute {
   reason: "assistant_identity" | "conversation_start" | "evidence_required" | "social_only";
 }
 
+export interface ChatOwnershipAck {
+  state: "ai_owned" | "human_owned";
+  suppressed: boolean;
+}
+
 export interface ChatResponse {
   conversationId: string;
   agentId?: string;
@@ -35,11 +40,14 @@ export interface ChatResponse {
   assistantMessageId: string;
   route: ChatRoute;
   answer: string;
+  skillOutcome?: string;
+  answerOutcome?: string;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
   suggestions?: ChatSuggestion[];
   activitySummary: ActivitySummary;
   activityTrace: ActivityTrace;
+  ownership?: ChatOwnershipAck;
   /**
    * Turn-trace envelope: conversation spine as the root span with capability
    * traces as typed leaves. Surfaced under `debug` (operator-only); the legacy

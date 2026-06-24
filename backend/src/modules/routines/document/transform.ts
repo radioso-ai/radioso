@@ -53,7 +53,16 @@ export const routineDraftToDocument = (draft: RoutineDefinitionDraftInput): Rout
             ? { kind: "outcome", status: transition.outcomeStatus ?? transition.guardText ?? "" }
             : transition.guardKind === "counter"
               ? { kind: "counter", limit: transition.counterLimit ?? Number.parseInt(transition.guardText ?? "", 10) }
-              : { kind: "default" };
+              : transition.guardKind === "field" && transition.fieldRef && transition.fieldOp
+                ? {
+                    kind: "field",
+                    ref: transition.fieldRef,
+                    op: transition.fieldOp,
+                    value: transition.fieldValue ?? null,
+                    values: transition.fieldValues ?? null,
+                    unit: transition.fieldUnit ?? null,
+                  }
+                : { kind: "default" };
     const branch: RoutineDocumentBranch = {
       fromStepId: transition.fromStep,
       target: {
@@ -83,7 +92,7 @@ export const routineDraftToDocument = (draft: RoutineDefinitionDraftInput): Rout
       kind: step.kind,
       toolRef: step.toolRef ?? null,
       actionType: step.actionType ?? null,
-      metadata: step.metadata ?? {},
+      metadata: { ...(step.metadata ?? {}) },
       ordinal: step.ordinal,
       branches: transitionsByStep.get(step.stableStepId) ?? [],
     })),
@@ -107,7 +116,8 @@ const inferGuardKind = (guard: RoutineDocumentBranch["guard"]): RoutineDefinitio
 const transitionFieldsForGuard = (
   guard: RoutineDocumentBranch["guard"],
   slotKeys: ReadonlySet<string>,
-): Pick<RoutineDefinitionDraftInput["transitions"][number], "guardText" | "outcomeStatus" | "counterLimit"> => {
+): Pick<RoutineDefinitionDraftInput["transitions"][number], "guardText" | "outcomeStatus" | "counterLimit"> &
+  Partial<Pick<RoutineDefinitionDraftInput["transitions"][number], "fieldRef" | "fieldOp" | "fieldValue" | "fieldValues" | "fieldUnit">> => {
   switch (guard.kind) {
     case "llm":
       return { guardText: decodeRoutineDocumentText(guard.text, slotKeys), outcomeStatus: null, counterLimit: null };
@@ -117,6 +127,17 @@ const transitionFieldsForGuard = (
       return { guardText: null, outcomeStatus: guard.status, counterLimit: null };
     case "counter":
       return { guardText: null, outcomeStatus: null, counterLimit: guard.limit };
+    case "field":
+      return {
+        guardText: null,
+        outcomeStatus: null,
+        counterLimit: null,
+        fieldRef: guard.ref,
+        fieldOp: guard.op,
+        fieldValue: guard.value,
+        fieldValues: guard.values,
+        fieldUnit: guard.unit,
+      };
     default:
       return { guardText: null, outcomeStatus: null, counterLimit: null };
   }
@@ -210,7 +231,7 @@ export const routineDocumentToDraft = (document: RoutineDocument): RoutineDocume
         toolRef: step.toolRef,
         actionType: step.actionType,
         ordinal: step.ordinal,
-        metadata: step.metadata,
+        metadata: { ...step.metadata },
       };
     }),
     transitions: transitionDrafts,

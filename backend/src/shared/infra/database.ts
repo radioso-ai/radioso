@@ -1,4 +1,15 @@
+import type { Kysely } from "kysely";
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
+
+import { createKyselyDatabase } from "./kysely/kyselyDatabase.js";
+import type { DB } from "./kysely/schema.js";
+
+export interface DatabaseExecutor {
+  query<T extends QueryResultRow>(text: string, params?: unknown[]): Promise<T[]>;
+  queryOptional<T extends QueryResultRow>(text: string, params?: unknown[]): Promise<T | null>;
+  queryOne<T extends QueryResultRow>(text: string, params?: unknown[]): Promise<T>;
+  execute(text: string, params?: unknown[]): Promise<number>;
+}
 
 export interface DatabaseOptions {
   poolMax?: number;
@@ -12,6 +23,7 @@ export interface DatabaseOptions {
 
 export class Database {
   readonly pool: Pool;
+  #kysely?: Kysely<DB>;
 
   constructor(connectionString: string, options: DatabaseOptions = {}) {
     this.pool = new Pool({
@@ -25,6 +37,19 @@ export class Database {
       application_name: options.applicationName,
       keepAlive: true,
     });
+  }
+
+  /**
+   * Kysely query builder over the same pool. Repositories migrated off raw SQL are
+   * injected this (typed `Db`); it shares the pool and transaction context with the raw
+   * `query*` methods during the migration. Lazily created; closed via {@link close}.
+   */
+  get kysely(): Kysely<DB> {
+    if (!this.#kysely) {
+      this.#kysely = createKyselyDatabase(this.pool);
+    }
+
+    return this.#kysely;
   }
 
   async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
@@ -71,3 +96,29 @@ export class Database {
     await this.pool.end();
   }
 }
+
+export const databaseExecutorFromClient = (client: Pick<PoolClient, "query">): DatabaseExecutor => ({
+  async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
+    const result = await client.query<T>(text, params);
+    return result.rows;
+  },
+
+  async queryOptional<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T | null> {
+    const result = await client.query<T>(text, params);
+    return result.rows[0] ?? null;
+  },
+
+  async queryOne<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T> {
+    const result = await client.query<T>(text, params);
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error("Expected query to return one row");
+    }
+    return row;
+  },
+
+  async execute(text: string, params: unknown[] = []): Promise<number> {
+    const result = await client.query(text, params);
+    return result.rowCount ?? 0;
+  },
+});

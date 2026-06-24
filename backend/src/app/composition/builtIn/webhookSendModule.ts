@@ -1,5 +1,6 @@
 import { AgentRepository } from "../../../db/repositories/agentRepository.js";
 import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
+import { AgentSkillRepository } from "../../../modules/agentSkills/repository.js";
 import {
   ConversationAgentWebhookPermissionResolver,
   FetchWebhookHttpClient,
@@ -23,8 +24,9 @@ export const createWebhookSendApplicationModule = (): ApplicationModule => ({
           destinations: webhookDestinations,
           deliveryOutcomes: webhookDestinations,
           permission: new ConversationAgentWebhookPermissionResolver(
-            new ConversationRepository(database),
-            new AgentRepository(database),
+            new ConversationRepository(database.kysely),
+            new AgentRepository(database.kysely),
+            new AgentSkillRepository(database.kysely),
           ),
           httpClient: new FetchWebhookHttpClient(assertPublicWebsiteUrl),
           telemetryService,

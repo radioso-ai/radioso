@@ -1,3 +1,9 @@
+---
+title: "Code Map"
+description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
+last_updated: 2026-06-17
+---
+
 # Code Map
 
 This map is a starting point for feature work. It is not a generated inventory.
@@ -83,12 +89,17 @@ Related docs:
 
 ## Persistence And Data Access
 
-Owns the Postgres implementations of persistence ports: SQL, row→record mapping,
-migrations, and the generated schema snapshot. No ORM; raw SQL via `pg` lives in
-repository adapters behind per-module ports.
+Owns the Postgres implementations of persistence ports: queries, row→record mapping,
+migrations, and the generated schema snapshot. Data access goes through **Kysely** (the
+typed query builder) on the shared `pg.Pool`; Postgres-specific fragments live in
+`shared/infra/kysely/sqlHelpers.ts`, and the `DB` type is generated from the migrations
+(`pnpm run db:types`). Raw `pg` SQL is confined to a small allowlist — the migration runner,
+the `Database` pool wrapper, the pgvector/full-text adapters, and the connector files bound to
+the published `@radioso/connector-api` contract — enforced by `pnpm run lint:no-raw-sql`
+(`scripts/checkNoRawSql.mjs`). Migrations themselves stay raw `.sql`.
 
 Should not own product rules. Domain modules depend on a `*RepositoryPort` (a
-type) and never import `pg`, the `Database` class, or a concrete repository.
+type) and never import `pg`, Kysely, the `Database` class, or a concrete repository.
 
 Primary paths:
 
@@ -97,13 +108,18 @@ Primary paths:
 - `backend/src/db/repositories/` — repository adapters and row mappers
 - `backend/src/db/migrations/` — schema; system of record, applied in order
 - `backend/src/db/schema.sql` — generated read-only snapshot of the full schema
-- `backend/src/shared/infra/database.ts` — `query`/`queryOne`/`withTransaction`
-- `backend/src/app/server/dependencyBuilders.ts` — where repositories are wired
+- `backend/src/shared/infra/database.ts` — the pg Pool wrapper; exposes `.kysely` (the
+  shared `Kysely<DB>`) plus the legacy `query`/`queryOne`/`withTransaction` used by the
+  migration runner and allowlisted raw-SQL adapters
+- `backend/src/shared/infra/kysely/` — `kyselyDatabase.ts` (builds Kysely on the pool),
+  generated `schema.ts` (the `DB` type), and `sqlHelpers.ts` (the only home for
+  Postgres-specific fragments: pgvector, jsonb, `now()`, etc.)
+- `backend/src/app/server/dependencyBuilders.ts` — where repositories are wired (`database.kysely`)
 
 Useful searches:
 
 - `rg "implements .*RepositoryPort" backend/src/db/repositories`
-- `rg "new .*Repository\(database" backend/src/app/server/dependencyBuilders.ts`
+- `rg "new .*Repository\(database.kysely" backend/src/app/server/dependencyBuilders.ts`
 
 Focused checks:
 
@@ -139,10 +155,47 @@ Related docs:
 
 - [Customer Email Connections](../customer-email-skills.md)
 
+## Slack Channel
+
+Owns Slack app installation, the inbound Slack Events API connector, Slack
+conversation mapping, generated self-host manifests, and Slack outbound posts
+used by channel escalation and Slack skills.
+
+Should not own assistant turn behavior, retrieval behavior, or routine
+selection. Slack enters the chat path as `sourceChannel: "slack"` and uses the
+shared Slack Web API client for posts.
+
+Public surfaces and key files:
+
+- `backend/src/app/http/routes/slackConnectionRoutes.ts`
+- `backend/src/app/http/openapi/paths/slackPaths.ts`
+- `backend/src/modules/slack/public.ts`
+- `backend/src/modules/slack/manifest/slackManifest.ts`
+- `backend/src/modules/connectors/plugins/slack/`
+- `frontend/lib/api-slack.ts`
+- `frontend/components/dashboard/settings/slack-channel-card.tsx`
+
+Useful searches:
+
+- `rg "slack/manifest|slack/install|slack/binding" backend/src frontend`
+- `rg "app_mention|message.im|slack_conversation_links" backend/src backend/tests`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/slack tests/contract/slack-admin.contract.test.ts tests/contract/slack-webhook.contract.test.ts tests/integration/slack`
+- `cd frontend && pnpm exec vitest run tests/unit/api-slack.test.ts`
+- `cd frontend && pnpm exec playwright test tests/e2e/slack-channel.spec.ts`
+
+Related docs:
+
+- [Slack Channel](../slack-channel.md)
+- [Slack Skills](../slack-skills.md)
+- `specs/092-slack-channel/`
+
 ## Agent Skill Definitions (shared spine)
 
 External MCP skills (`externalSkills`), customer email skills (`customerEmail`),
-and webhook skills (`webhookSkills`) share one persistence spine: `agent_skills`
+webhook skills (`webhookSkills`), and Slack skills (`slackSkills`) share one persistence spine: `agent_skills`
 holds the common columns, a single `@mention` namespace per agent enforced
 **across kinds**, generic `target_type` / `target_id` references, and a JSON
 `config` object. Database triggers enforce the current target references for MCP
@@ -158,7 +211,7 @@ Public surfaces and key files:
 
 - `backend/src/modules/agentSkills/public.ts` (spine vocabulary + shared type)
 - `backend/src/modules/integrationOauth/public.ts` (OAuth lifecycle)
-- `backend/src/db/repositories/externalSkillDefinitionRepository.ts`, `emailSkillDefinitionRepository.ts`, `webhookSkillDefinitionRepository.ts`
+- `backend/src/db/repositories/externalSkillDefinitionRepository.ts`, `emailSkillDefinitionRepository.ts`, `webhookSkillDefinitionRepository.ts`, and `backend/src/modules/slackSkills/repository.ts`
 - `backend/src/db/migrations/099_agent_skills_spine.sql`, `100_email_skills_into_spine.sql`, `101_agent_skills_generic_targets.sql`
 
 Focused checks (real Postgres via `INTEGRATION_DATABASE_URL`):

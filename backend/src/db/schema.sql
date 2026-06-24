@@ -59,6 +59,10 @@ CREATE FUNCTION public.block_agent_skill_customer_email_connection_delete() RETU
     LANGUAGE plpgsql
     AS $$
 BEGIN
+  IF OLD.provider NOT IN ('customer_email_google', 'customer_email_microsoft') THEN
+    RETURN OLD;
+  END IF;
+
   IF NOT EXISTS (SELECT 1 FROM workspaces WHERE id = OLD.workspace_id) THEN
     RETURN OLD;
   END IF;
@@ -208,9 +212,10 @@ BEGIN
     END IF;
     target_uuid := agent_skill_target_uuid(NEW.target_id, 'customer_email_connection');
     SELECT TRUE INTO target_exists
-    FROM customer_email_connections
+    FROM integration_connections
     WHERE id = target_uuid
       AND workspace_id = NEW.workspace_id
+      AND provider IN ('customer_email_google', 'customer_email_microsoft')
     FOR KEY SHARE;
     IF target_exists IS NOT TRUE THEN
       RAISE EXCEPTION 'customer_email skill % references unknown customer email connection %', NEW.id, NEW.target_id
@@ -236,6 +241,26 @@ BEGIN
       RAISE EXCEPTION 'webhook skill % references unknown webhook destination %', NEW.id, NEW.target_id
         USING ERRCODE = '23503',
               CONSTRAINT = 'agent_skills_webhook_target_fk';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF NEW.kind = 'slack' THEN
+    IF NEW.target_type IS DISTINCT FROM 'slack_installation' OR NEW.target_id IS NULL THEN
+      RAISE EXCEPTION 'slack skill % must target a Slack installation', NEW.id
+        USING ERRCODE = '23503',
+              CONSTRAINT = 'agent_skills_slack_target_fk';
+    END IF;
+    target_uuid := agent_skill_target_uuid(NEW.target_id, 'slack_installation');
+    SELECT TRUE INTO target_exists
+    FROM slack_installations
+    WHERE id = target_uuid
+      AND workspace_id = NEW.workspace_id
+    FOR KEY SHARE;
+    IF target_exists IS NOT TRUE THEN
+      RAISE EXCEPTION 'slack skill % references unknown Slack installation %', NEW.id, NEW.target_id
+        USING ERRCODE = '23503',
+              CONSTRAINT = 'agent_skills_slack_target_fk';
     END IF;
     RETURN NEW;
   END IF;
@@ -438,7 +463,10 @@ CREATE TABLE public.agent_skills (
     target_type text,
     target_id text,
     config jsonb DEFAULT '{}'::jsonb NOT NULL,
-    CONSTRAINT agent_skills_config_target_check CHECK (((jsonb_typeof(config) = 'object'::text) AND ((target_type IS NULL) OR (NULLIF(btrim(target_type), ''::text) IS NOT NULL)) AND ((target_id IS NULL) OR (NULLIF(btrim(target_id), ''::text) IS NOT NULL))))
+    invocation_mode text DEFAULT 'routine_named'::text NOT NULL,
+    CONSTRAINT agent_skills_config_target_check CHECK (((jsonb_typeof(config) = 'object'::text) AND ((target_type IS NULL) OR (NULLIF(btrim(target_type), ''::text) IS NOT NULL)) AND ((target_id IS NULL) OR (NULLIF(btrim(target_id), ''::text) IS NOT NULL)))),
+    CONSTRAINT agent_skills_invocation_mode_check CHECK ((invocation_mode = ANY (ARRAY['default_answer'::text, 'routine_named'::text, 'agent_selectable'::text]))),
+    CONSTRAINT agent_skills_kind_check CHECK ((kind = ANY (ARRAY['external_mcp'::text, 'customer_email'::text, 'webhook'::text, 'slack'::text, 'retrieve'::text, 'notify'::text])))
 );
 
 
@@ -1012,6 +1040,24 @@ CREATE TABLE public.connector_whatsapp_message_log (
 
 
 --
+-- Name: conversation_ownership; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.conversation_ownership (
+    conversation_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    state text NOT NULL,
+    owner_account_id uuid,
+    owner_display_name text,
+    reason text,
+    version integer DEFAULT 1 NOT NULL,
+    taken_over_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: conversations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1024,30 +1070,6 @@ CREATE TABLE public.conversations (
     anonymous_session_id text,
     source_origin text,
     agent_id uuid
-);
-
-
---
--- Name: customer_email_connections; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.customer_email_connections (
-    id uuid NOT NULL,
-    workspace_id uuid NOT NULL,
-    oauth_connection_id uuid NOT NULL,
-    provider text NOT NULL,
-    display_name text NOT NULL,
-    sender_email text NOT NULL,
-    sender_name text,
-    reply_to_email text,
-    status text DEFAULT 'authorized'::text NOT NULL,
-    last_health_status text,
-    last_health_checked_at timestamp with time zone,
-    last_error_code text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT customer_email_connections_last_health_status_check CHECK (((last_health_status IS NULL) OR (last_health_status = ANY (ARRAY['ok'::text, 'failed'::text, 'unknown'::text])))),
-    CONSTRAINT customer_email_connections_status_check CHECK ((status = ANY (ARRAY['authorized'::text, 'disabled'::text, 'needs_reauth'::text, 'error'::text])))
 );
 
 
@@ -1264,6 +1286,28 @@ CREATE TABLE public.ingestion_settings (
 
 
 --
+-- Name: integration_connections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.integration_connections (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    oauth_connection_id uuid NOT NULL,
+    provider text NOT NULL,
+    display_name text NOT NULL,
+    status text DEFAULT 'authorized'::text NOT NULL,
+    last_health_status text,
+    last_health_checked_at timestamp with time zone,
+    last_error_code text,
+    config jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT integration_connections_last_health_status_check CHECK (((last_health_status IS NULL) OR (last_health_status = ANY (ARRAY['ok'::text, 'failed'::text, 'unknown'::text])))),
+    CONSTRAINT integration_connections_status_check CHECK ((status = ANY (ARRAY['authorized'::text, 'disabled'::text, 'needs_reauth'::text, 'error'::text])))
+);
+
+
+--
 -- Name: integration_oauth_connections; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1323,7 +1367,8 @@ CREATE TABLE public.messages (
     metadata_json jsonb DEFAULT '{}'::jsonb NOT NULL,
     skill_name text,
     skill_outcome text,
-    skill_status text
+    skill_status text,
+    source text
 );
 
 
@@ -1340,6 +1385,33 @@ CREATE TABLE public.password_reset_tokens (
     request_ip text,
     request_user_agent text,
     created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: pending_decisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pending_decisions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    handle text NOT NULL,
+    conversation_id uuid NOT NULL,
+    session_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    agent_id uuid NOT NULL,
+    routine_id text NOT NULL,
+    step_id text NOT NULL,
+    reason text,
+    options jsonb DEFAULT '[]'::jsonb NOT NULL,
+    decider_scope jsonb NOT NULL,
+    content_hash text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    decision jsonb,
+    decided_by uuid,
+    decided_at timestamp with time zone,
+    deadline timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -1419,6 +1491,8 @@ CREATE TABLE public.routine_definition (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     lineage_id uuid NOT NULL,
+    activation_reentry_mode text DEFAULT 'once_per_conversation'::text NOT NULL,
+    CONSTRAINT routine_definition_activation_reentry_mode_check CHECK ((activation_reentry_mode = ANY (ARRAY['once_per_conversation'::text, 'always'::text, 'semantic'::text]))),
     CONSTRAINT routine_definition_activation_trigger_description_check CHECK ((NULLIF(btrim(activation_trigger_description), ''::text) IS NOT NULL)),
     CONSTRAINT routine_definition_name_check CHECK ((NULLIF(btrim(name), ''::text) IS NOT NULL)),
     CONSTRAINT routine_definition_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text, 'superseded'::text, 'archived'::text]))),
@@ -1438,6 +1512,7 @@ CREATE TABLE public.routine_slot (
     required boolean DEFAULT true NOT NULL,
     description text,
     ordinal integer NOT NULL,
+    mutable boolean DEFAULT false NOT NULL,
     CONSTRAINT routine_slot_key_check CHECK ((NULLIF(btrim(key), ''::text) IS NOT NULL)),
     CONSTRAINT routine_slot_ordinal_check CHECK ((ordinal >= 0)),
     CONSTRAINT routine_slot_stable_slot_id_check CHECK ((NULLIF(btrim(stable_slot_id), ''::text) IS NOT NULL)),
@@ -1513,9 +1588,14 @@ CREATE TABLE public.routine_transition (
     ordinal integer NOT NULL,
     outcome_status text,
     counter_limit integer,
+    field_ref text,
+    field_op text,
+    field_value jsonb,
+    field_values jsonb,
+    field_unit text,
     CONSTRAINT routine_transition_counter_limit_check CHECK (((counter_limit IS NULL) OR (counter_limit > 0))),
     CONSTRAINT routine_transition_from_step_check CHECK ((NULLIF(btrim(from_step), ''::text) IS NOT NULL)),
-    CONSTRAINT routine_transition_guard_kind_check CHECK ((guard_kind = ANY (ARRAY['llm'::text, 'default'::text, 'slot_filled'::text, 'outcome'::text, 'counter'::text]))),
+    CONSTRAINT routine_transition_guard_kind_check CHECK ((guard_kind = ANY (ARRAY['llm'::text, 'default'::text, 'slot_filled'::text, 'outcome'::text, 'counter'::text, 'field'::text]))),
     CONSTRAINT routine_transition_ordinal_check CHECK ((ordinal >= 0)),
     CONSTRAINT routine_transition_to_ref_check CHECK ((NULLIF(btrim(to_ref), ''::text) IS NOT NULL))
 );
@@ -1555,6 +1635,65 @@ CREATE TABLE public.skill_intake_states (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT skill_intake_states_status_check CHECK ((status = ANY (ARRAY['active'::text, 'paused'::text, 'awaiting_confirmation'::text, 'awaiting_tool'::text, 'completed'::text, 'cancelled'::text, 'expired'::text, 'failed'::text])))
+);
+
+
+--
+-- Name: slack_channel_bindings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.slack_channel_bindings (
+    id uuid NOT NULL,
+    installation_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    answering_agent_id uuid NOT NULL,
+    escalation_channel_id text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: slack_conversation_links; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.slack_conversation_links (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    installation_id uuid NOT NULL,
+    slack_key text NOT NULL,
+    conversation_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: slack_inbound_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.slack_inbound_events (
+    event_id text NOT NULL,
+    team_id text NOT NULL,
+    received_at timestamp with time zone DEFAULT now() NOT NULL,
+    status text DEFAULT 'received'::text NOT NULL,
+    CONSTRAINT slack_inbound_events_status_check CHECK ((status = ANY (ARRAY['received'::text, 'processed'::text, 'skipped'::text, 'failed'::text])))
+);
+
+
+--
+-- Name: slack_installations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.slack_installations (
+    id uuid NOT NULL,
+    connection_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    team_id text NOT NULL,
+    team_name text,
+    bot_user_id text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -2356,19 +2495,19 @@ ALTER TABLE ONLY public.connector_whatsapp_message_log
 
 
 --
+-- Name: conversation_ownership conversation_ownership_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_ownership
+    ADD CONSTRAINT conversation_ownership_pkey PRIMARY KEY (conversation_id);
+
+
+--
 -- Name: conversations conversations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.conversations
     ADD CONSTRAINT conversations_pkey PRIMARY KEY (id);
-
-
---
--- Name: customer_email_connections customer_email_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.customer_email_connections
-    ADD CONSTRAINT customer_email_connections_pkey PRIMARY KEY (id);
 
 
 --
@@ -2468,6 +2607,14 @@ ALTER TABLE ONLY public.ingestion_settings
 
 
 --
+-- Name: integration_connections integration_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.integration_connections
+    ADD CONSTRAINT integration_connections_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: integration_oauth_connections integration_oauth_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2505,6 +2652,14 @@ ALTER TABLE ONLY public.password_reset_tokens
 
 ALTER TABLE ONLY public.password_reset_tokens
     ADD CONSTRAINT password_reset_tokens_token_hash_key UNIQUE (token_hash);
+
+
+--
+-- Name: pending_decisions pending_decisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_decisions
+    ADD CONSTRAINT pending_decisions_pkey PRIMARY KEY (id);
 
 
 --
@@ -2644,6 +2799,62 @@ ALTER TABLE ONLY public.skill_intake_states
 
 
 --
+-- Name: slack_channel_bindings slack_channel_bindings_installation_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_channel_bindings
+    ADD CONSTRAINT slack_channel_bindings_installation_id_key UNIQUE (installation_id);
+
+
+--
+-- Name: slack_channel_bindings slack_channel_bindings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_channel_bindings
+    ADD CONSTRAINT slack_channel_bindings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: slack_conversation_links slack_conversation_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_conversation_links
+    ADD CONSTRAINT slack_conversation_links_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: slack_conversation_links slack_conversation_links_slack_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_conversation_links
+    ADD CONSTRAINT slack_conversation_links_slack_key_key UNIQUE (slack_key);
+
+
+--
+-- Name: slack_inbound_events slack_inbound_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_inbound_events
+    ADD CONSTRAINT slack_inbound_events_pkey PRIMARY KEY (event_id);
+
+
+--
+-- Name: slack_installations slack_installations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_installations
+    ADD CONSTRAINT slack_installations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: slack_installations slack_installations_team_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_installations
+    ADD CONSTRAINT slack_installations_team_id_key UNIQUE (team_id);
+
+
+--
 -- Name: usage_daily_rollups usage_daily_rollups_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2753,6 +2964,13 @@ ALTER TABLE ONLY public.workspace_webhook_destinations
 
 ALTER TABLE ONLY public.workspaces
     ADD CONSTRAINT workspaces_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_skills_one_default_answer; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX agent_skills_one_default_answer ON public.agent_skills USING btree (agent_id) WHERE (invocation_mode = 'default_answer'::text);
 
 
 --
@@ -3393,6 +3611,13 @@ CREATE INDEX clarification_states_pending_idx ON public.clarification_states USI
 
 
 --
+-- Name: conversation_ownership_workspace_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX conversation_ownership_workspace_idx ON public.conversation_ownership USING btree (workspace_id);
+
+
+--
 -- Name: conversations_workspace_anon_updated_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3624,20 +3849,6 @@ CREATE INDEX idx_conversations_workspace_id ON public.conversations USING btree 
 
 
 --
--- Name: idx_customer_email_connections_oauth; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_customer_email_connections_oauth ON public.customer_email_connections USING btree (oauth_connection_id);
-
-
---
--- Name: idx_customer_email_connections_workspace; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_customer_email_connections_workspace ON public.customer_email_connections USING btree (workspace_id);
-
-
---
 -- Name: idx_document_processing_jobs_claim; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3799,6 +4010,27 @@ CREATE INDEX idx_eval_snapshots_workspace_captured_at ON public.eval_snapshots U
 
 
 --
+-- Name: idx_integration_connections_oauth; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_integration_connections_oauth ON public.integration_connections USING btree (oauth_connection_id);
+
+
+--
+-- Name: idx_integration_connections_workspace; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_integration_connections_workspace ON public.integration_connections USING btree (workspace_id);
+
+
+--
+-- Name: idx_integration_connections_workspace_provider; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_integration_connections_workspace_provider ON public.integration_connections USING btree (workspace_id, provider);
+
+
+--
 -- Name: idx_integration_oauth_connections_workspace; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3908,6 +4140,48 @@ CREATE INDEX idx_routine_terminal_definition_id ON public.routine_terminal USING
 --
 
 CREATE INDEX idx_routine_transition_definition_id ON public.routine_transition USING btree (definition_id);
+
+
+--
+-- Name: idx_slack_channel_bindings_answering_agent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_slack_channel_bindings_answering_agent ON public.slack_channel_bindings USING btree (answering_agent_id);
+
+
+--
+-- Name: idx_slack_channel_bindings_workspace; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_slack_channel_bindings_workspace ON public.slack_channel_bindings USING btree (workspace_id);
+
+
+--
+-- Name: idx_slack_conversation_links_installation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_slack_conversation_links_installation ON public.slack_conversation_links USING btree (installation_id);
+
+
+--
+-- Name: idx_slack_conversation_links_workspace; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_slack_conversation_links_workspace ON public.slack_conversation_links USING btree (workspace_id);
+
+
+--
+-- Name: idx_slack_installations_connection; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_slack_installations_connection ON public.slack_installations USING btree (connection_id);
+
+
+--
+-- Name: idx_slack_installations_workspace; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_slack_installations_workspace ON public.slack_installations USING btree (workspace_id);
 
 
 --
@@ -4041,6 +4315,34 @@ CREATE INDEX messages_workspace_role_created_id_idx ON public.messages USING btr
 --
 
 CREATE INDEX messages_workspace_skill_turn_idx ON public.messages USING btree (workspace_id, skill_name, skill_outcome, skill_status, created_at DESC);
+
+
+--
+-- Name: pending_decisions_deadline_pending_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pending_decisions_deadline_pending_idx ON public.pending_decisions USING btree (deadline) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: pending_decisions_handle_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX pending_decisions_handle_idx ON public.pending_decisions USING btree (handle);
+
+
+--
+-- Name: pending_decisions_one_open_gate_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX pending_decisions_one_open_gate_idx ON public.pending_decisions USING btree (conversation_id, routine_id, step_id) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: pending_decisions_workspace_pending_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pending_decisions_workspace_pending_idx ON public.pending_decisions USING btree (workspace_id, created_at) WHERE (status = 'pending'::text);
 
 
 --
@@ -4877,10 +5179,10 @@ CREATE TRIGGER trg_agent_skills_target_reference BEFORE INSERT OR UPDATE OF kind
 
 
 --
--- Name: customer_email_connections trg_customer_email_connections_block_agent_skill_reference; Type: TRIGGER; Schema: public; Owner: -
+-- Name: integration_connections trg_integration_connections_block_customer_email_agent_skill_re; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER trg_customer_email_connections_block_agent_skill_reference BEFORE DELETE ON public.customer_email_connections FOR EACH ROW EXECUTE FUNCTION public.block_agent_skill_customer_email_connection_delete();
+CREATE TRIGGER trg_integration_connections_block_customer_email_agent_skill_re BEFORE DELETE ON public.integration_connections FOR EACH ROW EXECUTE FUNCTION public.block_agent_skill_customer_email_connection_delete();
 
 
 --
@@ -5168,6 +5470,14 @@ ALTER TABLE ONLY public.connector_whatsapp_message_log
 
 
 --
+-- Name: conversation_ownership conversation_ownership_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_ownership
+    ADD CONSTRAINT conversation_ownership_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
 -- Name: conversations conversations_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5181,22 +5491,6 @@ ALTER TABLE ONLY public.conversations
 
 ALTER TABLE ONLY public.conversations
     ADD CONSTRAINT conversations_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
-
-
---
--- Name: customer_email_connections customer_email_connections_oauth_connection_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.customer_email_connections
-    ADD CONSTRAINT customer_email_connections_oauth_connection_id_fkey FOREIGN KEY (oauth_connection_id) REFERENCES public.integration_oauth_connections(id) ON DELETE RESTRICT;
-
-
---
--- Name: customer_email_connections customer_email_connections_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.customer_email_connections
-    ADD CONSTRAINT customer_email_connections_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -5252,7 +5546,7 @@ ALTER TABLE ONLY public.email_skill_activity
 --
 
 ALTER TABLE ONLY public.email_skill_activity
-    ADD CONSTRAINT email_skill_activity_connection_id_fkey FOREIGN KEY (connection_id) REFERENCES public.customer_email_connections(id) ON DELETE RESTRICT;
+    ADD CONSTRAINT email_skill_activity_connection_id_fkey FOREIGN KEY (connection_id) REFERENCES public.integration_connections(id) ON DELETE RESTRICT;
 
 
 --
@@ -5365,6 +5659,22 @@ ALTER TABLE ONLY public.eval_snapshots
 
 ALTER TABLE ONLY public.ingestion_settings
     ADD CONSTRAINT ingestion_settings_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: integration_connections integration_connections_oauth_connection_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.integration_connections
+    ADD CONSTRAINT integration_connections_oauth_connection_id_fkey FOREIGN KEY (oauth_connection_id) REFERENCES public.integration_oauth_connections(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: integration_connections integration_connections_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.integration_connections
+    ADD CONSTRAINT integration_connections_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -5493,6 +5803,70 @@ ALTER TABLE ONLY public.skill_intake_states
 
 ALTER TABLE ONLY public.skill_intake_states
     ADD CONSTRAINT skill_intake_states_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: slack_channel_bindings slack_channel_bindings_answering_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_channel_bindings
+    ADD CONSTRAINT slack_channel_bindings_answering_agent_id_fkey FOREIGN KEY (answering_agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: slack_channel_bindings slack_channel_bindings_installation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_channel_bindings
+    ADD CONSTRAINT slack_channel_bindings_installation_id_fkey FOREIGN KEY (installation_id) REFERENCES public.slack_installations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: slack_channel_bindings slack_channel_bindings_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_channel_bindings
+    ADD CONSTRAINT slack_channel_bindings_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: slack_conversation_links slack_conversation_links_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_conversation_links
+    ADD CONSTRAINT slack_conversation_links_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: slack_conversation_links slack_conversation_links_installation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_conversation_links
+    ADD CONSTRAINT slack_conversation_links_installation_id_fkey FOREIGN KEY (installation_id) REFERENCES public.slack_installations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: slack_conversation_links slack_conversation_links_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_conversation_links
+    ADD CONSTRAINT slack_conversation_links_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: slack_installations slack_installations_connection_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_installations
+    ADD CONSTRAINT slack_installations_connection_id_fkey FOREIGN KEY (connection_id) REFERENCES public.integration_connections(id) ON DELETE CASCADE;
+
+
+--
+-- Name: slack_installations slack_installations_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_installations
+    ADD CONSTRAINT slack_installations_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

@@ -26,6 +26,7 @@ export {
   type SkillCatalogEntry,
   type SkillCatalogEntryDefinition,
   type SkillCatalogResponse,
+  type SkillAvailability,
   type SkillCallerSurface,
   type SkillDefinition,
   type SkillDiagnostic,
@@ -44,9 +45,36 @@ export {
   type ResolvedSkillStep,
 } from "./domain.js";
 export { retrievalAnswerSkillDefinition } from "./definitions/retrieval.answer.js";
+export { retrievalContextSkillDefinition } from "./definitions/retrieval.context.js";
 export { builtInSkillCatalogEntries, createDefaultSkillCatalogRegistry } from "./defaultCatalog.js";
 export { directAnswerSkillDefinition } from "./definitions/direct.js";
 export { SkillCatalogService, type SkillCatalogContext } from "./skillCatalogService.js";
+export {
+  SkillAuthoringCatalogService,
+  type SkillAuthoringCatalog,
+  type SkillAuthoringCatalogContext,
+} from "./skillAuthoringCatalog.js";
+export {
+  externalSkillToAuthoringDescriptor,
+  skillCatalogEntryToAuthoringDescriptor,
+  type ExternalSkillAuthoringDescriptorSource,
+  type SkillAuthoringDescriptor,
+  type SkillAuthoringInput,
+  type SkillAuthoringInputType,
+  type SkillAuthoringOutcome,
+  type SkillCatalogDescriptorSource,
+} from "./authoringDescriptor.js";
+export {
+  isRoutineAuthoringBuiltInSkill,
+  isRoutineDispatchableBuiltInSkill,
+  routineAuthoringBuiltInSkillNames,
+  routineAuthoringBuiltInSkills,
+  routineDispatchableBuiltInSkillNames,
+  routineDispatchableBuiltInSkills,
+  routineSkillCategories,
+  routineSkillCategoryForBuiltIn,
+  type RoutineSkillCategory,
+} from "./routineAuthoringPolicy.js";
 export {
   SkillCatalogRegistry,
   SkillExecutorRegistry,
@@ -63,3 +91,18 @@ export {
   type SkillOutcomeControl,
   type SkillTransientGuidance,
 } from "./composition.js";
+// Exported last: the capability registry's descriptors import sibling module barrels whose
+// executors depend back on the composition exports above, so this must initialize after them.
+export {
+  SkillCapabilityRegistry,
+  createDefaultSkillCapabilityRegistry,
+  createSkillCapabilityDescriptor,
+  skillCapabilityIds,
+  skillCapabilityIdSchema,
+  type SkillCapabilityDescriptor,
+  type SkillCapabilityId,
+  type SkillCapabilityInputSchema,
+  type SkillCapabilityTarget,
+  type SkillCapabilityTargetContext,
+  type SkillCapabilityTargetEnumerators,
+} from "./capabilityRegistry.js";

@@ -1,3 +1,9 @@
+---
+title: "Suggested Questions"
+description: "Toggle for assistant-generated grounded follow-up question chips after each answer."
+last_updated: 2026-05-09
+---
+
 # Suggested Questions
 
 ## Summary

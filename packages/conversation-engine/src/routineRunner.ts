@@ -31,11 +31,34 @@ const resolveFieldValue = (
   variables: Record<string, unknown>,
   skillResult?: RoutineSkillResult,
 ): unknown => {
+  const readPath = (source: Record<string, unknown>, path: string[]): unknown => {
+    let value: unknown = source;
+    for (const segment of path) {
+      if (typeof value !== "object" || value === null || !Object.prototype.hasOwnProperty.call(value, segment)) {
+        return undefined;
+      }
+      value = (value as Record<string, unknown>)[segment];
+    }
+    return value;
+  };
+  const path = ref.split(".");
   const outputs = skillResult?.outputs;
   if (outputs && Object.prototype.hasOwnProperty.call(outputs, ref)) {
     return outputs[ref];
   }
-  return Object.prototype.hasOwnProperty.call(variables, ref) ? variables[ref] : undefined;
+  if (outputs && path.length > 1) {
+    const nested = readPath(outputs, path);
+    if (nested !== undefined) {
+      return nested;
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(variables, ref)) {
+    return variables[ref];
+  }
+  if (path.length > 1) {
+    return readPath(variables, path);
+  }
+  return undefined;
 };
 
 const toNumber = (value: unknown): number | null => {
@@ -156,6 +179,40 @@ const interpolateSlots = (text: string, variables: Record<string, unknown>): str
   text.replace(SLOT_REFERENCE, (_match, key: string) =>
     Object.prototype.hasOwnProperty.call(variables, key) ? String(variables[key] ?? "") : "");
 
+const assignOutputs = (
+  outputAssignments: Record<string, string> | undefined,
+  outputs: Record<string, unknown> | undefined,
+): Record<string, unknown> => {
+  if (!outputAssignments || !outputs) {
+    return {};
+  }
+  const assigned: Record<string, unknown> = {};
+  for (const [outputField, variableName] of Object.entries(outputAssignments)) {
+    if (Object.prototype.hasOwnProperty.call(outputs, outputField)) {
+      assigned[variableName] = outputs[outputField];
+    }
+  }
+  return assigned;
+};
+
+const stagedContextForSkillResult = (
+  step: RoutineStep,
+  result: RoutineSkillResult,
+): TurnContext["stagedContext"][number] | null => {
+  if (!result.outputs) {
+    return null;
+  }
+  return {
+    kind: "skill_result",
+    ...(step.skillName ? { source: step.skillName } : {}),
+    data: result.outputs,
+    metadata: {
+      stepId: step.id,
+      status: result.status,
+    },
+  };
+};
+
 const hasTypedSlotSchema = (routine: Routine): boolean =>
   Array.isArray(routine.slots) && routine.slots.length > 0;
 
@@ -256,6 +313,15 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // Injectable so relative-date guards ("older_than 6 months") are deterministic in tests.
     private readonly clock: () => Date = () => new Date(),
   ) {}
+
+  getCurrentStep(state: RoutineState): RoutineStep | null {
+    const routine = this.routines.find((candidate) => candidate.id === state.routineId);
+    if (!routine) {
+      return null;
+    }
+    const stepId = state.path.at(-1) ?? routine.rootStepId;
+    return routine.steps.find((candidate) => candidate.id === stepId) ?? null;
+  }
 
   async resume(input: {
     turn: TurnContext;
@@ -426,40 +492,52 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       return { ...decision, nextStepId: chosen };
     };
 
-    // Select the step this turn lands on from the current step's outgoing edges.
-    const decision = await selectNext({
-      step: currentStep,
-      transitions: outgoing(currentStepId),
-      variables: state.variables,
-      state: { ...state, attempts },
-    });
-    // The user's message is off-topic for the routine → decline this turn and let
-    // normal answering handle it; the routine stays at its current step to resume.
-    // response/nextState are inert placeholders the engine ignores on a yield.
-    if (decision.yieldTurn) {
-      return { yielded: true, response: { answer: "" }, nextState: null };
-    }
-    const mainSelectorRan = lastSelectorRan;
-    const landedId = landingStepId(currentStepId, decision);
-    let step = landedId === currentStepId ? currentStep : stepById(landedId);
-    let variables = { ...state.variables, ...(decision.variables ?? {}) };
-    // Trace the resume step's outcome: it either advanced off (the user satisfied it) or
-    // was re-asked. Captured keys, if any, belong to this step's edge evaluation.
-    {
-      const captured = capturedKeysFrom(state.variables, decision);
-      traceSteps.push({
-        stepId: currentStep.id,
-        kind: currentStep.kind,
-        event: step.id === currentStepId ? "reasked" : "advanced",
-        ...(captured.length > 0 ? { capturedSlotKeys: captured } : {}),
-        viaSelector: mainSelectorRan,
+    let step: RoutineStep;
+    let variables = { ...state.variables };
+    let path: string[];
+    if (currentStep.kind === "skill" || currentStep.kind === "action") {
+      // Transit steps execute when the routine lands on them. This matters for a
+      // routine whose root step is a tool (for example retrieval.context): selecting
+      // from its outgoing edges first would skip the tool entirely.
+      step = currentStep;
+      path = state.path.at(-1) === currentStep.id ? [...state.path] : [...state.path, currentStep.id];
+    } else {
+      // Select the step this turn lands on from the current step's outgoing edges.
+      const decision = await selectNext({
+        step: currentStep,
+        transitions: outgoing(currentStepId),
+        variables: state.variables,
+        state: { ...state, attempts },
       });
+      // The user's message is off-topic for the routine → decline this turn and let
+      // normal answering handle it; the routine stays at its current step to resume.
+      // response/nextState are inert placeholders the engine ignores on a yield.
+      if (decision.yieldTurn) {
+        return { yielded: true, response: { answer: "" }, nextState: null };
+      }
+      const mainSelectorRan = lastSelectorRan;
+      const landedId = landingStepId(currentStepId, decision);
+      step = landedId === currentStepId ? currentStep : stepById(landedId);
+      variables = { ...state.variables, ...(decision.variables ?? {}) };
+      // Trace the resume step's outcome: it either advanced off (the user satisfied it) or
+      // was re-asked. Captured keys, if any, belong to this step's edge evaluation.
+      {
+        const captured = capturedKeysFrom(state.variables, decision);
+        traceSteps.push({
+          stepId: currentStep.id,
+          kind: currentStep.kind,
+          event: step.id === currentStepId ? "reasked" : "advanced",
+          ...(captured.length > 0 ? { capturedSlotKeys: captured } : {}),
+          viaSelector: mainSelectorRan,
+        });
+      }
+      // Append to the path only on a real advance; re-asking a step keeps it stable.
+      path = step.id === currentStepId ? [...state.path] : [...state.path, step.id];
+      if (step.id !== currentStepId) {
+        attempts[step.id] = (attempts[step.id] ?? 0) + 1;
+      }
     }
-    // Append to the path only on a real advance; re-asking a step keeps it stable.
-    const path = step.id === currentStepId ? [...state.path] : [...state.path, step.id];
-    if (step.id !== currentStepId) {
-      attempts[step.id] = (attempts[step.id] ?? 0) + 1;
-    }
+    let stagedContext = turn.stagedContext;
 
     // Skip slot-collection steps whose slots are already filled, so an intake never
     // re-asks for a value the routine already holds. A bounded loop (a `counter`
@@ -561,8 +639,14 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       const skillResult: RoutineSkillResult = await this.skillDispatcher.dispatch({
         skillName: step.skillName,
         state: skillStateAtStep,
-        turn,
+        turn: stagedContext === turn.stagedContext ? turn : { ...turn, stagedContext },
+        ...(step.inputBindings ? { inputBindings: step.inputBindings } : {}),
       });
+      variables = { ...variables, ...assignOutputs(step.outputAssignments, skillResult.outputs) };
+      const staged = stagedContextForSkillResult(step, skillResult);
+      if (staged) {
+        stagedContext = [...stagedContext, staged];
+      }
       const skillEntry: RoutineTraceStepEntry = {
         stepId: step.id,
         kind: step.kind,
@@ -585,7 +669,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
           step,
           transitions: skillEdges,
           variables,
-          state: skillStateAtStep,
+          state: { ...skillStateAtStep, variables },
           skillResult,
           defaultOnDecline: true,
         });
@@ -614,21 +698,66 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       enterStep(step, path);
     }
 
+    if (step.kind === "await") {
+      if (!step.decision) {
+        throw new Error(`routine_await_step_missing_decision:${routine.id}:${step.id}`);
+      }
+      const nextState: RoutineState = { ...state, path, variables, attempts, status: "suspended" };
+      const renderedStep = step.action
+        ? { ...step, action: interpolateSlots(step.action, variables) }
+        : step;
+      const baseSteering = projectStep(renderedStep);
+      const steering = input.steeringResolver
+        ? await input.steeringResolver.resolve({ step, baseSteering, turn })
+        : baseSteering;
+      const response = await this.renderer.render({
+        step: renderedStep,
+        steering,
+        turn,
+      });
+      traceSteps.push({ stepId: step.id, kind: step.kind, event: "suspended" });
+      const trace: RoutineRunTrace = {
+        routineId: routine.id,
+        startStepId: currentStepId,
+        landedStepId: step.id,
+        capturedSlotKeys: [...new Set(traceSteps.flatMap((entry) => entry.capturedSlotKeys ?? []))],
+        filledSlotKeys: [...declaredSlotKeys].filter((key) => hasVariable(variables, key)),
+        steps: traceSteps,
+      };
+      const reason = typeof step.metadata?.reason === "string" ? step.metadata.reason : undefined;
+
+      return {
+        response,
+        nextState,
+        awaitingDecision: {
+          stepId: step.id,
+          options: step.decision.options,
+          captureKey: step.decision.captureKey,
+          ...(reason ? { reason } : {}),
+        },
+        ...(actions.length > 0 ? { actions } : {}),
+        trace,
+      };
+    }
+
     const nextState: RoutineState = { ...state, path, variables, attempts, status: "active" };
     // Fill the captured slot values into the step's instruction before it reaches the
     // renderer, so references like "{{slot.phone}}" render the real value.
     const renderedStep = step.action
       ? { ...step, action: interpolateSlots(step.action, variables) }
       : step;
+    const turnWithStagedContext: TurnContext = stagedContext === turn.stagedContext
+      ? turn
+      : { ...turn, stagedContext };
     const baseSteering = projectStep(renderedStep);
     const steering = input.steeringResolver
-      ? await input.steeringResolver.resolve({ step, baseSteering, turn })
+      ? await input.steeringResolver.resolve({ step, baseSteering, turn: turnWithStagedContext })
       : baseSteering;
 
     const response = await this.renderer.render({
       step: renderedStep,
       steering,
-      turn,
+      turn: turnWithStagedContext,
     });
 
     const terminalKind = terminalKindFor(step);

@@ -1,4 +1,5 @@
 import type { Router } from "express";
+import type { Pool } from "pg";
 
 import type {
   SkillDefinition,
@@ -45,7 +46,10 @@ export interface AgentSurfaceExtension<TSettings = unknown> {
 
 export type ApplicationAccountCreatedHandler = (context: {
   accountId: string;
-  database: ApplicationDatabasePort;
+  // The OSS `Database` instance is passed here at runtime; it carries both the
+  // `query` escape hatch and the `pool` EE builds its Kysely from. Typed as the
+  // full port so EE handlers can construct data-access services.
+  database: UsageLimitDatabasePort;
   logger: {
     error(entry: unknown, message?: string): void;
   };
@@ -195,6 +199,24 @@ export interface ApplicationRouteMount {
         accountId: string;
         workspaceId: string;
         principal?: AuthenticatedPrincipal;
+      }>;
+      // Provider-agnostic federated sign-in. EE modules translate their
+      // provider response (e.g. Google OAuth) into this verified-identity
+      // assertion; OSS owns account provisioning + session issuance and never
+      // learns about the specific provider.
+      federatedLogin(input: {
+        provider: string;
+        subject: string;
+        email: string;
+        emailVerified: boolean;
+      }): Promise<{
+        userId: string;
+        accountId: string;
+        organizationName: string;
+        workspaceId: string;
+        workspaceName: string;
+        workspacePublicRouteKey: string;
+        sessionCookie: string;
       }>;
     };
     accountAccessService: {
@@ -393,6 +415,11 @@ export interface UsageLimitDatabaseClient {
 }
 
 export interface UsageLimitDatabasePort extends UsageLimitDatabaseClient {
+  // The underlying connection pool, owned by the OSS `Database` that is handed
+  // to EE's registration callbacks. EE builds its own self-contained Kysely on
+  // this pool (see `db/eeSchema.ts`) for data access, while `query` remains for
+  // the DDL migrator. EE never owns or closes this pool.
+  pool: Pool;
   withTransaction?<T>(callback: (client: UsageLimitDatabaseClient) => Promise<T>): Promise<T>;
 }
 

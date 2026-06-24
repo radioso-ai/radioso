@@ -5,6 +5,7 @@ import type {
   ChatBootstrapService,
   ChatHistoryService,
   ChatService,
+  PublicConversationEventBus,
   WorkbenchReplayRunner,
 } from "../../modules/chat/composition.js";
 import type {
@@ -36,13 +37,16 @@ import type { WorkspaceSessionService } from "../../modules/auth/services/worksp
 import type { McpConnectionService } from "../../modules/externalSkills/services/mcpConnectionService.js";
 import type { ExternalSkillDefinitionService } from "../../modules/externalSkills/services/externalSkillDefinitionService.js";
 import type { OauthConnectionService } from "../../modules/integrationOauth/public.js";
+import type { SlackInstallationService } from "../../modules/slack/public.js";
 import type { CustomerEmailConnectionService, CustomerEmailOAuthService, EmailSkillDefinitionService } from "../../modules/customerEmail/public.js";
 import type { WebhookSkillDefinitionService } from "../../modules/webhookSkills/public.js";
+import type { SlackSkillDefinitionService } from "../../modules/slackSkills/public.js";
 import type { ChunkRepositoryPort } from "../../modules/documents/contracts/index.js";
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
 import type { AccountRepositoryPort } from "../../modules/auth/services/authService.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
+import type { ConversationOwnershipRepository } from "../../db/repositories/conversationOwnershipRepository.js";
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
 import type { ConnectorIngestionPort } from "@radioso/connector-api";
 import type { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
@@ -63,7 +67,9 @@ import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { ApplicationModuleCoordinator, ApplicationRouteMount } from "../composition/applicationModule.js";
 import type { PublicChatActionAdvertiserPort, ContactHistoryProviderPort } from "../../modules/chat/contracts/index.js";
 import type { UserRepositoryPort } from "../../db/repositories/userRepository.js";
-import type { SkillCatalogService } from "../../modules/skills/public.js";
+import type { SkillAuthoringCatalog, SkillCatalogService } from "../../modules/skills/public.js";
+import type { AgentSkillsService } from "../../modules/agentSkills/public.js";
+import type { SkillCapabilityRegistry } from "../../modules/skills/capabilityRegistry.js";
 import type { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../modules/agents/public.js";
 import type { RoutineDefinitionService, RoutineDraftAssistService } from "../../modules/routines/public.js";
 import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.js";
@@ -79,6 +85,7 @@ import type {
   EvalRunService,
   EvalSnapshotService,
 } from "../../modules/eval/composition.js";
+import type { ApprovalDecisionService } from "../../modules/approvals/public.js";
 
 export interface AppDependencies {
   env: Env;
@@ -91,6 +98,7 @@ export interface AppDependencies {
   usageLimitPolicy: UsageLimitPolicy;
   organizationCreationGuard: OrganizationCreationGuard;
   publicChatActionAdvertiser: PublicChatActionAdvertiserPort;
+  publicConversationEventBus: PublicConversationEventBus;
   contactHistoryProvider: ContactHistoryProviderPort;
   applicationRouteMounts: ApplicationRouteMount[];
   applicationModules: ApplicationModuleCoordinator;
@@ -104,10 +112,12 @@ export interface AppDependencies {
   abuseControlService: AbuseControlService;
   workspaceProviderCredentialsService: WorkspaceProviderCredentialsService;
   oauthConnectionService: OauthConnectionService;
+  slackInstallationService: SlackInstallationService;
   customerEmailOAuthService: CustomerEmailOAuthService;
   customerEmailConnectionService: CustomerEmailConnectionService;
   emailSkillDefinitionService: EmailSkillDefinitionService;
   webhookSkillDefinitionService: WebhookSkillDefinitionService;
+  slackSkillDefinitionService: SlackSkillDefinitionService;
   emailSkillActivityRepository: EmailSkillActivityRepositoryPort;
   mcpConnectionService: McpConnectionService;
   externalSkillDefinitionService: ExternalSkillDefinitionService;
@@ -135,6 +145,7 @@ export interface AppDependencies {
   documentDeletionService: DocumentDeletionService;
   documentStorage: DocumentStoragePort;
   chatService: ChatService;
+  approvalDecisionService: ApprovalDecisionService;
   workbenchReplayRunner: WorkbenchReplayRunner;
   // Worker-process drain loop for the async conversation-action outbox (spec 070).
   // Present in every dependency build; only the worker runtime calls start/stop.
@@ -151,6 +162,9 @@ export interface AppDependencies {
   evalRunService: EvalRunService;
   platformSettingsService: PlatformSettingsService;
   skillCatalogService: SkillCatalogService;
+  skillAuthoringCatalog: SkillAuthoringCatalog;
+  skillCapabilityRegistry: SkillCapabilityRegistry;
+  agentSkillsService: AgentSkillsService;
   agentService: AgentService;
   authoredDirectiveService: AuthoredDirectiveService;
   routineDefinitionService: RoutineDefinitionService;
@@ -163,6 +177,10 @@ export interface AppDependencies {
   accountRepository: AccountRepositoryPort;
   bootstrapGreetingCacheRepository: BootstrapGreetingCacheRepositoryPort;
   conversationRepository: ConversationRepositoryPort;
+  conversationOwnershipRepository: Pick<
+    ConversationOwnershipRepository,
+    "load" | "loadByConversationIds" | "requestHandoff" | "takeOver" | "transfer" | "handBack"
+  >;
   messageRepository: MessageRepositoryPort;
   connectorRegistry: ConnectorRegistry;
   connectorIngestionPort: ConnectorIngestionPort;

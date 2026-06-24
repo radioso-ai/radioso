@@ -1,3 +1,9 @@
+---
+title: "Vector Top K"
+description: "Retrieval setting controlling the number of semantic candidates retained from vector search before reranking."
+last_updated: 2026-04-02
+---
+
 # Vector Top K
 
 ## Summary

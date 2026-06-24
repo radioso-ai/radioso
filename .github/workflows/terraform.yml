@@ -36,6 +36,7 @@ jobs:
       GCP_REGION: ${{ vars.GCP_REGION }}
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
       APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+      CONNECTOR_PUBLIC_BASE_URL: ${{ vars.CONNECTOR_PUBLIC_BASE_URL }}
       PUBLIC_CHAT_BASE_URL: ${{ vars.PUBLIC_CHAT_BASE_URL }}
       RADIOSO_MCP_ENABLED: ${{ vars.RADIOSO_MCP_ENABLED }}
       TF_IN_AUTOMATION: true
@@ -47,6 +48,9 @@ jobs:
       TF_VAR_session_cookie_secret: ${{ secrets.SESSION_COOKIE_SECRET }}
       TF_VAR_public_chat_session_secret: ${{ secrets.PUBLIC_CHAT_SESSION_SECRET }}
       TF_VAR_workspace_token_secret: ${{ secrets.WORKSPACE_TOKEN_SECRET }}
+      TF_VAR_slack_oauth_client_id: ${{ secrets.SLACK_OAUTH_CLIENT_ID }}
+      TF_VAR_slack_oauth_client_secret: ${{ secrets.SLACK_OAUTH_CLIENT_SECRET }}
+      TF_VAR_slack_signing_secret: ${{ secrets.SLACK_SIGNING_SECRET }}
 
     steps:
       - name: Require configured GitHub environment variables
@@ -148,6 +152,12 @@ jobs:
           echo "TF_VAR_radioso_mcp_base_url_override=${BACKEND_URL}" >> "$GITHUB_ENV"
           echo "TF_VAR_app_base_url_override=${APP_BASE_URL_OVERRIDE}" >> "$GITHUB_ENV"
           echo "TF_VAR_public_chat_base_url_override=${PUBLIC_CHAT_BASE_URL_OVERRIDE}" >> "$GITHUB_ENV"
+          # Public backend/API origin (e.g. https://api.example.com) where Slack and
+          # OAuth providers reach the backend directly. Left null when unset so the
+          # backend falls back to APP_BASE_URL (single-origin deployments).
+          if [ -n "${CONNECTOR_PUBLIC_BASE_URL:-}" ]; then
+            echo "TF_VAR_connector_public_base_url=${CONNECTOR_PUBLIC_BASE_URL}" >> "$GITHUB_ENV"
+          fi
           echo "TF_VAR_worker_tasks_service_url_override=${WORKER_URL}" >> "$GITHUB_ENV"
 
       - name: Terraform init

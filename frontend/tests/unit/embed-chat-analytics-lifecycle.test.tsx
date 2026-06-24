@@ -31,7 +31,9 @@ vi.mock('@/lib/api', () => ({
     createSession: vi.fn(),
     getConversationDetail: vi.fn(),
     listConversations: vi.fn(),
+    streamConversationEvents: vi.fn(),
     streamMessage: vi.fn(),
+    tailConversation: vi.fn(),
   },
   readStoredAnonymousSessionId: vi.fn(() => null),
   readStoredEffectivePublicChatToken: vi.fn(() => null),
@@ -150,7 +152,11 @@ describe('embedded chat analytics lifecycle', () => {
     root = null
     originalParent = window.parent
     publicChatApiMock.listConversations.mockResolvedValue(baseConversationList)
+    publicChatApiMock.streamConversationEvents.mockImplementation(
+      () => new Promise<void>(() => {}),
+    )
     publicChatApiMock.streamMessage.mockReset()
+    publicChatApiMock.tailConversation.mockResolvedValue({ messages: [], cursor: null })
   })
 
   afterEach(() => {
@@ -243,6 +249,7 @@ describe('embedded chat analytics lifecycle', () => {
       messageWindowLimit: 50,
       hasOlderMessages: false,
       nextCursor: null,
+      tailCursor: 'assistant-recovered-cursor',
       messages: [
         {
           id: 'assistant-recovered',
@@ -311,6 +318,7 @@ describe('embedded chat analytics lifecycle', () => {
       messageWindowLimit: 50,
       hasOlderMessages: false,
       nextCursor: null,
+      tailCursor: 'conversation-empty-cursor',
       messages: [],
     })
 

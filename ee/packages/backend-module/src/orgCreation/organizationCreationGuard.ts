@@ -1,20 +1,13 @@
+import { sql } from "kysely";
+
+import { createEeKysely, type EeDb } from "../db/eeSchema.js";
 import type {
   OrganizationCreationGuard,
   OrganizationCreationReservation,
-  UsageLimitDatabaseClient,
   UsageLimitDatabasePort,
 } from "../radiosoModuleTypes.js";
 
 const DEFAULT_MONTHLY_LIMIT = 10;
-
-const queryRows = async <T = Record<string, unknown>>(
-  client: UsageLimitDatabaseClient,
-  text: string,
-  params: unknown[] = [],
-): Promise<T[]> => {
-  const result = await client.query<T>(text, params);
-  return Array.isArray(result) ? result : result.rows;
-};
 
 const toIsoDate = (date: Date): string => date.toISOString().slice(0, 10);
 
@@ -91,6 +84,7 @@ const mapOverride = (row: {
 };
 
 export class EnterpriseOrganizationCreationGuard implements OrganizationCreationGuard {
+  private readonly db: EeDb;
   private readonly defaultLimit: number;
   private readonly now: () => Date;
 
@@ -101,6 +95,7 @@ export class EnterpriseOrganizationCreationGuard implements OrganizationCreation
       now?: () => Date;
     } = {},
   ) {
+    this.db = createEeKysely(this.database.pool);
     this.defaultLimit = options.defaultLimit ?? resolveOrganizationCreationDefaultLimit();
     this.now = options.now ?? (() => new Date());
   }
@@ -114,34 +109,35 @@ export class EnterpriseOrganizationCreationGuard implements OrganizationCreation
     const limit = override?.monthlyLimit ?? this.defaultLimit;
     const periodStart = currentPeriodStart(this.now());
 
-    await queryRows(
-      this.database,
-      `INSERT INTO ee_org_creation_counters (user_id, period_start, used_count)
-       VALUES ($1, $2::date, 0)
-       ON CONFLICT (user_id, period_start) DO NOTHING`,
-      [input.userId, periodStart],
-    );
+    await this.db
+      .insertInto("ee_org_creation_counters")
+      .values({
+        user_id: input.userId,
+        period_start: sql<string>`${periodStart}::date`,
+        used_count: 0,
+      })
+      .onConflict((oc) => oc.columns(["user_id", "period_start"]).doNothing())
+      .execute();
 
-    const rows = await queryRows<{ used_count: number }>(
-      this.database,
-      `UPDATE ee_org_creation_counters
-       SET used_count = used_count + 1,
-           updated_at = NOW()
-       WHERE user_id = $1
-         AND period_start = $2::date
-         AND used_count < $3
-       RETURNING used_count`,
-      [input.userId, periodStart, limit],
-    );
+    const rows = await this.db
+      .updateTable("ee_org_creation_counters")
+      .set({
+        used_count: sql<number>`used_count + 1`,
+        updated_at: sql<Date>`now()`,
+      })
+      .where("user_id", "=", input.userId)
+      .where("period_start", "=", sql<string>`${periodStart}::date`)
+      .where("used_count", "<", limit)
+      .returning("used_count")
+      .execute();
 
     if (rows.length === 0) {
-      const [counter] = await queryRows<{ used_count: number }>(
-        this.database,
-        `SELECT used_count
-         FROM ee_org_creation_counters
-         WHERE user_id = $1 AND period_start = $2::date`,
-        [input.userId, periodStart],
-      );
+      const counter = await this.db
+        .selectFrom("ee_org_creation_counters")
+        .select("used_count")
+        .where("user_id", "=", input.userId)
+        .where("period_start", "=", sql<string>`${periodStart}::date`)
+        .executeTakeFirst();
       throw new OrganizationCreationLimitExceededError({
         limit,
         used: counter?.used_count ?? limit,
@@ -150,49 +146,40 @@ export class EnterpriseOrganizationCreationGuard implements OrganizationCreation
       });
     }
 
-    return new EnterpriseOrganizationCreationReservation(this.database, input.userId, periodStart);
+    return new EnterpriseOrganizationCreationReservation(this.db, input.userId, periodStart);
   }
 
   async getOverride(userId: string): Promise<OrganizationCreationOverride | null> {
-    const [row] = await queryRows<{
-      user_id: string;
-      monthly_limit: number | string | null;
-      updated_at: Date | string;
-    }>(
-      this.database,
-      `SELECT user_id, monthly_limit, updated_at
-       FROM ee_org_creation_overrides
-       WHERE user_id = $1`,
-      [userId],
-    );
+    const row = await this.db
+      .selectFrom("ee_org_creation_overrides")
+      .select(["user_id", "monthly_limit", "updated_at"])
+      .where("user_id", "=", userId)
+      .executeTakeFirst();
 
     return row ? mapOverride(row) : null;
   }
 
   async upsertOverride(input: { userId: string; monthlyLimit: number | null }): Promise<OrganizationCreationOverride> {
-    const [row] = await queryRows<{
-      user_id: string;
-      monthly_limit: number | string | null;
-      updated_at: Date | string;
-    }>(
-      this.database,
-      `INSERT INTO ee_org_creation_overrides (user_id, monthly_limit)
-       VALUES ($1, $2)
-       ON CONFLICT (user_id)
-       DO UPDATE SET monthly_limit = EXCLUDED.monthly_limit, updated_at = NOW()
-       RETURNING user_id, monthly_limit, updated_at`,
-      [input.userId, input.monthlyLimit],
-    );
+    const row = await this.db
+      .insertInto("ee_org_creation_overrides")
+      .values({ user_id: input.userId, monthly_limit: input.monthlyLimit })
+      .onConflict((oc) =>
+        oc.column("user_id").doUpdateSet({
+          monthly_limit: (eb) => eb.ref("excluded.monthly_limit"),
+          updated_at: sql<Date>`now()`,
+        }),
+      )
+      .returning(["user_id", "monthly_limit", "updated_at"])
+      .executeTakeFirstOrThrow();
 
     return mapOverride(row);
   }
 
   async deleteOverride(userId: string): Promise<void> {
-    await queryRows(
-      this.database,
-      `DELETE FROM ee_org_creation_overrides WHERE user_id = $1`,
-      [userId],
-    );
+    await this.db
+      .deleteFrom("ee_org_creation_overrides")
+      .where("user_id", "=", userId)
+      .execute();
   }
 }
 
@@ -200,7 +187,7 @@ class EnterpriseOrganizationCreationReservation implements OrganizationCreationR
   private completed = false;
 
   constructor(
-    private readonly database: UsageLimitDatabasePort,
+    private readonly db: EeDb,
     private readonly userId: string,
     private readonly periodStart: string,
   ) {}
@@ -214,14 +201,15 @@ class EnterpriseOrganizationCreationReservation implements OrganizationCreationR
       return;
     }
     this.completed = true;
-    await queryRows(
-      this.database,
-      `UPDATE ee_org_creation_counters
-       SET used_count = GREATEST(used_count - 1, 0),
-           updated_at = NOW()
-       WHERE user_id = $1 AND period_start = $2::date`,
-      [this.userId, this.periodStart],
-    );
+    await this.db
+      .updateTable("ee_org_creation_counters")
+      .set({
+        used_count: sql<number>`greatest(used_count - 1, 0)`,
+        updated_at: sql<Date>`now()`,
+      })
+      .where("user_id", "=", this.userId)
+      .where("period_start", "=", sql<string>`${this.periodStart}::date`)
+      .execute();
   }
 }
 

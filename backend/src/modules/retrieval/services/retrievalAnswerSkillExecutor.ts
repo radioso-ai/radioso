@@ -1,9 +1,14 @@
 import type {
+  ConversationMessage,
+  TurnContext,
+} from "@radioso/conversation-contract";
+import type {
   SkillDispatchResult,
   SkillExecutorPort,
   SkillInvocation,
   SkillOutcome,
 } from "../../skills/public.js";
+import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 
 import type {
   RetrievalPipelineInterpretationResult,
@@ -11,9 +16,16 @@ import type {
   RetrievalPipelineResult,
 } from "./retrievalPipelineService.js";
 import type { RetrievalPipelineRequest } from "./retrievalPipelineStages.js";
+import {
+  parseRetrieveSkillConfig,
+  retrieveSkillConfigToSettingsOverride,
+  type RetrieveSkillConfig,
+} from "../domain/retrievalSkillSettings.js";
+import type { RetrievalSourceScope } from "../domain/retrievalSourceFilter.js";
 
 /** Internal-adapter key the `retrieval.answer` skill declares in its execution descriptor. */
 export const RETRIEVAL_ANSWER_ADAPTER = "retrieval_answer";
+export const RETRIEVAL_CONTEXT_SKILL_NAME = "retrieval.context";
 
 // The rich RetrievalPipelineResult is not a model-visible answer/output — it is
 // loop-internal context the chat turn composes its response from. It therefore
@@ -24,6 +36,61 @@ const RETRIEVAL_RESULT_KEY = "__retrievalResult";
 
 const embedRetrievalResult = (result: RetrievalPipelineResult): SkillOutcome => ({
   status: "completed",
+  metadata: { [RETRIEVAL_RESULT_KEY]: result },
+});
+
+const toRetrievalContextOutputs = (result: RetrievalPipelineResult): Record<string, unknown> => ({
+  has_context: result.contexts.length > 0,
+  source_count: result.contexts.length,
+  rewritten_query: result.rewrittenQuery,
+  contexts: result.contexts.map((context) => ({
+    documentId: context.documentId,
+    chunkId: context.chunkId,
+    title: context.title,
+    content: context.content,
+    metadata: context.metadata,
+    score: context.relevanceScore,
+    promptPosition: context.promptPosition,
+  })),
+  citations: result.citations.map((citation) => ({
+    documentId: citation.documentId,
+    chunkId: citation.chunkId,
+    title: citation.title,
+  })),
+});
+
+const embedRetrievalContextResult = (result: RetrievalPipelineResult): SkillOutcome => ({
+  status: (result.contexts.length > 0 ? "context_ready" : "no_context") as SkillOutcome["status"],
+  outputs: toRetrievalContextOutputs(result),
+  metadata: { [RETRIEVAL_RESULT_KEY]: result },
+});
+
+const outcomeForSkill = (skillName: string, result: RetrievalPipelineResult): SkillOutcome =>
+  skillName === RETRIEVAL_CONTEXT_SKILL_NAME ? embedRetrievalContextResult(result) : embedRetrievalResult(result);
+
+const namedRetrieveOutcome = (result: RetrievalPipelineResult): SkillOutcome => ({
+  status: (result.contexts.length > 0 ? "found" : "empty") as SkillOutcome["status"],
+  outputs: {
+    found: result.contexts.length > 0,
+    source_count: result.contexts.length,
+    rewritten_query: result.rewrittenQuery,
+    contexts: result.contexts.map((context) => ({
+      documentId: context.documentId,
+      chunkId: context.chunkId,
+      title: context.title,
+      metadata: context.metadata,
+      score: context.relevanceScore,
+      promptPosition: context.promptPosition,
+    })),
+    citations: result.citations.map((citation) => {
+      const record = citation as { documentId?: unknown; chunkId?: unknown; title?: unknown };
+      return {
+        documentId: record.documentId,
+        chunkId: record.chunkId,
+        title: record.title,
+      };
+    }),
+  },
   metadata: { [RETRIEVAL_RESULT_KEY]: result },
 });
 
@@ -38,6 +105,11 @@ interface InterpretedInvocationContext {
   withRetrieval: boolean;
 }
 
+interface TurnInvocationContext {
+  turn: TurnContext;
+  workspaceId: string;
+}
+
 const isRequest = (value: unknown): value is RetrievalPipelineRequest =>
   typeof value === "object" && value !== null &&
   typeof (value as RetrievalPipelineRequest).workspaceId === "string" &&
@@ -48,6 +120,93 @@ const isInterpreted = (value: unknown): value is InterpretedInvocationContext =>
   typeof value === "object" && value !== null &&
   "interpreted" in value && typeof (value as InterpretedInvocationContext).withRetrieval === "boolean";
 
+const isTurnInvocation = (value: unknown): value is TurnInvocationContext =>
+  typeof value === "object" && value !== null &&
+  typeof (value as TurnInvocationContext).workspaceId === "string" &&
+  typeof (value as TurnInvocationContext).turn === "object" &&
+  (value as TurnInvocationContext).turn !== null;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const optionalRecord = (value: unknown): Record<string, unknown> | undefined =>
+  isRecord(value) ? value : undefined;
+
+const retrieveConfigFromSkill = (skill: SkillInvocation["skill"]): RetrieveSkillConfig | null => {
+  const metadata = optionalRecord((skill as SkillInvocation["skill"] & { metadata?: unknown }).metadata);
+  const config = metadata?.retrieveConfig;
+  return config ? parseRetrieveSkillConfig(config) : null;
+};
+
+const sourceScopeFromConfig = (config: RetrieveSkillConfig): RetrievalSourceScope | undefined => {
+  if (config.sourceScope === "all") {
+    return { mode: "all" };
+  }
+  return { mode: "selected", sourceIds: config.sourceScope.sourceIds };
+};
+
+const applyRetrieveConfig = (
+  request: RetrievalPipelineRequest,
+  config: RetrieveSkillConfig | null,
+): RetrievalPipelineRequest => {
+  if (!config) {
+    return request;
+  }
+  return {
+    ...request,
+    sourceScope: sourceScopeFromConfig(config),
+    agentSkillSettings: {
+      ...(request.agentSkillSettings ?? {}),
+      "retrieval.answer": {
+        ...optionalRecord(request.agentSkillSettings?.["retrieval.answer"]),
+        ...retrieveSkillConfigToSettingsOverride(config),
+      },
+    },
+  };
+};
+
+const messageDate = (message: ConversationMessage): Date => {
+  if (!message.createdAt) return new Date(0);
+  const parsed = new Date(message.createdAt);
+  return Number.isNaN(parsed.getTime()) ? new Date(0) : parsed;
+};
+
+const retrievalRole = (role: ConversationMessage["role"]): MessageRecord["role"] =>
+  role === "user" || role === "assistant" ? role : "system";
+
+const toRetrievalHistory = (
+  history: ConversationMessage[],
+  workspaceId: string,
+  conversationId: string,
+): MessageRecord[] =>
+  history.map((message, index) => ({
+    id: message.id ?? `${conversationId}:history:${index}`,
+    conversationId,
+    workspaceId,
+    role: retrievalRole(message.role),
+    content: message.content,
+    ...(message.metadata ? { metadata: message.metadata } : {}),
+    createdAt: messageDate(message),
+  }));
+
+const requestFromTurn = (
+  { turn, workspaceId }: TurnInvocationContext,
+  boundQuery?: string,
+  retrieveConfig?: RetrieveSkillConfig | null,
+): RetrievalPipelineRequest => {
+  const metadata = optionalRecord(turn.agent.metadata);
+  return applyRetrieveConfig({
+    workspaceId,
+    // A typed routine step can bind the `query` input to a slot or literal; honor
+    // that over the turn's latest message. Untyped/legacy steps leave it unbound
+    // and fall back to the user's reply.
+    query: boundQuery ?? turn.inputEvent.content,
+    history: toRetrievalHistory(turn.history, workspaceId, turn.sessionId),
+    ...(turn.inputEvent.locale ? { responseLanguage: turn.inputEvent.locale } : {}),
+    ...(metadata?.skillSettings ? { agentSkillSettings: optionalRecord(metadata.skillSettings) } : {}),
+  }, retrieveConfig ?? null);
+};
+
 /**
  * Dispatches the `retrieval.answer` capability through the skill-invocation port
  * by wrapping the retrieval controller (the fixed/reasoning strategy chooser).
@@ -57,28 +216,41 @@ const isInterpreted = (value: unknown): value is InterpretedInvocationContext =>
  *
  * It accepts either a raw `request` (runs the full interpret+execute path) or an
  * already-interpreted result plus a `withRetrieval` flag (the two-phase path the
- * chat loop uses, where interpretation/routing happen in the loop's gather step).
+ * chat loop uses, where interpretation/routing happen in the loop's gather step),
+ * or a routine turn context plus workspace id.
  */
 export class RetrievalAnswerSkillExecutor implements SkillExecutorPort {
   constructor(private readonly controller: RetrievalPipelinePort) {}
 
   async dispatch(invocation: SkillInvocation): Promise<SkillDispatchResult> {
     const context = invocation.context ?? {};
+    const retrieveConfig = retrieveConfigFromSkill(invocation.skill);
+    const namedRetrieve = retrieveConfig !== null;
 
     if (isInterpreted(context)) {
+      const interpreted = retrieveConfig
+        ? { ...context.interpreted, request: applyRetrieveConfig(context.interpreted.request, retrieveConfig) }
+        : context.interpreted;
       const result = context.withRetrieval
-        ? await this.controller.runInterpreted(context.interpreted)
-        : await this.controller.runWithoutRetrieval(context.interpreted);
-      return { disposition: "settled", outcome: embedRetrievalResult(result) };
+        ? await this.controller.runInterpreted(interpreted)
+        : await this.controller.runWithoutRetrieval(interpreted);
+      return { disposition: "settled", outcome: namedRetrieve ? namedRetrieveOutcome(result) : outcomeForSkill(invocation.skill.name, result) };
     }
 
     if (isRequest(context.request)) {
-      const result = await this.controller.run(context.request);
-      return { disposition: "settled", outcome: embedRetrievalResult(result) };
+      const result = await this.controller.run(applyRetrieveConfig(context.request, retrieveConfig));
+      return { disposition: "settled", outcome: namedRetrieve ? namedRetrieveOutcome(result) : outcomeForSkill(invocation.skill.name, result) };
+    }
+
+    if (isTurnInvocation(context)) {
+      const bound = invocation.collected?.query;
+      const boundQuery = typeof bound === "string" && bound.trim().length > 0 ? bound : undefined;
+      const result = await this.controller.run(requestFromTurn(context, boundQuery, retrieveConfig));
+      return { disposition: "settled", outcome: namedRetrieve ? namedRetrieveOutcome(result) : outcomeForSkill(invocation.skill.name, result) };
     }
 
     throw new Error(
-      "retrieval.answer dispatch requires a `request` or an `interpreted` result in the invocation context",
+      "retrieval.answer dispatch requires a `request`, an `interpreted` result, or a `turn` plus `workspaceId` in the invocation context",
     );
   }
 }

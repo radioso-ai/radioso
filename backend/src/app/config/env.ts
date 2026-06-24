@@ -47,6 +47,7 @@ const envSchema = z.object({
   OTEL_TRACES_SAMPLER_ARG: emptyStringToUndefined(z.string().min(1)),
   PRODUCT_ANALYTICS_SINKS: z.string().min(1).default("audit"),
   ERROR_SINKS: z.string().min(1).default("audit"),
+  RADIOSO_EDITION: z.enum(["oss", "enterprise"]).default("oss"),
   GOOGLE_CLOUD_PROJECT: emptyStringToUndefined(z.string().min(1)),
   RADIOSO_CDN_URL_MAP: emptyStringToUndefined(z.string().min(1)),
   DATABASE_URL: z.string().min(1),

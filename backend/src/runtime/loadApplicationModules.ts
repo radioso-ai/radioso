@@ -11,6 +11,8 @@ type ApplicationModuleExport =
       applicationModules?: ApplicationModule[];
     };
 
+const ENTERPRISE_BACKEND_MODULE_SPECIFIER = "@radioso/enterprise-backend-module";
+
 const asApplicationModules = (moduleExport: ApplicationModuleExport): ApplicationModule[] => {
   if (Array.isArray(moduleExport)) {
     return moduleExport;
@@ -58,14 +60,26 @@ const appendUniqueModules = (
   }
 };
 
-export const loadConfiguredApplicationModules = async (
-  env: Pick<Env, "NODE_ENV" | "RADIOSO_APPLICATION_MODULES">,
-  logger: Pick<AppLogger, "info" | "warn">,
-): Promise<ApplicationModule[]> => {
-  const specifiers = env.RADIOSO_APPLICATION_MODULES
+export const resolveConfiguredApplicationModuleSpecifiers = (
+  env: Pick<Env, "RADIOSO_APPLICATION_MODULES" | "RADIOSO_EDITION">,
+): string[] => {
+  const configuredSpecifiers = env.RADIOSO_APPLICATION_MODULES
     ?.split(",")
     .map((specifier) => specifier.trim())
     .filter(Boolean) ?? [];
+
+  return configuredSpecifiers.length > 0
+    ? configuredSpecifiers
+    : env.RADIOSO_EDITION === "enterprise"
+      ? [ENTERPRISE_BACKEND_MODULE_SPECIFIER]
+      : [];
+};
+
+export const loadConfiguredApplicationModules = async (
+  env: Pick<Env, "NODE_ENV" | "RADIOSO_APPLICATION_MODULES" | "RADIOSO_EDITION">,
+  logger: Pick<AppLogger, "info" | "warn">,
+): Promise<ApplicationModule[]> => {
+  const specifiers = resolveConfiguredApplicationModuleSpecifiers(env);
 
   const modules: ApplicationModule[] = [];
   const seenModuleIds = new Set<string>();

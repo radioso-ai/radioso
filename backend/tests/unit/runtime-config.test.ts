@@ -137,6 +137,10 @@ describe("runtime configuration", () => {
   it("keeps backend deploy image packaging aligned with backend workspace imports", async () => {
     const dockerfile = await readFile(new URL("../../../infra/backend.Dockerfile", import.meta.url), "utf8");
     const workflow = await readFile(new URL("../../../.github/workflows/deploy-staging.yml", import.meta.url), "utf8");
+    const sharedDeployWorkflow = await readFile(
+      new URL("../../../.github/workflows/_deploy-cloud-run.yml", import.meta.url),
+      "utf8",
+    );
 
     for (const expected of [
       "COPY packages/conversation-tools/package.json ./packages/conversation-tools/package.json",
@@ -148,6 +152,11 @@ describe("runtime configuration", () => {
     }
 
     expect(workflow).toContain("packages/conversation-tools/**");
+    expect(sharedDeployWorkflow).toContain('--build-arg RADIOSO_EDITION="${RADIOSO_EDITION}"');
+    expect(sharedDeployWorkflow.match(/--update-env-vars "RADIOSO_EDITION=\$\{RADIOSO_EDITION\}"/g)).toHaveLength(3);
+    expect(sharedDeployWorkflow).toContain(
+      '--update-env-vars "RADIOSO_EDITION=${RADIOSO_EDITION},NEXT_PUBLIC_RADIOSO_EDITION=${RADIOSO_EDITION}"',
+    );
   });
 
   it("clears incomplete frontend Next dev caches with missing vendor chunks", async () => {
@@ -177,6 +186,7 @@ describe("runtime configuration", () => {
     expect(env.OTEL_TRACES_SAMPLER_ARG).toBeUndefined();
     expect(env.PRODUCT_ANALYTICS_SINKS).toBe("audit");
     expect(env.ERROR_SINKS).toBe("audit");
+    expect(env.RADIOSO_EDITION).toBe("oss");
   });
 
   it("requires an OTLP endpoint when tracing is enabled", () => {
@@ -255,10 +265,12 @@ describe("runtime configuration", () => {
       ...baseEnv,
       PRODUCT_ANALYTICS_SINKS: "audit,posthog",
       ERROR_SINKS: "audit,sentry",
+      RADIOSO_EDITION: "enterprise",
     });
 
     expect(env.PRODUCT_ANALYTICS_SINKS).toBe("audit,posthog");
     expect(env.ERROR_SINKS).toBe("audit,sentry");
+    expect(env.RADIOSO_EDITION).toBe("enterprise");
   });
 
   it("keeps no-op worker dispatch as the default without AMQP settings", () => {

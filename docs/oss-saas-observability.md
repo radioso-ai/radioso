@@ -1,7 +1,7 @@
 ---
 title: "OSS And SaaS Observability"
 description: "Vendor-neutral observability strategy separating telemetry, analytics, and error reporting via internal contracts with OSS defaults and optional SaaS exporters."
-last_updated: 2026-06-06
+last_updated: 2026-06-24
 ---
 
 # OSS And SaaS Observability
@@ -387,6 +387,7 @@ inside product diagnostics.
 Enterprise SaaS examples:
 
 ```bash
+RADIOSO_EDITION=enterprise
 PRODUCT_ANALYTICS_SINKS=audit,posthog
 ERROR_SINKS=audit,sentry,posthog
 SENTRY_DSN=...
@@ -396,7 +397,9 @@ POSTHOG_HOST=...
 
 The OSS runtime can carry the sink list without importing vendor code. The
 Enterprise backend module owns validation and registration for the vendor
-credentials.
+credentials. In practice, `RADIOSO_EDITION=enterprise` loads the bundled
+`@radioso/enterprise-backend-module` unless `RADIOSO_APPLICATION_MODULES` is set
+to an explicit comma-separated module list.
 
 ## Frontend-only events
 

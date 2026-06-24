@@ -121,7 +121,7 @@ describe("enterprise observability module", () => {
     });
 
     expect(posthogFetch).toHaveBeenCalledWith(
-      "https://app.posthog.com/capture/",
+      "https://app.posthog.com/i/v0/e/",
       expect.objectContaining({
         method: "POST",
       }),
@@ -144,6 +144,7 @@ describe("enterprise observability module", () => {
       distinct_id: "request-1",
     }));
     expect(posthogErrorBody.properties).toEqual(expect.objectContaining({
+      distinct_id: "request-1",
       "$process_person_profile": false,
       "$exception_level": "error",
       errorType: "worker.failure",

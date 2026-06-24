@@ -13,6 +13,7 @@ export interface PendingDecisionOption {
   id: string;
   label: string;
   description?: string;
+  payload?: unknown;
 }
 
 export interface PendingDecisionRecord {

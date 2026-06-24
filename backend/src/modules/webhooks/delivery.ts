@@ -13,10 +13,35 @@ export type WebhookUrlGuard = (url: string) => Promise<void>;
 const DEFAULT_WEBHOOK_TIMEOUT_MS = 10_000;
 const DEFAULT_MAX_WEBHOOK_REDIRECTS = 3;
 
+const isLocalDevelopmentHttpUrl = (value: string): boolean => {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:") {
+      return false;
+    }
+    const hostname = url.hostname.toLowerCase();
+    return (
+      hostname === "localhost" ||
+      hostname.endsWith(".localhost") ||
+      hostname === "host.docker.internal" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1" ||
+      hostname === "[::1]"
+    );
+  } catch {
+    return false;
+  }
+};
+
 export class FetchWebhookHttpClient implements WebhookHttpClient {
   constructor(
     private readonly assertPublicUrl: WebhookUrlGuard,
-    private readonly options: { timeoutMs?: number; maxRedirects?: number; deadlineMs?: number } = {},
+    private readonly options: {
+      timeoutMs?: number;
+      maxRedirects?: number;
+      deadlineMs?: number;
+      allowHttpLoopback?: boolean;
+    } = {},
   ) {}
 
   async post(request: { url: string; rawBody: string; headers: Record<string, string> }): Promise<void> {
@@ -27,7 +52,9 @@ export class FetchWebhookHttpClient implements WebhookHttpClient {
     let currentUrl = request.url;
 
     for (let hop = 0; hop <= maxRedirects; hop += 1) {
-      await this.assertPublicUrl(currentUrl);
+      if (!(this.options.allowHttpLoopback === true && isLocalDevelopmentHttpUrl(currentUrl))) {
+        await this.assertPublicUrl(currentUrl);
+      }
       const remainingMs = deadlineMs - (Date.now() - startedAt);
       if (remainingMs <= 0) {
         throw new Error(`Webhook exceeded ${deadlineMs}ms delivery deadline`);

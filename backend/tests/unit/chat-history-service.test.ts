@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
 import { ChatHistoryService } from "../../src/modules/chat/services/chatHistoryService.js";
 import type {
@@ -193,6 +194,47 @@ describe("chat history service ownership read surface", () => {
 
     expect(humanRow?.ownership).toMatchObject({ state: "human_owned", reason: "retrieval_miss" });
     expect(aiRow?.ownership).toBeUndefined();
+  });
+
+  it("projects persisted channel context into list and detail responses", async () => {
+    const { conversationRepository, service } = createService();
+    const slackContext = {
+      provider: "slack",
+      team: { id: "T123", name: "Ausalt" },
+      channel: { id: "D123", type: "im" },
+      threadTs: "1712345678.000100",
+      user: { id: "U123", displayName: "Dana" },
+    } satisfies ConversationChannelContext;
+    const slackConversation = await conversationRepository.create(
+      "workspace-1",
+      null,
+      "authenticated_chat",
+      null,
+      null,
+      slackContext,
+    );
+    const webConversation = await conversationRepository.create(
+      "workspace-1",
+      null,
+      "authenticated_chat",
+      null,
+      null,
+      null,
+    );
+
+    const list = await service.listConversations("workspace-1", { limit: 50, offset: 0 });
+    const items = await service.listItems("workspace-1", { limit: 50, offset: 0 });
+    const slackRow = list.conversations.find((row) => row.id === slackConversation.id);
+    const webRow = list.conversations.find((row) => row.id === webConversation.id);
+    const slackItem = items.items.find((item) => item.kind === "chat" && item.conversation.id === slackConversation.id);
+    const slackDetail = await service.getConversation("workspace-1", slackConversation.id, detailInput);
+    const webDetail = await service.getConversation("workspace-1", webConversation.id, detailInput);
+
+    expect(slackRow?.channelContext).toEqual(slackContext);
+    expect(slackItem?.kind === "chat" ? slackItem.conversation.channelContext : null).toEqual(slackContext);
+    expect(slackDetail.channelContext).toEqual(slackContext);
+    expect(webRow?.channelContext).toBeNull();
+    expect(webDetail.channelContext).toBeNull();
   });
 
   it("tails dashboard messages with ownership only while human-owned", async () => {

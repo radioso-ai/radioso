@@ -44,6 +44,19 @@ export interface ConversationInputEvent {
   metadata?: Record<string, unknown>;
 }
 
+export type ConversationChannelContext =
+  | {
+      provider: "slack";
+      team: { id: string; name?: string };
+      channel: { id: string; type: "im" | "channel" };
+      threadTs?: string;
+      user: { id: string; displayName?: string };
+    }
+  | {
+      provider: "web";
+      origin?: string;
+    };
+
 export type SteeringSource = "directive" | "skill" | "routine";
 
 export type SteeringLifespan = "response" | "session";

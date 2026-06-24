@@ -1,4 +1,5 @@
 import type { ChatResponse } from "../types/chatResponses.js";
+import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
 export type {
   AnswerSegment,
@@ -52,6 +53,7 @@ export interface ChatAnswerPort {
     metadataFilter?: Record<string, unknown>;
     pageContext?: unknown;
     sourceChannel?: string | null;
+    channelContext?: ConversationChannelContext | null;
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
   }): Promise<ChatResponse>;

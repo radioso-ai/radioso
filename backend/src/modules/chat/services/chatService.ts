@@ -12,6 +12,7 @@ import type {
   ConversationRoutineStore,
   ConversationTrace,
   ClarificationCandidate,
+  ConversationChannelContext,
   ClarificationPolicy,
   RecentClarificationReader,
   RenderableTurn,
@@ -1205,6 +1206,7 @@ export class ChatService {
     metadataFilter?: Record<string, unknown>;
     pageContext?: AssistantPageContext | null;
     sourceChannel?: string | null;
+    channelContext?: ConversationChannelContext | null;
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
   }): Promise<ChatResponse> {
@@ -1228,6 +1230,7 @@ export class ChatService {
     metadataFilter?: Record<string, unknown>;
     pageContext?: AssistantPageContext | null;
     sourceChannel?: string | null;
+    channelContext?: ConversationChannelContext | null;
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
   }): Promise<ChatResponse> {
@@ -1391,6 +1394,7 @@ export class ChatService {
     metadataFilter?: Record<string, unknown>;
     pageContext?: AssistantPageContext | null;
     sourceChannel?: string | null;
+    channelContext?: ConversationChannelContext | null;
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
   }): AsyncIterable<ChatStreamEvent> {
@@ -1414,6 +1418,7 @@ export class ChatService {
     metadataFilter?: Record<string, unknown>;
     pageContext?: AssistantPageContext | null;
     sourceChannel?: string | null;
+    channelContext?: ConversationChannelContext | null;
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
   }): AsyncIterable<ChatStreamEvent> {

@@ -3119,6 +3119,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     sourceChannel: string | null = null,
     anonymousSessionId: string | null = null,
     sourceOrigin: string | null = null,
+    channelContext: ConversationRecord["channelContext"] = null,
   ): Promise<ConversationRecord> {
     const record: ConversationRecord = {
       id: randomUUID(),
@@ -3127,6 +3128,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
       agentName: null,
       sourceChannel,
       sourceOrigin,
+      channelContext,
       anonymousSessionId,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -3141,6 +3143,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     sourceChannel?: string | null;
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
+    channelContext?: ConversationRecord["channelContext"];
     content: string;
   }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }> {
     const conversation = await this.create(
@@ -3149,6 +3152,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
       input.sourceChannel ?? null,
       input.anonymousSessionId ?? null,
       input.sourceOrigin ?? null,
+      input.channelContext ?? null,
     );
     const assistantMessage: MessageRecord = {
       id: randomUUID(),

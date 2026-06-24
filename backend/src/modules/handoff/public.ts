@@ -5,6 +5,8 @@ export {
   isHumanOwned,
   resolveOwnership,
 } from "./ownershipState.js";
+export { OperatorReplyService } from "./operatorReplyService.js";
+export { ConversationOwnershipRepository } from "../../db/repositories/conversationOwnershipRepository.js";
 export type {
   CanResumeInput,
   CanResumeResult,

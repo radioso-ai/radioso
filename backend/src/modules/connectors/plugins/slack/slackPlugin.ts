@@ -7,12 +7,23 @@ import type {
 
 import { OauthConnectionRepository } from "../../../../db/repositories/oauthConnectionRepository.js";
 import { ActionRequestRepository } from "../../../../db/repositories/actionRequestRepository.js";
+import { PendingDecisionRepository } from "../../../../db/repositories/pendingDecisionRepository.js";
+import type { ApprovalDecisionService } from "../../../approvals/public.js";
+import type { AuditPort } from "../../../audit/contracts/index.js";
+import { ConversationOwnershipRepository, type OperatorReplyService } from "../../../handoff/public.js";
+import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 import { IntegrationConnectionRepository } from "../../../integrationConnections/public.js";
 import {
+  createSlackInteractivityRouter,
+  FetchSlackResponseUrlClient,
+  PostgresSlackOperatorPermission,
+  PostgresWorkspaceMemberLookup,
   SlackChannelBindingRepository,
   SlackInstallationRepository,
   SlackInstallationService,
-  type SlackWebApiClient,
+  SlackInteractivityHandler,
+  SlackOperatorIdentityResolver,
+  SlackWebApiClient,
 } from "../../../slack/public.js";
 import { SlackMessageHandler, type SlackWebApiClientFactory } from "./slackMessageHandler.js";
 import { connectorKyselyDb } from "../../services/connectorKyselyDb.js";
@@ -24,6 +35,14 @@ export interface SlackPluginOptions {
   encryptionKey?: string;
   clientFactory?: SlackWebApiClientFactory;
 }
+
+type SlackConnectorContext = ConnectorContext & {
+  approvalDecisionService?: Pick<ApprovalDecisionService, "resolve">;
+  operatorReplyService?: Pick<OperatorReplyService, "reply">;
+  auditService?: Pick<AuditPort, "record">;
+  metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
+  assertPublicUrl?: (url: string) => Promise<void>;
+};
 
 export class SlackPlugin implements ConnectorPlugin {
   readonly id = "slack";
@@ -62,12 +81,29 @@ export class SlackPlugin implements ConnectorPlugin {
       );
     }
     const slackPostOutbox = new ActionRequestRepository(db);
+    const extendedContext = context as SlackConnectorContext;
     const installationService = new SlackInstallationService({
       oauthConnections,
       integrationConnections,
       installations,
       bindings,
       encryptionKey: this.options.encryptionKey,
+    });
+    const operatorIdentityResolver = new SlackOperatorIdentityResolver({
+      workspaceMembers: new PostgresWorkspaceMemberLookup(db),
+      permissions: new PostgresSlackOperatorPermission(db),
+      slack: {
+        usersInfo: async (slackUserId, installation) => {
+          if (!installation) {
+            throw new Error("slack_installation_required");
+          }
+          const botToken = await installationService.resolveBotTokenForInstallation(installation);
+          if (!botToken) {
+            throw new Error("slack_bot_token_not_found");
+          }
+          return new SlackWebApiClient({ botToken }).usersInfo(slackUserId);
+        },
+      },
     });
     const messageHandler = new SlackMessageHandler({
       logger: context.logger,
@@ -88,6 +124,36 @@ export class SlackPlugin implements ConnectorPlugin {
         installations,
         persistence,
         messageHandler,
+      }),
+    );
+    context.http.mount(
+      "/",
+      createSlackInteractivityRouter({
+        logger: context.logger,
+        signingSecret: this.options.signingSecret,
+        handler: new SlackInteractivityHandler({
+          installations,
+          identityResolver: operatorIdentityResolver,
+          approvalDecisions: extendedContext.approvalDecisionService,
+          pendingDecisions: new PendingDecisionRepository(db),
+          conversationOwnership: new ConversationOwnershipRepository(db),
+          operatorReplyService: extendedContext.operatorReplyService,
+          slackViews: {
+            open: async ({ installation, triggerId, view }) => {
+              const botToken = await installationService.resolveBotTokenForInstallation(installation);
+              if (!botToken) {
+                throw new Error("slack_bot_token_not_found");
+              }
+              await new SlackWebApiClient({ botToken }).viewsOpen({ triggerId, view });
+            },
+          },
+          responseUrlClient: new FetchSlackResponseUrlClient({
+            assertPublicUrl: extendedContext.assertPublicUrl,
+          }),
+          audit: extendedContext.auditService,
+          metrics: extendedContext.metricsRegistry ?? undefined,
+          logger: context.logger,
+        }),
       }),
     );
     this.initialized = true;

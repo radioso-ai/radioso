@@ -147,6 +147,7 @@ describe("ChatSessionPreparer suggested-question settings", () => {
       agentName: agent.name,
       sourceChannel: "workbench_replay",
       sourceOrigin: null,
+      channelContext: null,
       anonymousSessionId: null,
       createdAt: new Date("2026-01-01T00:00:00.000Z"),
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),

@@ -2,6 +2,7 @@ import type {
   ConnectorChatPort,
   ConnectorLogger,
 } from "@radioso/connector-api";
+import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
 import {
   SlackWebApiClient,
@@ -16,6 +17,7 @@ import {
   enqueueSlackPostAction,
   slackPostIdempotencyKey,
   type SlackPostOutboxPort,
+  buildOwnershipMessage,
 } from "../../../slack/public.js";
 import type { SlackPersistencePort } from "./slackPersistence.js";
 
@@ -80,6 +82,15 @@ export class SlackMessageHandler {
       envelope: input as SlackInboundEventEnvelope & { event: SlackMessageImEvent },
       getSlackKey: (installation) => dmSlackKey(installation.teamId, input.event.user),
       getReplyThreadTs: () => undefined,
+      getChannelContext: (installation) => ({
+        provider: "slack",
+        team: {
+          id: installation.teamId,
+          ...(installation.teamName ? { name: installation.teamName } : {}),
+        },
+        channel: { id: input.event.channel, type: "im" },
+        user: { id: input.event.user },
+      }),
     });
   }
 
@@ -91,6 +102,16 @@ export class SlackMessageHandler {
         return mentionSlackKey(installation.teamId, input.event.channel, threadTs);
       },
       getReplyThreadTs: () => input.event.thread_ts ?? input.event.ts,
+      getChannelContext: (installation) => ({
+        provider: "slack",
+        team: {
+          id: installation.teamId,
+          ...(installation.teamName ? { name: installation.teamName } : {}),
+        },
+        channel: { id: input.event.channel, type: "channel" },
+        threadTs: input.event.thread_ts ?? input.event.ts,
+        user: { id: input.event.user },
+      }),
     });
   }
 
@@ -98,6 +119,7 @@ export class SlackMessageHandler {
     envelope: SlackInboundEventEnvelope & { event: SlackMessageImEvent | SlackAppMentionEvent };
     getSlackKey: (installation: SlackInstallationRecord) => string;
     getReplyThreadTs: () => string | undefined;
+    getChannelContext: (installation: SlackInstallationRecord) => ConversationChannelContext;
   }): Promise<void> {
     const { envelope } = input;
     const installation = await this.options.installations.findByTeamId(envelope.teamId);
@@ -139,6 +161,7 @@ export class SlackMessageHandler {
       conversationId: existingLink?.conversationId,
       query,
       sourceChannel: "slack",
+      channelContext: input.getChannelContext(installation),
     });
     await this.options.persistence.upsertConversationLink({
       workspaceId: installation.workspaceId,
@@ -200,6 +223,13 @@ export class SlackMessageHandler {
     if (input.outcome !== "no_context" || !input.escalationChannelId || !this.options.slackPostOutbox) {
       return;
     }
+    const message = buildOwnershipMessage({
+      conversationId: input.conversationId,
+      workspaceId: input.installation.workspaceId,
+      state: "ai_owned",
+      contextText: input.query,
+      dashboardPath: `/conversations/${input.conversationId}`,
+    });
     await enqueueSlackPostAction(this.options.slackPostOutbox, {
       workspaceId: input.installation.workspaceId,
       conversationId: input.conversationId,
@@ -210,7 +240,8 @@ export class SlackMessageHandler {
       payload: {
         installationId: input.installation.id,
         channelId: input.escalationChannelId,
-        text: `Slack question needs human follow-up:\n\n${input.query}\n\nConversation: ${input.conversationId}`,
+        text: message.text,
+        blocks: message.blocks,
         conversationRef: input.conversationId,
         kind: "gap_escalation",
       },

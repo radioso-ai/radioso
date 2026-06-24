@@ -1069,7 +1069,8 @@ CREATE TABLE public.conversations (
     source_channel text,
     anonymous_session_id text,
     source_origin text,
-    agent_id uuid
+    agent_id uuid,
+    channel_context jsonb
 );
 
 
@@ -1550,8 +1551,10 @@ CREATE TABLE public.routine_step (
     ordinal integer NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     action_type text,
+    capture_key text,
+    options jsonb,
     CONSTRAINT routine_step_instruction_check CHECK ((NULLIF(btrim(instruction), ''::text) IS NOT NULL)),
-    CONSTRAINT routine_step_kind_check CHECK ((kind = ANY (ARRAY['chat'::text, 'tool'::text, 'action'::text]))),
+    CONSTRAINT routine_step_kind_check CHECK ((kind = ANY (ARRAY['chat'::text, 'tool'::text, 'action'::text, 'approval'::text]))),
     CONSTRAINT routine_step_ordinal_check CHECK ((ordinal >= 0)),
     CONSTRAINT routine_step_stable_step_id_check CHECK ((NULLIF(btrim(stable_step_id), ''::text) IS NOT NULL))
 );

@@ -9,6 +9,7 @@ import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader
 import type { ChatGateway } from "../contracts/chatGateway.js";
 import type { ChatBootstrapResponse } from "../types/chatResponses.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
+import type { ConversationChannelContext } from "@radioso/conversation-contract";
 import {
   buildPublicAssistantIdentityLines,
 } from "../../settings/contracts/assistantBootstrap.js";
@@ -71,6 +72,7 @@ export class ChatBootstrapService {
     agentId?: string | null;
     accountId?: string;
     sourceChannel?: string | null;
+    channelContext?: ConversationChannelContext | null;
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
     userExpectedLocale?: string | null;

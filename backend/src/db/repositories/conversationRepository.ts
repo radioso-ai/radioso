@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
+import type { ConversationChannelContext } from "@radioso/conversation-contract";
 import type { MessageRecord } from "./messageRepository.js";
 
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
-import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
+import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface ConversationRecord {
@@ -12,6 +13,7 @@ export interface ConversationRecord {
   agentName: string | null;
   sourceChannel: string | null;
   sourceOrigin: string | null;
+  channelContext: ConversationChannelContext | null;
   anonymousSessionId: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -24,6 +26,7 @@ export interface ConversationRepositoryPort {
     sourceChannel?: string | null,
     anonymousSessionId?: string | null,
     sourceOrigin?: string | null,
+    channelContext?: ConversationChannelContext | null,
   ): Promise<ConversationRecord>;
   createWithInitialAssistantMessage(input: {
     workspaceId: string;
@@ -31,6 +34,7 @@ export interface ConversationRepositoryPort {
     sourceChannel?: string | null;
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
+    channelContext?: ConversationChannelContext | null;
     content: string;
   }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }>;
   listPageByWorkspaceId(
@@ -61,6 +65,7 @@ interface ConversationRow {
   agent_name?: string | null;
   source_channel: string | null;
   source_origin: string | null;
+  channel_context?: ConversationChannelContext | null;
   anonymous_session_id: string | null;
   created_at: Date;
   updated_at: Date;
@@ -81,6 +86,7 @@ const conversationColumns = [
   "agent_id",
   "source_channel",
   "source_origin",
+  "channel_context",
   "anonymous_session_id",
   "created_at",
   "updated_at",
@@ -93,6 +99,7 @@ const conversationSelectColumns = [
   "a.name as agent_name",
   "c.source_channel as source_channel",
   "c.source_origin as source_origin",
+  "c.channel_context as channel_context",
   "c.anonymous_session_id as anonymous_session_id",
   "c.created_at as created_at",
   "c.updated_at as updated_at",
@@ -114,6 +121,7 @@ const mapConversation = (row: ConversationRow): ConversationRecord => ({
   agentName: row.agent_name ?? null,
   sourceChannel: row.source_channel,
   sourceOrigin: row.source_origin ?? null,
+  channelContext: (row.channel_context as ConversationChannelContext | null) ?? null,
   anonymousSessionId: row.anonymous_session_id ?? null,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
@@ -128,6 +136,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
     sourceChannel: string | null = null,
     anonymousSessionId: string | null = null,
     sourceOrigin: string | null = null,
+    channelContext: ConversationChannelContext | null = null,
   ): Promise<ConversationRecord> {
     const row = await this.db
       .insertInto("conversations")
@@ -137,12 +146,13 @@ export class ConversationRepository implements ConversationRepositoryPort {
         agent_id: agentId,
         source_channel: sourceChannel,
         source_origin: sourceOrigin,
+        channel_context: channelContext ? toJsonb(channelContext) : null,
         anonymous_session_id: anonymousSessionId,
       })
       .returning(conversationColumns)
       .executeTakeFirstOrThrow();
 
-    return mapConversation(row);
+    return mapConversation(row as ConversationRow);
   }
 
   async createWithInitialAssistantMessage(input: {
@@ -151,6 +161,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
     sourceChannel?: string | null;
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
+    channelContext?: ConversationChannelContext | null;
     content: string;
   }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }> {
     return this.db.transaction().execute(async (trx) => {
@@ -164,6 +175,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
           agent_id: input.agentId ?? null,
           source_channel: input.sourceChannel ?? null,
           source_origin: input.sourceOrigin ?? null,
+          channel_context: input.channelContext ? toJsonb(input.channelContext) : null,
           anonymous_session_id: input.anonymousSessionId ?? null,
         })
         .returning(conversationColumns)
@@ -181,7 +193,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
         .executeTakeFirstOrThrow() as MessageRow;
 
       return {
-        conversation: mapConversation(conversationRow),
+        conversation: mapConversation(conversationRow as ConversationRow),
         assistantMessage: {
           id: messageRow.id,
           conversationId: messageRow.conversation_id,

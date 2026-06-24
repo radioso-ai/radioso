@@ -1,5 +1,6 @@
 import type { Router } from "express";
 import type { QueryResultRow } from "pg";
+import type { ConversationChannelContext } from "@radioso/conversation-contract";
 import type { ConfigFieldDefinition } from "./configSchema.js";
 
 /**
@@ -22,6 +23,8 @@ export interface ConnectorChatPort {
     conversationId?: string;
     query: string;
     sourceChannel?: string | null;
+    // Message-queue impact: synchronous connector chat port only; no AMQP or worker payload changes.
+    channelContext?: ConversationChannelContext | null;
   }): Promise<{
     conversationId: string;
     answer: string;

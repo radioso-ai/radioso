@@ -62,6 +62,72 @@ describe("SlackPostActionHandler", () => {
     });
   });
 
+  it("posts interactive block messages with fallback text", async () => {
+    const postMessage = vi.fn(async () => ({ channel: "CSUPPORT", ts: "1.2" }));
+    const handler = new SlackPostActionHandler({
+      credentials: {
+        findInstallationById: vi.fn(async () => installation),
+        markNeedsReauthForInstallation: vi.fn(async () => true),
+        resolveBotTokenForInstallation: vi.fn(async () => "xoxb-token"),
+      },
+      clientFactory: vi.fn(() => ({ postMessage })),
+    });
+    const blocks = [{ type: "section", text: { type: "mrkdwn", text: "Approval needed" } }];
+
+    await handler.handle({
+      context,
+      payload: {
+        installationId: installation.id,
+        channelId: "CSUPPORT",
+        text: "Approval needed",
+        blocks,
+        conversationRef: context.conversationId,
+        kind: "operator_notification",
+      },
+    });
+
+    expect(postMessage).toHaveBeenCalledWith({
+      channel: "CSUPPORT",
+      text: "Approval needed",
+      blocks,
+    });
+  });
+
+  it("updates an existing Slack message when updateTs is present", async () => {
+    const postMessage = vi.fn();
+    const updateMessage = vi.fn(async () => ({ channel: "CSUPPORT", ts: "9.9" }));
+    const handler = new SlackPostActionHandler({
+      credentials: {
+        findInstallationById: vi.fn(async () => installation),
+        markNeedsReauthForInstallation: vi.fn(async () => true),
+        resolveBotTokenForInstallation: vi.fn(async () => "xoxb-token"),
+      },
+      clientFactory: vi.fn(() => ({ postMessage, updateMessage })),
+    });
+    const blocks = [{ type: "section", text: { type: "mrkdwn", text: "Approved" } }];
+
+    await handler.handle({
+      context,
+      payload: {
+        installationId: installation.id,
+        channelId: "CSUPPORT",
+        text: "Approved",
+        blocks,
+        updateTs: "9.9",
+        conversationRef: context.conversationId,
+        kind: "operator_notification",
+      },
+    });
+
+    expect(updateMessage).toHaveBeenCalledWith({
+      channel: "CSUPPORT",
+      ts: "9.9",
+      text: "Approved",
+      blocks,
+    });
+    expect(postMessage).not.toHaveBeenCalled();
+  });
+
   it("throws on transient Slack failures so the dispatcher records retry/backoff", async () => {
     const handler = new SlackPostActionHandler({
       credentials: {

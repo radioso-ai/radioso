@@ -22,6 +22,7 @@ export class AssistantChatService {
         agentId: input.agentId,
         accountId: input.accountId,
         sourceChannel: input.sourceChannel ?? input.sourceContext?.surface ?? null,
+        channelContext: input.channelContext ?? input.sourceContext?.channelContext ?? null,
         anonymousSessionId: input.anonymousSessionId,
         sourceOrigin: input.sourceOrigin ?? input.sourceContext?.sourceOrigin ?? null,
         userExpectedLocale: input.userExpectedLocale,
@@ -53,6 +54,7 @@ export class AssistantChatService {
       metadataFilter: input.metadataFilter,
       pageContext: input.pageContext,
       sourceChannel: input.sourceChannel ?? input.sourceContext?.surface ?? null,
+      channelContext: input.channelContext ?? input.sourceContext?.channelContext ?? null,
       anonymousSessionId: input.anonymousSessionId,
       sourceOrigin: input.sourceOrigin ?? input.sourceContext?.sourceOrigin ?? null,
     });
@@ -79,6 +81,7 @@ export class AssistantChatService {
       metadataFilter: input.metadataFilter,
       pageContext: input.pageContext,
       sourceChannel: input.sourceChannel ?? input.sourceContext?.surface ?? null,
+      channelContext: input.channelContext ?? input.sourceContext?.channelContext ?? null,
       anonymousSessionId: input.anonymousSessionId,
       sourceOrigin: input.sourceOrigin ?? input.sourceContext?.sourceOrigin ?? null,
     });

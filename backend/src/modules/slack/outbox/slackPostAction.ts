@@ -23,9 +23,11 @@ export const slackPostPayloadSchema = z.object({
   installationId: z.string().uuid(),
   channelId: z.string().min(1),
   text: z.string().min(1).max(MAX_SLACK_POST_ACTION_TEXT_LENGTH),
+  blocks: z.array(z.record(z.unknown())).optional(),
   threadTs: z.string().min(1).optional(),
-  conversationRef: z.string().min(1),
-  kind: z.enum(["gap_escalation", "routine_post"]),
+  conversationRef: z.string().min(1).optional(),
+  kind: z.enum(["gap_escalation", "routine_post", "operator_notification", "human_reply"]),
+  updateTs: z.string().min(1).optional(),
 });
 
 export type SlackPostPayload = z.infer<typeof slackPostPayloadSchema>;
@@ -59,13 +61,13 @@ export const enqueueSlackPostAction = async (
     type: SLACK_POST_ACTION_TYPE,
     payload: input.payload,
     workspaceId: input.workspaceId,
-    conversationId: input.conversationId ?? input.payload.conversationRef,
+    conversationId: input.conversationId ?? input.payload.conversationRef ?? null,
     idempotencyKey: input.idempotencyKey,
   });
 
 export type SlackPostClientFactory = (
   options: Pick<SlackWebApiClientOptions, "botToken">,
-) => Pick<SlackWebApiClientInstance, "postMessage">;
+) => Pick<SlackWebApiClientInstance, "postMessage"> & Partial<Pick<SlackWebApiClientInstance, "updateMessage">>;
 
 export interface SlackPostCredentialResolver {
   findInstallationById(installationId: string): Promise<SlackInstallationRecord | null>;
@@ -99,11 +101,31 @@ export class SlackPostActionHandler implements ActionHandler {
       throw new Error("slack_bot_token_not_found");
     }
     try {
-      await postSlackText(this.clientFactory({ botToken }), {
-        channel: payload.channelId,
-        text: payload.text,
-        ...(payload.threadTs ? { threadTs: payload.threadTs } : {}),
-      });
+      const client = this.clientFactory({ botToken });
+      if (payload.updateTs) {
+        if (!client.updateMessage) {
+          throw new Error("slack_update_message_unavailable");
+        }
+        await client.updateMessage({
+          channel: payload.channelId,
+          ts: payload.updateTs,
+          text: payload.text,
+          ...(payload.blocks ? { blocks: payload.blocks } : {}),
+        });
+      } else if (payload.blocks) {
+        await client.postMessage({
+          channel: payload.channelId,
+          text: payload.text,
+          ...(payload.threadTs ? { threadTs: payload.threadTs } : {}),
+          blocks: payload.blocks,
+        });
+      } else {
+        await postSlackText(client, {
+          channel: payload.channelId,
+          text: payload.text,
+          ...(payload.threadTs ? { threadTs: payload.threadTs } : {}),
+        });
+      }
     } catch (error) {
       const authErrorCode = slackAuthErrorCode(error);
       if (authErrorCode) {
@@ -116,7 +138,7 @@ export class SlackPostActionHandler implements ActionHandler {
       workspaceId: input.context.workspaceId,
       installationId: payload.installationId,
       kind: payload.kind,
-      conversationRef: payload.conversationRef,
+      conversationRef: payload.conversationRef ?? null,
     }, "Slack post action delivered");
   }
 

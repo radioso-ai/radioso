@@ -69,13 +69,25 @@ describe("Slack admin REST contract", () => {
         oauth_config: {
           redirect_urls: ["https://self-host.example.com/api/v1/oauth/callback/slack"],
           scopes: {
-            bot: expect.arrayContaining(["app_mentions:read", "chat:write", "im:history", "im:read", "im:write"]),
+            bot: expect.arrayContaining([
+              "app_mentions:read",
+              "chat:write",
+              "im:history",
+              "im:read",
+              "im:write",
+              "users:read",
+              "users:read.email",
+            ]),
           },
         },
         settings: {
           event_subscriptions: {
             request_url: "https://self-host.example.com/api/connectors/slack/events",
             bot_events: ["app_mention", "message.im"],
+          },
+          interactivity: {
+            is_enabled: true,
+            request_url: "https://self-host.example.com/api/connectors/slack/interactivity",
           },
         },
       },
@@ -107,6 +119,9 @@ describe("Slack admin REST contract", () => {
     ]);
     expect(response.body.manifest.settings.event_subscriptions.request_url).toBe(
       "https://api.example.com/api/connectors/slack/events",
+    );
+    expect(response.body.manifest.settings.interactivity.request_url).toBe(
+      "https://api.example.com/api/connectors/slack/interactivity",
     );
   });
 

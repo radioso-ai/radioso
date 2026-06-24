@@ -35,7 +35,11 @@ import {
 } from '@/lib/api'
 import { hitlApi } from '@/lib/api-hitl'
 import { useConversationTail } from '@/hooks/use-conversation-tail'
-import { formatConversationSource } from '@/lib/history-source'
+import {
+  formatConversationChannelContextDetails,
+  formatConversationSource,
+  getConversationSourceBadge,
+} from '@/lib/history-source'
 import {
   type DiagnosticPresentation,
   presentActivityOutcome,
@@ -563,9 +567,19 @@ export function ConversationDrawer({
                   />
                 ) : null}
                 {(selectedItem?.kind === 'chat' || selectedItem?.kind === 'contact') && conversationDetail ? (() => {
-                  const source = formatConversationSource(conversationDetail.sourceChannel, conversationDetail.sourceOrigin)
+                  const source = formatConversationSource(conversationDetail)
+                  const sourceBadge = getConversationSourceBadge(conversationDetail)
+                  const contextDetails = formatConversationChannelContextDetails(conversationDetail.channelContext)
                   return source ? (
-                    <span className="shrink-0 rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground">{source}</span>
+                    <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+                      {sourceBadge ? (
+                        <span className={`${sourceBadge.className} shrink-0 font-medium`}>{sourceBadge.label}</span>
+                      ) : null}
+                      <span className="shrink-0 rounded-full bg-muted px-2.5 py-0.5">{source}</span>
+                      {contextDetails.length > 0 ? (
+                        <span className="min-w-0 truncate">{contextDetails.join(' · ')}</span>
+                      ) : null}
+                    </div>
                   ) : null
                 })() : null}
               </div>

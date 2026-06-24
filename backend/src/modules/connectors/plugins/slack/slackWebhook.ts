@@ -1,10 +1,8 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
-
 import { Router, type Request } from "express";
 
 import type { ConnectorLogger } from "@radioso/connector-api";
 
-import type { SlackInstallationRepositoryPort } from "../../../slack/public.js";
+import { isValidSlackSignature, type SlackInstallationRepositoryPort } from "../../../slack/public.js";
 import type { SlackAppMentionEvent, SlackMessageHandler, SlackMessageImEvent } from "./slackMessageHandler.js";
 import type { SlackPersistencePort } from "./slackPersistence.js";
 
@@ -22,7 +20,6 @@ interface WebhookRequest extends Request {
   rawBody?: Buffer;
 }
 
-const REPLAY_WINDOW_SECONDS = 5 * 60;
 const DEFAULT_PROCESSING_RETRY_DELAYS_MS = [1_000, 5_000, 30_000] as const;
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
@@ -75,38 +72,6 @@ const parseAppMentionEvent = (event: unknown): SlackAppMentionEvent | null => {
     ...(readString(event.thread_ts) ? { thread_ts: readString(event.thread_ts)! } : {}),
     ...(readString(event.bot_id) ? { bot_id: readString(event.bot_id)! } : {}),
   };
-};
-
-export const isValidSlackSignature = (input: {
-  rawBody: Buffer;
-  signatureHeader: string | undefined;
-  timestampHeader: string | undefined;
-  signingSecret: string;
-  nowMs?: number;
-}): boolean => {
-  const signature = input.signatureHeader;
-  const timestamp = input.timestampHeader;
-  if (!signature?.startsWith("v0=") || !timestamp) {
-    return false;
-  }
-  const timestampSeconds = Number(timestamp);
-  if (!Number.isFinite(timestampSeconds)) {
-    return false;
-  }
-  const nowSeconds = Math.floor((input.nowMs ?? Date.now()) / 1000);
-  if (Math.abs(nowSeconds - timestampSeconds) > REPLAY_WINDOW_SECONDS) {
-    return false;
-  }
-  const base = `v0:${timestamp}:${input.rawBody.toString("utf8")}`;
-  const expected = `v0=${createHmac("sha256", input.signingSecret).update(base).digest("hex")}`;
-  if (signature.length !== expected.length) {
-    return false;
-  }
-  try {
-    return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
-  } catch {
-    return false;
-  }
 };
 
 export const createSlackWebhookRouter = (options: SlackWebhookRouterOptions): Router => {

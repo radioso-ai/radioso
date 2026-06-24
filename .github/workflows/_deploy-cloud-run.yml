@@ -146,16 +146,16 @@ jobs:
           fi
 
       - name: Deploy backend service
-        run: gcloud run services update "${BACKEND_SERVICE}" --image "${BACKEND_IMAGE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
+        run: gcloud run services update "${BACKEND_SERVICE}" --image "${BACKEND_IMAGE}" --update-env-vars "RADIOSO_EDITION=${RADIOSO_EDITION}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
 
       - name: Deploy worker service
-        run: gcloud run services update "${WORKER_SERVICE}" --image "${BACKEND_IMAGE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
+        run: gcloud run services update "${WORKER_SERVICE}" --image "${BACKEND_IMAGE}" --update-env-vars "RADIOSO_EDITION=${RADIOSO_EDITION}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
 
       - name: Deploy crawler worker service
-        run: gcloud run services update "${CRAWLER_WORKER_SERVICE}" --image "${BACKEND_IMAGE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
+        run: gcloud run services update "${CRAWLER_WORKER_SERVICE}" --image "${BACKEND_IMAGE}" --update-env-vars "RADIOSO_EDITION=${RADIOSO_EDITION}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
 
       - name: Deploy frontend service
-        run: gcloud run services update "${FRONTEND_SERVICE}" --image "${FRONTEND_IMAGE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
+        run: gcloud run services update "${FRONTEND_SERVICE}" --image "${FRONTEND_IMAGE}" --update-env-vars "RADIOSO_EDITION=${RADIOSO_EDITION},NEXT_PUBLIC_RADIOSO_EDITION=${RADIOSO_EDITION}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
 
       - name: Print deployed service URLs
         run: |

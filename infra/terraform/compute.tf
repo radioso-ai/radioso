@@ -72,6 +72,27 @@ resource "google_cloud_run_v2_service" "backend" {
           value = env.value
         }
       }
+      dynamic "env" {
+        for_each = var.otel_logs_enabled ? [true] : []
+        content {
+          name  = "OTEL_LOGS_ENABLED"
+          value = "true"
+        }
+      }
+      dynamic "env" {
+        for_each = var.otel_logs_enabled && local.otel_logs_endpoint != null ? [local.otel_logs_endpoint] : []
+        content {
+          name  = "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.otel_logs_enabled ? [var.otel_logs_min_level] : []
+        content {
+          name  = "OTEL_LOGS_MIN_LEVEL"
+          value = env.value
+        }
+      }
       env {
         name  = "RADIOSO_EDITION"
         value = var.radioso_edition
@@ -237,6 +258,18 @@ resource "google_cloud_run_v2_service" "backend" {
         }
       }
       dynamic "env" {
+        for_each = var.otel_logs_enabled && local.posthog_api_key_configured ? [google_secret_manager_secret.secrets["posthog-api-key"].secret_id] : []
+        content {
+          name = "OTEL_EXPORTER_OTLP_LOGS_AUTH_BEARER"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
         for_each = local.slack_oauth_client_id_configured ? [google_secret_manager_secret.secrets["slack-oauth-client-id"].secret_id] : []
         content {
           name = "SLACK_OAUTH_CLIENT_ID"
@@ -377,6 +410,16 @@ resource "google_cloud_run_v2_service" "backend" {
       error_message = "radioso_mcp_signing_secret must be set when radioso_mcp_enabled is true."
     }
 
+    precondition {
+      condition     = !var.otel_logs_enabled || local.otel_logs_endpoint != null
+      error_message = "otel_logs_endpoint or posthog_host must be set when otel_logs_enabled is true."
+    }
+
+    precondition {
+      condition     = !var.otel_logs_enabled || local.posthog_api_key_configured
+      error_message = "posthog_api_key must be set when otel_logs_enabled is true."
+    }
+
     ignore_changes = [
       client,
       client_version,
@@ -510,6 +553,27 @@ resource "google_cloud_run_v2_service" "document_worker" {
           value = env.value
         }
       }
+      dynamic "env" {
+        for_each = var.otel_logs_enabled ? [true] : []
+        content {
+          name  = "OTEL_LOGS_ENABLED"
+          value = "true"
+        }
+      }
+      dynamic "env" {
+        for_each = var.otel_logs_enabled && local.otel_logs_endpoint != null ? [local.otel_logs_endpoint] : []
+        content {
+          name  = "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.otel_logs_enabled ? [var.otel_logs_min_level] : []
+        content {
+          name  = "OTEL_LOGS_MIN_LEVEL"
+          value = env.value
+        }
+      }
       env {
         name  = "RADIOSO_EDITION"
         value = var.radioso_edition
@@ -636,6 +700,18 @@ resource "google_cloud_run_v2_service" "document_worker" {
         for_each = local.posthog_api_key_configured ? [google_secret_manager_secret.secrets["posthog-api-key"].secret_id] : []
         content {
           name = "POSTHOG_API_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = var.otel_logs_enabled && local.posthog_api_key_configured ? [google_secret_manager_secret.secrets["posthog-api-key"].secret_id] : []
+        content {
+          name = "OTEL_EXPORTER_OTLP_LOGS_AUTH_BEARER"
           value_source {
             secret_key_ref {
               secret  = env.value
@@ -783,6 +859,27 @@ resource "google_cloud_run_v2_service" "crawler_worker" {
           value = env.value
         }
       }
+      dynamic "env" {
+        for_each = var.otel_logs_enabled ? [true] : []
+        content {
+          name  = "OTEL_LOGS_ENABLED"
+          value = "true"
+        }
+      }
+      dynamic "env" {
+        for_each = var.otel_logs_enabled && local.otel_logs_endpoint != null ? [local.otel_logs_endpoint] : []
+        content {
+          name  = "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.otel_logs_enabled ? [var.otel_logs_min_level] : []
+        content {
+          name  = "OTEL_LOGS_MIN_LEVEL"
+          value = env.value
+        }
+      }
       env {
         name  = "RADIOSO_EDITION"
         value = var.radioso_edition
@@ -898,6 +995,18 @@ resource "google_cloud_run_v2_service" "crawler_worker" {
         for_each = local.posthog_api_key_configured ? [google_secret_manager_secret.secrets["posthog-api-key"].secret_id] : []
         content {
           name = "POSTHOG_API_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = var.otel_logs_enabled && local.posthog_api_key_configured ? [google_secret_manager_secret.secrets["posthog-api-key"].secret_id] : []
+        content {
+          name = "OTEL_EXPORTER_OTLP_LOGS_AUTH_BEARER"
           value_source {
             secret_key_ref {
               secret  = env.value

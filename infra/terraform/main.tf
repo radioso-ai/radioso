@@ -46,4 +46,13 @@ locals {
     )
   )
   enterprise_application_modules = var.radioso_edition == "enterprise" ? "@radioso/enterprise-backend-module" : null
+  otel_logs_endpoint = (
+    var.otel_logs_endpoint != null
+    ? var.otel_logs_endpoint
+    : (
+      var.posthog_host != null
+      ? "${trimsuffix(var.posthog_host, "/")}/i/v1/logs"
+      : null
+    )
+  )
 }

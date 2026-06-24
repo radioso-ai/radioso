@@ -1,4 +1,9 @@
 import type { Env } from "../app/config/env.js";
+import {
+  initializeOpenTelemetryLogging,
+  shutdownOpenTelemetryLogging,
+  type LogLevelName,
+} from "../shared/observability/logging/index.js";
 import type { AppLogger } from "../shared/observability/logger.js";
 import {
   initializeTracing,
@@ -32,6 +37,17 @@ export const startRuntimeTracing = (
   logger: AppLogger,
   runtimeRole: RuntimeRole,
 ): void => {
+  initializeOpenTelemetryLogging({
+    authBearerToken: env.OTEL_EXPORTER_OTLP_LOGS_AUTH_BEARER,
+    enabled: Boolean(env.OTEL_LOGS_ENABLED),
+    environment: env.OBSERVABILITY_ENVIRONMENT ?? env.NODE_ENV ?? "development",
+    logger,
+    minimumLevel: env.OTEL_LOGS_MIN_LEVEL as LogLevelName | undefined,
+    otlpEndpoint: env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT,
+    runtimeRole,
+    serviceName: serviceName(env, runtimeRole),
+    version: env.OBSERVABILITY_VERSION,
+  });
   initializeTracing({
     enabled: Boolean(env.OTEL_ENABLED),
     environment: env.OBSERVABILITY_ENVIRONMENT ?? env.NODE_ENV ?? "development",
@@ -46,5 +62,8 @@ export const startRuntimeTracing = (
 };
 
 export const stopRuntimeTracing = async (): Promise<void> => {
-  await shutdownTracing();
+  await Promise.all([
+    shutdownTracing(),
+    shutdownOpenTelemetryLogging(),
+  ]);
 };

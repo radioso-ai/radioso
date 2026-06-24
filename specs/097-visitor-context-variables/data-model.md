@@ -52,10 +52,13 @@ The declaration. Holds no value.
 | default_surfacing | text | CHECK in (`always`, `on_reference`, `operator_only`). Default for enablements. |
 | created_at / updated_at | timestamptz | |
 
-Built-in variables (`page_url`, `page_title`, `page_locale`, `browser_locale`, `page_content`,
-`visitor_identity`) are seeded as catalog rows so they share one rendering and persistence
-path. Built-ins are flagged read-only-declaration (operators enable/wire them but cannot
-delete or rename them).
+Built-in variables (`page_context` — a single bundle of the page fields, decision A — and
+`visitor_identity`) are defined in a **code registry** (`context-variables/registry.ts`), NOT
+seeded as catalog rows. Seeding per-workspace rows for built-ins would require backfilling
+every existing and future workspace; instead built-ins are implicitly available and resolved
+in code (Slice 1 already resolves `page_context` with zero DB rows). The catalog tables below
+therefore hold ONLY host-defined variables. Operators enable/wire built-ins through the same
+per-agent enablement, but cannot delete or rename them.
 
 ## agent_context_variables (NEW — per-agent enablement/wiring)
 
@@ -204,14 +207,14 @@ tolerate absence (prompt fallback). This keeps the existing guarantee analysis s
 
 ## Migration & backfill
 
-1. Create `context_variables`, `agent_context_variables`, `context_variable_values`.
-2. Seed built-in catalog rows for the existing page fields + `visitor_identity`.
-3. Backfill `agent_context_variables` for every existing agent: enable the page built-ins with
-   `source = browser`, `surfacing = always`, preserving today's behavior (now also on the
-   retrieval path).
-4. Per-turn persistence: prefer reusing `messages.metadata_json` (no schema change); add
-   `context_turn_snapshots` only if option B is chosen. `conversations.channel_context` is
-   left untouched.
+1. Create `context_variables`, `agent_context_variables`, `context_variable_values`
+   (migration `112_context_variables.sql`). No seed, no backfill.
+2. Built-ins (`page_context`, `visitor_identity`) live in the code registry, not the DB, so no
+   seeding/backfill is needed; `page_context` already resolves and renders (Slice 1).
+3. Per-turn persistence (shipped in Slice 1): the redacted snapshot rides on
+   `messages.metadata_json.contextVariables`. `conversations.channel_context` is left untouched.
+4. Kysely types are regenerated from the migrations via `pnpm --dir backend run db:types`
+   (throwaway pgvector container), which also validates the migration SQL.
 
 Persistence access uses Kysely per spec 093 (no raw SQL outside the sanctioned allowlist).
 

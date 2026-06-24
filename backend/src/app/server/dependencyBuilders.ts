@@ -211,6 +211,8 @@ import { ContextualDirectiveMatchGatewayFactory } from "../../shared/infra/llm/c
 import { TextGenerationClientCache } from "../../shared/infra/llm/textClientFactory.js";
 import { createMailService } from "../../modules/mail/public.js";
 import { AgentSkillRepository } from "../../modules/agentSkills/public.js";
+import { ContextVariableResolverService } from "../../modules/context-variables/public.js";
+import { SkillBackedContextResolver } from "../composition/builtIn/contextResolverModule.js";
 import { createLogger, type AppLogger } from "../../shared/observability/logger.js";
 import { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
 import { createPublishedRoutineRegistrationSource } from "../composition/routineDefinitionSource.js";
@@ -1340,6 +1342,16 @@ export const buildChatServices = (input: {
     input.llmRegistry.createRewriteInferencePipeline(input.usageEventRecorder),
   );
   const routineStateRepository = new RoutineStateRepository(input.database.kysely);
+  const contextVariableRepository = new ContextVariableRepository(input.database.kysely);
+  const contextVariableResolver = new ContextVariableResolverService({
+    repository: contextVariableRepository,
+    resolver: new SkillBackedContextResolver({
+      agentSkills: new AgentSkillRepository(input.database.kysely),
+      skillExecutorRegistry: input.composition.skillExecutorRegistry,
+    }),
+    logger: input.logger,
+    metrics: input.metricsRegistry ?? null,
+  });
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
     messageRepository: input.messageRepository,
@@ -1355,7 +1367,7 @@ export const buildChatServices = (input: {
     bootstrapGreetingCacheRepository: input.bootstrapGreetingCacheRepository,
     usageLimitPolicy: input.usageLimitPolicy,
     agentService: input.agentService,
-    contextVariableRepository: new ContextVariableRepository(input.database.kysely),
+    contextVariableRepository: contextVariableResolver,
     // 067: behavioral steering. The standing set is supplied by application
     // composition; default answer behavior is registered by a built-in module.
     // Contextual matching is created per turn so the model call carries the

@@ -12,12 +12,14 @@ export {
   ContextResolutionService,
   resolveContextForTurn,
 } from "./contextResolutionService.js";
+export { ContextVariableResolverService } from "./contextVariableResolverService.js";
 export type {
   ResolvedTurnContext,
   PageContextInput,
   ResolvedVariableInput,
   ContextVariableSurfacing,
 } from "./contextResolutionService.js";
+export type { ContextResolverPort } from "./contextVariableResolverService.js";
 export { redactSnapshot, REDACTED_VALUE } from "./redaction.js";
 export type { ContextVariableSnapshot, SnapshotEntry } from "./redaction.js";
 export {

@@ -437,6 +437,125 @@ test("turn flow shows offered clarification decisions and candidates", async ({ 
   await expect(stageDetail.getByText("ignored")).toBeVisible();
 });
 
+test("routine-driven turn without a retrieval leaf still exposes the debug panel", async ({ page }) => {
+  const conversationId = "conversation-routine";
+  const assistantMessageId = "assistant-message-routine";
+  const historyList = {
+    conversations: [
+      {
+        id: conversationId,
+        sourceChannel: null,
+        sourceOrigin: null,
+        anonymousSessionId: null,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        messageCount: 2,
+        userMessageCount: 1,
+        assistantMessageCount: 1,
+        preview: "I want to order Black Soap Bar 2 units",
+      },
+    ],
+    total: 1,
+    nextCursor: null,
+    hasMore: false,
+  };
+  // A routine drives the reply: the spine carries a `routine_resume` stage and a
+  // dispatch with NO sub-trace, and the turn has no legacy `activityTrace`. There
+  // is no retrieval leaf, so the only thing to inspect is the spine itself.
+  const turnTrace = {
+    version: 1,
+    spine: {
+      traceId: "conversation-turn-routine",
+      startedAt: nowIso,
+      completedAt: nowIso,
+      stages: [
+        { id: "gather", kind: "gather", status: "applied", outputs: { historyCount: 2 } },
+        {
+          id: "routine",
+          kind: "routine_resume",
+          status: "applied",
+          outputs: { routineId: "order-flow", completed: false },
+        },
+        {
+          id: "dispatch:routine",
+          kind: "skill_dispatch",
+          status: "applied",
+          outputs: { skillName: "routine", outcomeStatus: "completed" },
+        },
+        { id: "compose", kind: "compose", status: "applied", outputs: { outcomeCount: 1 } },
+      ],
+    },
+  };
+  const conversationDetail = {
+    conversationId,
+    workspaceId,
+    sourceChannel: null,
+    sourceOrigin: null,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    messageCount: 2,
+    userMessageCount: 1,
+    assistantMessageCount: 1,
+    messagesTotal: 2,
+    messageWindowOffset: 0,
+    messageWindowLimit: 50,
+    hasOlderMessages: false,
+    nextCursor: null,
+    messages: [
+      {
+        id: "user-message-routine",
+        role: "user",
+        content: "I want to order Black Soap Bar 2 units",
+        createdAt: nowIso,
+      },
+      {
+        id: assistantMessageId,
+        role: "assistant",
+        content: "Sure — I can help with 2 units of the Black Soap Bar. Would you like to place the order?",
+        createdAt: nowIso,
+        citations: [],
+        answerSegments: [
+          { text: "Sure — I can help with 2 units of the Black Soap Bar. Would you like to place the order?" },
+        ],
+        debug: {
+          eventStatus: "success",
+          recordedAt: nowIso,
+          stream: false,
+          citationCount: 0,
+          answerOutcome: "completed",
+          // No retrieval ran, so there is no activityTrace — only the spine.
+          turnTrace,
+          route: {
+            generator: "assistant",
+            routeType: "direct",
+            routeReason: "routine",
+            retrievalInvoked: false,
+          },
+        },
+      },
+    ],
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList,
+    conversationDetail,
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity?tab=all`);
+  await page.getByRole("button", { name: /I want to order Black Soap Bar 2 units/ }).click();
+  await expect(page).toHaveURL(/itemKind=chat/);
+
+  // The debug toggle must appear even though this turn has no retrieval leaf —
+  // the spine envelope alone is inspectable.
+  await page.getByRole("button", { name: "Debug" }).click();
+  await expect(page.getByText("Outcome summary").first()).toBeVisible();
+
+  // The flow opens from the spine and shows the routine path.
+  await page.getByRole("button", { name: "Flow" }).click();
+  await expect(page.getByText("Turn flow", { exact: true })).toBeVisible();
+});
+
 test("activity filtered pages request one offset-backed page", async ({ page }) => {
   const requestLog: string[] = [];
   const historyList = {

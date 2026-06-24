@@ -286,6 +286,7 @@ export const createTestEnv = (): Env => ({
   RADIOSO_MCP_REQUEST_TIMEOUT_MS: 30_000,
   RADIOSO_MCP_SERVER_NAME: "radioso-context",
   RADIOSO_MCP_WORKSPACE_POLICIES_PATH: undefined,
+  RADIOSO_EDITION: "oss",
   RADIOSO_APPLICATION_MODULES: undefined,
 });
 

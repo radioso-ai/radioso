@@ -281,7 +281,10 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       agentName: z.string().nullable(),
       sourceChannel: z.string().nullable(),
       sourceOrigin: z.string().nullable(),
-      channelContext: ConversationChannelContextSchema.nullable(),
+      // Union-with-null rather than `.nullable()`: `.nullable()` on a registered $ref emits a
+      // contradictory `allOf: [$ref, null]` under OpenAPI 3.1, so `channelContext: null` (every
+      // non-Slack conversation) would be invalid against the published schema.
+      channelContext: z.union([ConversationChannelContextSchema, z.null()]),
       anonymousSessionId: z.string().nullable(),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
@@ -485,7 +488,10 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       agentId: z.string().uuid().nullable(),
       sourceChannel: z.string().nullable(),
       sourceOrigin: z.string().nullable(),
-      channelContext: ConversationChannelContextSchema.nullable(),
+      // Union-with-null rather than `.nullable()`: `.nullable()` on a registered $ref emits a
+      // contradictory `allOf: [$ref, null]` under OpenAPI 3.1, so `channelContext: null` (every
+      // non-Slack conversation) would be invalid against the published schema.
+      channelContext: z.union([ConversationChannelContextSchema, z.null()]),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
       messageCount: z.number().int().min(0),

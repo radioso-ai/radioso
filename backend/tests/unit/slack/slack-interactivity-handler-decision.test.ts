@@ -58,7 +58,7 @@ const blockPayload = {
 };
 
 const createHandler = (overrides: {
-  identity?: { accountId: string; userId?: string | null; displayName: string | null } | { rejected: true };
+  identity?: { accountId: string; userId: string | null; displayName: string | null } | { rejected: true };
   resolveError?: Error;
 } = {}) => {
   const responsePosts: Array<{ url: string; body: Record<string, unknown> }> = [];

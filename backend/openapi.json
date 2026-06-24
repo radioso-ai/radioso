@@ -9931,100 +9931,15 @@
             ]
           },
           "channelContext": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/ConversationChannelContext"
               },
               {
-                "oneOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "provider": {
-                        "type": "string",
-                        "enum": [
-                          "slack"
-                        ]
-                      },
-                      "team": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "name": {
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "id"
-                        ]
-                      },
-                      "channel": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "type": {
-                            "type": "string",
-                            "enum": [
-                              "im",
-                              "channel"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "id",
-                          "type"
-                        ]
-                      },
-                      "threadTs": {
-                        "type": "string"
-                      },
-                      "user": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "displayName": {
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "id"
-                        ]
-                      }
-                    },
-                    "required": [
-                      "provider",
-                      "team",
-                      "channel",
-                      "user"
-                    ]
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "provider": {
-                        "type": "string",
-                        "enum": [
-                          "web"
-                        ]
-                      },
-                      "origin": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "provider"
-                    ]
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
+                "type": "null"
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -10779,100 +10694,15 @@
             ]
           },
           "channelContext": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/ConversationChannelContext"
               },
               {
-                "oneOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "provider": {
-                        "type": "string",
-                        "enum": [
-                          "slack"
-                        ]
-                      },
-                      "team": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "name": {
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "id"
-                        ]
-                      },
-                      "channel": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "type": {
-                            "type": "string",
-                            "enum": [
-                              "im",
-                              "channel"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "id",
-                          "type"
-                        ]
-                      },
-                      "threadTs": {
-                        "type": "string"
-                      },
-                      "user": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "displayName": {
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "id"
-                        ]
-                      }
-                    },
-                    "required": [
-                      "provider",
-                      "team",
-                      "channel",
-                      "user"
-                    ]
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "provider": {
-                        "type": "string",
-                        "enum": [
-                          "web"
-                        ]
-                      },
-                      "origin": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "provider"
-                    ]
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
+                "type": "null"
+              },
+              {
+                "type": "null"
               }
             ]
           },

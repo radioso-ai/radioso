@@ -23,7 +23,7 @@ export interface SlackUserInfoLookupPort {
 }
 
 export type SlackOperatorIdentityResolution =
-  | { accountId: string; displayName: string | null }
+  | { accountId: string; userId: string | null; displayName: string | null }
   | { rejected: true };
 
 const displayNameForSlackUser = (user: SlackUserInfo): string | null =>
@@ -65,6 +65,10 @@ export class SlackOperatorIdentityResolver {
     if (!authorized) {
       return { rejected: true };
     }
-    return { accountId: member.accountId, displayName: displayNameForSlackUser(slackUser) };
+    return {
+      accountId: member.accountId,
+      userId: member.userId ?? null,
+      displayName: displayNameForSlackUser(slackUser),
+    };
   }
 }

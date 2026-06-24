@@ -1469,7 +1469,7 @@ components:
       properties:
         provider:
           type: string
-          enum: &a37
+          enum: &a36
             - openai
             - openai-compatible
             - gemini
@@ -6664,7 +6664,7 @@ components:
                   type: string
                 type:
                   type: string
-                  enum: &a33
+                  enum:
                     - im
                     - channel
               required:
@@ -6720,62 +6720,10 @@ components:
             - string
             - "null"
         channelContext:
-          allOf:
+          anyOf:
             - $ref: "#/components/schemas/ConversationChannelContext"
-            - oneOf:
-                - type: object
-                  properties:
-                    provider:
-                      type: string
-                      enum:
-                        - slack
-                    team:
-                      type: object
-                      properties:
-                        id:
-                          type: string
-                        name:
-                          type: string
-                      required:
-                        - id
-                    channel:
-                      type: object
-                      properties:
-                        id:
-                          type: string
-                        type:
-                          type: string
-                          enum: *a33
-                      required:
-                        - id
-                        - type
-                    threadTs:
-                      type: string
-                    user:
-                      type: object
-                      properties:
-                        id:
-                          type: string
-                        displayName:
-                          type: string
-                      required:
-                        - id
-                  required:
-                    - provider
-                    - team
-                    - channel
-                    - user
-                - type: object
-                  properties:
-                    provider:
-                      type: string
-                      enum:
-                        - web
-                    origin:
-                      type: string
-                  required:
-                    - provider
-                - type: "null"
+            - type: "null"
+            - type: "null"
         anonymousSessionId:
           type:
             - string
@@ -7007,7 +6955,7 @@ components:
           format: uuid
         value:
           type: string
-          enum: &a34
+          enum: &a33
             - up
             - down
         comment:
@@ -7016,7 +6964,7 @@ components:
             - "null"
         actorType:
           type: string
-          enum: &a35
+          enum: &a34
             - authenticated_user
             - api_token
             - anonymous_user
@@ -7076,14 +7024,14 @@ components:
           format: uuid
         value:
           type: string
-          enum: *a34
+          enum: *a33
         comment:
           type:
             - string
             - "null"
         actorType:
           type: string
-          enum: *a35
+          enum: *a34
         actorId:
           type: string
         accountId:
@@ -7305,62 +7253,10 @@ components:
             - string
             - "null"
         channelContext:
-          allOf:
+          anyOf:
             - $ref: "#/components/schemas/ConversationChannelContext"
-            - oneOf:
-                - type: object
-                  properties:
-                    provider:
-                      type: string
-                      enum:
-                        - slack
-                    team:
-                      type: object
-                      properties:
-                        id:
-                          type: string
-                        name:
-                          type: string
-                      required:
-                        - id
-                    channel:
-                      type: object
-                      properties:
-                        id:
-                          type: string
-                        type:
-                          type: string
-                          enum: *a33
-                      required:
-                        - id
-                        - type
-                    threadTs:
-                      type: string
-                    user:
-                      type: object
-                      properties:
-                        id:
-                          type: string
-                        displayName:
-                          type: string
-                      required:
-                        - id
-                  required:
-                    - provider
-                    - team
-                    - channel
-                    - user
-                - type: object
-                  properties:
-                    provider:
-                      type: string
-                      enum:
-                        - web
-                    origin:
-                      type: string
-                  required:
-                    - provider
-                - type: "null"
+            - type: "null"
+            - type: "null"
         createdAt:
           type: string
           format: date-time
@@ -8984,8 +8880,8 @@ paths:
         - Settings
       summary: List workspace webhook destinations
       operationId: listWebhookDestinations
-      security: &a36
-        - &a38
+      security: &a35
+        - &a37
           sessionCookie: []
           workspaceSelection: []
       responses:
@@ -9006,7 +8902,7 @@ paths:
         - Settings
       summary: Create a workspace webhook destination
       operationId: createWebhookDestination
-      security: *a36
+      security: *a35
       requestBody:
         required: true
         content:
@@ -9044,7 +8940,7 @@ paths:
         - Settings
       summary: Get a workspace webhook destination
       operationId: getWebhookDestination
-      security: *a36
+      security: *a35
       parameters:
         - schema:
             type: string
@@ -9076,7 +8972,7 @@ paths:
         - Settings
       summary: Update a workspace webhook destination
       operationId: updateWebhookDestination
-      security: *a36
+      security: *a35
       parameters:
         - schema:
             type: string
@@ -9126,7 +9022,7 @@ paths:
         - Settings
       summary: Delete a workspace webhook destination
       operationId: deleteWebhookDestination
-      security: *a36
+      security: *a35
       parameters:
         - schema:
             type: string
@@ -9161,7 +9057,7 @@ paths:
         - Settings
       summary: Rotate a workspace webhook destination secret
       operationId: rotateWebhookDestinationSecret
-      security: *a36
+      security: *a35
       parameters:
         - schema:
             type: string
@@ -9561,7 +9457,7 @@ paths:
       parameters:
         - schema:
             type: string
-            enum: *a37
+            enum: *a36
           required: true
           name: provider
           in: path
@@ -9602,7 +9498,7 @@ paths:
       parameters:
         - schema:
             type: string
-            enum: *a37
+            enum: *a36
           required: true
           name: provider
           in: path
@@ -10751,7 +10647,7 @@ paths:
       operationId: listSkills
       security:
         - bearerAuth: []
-        - *a38
+        - *a37
       responses:
         "200":
           description: Skills catalog returned
@@ -10773,7 +10669,7 @@ paths:
       operationId: getSkill
       security:
         - bearerAuth: []
-        - *a38
+        - *a37
       parameters:
         - schema:
             type: string
@@ -10802,11 +10698,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/mcp-connections:
     get:
-      tags: &a39
+      tags: &a38
         - External Skills
       summary: List an agent's MCP connections
       operationId: listMcpConnections
-      security: &a40
+      security: &a39
         - bearerAuth: []
       parameters:
         - schema:
@@ -10868,10 +10764,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     post:
-      tags: *a39
+      tags: *a38
       summary: Create an MCP connection
       operationId: createMcpConnection
-      security: *a40
+      security: *a39
       parameters:
         - schema:
             type: string
@@ -10980,10 +10876,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/mcp-connections/{connectionId}/discover:
     post:
-      tags: *a39
+      tags: *a38
       summary: Discover a connection's tools
       operationId: discoverMcpConnectionTools
-      security: *a40
+      security: *a39
       parameters:
         - schema:
             type: string
@@ -11033,10 +10929,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/mcp-connections/{connectionId}:
     delete:
-      tags: *a39
+      tags: *a38
       summary: Delete an MCP connection
       operationId: deleteMcpConnection
-      security: *a40
+      security: *a39
       parameters:
         - schema:
             type: string
@@ -11072,10 +10968,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     get:
-      tags: *a39
+      tags: *a38
       summary: Get an MCP connection
       operationId: getMcpConnection
-      security: *a40
+      security: *a39
       parameters:
         - schema:
             type: string
@@ -11135,10 +11031,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     patch:
-      tags: *a39
+      tags: *a38
       summary: Update an MCP connection (rename / rotate token)
       operationId: updateMcpConnection
-      security: *a40
+      security: *a39
       parameters:
         - schema:
             type: string
@@ -11217,10 +11113,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/external-skills:
     get:
-      tags: *a39
+      tags: *a38
       summary: List an agent's external skill definitions
       operationId: listExternalSkills
-      security: *a40
+      security: *a39
       parameters:
         - schema:
             type: string
@@ -11300,10 +11196,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     post:
-      tags: *a39
+      tags: *a38
       summary: Define an external skill (bind a discovered tool)
       operationId: createExternalSkill
-      security: *a40
+      security: *a39
       parameters:
         - schema:
             type: string
@@ -11429,10 +11325,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/external-skills/{skillId}:
     delete:
-      tags: *a39
+      tags: *a38
       summary: Delete an external skill definition
       operationId: deleteExternalSkill
-      security: *a40
+      security: *a39
       parameters:
         - schema:
             type: string
@@ -11462,10 +11358,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     get:
-      tags: *a39
+      tags: *a38
       summary: Get an external skill definition
       operationId: getExternalSkill
-      security: *a40
+      security: *a39
       parameters:
         - schema:
             type: string
@@ -11544,10 +11440,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     patch:
-      tags: *a39
+      tags: *a38
       summary: Update an external skill definition (enable / update bindings)
       operationId: updateExternalSkill
-      security: *a40
+      security: *a39
       parameters:
         - schema:
             type: string
@@ -11662,10 +11558,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/mcp-connections/{connectionId}/oauth/authorize:
     post:
-      tags: *a39
+      tags: *a38
       summary: Start the OAuth authorization flow for a connection
       operationId: startMcpConnectionOauth
-      security: *a40
+      security: *a39
       parameters:
         - schema:
             type: string
@@ -11718,10 +11614,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/mcp-connections/{connectionId}/oauth/complete:
     post:
-      tags: *a39
+      tags: *a38
       summary: Complete the OAuth authorization flow
       operationId: completeMcpConnectionOauth
-      security: *a40
+      security: *a39
       parameters:
         - schema:
             type: string
@@ -11804,11 +11700,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/oauth-connections:
     post:
-      tags: &a41
+      tags: &a40
         - OAuth Connections
       summary: Create and start a workspace OAuth connection
       operationId: createWorkspaceOauthConnection
-      security: &a42
+      security: &a41
         - bearerAuth: []
       parameters:
         - schema:
@@ -11881,10 +11777,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     get:
-      tags: *a41
+      tags: *a40
       summary: List non-secret workspace OAuth connection statuses
       operationId: listWorkspaceOauthConnections
-      security: *a42
+      security: *a41
       parameters:
         - schema:
             type: string
@@ -11914,7 +11810,7 @@ paths:
                           type: string
                         status:
                           type: string
-                          enum: &a43
+                          enum: &a42
                             - pending
                             - authorized
                             - needs_reauth
@@ -11954,10 +11850,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/oauth-connections/{connectionId}:
     get:
-      tags: *a41
+      tags: *a40
       summary: Get a non-secret workspace OAuth connection status
       operationId: getWorkspaceOauthConnection
-      security: *a42
+      security: *a41
       parameters:
         - schema:
             type: string
@@ -11991,7 +11887,7 @@ paths:
                         type: string
                       status:
                         type: string
-                        enum: *a43
+                        enum: *a42
                       grantedScopes:
                         type: array
                         items:
@@ -12032,10 +11928,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/oauth-connections/{connectionId}/reauthorize:
     post:
-      tags: *a41
+      tags: *a40
       summary: Restart authorization for a workspace OAuth connection
       operationId: reauthorizeWorkspaceOauthConnection
-      security: *a42
+      security: *a41
       parameters:
         - schema:
             type: string
@@ -12096,7 +11992,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/oauth/callback/{provider}:
     get:
-      tags: *a41
+      tags: *a40
       summary: Complete a provider OAuth callback
       operationId: completeWorkspaceOauthCallback
       parameters:
@@ -12142,7 +12038,7 @@ paths:
         - Customer Email Activity
       summary: List sanitized workspace customer email skill activity
       operationId: listWorkspaceEmailSkillActivity
-      security: &a44
+      security: &a43
         - bearerAuth: []
       parameters:
         - schema:
@@ -12244,12 +12140,12 @@ paths:
                           type: string
                         mode:
                           type: string
-                          enum: &a48
+                          enum: &a47
                             - draft
                             - send
                         outcome:
                           type: string
-                          enum: &a49
+                          enum: &a48
                             - drafted
                             - sent
                             - missing_input
@@ -12326,11 +12222,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-connections:
     get:
-      tags: &a45
+      tags: &a44
         - Customer Email Connections
       summary: List workspace customer email connections
       operationId: listWorkspaceEmailConnections
-      security: *a44
+      security: *a43
       parameters:
         - schema:
             type: string
@@ -12375,7 +12271,7 @@ paths:
                             - "null"
                         status:
                           type: string
-                          enum: &a46
+                          enum: &a45
                             - authorized
                             - disabled
                             - needs_reauth
@@ -12384,7 +12280,7 @@ paths:
                           type:
                             - string
                             - "null"
-                          enum: &a47
+                          enum: &a46
                             - ok
                             - failed
                             - unknown
@@ -12427,10 +12323,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     post:
-      tags: *a45
+      tags: *a44
       summary: Create a workspace customer email connection
       operationId: createWorkspaceEmailConnection
-      security: *a44
+      security: *a43
       parameters:
         - schema:
             type: string
@@ -12501,12 +12397,12 @@ paths:
                           - "null"
                       status:
                         type: string
-                        enum: *a46
+                        enum: *a45
                       lastHealthStatus:
                         type:
                           - string
                           - "null"
-                        enum: *a47
+                        enum: *a46
                       lastHealthCheckedAt:
                         type:
                           - string
@@ -12559,10 +12455,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-connections/{connectionId}:
     patch:
-      tags: *a45
+      tags: *a44
       summary: Update or enable/disable a workspace customer email connection
       operationId: updateWorkspaceEmailConnection
-      security: *a44
+      security: *a43
       parameters:
         - schema:
             type: string
@@ -12634,12 +12530,12 @@ paths:
                           - "null"
                       status:
                         type: string
-                        enum: *a46
+                        enum: *a45
                       lastHealthStatus:
                         type:
                           - string
                           - "null"
-                        enum: *a47
+                        enum: *a46
                       lastHealthCheckedAt:
                         type:
                           - string
@@ -12691,10 +12587,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     delete:
-      tags: *a45
+      tags: *a44
       summary: Delete a workspace customer email connection
       operationId: deleteWorkspaceEmailConnection
-      security: *a44
+      security: *a43
       parameters:
         - schema:
             type: string
@@ -12737,10 +12633,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-connections/{connectionId}/health-check:
     post:
-      tags: *a45
+      tags: *a44
       summary: Check customer email connection health
       operationId: checkWorkspaceEmailConnectionHealth
-      security: *a44
+      security: *a43
       parameters:
         - schema:
             type: string
@@ -12789,12 +12685,12 @@ paths:
                           - "null"
                       status:
                         type: string
-                        enum: *a46
+                        enum: *a45
                       lastHealthStatus:
                         type:
                           - string
                           - "null"
-                        enum: *a47
+                        enum: *a46
                       lastHealthCheckedAt:
                         type:
                           - string
@@ -12841,11 +12737,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/email-skills:
     get:
-      tags: &a50
+      tags: &a49
         - Customer Email Skills
       summary: List agent customer email skills
       operationId: listAgentEmailSkills
-      security: *a44
+      security: *a43
       parameters:
         - schema:
             type: string
@@ -12882,7 +12778,7 @@ paths:
                           type: string
                         mode:
                           type: string
-                          enum: *a48
+                          enum: *a47
                         boundInputs:
                           type: object
                           additionalProperties: {}
@@ -12901,7 +12797,7 @@ paths:
                           type: array
                           items:
                             type: string
-                            enum: *a49
+                            enum: *a48
                         createdAt:
                           type: string
                         updatedAt:
@@ -12940,10 +12836,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     post:
-      tags: *a50
+      tags: *a49
       summary: Create an agent customer email skill
       operationId: createAgentEmailSkill
-      security: *a44
+      security: *a43
       parameters:
         - schema:
             type: string
@@ -12965,7 +12861,7 @@ paths:
                   format: uuid
                 mode:
                   type: string
-                  enum: *a48
+                  enum: *a47
                   default: draft
                 boundInputs:
                   type: object
@@ -13014,7 +12910,7 @@ paths:
                         type: string
                       mode:
                         type: string
-                        enum: *a48
+                        enum: *a47
                       boundInputs:
                         type: object
                         additionalProperties: {}
@@ -13033,7 +12929,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a49
+                          enum: *a48
                       createdAt:
                         type: string
                       updatedAt:
@@ -13085,10 +12981,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/email-skills/{skillId}:
     get:
-      tags: *a50
+      tags: *a49
       summary: Get an agent customer email skill
       operationId: getAgentEmailSkill
-      security: *a44
+      security: *a43
       parameters:
         - schema:
             type: string
@@ -13129,7 +13025,7 @@ paths:
                         type: string
                       mode:
                         type: string
-                        enum: *a48
+                        enum: *a47
                       boundInputs:
                         type: object
                         additionalProperties: {}
@@ -13148,7 +13044,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a49
+                          enum: *a48
                       createdAt:
                         type: string
                       updatedAt:
@@ -13187,10 +13083,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     patch:
-      tags: *a50
+      tags: *a49
       summary: Update an agent customer email skill
       operationId: updateAgentEmailSkill
-      security: *a44
+      security: *a43
       parameters:
         - schema:
             type: string
@@ -13213,7 +13109,7 @@ paths:
               properties:
                 mode:
                   type: string
-                  enum: *a48
+                  enum: *a47
                 boundInputs:
                   type: object
                   additionalProperties: {}
@@ -13255,7 +13151,7 @@ paths:
                         type: string
                       mode:
                         type: string
-                        enum: *a48
+                        enum: *a47
                       boundInputs:
                         type: object
                         additionalProperties: {}
@@ -13274,7 +13170,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a49
+                          enum: *a48
                       createdAt:
                         type: string
                       updatedAt:
@@ -13319,10 +13215,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     delete:
-      tags: *a50
+      tags: *a49
       summary: Delete an agent customer email skill
       operationId: deleteAgentEmailSkill
-      security: *a44
+      security: *a43
       parameters:
         - schema:
             type: string
@@ -13359,11 +13255,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/slack/install/start:
     post:
-      tags: &a51
+      tags: &a50
         - Slack
       summary: Start Slack OAuth installation
       operationId: startWorkspaceSlackInstall
-      security: &a52
+      security: &a51
         - bearerAuth: []
       parameters:
         - schema:
@@ -13420,10 +13316,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/slack/install/status:
     get:
-      tags: *a51
+      tags: *a50
       summary: Get Slack installation status
       operationId: getWorkspaceSlackInstallStatus
-      security: *a52
+      security: *a51
       parameters:
         - schema:
             type: string
@@ -13487,10 +13383,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/slack/manifest:
     get:
-      tags: *a51
+      tags: *a50
       summary: Get self-host Slack app manifest
       operationId: getWorkspaceSlackManifest
-      security: *a52
+      security: *a51
       parameters:
         - schema:
             type: string
@@ -13616,10 +13512,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/slack/binding:
     get:
-      tags: *a51
+      tags: *a50
       summary: Get Slack answering binding
       operationId: getWorkspaceSlackBinding
-      security: *a52
+      security: *a51
       parameters:
         - schema:
             type: string
@@ -13660,10 +13556,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     put:
-      tags: *a51
+      tags: *a50
       summary: Set Slack answering binding
       operationId: setWorkspaceSlackBinding
-      security: *a52
+      security: *a51
       parameters:
         - schema:
             type: string
@@ -13733,10 +13629,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/slack/installation:
     delete:
-      tags: *a51
+      tags: *a50
       summary: Disconnect Slack installation
       operationId: disconnectWorkspaceSlackInstallation
-      security: *a52
+      security: *a51
       parameters:
         - schema:
             type: string
@@ -13765,7 +13661,7 @@ paths:
         - Webhook Skills
       summary: List agent webhook skills
       operationId: listAgentWebhookSkills
-      security: &a53
+      security: &a52
         - bearerAuth: []
       parameters:
         - schema:
@@ -13822,7 +13718,7 @@ paths:
                           type: array
                           items:
                             type: string
-                            enum: &a54
+                            enum: &a53
                               - delivered
                               - missing_input
                               - destination_not_found
@@ -13868,7 +13764,7 @@ paths:
         - Webhook Skills
       summary: Create an agent webhook skill
       operationId: createAgentWebhookSkill
-      security: *a53
+      security: *a52
       parameters:
         - schema:
             type: string
@@ -13957,7 +13853,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a54
+                          enum: *a53
                       createdAt:
                         type: string
                       updatedAt:
@@ -14012,7 +13908,7 @@ paths:
         - Webhook Skills
       summary: Get an agent webhook skill
       operationId: getAgentWebhookSkill
-      security: *a53
+      security: *a52
       parameters:
         - schema:
             type: string
@@ -14072,7 +13968,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a54
+                          enum: *a53
                       createdAt:
                         type: string
                       updatedAt:
@@ -14114,7 +14010,7 @@ paths:
         - Webhook Skills
       summary: Update an agent webhook skill
       operationId: updateAgentWebhookSkill
-      security: *a53
+      security: *a52
       parameters:
         - schema:
             type: string
@@ -14198,7 +14094,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a54
+                          enum: *a53
                       createdAt:
                         type: string
                       updatedAt:
@@ -14246,7 +14142,7 @@ paths:
         - Webhook Skills
       summary: Delete an agent webhook skill
       operationId: deleteAgentWebhookSkill
-      security: *a53
+      security: *a52
       parameters:
         - schema:
             type: string
@@ -14287,7 +14183,7 @@ paths:
         - Slack Skills
       summary: List agent Slack skills
       operationId: listAgentSlackSkills
-      security: &a57
+      security: &a56
         - bearerAuth: []
       parameters:
         - schema:
@@ -14326,13 +14222,13 @@ paths:
                         boundInputs:
                           type: object
                           properties:
-                            channelId: &a55 {}
-                            text: *a55
-                            threadTs: *a55
+                            channelId: &a54 {}
+                            text: *a54
+                            threadTs: *a54
                         exposedInputs:
                           type: object
                           properties:
-                            channelId: &a56
+                            channelId: &a55
                               type: object
                               properties:
                                 description:
@@ -14342,15 +14238,15 @@ paths:
                                 required:
                                   type: boolean
                                   default: true
-                            text: *a56
-                            threadTs: *a56
+                            text: *a55
+                            threadTs: *a55
                         enabled:
                           type: boolean
                         outcomes:
                           type: array
                           items:
                             type: string
-                            enum: &a62
+                            enum: &a61
                               - enqueued
                               - missing_input
                               - failed
@@ -14395,7 +14291,7 @@ paths:
         - Slack Skills
       summary: Create an agent Slack skill
       operationId: createAgentSlackSkill
-      security: *a57
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -14418,14 +14314,14 @@ paths:
                 boundInputs:
                   type: object
                   properties:
-                    channelId: &a58 {}
-                    text: *a58
-                    threadTs: *a58
+                    channelId: &a57 {}
+                    text: *a57
+                    threadTs: *a57
                   default: {}
                 exposedInputs:
                   type: object
                   properties:
-                    channelId: &a59
+                    channelId: &a58
                       type: object
                       properties:
                         description:
@@ -14435,8 +14331,8 @@ paths:
                         required:
                           type: boolean
                           default: true
-                    text: *a59
-                    threadTs: *a59
+                    text: *a58
+                    threadTs: *a58
                   default: {}
                 enabled:
                   type: boolean
@@ -14472,13 +14368,13 @@ paths:
                       boundInputs:
                         type: object
                         properties:
-                          channelId: &a60 {}
-                          text: *a60
-                          threadTs: *a60
+                          channelId: &a59 {}
+                          text: *a59
+                          threadTs: *a59
                       exposedInputs:
                         type: object
                         properties:
-                          channelId: &a61
+                          channelId: &a60
                             type: object
                             properties:
                               description:
@@ -14488,15 +14384,15 @@ paths:
                               required:
                                 type: boolean
                                 default: true
-                          text: *a61
-                          threadTs: *a61
+                          text: *a60
+                          threadTs: *a60
                       enabled:
                         type: boolean
                       outcomes:
                         type: array
                         items:
                           type: string
-                          enum: *a62
+                          enum: *a61
                       createdAt:
                         type: string
                       updatedAt:
@@ -14551,7 +14447,7 @@ paths:
         - Slack Skills
       summary: Get an agent Slack skill
       operationId: getAgentSlackSkill
-      security: *a57
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -14593,13 +14489,13 @@ paths:
                       boundInputs:
                         type: object
                         properties:
-                          channelId: &a63 {}
-                          text: *a63
-                          threadTs: *a63
+                          channelId: &a62 {}
+                          text: *a62
+                          threadTs: *a62
                       exposedInputs:
                         type: object
                         properties:
-                          channelId: &a64
+                          channelId: &a63
                             type: object
                             properties:
                               description:
@@ -14609,15 +14505,15 @@ paths:
                               required:
                                 type: boolean
                                 default: true
-                          text: *a64
-                          threadTs: *a64
+                          text: *a63
+                          threadTs: *a63
                       enabled:
                         type: boolean
                       outcomes:
                         type: array
                         items:
                           type: string
-                          enum: *a62
+                          enum: *a61
                       createdAt:
                         type: string
                       updatedAt:
@@ -14659,7 +14555,7 @@ paths:
         - Slack Skills
       summary: Update an agent Slack skill
       operationId: updateAgentSlackSkill
-      security: *a57
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -14683,13 +14579,13 @@ paths:
                 boundInputs:
                   type: object
                   properties:
-                    channelId: &a65 {}
-                    text: *a65
-                    threadTs: *a65
+                    channelId: &a64 {}
+                    text: *a64
+                    threadTs: *a64
                 exposedInputs:
                   type: object
                   properties:
-                    channelId: &a66
+                    channelId: &a65
                       type: object
                       properties:
                         description:
@@ -14699,8 +14595,8 @@ paths:
                         required:
                           type: boolean
                           default: true
-                    text: *a66
-                    threadTs: *a66
+                    text: *a65
+                    threadTs: *a65
                 enabled:
                   type: boolean
       responses:
@@ -14731,13 +14627,13 @@ paths:
                       boundInputs:
                         type: object
                         properties:
-                          channelId: &a67 {}
-                          text: *a67
-                          threadTs: *a67
+                          channelId: &a66 {}
+                          text: *a66
+                          threadTs: *a66
                       exposedInputs:
                         type: object
                         properties:
-                          channelId: &a68
+                          channelId: &a67
                             type: object
                             properties:
                               description:
@@ -14747,15 +14643,15 @@ paths:
                               required:
                                 type: boolean
                                 default: true
-                          text: *a68
-                          threadTs: *a68
+                          text: *a67
+                          threadTs: *a67
                       enabled:
                         type: boolean
                       outcomes:
                         type: array
                         items:
                           type: string
-                          enum: *a62
+                          enum: *a61
                       createdAt:
                         type: string
                       updatedAt:
@@ -14803,7 +14699,7 @@ paths:
         - Slack Skills
       summary: Delete an agent Slack skill
       operationId: deleteAgentSlackSkill
-      security: *a57
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -16302,7 +16198,7 @@ paths:
         - Conversation Ownership
       summary: Take human ownership of a conversation
       operationId: takeOverConversation
-      security: &a69
+      security: &a68
         - bearerAuth: []
       parameters:
         - schema:
@@ -16366,7 +16262,7 @@ paths:
         - Conversation Ownership
       summary: Reply to a conversation as a human operator
       operationId: replyToConversation
-      security: *a69
+      security: *a68
       parameters:
         - schema:
             type: string
@@ -16435,7 +16331,7 @@ paths:
         - Conversation Ownership
       summary: Transfer human ownership of a conversation
       operationId: transferConversationOwnership
-      security: *a69
+      security: *a68
       parameters:
         - schema:
             type: string
@@ -16503,7 +16399,7 @@ paths:
         - Conversation Ownership
       summary: Return a human-owned conversation to AI ownership
       operationId: handBackConversation
-      security: *a69
+      security: *a68
       parameters:
         - schema:
             type: string
@@ -17225,7 +17121,7 @@ paths:
                           properties:
                             provider:
                               type: string
-                              enum: &a70
+                              enum: &a69
                                 - openai
                                 - openai-compatible
                                 - gemini
@@ -17282,7 +17178,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: *a70
+                          enum: *a69
                         model:
                           type: string
                       required:

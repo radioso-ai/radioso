@@ -42,6 +42,7 @@ describe("SlackOperatorIdentityResolver", () => {
 
     await expect(resolver.resolve({ installation, slackUserId: "U123" })).resolves.toEqual({
       accountId: "account-1",
+      userId: "user-1",
       displayName: "Dana Scully",
     });
     expect(slack.usersInfo).toHaveBeenCalledWith("U123", installation);

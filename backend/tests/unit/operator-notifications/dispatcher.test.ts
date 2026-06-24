@@ -35,7 +35,7 @@ describe("OperatorNotificationDispatcher", () => {
     expect(second.deliver).toHaveBeenCalledWith(notification, context);
   });
 
-  it("logs a sink failure without blocking other sinks", async () => {
+  it("attempts every sink even when one fails, then rethrows so the action outbox retries", async () => {
     const warn = vi.fn();
     const failing: OperatorNotificationSink = {
       deliver: vi.fn(async () => {
@@ -45,7 +45,9 @@ describe("OperatorNotificationDispatcher", () => {
     const succeeding: OperatorNotificationSink = { deliver: vi.fn(async () => {}) };
     const dispatcher = new OperatorNotificationDispatcher([failing, succeeding], { warn });
 
-    await expect(dispatcher.dispatch(notification, context)).resolves.toBeUndefined();
+    // The other sink is still attempted (no short-circuit), but the failure is surfaced so the
+    // at-least-once outbox retries — idempotent sinks de-dupe the already-delivered ones.
+    await expect(dispatcher.dispatch(notification, context)).rejects.toThrow();
 
     expect(succeeding.deliver).toHaveBeenCalledWith(notification, context);
     expect(warn).toHaveBeenCalledWith(

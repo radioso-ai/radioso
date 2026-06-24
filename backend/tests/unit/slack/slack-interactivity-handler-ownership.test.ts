@@ -57,7 +57,7 @@ const viewPayload = (value: string) => ({
 });
 
 const createHandler = (overrides: {
-  identity?: { accountId: string; userId?: string | null; displayName: string | null } | { rejected: true };
+  identity?: { accountId: string; userId: string | null; displayName: string | null } | { rejected: true };
   currentOwnership?: ConversationOwnershipRecord | null;
   takeOverResult?: { ok: true; record: ConversationOwnershipRecord } | { ok: false; record: ConversationOwnershipRecord | null };
   handBackResult?: { ok: true; record: ConversationOwnershipRecord } | { ok: false; record: ConversationOwnershipRecord | null };

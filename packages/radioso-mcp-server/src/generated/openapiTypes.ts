@@ -4699,28 +4699,7 @@ export interface components {
             agentName: string | null;
             sourceChannel: string | null;
             sourceOrigin: string | null;
-            channelContext: components["schemas"]["ConversationChannelContext"] & ({
-                /** @enum {string} */
-                provider: "slack";
-                team: {
-                    id: string;
-                    name?: string;
-                };
-                channel: {
-                    id: string;
-                    /** @enum {string} */
-                    type: "im" | "channel";
-                };
-                threadTs?: string;
-                user: {
-                    id: string;
-                    displayName?: string;
-                };
-            } | {
-                /** @enum {string} */
-                provider: "web";
-                origin?: string;
-            } | null);
+            channelContext: components["schemas"]["ConversationChannelContext"] | null;
             anonymousSessionId: string | null;
             /** Format: date-time */
             createdAt: string;
@@ -4917,28 +4896,7 @@ export interface components {
             agentId: string | null;
             sourceChannel: string | null;
             sourceOrigin: string | null;
-            channelContext: components["schemas"]["ConversationChannelContext"] & ({
-                /** @enum {string} */
-                provider: "slack";
-                team: {
-                    id: string;
-                    name?: string;
-                };
-                channel: {
-                    id: string;
-                    /** @enum {string} */
-                    type: "im" | "channel";
-                };
-                threadTs?: string;
-                user: {
-                    id: string;
-                    displayName?: string;
-                };
-            } | {
-                /** @enum {string} */
-                provider: "web";
-                origin?: string;
-            } | null);
+            channelContext: components["schemas"]["ConversationChannelContext"] | null;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */

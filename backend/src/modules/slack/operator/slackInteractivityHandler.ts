@@ -238,7 +238,6 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     }
 
     const decision = await this.options.pendingDecisions?.loadByHandle(action.handle);
-    const identityUserId = isRecord(identity) ? readString((identity as Record<string, unknown>).userId) : null;
     try {
       const result = await this.options.approvalDecisions.resolve({
         agentId: action.agentId,
@@ -248,7 +247,9 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
         caller: {
           accountId: identity.accountId,
           workspaceId: installation.workspaceId,
-          ...(identityUserId ? { userId: identityUserId } : {}),
+          // Required for workspace_role-scoped decisions: resolveWorkspaceRole returns null
+          // without a userId, so a role-scoped gate would reject an otherwise-authorized operator.
+          ...(identity.userId ? { userId: identity.userId } : {}),
         },
       });
       this.incrementDecisionCounter("resolved");

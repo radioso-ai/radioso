@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "How to create and edit routines in the dashboard using the prose and form editors, bind skill inputs/outputs, copy a routine to text, and manage lifecycle."
-last_updated: 2026-06-22
+last_updated: 2026-06-25
 ---
 
 # Authoring Routines
@@ -108,21 +108,32 @@ inline reference, not raw syntax. Each kind has its own colour:
 The key point: chips for structure, prose for instruction. You never type curly
 braces or arrows.
 
-### Variable types
+### Variable types and flags
 
 A variable has a type: `text`, `number`, `boolean`, `email`, or `date`. The type
 is shown on the variable chip. Click the chip to change it, or set it inside the
 **Condition** dialog when you build a comparison. The type decides which exact
 comparisons are available.
 
+The same chip menu carries two flags:
+
+- **Optional** - by default a variable is required, and a step that asks for it
+  waits until the user provides it. Mark it optional when the routine can finish
+  without that value.
+- **Editable after completion** - see the next section.
+
+Both flags are also available in the Form view; the prose chip menu and the form
+edit the same slot.
+
 A name identifies one thing. Once a name is used by a chip, the `@` menu will not
 let a second chip of a different kind reuse it.
 
 ### Editable after completion
 
-A variable can be marked **editable after** in the Form view. This controls one
-thing: whether the visitor can correct that value after the routine has finished,
-without running the whole routine again.
+A variable can be marked **editable after completion**, either from its chip menu
+in the Prose view or from the Form view. This controls one thing: whether the
+visitor can correct that value after the routine has finished, without running the
+whole routine again.
 
 When a variable is editable and the visitor's next message changes it, the
 assistant updates the stored value in place and confirms the change. The new value

@@ -125,6 +125,43 @@ describe('routine prose token grammar', () => {
     expect(parsed.variables).toContainEqual({ id: 'vip', name: 'vip', type: 'boolean' })
   })
 
+  it('round-trips optional and mutable slot flags through the vars declaration', () => {
+    const input = {
+      name: 'intake',
+      trigger: 'when collecting details',
+      variables: [
+        { id: 'email', name: 'email', type: 'email' as const, required: false },
+        { id: 'note', name: 'note', type: 'text' as const, mutable: true },
+        { id: 'phone', name: 'phone', type: 'text' as const, required: false, mutable: true },
+        { id: 'name', name: 'name', type: 'text' as const },
+      ],
+      paragraphs: [
+        { segments: [
+          { kind: 'text' as const, text: 'Collect ' },
+          { kind: 'chip' as const, chipKind: 'variable' as const, refId: 'email', label: '@email' },
+          { kind: 'text' as const, text: ', ' },
+          { kind: 'chip' as const, chipKind: 'variable' as const, refId: 'note', label: '@note' },
+          { kind: 'text' as const, text: ', ' },
+          { kind: 'chip' as const, chipKind: 'variable' as const, refId: 'phone', label: '@phone' },
+          { kind: 'text' as const, text: ', ' },
+          { kind: 'chip' as const, chipKind: 'variable' as const, refId: 'name', label: '@name' },
+          { kind: 'text' as const, text: '.' },
+        ] },
+      ],
+    }
+    const { text, parsed } = roundTrip(input)
+
+    expect(text).toContain('email:email:optional')
+    expect(text).toContain('note:text:mutable')
+    expect(text).toContain('phone:text:optional:mutable')
+
+    expect(parsed.variables).toContainEqual({ id: 'email', name: 'email', type: 'email', required: false })
+    expect(parsed.variables).toContainEqual({ id: 'note', name: 'note', type: 'text', mutable: true })
+    expect(parsed.variables).toContainEqual({ id: 'phone', name: 'phone', type: 'text', required: false, mutable: true })
+    // A required, non-mutable text variable round-trips bare — no flags, no declaration needed.
+    expect(parsed.variables).toContainEqual({ id: 'name', name: 'name', type: 'text' })
+  })
+
   it('round-trips a capped backward jump', () => {
     const input = {
       name: 'retry',

@@ -80,6 +80,14 @@ export function RoutineProseTab({
     setVariables((current) => current.map((variable) => (variable.id === id ? { ...variable, type } : variable)))
   }
 
+  const setVariableRequired = (id: string, required: boolean) => {
+    setVariables((current) => current.map((variable) => (variable.id === id ? { ...variable, required } : variable)))
+  }
+
+  const setVariableMutable = (id: string, mutable: boolean) => {
+    setVariables((current) => current.map((variable) => (variable.id === id ? { ...variable, mutable } : variable)))
+  }
+
   if (!loaded) {
     return (
       <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
@@ -99,6 +107,8 @@ export function RoutineProseTab({
         onCreateVariable={addVariable}
         onDocChange={setBlocks}
         onSetVariableType={setVariableType}
+        onSetVariableRequired={setVariableRequired}
+        onSetVariableMutable={setVariableMutable}
         onPasteFrontmatter={({ name: pastedName, trigger: pastedTrigger }) => {
           if (!onHeaderChange) return
           onHeaderChange((current) => ({

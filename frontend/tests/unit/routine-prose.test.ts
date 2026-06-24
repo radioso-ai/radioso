@@ -475,26 +475,47 @@ describe('routineToChipDoc (inverse serializer)', () => {
     expect(routineToChipDoc({ ...base, terminals: [{ ...base.terminals[0]!, stableStepId: 'complete_1' }] })).toBeNull()
   })
 
-  it('falls back to Form for a non-required slot (prose would flip it to required)', () => {
+  it('round-trips an optional (non-required) slot through prose', () => {
     const draft = draftFromChipDoc({
       name: 'x',
       trigger: 'y',
       blocks: [{ text: 'Ask for {{slot.email}}.', chips: [{ kind: 'variable', refId: 'email' }] }],
-      variables: [{ id: 'email', name: 'email', type: 'email' }],
+      variables: [{ id: 'email', name: 'email', type: 'email', required: false }],
     })
-    expect(routineToChipDoc(draft)).not.toBeNull()
-    expect(routineToChipDoc({ ...draft, slots: draft.slots.map((slot) => ({ ...slot, required: false })) })).toBeNull()
+    expect(draft.slots[0]!.required).toBe(false)
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    expect(doc!.variables[0]).toMatchObject({ id: 'email', required: false })
+    const redraft = draftFromChipDoc({ name: 'x', trigger: 'y', blocks: paragraphsToBlocks(doc!.paragraphs), variables: doc!.variables })
+    expect(redraft.slots[0]!.required).toBe(false)
   })
 
-  it('falls back to Form for a mutable slot (prose would drop the flag)', () => {
+  it('round-trips a mutable slot through prose', () => {
+    const draft = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: [{ text: 'Ask for {{slot.email}}.', chips: [{ kind: 'variable', refId: 'email' }] }],
+      variables: [{ id: 'email', name: 'email', type: 'email', mutable: true }],
+    })
+    expect(draft.slots[0]!.mutable).toBe(true)
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    expect(doc!.variables[0]).toMatchObject({ id: 'email', mutable: true })
+    const redraft = draftFromChipDoc({ name: 'x', trigger: 'y', blocks: paragraphsToBlocks(doc!.paragraphs), variables: doc!.variables })
+    expect(redraft.slots[0]!.mutable).toBe(true)
+  })
+
+  it('defaults a slot to required and non-mutable, omitting the flags from the chip variable', () => {
     const draft = draftFromChipDoc({
       name: 'x',
       trigger: 'y',
       blocks: [{ text: 'Ask for {{slot.email}}.', chips: [{ kind: 'variable', refId: 'email' }] }],
       variables: [{ id: 'email', name: 'email', type: 'email' }],
     })
-    expect(routineToChipDoc(draft)).not.toBeNull()
-    expect(routineToChipDoc({ ...draft, slots: draft.slots.map((slot) => ({ ...slot, mutable: true })) })).toBeNull()
+    expect(draft.slots[0]!.required).toBe(true)
+    expect(draft.slots[0]!.mutable).toBeUndefined()
+    const doc = routineToChipDoc(draft)
+    expect(doc!.variables[0]).toEqual({ id: 'email', name: 'email', type: 'email' })
   })
 
   it('compiles an approval chip into an approval step with one field guard per option', () => {

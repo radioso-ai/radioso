@@ -168,13 +168,23 @@ export const serializeProseDoc = (input: {
   paragraphs: ProseParagraph[]
 }): string => {
   const referenced = referencedVariableIds(input.paragraphs)
-  // Only non-default-typed variables need a declaration — a plain `@name` round-trips as
-  // text, so we don't clutter the header with the common case.
-  const typedVars = input.variables.filter((variable) => referenced.has(variable.id) && variable.type !== 'text')
+  // A variable needs a declaration only when it carries something a bare `@name` can't —
+  // a non-text type, or an optional/mutable flag. The common case (required, non-mutable,
+  // text) round-trips as plain text, so the header stays uncluttered.
+  const declaredVars = input.variables.filter((variable) =>
+    referenced.has(variable.id)
+    && (variable.type !== 'text' || variable.required === false || variable.mutable === true))
 
   const front = [FENCE, `name: ${input.name}`, `trigger: ${input.trigger}`]
-  if (typedVars.length > 0) {
-    front.push(`vars: ${typedVars.map((variable) => `${variable.id}:${variable.type}`).join(', ')}`)
+  if (declaredVars.length > 0) {
+    // Each declaration is `key:type` plus optional `:optional` / `:mutable` flag tokens.
+    front.push(`vars: ${declaredVars.map((variable) => {
+      const flags = [
+        ...(variable.required === false ? ['optional'] : []),
+        ...(variable.mutable === true ? ['mutable'] : []),
+      ]
+      return [variable.id, variable.type, ...flags].join(':')
+    }).join(', ')}`)
   }
   front.push(FENCE)
 
@@ -341,6 +351,9 @@ export const parseProseDoc = (
   let trigger: string | null = null
   let hadFrontmatter = false
   const declaredTypes = new Map<string, RoutineSlotType>()
+  // Slot flags declared alongside the type (`key:type:optional:mutable`). Absent = default
+  // (required, non-mutable), so we only record the non-default flags we actually saw.
+  const declaredFlags = new Map<string, { required?: boolean; mutable?: boolean }>()
 
   let bodyStart = 0
   if (lines[0]?.trim() === FENCE) {
@@ -356,9 +369,17 @@ export const parseProseDoc = (
         else if (key === 'vars') {
           hadFrontmatter = true
           for (const declaration of splitList(value)) {
-            const [varKey, varType] = declaration.split(':').map((part) => part.trim())
+            const [varKey, varType, ...flags] = declaration.split(':').map((part) => part.trim())
             if (varKey && varType && (SLOT_TYPES as readonly string[]).includes(varType)) {
               declaredTypes.set(varKey, varType as RoutineSlotType)
+              const required = flags.includes('optional') ? false : undefined
+              const mutable = flags.includes('mutable') ? true : undefined
+              if (required !== undefined || mutable !== undefined) {
+                declaredFlags.set(varKey, {
+                  ...(required !== undefined ? { required } : {}),
+                  ...(mutable !== undefined ? { mutable } : {}),
+                })
+              }
             }
           }
         }
@@ -392,6 +413,7 @@ export const parseProseDoc = (
     id,
     name: id,
     type: declaredTypes.get(id) ?? 'text',
+    ...declaredFlags.get(id),
   }))
 
   return { name, trigger, variables, paragraphs, hadFrontmatter }

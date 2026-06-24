@@ -48,8 +48,12 @@ test("author a routine with variable and skill chips, set a type, and save", asy
   await page.getByRole("option", { name: "Skill (not in catalog): refund" }).click();
   await expect(page.locator('[data-routine-chip="skill"]')).toBeVisible();
 
-  // Set the variable's type from its own inline menu (no separate list).
+  // The variable's inline menu owns its type plus the slot flags (optional, editable after
+  // completion) — prose parity with the Form composer. The checkbox items keep the menu open,
+  // so toggle them first, then the type radio (which closes the menu) last.
   await variableChip.click();
+  await page.getByRole("menuitemcheckbox", { name: "Optional" }).click();
+  await page.getByRole("menuitemcheckbox", { name: "Editable after completion" }).click();
   await expect(page.getByRole("menuitemradio", { name: "date" })).toBeVisible();
   await page.getByRole("menuitemradio", { name: "date" }).click();
   // The new type is reflected on the chip face.
@@ -62,8 +66,11 @@ test("author a routine with variable and skill chips, set a type, and save", asy
   await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
   const created = routineUpdates.find((update) => update.method === "POST");
   expect(created?.body?.name).toBe("Process a refund request");
-  const orderSlot = (created?.body?.slots ?? []).find((slot: { key: string; type: string }) => slot.key === "order_id");
+  const orderSlot = (created?.body?.slots ?? []).find((slot: { key: string; type: string; required?: boolean; mutable?: boolean }) => slot.key === "order_id");
   expect(orderSlot?.type).toBe("date");
+  // The slot flags persist through prose save (no Form fallback).
+  expect(orderSlot?.required).toBe(false);
+  expect(orderSlot?.mutable).toBe(true);
 });
 
 test("a blank form draft can switch back to prose without advanced fallback", async ({ page }) => {

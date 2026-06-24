@@ -44,6 +44,14 @@ export function RoutineProseEditor({
     setVariables((current) => current.map((variable) => (variable.id === id ? { ...variable, type } : variable)))
   }
 
+  const setVariableRequired = (id: string, required: boolean) => {
+    setVariables((current) => current.map((variable) => (variable.id === id ? { ...variable, required } : variable)))
+  }
+
+  const setVariableMutable = (id: string, mutable: boolean) => {
+    setVariables((current) => current.map((variable) => (variable.id === id ? { ...variable, mutable } : variable)))
+  }
+
   // Names already taken by a chip in the document, so the @ menu won't let a
   // second kind claim the same name.
   const reservedRefKinds = useMemo(() => {
@@ -118,6 +126,8 @@ export function RoutineProseEditor({
             onCreateVariable={addVariable}
             onDocChange={setBlocks}
             onSetVariableType={setVariableType}
+            onSetVariableRequired={setVariableRequired}
+            onSetVariableMutable={setVariableMutable}
             onPasteFrontmatter={({ name: pastedName, trigger: pastedTrigger }) => {
               if (pastedName !== null) setName(pastedName)
               if (pastedTrigger !== null) setTrigger(pastedTrigger)

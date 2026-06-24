@@ -91,7 +91,16 @@ export function slugifyVariableKey(name: string): string {
 
 const SLOT_REFERENCE = /\{\{\s*slot\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 
-export type ChipDocVariable = { id: string; name: string; type: RoutineSlotType }
+// A variable carried on the chip document. `required`/`mutable` are omitted in the common
+// case (required, non-mutable) so the bare `{ id, name, type }` shape round-trips unchanged;
+// they're only present when the author marks a slot optional or editable-after-completion.
+export type ChipDocVariable = {
+  id: string
+  name: string
+  type: RoutineSlotType
+  required?: boolean
+  mutable?: boolean
+}
 
 // One block of the chip document = one line/paragraph: its readable text plus the chips
 // it contains. A block carrying a target chip (handoff) is a branch; otherwise it's a
@@ -215,8 +224,11 @@ export function draftFromChipDoc(input: {
       stableSlotId: variable.id,
       key: variable.id,
       type: variable.type,
-      required: true,
+      // A variable defaults to required; only an explicit `required: false` makes it optional.
+      required: variable.required ?? true,
       description: variable.name,
+      // Only carry the mutable flag when set, so a non-mutable slot stays `mutable: undefined`.
+      ...(variable.mutable ? { mutable: true } : {}),
       ordinal: index,
     }))
 
@@ -626,13 +638,6 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
   const handoff = handoffTerminals[0]
   if (handoff && (handoff.stableStepId !== HANDOFF_TERMINAL_ID || (handoff.instruction ?? '') !== DEFAULT_HANDOFF_INSTRUCTION)) return null
 
-  // The prose editor treats every collected variable as required (it regenerates
-  // required:true). A non-required slot would be silently flipped on save, so fall back.
-  if (routine.slots.some((slot) => slot.required === false)) return null
-  // The prose chip-variable model carries no mutable flag, so a mutable slot would be
-  // silently flipped off on save. Edit those routines in Form. (issue #746)
-  if (routine.slots.some((slot) => slot.mutable)) return null
-
   const completeId = complete.stableStepId
   const handoffId = handoff?.stableStepId ?? null
   const stepIds = new Set(steps.map((step) => step.stableStepId))
@@ -640,7 +645,15 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
 
   const variables: ChipDocVariable[] = [...routine.slots]
     .sort((left, right) => left.ordinal - right.ordinal)
-    .map((slot) => ({ id: slot.key, name: (slot.description ?? '').trim() || slot.key, type: slot.type }))
+    .map((slot) => ({
+      id: slot.key,
+      name: (slot.description ?? '').trim() || slot.key,
+      type: slot.type,
+      // Mirror draftFromChipDoc: emit the flags only when non-default so a plain required,
+      // non-mutable slot stays the bare `{ id, name, type }` shape.
+      ...(slot.required === false ? { required: false } : {}),
+      ...(slot.mutable ? { mutable: true } : {}),
+    }))
   const nameByRef = new Map(variables.map((variable) => [variable.id, variable.name]))
 
   const outgoing = new Map<string, RoutineTransition[]>()

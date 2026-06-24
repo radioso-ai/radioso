@@ -16,6 +16,7 @@ import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext
 
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -416,7 +417,7 @@ export function approvalChipTargets(stepTargets: ApprovalChipTarget[]): Approval
 
 function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: RoutineChipKind; refId: string; label: string }): JSX.Element {
   const [editor] = useLexicalComposerContext()
-  const { getType, setType, variables } = useRoutineVariables()
+  const { getType, setType, getRequired, setRequired, getMutable, setMutable, variables } = useRoutineVariables()
   const type = kind === 'variable' ? getType(refId) : null
   const skillCatalog = useSkillDescriptor(refId, label)
 
@@ -687,6 +688,23 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
                 <DropdownMenuRadioItem key={type} value={type}>{type}</DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            {/* Closing the menu on select would drop the author mid-config; keep it open so
+                type, optional, and editable can be toggled in one pass. */}
+            <DropdownMenuCheckboxItem
+              checked={!getRequired(refId)}
+              onCheckedChange={(checked) => setRequired(refId, !checked)}
+              onSelect={(event) => event.preventDefault()}
+            >
+              Optional
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={getMutable(refId)}
+              onCheckedChange={(checked) => setMutable(refId, checked === true)}
+              onSelect={(event) => event.preventDefault()}
+            >
+              Editable after completion
+            </DropdownMenuCheckboxItem>
             <DropdownMenuSeparator />
           </>
         ) : null}

@@ -779,6 +779,8 @@ function ClipboardRoundTripPlugin({
   variables,
   onCreateVariable,
   onSetVariableType,
+  onSetVariableRequired,
+  onSetVariableMutable,
   onPasteFrontmatter,
 }: {
   name: string
@@ -786,6 +788,8 @@ function ClipboardRoundTripPlugin({
   variables: ChipDocVariable[]
   onCreateVariable: (variable: RoutineEditorVariable) => void
   onSetVariableType: (refId: string, type: RoutineSlotType) => void
+  onSetVariableRequired?: (refId: string, required: boolean) => void
+  onSetVariableMutable?: (refId: string, mutable: boolean) => void
   onPasteFrontmatter?: (frontmatter: { name: string | null; trigger: string | null }) => void
 }) {
   const [editor] = useLexicalComposerContext()
@@ -795,7 +799,7 @@ function ClipboardRoundTripPlugin({
   // header, variables, skill catalog, and the paste callbacks — through this ref so they
   // always see fresh values without re-registering on every render. The ref is synced after
   // each render (not during).
-  const stateRef = useRef({ name, trigger, variables, skillNames: new Set<string>(), onCreateVariable, onSetVariableType, onPasteFrontmatter })
+  const stateRef = useRef({ name, trigger, variables, skillNames: new Set<string>(), onCreateVariable, onSetVariableType, onSetVariableRequired, onSetVariableMutable, onPasteFrontmatter })
   useEffect(() => {
     stateRef.current = {
       name,
@@ -804,6 +808,8 @@ function ClipboardRoundTripPlugin({
       skillNames: new Set(skillCatalog.skills.map((skill) => skill.skillName)),
       onCreateVariable,
       onSetVariableType,
+      onSetVariableRequired,
+      onSetVariableMutable,
       onPasteFrontmatter,
     }
   })
@@ -844,7 +850,7 @@ function ClipboardRoundTripPlugin({
         if (!text || !looksLikeRoutineProse(text)) return false
         event.preventDefault()
 
-        const { variables: currentVariables, skillNames, onCreateVariable, onSetVariableType, onPasteFrontmatter } = stateRef.current
+        const { variables: currentVariables, skillNames, onCreateVariable, onSetVariableType, onSetVariableRequired, onSetVariableMutable, onPasteFrontmatter } = stateRef.current
         const parsed = parseProseDoc(text, (candidate) => skillNames.has(candidate))
 
         for (const variable of parsed.variables) {
@@ -853,6 +859,8 @@ function ClipboardRoundTripPlugin({
           if (currentVariables.some((existing) => existing.id === variable.id)) continue
           onCreateVariable({ id: variable.id, name: variable.name })
           if (variable.type !== 'text') onSetVariableType(variable.id, variable.type)
+          if (variable.required === false) onSetVariableRequired?.(variable.id, false)
+          if (variable.mutable === true) onSetVariableMutable?.(variable.id, true)
         }
         if (onPasteFrontmatter && (parsed.name !== null || parsed.trigger !== null)) {
           onPasteFrontmatter({ name: parsed.name, trigger: parsed.trigger })
@@ -947,6 +955,8 @@ export function RoutineChipEditor({
   onCreateVariable,
   onDocChange,
   onSetVariableType,
+  onSetVariableRequired,
+  onSetVariableMutable,
   onPasteFrontmatter,
 }: {
   variables: ChipDocVariable[]
@@ -959,6 +969,8 @@ export function RoutineChipEditor({
   onCreateVariable: (variable: RoutineEditorVariable) => void
   onDocChange: (blocks: RoutineDocBlock[]) => void
   onSetVariableType: (refId: string, type: RoutineSlotType) => void
+  onSetVariableRequired?: (refId: string, required: boolean) => void
+  onSetVariableMutable?: (refId: string, mutable: boolean) => void
   onPasteFrontmatter?: (frontmatter: { name: string | null; trigger: string | null }) => void
 }): JSX.Element {
   const variablesContext = useMemo(
@@ -966,8 +978,12 @@ export function RoutineChipEditor({
       variables,
       getType: (refId: string): RoutineSlotType => variables.find((variable) => variable.id === refId)?.type ?? 'text',
       setType: onSetVariableType,
+      getRequired: (refId: string): boolean => variables.find((variable) => variable.id === refId)?.required ?? true,
+      setRequired: (refId: string, required: boolean) => onSetVariableRequired?.(refId, required),
+      getMutable: (refId: string): boolean => variables.find((variable) => variable.id === refId)?.mutable ?? false,
+      setMutable: (refId: string, mutable: boolean) => onSetVariableMutable?.(refId, mutable),
     }),
-    [variables, onSetVariableType],
+    [variables, onSetVariableType, onSetVariableRequired, onSetVariableMutable],
   )
 
   return (
@@ -1013,6 +1029,8 @@ export function RoutineChipEditor({
             variables={variables}
             onCreateVariable={onCreateVariable}
             onSetVariableType={onSetVariableType}
+            onSetVariableRequired={onSetVariableRequired}
+            onSetVariableMutable={onSetVariableMutable}
             onPasteFrontmatter={onPasteFrontmatter}
           />
         </div>

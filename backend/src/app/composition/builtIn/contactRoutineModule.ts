@@ -23,6 +23,7 @@ import { AgentRepository } from "../../../db/repositories/agentRepository.js";
 import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
 import { ActionRequestRepository } from "../../../db/repositories/actionRequestRepository.js";
 import { PendingDecisionRepository } from "../../../db/repositories/pendingDecisionRepository.js";
+import { AgentSkillRepository } from "../../../modules/agentSkills/repository.js";
 import { OperatorNotificationDispatcher } from "../../../modules/operatorNotifications/public.js";
 import {
   SlackChannelBindingRepository,
@@ -80,6 +81,7 @@ const buildOperatorNotificationDispatcher = (input: {
     new ConversationRepository(input.database.kysely),
     new AgentRepository(input.database.kysely),
     ownerFallback,
+    new AgentSkillRepository(input.database.kysely),
   );
   return new OperatorNotificationDispatcher([
     new EmailWebhookOperatorNotificationSink(
@@ -134,6 +136,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
             new ConversationRepository(database.kysely),
             new AgentRepository(database.kysely),
             ownerFallback,
+            new AgentSkillRepository(database.kysely),
           ),
           logger,
           // SSRF guard: every webhook hop is re-validated against the public-host

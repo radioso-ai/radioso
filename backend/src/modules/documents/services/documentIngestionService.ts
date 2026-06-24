@@ -6,7 +6,7 @@ import type {
   DocumentProcessingJobRepositoryPort,
   DocumentProcessingQueueSnapshot,
 } from "../../../db/repositories/documentProcessingJobRepository.js";
-import { normalizeMarkdown } from "../../retrieval/public.js";
+import { normalizeMarkdown, renderMetadataSearchText } from "../../retrieval/public.js";
 import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
 import {
   toDocumentSourceSummary,
@@ -329,7 +329,7 @@ export class DocumentIngestionService {
       sourceContent: input.content,
       metadata: input.metadata,
     });
-    const indexedContent = describeIndexedContent(sanitizedContent.markdownContent);
+    const indexedContent = describeIndexedContent(sanitizedContent.markdownContent, input.metadata);
     const resolvedSource = await this.resolveSourceForInput(input.workspaceId, input.source);
     const externalDocumentId = input.externalDocumentId ?? null;
 
@@ -498,7 +498,7 @@ export class DocumentIngestionService {
       sourceContent: input.content,
       metadata: input.metadata,
     });
-    const indexedContent = describeIndexedContent(sanitizedContent.markdownContent);
+    const indexedContent = describeIndexedContent(sanitizedContent.markdownContent, input.metadata);
     let document:
       | {
           id: string;
@@ -928,16 +928,28 @@ const normalizeWebsiteSourceUrl = (value: string): string => {
   return url.toString().replace(/\/$/, "");
 };
 
-const describeIndexedContent = (markdownContent: string): {
+const describeIndexedContent = (
+  markdownContent: string,
+  metadata?: Record<string, unknown>,
+): {
   markdownContent: string;
   contentSizeBytes: number;
   contentHash: string;
 } => {
   const normalizedMarkdown = normalizeMarkdown(markdownContent);
+  // The content hash gates whether a re-ingest reprocesses (re-chunks + re-embeds).
+  // Fold the searchable metadata projection into it so a metadata-only change —
+  // e.g. an author becoming available on a re-sync — still re-embeds; otherwise
+  // the new metadata never reaches the embedded search text. Size stays
+  // content-only so storage quota accounting is unaffected.
+  const metadataSearchText = renderMetadataSearchText(metadata ?? {});
+  const fingerprint = metadataSearchText
+    ? `${normalizedMarkdown} ${metadataSearchText}`
+    : normalizedMarkdown;
   return {
     markdownContent: normalizedMarkdown,
     contentSizeBytes: Buffer.byteLength(normalizedMarkdown, "utf8"),
-    contentHash: createHash("sha256").update(normalizedMarkdown, "utf8").digest("hex"),
+    contentHash: createHash("sha256").update(fingerprint, "utf8").digest("hex"),
   };
 };
 

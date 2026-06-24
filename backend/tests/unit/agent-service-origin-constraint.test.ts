@@ -39,9 +39,41 @@ describe("AgentService public launch origin constraints", () => {
     const grant = await accessGrantService.resolvePublicLaunchGrant(agent.surfaceSettings.websiteEmbed.token!);
     expect(grant?.originConstraint).toEqual({ mode: "allow-all", origins: [] });
   });
+
+  it("resolves contact affordance state from contact_human notify skill with legacy fallback", async () => {
+    const legacy = createService();
+    const legacyAgent = await legacy.service.create("workspace-1", {
+      contactRequestsEnabled: true,
+    });
+    await expect(legacy.service.resolve("workspace-1", legacyAgent.id))
+      .resolves.toMatchObject({ contactRequestsEnabled: true });
+
+    const skillBacked = createService({
+      findByName: async () => ({
+        id: "skill-1",
+        workspaceId: "workspace-1",
+        agentId: legacyAgent.id,
+        skillName: "contact_human",
+        kind: "notify",
+        targetType: "notify_delivery",
+        targetId: null,
+        config: {},
+        invocationMode: "routine_named",
+        enabled: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    });
+    const skillBackedAgent = await skillBacked.service.create("workspace-1", {
+      contactRequestsEnabled: true,
+    });
+
+    await expect(skillBacked.service.resolve("workspace-1", skillBackedAgent.id))
+      .resolves.toMatchObject({ contactRequestsEnabled: false });
+  });
 });
 
-const createService = () => {
+const createService = (agentSkills?: ConstructorParameters<typeof AgentService>[5]) => {
   const accessGrantService = new AccessGrantService({
     repository: new InMemoryAccessGrantRepository(),
     originMatcher: new DefaultOriginMatcher(),
@@ -91,6 +123,7 @@ const createService = () => {
     undefined,
     undefined,
     accessGrantService,
+    agentSkills,
   );
   return { service, accessGrantService };
 };

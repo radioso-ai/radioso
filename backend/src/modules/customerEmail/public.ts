@@ -35,6 +35,7 @@ export {
   customerEmailSkillInputKeys,
   customerEmailSkillModes,
   customerEmailSkillOutcomes,
+  requiredCustomerEmailSkillInputs,
   emailSkillActivityQuerySchema,
   customerEmailConnectionStatuses,
   customerEmailConnectionUpdateSchema,

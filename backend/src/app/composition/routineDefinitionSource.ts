@@ -1,6 +1,11 @@
 import type { RoutineRegistration } from "../../modules/chat/composition.js";
 import type { RoutineDefinitionRepository } from "../../db/repositories/routineDefinitionRepository.js";
-import { compileRoutineDefinition, legacyCompiledRoutineId, type RoutineDefinition } from "../../modules/routines/public.js";
+import {
+  compileRoutineDefinition,
+  legacyCompiledRoutineId,
+  type RoutineCompletionExport,
+  type RoutineDefinition,
+} from "../../modules/routines/public.js";
 
 export interface PublishedRoutineRegistrationSource {
   load(input: { agentId: string }): Promise<RoutineRegistration[]>;
@@ -10,12 +15,20 @@ export interface PublishedRoutineRegistrationSource {
 export interface PublishedRoutineRegistrationSourceOptions {
   onDefinitionError?: (input: { agentId: string; definitionId: string; error: unknown }) => void;
   onPinnedDefinitionError?: (input: { agentId: string; routineId: string; definitionId?: string; error: unknown }) => void;
+  resolveCompletionExport?: (definition: RoutineDefinition) => Promise<RoutineCompletionExport | null>;
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
-const registrationFromDefinition = (definition: RoutineDefinition): RoutineRegistration => {
-  const routine = compileRoutineDefinition(definition);
+const registrationFromDefinition = async (
+  definition: RoutineDefinition,
+  options: PublishedRoutineRegistrationSourceOptions,
+): Promise<RoutineRegistration> => {
+  const skillBackedCompletionExport = await options.resolveCompletionExport?.(definition);
+  const routine = compileRoutineDefinition({
+    ...definition,
+    ...(skillBackedCompletionExport ? { completionExport: skillBackedCompletionExport } : {}),
+  });
   return {
     routine,
     trigger: {
@@ -58,7 +71,7 @@ export const createPublishedRoutineRegistrationSource = (
     const registrations: RoutineRegistration[] = [];
     for (const definition of definitions) {
       try {
-        registrations.push(registrationFromDefinition(definition));
+        registrations.push(await registrationFromDefinition(definition, options));
       } catch (error) {
         options.onDefinitionError?.({ agentId, definitionId: definition.id, error });
       }
@@ -108,7 +121,7 @@ export const createPublishedRoutineRegistrationSource = (
             });
             continue;
           }
-          registrations.push(registrationFromDefinition(definition));
+          registrations.push(await registrationFromDefinition(definition, options));
           continue;
         }
 
@@ -123,7 +136,7 @@ export const createPublishedRoutineRegistrationSource = (
           });
           continue;
         }
-        const registration = registrationFromDefinition(definition);
+        const registration = await registrationFromDefinition(definition, options);
         registrations.push({
           ...registration,
           routine: { ...registration.routine, id: routineId },

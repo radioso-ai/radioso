@@ -139,6 +139,11 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
           turn,
           agentId: turn.agent.id,
           sessionId: turn.sessionId,
+          // In the chat subsystem the routine state machine is keyed by the
+          // conversation id, which TurnContext carries as `sessionId`. Surface it
+          // under the name the action outbox + contact-delivery resolver expect so a
+          // notify skill can scope its enqueue (recipients + dedup) to the conversation.
+          conversationId: turn.sessionId,
           routineId: state.routineId,
           ...(stepId ? { stepId } : {}),
           ...(this.workspaceId ? { workspaceId: this.workspaceId } : {}),

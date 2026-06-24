@@ -1492,6 +1492,59 @@ export interface paths {
         patch: operations["updateAgentSlackSkill"];
         trace?: never;
     };
+    "/api/v1/agents/{agentId}/skill-capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List agent skill capabilities */
+        get: operations["listAgentSkillCapabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List agent skills */
+        get: operations["listAgentSkills"];
+        put?: never;
+        /** Create an agent skill */
+        post: operations["createAgentSkill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/skills/{skillId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete an agent skill */
+        delete: operations["deleteAgentSkill"];
+        options?: never;
+        head?: never;
+        /** Update an agent skill */
+        patch: operations["updateAgentSkill"];
+        trace?: never;
+    };
     "/api/v1/retrieval/answer": {
         parameters: {
             query?: never;
@@ -11756,6 +11809,451 @@ export interface operations {
             };
             /** @description Agent or Slack skill not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentSkillCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Skill capabilities */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        capabilities: {
+                            /** @enum {string} */
+                            id: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                            storedKind: string;
+                            targetKind: string;
+                            requiresTarget: boolean;
+                            inputSchema: {
+                                /** @enum {string} */
+                                source: "discovered";
+                            } | {
+                                /** @enum {string} */
+                                source: "static";
+                                schema: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            settingsFields: {
+                                key: string;
+                                label: string;
+                                /** @enum {string} */
+                                type: "boolean" | "number" | "text" | "textarea" | "select" | "string_list" | "source_scope";
+                                help?: string;
+                                options?: {
+                                    value: string;
+                                    label: string;
+                                }[];
+                                min?: number;
+                                max?: number;
+                                group?: string;
+                                advanced?: boolean;
+                            }[];
+                            outcomeVocabulary: string[];
+                            supportedInvocationModes: ("default_answer" | "routine_named" | "agent_selectable")[];
+                            /** @enum {string} */
+                            defaultInvocationMode?: "default_answer" | "routine_named" | "agent_selectable";
+                            executorAdapter: string;
+                            targets: {
+                                id: string;
+                                label: string;
+                                status?: string;
+                            }[];
+                            available: boolean;
+                            /** @enum {string|null} */
+                            unavailableReason: "no_connection" | null;
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentSkills: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent skills */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skills: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            name: string;
+                            /** @enum {string} */
+                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                            storedKind: string;
+                            target: {
+                                kind: string;
+                                /** Format: uuid */
+                                id: string | null;
+                            };
+                            config: {
+                                [key: string]: unknown;
+                            };
+                            /** @enum {string} */
+                            invocationMode: "default_answer" | "routine_named" | "agent_selectable";
+                            enabled: boolean;
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAgentSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    /** @enum {string} */
+                    capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                    target: {
+                        kind: string;
+                        /** Format: uuid */
+                        id: string | null;
+                    };
+                    /** @default {} */
+                    config?: {
+                        [key: string]: unknown;
+                    };
+                    /**
+                     * @default routine_named
+                     * @enum {string}
+                     */
+                    invocationMode?: "default_answer" | "routine_named" | "agent_selectable";
+                    /** @default true */
+                    enabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Agent skill */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            name: string;
+                            /** @enum {string} */
+                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                            storedKind: string;
+                            target: {
+                                kind: string;
+                                /** Format: uuid */
+                                id: string | null;
+                            };
+                            config: {
+                                [key: string]: unknown;
+                            };
+                            /** @enum {string} */
+                            invocationMode: "default_answer" | "routine_named" | "agent_selectable";
+                            enabled: boolean;
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid skill definition */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Skill name or default-answer already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAgentSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAgentSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    target?: {
+                        kind: string;
+                        /** Format: uuid */
+                        id: string | null;
+                    };
+                    config?: {
+                        [key: string]: unknown;
+                    };
+                    /** @enum {string} */
+                    invocationMode?: "default_answer" | "routine_named" | "agent_selectable";
+                    enabled?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Agent skill */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        skill: {
+                            /** Format: uuid */
+                            id: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            /** Format: uuid */
+                            agentId: string;
+                            name: string;
+                            /** @enum {string} */
+                            capability: "retrieve" | "mcp_tool" | "email" | "slack_post" | "webhook_call" | "notify";
+                            storedKind: string;
+                            target: {
+                                kind: string;
+                                /** Format: uuid */
+                                id: string | null;
+                            };
+                            config: {
+                                [key: string]: unknown;
+                            };
+                            /** @enum {string} */
+                            invocationMode: "default_answer" | "routine_named" | "agent_selectable";
+                            enabled: boolean;
+                            createdAt: string;
+                            updatedAt: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid skill definition */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Default-answer already exists */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

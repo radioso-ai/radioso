@@ -27,9 +27,9 @@ export type AgentSectionId =
   | 'chat'
   | 'identity'
   | 'behavior'
-  | 'skills'
   | 'directives'
   | 'routines'
+  | 'skills'
   | 'public-chat-link'
   | 'website-embed'
   | 'api-channel'
@@ -44,9 +44,9 @@ const AGENT_SECTION_ROUTES: Record<AgentSectionId, AgentSectionRoute> = {
   chat: { agentTab: 'chat' },
   identity: { agentTab: 'behavior', anchor: 'assistant-identity' },
   behavior: { agentTab: 'behavior', anchor: 'assistant-behavior' },
-  skills: { agentTab: 'behavior', anchor: 'assistant-skills' },
   directives: { agentTab: 'behavior', anchor: 'assistant-directives' },
   routines: { agentTab: 'behavior', anchor: 'assistant-routines' },
+  skills: { agentTab: 'behavior', anchor: 'assistant-skills' },
   'public-chat-link': { agentTab: 'channels', anchor: 'public-chat-link' },
   'website-embed': { agentTab: 'channels', anchor: 'website-embed' },
   'api-channel': { agentTab: 'channels', anchor: 'api-channel' },

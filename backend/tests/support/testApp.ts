@@ -112,8 +112,12 @@ import { InMemoryEmailSkillDefinitionRepository } from "./inMemoryEmailSkillDefi
 import { InMemoryEmailSkillActivityRepository } from "./inMemoryEmailSkillActivity.js";
 import { InMemoryWebhookSkillDefinitionRepository } from "./inMemoryWebhookSkillDefinitions.js";
 import { InMemorySlackSkillDefinitionRepository } from "./inMemorySlackSkillDefinitions.js";
+import { InMemoryAgentSkillRepository } from "./inMemoryAgentSkills.js";
 import { SlackSkillDefinitionService } from "../../src/modules/slackSkills/public.js";
 import { OperatorReplyService } from "../../src/modules/handoff/public.js";
+import { AgentSkillsService } from "../../src/modules/agentSkills/public.js";
+import { createDefaultSkillCapabilityRegistry } from "../../src/modules/skills/capabilityRegistry.js";
+import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../src/modules/documents/contracts/index.js";
 import {
   DefaultWebhookDestinationAdapter,
   WebhookDestinationService,
@@ -283,6 +287,7 @@ export const createTestEnv = (): Env => ({
   RADIOSO_MCP_REQUEST_TIMEOUT_MS: 30_000,
   RADIOSO_MCP_SERVER_NAME: "radioso-context",
   RADIOSO_MCP_WORKSPACE_POLICIES_PATH: undefined,
+  RADIOSO_EDITION: "oss",
   RADIOSO_APPLICATION_MODULES: undefined,
 });
 
@@ -834,6 +839,7 @@ export const createTestDependencies = (overrides: {
   const emailSkillActivityRepository = new InMemoryEmailSkillActivityRepository();
   const webhookSkillDefinitionRepository = new InMemoryWebhookSkillDefinitionRepository();
   const slackSkillDefinitionRepository = new InMemorySlackSkillDefinitionRepository();
+  const agentSkillRepository = new InMemoryAgentSkillRepository();
   customerEmailConnectionRepository.setReferenceChecker((connectionId) =>
     emailSkillDefinitionRepository.countByConnection("", connectionId),
   );
@@ -903,6 +909,57 @@ export const createTestDependencies = (overrides: {
   const slackSkillDefinitionService = new SlackSkillDefinitionService({
     repository: slackSkillDefinitionRepository,
     installations: slackInstallationRepository,
+  });
+  const skillCapabilityRegistry = createDefaultSkillCapabilityRegistry({
+    mcp_tool: async ({ agentId }) =>
+      (await mcpConnectionService.list(agentId)).map((connection) => ({
+        id: connection.id,
+        label: connection.displayName,
+        status: connection.status,
+      })),
+    email: async ({ workspaceId }) =>
+      (await customerEmailConnectionService.list(workspaceId)).map((connection) => ({
+        id: connection.id,
+        label: connection.displayName,
+        status: connection.status,
+      })),
+    slack_post: async ({ workspaceId }) => {
+      const status = await slackInstallationService.getStatus(workspaceId);
+      return status.installationId
+        ? [{ id: status.installationId, label: status.teamName ?? "Slack", status: status.status }]
+        : [];
+    },
+    webhook_call: async ({ workspaceId }) =>
+      (await webhookDestinations.list(workspaceId)).map((destination) => ({
+        id: destination.id,
+        label: destination.name,
+        status: destination.lastDeliveryStatus ?? undefined,
+      })),
+    retrieve: async ({ workspaceId }) => {
+      const [sources, manualDocumentCount] = await Promise.all([
+        documentSourceRepository.listByWorkspaceIdWithDocumentCounts(workspaceId),
+        documentSourceRepository.countDocumentsWithoutSource(workspaceId),
+      ]);
+      return [
+        ...sources.map((source) => ({
+          id: source.id,
+          label: source.name,
+          status: source.lastSyncStatus ?? undefined,
+        })),
+        ...(manualDocumentCount > 0
+          ? [{
+              id: MANUALLY_ADDED_DOCUMENTS_SOURCE_ID,
+              label: "Manually added documents",
+              status: "available",
+            }]
+          : []),
+      ];
+    },
+  });
+  const agentSkillsService = new AgentSkillsService({
+    repository: agentSkillRepository,
+    capabilities: skillCapabilityRegistry,
+    logger,
   });
   const accessGrantService = new AccessGrantService({
     repository: accessGrantRepository,
@@ -1197,6 +1254,8 @@ export const createTestDependencies = (overrides: {
     emailSkillDefinitionService,
     webhookSkillDefinitionService,
     slackSkillDefinitionService,
+    skillCapabilityRegistry,
+    agentSkillsService,
     emailSkillActivityRepository,
     mcpConnectionService,
     externalSkillDefinitionService,

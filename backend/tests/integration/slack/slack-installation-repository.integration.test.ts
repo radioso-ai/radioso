@@ -172,6 +172,24 @@ describeIfDatabase("slack installation + binding repositories (postgres, kysely)
       id: created.id,
       gapEscalationEnabled: true,
     });
+
+    const renamedChannel = await bindings.upsert({
+      installationId: installation!.id,
+      workspaceId,
+      answeringAgentId: agentId,
+      escalationChannelId: "C456",
+      gapEscalationEnabled: true,
+    });
+    expect(renamedChannel.escalationChannelId).toBe("C456");
+
+    const preserved = await bindings.upsert({
+      installationId: installation!.id,
+      workspaceId,
+      answeringAgentId: agentId,
+      gapEscalationEnabled: false,
+    });
+    expect(preserved.escalationChannelId).toBe("C456");
+    expect(preserved.gapEscalationEnabled).toBe(false);
   });
 
   it("removes binding then installation and reports the deletions", async () => {

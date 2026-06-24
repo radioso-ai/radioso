@@ -1,7 +1,7 @@
 ---
 title: "Slack Channel"
 description: "Connect a Radioso agent to Slack direct messages, mentions, human escalation posts, and operator callbacks."
-last_updated: 2026-06-24
+last_updated: 2026-06-25
 ---
 
 # Slack Channel
@@ -146,9 +146,10 @@ It fills, using `CONNECTOR_PUBLIC_BASE_URL` when set and otherwise `APP_BASE_URL
   Slack user lookup
   (`users:read`, `users:read.email`)
 
-If an existing Slack app was installed before interactive operator actions were
-available, reinstall or re-consent the app so Slack grants the new user lookup
-scopes and sends interactivity callbacks to Radioso.
+If an existing Slack app was installed before message reactions or interactive
+operator actions were available, reinstall or re-consent the app so Slack grants
+the new reaction and user lookup scopes and sends interactivity callbacks to
+Radioso.
 
 The backend must be reachable by Slack at a public HTTPS URL. If Slack cannot
 reach the callback, event, or interactivity URL, OAuth install and inbound messages cannot

@@ -19,6 +19,7 @@ import type {
   OauthConnectionRepositoryPort,
 } from "../../../src/db/repositories/oauthConnectionRepository.js";
 import { decryptOauthTokens } from "../../../src/modules/integrationOauth/public.js";
+import { slackBotScopes } from "../../../src/modules/slack/manifest/slackManifest.js";
 
 const encryptionKey = Buffer.alloc(32, 7).toString("base64");
 
@@ -200,8 +201,10 @@ class InMemorySlackBindings implements SlackBindingRepositoryPort {
       installationId: input.installationId,
       workspaceId: input.workspaceId,
       answeringAgentId: input.answeringAgentId,
-      escalationChannelId: input.escalationChannelId ?? null,
-      gapEscalationEnabled: input.gapEscalationEnabled ?? false,
+      escalationChannelId: input.escalationChannelId === undefined
+        ? existing?.escalationChannelId ?? null
+        : input.escalationChannelId,
+      gapEscalationEnabled: input.gapEscalationEnabled ?? existing?.gapEscalationEnabled ?? false,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     };
@@ -291,6 +294,58 @@ describe("SlackInstallationService", () => {
     expect(bindings.upserts.at(-1)).toMatchObject({ answeringAgentId: "agent-2" });
     expect(decryptOauthTokens(oauthConnections.tokenWrites.at(-1)!.credentialCiphertext, encryptionKey)).toMatchObject({
       accessToken: "xoxb-new",
+    });
+  });
+
+  it("preserves the escalation channel when a binding update only changes gap escalation", async () => {
+    const { service } = createService();
+    await service.saveInstallation({
+      workspaceId: "workspace-1",
+      teamId: "T123",
+      teamName: "Acme",
+      botUserId: "U_BOT",
+      botAccessToken: "xoxb-token",
+      grantedScopes: [...slackBotScopes],
+      answeringAgentId: "agent-1",
+      escalationChannelId: "C_ESC",
+      gapEscalationEnabled: false,
+    });
+
+    const updated = await service.setBinding({
+      workspaceId: "workspace-1",
+      answeringAgentId: "agent-1",
+      gapEscalationEnabled: true,
+    });
+
+    expect(updated).toMatchObject({
+      escalationChannelId: "C_ESC",
+      gapEscalationEnabled: true,
+    });
+  });
+
+  it("clears the escalation channel when a binding update explicitly sets null", async () => {
+    const { service } = createService();
+    await service.saveInstallation({
+      workspaceId: "workspace-1",
+      teamId: "T123",
+      teamName: "Acme",
+      botUserId: "U_BOT",
+      botAccessToken: "xoxb-token",
+      grantedScopes: [...slackBotScopes],
+      answeringAgentId: "agent-1",
+      escalationChannelId: "C_ESC",
+      gapEscalationEnabled: true,
+    });
+
+    const updated = await service.setBinding({
+      workspaceId: "workspace-1",
+      answeringAgentId: "agent-1",
+      escalationChannelId: null,
+    });
+
+    expect(updated).toMatchObject({
+      escalationChannelId: null,
+      gapEscalationEnabled: true,
     });
   });
 
@@ -412,6 +467,26 @@ describe("SlackInstallationService", () => {
       lastHealthStatus: "failed",
       lastErrorCode: "token_revoked",
     });
+    await expect(service.getStatus("workspace-1")).resolves.toMatchObject({
+      status: "needs_reauth",
+      installationId: saved.installation.id,
+      teamName: "Acme",
+      answeringAgentId: "agent-1",
+    });
+  });
+
+  it("reports needs_reauth when a connected Slack install is missing required bot scopes", async () => {
+    const { service } = createService();
+    const saved = await service.saveInstallation({
+      workspaceId: "workspace-1",
+      teamId: "T123",
+      teamName: "Acme",
+      botUserId: "U_BOT",
+      botAccessToken: "xoxb-token",
+      grantedScopes: slackBotScopes.filter((scope) => scope !== "reactions:write"),
+      answeringAgentId: "agent-1",
+    });
+
     await expect(service.getStatus("workspace-1")).resolves.toMatchObject({
       status: "needs_reauth",
       installationId: saved.installation.id,

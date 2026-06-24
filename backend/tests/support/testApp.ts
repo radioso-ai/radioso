@@ -94,6 +94,7 @@ import { WebhookSkillDefinitionService } from "../../src/modules/webhookSkills/p
 import {
   SlackInstallationService,
   buildSlackOauthProviderDefinition,
+  slackBotScopes,
   type SlackOauthMetadata,
 } from "../../src/modules/slack/public.js";
 import {
@@ -807,7 +808,7 @@ export const createTestDependencies = (overrides: {
             ok: true,
             access_token: "xoxb-test-slack-token",
             token_type: "bot",
-            scope: "chat:write,im:history,im:read,im:write",
+            scope: slackBotScopes.join(","),
             team: { id: "TTEST", name: "Test Slack" },
             bot_user_id: "UTESTBOT",
             authed_user: { id: "UINSTALLER" },

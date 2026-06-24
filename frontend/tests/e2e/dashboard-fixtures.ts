@@ -1146,8 +1146,10 @@ export const installDashboardApiMocks = async (
         options.slackRequests?.push({ method: request.method(), path, body });
         slackBinding = {
           answeringAgentId: body.answeringAgentId,
-          escalationChannelId: body.escalationChannelId ?? null,
-          gapEscalationEnabled: body.gapEscalationEnabled ?? false,
+          escalationChannelId: body.escalationChannelId === undefined
+            ? slackBinding.escalationChannelId
+            : body.escalationChannelId,
+          gapEscalationEnabled: body.gapEscalationEnabled ?? slackBinding.gapEscalationEnabled,
         };
         slackStatus = {
           ...slackStatus,

@@ -199,6 +199,17 @@ describe("Slack admin REST contract", () => {
     });
     expectNoSecrets(updatedBinding.body);
 
+    const policyOnlyUpdate = await request(app)
+      .put(`${base}/binding`)
+      .set(headers)
+      .send({ answeringAgentId, gapEscalationEnabled: false });
+    expect(policyOnlyUpdate.status).toBe(200);
+    expect(policyOnlyUpdate.body).toEqual({
+      answeringAgentId,
+      escalationChannelId: "CESCALATE",
+      gapEscalationEnabled: false,
+    });
+
     const connectedWithBinding = await request(app).get(`${base}/install/status`).set(headers);
     expect(connectedWithBinding.status).toBe(200);
     expect(connectedWithBinding.body).toEqual({

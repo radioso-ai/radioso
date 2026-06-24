@@ -141,7 +141,7 @@ export const createSlackConnectionRoutes = (dependencies: SlackConnectionRouteDe
         const binding = await dependencies.slackInstallationService.setBinding({
           workspaceId,
           answeringAgentId: req.body.answeringAgentId,
-          escalationChannelId: req.body.escalationChannelId ?? null,
+          escalationChannelId: req.body.escalationChannelId,
           gapEscalationEnabled: req.body.gapEscalationEnabled,
         });
         res.status(200).json(presentBinding(binding));

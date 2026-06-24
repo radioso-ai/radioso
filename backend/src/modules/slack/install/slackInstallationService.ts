@@ -18,6 +18,7 @@ import type {
   IntegrationConnectionRecord,
   IntegrationConnectionRepositoryPort,
 } from "../../integrationConnections/public.js";
+import { slackBotScopes } from "../manifest/slackManifest.js";
 
 export interface SlackInstallationRecord {
   id: string;
@@ -117,6 +118,14 @@ const toStoredTokens = (input: SaveSlackInstallationInput): StoredOauthTokens =>
   ...(input.grantedScopes.length > 0 ? { scope: input.grantedScopes.join(" ") } : {}),
 });
 
+const normalizeGrantedScopes = (grantedScopes: readonly string[]): Set<string> =>
+  new Set(grantedScopes.flatMap((scope) => scope.split(/[,\s]+/u)).filter(Boolean));
+
+const hasRequiredSlackBotScopes = (grantedScopes: readonly string[]): boolean => {
+  const granted = normalizeGrantedScopes(grantedScopes);
+  return slackBotScopes.every((scope) => granted.has(scope));
+};
+
 export class SlackInstallationService {
   constructor(private readonly options: SlackInstallationServiceOptions) {}
 
@@ -180,13 +189,17 @@ export class SlackInstallationService {
     if (!connection) {
       return { status: "not_configured" };
     }
+    const oauthConnection = await this.options.oauthConnections.findById(workspaceId, connection.oauthConnectionId);
     const binding = await this.options.bindings.findByInstallationId(installation.id);
-    return {
-      status: connection.status === "authorized"
+    const status = connection.status === "authorized" && oauthConnection && !hasRequiredSlackBotScopes(oauthConnection.grantedScopes)
+      ? "needs_reauth"
+      : connection.status === "authorized"
         ? "connected"
         : connection.status === "error"
           ? "needs_reauth"
-          : connection.status,
+          : connection.status;
+    return {
+      status,
       installationId: installation.id,
       ...(installation.teamName ? { teamName: installation.teamName } : {}),
       ...(binding?.answeringAgentId ? { answeringAgentId: binding.answeringAgentId } : {}),
@@ -212,7 +225,7 @@ export class SlackInstallationService {
       installationId: installation.id,
       workspaceId: input.workspaceId,
       answeringAgentId: input.answeringAgentId,
-      escalationChannelId: input.escalationChannelId ?? null,
+      escalationChannelId: input.escalationChannelId,
       gapEscalationEnabled: input.gapEscalationEnabled,
     });
   }
@@ -522,7 +535,9 @@ export class SlackChannelBindingRepository implements SlackBindingRepositoryPort
         oc.column("installation_id").doUpdateSet((eb) => ({
           workspace_id: eb.ref("excluded.workspace_id"),
           answering_agent_id: eb.ref("excluded.answering_agent_id"),
-          escalation_channel_id: eb.ref("excluded.escalation_channel_id"),
+          ...(input.escalationChannelId !== undefined
+            ? { escalation_channel_id: eb.ref("excluded.escalation_channel_id") }
+            : {}),
           ...(input.gapEscalationEnabled !== undefined
             ? { gap_escalation_enabled: eb.ref("excluded.gap_escalation_enabled") }
             : {}),

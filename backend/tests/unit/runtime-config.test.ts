@@ -253,6 +253,29 @@ describe("runtime configuration", () => {
     expect(env.CONNECTOR_ENCRYPTION_KEY).toBe(key);
   });
 
+  it("keeps loopback webhook destinations disabled by default", () => {
+    const env = getEnv({
+      ...baseEnv,
+    });
+
+    expect(env.WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK).toBe(false);
+  });
+
+  it("accepts loopback webhook destinations only outside production", () => {
+    const env = getEnv({
+      ...baseEnv,
+      WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK: "true",
+    });
+
+    expect(env.WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK).toBe(true);
+
+    expect(() => getEnv({
+      ...baseEnv,
+      NODE_ENV: "production",
+      WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK: "true",
+    })).toThrow(/WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK/);
+  });
+
   it("requires a metrics auth token when metrics exposure is enabled", () => {
     expect(() => getEnv({
       ...baseEnv,

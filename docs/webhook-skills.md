@@ -22,6 +22,12 @@ The response includes the plaintext secret once. Later reads never return it.
 Webhook deliveries are signed with `X-Radioso-Signature` and include
 `X-Radioso-Timestamp` and `Idempotency-Key`.
 
+Destination URLs must be HTTPS and publicly routable by default. For local
+development only, set `WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK=true` to allow
+`http://localhost`, `http://127.0.0.1`, `http://[::1]`, or Docker
+`http://host.docker.internal` destinations. Radioso rejects this setting in
+production.
+
 ## 2. Define an agent webhook skill
 
 Open the agent's **Skills** list and choose **Add new skill**. Pick the

@@ -1,6 +1,7 @@
 import { describe } from "vitest";
 
 import { Database } from "../../../src/shared/infra/database.js";
+import { runAllTestMigrations } from "../../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -37,6 +38,12 @@ export const resolveIntegrationDatabase = async (): Promise<{
     throw new Error(
       `INTEGRATION_DATABASE_URL is set but the database is unreachable (host: ${new URL(integrationDatabaseUrl).host}); refusing to silently skip integration coverage`,
     );
+  }
+  const database = new Database(integrationDatabaseUrl);
+  try {
+    await runAllTestMigrations(database);
+  } finally {
+    await database.close().catch(() => undefined);
   }
   return { describeIntegration: describe, integrationDatabaseUrl };
 };

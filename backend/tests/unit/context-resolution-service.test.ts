@@ -32,24 +32,40 @@ describe("resolveContextForTurn", () => {
     expect(result.snapshot).toEqual({
       page_context: result.fragments[0],
     });
+    // page context is always-surfaced → rendered
+    expect(result.renderFragments).toEqual([result.fragments[0]]);
   });
 
   it("returns empty turn context for null or empty page context", () => {
-    expect(resolveContextForTurn(null)).toEqual({
-      fragments: [],
-      staged: [],
-      snapshot: {},
-    });
+    const empty = { fragments: [], renderFragments: [], staged: [], snapshot: {} };
+    expect(resolveContextForTurn(null)).toEqual(empty);
     expect(resolveContextForTurn({
       pageUrl: " ",
       pageTitle: null,
       pageLocale: undefined,
       browserLocale: "",
       content: "\n",
-    })).toEqual({
-      fragments: [],
-      staged: [],
-      snapshot: {},
+    })).toEqual(empty);
+  });
+
+  it("stages and snapshots host variables but only renders always-surfaced ones", () => {
+    const result = resolveContextForTurn(null, [
+      { name: "cart", description: "the cart", value: { items: 2 }, surfacing: "always" },
+      { name: "order_status", value: "shipped", surfacing: "on_reference" },
+      { name: "ssn", value: "123-45-6789", surfacing: "operator_only", sensitive: true },
+    ]);
+
+    // all three are staged for the matcher/routines
+    expect(result.staged.map((entry) => entry.id)).toEqual(["cart", "order_status", "ssn"]);
+    // only the always-surfaced one is rendered
+    expect(result.renderFragments).toEqual([
+      { kind: "variable", name: "cart", description: "the cart", value: { items: 2 }, trust: "unverified" },
+    ]);
+    // snapshot keeps all, with the sensitive value redacted
+    expect(result.snapshot).toEqual({
+      cart: { items: 2 },
+      order_status: "shipped",
+      ssn: "[redacted]",
     });
   });
 });

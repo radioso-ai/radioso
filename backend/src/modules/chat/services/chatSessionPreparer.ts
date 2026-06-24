@@ -20,6 +20,7 @@ import type {
   RewriteContinuityState,
 } from "../../retrieval/public.js";
 import { resolveContextForTurn } from "../../context-variables/public.js";
+import type { ResolvedTurnContext } from "../../context-variables/public.js";
 import type { AgentRecord, AgentService } from "../../agents/public.js";
 import { DEFAULT_CONTACT_REQUEST_DELIVERY, defaultAgentBrandingSettings, isAgentRetrievalEnabled } from "../../agents/public.js";
 import { defaultWebsiteEmbedSettings } from "../../settings/contracts/websiteEmbed.js";
@@ -63,6 +64,12 @@ export interface PreparedSession {
    * outcome is a generic conversation outcome rather than a retrieval-shaped one.
    */
   stagedContext: StagedContext[];
+  /**
+   * Resolved visitor context variables for this turn (page context + host-defined variables).
+   * The single source of truth for what the answer composers render and what the lifecycle
+   * persists; its `staged` entries are also merged into `stagedContext` for the matcher.
+   */
+  resolvedContext: ResolvedTurnContext;
   /**
    * Pre-answer dispatch trace (neutral `ConversationTrace`) that rides on the turn
    * outcome. Distinct from the lifecycle's post-answer `ActivityTrace`.
@@ -222,10 +229,12 @@ export class ChatSessionPreparer {
   private stagedSpineFor(
     retrieval: PreparedSession["retrieval"],
     pageContext?: AssistantPageContext | null,
-  ): Pick<PreparedSession, "stagedContext" | "turnTrace"> {
+  ): Pick<PreparedSession, "stagedContext" | "resolvedContext" | "turnTrace"> {
+    // Slice 1: only page context is resolved (no store-backed variables yet).
     const resolvedContext = resolveContextForTurn(pageContext);
     return {
       stagedContext: [toPreparedStagedContext(retrieval), ...resolvedContext.staged],
+      resolvedContext,
       turnTrace: toConversationTrace(retrieval.trace),
     };
   }

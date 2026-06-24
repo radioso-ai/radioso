@@ -1,6 +1,5 @@
 import type { ChatGatewayUsageContext } from "../contracts/chatGateway.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
-import type { AssistantPageContext } from "../types/assistantApi.js";
 import { renderContextBlock } from "../../context-variables/public.js";
 import { AssistantInstructionBuilder } from "./assistantInstructionBuilder.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
@@ -8,7 +7,7 @@ import type { PreparedSession } from "./chatSessionPreparer.js";
 /**
  * Capability-agnostic answer-composition utilities shared by every terminal answer
  * skill (retrieval, social, identity, …). It knows how to build the instruction
- * block, page-context block, and the workspace/usage contexts a model call needs —
+ * block, visitor-context block, and the workspace/usage contexts a model call needs —
  * nothing about whether an answer is grounded. Skills own their own prompt and
  * generation; this just removes the boilerplate they share.
  */
@@ -48,15 +47,13 @@ export class ChatAnswerSupport {
     });
   }
 
-  buildPageContextBlock(pageContext?: AssistantPageContext | null): string {
-    if (!pageContext) {
-      return "";
-    }
-    return renderContextBlock([{ kind: "page_context", ...pageContext }]);
+  /** Render the turn's renderable visitor-context fragments (page + always-surfaced variables). */
+  buildContextBlock(session: PreparedSession): string {
+    return renderContextBlock(session.resolvedContext?.renderFragments ?? []);
   }
 
-  buildPromptWithPageContext(prompt: string, pageContext?: AssistantPageContext | null): string {
-    const pageContextBlock = this.buildPageContextBlock(pageContext);
-    return pageContextBlock ? `${prompt}\n\n${pageContextBlock}` : prompt;
+  buildPromptWithContext(prompt: string, session: PreparedSession): string {
+    const contextBlock = this.buildContextBlock(session);
+    return contextBlock ? `${prompt}\n\n${contextBlock}` : prompt;
   }
 }

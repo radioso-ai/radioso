@@ -14,6 +14,7 @@ import {
 import { HANDOFF_NOTIFY_ACTION_TYPE } from "../../src/modules/chat/services/routines/contactRoutine.js";
 import type { ChatPresentedAnswer } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
+import { resolveContextForTurn } from "../../src/modules/context-variables/public.js";
 import { TURN_TRACE_ENVELOPE_VERSION } from "../../src/modules/chat/services/turnTraceEnvelope.js";
 import { capabilityNames, type CapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../src/shared/domain/actionCapabilities.js";
@@ -52,6 +53,7 @@ const session = (): PreparedSession =>
     turnRoute: "direct",
     directiveSteering: { rules: [], matches: [], omissions: [] },
     stagedContext: [],
+    resolvedContext: resolveContextForTurn(null),
     retrieval: {
       contexts: [],
       diagnostics: {},
@@ -120,13 +122,13 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     const { lifecycle, messageRepository } = harness();
     const prepared = {
       ...session(),
-      pageContext: {
+      resolvedContext: resolveContextForTurn({
         pageUrl: "https://example.test/docs",
         pageTitle: "Docs",
         pageLocale: "en-US",
         browserLocale: "en",
         content: "Visible page text.",
-      },
+      }),
     };
 
     await lifecycle.completeAssistantTurn({

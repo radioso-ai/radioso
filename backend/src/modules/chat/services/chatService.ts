@@ -105,6 +105,7 @@ import {
   toConversationMessages,
   toPreparedStagedContext,
 } from "./conversationContractMappers.js";
+import { resolveContextForTurn } from "../../context-variables/public.js";
 import type { TurnRouter, TurnRouting } from "./turnRouter.js";
 import type { ResponseLanguageDetector } from "../../../shared/services/responseLanguageDetector.js";
 import type { HandoffWaitingMessageGenerator } from "../../../shared/services/handoffWaitingMessageGenerator.js";
@@ -862,6 +863,7 @@ export class ChatService {
       effectiveQuery: userMessage.content,
       pageContext: null,
       stagedContext: [toPreparedStagedContext(retrieval)],
+      resolvedContext: resolveContextForTurn(null),
       turnTrace: {
         traceId: `approval-resume-${record.handle}`,
         startedAt: new Date().toISOString(),

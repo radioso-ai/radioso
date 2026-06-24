@@ -142,6 +142,7 @@ const session = (): PreparedSession => {
       omissions: [],
     },
     stagedContext: [toPreparedStagedContext(retrieval)],
+    resolvedContext: { fragments: [], renderFragments: [], staged: [], snapshot: {} },
     turnTrace: toConversationTrace(retrieval.trace),
   };
 };

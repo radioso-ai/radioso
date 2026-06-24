@@ -47,7 +47,6 @@ import {
 } from "./chatTraceLeaves.js";
 import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
 import type { CapturedClarificationTransition } from "./clarification/deferredClarificationStore.js";
-import { resolveContextForTurn } from "../../context-variables/public.js";
 
 const DISPATCH_STAGE_ID_PREFIX = "dispatch:";
 
@@ -257,7 +256,7 @@ export const buildTurnTraceForPresentation = (
     : undefined;
 
   const assistantMessageId = randomUUID();
-  const contextVariablesSnapshot = resolveContextForTurn(input.session.pageContext).snapshot;
+  const contextVariablesSnapshot = input.session.resolvedContext.snapshot;
   const hasContextVariablesSnapshot = Object.keys(contextVariablesSnapshot).length > 0;
   const assistantMessage: MessageCreateInput = {
     id: assistantMessageId,

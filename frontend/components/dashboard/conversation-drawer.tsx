@@ -596,7 +596,7 @@ export function ConversationDrawer({
                     Flow
                   </Button>
                 ) : null}
-                {activeTrace ? (
+                {activeTrace || activeEnvelope ? (
                   <Button
                     type="button"
                     size="sm"

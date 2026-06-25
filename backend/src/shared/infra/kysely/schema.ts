@@ -689,6 +689,7 @@ export interface SlackChannelBindings {
   answering_agent_id: string;
   created_at: Generated<Timestamp>;
   escalation_channel_id: string | null;
+  gap_escalation_enabled: Generated<boolean>;
   id: string;
   installation_id: string;
   updated_at: Generated<Timestamp>;

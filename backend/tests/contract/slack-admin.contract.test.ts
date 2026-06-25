@@ -75,6 +75,7 @@ describe("Slack admin REST contract", () => {
               "im:history",
               "im:read",
               "im:write",
+              "reactions:write",
               "users:read",
               "users:read.email",
             ]),
@@ -180,15 +181,34 @@ describe("Slack admin REST contract", () => {
 
     const emptyBinding = await request(app).get(`${base}/binding`).set(headers);
     expect(emptyBinding.status).toBe(200);
-    expect(emptyBinding.body).toEqual({ answeringAgentId: null, escalationChannelId: null });
+    expect(emptyBinding.body).toEqual({
+      answeringAgentId: null,
+      escalationChannelId: null,
+      gapEscalationEnabled: false,
+    });
 
     const updatedBinding = await request(app)
       .put(`${base}/binding`)
       .set(headers)
-      .send({ answeringAgentId, escalationChannelId: "CESCALATE" });
+      .send({ answeringAgentId, escalationChannelId: "CESCALATE", gapEscalationEnabled: true });
     expect(updatedBinding.status).toBe(200);
-    expect(updatedBinding.body).toEqual({ answeringAgentId, escalationChannelId: "CESCALATE" });
+    expect(updatedBinding.body).toEqual({
+      answeringAgentId,
+      escalationChannelId: "CESCALATE",
+      gapEscalationEnabled: true,
+    });
     expectNoSecrets(updatedBinding.body);
+
+    const policyOnlyUpdate = await request(app)
+      .put(`${base}/binding`)
+      .set(headers)
+      .send({ answeringAgentId, gapEscalationEnabled: false });
+    expect(policyOnlyUpdate.status).toBe(200);
+    expect(policyOnlyUpdate.body).toEqual({
+      answeringAgentId,
+      escalationChannelId: "CESCALATE",
+      gapEscalationEnabled: false,
+    });
 
     const connectedWithBinding = await request(app).get(`${base}/install/status`).set(headers);
     expect(connectedWithBinding.status).toBe(200);

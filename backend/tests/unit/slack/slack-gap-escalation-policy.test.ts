@@ -45,6 +45,7 @@ const makeHandler = (input: {
   outcome: "answered" | "no_context";
   answer?: string;
   escalationChannelId?: string | null;
+  gapEscalationEnabled?: boolean;
   outbox?: SlackPostOutboxPort;
 }) => {
   const chat: ConnectorChatPort = {
@@ -68,6 +69,7 @@ const makeHandler = (input: {
       workspaceId: installation.workspaceId,
       answeringAgentId: "66666666-6666-6666-6666-666666666666",
       escalationChannelId: input.escalationChannelId === undefined ? "CSUPPORT" : input.escalationChannelId,
+      gapEscalationEnabled: input.gapEscalationEnabled ?? false,
       createdAt: new Date(),
       updatedAt: new Date(),
     })),
@@ -93,7 +95,7 @@ const makeHandler = (input: {
       installationService,
       persistence: basePersistence(),
       slackPostOutbox: outbox,
-      clientFactory: () => ({ postMessage: posted }),
+      clientFactory: () => ({ postMessage: posted, addReaction: vi.fn(), removeReaction: vi.fn() }),
     }),
     installationService,
   };
@@ -116,6 +118,7 @@ describe("Slack gap escalation policy", () => {
     const { chat, handler, outbox } = makeHandler({
       outcome: "no_context",
       answer: "Here is a totally confident answer that should not matter.",
+      gapEscalationEnabled: true,
     });
 
     await handler.handleMessageIm(event);
@@ -153,6 +156,17 @@ describe("Slack gap escalation policy", () => {
       conversationId: "44444444-4444-4444-4444-444444444444",
       workspaceId: installation.workspaceId,
     });
+  });
+
+  it("does not auto-escalate no_context turns when gap escalation is disabled", async () => {
+    const { handler, outbox } = makeHandler({
+      outcome: "no_context",
+      gapEscalationEnabled: false,
+    });
+
+    await handler.handleMessageIm(event);
+
+    expect(outbox.enqueue).not.toHaveBeenCalled();
   });
 
   it("does not escalate a grounded turn even when answer text looks like a gap", async () => {
@@ -207,6 +221,7 @@ describe("Slack gap escalation policy", () => {
         workspaceId: installation.workspaceId,
         answeringAgentId: "66666666-6666-6666-6666-666666666666",
         escalationChannelId: null,
+        gapEscalationEnabled: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       })),
@@ -225,7 +240,7 @@ describe("Slack gap escalation policy", () => {
       bindings,
       installationService,
       persistence,
-      clientFactory: () => ({ postMessage: posted }),
+      clientFactory: () => ({ postMessage: posted, addReaction: vi.fn(), removeReaction: vi.fn() }),
     });
     const mentionEvent = {
       eventId: "EvMentionOne",

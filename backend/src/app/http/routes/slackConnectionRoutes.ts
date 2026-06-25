@@ -17,6 +17,7 @@ const uuidSchema = z.string().uuid();
 const bindingUpdateSchema = z.object({
   answeringAgentId: z.string().uuid(),
   escalationChannelId: z.string().trim().min(1).nullable().optional(),
+  gapEscalationEnabled: z.boolean().optional(),
 });
 
 const parseUuid = (raw: unknown, field: string): string => {
@@ -30,6 +31,7 @@ const parseUuid = (raw: unknown, field: string): string => {
 const presentBinding = (binding: Awaited<ReturnType<AppDependencies["slackInstallationService"]["getBinding"]>>) => ({
   answeringAgentId: binding?.answeringAgentId ?? null,
   escalationChannelId: binding?.escalationChannelId ?? null,
+  gapEscalationEnabled: binding?.gapEscalationEnabled ?? false,
 });
 
 export const createSlackConnectionRoutes = (dependencies: SlackConnectionRouteDependencies): Router => {
@@ -139,7 +141,8 @@ export const createSlackConnectionRoutes = (dependencies: SlackConnectionRouteDe
         const binding = await dependencies.slackInstallationService.setBinding({
           workspaceId,
           answeringAgentId: req.body.answeringAgentId,
-          escalationChannelId: req.body.escalationChannelId ?? null,
+          escalationChannelId: req.body.escalationChannelId,
+          gapEscalationEnabled: req.body.gapEscalationEnabled,
         });
         res.status(200).json(presentBinding(binding));
       } catch (error) {

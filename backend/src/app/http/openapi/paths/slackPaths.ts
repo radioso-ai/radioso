@@ -27,11 +27,13 @@ const SlackInstallStatusSchema = z.object({
 const SlackBindingSchema = z.object({
   answeringAgentId: z.string().uuid().nullable(),
   escalationChannelId: z.string().nullable(),
+  gapEscalationEnabled: z.boolean(),
 });
 
 const SlackBindingUpdateSchema = z.object({
   answeringAgentId: z.string().uuid(),
   escalationChannelId: z.string().nullable().optional(),
+  gapEscalationEnabled: z.boolean().optional(),
 });
 
 const SlackManifestResponseSchema = z.object({

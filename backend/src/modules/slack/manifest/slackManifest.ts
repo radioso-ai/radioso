@@ -4,6 +4,7 @@ export const slackBotScopes = [
   "im:history",
   "im:read",
   "im:write",
+  "reactions:write",
   "users:read",
   "users:read.email",
 ] as const;

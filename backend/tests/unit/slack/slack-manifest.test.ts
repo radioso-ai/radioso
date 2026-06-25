@@ -17,7 +17,7 @@ describe("slack manifest", () => {
       request_url: "https://radioso.example.com/api/connectors/slack/interactivity",
     });
     expect(manifest.oauth_config.scopes.bot).toEqual(slackBotScopes);
-    expect(manifest.oauth_config.scopes.bot).toEqual(expect.arrayContaining(["users:read", "users:read.email"]));
+    expect(manifest.oauth_config.scopes.bot).toEqual(expect.arrayContaining(["users:read", "users:read.email", "reactions:write"]));
     expect(manifest.oauth_config.scopes.bot).not.toContain("search:read");
     expect(manifest.oauth_config.scopes.bot).not.toContain("search.messages");
   });

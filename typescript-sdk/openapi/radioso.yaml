@@ -13540,9 +13540,12 @@ paths:
                     type:
                       - string
                       - "null"
+                  gapEscalationEnabled:
+                    type: boolean
                 required:
                   - answeringAgentId
                   - escalationChannelId
+                  - gapEscalationEnabled
         "401":
           description: Authentication required
           content:
@@ -13581,6 +13584,8 @@ paths:
                   type:
                     - string
                     - "null"
+                gapEscalationEnabled:
+                  type: boolean
               required:
                 - answeringAgentId
       responses:
@@ -13600,9 +13605,12 @@ paths:
                     type:
                       - string
                       - "null"
+                  gapEscalationEnabled:
+                    type: boolean
                 required:
                   - answeringAgentId
                   - escalationChannelId
+                  - gapEscalationEnabled
         "400":
           description: Invalid binding request
           content:

@@ -113,7 +113,7 @@ export class SlackPlugin implements ConnectorPlugin {
       installationService,
       persistence,
       slackPostOutbox,
-      clientFactory: this.options.clientFactory as ((options: { botToken: string }) => Pick<SlackWebApiClient, "postMessage">) | undefined,
+      clientFactory: this.options.clientFactory,
     });
 
     context.http.mount(

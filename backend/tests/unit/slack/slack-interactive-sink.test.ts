@@ -28,6 +28,7 @@ const binding: SlackChannelBindingRecord = {
   workspaceId: "ws_1",
   answeringAgentId: "agent_1",
   escalationChannelId: "COPS",
+  gapEscalationEnabled: false,
   createdAt: new Date("2026-01-01T00:00:00Z"),
   updatedAt: new Date("2026-01-01T00:00:00Z"),
 };

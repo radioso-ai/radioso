@@ -106,6 +106,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
     await client.query(await readFile(path.join(testMigrationsPath, "095_integration_oauth_connections.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "105_integration_connections.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "107_slack_keystone.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "112_slack_gap_escalation_optin.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "072_routine_action_requests.sql"), "utf8"));
     await client.query(`INSERT INTO workspaces (id) VALUES ($1)`, [workspaceId]);
     await client.query(`INSERT INTO agents (id, workspace_id, name) VALUES ($1, $2, 'Slack Agent')`, [agentId, workspaceId]);
@@ -180,6 +181,8 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
           });
           return { channel: input.channel, ts: "1720000000.000100" };
         },
+        addReaction: async () => undefined,
+        removeReaction: async () => undefined,
       }),
     });
 
@@ -251,6 +254,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       grantedScopes: ["app_mentions:read", "chat:write", "im:read", "im:write"],
       answeringAgentId: agentId,
       escalationChannelId: "CSUPPORT",
+      gapEscalationEnabled: true,
     });
 
     const posts: Array<{ channel: string; text: string; threadTs?: string }> = [];
@@ -299,6 +303,8 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
           });
           return { channel: input.channel, ts: "1720000000.000300" };
         },
+        addReaction: async () => undefined,
+        removeReaction: async () => undefined,
       }),
     });
 
@@ -391,6 +397,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       grantedScopes: ["chat:write", "im:read"],
       answeringAgentId: agentId,
       escalationChannelId: "CSUPPORT",
+      gapEscalationEnabled: true,
     });
 
     let nextOutcome: "answered" | "no_context" = "no_context";
@@ -422,6 +429,8 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       },
       clientFactory: () => ({
         postMessage: async (input) => ({ channel: input.channel, ts: "1720000000.000200" }),
+        addReaction: async () => undefined,
+        removeReaction: async () => undefined,
       }),
     });
 

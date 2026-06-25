@@ -461,6 +461,40 @@ describe('routineToChipDoc (inverse serializer)', () => {
     expect(redraft.transitions).toEqual(draft.transitions)
   })
 
+  it('compiles an action chip to an action step and round-trips it', () => {
+    const draft = draftFromChipDoc({
+      name: 'Escalate',
+      trigger: 'wants a human',
+      blocks: [
+        { text: 'Email the team the request ', chips: [{ kind: 'action', refId: 'contact.send' }] },
+        { text: 'Let them know a teammate will follow up.', chips: [] },
+      ],
+      variables: [],
+    })
+    // An action chip names an outbox action; it compiles to an action step.
+    expect(draft.steps[0]).toMatchObject({ kind: 'action', actionType: 'contact.send', instruction: 'Email the team the request' })
+    // The action step has a follow-up edge (the validator requires one).
+    expect(draft.transitions.some((transition) => transition.fromStep === draft.steps[0]!.stableStepId)).toBe(true)
+
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    const redraft = draftFromChipDoc({ name: 'Escalate', trigger: 'wants a human', blocks: paragraphsToBlocks(doc!.paragraphs), variables: doc!.variables })
+    expect(redraft.steps).toEqual(draft.steps)
+    expect(redraft.transitions).toEqual(draft.transitions)
+  })
+
+  it('falls back to Form for an action step with no action type', () => {
+    const base = draftFromChipDoc({
+      name: 'Escalate',
+      trigger: 'wants a human',
+      blocks: [{ text: 'Email the team ', chips: [{ kind: 'action', refId: 'contact.send' }] }],
+      variables: [],
+    })
+    expect(routineToChipDoc(base)).not.toBeNull()
+    const stripped = { ...base, steps: base.steps.map((step) => step.kind === 'action' ? { ...step, actionType: null } : step) }
+    expect(routineToChipDoc(stripped)).toBeNull()
+  })
+
   it('compiles an end chip to a branch that completes the routine, and round-trips it', () => {
     const draft = draftFromChipDoc({
       name: 'Refund',
@@ -504,8 +538,8 @@ describe('routineToChipDoc (inverse serializer)', () => {
   it('returns null for routines the prose editor cannot represent (form fallback)', () => {
     const base = draftFromChipDoc({ name: 'x', trigger: 'y', blocks: [{ text: 'Do a thing.', chips: [] }], variables: [] })
 
-    // An action (outbox) step has no prose chip.
-    expect(routineToChipDoc({ ...base, steps: [{ ...base.steps[0]!, kind: 'action', actionType: 'contact.send' }] })).toBeNull()
+    // An action (outbox) step with no action type can't render as an action chip.
+    expect(routineToChipDoc({ ...base, steps: [{ ...base.steps[0]!, kind: 'action', actionType: null }] })).toBeNull()
     // A tool step must name the skill it dispatches.
     expect(routineToChipDoc({ ...base, steps: [{ ...base.steps[0]!, kind: 'tool', toolRef: null }] })).toBeNull()
     // A counter guard has no prose chip.

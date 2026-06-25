@@ -2,7 +2,7 @@
 
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
-import { AtSign, BadgeCheck, Bold, CornerUpRight, Database, Flag, Gavel, Heading1, Italic, Workflow } from 'lucide-react'
+import { AtSign, BadgeCheck, Bold, CornerUpRight, Database, Flag, Gavel, Heading1, Italic, Send, Workflow } from 'lucide-react'
 
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
 import { ContentEditable } from '@lexical/react/LexicalContentEditable'
@@ -236,6 +236,52 @@ function OutcomeDialog({
   )
 }
 
+// Author an action step: a step that emits an outbox action (an email to a teammate, a
+// webhook, a Slack post) named by its action type. The action type is a free identifier the
+// runtime resolves to a registered handler, the same as the Form view's action field.
+function ActionDialog({
+  open,
+  onOpenChange,
+  onConfirm,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onConfirm: (actionType: string) => void
+}) {
+  const [actionType, setActionType] = useState('')
+  const reset = () => setActionType('')
+  const confirm = () => {
+    const trimmed = actionType.trim()
+    if (!trimmed) return
+    onConfirm(trimmed)
+    reset()
+    onOpenChange(false)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => { if (!next) reset(); onOpenChange(next) }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add an action step</DialogTitle>
+          <DialogDescription>An action step emits an outbox action when the routine reaches it, then continues. Name the action type the runtime should dispatch.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1.5">
+          <Label htmlFor="actionType">Action type</Label>
+          <Input
+            id="actionType"
+            value={actionType}
+            onChange={(event) => setActionType(event.target.value)}
+            placeholder="contact.send"
+          />
+        </div>
+        <DialogFooter>
+          <Button type="button" onClick={confirm} disabled={!actionType.trim()}>Add action step</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // A clearly visible "on" state for the toggle buttons (Bold/Italic/Step). The default
 // `secondary` button variant is a washed-out grey that reads as inactive against the
 // toolbar, so an active toggle gets the solid accent instead.
@@ -264,6 +310,7 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
   const skillCatalog = useContext(RoutineSkillCatalogContext)
   const [conditionOpen, setConditionOpen] = useState(false)
   const [outcomeOpen, setOutcomeOpen] = useState(false)
+  const [actionOpen, setActionOpen] = useState(false)
   const [jumpOpen, setJumpOpen] = useState(false)
   const [jumpTargets, setJumpTargets] = useState<{ id: string; title: string }[]>([])
   const [approvalOpen, setApprovalOpen] = useState(false)
@@ -342,6 +389,22 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
         const selection = $getSelection()
         if (!$isRangeSelection(selection)) return
         const chip = $createChipNode('end', 'done', 'end')
+        selection.insertNodes([chip])
+        const trailing = $createTextNode(' ')
+        chip.insertAfter(trailing)
+        trailing.select()
+      })
+    })
+  }
+
+  // Insert an action chip — turns the line into an action step that emits the named outbox
+  // action. The line's prose is the step instruction.
+  const insertAction = (actionType: string) => {
+    editor.focus(() => {
+      editor.update(() => {
+        const selection = $getSelection()
+        if (!$isRangeSelection(selection)) return
+        const chip = $createChipNode('action', actionType, actionType)
         selection.insertNodes([chip])
         const trailing = $createTextNode(' ')
         chip.insertAfter(trailing)
@@ -494,6 +557,10 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
         <Workflow className="h-4 w-4" />
         Outcome
       </Button>
+      <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={() => setActionOpen(true)}>
+        <Send className="h-4 w-4" />
+        Action
+      </Button>
       <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={insertEnd}>
         <Flag className="h-4 w-4" />
         End
@@ -513,6 +580,7 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
       </Button>
       <ConditionBuilderDialog open={conditionOpen} onOpenChange={setConditionOpen} variables={variables} onConfirm={insertCondition} onSetVariableType={onSetVariableType} />
       <OutcomeDialog open={outcomeOpen} onOpenChange={setOutcomeOpen} statuses={outcomeStatuses} onConfirm={insertOutcome} />
+      <ActionDialog open={actionOpen} onOpenChange={setActionOpen} onConfirm={insertAction} />
       <JumpDialog open={jumpOpen} onOpenChange={setJumpOpen} targets={jumpTargets} onConfirm={insertJump} />
       <ApprovalChipDialog open={approvalOpen} onOpenChange={setApprovalOpen} targets={approvalTargets} initial={{ captureKey: '', options: [] }} onConfirm={insertApproval} />
     </div>
@@ -913,12 +981,13 @@ function ClipboardRoundTripPlugin({
         if (!state.read($selectionSpansDocument)) return false
         const { name: currentName, trigger: currentTrigger, variables: currentVariables } = stateRef.current
         const paragraphs = state.read($readProseParagraphs)
-        // The plain-text token grammar has no approval/decision/outcome form, so a routine
-        // with a gate or an outcome branch isn't exported as tokens — fall through to Lexical's
-        // native clipboard, which round-trips losslessly in-app via the JSON flavour.
+        // The plain-text token grammar has no approval/decision/outcome/action form, so a
+        // routine with a gate, an outcome branch, or an action step isn't exported as tokens —
+        // fall through to Lexical's native clipboard, which round-trips losslessly in-app via
+        // the JSON flavour.
         if (paragraphs.some((paragraph) => paragraph.segments.some((segment) =>
           segment.kind === 'chip'
-          && (segment.chipKind === 'approval' || segment.chipKind === 'decision' || (segment.chipKind === 'condition' && segment.refId === OUTCOME_GUARD_REF))))) {
+          && (segment.chipKind === 'approval' || segment.chipKind === 'decision' || segment.chipKind === 'action' || (segment.chipKind === 'condition' && segment.refId === OUTCOME_GUARD_REF))))) {
           return false
         }
         const text = serializeProseDoc({ name: currentName, trigger: currentTrigger, variables: currentVariables, paragraphs })

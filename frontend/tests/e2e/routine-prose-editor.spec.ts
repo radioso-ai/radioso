@@ -537,6 +537,38 @@ test("a name can't be claimed by a second chip kind", async ({ page }) => {
   await expect(page.getByRole("option", { name: "Handoff: refund" })).toHaveCount(0);
 });
 
+test("an action chip compiles to an action step naming the action type", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Escalate to a human");
+  await page.getByLabel("Trigger", { exact: true }).fill("When the visitor asks for a person");
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+  await editor.pressSequentially("Email the team the request ");
+  // The action step emits an outbox action named by its type.
+  await page.getByRole("button", { name: "Action" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Action type").fill("contact.send");
+  await dialog.getByRole("button", { name: "Add action step" }).click();
+  await expect(page.locator('[data-routine-chip="action"]')).toBeVisible();
+
+  await page.getByRole("button", { name: "Save routine" }).click();
+
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  const created = routineUpdates.find((update) => update.method === "POST");
+  const actionStep = (created?.body?.steps ?? []).find((step: { kind: string }) => step.kind === "action");
+  expect(actionStep).toMatchObject({ kind: "action", actionType: "contact.send" });
+  // The action step has a follow-up edge (the validator requires one).
+  const transitions = created?.body?.transitions ?? [];
+  expect(transitions.some((transition: { fromStep: string }) => transition.fromStep === actionStep.stableStepId)).toBe(true);
+});
+
 test("a skill chip compiles to a tool step naming the skill", async ({ page }) => {
   const routineUpdates: RoutineMutationFixture[] = [];
 

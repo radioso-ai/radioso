@@ -504,16 +504,19 @@ export function draftFromChipDoc(input: {
       titledStep = { step, body: [] }
       continue
     }
-    // A skill chip turns the step into a tool step the runner dispatches through the
-    // skill port (the skill itself is defined elsewhere; here it's referenced by name).
+    // A skill chip turns the step into a tool step the runner dispatches through the skill
+    // port; an action chip turns it into an action step that emits an outbox action (named by
+    // its action type). Both reference something defined elsewhere by name.
     const skillChip = block.chips.find((chip) => chip.kind === 'skill')
+    const actionChip = block.chips.find((chip) => chip.kind === 'action')
     const instruction = block.text.trim()
-    if (!instruction && !skillChip) {
+    if (!instruction && !skillChip && !actionChip) {
       // A non-branch block with no prose (e.g. an orphan condition chip) isn't a step.
       continue
     }
     if (titledStep) {
-      // Body of the current titled step (a skill chip makes it a tool step).
+      // Body of the current titled step (a skill chip makes it a tool step; an action chip an
+      // action step).
       if (instruction) titledStep.body.push(instruction)
       if (skillChip) {
         titledStep.step.kind = 'tool'
@@ -524,6 +527,9 @@ export function draftFromChipDoc(input: {
           outputAssignments: skillChip.outputAssignments ?? {},
           mode: skillChip.mode ?? 'typed',
         }
+      } else if (actionChip) {
+        titledStep.step.kind = 'action'
+        titledStep.step.actionType = actionChip.refId
       }
       flushTitledBody()
       continue
@@ -531,12 +537,12 @@ export function draftFromChipDoc(input: {
     const id = `step_${steps.length + 1}`
     steps.push({
       stableStepId: id,
-      kind: skillChip ? 'tool' : 'chat',
-      // Every step needs a non-empty instruction (backend requirement). A skill chip
-      // alone on a line carries no prose, so fall back to the skill name.
-      instruction: !instruction && skillChip ? skillChip.refId : instruction,
+      kind: actionChip ? 'action' : skillChip ? 'tool' : 'chat',
+      // Every step needs a non-empty instruction (backend requirement). A skill or action chip
+      // alone on a line carries no prose, so fall back to the referenced name.
+      instruction: instruction || (actionChip?.refId ?? skillChip?.refId ?? ''),
       toolRef: skillChip ? skillChip.refId : null,
-      actionType: null,
+      actionType: actionChip ? actionChip.refId : null,
       ordinal: steps.length,
       metadata: skillChip
         ? {
@@ -599,7 +605,7 @@ export function draftFromChipDoc(input: {
 // One inline piece of a loaded prose paragraph: literal text or a chip. This is the
 // richer shape draftFromChipDoc's flat {text, chips} can't carry — it preserves where
 // each chip sits inline — so the editor can rebuild the Lexical document on load.
-export type ProseChipKind = 'variable' | 'skill' | 'handoff' | 'step' | 'condition' | 'end' | 'approval' | 'decision'
+export type ProseChipKind = 'variable' | 'skill' | 'action' | 'handoff' | 'step' | 'condition' | 'end' | 'approval' | 'decision'
 export type ProseSegment =
   | { kind: 'text'; text: string }
   | {
@@ -694,8 +700,10 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
   if (routine.completionExport?.enabled) return null
 
   const steps = [...routine.steps].sort((left, right) => left.ordinal - right.ordinal)
-  if (steps.some((step) => step.kind !== 'chat' && step.kind !== 'tool' && step.kind !== 'approval')) return null
+  if (steps.some((step) => step.kind !== 'chat' && step.kind !== 'tool' && step.kind !== 'approval' && step.kind !== 'action')) return null
   if (steps.some((step) => step.kind === 'tool' && !step.toolRef)) return null
+  // An action step with no action type can't be shown as an action chip.
+  if (steps.some((step) => step.kind === 'action' && !step.actionType)) return null
 
   // Prose collapses to a single complete terminal and at most one handoff. More than one of
   // either is a real multi-ending graph that only the Form view can author.
@@ -851,6 +859,9 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
           mode: metadata?.mode,
         })
       }
+      if (step.kind === 'action' && step.actionType) {
+        bodySegments.push({ kind: 'chip', chipKind: 'action', refId: step.actionType, label: step.actionType })
+      }
       if (bodySegments.length > 0) paragraphs.push({ segments: bodySegments })
     } else {
       const segments = parseInstructionSegments(step.instruction ?? '', nameByRef)
@@ -865,6 +876,9 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
           outputAssignments: metadata?.outputAssignments,
           mode: metadata?.mode,
         })
+      }
+      if (step.kind === 'action' && step.actionType) {
+        segments.push({ kind: 'chip', chipKind: 'action', refId: step.actionType, label: step.actionType })
       }
       paragraphs.push({ segments })
     }

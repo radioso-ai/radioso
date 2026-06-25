@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState, type ComponentType, type JSX } from 'react'
-import { AlertTriangle, BadgeCheck, ChevronDown, CornerUpRight, Flag, Gavel, Plus, Sparkles, Trash2, Workflow, Zap, type LucideIcon } from 'lucide-react'
+import { AlertTriangle, BadgeCheck, ChevronDown, CornerUpRight, Flag, Gavel, Plus, Send, Sparkles, Trash2, Workflow, Zap, type LucideIcon } from 'lucide-react'
 import {
   $getNodeByKey,
   $getRoot,
@@ -51,7 +51,7 @@ import { useRoutineVariables } from '@/components/dashboard/settings/routine-var
 // `condition` chip is a structured comparison ("decided in code"); the others are
 // references/targets. An `end` chip is a branch target that completes the routine (the
 // counterpart to a `handoff` chip, which escalates).
-export type RoutineChipKind = 'variable' | 'skill' | 'handoff' | 'step' | 'condition' | 'end' | 'approval' | 'decision'
+export type RoutineChipKind = 'variable' | 'skill' | 'action' | 'handoff' | 'step' | 'condition' | 'end' | 'approval' | 'decision'
 
 export type RoutineFieldGuardValue = string | number | boolean
 
@@ -81,6 +81,7 @@ export type SerializedChipNode = Spread<
 const KIND_META: Record<RoutineChipKind, { className: string; icon: LucideIcon | null }> = {
   variable: { className: 'border-amber-300 bg-amber-100 text-amber-900', icon: null },
   skill: { className: 'border-emerald-300 bg-emerald-100 text-emerald-900', icon: Zap },
+  action: { className: 'border-cyan-300 bg-cyan-100 text-cyan-900', icon: Send },
   handoff: { className: 'border-rose-300 bg-rose-100 text-rose-900', icon: CornerUpRight },
   step: { className: 'border-sky-300 bg-sky-100 text-sky-900', icon: CornerUpRight },
   condition: { className: 'border-indigo-300 bg-indigo-100 text-indigo-900', icon: BadgeCheck },

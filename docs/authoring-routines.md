@@ -100,6 +100,10 @@ inline reference, not raw syntax. Each kind has its own colour:
   the **Outcome** toolbar button on a branch line after a skill step, and give the
   result status (for example `succeeded` or `failed`); the branch fires when the
   skill returns that status (see [Branch on a skill outcome](#branch-on-a-skill-outcome)).
+- **Action** - turns the line into an action step that emits an outbox action (an
+  email to a teammate, a webhook, a Slack post) when the routine reaches it, then
+  continues. Insert it from the **Action** toolbar button and name the action type
+  (for example `contact.send`). The line's prose is the step instruction.
 - **Step title** - names a step so a jump can target it. Use the **Step** toolbar
   button to turn the current line into a titled step; its title becomes a stable
   id, and the following lines are that step's instruction. Untitled lines are
@@ -386,9 +390,9 @@ chips:
 - an end is `-> end`, a handoff is `-> handoff`, and a jump is `-> step:<id>`
 - a decided-in-code check is `[if amount >= 100]`
 
-The portable text form has no marker for approval gates or outcome branches, so a
-routine that uses either copies in-app only (paste it back into a prose editor in
-the same app) rather than as portable text.
+The portable text form has no marker for approval gates, outcome branches, or
+action steps, so a routine that uses any of them copies in-app only (paste it back
+into a prose editor in the same app) rather than as portable text.
 
 To restore the routine, paste the text back into the prose editor. The markers
 become chips again, and the name and trigger fill in from the text. The text
@@ -416,12 +420,12 @@ The form exposes:
 - terminal kind and message: `complete` or `handoff`
 - completion export through a `webhook_call` skill
 
-A routine that uses any of these advanced shapes - an action (outbox) step, a
-slot-filled branch, more than one completion or handoff, an activation gate, or a
-completion export - opens in **Form** automatically. The **Prose** tab shows a short note pointing you to **Form** for
-that routine. (Optional and editable-after-completion slots, custom completion or
-handoff messages, custom terminal ids, and outcome branches are all authored in
-**Prose** too.)
+A routine that uses any of these advanced shapes - a slot-filled branch, more than
+one completion or handoff, an activation gate, or a completion export - opens in
+**Form** automatically. The **Prose** tab shows a short note pointing you to
+**Form** for that routine. (Optional and editable-after-completion slots, custom
+completion or handoff messages, custom terminal ids, outcome branches, and action
+steps are all authored in **Prose** too.)
 
 ### Completion export
 

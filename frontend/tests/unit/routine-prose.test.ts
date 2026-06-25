@@ -561,10 +561,35 @@ describe('routineToChipDoc (inverse serializer)', () => {
 
     // Authored step metadata the chips can't carry would be dropped on a round-trip.
     expect(routineToChipDoc({ ...base, steps: [{ ...base.steps[0]!, metadata: { custom: 'x' } }] })).toBeNull()
-    // Skill-binding metadata and the outline label are preserved, so they don't force a fallback.
-    expect(routineToChipDoc({ ...base, steps: [{ ...base.steps[0]!, metadata: { outlineLabel: 'Do a thing.' } }] })).not.toBeNull()
+    // Skill-binding metadata only round-trips on a tool step, not a chat step.
+    expect(routineToChipDoc({ ...base, steps: [{ ...base.steps[0]!, metadata: { inputBindings: {} } }] })).toBeNull()
+    // An outline label that slugifies back to the step id is preserved (no fallback)...
+    expect(routineToChipDoc({ ...base, steps: [{ ...base.steps[0]!, stableStepId: 'step_1', metadata: { outlineLabel: 'Step 1' } }] })).not.toBeNull()
+    // ...but one that would rename the step (slugifies to a different id) falls back.
+    expect(routineToChipDoc({ ...base, steps: [{ ...base.steps[0]!, stableStepId: 'step_1', metadata: { outlineLabel: 'Totally different name' } }] })).toBeNull()
     // A handoff terminal no transition targets would be dropped on a round-trip.
     expect(routineToChipDoc({ ...base, terminals: [...base.terminals, { stableStepId: 'handoff', kind: 'handoff', instruction: 'x', ordinal: 1 }] })).toBeNull()
+  })
+
+  it('falls back to Form for an llm branch whose phrase (guardText) is empty', () => {
+    const llmBranch = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: [
+        { text: 'Check the request.', chips: [] },
+        { text: 'If it is urgent,', chips: [{ kind: 'handoff', refId: 'handoff' }] },
+      ],
+      variables: [],
+    })
+    expect(routineToChipDoc(llmBranch)).not.toBeNull()
+    // A null guardText compiles to condition "llm"; rendering it as a bare branch would
+    // round-trip to "" — a different compiled condition — so fall back instead.
+    const nulled = {
+      ...llmBranch,
+      transitions: llmBranch.transitions.map((transition) =>
+        transition.guardKind === 'llm' ? { ...transition, guardText: null } : transition),
+    }
+    expect(routineToChipDoc(nulled)).toBeNull()
   })
 
   it('falls back to Form for a counter jump whose limit lives only in guardText', () => {

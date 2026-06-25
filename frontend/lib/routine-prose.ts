@@ -149,10 +149,24 @@ const HANDOFF_TERMINAL_ID = 'handoff'
 // The default message a handoff terminal carries when the author hasn't set one.
 const DEFAULT_HANDOFF_INSTRUCTION = 'Bringing in a teammate.'
 
-// Step metadata keys the chip document preserves: the skill-binding state (tool steps) and
-// the outline label (a titled step's heading). Any other key is authored metadata the prose
-// round-trip can't carry, so routineToChipDoc falls back to Form when it sees one.
-const PRESERVED_STEP_METADATA_KEYS = new Set(['inputBindings', 'outputAssignments', 'mode', 'outlineLabel'])
+// Step metadata keys the chip document preserves. The skill-binding state only round-trips on
+// a tool step (it rides on the skill chip); the outline label (a titled step's heading) can
+// ride on any step. Any other key — or binding state on a non-tool step — is authored metadata
+// the prose round-trip can't carry, so routineToChipDoc falls back to Form when it sees one.
+const PRESERVED_TOOL_METADATA_KEYS = new Set(['inputBindings', 'outputAssignments', 'mode', 'outlineLabel'])
+const OUTLINE_LABEL_ONLY = new Set(['outlineLabel'])
+
+// True when a step's metadata round-trips through the chip document without loss or renaming.
+function stepMetadataIsRepresentable(step: RoutineDefinitionDraft['steps'][number]): boolean {
+  const metadata = (step.metadata ?? {}) as Record<string, unknown>
+  const allowed = step.kind === 'tool' ? PRESERVED_TOOL_METADATA_KEYS : OUTLINE_LABEL_ONLY
+  if (Object.keys(metadata).some((key) => !allowed.has(key))) return false
+  const label = metadata.outlineLabel
+  // The label becomes the step's heading, which draftFromChipDoc slugifies back into the id —
+  // so it must already slugify to the existing id, or the id (and its jump targets) would move.
+  if (typeof label === 'string' && label.trim() && slugifyVariableKey(label.trim()) !== step.stableStepId) return false
+  return true
+}
 
 // A condition chip whose refId is this sentinel is an outcome guard, not a variable
 // comparison: it branches on the preceding tool step's result status (carried in the chip's
@@ -721,10 +735,11 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
   if (steps.some((step) => step.kind === 'tool' && !step.toolRef)) return null
   // An action step with no action type can't be shown as an action chip.
   if (steps.some((step) => step.kind === 'action' && !step.actionType)) return null
-  // The chip document only carries the skill-binding metadata and the outline label; any other
-  // authored step metadata (the schema is passthrough, and the compiler emits it into the
-  // graph) would be dropped on a prose round-trip, so fall back to Form.
-  if (steps.some((step) => Object.keys(step.metadata ?? {}).some((key) => !PRESERVED_STEP_METADATA_KEYS.has(key)))) return null
+  // Fall back to Form for any step whose metadata the prose round-trip can't carry faithfully:
+  // an unpreservable key (authored passthrough metadata, or binding state on a non-tool step),
+  // or an outline label that doesn't slugify back to the step's id (the heading would rename
+  // the step, changing its id and every transition that targets it).
+  if (steps.some((step) => !stepMetadataIsRepresentable(step))) return null
 
   // Prose collapses to a single complete terminal and at most one handoff. More than one of
   // either is a real multi-ending graph that only the Form view can author.
@@ -914,11 +929,14 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
     // bound makes it a safe backward loop). A jump can only target a titled step (it needs a
     // stable name). An outcome guard must carry a status. Anything else isn't prose-shaped.
     const chainTarget = steps[index + 1]?.stableStepId ?? completeId
-    // True when a guard prefix (condition chip / AI prose / outcome chip) can render. A field
-    // guard without its ref+operator, or an outcome guard with no status, can't — the prose
-    // would round-trip to a different guard kind, so it falls back to Form.
+    // True when a guard prefix (condition chip / AI prose / outcome chip) can render. Each
+    // requires its defining field: an llm guard needs a non-null guardText — a `null` one
+    // compiles to the condition `"llm"` but a bare prose round-trip would emit `""`, a
+    // different condition (an empty `""` already round-trips to `""`, so it stays); a field
+    // guard needs ref+operator; an outcome guard a status. Otherwise the prose would
+    // round-trip to a different guard, so it falls back.
     const guardRenders = (edge: RoutineTransition): boolean =>
-      edge.guardKind === 'llm'
+      (edge.guardKind === 'llm' && edge.guardText != null)
       || (edge.guardKind === 'field' && Boolean(edge.fieldRef) && Boolean(edge.fieldOp))
       || (edge.guardKind === 'outcome' && Boolean(edge.outcomeStatus))
     // A counter jump's bound rides on the step chip's counterLimit; one whose limit lives only

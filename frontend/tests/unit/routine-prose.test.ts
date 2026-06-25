@@ -272,6 +272,55 @@ describe('titled steps and jumps', () => {
     expect(loop).toMatchObject({ guardKind: 'counter', counterLimit: 3 })
   })
 
+  it('synthesizes a heading for an untitled jump target so a Form-shaped routine opens in prose', () => {
+    // A routine that jumps to a step which has a clean id but no author label — the shape a
+    // Form-authored routine has (Form does not set outline labels).
+    const titled = draftFromChipDoc({
+      name: 'Support',
+      trigger: 'needs help',
+      blocks: [
+        { text: 'Triage', chips: [], headingLevel: 1 },
+        { text: 'If it is a billing question,', chips: [{ kind: 'step', refId: 'resolve_billing' }] },
+        { text: 'Resolve billing', chips: [], headingLevel: 1 },
+      ],
+      variables: [],
+    })
+    const formish = { ...titled, steps: titled.steps.map((step) => ({ ...step, metadata: {} })) }
+
+    const doc = routineToChipDoc(formish)
+    expect(doc).not.toBeNull()
+    // The jump target gets a synthesized heading derived from its id.
+    expect(doc!.paragraphs.some((paragraph) =>
+      paragraph.headingLevel === 1 && paragraph.segments.some((segment) => segment.kind === 'text' && segment.text === 'Resolve Billing'))).toBe(true)
+    // The jump round-trips to the same target id (the synthesized title slugifies back to it).
+    const redraft = draftFromChipDoc({ name: 'Support', trigger: 'needs help', blocks: paragraphsToBlocks(doc!.paragraphs), variables: doc!.variables })
+    expect(redraft.transitions.some((transition) => transition.toRef === 'resolve_billing' && transition.guardKind === 'llm')).toBe(true)
+  })
+
+  it('still falls back to Form when an untitled jump target id is not a clean slug', () => {
+    const titled = draftFromChipDoc({
+      name: 'Support',
+      trigger: 'needs help',
+      blocks: [
+        { text: 'Triage', chips: [], headingLevel: 1 },
+        { text: 'If it is a billing question,', chips: [{ kind: 'step', refId: 'resolve_billing' }] },
+        { text: 'Resolve billing', chips: [], headingLevel: 1 },
+      ],
+      variables: [],
+    })
+    // Give the jump target an id that no title slugifies back to (mixed case), and drop labels.
+    const exotic = {
+      ...titled,
+      steps: titled.steps.map((step) =>
+        step.stableStepId === 'resolve_billing'
+          ? { ...step, stableStepId: 'ResolveBilling', metadata: {} }
+          : { ...step, metadata: {} }),
+      transitions: titled.transitions.map((transition) =>
+        transition.toRef === 'resolve_billing' ? { ...transition, toRef: 'ResolveBilling' } : transition),
+    }
+    expect(routineToChipDoc(exotic)).toBeNull()
+  })
+
   it('keeps untitled blocks on the original positional-id behavior (no regression)', () => {
     const draft = draftFromChipDoc({
       name: 'Plain',

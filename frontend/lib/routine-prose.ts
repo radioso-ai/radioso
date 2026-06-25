@@ -736,7 +736,30 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
     const label = (step.metadata as Record<string, unknown> | undefined)?.outlineLabel
     return typeof label === 'string' && label.trim() ? label.trim() : null
   }
-  const titleByStepId = new Map(steps.map((step) => [step.stableStepId, titleOf(step)] as const))
+
+  // Steps a non-default edge points at (a jump, a conditional/outcome branch, an approval
+  // option) need a stable name so the prose `step` chip and its heading can target them.
+  const jumpTargetIds = new Set<string>()
+  for (const transition of routine.transitions) {
+    if (transition.guardKind !== 'default' && stepIds.has(transition.toRef)) jumpTargetIds.add(transition.toRef)
+  }
+  // A readable heading synthesized from a step id (`resolve_billing` -> "Resolve Billing").
+  // The jump targets the step by id, so the synthesized title must slugify back to the exact
+  // id or it can't be used — this lets a Form step (no author label) become targetable when
+  // its id is a clean slug, and falls back to Form otherwise.
+  const titleFromId = (id: string): string | null => {
+    const humanized = id.split('_').filter(Boolean)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+    if (humanized && slugifyVariableKey(humanized) === id) return humanized
+    if (slugifyVariableKey(id) === id) return id
+    return null
+  }
+  const titleByStepId = new Map(steps.map((step) => {
+    const label = titleOf(step)
+    if (label) return [step.stableStepId, label] as const
+    // Only jump targets get a synthesized title; other untitled steps stay one-line.
+    return [step.stableStepId, jumpTargetIds.has(step.stableStepId) ? titleFromId(step.stableStepId) : null] as const
+  }))
 
   // Map an approval option's branch target (a step/terminal id) to the id the chip carries:
   // the complete/handoff terminals collapse to their prose constants; a step target must be
@@ -751,7 +774,8 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
   const paragraphs: ProseParagraph[] = []
   for (let index = 0; index < steps.length; index++) {
     const step = steps[index]!
-    const title = titleOf(step)
+    // Includes a title synthesized for an untitled jump target, so it renders as a heading.
+    const title = titleByStepId.get(step.stableStepId) ?? null
     if (step.kind === 'approval') {
       // An approval gate renders inline: a `decision` declaration chip (the choices + labels)
       // followed by one ordinary branch line per option — "if <decision> is <choice> then

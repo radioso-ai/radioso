@@ -417,9 +417,8 @@ The form exposes:
 - completion export through a `webhook_call` skill
 
 A routine that uses any of these advanced shapes - an action (outbox) step, a
-slot-filled branch, a jump to an untitled step, more than one completion or
-handoff, an activation gate, or a completion export - opens in **Form**
-automatically. The **Prose** tab shows a short note pointing you to **Form** for
+slot-filled branch, more than one completion or handoff, an activation gate, or a
+completion export - opens in **Form** automatically. The **Prose** tab shows a short note pointing you to **Form** for
 that routine. (Optional and editable-after-completion slots, custom completion or
 handoff messages, custom terminal ids, and outcome branches are all authored in
 **Prose** too.)

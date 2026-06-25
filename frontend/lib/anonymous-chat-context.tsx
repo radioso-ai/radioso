@@ -318,6 +318,7 @@ export function AnonymousChatProvider({
   consumeSessionHandoff,
   localeOverride,
   pageContext,
+  signedIdentity,
   onAnalyticsEvent,
   children,
 }: {
@@ -326,6 +327,7 @@ export function AnonymousChatProvider({
   consumeSessionHandoff?: boolean
   localeOverride?: string | null
   pageContext?: WebsiteEmbedPageContext | null
+  signedIdentity?: string | null
   onAnalyticsEvent?: (event: WebsiteEmbedAnalyticsInput) => void
   children: ReactNode
 }) {
@@ -817,6 +819,7 @@ export function AnonymousChatProvider({
                 pageContext,
               }),
               pageContext,
+              signedIdentity,
             },
             {
               onConversation: ({ conversationId: newId }) => {
@@ -1042,7 +1045,7 @@ export function AnonymousChatProvider({
         setIsLoading(false)
       }
     },
-    [applyCompletion, bootstrapGreetingId, conversationId, isHydrating, isLoading, isUnavailable, localeOverride, messages, onAnalyticsEvent, pageContext, recoverAssistantMessage, withPublicSessionRetry],
+    [applyCompletion, bootstrapGreetingId, conversationId, isHydrating, isLoading, isUnavailable, localeOverride, messages, onAnalyticsEvent, pageContext, recoverAssistantMessage, signedIdentity, withPublicSessionRetry],
   )
 
   const loadOlderMessages = useCallback(async () => {

@@ -53,6 +53,8 @@ export interface AssistantChatRequest {
   anonymousSessionId?: string | null;
   sourceOrigin?: string | null;
   pageContext?: AssistantPageContext | null;
+  verifiedCustomerId?: string | null;
+  verifiedIdentity?: Record<string, unknown> | null;
 }
 
 export type AssistantChatResponse = ChatResponse | ChatBootstrapResponse;

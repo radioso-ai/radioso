@@ -20,6 +20,7 @@ export const anonymousChatSchema = z.object({
   startConversation: z.boolean().optional(),
   userExpectedLocale: localeHintSchema.optional(),
   pageContext: pageContextSchema,
+  signedIdentity: z.string().max(8192).optional(),
   inputMetadata: z.object({
     method: z.enum(["typed", "suggestion_click", "intent_click"]),
     suggestionSourceMessageId: z.string().uuid().optional(),

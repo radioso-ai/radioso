@@ -1047,6 +1047,29 @@ export const createTestDependencies = (overrides: {
   const connectorDb = new InMemoryConnectorDatabase();
   const agentRepository = new InMemoryAgentRepository(createDefaultAgentSkillSettingsRegistry());
   const contextVariableRepository = new InMemoryContextVariableRepository();
+  const identityNonces = new Map<string, Date>();
+  const identityNonceRepository = {
+    async isUsed(nonce: string) {
+      const expiresAt = identityNonces.get(nonce);
+      return Boolean(expiresAt && expiresAt.getTime() > Date.now());
+    },
+    async markUsed(nonce: string, _workspaceId: string, expiresAt: Date) {
+      if (identityNonces.has(nonce)) {
+        throw new Error("Identity nonce has already been used");
+      }
+      identityNonces.set(nonce, expiresAt);
+    },
+    async deleteExpired(now: Date) {
+      let deleted = 0;
+      for (const [nonce, expiresAt] of identityNonces) {
+        if (expiresAt.getTime() <= now.getTime()) {
+          identityNonces.delete(nonce);
+          deleted += 1;
+        }
+      }
+      return deleted;
+    },
+  };
   const routineDefinitionRepository = new InMemoryRoutineDefinitionRepository();
   const webhookDestinationRepository = new InMemoryWebhookDestinationRepository();
   const webhookDestinations = new DefaultWebhookDestinationAdapter(new WebhookDestinationService({
@@ -1322,6 +1345,7 @@ export const createTestDependencies = (overrides: {
     bootstrapGreetingCacheRepository,
     usageLimitPolicy,
     agentService,
+    contextVariableRepository,
     turnRouter,
     conversationEngine: createConversationEngine(),
     routineStore: routineStateStore,
@@ -1532,6 +1556,7 @@ export const createTestDependencies = (overrides: {
     workspaceRepository,
     agentRepository,
     contextVariableRepository,
+    identityNonceRepository,
     bootstrapGreetingCacheRepository,
     conversationRepository,
     conversationOwnershipRepository,

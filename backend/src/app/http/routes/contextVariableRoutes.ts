@@ -7,6 +7,7 @@ import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../m
 import { validateBody } from "../middleware/validate.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import type { ContextVariableScope } from "../../../modules/context-variables/public.js";
+import { deriveVisitorIdentitySigningKey } from "../../../modules/context-variables/public.js";
 
 const MAX_CONTEXT_VARIABLE_VALUE_BYTES = 32 * 1024;
 
@@ -111,7 +112,7 @@ const agentContextVariableEnablementBodySchema = z.object({
 
 type ContextVariableRouteDependencies = WorkspaceSessionDependencies & Pick<
   AppDependencies,
-  "accountAccessService" | "agentRepository" | "contextVariableRepository"
+  "accountAccessService" | "agentRepository" | "contextVariableRepository" | "env"
 >;
 
 const parseParams = <T extends z.AnyZodObject>(schema: T, params: unknown): z.infer<T> => {
@@ -257,6 +258,26 @@ export const createContextVariableRoutes = (dependencies: ContextVariableRouteDe
     }
   });
 
+  router.get("/agents/:agentId/context-variables/signing-key", workspaceSession, contextManage, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const { agentId } = parseParams(z.object({ agentId: z.string().uuid() }), req.params);
+      await requireAgent(dependencies, workspaceId, agentId);
+      if (!dependencies.env.WORKSPACE_TOKEN_SECRET) {
+        throw badRequest("Workspace token signing is not configured");
+      }
+      res.status(200).json({
+        signingKey: deriveVisitorIdentitySigningKey(
+          dependencies.env.WORKSPACE_TOKEN_SECRET,
+          workspaceId,
+          agentId,
+        ).toString("hex"),
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.put(
     "/agents/:agentId/context-variables/:variableId",
     workspaceSession,
@@ -360,4 +381,3 @@ export const createContextVariableRoutes = (dependencies: ContextVariableRouteDe
 
   return router;
 };
-

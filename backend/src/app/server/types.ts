@@ -74,6 +74,7 @@ import type { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveServ
 import type { RoutineDefinitionService, RoutineDraftAssistService } from "../../modules/routines/public.js";
 import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.js";
 import type { ContextVariableRepositoryPort } from "../../db/repositories/contextVariableRepository.js";
+import type { IdentityNonceRepositoryPort } from "../../db/repositories/identityNonceRepository.js";
 import type { EmailSkillActivityRepositoryPort } from "../../db/repositories/emailSkillActivityRepository.js";
 import type { DocumentSourceRepositoryPort } from "../../db/repositories/documentSourceRepository.js";
 import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
@@ -177,6 +178,7 @@ export interface AppDependencies {
   workspaceRepository: WorkspaceRepositoryPort;
   agentRepository: AgentRepositoryPort;
   contextVariableRepository: ContextVariableRepositoryPort;
+  identityNonceRepository: IdentityNonceRepositoryPort;
   userRepository: UserRepositoryPort;
   accountRepository: AccountRepositoryPort;
   bootstrapGreetingCacheRepository: BootstrapGreetingCacheRepositoryPort;

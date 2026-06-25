@@ -1216,6 +1216,8 @@ export class ChatService {
     channelContext?: ConversationChannelContext | null;
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
+    verifiedCustomerId?: string | null;
+    verifiedIdentity?: Record<string, unknown> | null;
   }): Promise<ChatResponse> {
     return traceOperation({
       name: "chat.turn",
@@ -1240,6 +1242,8 @@ export class ChatService {
     channelContext?: ConversationChannelContext | null;
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
+    verifiedCustomerId?: string | null;
+    verifiedIdentity?: Record<string, unknown> | null;
   }): Promise<ChatResponse> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
@@ -1404,6 +1408,8 @@ export class ChatService {
     channelContext?: ConversationChannelContext | null;
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
+    verifiedCustomerId?: string | null;
+    verifiedIdentity?: Record<string, unknown> | null;
   }): AsyncIterable<ChatStreamEvent> {
     yield* traceAsyncIterable({
       name: "chat.turn",
@@ -1428,6 +1434,8 @@ export class ChatService {
     channelContext?: ConversationChannelContext | null;
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
+    verifiedCustomerId?: string | null;
+    verifiedIdentity?: Record<string, unknown> | null;
   }): AsyncIterable<ChatStreamEvent> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;

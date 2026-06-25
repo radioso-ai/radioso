@@ -78,6 +78,7 @@ const envSchema = z.object({
   SESSION_COOKIE_NAME: z.string().min(1).default("radioso_session"),
   SESSION_COOKIE_SECRET: z.string().min(16),
   WORKSPACE_TOKEN_SECRET: emptyStringToUndefined(z.string().min(16)),
+  WORKSPACE_TOKEN_SECRET_PREVIOUS: emptyStringToUndefined(z.string().min(16)),
   PUBLIC_CHAT_SESSION_SECRET: emptyStringToUndefined(z.string().min(16)),
   WEBSITE_EMBED_SECRET: emptyStringToUndefined(z.string().min(16)),
   RADIOSO_MCP_SIGNING_SECRET: emptyStringToUndefined(z.string().min(16)),

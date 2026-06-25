@@ -96,6 +96,8 @@ export interface PrepareChatSessionInput {
   channelContext?: ConversationChannelContext | null;
   anonymousSessionId?: string | null;
   sourceOrigin?: string | null;
+  verifiedCustomerId?: string | null;
+  verifiedIdentity?: Record<string, unknown> | null;
 }
 
 export interface PrepareChatSessionOptions {
@@ -263,12 +265,39 @@ export class ChatSessionPreparer {
     if (input.anonymousSessionId) {
       scopes.push({ type: "session", id: input.anonymousSessionId });
     }
+    if (input.verifiedCustomerId) {
+      scopes.push({ type: "customer", id: input.verifiedCustomerId });
+    }
     scopes.push({ type: "agent", id: agent.id });
     scopes.push({ type: "workspace", id: input.workspaceId });
     try {
-      return await this.contextVariableRepository.resolveForAgent(input.workspaceId, agent.id, scopes);
+      const resolved = await this.contextVariableRepository.resolveForAgent(input.workspaceId, agent.id, scopes);
+      if (!input.verifiedIdentity) {
+        return resolved;
+      }
+      return [
+        ...resolved,
+        {
+          name: "visitor_identity",
+          description: "Verified visitor identity supplied by the host.",
+          value: input.verifiedIdentity,
+          surfacing: "on_reference",
+          sensitive: true,
+          trust: "verified",
+        },
+      ];
     } catch {
-      return [];
+      if (!input.verifiedIdentity) {
+        return [];
+      }
+      return [{
+        name: "visitor_identity",
+        description: "Verified visitor identity supplied by the host.",
+        value: input.verifiedIdentity,
+        surfacing: "on_reference",
+        sensitive: true,
+        trust: "verified",
+      }];
     }
   }
 

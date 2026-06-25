@@ -99,6 +99,7 @@ export interface OpenApiSchemaCatalog {
   ContextVariableListResponseSchema: z.ZodTypeAny;
   ContextVariableParamsSchema: RouteParameterSchema;
   ContextVariableResponseSchema: z.ZodTypeAny;
+  ContextVariableSigningKeyResponseSchema: z.ZodTypeAny;
   ContextVariableUpdateRequestSchema: z.ZodTypeAny;
   ContextVariableValueDeleteRequestSchema: z.ZodTypeAny;
   ContextVariableValueQuerySchema: RouteParameterSchema;

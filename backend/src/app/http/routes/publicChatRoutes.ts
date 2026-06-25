@@ -13,6 +13,7 @@ import { validateBody } from "../middleware/validate.js";
 import { collectionPageQuerySchema, conversationTailQuerySchema, conversationWindowQuerySchema } from "./conversationRouteSchemas.js";
 import { isAllowedWebsiteEmbedOrigin } from "../../../shared/domain/websiteEmbed.js";
 import { getWebsiteEmbedSurfaceSettings } from "../../../modules/agents/public.js";
+import { verifySignedIdentity } from "../../../modules/context-variables/public.js";
 import {
   issuePublicChatResumeToken,
   issuePublicChatSession,
@@ -52,11 +53,47 @@ type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & Pick<
   | "chatHistoryService"
   | "conversationRepository"
   | "documentStorage"
+  | "identityNonceRepository"
   | "logger"
   | "workspaceRepository"
   | "accountAccessService"
   | "accessGrantService"
 >;
+
+const verifyRequestSignedIdentity = async (
+  dependencies: PublicChatRouteDependencies,
+  input: {
+    token?: string;
+    workspaceId: string;
+    agentId: string;
+    anonymousSessionId: string;
+    sourceOrigin: string | null;
+  },
+) => {
+  if (!input.token || !input.sourceOrigin) {
+    return null;
+  }
+
+  try {
+    return await verifySignedIdentity({
+      token: input.token,
+      workspaceId: input.workspaceId,
+      agentId: input.agentId,
+      boundSessionId: input.anonymousSessionId,
+      boundOrigin: input.sourceOrigin,
+      now: Date.now(),
+      secrets: [
+        dependencies.env.WORKSPACE_TOKEN_SECRET,
+        dependencies.env.WORKSPACE_TOKEN_SECRET_PREVIOUS,
+      ].filter((secret): secret is string => Boolean(secret)),
+      isNonceUsed: (nonce) => dependencies.identityNonceRepository.isUsed(nonce),
+      markNonceUsed: (nonce, expiresAt) =>
+        dependencies.identityNonceRepository.markUsed(nonce, input.workspaceId, new Date(expiresAt)),
+    });
+  } catch {
+    return null;
+  }
+};
 
 export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies): Router => {
   const router = Router();
@@ -543,7 +580,6 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           sourceOrigin: string | null;
           citationDisplayEnabled: boolean;
         };
-
         // `startConversation` requests the proactive greeting, which carries no
         // user message. If a message is also present, the caller is starting a
         // conversation *with* that message (a reasonable reading of the flag) —
@@ -574,6 +610,14 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           return;
         }
 
+        const verifiedIdentity = await verifyRequestSignedIdentity(dependencies, {
+          token: req.body.signedIdentity,
+          workspaceId,
+          agentId,
+          anonymousSessionId,
+          sourceOrigin,
+        });
+
         const input = {
           workspaceId,
           agentId,
@@ -587,6 +631,10 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           sourceChannel,
           anonymousSessionId,
           sourceOrigin,
+          verifiedCustomerId: verifiedIdentity?.customerId,
+          verifiedIdentity: verifiedIdentity
+            ? { customerId: verifiedIdentity.customerId, ...verifiedIdentity.attributes }
+            : undefined,
         };
 
         if (input.stream) {

@@ -161,6 +161,13 @@ export const registerContextVariableSchemas = (registry: OpenAPIRegistry, schema
     scopeId: z.string(),
   });
 
+  const ContextVariableSigningKeyResponseSchema = registry.register(
+    "ContextVariableSigningKeyResponse",
+    z.object({
+      signingKey: z.string().regex(/^[0-9a-f]{64}$/),
+    }),
+  );
+
   Object.assign(schemas, {
     AgentContextVariableEnablementListResponseSchema,
     AgentContextVariableEnablementRequestSchema,
@@ -170,6 +177,7 @@ export const registerContextVariableSchemas = (registry: OpenAPIRegistry, schema
     ContextVariableListResponseSchema,
     ContextVariableParamsSchema,
     ContextVariableResponseSchema,
+    ContextVariableSigningKeyResponseSchema,
     ContextVariableUpdateRequestSchema,
     ContextVariableValueDeleteRequestSchema,
     ContextVariableValueQuerySchema,

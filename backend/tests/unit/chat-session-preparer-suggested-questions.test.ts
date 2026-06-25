@@ -411,4 +411,69 @@ describe("ChatSessionPreparer suggested-question settings", () => {
     });
     expect(session.resolvedContext.snapshot).toMatchObject({ cart: { items: 2 } });
   });
+
+  it("adds the verified customer scope before agent scope and stages verified identity", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const agentRepository = new InMemoryAgentRepository();
+    const agent = await agentRepository.create("ws-1", { name: "Shop Bot" });
+    const retrievalTurn: RetrievalTurnPort = {
+      async interpret(request: RetrievalPipelineRequest) {
+        return {
+          request,
+          traceStartedAtMs: Date.now(),
+          context: { result: {} as never, startedAt: Date.now(), durationMs: 0 },
+          interpretation: { result: {}, startedAt: Date.now(), durationMs: 0 },
+        };
+      },
+      async dispatch(input) {
+        return fixedRetrievalResult(input.interpreted.request);
+      },
+    };
+    const resolveForAgent = vi.fn(async () => []);
+    const preparer = new ChatSessionPreparer(
+      conversationRepository,
+      messageRepository,
+      retrievalTurn,
+      createAuditService(),
+      undefined,
+      { async resolve() { return agent; } },
+      undefined,
+      { resolveForAgent },
+    );
+
+    const session = await preparer.prepare({
+      workspaceId: "ws-1",
+      agentId: agent.id,
+      query: "What is my plan?",
+      anonymousSessionId: "sess-1",
+      verifiedCustomerId: "cust-1",
+      verifiedIdentity: { customerId: "cust-1", plan: "pro" },
+    });
+
+    expect(resolveForAgent).toHaveBeenCalledWith("ws-1", agent.id, [
+      { type: "session", id: "sess-1" },
+      { type: "customer", id: "cust-1" },
+      { type: "agent", id: agent.id },
+      { type: "workspace", id: "ws-1" },
+    ]);
+    expect(session.stagedContext).toContainEqual({
+      kind: "context_variable",
+      id: "visitor_identity",
+      data: {
+        kind: "variable",
+        name: "visitor_identity",
+        description: "Verified visitor identity supplied by the host.",
+        value: { customerId: "cust-1", plan: "pro" },
+        trust: "verified",
+      },
+      metadata: {
+        variableName: "visitor_identity",
+        surfacing: "on_reference",
+        trustTier: "verified",
+        sensitive: true,
+      },
+    });
+    expect(session.resolvedContext.snapshot).toMatchObject({ visitor_identity: "[redacted]" });
+  });
 });

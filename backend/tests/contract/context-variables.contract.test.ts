@@ -2,6 +2,7 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 
 import { createTestApp, issueTestToken } from "../support/testApp.js";
+import { deriveVisitorIdentitySigningKey } from "../../src/modules/context-variables/public.js";
 
 const createAgent = async (app: ReturnType<typeof createTestApp>["app"], authorization: string) =>
   request(app)
@@ -25,6 +26,26 @@ const createContextVariable = async (app: ReturnType<typeof createTestApp>["app"
     .expect(201);
 
 describe("context variable HTTP API", () => {
+  it("reveals the per-agent visitor identity signing key to workspace admins", async () => {
+    const { app, dependencies } = createTestApp();
+    const { token, workspaceId } = await issueTestToken(app, "context-vars-signing-key@example.com");
+    const authorization = `Bearer ${token}`;
+    const agent = await createAgent(app, authorization);
+
+    const response = await request(app)
+      .get(`/api/v1/agents/${agent.body.id}/context-variables/signing-key`)
+      .set("Authorization", authorization)
+      .expect(200);
+
+    expect(response.body).toEqual({
+      signingKey: deriveVisitorIdentitySigningKey(
+        dependencies.env.WORKSPACE_TOKEN_SECRET!,
+        workspaceId,
+        agent.body.id,
+      ).toString("hex"),
+    });
+  });
+
   it("manages workspace context variable declarations", async () => {
     const { app } = createTestApp();
     const { token } = await issueTestToken(app, "context-vars-catalog@example.com");
@@ -225,4 +246,3 @@ describe("context variable HTTP API", () => {
       .expect(404);
   });
 });
-

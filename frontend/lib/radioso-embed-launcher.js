@@ -7,6 +7,7 @@
   const DEFAULT_INITIAL_STATE = 'collapsed'
   const READY_MESSAGE = 'radioso:embed:ready'
   const SESSION_MESSAGE = 'radioso:embed:session'
+  const IDENTITY_MESSAGE = 'radioso:embed:identity'
   const ERROR_MESSAGE = 'radioso:embed:error'
   const COLLAPSE_MESSAGE = 'radioso:embed:collapse'
   const FULLSCREEN_MESSAGE = 'radioso:embed:fullscreen'
@@ -32,6 +33,7 @@
   const LAUNCHER_RETURN_TRANSITION = 'transform 820ms cubic-bezier(0.22, 1.42, 0.36, 1)'
   const LAUNCHER_TRAIL_COLORS = ['#FFC720', '#FFE08A', '#F4B400']
   const LAUNCHER_RELEASE_COLORS = ['#FFC720', '#FFE08A', '#22C55E', '#38BDF8', '#A78BFA', '#FB7185', '#F97316']
+  let signedIdentityToken = null
   const defaultCopy = {
     launcherDefaultLabel: 'Chat with us',
     iframeTitle: 'Radioso embedded chat',
@@ -1367,6 +1369,16 @@
     let suppressNextLauncherClick = false
     let bootstrapPromise = null
     let iframe = null
+    const postIdentityToIframe = () => {
+      if (iframe && iframe.contentWindow) {
+        iframe.contentWindow.postMessage({ type: IDENTITY_MESSAGE, signedIdentity: signedIdentityToken }, scriptUrl.origin)
+      }
+    }
+    window.Radioso = window.Radioso || {}
+    window.Radioso.identify = (identityToken) => {
+      signedIdentityToken = typeof identityToken === 'string' && identityToken.trim() ? identityToken.trim() : null
+      postIdentityToIframe()
+    }
 
     const applyResponsiveLayout = () => {
       const viewport = getViewportFrame()
@@ -1547,7 +1559,7 @@
             if (sessionAvatarUrl && iconContainer) {
               setLauncherAvatarMarkup(iconContainer, icon, sessionAvatarUrl)
             }
-            activeContentWindow.postMessage({ type: SESSION_MESSAGE, session, pageContext, resumed }, scriptUrl.origin)
+            activeContentWindow.postMessage({ type: SESSION_MESSAGE, session, pageContext, signedIdentity: signedIdentityToken, resumed }, scriptUrl.origin)
           })
           .catch((error) => {
             if (!activeContentWindow || iframe !== activeIframe) {

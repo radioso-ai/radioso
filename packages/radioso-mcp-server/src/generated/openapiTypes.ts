@@ -1034,6 +1034,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{agentId}/context-variables/signing-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Reveal the per-agent signed visitor identity key */
+        get: operations["getAgentContextVariableSigningKey"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agentId}/context-variables/{variableId}": {
         parameters: {
             query?: never;
@@ -3425,6 +3442,10 @@ export interface components {
                             /** @enum {string} */
                             kind: "variableRef";
                             ref: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "contextVariableRef";
+                            contextVariable: string;
                         };
                     };
                     outputAssignments?: {
@@ -3516,6 +3537,10 @@ export interface components {
                             /** @enum {string} */
                             kind: "variableRef";
                             ref: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "contextVariableRef";
+                            contextVariable: string;
                         };
                     };
                     outputAssignments?: {
@@ -3566,7 +3591,7 @@ export interface components {
             ok: boolean;
             diagnostics: {
                 /** @enum {string} */
-                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "variable_name_collision";
+                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "unknown_context_variable" | "variable_name_collision";
                 location: string;
                 message: string;
             }[];
@@ -3619,6 +3644,10 @@ export interface components {
                             /** @enum {string} */
                             kind: "variableRef";
                             ref: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "contextVariableRef";
+                            contextVariable: string;
                         };
                     };
                     outputAssignments?: {
@@ -3751,6 +3780,10 @@ export interface components {
                                 /** @enum {string} */
                                 kind: "variableRef";
                                 ref: string;
+                            } | {
+                                /** @enum {string} */
+                                kind: "contextVariableRef";
+                                contextVariable: string;
                             };
                         };
                         outputAssignments?: {
@@ -4783,6 +4816,7 @@ export interface components {
                 browserLocale?: string | null;
                 content?: string | null;
             };
+            signedIdentity?: string;
             inputMetadata?: {
                 /** @enum {string} */
                 method: "typed" | "suggestion_click" | "intent_click";
@@ -5351,6 +5385,9 @@ export interface components {
         };
         ContextVariableValueResponse: {
             value: components["schemas"]["ContextVariableValue"];
+        };
+        ContextVariableSigningKeyResponse: {
+            signingKey: string;
         };
         PendingApprovalDecisionOption: {
             id: string;
@@ -8857,6 +8894,55 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentContextVariableEnablementListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentContextVariableSigningKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signing key returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextVariableSigningKeyResponse"];
+                };
+            };
+            /** @description Signing is not configured */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Authentication required */

@@ -12,6 +12,16 @@ export {
   ContextResolutionService,
   resolveContextForTurn,
 } from "./contextResolutionService.js";
+export {
+  deriveVisitorIdentitySigningKey,
+  signVisitorIdentity,
+  verifySignedIdentity,
+} from "./identitySigning.js";
+export type {
+  SignedVisitorIdentityPayload,
+  VerifiedVisitorIdentity,
+  VerifySignedIdentityInput,
+} from "./identitySigning.js";
 export { ContextVariableResolverService } from "./contextVariableResolverService.js";
 export type {
   ResolvedTurnContext,

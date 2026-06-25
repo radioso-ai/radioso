@@ -4002,6 +4002,28 @@
                               "ref"
                             ],
                             "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "contextVariableRef"
+                                ]
+                              },
+                              "contextVariable": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120,
+                                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "contextVariable"
+                            ],
+                            "additionalProperties": false
                           }
                         ]
                       }
@@ -4502,6 +4524,28 @@
                               "ref"
                             ],
                             "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "contextVariableRef"
+                                ]
+                              },
+                              "contextVariable": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120,
+                                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "contextVariable"
+                            ],
+                            "additionalProperties": false
                           }
                         ]
                       }
@@ -4813,6 +4857,7 @@
                     "input_type_mismatch",
                     "unknown_input_binding",
                     "unknown_variable_ref",
+                    "unknown_context_variable",
                     "variable_name_collision"
                   ]
                 },
@@ -5078,6 +5123,28 @@
                             "required": [
                               "kind",
                               "ref"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "contextVariableRef"
+                                ]
+                              },
+                              "contextVariable": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120,
+                                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "contextVariable"
                             ],
                             "additionalProperties": false
                           }
@@ -5727,6 +5794,28 @@
                                 "required": [
                                   "kind",
                                   "ref"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "contextVariableRef"
+                                    ]
+                                  },
+                                  "contextVariable": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 120,
+                                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "contextVariable"
                                 ],
                                 "additionalProperties": false
                               }
@@ -9702,6 +9791,10 @@
               }
             }
           },
+          "signedIdentity": {
+            "type": "string",
+            "maxLength": 8192
+          },
           "inputMetadata": {
             "type": "object",
             "properties": {
@@ -12006,6 +12099,18 @@
         },
         "required": [
           "value"
+        ]
+      },
+      "ContextVariableSigningKeyResponse": {
+        "type": "object",
+        "properties": {
+          "signingKey": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "signingKey"
         ]
       },
       "PendingApprovalDecisionOption": {
@@ -16891,6 +16996,73 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentContextVariableEnablementListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/context-variables/signing-key": {
+      "get": {
+        "tags": [
+          "Context Variables"
+        ],
+        "summary": "Reveal the per-agent signed visitor identity key",
+        "operationId": "getAgentContextVariableSigningKey",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Signing key returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContextVariableSigningKeyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Signing is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

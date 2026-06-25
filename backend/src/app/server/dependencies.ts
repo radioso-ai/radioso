@@ -695,6 +695,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceRepository: repositories.workspaceRepository,
     agentRepository: repositories.agentRepository,
     contextVariableRepository,
+    identityNonceRepository: repositories.identityNonceRepository,
     bootstrapGreetingCacheRepository: repositories.bootstrapGreetingCacheRepository,
     conversationRepository: repositories.conversationRepository,
     conversationOwnershipRepository: repositories.conversationOwnershipRepository,

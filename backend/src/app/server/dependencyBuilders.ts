@@ -5,6 +5,7 @@ import { ActionRequestRepository } from "../../db/repositories/actionRequestRepo
 import { AccessGrantRepository } from "../../db/repositories/accessGrantRepository.js";
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
 import { ContextVariableRepository } from "../../db/repositories/contextVariableRepository.js";
+import { IdentityNonceRepository } from "../../db/repositories/identityNonceRepository.js";
 import { RoutineDefinitionRepository } from "../../db/repositories/routineDefinitionRepository.js";
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
 import { PendingDecisionRepository } from "../../db/repositories/pendingDecisionRepository.js";
@@ -345,6 +346,7 @@ export const buildRepositories = (
   // migrated to Kysely in a later pass, so it keeps the raw Database here.
   customerEmailConnectionRepository: new CustomerEmailConnectionRepository(database.kysely),
   integrationConnectionRepository: new IntegrationConnectionRepository(database.kysely),
+  identityNonceRepository: new IdentityNonceRepository(database.kysely),
   slackInstallationRepository: new SlackInstallationRepository(database.kysely),
   slackChannelBindingRepository: new SlackChannelBindingRepository(database.kysely),
   emailSkillDefinitionRepository: new EmailSkillDefinitionRepository(database.kysely),

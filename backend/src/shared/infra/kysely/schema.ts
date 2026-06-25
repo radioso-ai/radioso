@@ -287,6 +287,13 @@ export interface ConnectorWhatsappMessageLog {
   workspace_id: string;
 }
 
+export interface ContextIdentityNonces {
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp;
+  nonce: string;
+  workspace_id: string;
+}
+
 export interface ContextVariables {
   created_at: Generated<Timestamp>;
   default_surfacing: string;
@@ -921,6 +928,7 @@ export interface DB {
   connector_sync_state: ConnectorSyncState;
   connector_whatsapp_contacts: ConnectorWhatsappContacts;
   connector_whatsapp_message_log: ConnectorWhatsappMessageLog;
+  context_identity_nonces: ContextIdentityNonces;
   context_variable_values: ContextVariableValues;
   context_variables: ContextVariables;
   conversation_ownership: ConversationOwnership;

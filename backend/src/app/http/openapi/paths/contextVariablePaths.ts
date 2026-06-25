@@ -108,6 +108,22 @@ export const registerContextVariablePaths = (
   });
 
   registry.registerPath({
+    method: "get",
+    path: "/api/v1/agents/{agentId}/context-variables/signing-key",
+    tags: ["Context Variables"],
+    summary: "Reveal the per-agent signed visitor identity key",
+    operationId: "getAgentContextVariableSigningKey",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.AgentParamsSchema },
+    responses: {
+      200: { description: "Signing key returned", content: { "application/json": { schema: schemas.ContextVariableSigningKeyResponseSchema } } },
+      400: { description: "Signing is not configured", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
     method: "put",
     path: "/api/v1/agents/{agentId}/context-variables/{variableId}",
     tags: ["Context Variables"],
@@ -207,4 +223,3 @@ export const registerContextVariablePaths = (
     },
   });
 };
-

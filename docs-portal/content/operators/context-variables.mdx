@@ -62,6 +62,74 @@ Trust tier describes how much the system should trust the value.
 In practice, identity-sensitive behavior should depend on signed or backend
 pushed values, not on plain browser input.
 
+## Signed visitor identity
+
+Signed visitor identity lets a website backend prove which customer is using an
+embedded chat session. This is the only browser path that unlocks
+customer-scoped context values.
+
+First, reveal the per-agent signing key from an authenticated workspace-admin
+session:
+
+```text
+GET /api/v1/agents/{agentId}/context-variables/signing-key
+```
+
+The response contains a hex HMAC key derived for that workspace and agent. It is
+not stored as a separate database secret.
+
+Your backend signs this payload:
+
+```json
+{
+  "customerId": "cus_123",
+  "sessionId": "public-session-id",
+  "origin": "https://example.com",
+  "issuedAt": 1782398400000,
+  "nonce": "unique-random-value",
+  "attributes": {
+    "plan": "pro"
+  }
+}
+```
+
+Create the token as:
+
+```text
+payload = base64url(JSON.stringify(payloadObject))
+signature = base64url(HMAC_SHA256(signingKeyBytes, payload))
+token = payload + "." + signature
+```
+
+Then pass it to the launcher:
+
+```js
+window.Radioso.identify(token)
+```
+
+Radioso verifies the token on each message. Verification is strict:
+
+- the signature must match the current or previous workspace token secret
+- `issuedAt` must be within the acceptance window, currently five minutes
+- `sessionId` must match the established public chat session
+- `origin` must match the approved embed origin
+- `nonce` must not have been used before inside the acceptance window
+
+If any check fails, the identity is treated as absent. The visitor turn still
+continues as anonymous. Radioso does not expose token, payload, or secret values
+in logs.
+
+When verification succeeds, Radioso adds the `customer` scope to context
+resolution:
+
+```text
+session -> customer -> agent -> workspace
+```
+
+It also exposes a sensitive built-in `visitor_identity` context value with
+verified trust. Unsigned browser identity never gets verified trust and never
+unlocks customer-scoped data.
+
 ## Surfacing
 
 Surfacing controls whether a resolved value is shown to the model as part of

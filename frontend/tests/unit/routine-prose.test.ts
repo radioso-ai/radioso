@@ -558,6 +558,55 @@ describe('routineToChipDoc (inverse serializer)', () => {
     // A new prose draft emits a null completion instruction so routines do not say "All set."
     // as an extra final step.
     expect(base.terminals[0]?.instruction).toBeNull()
+
+    // Authored step metadata the chips can't carry would be dropped on a round-trip.
+    expect(routineToChipDoc({ ...base, steps: [{ ...base.steps[0]!, metadata: { custom: 'x' } }] })).toBeNull()
+    // Skill-binding metadata and the outline label are preserved, so they don't force a fallback.
+    expect(routineToChipDoc({ ...base, steps: [{ ...base.steps[0]!, metadata: { outlineLabel: 'Do a thing.' } }] })).not.toBeNull()
+    // A handoff terminal no transition targets would be dropped on a round-trip.
+    expect(routineToChipDoc({ ...base, terminals: [...base.terminals, { stableStepId: 'handoff', kind: 'handoff', instruction: 'x', ordinal: 1 }] })).toBeNull()
+  })
+
+  it('falls back to Form for a counter jump whose limit lives only in guardText', () => {
+    const looped = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: [
+        { text: 'Ask for code', chips: [], headingLevel: 1 },
+        { text: 'Check the code', chips: [], headingLevel: 1 },
+        { text: 'If the code is wrong,', chips: [{ kind: 'step', refId: 'ask_for_code', counterLimit: 3 }] },
+      ],
+      variables: [],
+    })
+    expect(routineToChipDoc(looped)).not.toBeNull()
+    const guardTextOnly = {
+      ...looped,
+      transitions: looped.transitions.map((transition) =>
+        transition.guardKind === 'counter' ? { ...transition, counterLimit: null, guardText: '3' } : transition),
+    }
+    expect(routineToChipDoc(guardTextOnly)).toBeNull()
+  })
+
+  it('falls back to Form for a field guard missing its ref or operator', () => {
+    const field = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: [
+        { text: 'Look up the {{slot.status}}.', chips: [{ kind: 'variable', refId: 'status' }] },
+        { text: '', chips: [
+          { kind: 'condition', refId: 'status', op: 'equals', value: 'final' },
+          { kind: 'end', refId: 'done' },
+        ] },
+      ],
+      variables: [{ id: 'status', name: 'status', type: 'text' }],
+    })
+    expect(routineToChipDoc(field)).not.toBeNull()
+    const broken = {
+      ...field,
+      transitions: field.transitions.map((transition) =>
+        transition.guardKind === 'field' ? { ...transition, fieldRef: undefined, fieldOp: undefined } : transition),
+    }
+    expect(routineToChipDoc(broken)).toBeNull()
   })
 
   it('compiles and round-trips an outcome guard branch from a tool step', () => {

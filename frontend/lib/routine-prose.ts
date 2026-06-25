@@ -149,6 +149,11 @@ const HANDOFF_TERMINAL_ID = 'handoff'
 // The default message a handoff terminal carries when the author hasn't set one.
 const DEFAULT_HANDOFF_INSTRUCTION = 'Bringing in a teammate.'
 
+// Step metadata keys the chip document preserves: the skill-binding state (tool steps) and
+// the outline label (a titled step's heading). Any other key is authored metadata the prose
+// round-trip can't carry, so routineToChipDoc falls back to Form when it sees one.
+const PRESERVED_STEP_METADATA_KEYS = new Set(['inputBindings', 'outputAssignments', 'mode', 'outlineLabel'])
+
 // A condition chip whose refId is this sentinel is an outcome guard, not a variable
 // comparison: it branches on the preceding tool step's result status (carried in the chip's
 // `value`), compiling to a `guardKind: 'outcome'` transition. The sentinel can't collide with
@@ -716,6 +721,10 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
   if (steps.some((step) => step.kind === 'tool' && !step.toolRef)) return null
   // An action step with no action type can't be shown as an action chip.
   if (steps.some((step) => step.kind === 'action' && !step.actionType)) return null
+  // The chip document only carries the skill-binding metadata and the outline label; any other
+  // authored step metadata (the schema is passthrough, and the compiler emits it into the
+  // graph) would be dropped on a prose round-trip, so fall back to Form.
+  if (steps.some((step) => Object.keys(step.metadata ?? {}).some((key) => !PRESERVED_STEP_METADATA_KEYS.has(key)))) return null
 
   // Prose collapses to a single complete terminal and at most one handoff. More than one of
   // either is a real multi-ending graph that only the Form view can author.
@@ -729,6 +738,10 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
   const handoff = handoffTerminals[0]
   const completeId = complete.stableStepId
   const handoffId = handoff?.stableStepId ?? null
+  // A handoff terminal is rendered only as the target of a handoff branch. One that no
+  // transition targets would be silently dropped on a round-trip (draftFromChipDoc only emits
+  // the handoff terminal when a handoff chip is present), so fall back to Form.
+  if (handoff && !routine.transitions.some((transition) => transition.toRef === handoff.stableStepId)) return null
   const stepIds = new Set(steps.map((step) => step.stableStepId))
   if (routine.transitions.some((transition) => !stepIds.has(transition.fromStep))) return null
 
@@ -901,10 +914,17 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
     // bound makes it a safe backward loop). A jump can only target a titled step (it needs a
     // stable name). An outcome guard must carry a status. Anything else isn't prose-shaped.
     const chainTarget = steps[index + 1]?.stableStepId ?? completeId
-    // True when a guard prefix (condition chip / AI prose / outcome chip) can render. An
-    // outcome guard with no status can't, so it falls back to Form.
+    // True when a guard prefix (condition chip / AI prose / outcome chip) can render. A field
+    // guard without its ref+operator, or an outcome guard with no status, can't — the prose
+    // would round-trip to a different guard kind, so it falls back to Form.
     const guardRenders = (edge: RoutineTransition): boolean =>
-      edge.guardKind === 'llm' || edge.guardKind === 'field' || (edge.guardKind === 'outcome' && Boolean(edge.outcomeStatus))
+      edge.guardKind === 'llm'
+      || (edge.guardKind === 'field' && Boolean(edge.fieldRef) && Boolean(edge.fieldOp))
+      || (edge.guardKind === 'outcome' && Boolean(edge.outcomeStatus))
+    // A counter jump's bound rides on the step chip's counterLimit; one whose limit lives only
+    // in guardText would round-trip to an unbounded (llm) jump, so require the explicit limit.
+    const counterRenders = (edge: RoutineTransition): boolean =>
+      edge.guardKind === 'counter' && edge.counterLimit != null
     let sawChain = false
     for (const edge of [...(outgoing.get(step.stableStepId) ?? [])].sort((left, right) => left.ordinal - right.ordinal)) {
       if (edge.guardKind === 'default') {
@@ -914,7 +934,7 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
         paragraphs.push(branchParagraph(edge, nameByRef, { kind: 'chip', chipKind: 'handoff', refId: HANDOFF_TERMINAL_ID, label: HANDOFF_CHIP_LABEL }))
       } else if (edge.toRef === completeId && guardRenders(edge)) {
         paragraphs.push(branchParagraph(edge, nameByRef, { kind: 'chip', chipKind: 'end', refId: DONE_TERMINAL_ID, label: 'end' }))
-      } else if (stepIds.has(edge.toRef) && (guardRenders(edge) || edge.guardKind === 'counter')) {
+      } else if (stepIds.has(edge.toRef) && (guardRenders(edge) || counterRenders(edge))) {
         const targetTitle = titleByStepId.get(edge.toRef)
         if (!targetTitle) return null
         paragraphs.push(branchParagraph(edge, nameByRef, {

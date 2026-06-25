@@ -23,7 +23,7 @@ export interface AuditEventRepositoryPort {
     metadata?: Record<string, unknown>;
   }): Promise<AuditEventRecord>;
   listChatAnswerEventsByConversationId(workspaceId: string, conversationId: string): Promise<AuditEventRecord[]>;
-  listChatAnswerEventsByAssistantMessageIds(
+  listChatTurnEventsByAssistantMessageIds(
     workspaceId: string,
     conversationId: string,
     assistantMessageIds: string[],
@@ -115,7 +115,7 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
     return rows.map((row) => mapAuditEvent(row as AuditEventRow));
   }
 
-  async listChatAnswerEventsByAssistantMessageIds(
+  async listChatTurnEventsByAssistantMessageIds(
     workspaceId: string,
     conversationId: string,
     assistantMessageIds: string[],
@@ -124,11 +124,14 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
       return [];
     }
 
+    // Both completed (`chat.answer`) and suspended (`chat.suspended`, HITL/durable-async
+    // turns awaiting an action or approval) carry the turn-trace envelope the debug panel
+    // renders. Reading only `chat.answer` hid the panel for action-required turns.
     const rows = await this.db
       .selectFrom("audit_events")
       .select(auditEventColumns)
       .where("workspace_id", "=", workspaceId)
-      .where("event_type", "=", "chat.answer")
+      .where("event_type", "in", ["chat.answer", "chat.suspended"])
       .where((eb) => eb(jsonbKeyText(eb.ref("metadata_json"), "conversationId"), "=", conversationId))
       .where((eb) => anyOf(jsonbKeyText(eb.ref("metadata_json"), "assistantMessageId"), assistantMessageIds, "text[]"))
       .orderBy("created_at", "asc")

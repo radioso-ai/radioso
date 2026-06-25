@@ -708,6 +708,56 @@ describe("chat history service", () => {
     });
   });
 
+  it("surfaces citations and the debug envelope for suspended (action-required) turns", async () => {
+    const { conversationRepository, messageRepository, auditRepository, service } = createService();
+
+    const conversation = await conversationRepository.create("workspace-1");
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "Please email the course details to the team.",
+    });
+    const assistant = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "Here is a draft you can copy/paste.",
+    });
+
+    // HITL / durable-async turns persist their audit event as `chat.suspended`,
+    // not `chat.answer`. The history panel must still resolve their citations and
+    // turn-trace envelope from that record.
+    await auditRepository.create({
+      workspaceId: "workspace-1",
+      eventType: "chat.suspended",
+      eventStatus: "success",
+      metadata: {
+        conversationId: conversation.id,
+        assistantMessageId: assistant.id,
+        citationCount: 1,
+        citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Course overview" }],
+        answerOutcome: "grounded_success",
+        turnTrace: {
+          version: 1,
+          spine: {
+            traceId: "conversation-turn-suspended",
+            startedAt: "2026-03-23T00:00:00.000Z",
+            stages: [{ id: "gather", kind: "gather", status: "applied" }],
+          },
+        },
+      },
+    });
+
+    const detail = await service.getConversation("workspace-1", conversation.id);
+    const assistantMessage = detail.messages.find((message) => message.role === "assistant");
+
+    expect(assistantMessage?.citations).toEqual([
+      { documentId: "doc-1", chunkId: "chunk-1", title: "Course overview" },
+    ]);
+    expect(assistantMessage?.debug?.turnTrace?.spine.traceId).toBe("conversation-turn-suspended");
+  });
+
   it("preserves provider-defined suggestion kinds and action payloads on reload", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();
 

@@ -50,6 +50,14 @@ describeIntegration("AuditEventRepository (Postgres)", () => {
       metadata: { conversationId, assistantMessageId },
     });
 
+  const chatSuspended = (assistantMessageId: string) =>
+    repository.create({
+      workspaceId,
+      eventType: "chat.suspended",
+      eventStatus: "success",
+      metadata: { conversationId, assistantMessageId },
+    });
+
   it("filters chat.answer events by conversationId and assistantMessageId via ->>", async () => {
     const a = await chatAnswer("m1");
     const b = await chatAnswer("m2");
@@ -58,9 +66,16 @@ describeIntegration("AuditEventRepository (Postgres)", () => {
     const byConv = await repository.listChatAnswerEventsByConversationId(workspaceId, conversationId);
     expect(byConv.map((e) => e.id).sort()).toEqual([a.id, b.id].sort());
 
-    const byMsg = await repository.listChatAnswerEventsByAssistantMessageIds(workspaceId, conversationId, ["m2"]);
+    const byMsg = await repository.listChatTurnEventsByAssistantMessageIds(workspaceId, conversationId, ["m2"]);
     expect(byMsg.map((e) => e.id)).toEqual([b.id]);
-    expect(await repository.listChatAnswerEventsByAssistantMessageIds(workspaceId, conversationId, [])).toEqual([]);
+    expect(await repository.listChatTurnEventsByAssistantMessageIds(workspaceId, conversationId, [])).toEqual([]);
+  });
+
+  it("returns suspended turns too, so the debug panel resolves their turnTrace", async () => {
+    const suspended = await chatSuspended("m-suspended");
+
+    const byMsg = await repository.listChatTurnEventsByAssistantMessageIds(workspaceId, conversationId, ["m-suspended"]);
+    expect(byMsg.map((e) => e.id)).toEqual([suspended.id]);
   });
 
   it("sanitizes invalid text characters before writing metadata jsonb", async () => {

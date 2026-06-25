@@ -877,7 +877,7 @@ export class ChatHistoryService {
     const assistantMessageIds = messages
       .filter((message) => message.role === "assistant")
       .map((message) => message.id);
-    const auditEvents = await this.auditEventRepository.listChatAnswerEventsByAssistantMessageIds(
+    const auditEvents = await this.auditEventRepository.listChatTurnEventsByAssistantMessageIds(
       workspaceId,
       conversation.id,
       assistantMessageIds,

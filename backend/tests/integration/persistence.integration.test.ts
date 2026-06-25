@@ -66,7 +66,7 @@ const noopAuditRepository = {
   async listChatAnswerEventsByConversationId() {
     return [];
   },
-  async listChatAnswerEventsByAssistantMessageIds() {
+  async listChatTurnEventsByAssistantMessageIds() {
     return [];
   },
   async findLatestChatAnswerEventByConversationId() {

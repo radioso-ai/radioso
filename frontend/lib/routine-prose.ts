@@ -1,4 +1,4 @@
-import type { RoutineDefinitionDraft, RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineReentryMode, RoutineSlotType, RoutineTransition } from './api-types'
+import type { RoutineCompletionExport, RoutineDefinitionDraft, RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineReentryMode, RoutineSlotType, RoutineTransition } from './api-types'
 import { approvalOptionTransitions } from './routine-approval'
 
 export const ROUTINE_SLOT_TYPES: RoutineSlotType[] = ['text', 'number', 'boolean', 'email', 'date']
@@ -183,6 +183,13 @@ export function readProseTerminals(routine: RoutineDefinitionDraft): { complete:
   }
 }
 
+// Read the completion-export config off a routine so the prose host can edit it and re-emit
+// it. Returns null when export is absent or disabled — the prose body does not encode it, so
+// the host carries it alongside (like the terminal messages and priority/reentry).
+export function readProseCompletionExport(routine: RoutineDefinitionDraft): RoutineCompletionExport | null {
+  return routine.completionExport?.enabled ? routine.completionExport : null
+}
+
 export const createEmptyRoutineProseDraft = (input: {
   name?: string
   triggerDescription?: string
@@ -222,6 +229,9 @@ export function draftFromChipDoc(input: {
   // The terminal ids + messages to emit. The chip body only references the canonical
   // `done`/`handoff`; these resolve those refs to the actual terminal the routine keeps.
   terminals?: ProseTerminalConfig
+  // Completion export config carried alongside the body (not encoded in chips). Included on
+  // the draft only when enabled.
+  completionExport?: RoutineCompletionExport | null
 }): RoutineDefinitionDraft {
   // Keep blocks with prose or chips (a branch can be pure chips: a condition + target).
   const blocks = input.blocks.filter((block) => block.text.trim().length > 0 || block.chips.length > 0)
@@ -599,6 +609,8 @@ export function draftFromChipDoc(input: {
     steps,
     transitions,
     terminals,
+    // Carry completion export through only when enabled, so a routine without it stays clean.
+    ...(input.completionExport?.enabled ? { completionExport: input.completionExport } : {}),
   }
 }
 
@@ -687,17 +699,17 @@ function branchParagraph(edge: RoutineTransition, nameByRef: Map<string, string>
 
 // Inverse of draftFromChipDoc: rebuild the chip document (variables + paragraphs with
 // inline chips) from a routine, so an existing routine can be edited in the prose editor.
-// Chat steps and skill-bound tool steps are representable, and field/llm/counter/outcome
-// guards round-trip; it returns null for shapes the prose editor can't show — action (outbox)
-// steps, slot_filled guards, an outcome guard with no status, a jump to an untitled step,
-// multiple complete/handoff terminals, an activation gate, or completion export — so the
-// caller falls back to the form editor rather than silently dropping that configuration. The complete/handoff terminal's id and message are
-// not dropped: the host reads them with readProseTerminals and feeds them back to
-// draftFromChipDoc, so a custom id or copy round-trips even though the body only references
-// the canonical `done`/`handoff`.
+// Chat/tool/action steps and field/llm/counter/outcome guards round-trip; it returns null for
+// shapes the prose editor can't show — slot_filled guards, an outcome guard with no status, an
+// action step with no action type, a jump to a step whose id is not a clean slug, multiple
+// complete/handoff terminals, or an activation gate — so the caller falls back to the form
+// editor rather than silently dropping that configuration. Routine-level config the body does
+// not encode — the complete/handoff terminal id + message and the completion export — is not
+// dropped: the host reads it with readProseTerminals / readProseCompletionExport and feeds it
+// back to draftFromChipDoc, so it round-trips even though the body only references the
+// canonical `done`/`handoff`.
 export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | null {
   if (routine.activation.gateRef) return null
-  if (routine.completionExport?.enabled) return null
 
   const steps = [...routine.steps].sort((left, right) => left.ordinal - right.ordinal)
   if (steps.some((step) => step.kind !== 'chat' && step.kind !== 'tool' && step.kind !== 'approval' && step.kind !== 'action')) return null

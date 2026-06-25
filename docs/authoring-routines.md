@@ -421,18 +421,23 @@ The form exposes:
 - completion export through a `webhook_call` skill
 
 A routine that uses any of these advanced shapes - a slot-filled branch, more than
-one completion or handoff, an activation gate, or a completion export - opens in
-**Form** automatically. The **Prose** tab shows a short note pointing you to
-**Form** for that routine. (Optional and editable-after-completion slots, custom
-completion or handoff messages, custom terminal ids, outcome branches, and action
-steps are all authored in **Prose** too.)
+one completion or handoff, or an activation gate - opens in **Form**
+automatically. The **Prose** tab shows a short note pointing you to **Form** for
+that routine. (Optional and editable-after-completion slots, custom completion or
+handoff messages, custom terminal ids, outcome branches, action steps, and
+completion export are all authored in **Prose** too.)
 
 ### Completion export
 
-Completion export is configured as an agent skill. Create or edit a
-`webhook_call` skill, commonly named `completion_export`, and bind it to a
-workspace webhook destination. The routine runtime invokes that skill when a
-published routine reaches completion.
+You turn completion export on from the **Completion export** panel below the
+editor, in either the **Prose** or the **Form** view: enable it, pick a workspace
+webhook destination, and choose which terminal kinds (`complete`, `handoff`)
+trigger it. When the routine reaches a matching terminal, it sends the collected
+slot data to that destination.
+
+The destination itself is a workspace webhook destination, surfaced to routines
+through a `webhook_call` skill, commonly named `completion_export`. The routine
+runtime invokes that skill when a published routine reaches a matching terminal.
 
 The stored routine shape still contains completion export metadata:
 

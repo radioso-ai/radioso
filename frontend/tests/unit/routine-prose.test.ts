@@ -6,6 +6,7 @@ import {
   draftFromChipDoc,
   formatConditionLabel,
   OUTCOME_GUARD_REF,
+  readProseCompletionExport,
   readProseTerminals,
   routineToChipDoc,
   slugifyVariableKey,
@@ -546,8 +547,6 @@ describe('routineToChipDoc (inverse serializer)', () => {
     expect(routineToChipDoc({ ...base, transitions: [{ ...base.transitions[0]!, guardKind: 'counter', counterLimit: 2 }] })).toBeNull()
     // An activation gate would be silently dropped on a prose round-trip.
     expect(routineToChipDoc({ ...base, activation: { ...base.activation, gateRef: 'gate_1' } })).toBeNull()
-    // Completion export would be silently dropped on a prose round-trip.
-    expect(routineToChipDoc({ ...base, completionExport: { enabled: true, triggerKinds: ['complete'], destinationRef: 'dest_1' } })).toBeNull()
     // More than one complete terminal isn't a prose shape (branches target distinct endings).
     expect(routineToChipDoc({ ...base, terminals: [...base.terminals, { stableStepId: 'done2', kind: 'complete', instruction: 'x', ordinal: 1 }] })).toBeNull()
     // More than one handoff terminal isn't a prose shape either.
@@ -666,6 +665,36 @@ describe('routineToChipDoc (inverse serializer)', () => {
       terminals: config,
     })
     expect(redraft.terminals.find((terminal) => terminal.kind === 'handoff')).toEqual(handoff)
+  })
+
+  it('reads and round-trips completion export config', () => {
+    const draft = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: [{ text: 'Do a thing.', chips: [] }],
+      variables: [],
+      completionExport: { enabled: true, triggerKinds: ['complete'], destinationRef: 'dest_1' },
+    })
+    expect(draft.completionExport).toEqual({ enabled: true, triggerKinds: ['complete'], destinationRef: 'dest_1' })
+    // A routine with completion export now opens in prose instead of falling back to Form.
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    expect(readProseCompletionExport(draft)).toEqual({ enabled: true, triggerKinds: ['complete'], destinationRef: 'dest_1' })
+
+    const redraft = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: paragraphsToBlocks(doc!.paragraphs),
+      variables: doc!.variables,
+      completionExport: readProseCompletionExport(draft),
+    })
+    expect(redraft.completionExport).toEqual(draft.completionExport)
+  })
+
+  it('omits completion export when it is disabled or absent', () => {
+    const none = draftFromChipDoc({ name: 'x', trigger: 'y', blocks: [{ text: 'Do a thing.', chips: [] }], variables: [] })
+    expect(none.completionExport).toBeUndefined()
+    expect(readProseCompletionExport(none)).toBeNull()
   })
 
   it('defaults to a done terminal with null instruction when no terminal config is given', () => {

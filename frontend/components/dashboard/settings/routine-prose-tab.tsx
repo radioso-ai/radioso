@@ -4,11 +4,14 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { RoutineChipEditor, type RoutineEditorVariable } from '@/components/dashboard/settings/routine-chip-editor'
 import type { RoutineChipKind } from '@/components/dashboard/settings/routine-chip-node'
+import { RoutineCompletionExportPanel } from '@/components/dashboard/settings/routine-completion-export-panel'
 import { RoutineTerminalMessages } from '@/components/dashboard/settings/routine-terminal-messages'
 import type { RoutineDefinitionDraft } from '@/lib/api'
-import type { RoutineSlotType } from '@/lib/api-types'
+import type { RoutineCompletionExport, RoutineSlotType, WebhookDestination } from '@/lib/api-types'
 import type { RoutineDraftHeader } from '@/lib/routine-form'
-import { draftFromChipDoc, readProseTerminals, routineToChipDoc, type ChipDocVariable, type RoutineDocBlock } from '@/lib/routine-prose'
+import { draftFromChipDoc, readProseCompletionExport, readProseTerminals, routineToChipDoc, type ChipDocVariable, type RoutineDocBlock } from '@/lib/routine-prose'
+
+const DISABLED_COMPLETION_EXPORT: RoutineCompletionExport = { enabled: false, triggerKinds: ['complete'], destinationRef: '' }
 
 // The prose view of the routine editor. It loads an existing routine into inline chips
 // (via routineToChipDoc), owns the chip-document state, and emits a draft up whenever the
@@ -19,11 +22,17 @@ import { draftFromChipDoc, readProseTerminals, routineToChipDoc, type ChipDocVar
 export function RoutineProseTab({
   source,
   header,
+  webhookDestinations,
+  isWebhookDestinationsLoading,
+  webhookDestinationsError,
   onDraftChange,
   onHeaderChange,
 }: {
   source: RoutineDefinitionDraft
   header: RoutineDraftHeader
+  webhookDestinations: WebhookDestination[]
+  isWebhookDestinationsLoading: boolean
+  webhookDestinationsError: string | null
   onDraftChange: (draft: RoutineDefinitionDraft | null) => void
   // Pasting a whole routine carries its name/trigger; lift them back into the host header.
   onHeaderChange?: (update: (header: RoutineDraftHeader) => RoutineDraftHeader) => void
@@ -38,6 +47,12 @@ export function RoutineProseTab({
   const initialTerminals = useMemo(() => readProseTerminals(source), [source])
   const [completionMessage, setCompletionMessage] = useState(initialTerminals.complete.instruction ?? '')
   const [handoffMessage, setHandoffMessage] = useState(initialTerminals.handoff?.instruction ?? '')
+
+  // Completion export is routine-level config the body doesn't encode; seed it from the loaded
+  // routine and edit it in the panel below the editor.
+  const [completionExport, setCompletionExport] = useState<RoutineCompletionExport>(
+    () => readProseCompletionExport(source) ?? DISABLED_COMPLETION_EXPORT,
+  )
 
   // The handoff message only applies when the routine actually hands off — show its input
   // when a handoff branch exists in the body or the loaded routine already had one.
@@ -71,6 +86,7 @@ export function RoutineProseTab({
         complete: { id: initialTerminals.complete.id, instruction: completionMessage },
         handoff: { id: initialTerminals.handoff?.id, instruction: handoffMessage },
       },
+      completionExport,
     })
     onDraftChange({
       ...draft,
@@ -82,7 +98,7 @@ export function RoutineProseTab({
         reentryMode: header.activation.reentryMode,
       },
     })
-  }, [loaded, blocks, variables, header, initialTerminals, completionMessage, handoffMessage, onDraftChange])
+  }, [loaded, blocks, variables, header, initialTerminals, completionMessage, handoffMessage, completionExport, onDraftChange])
 
   const addVariable = (variable: RoutineEditorVariable) => {
     setVariables((current) =>
@@ -147,6 +163,14 @@ export function RoutineProseTab({
         handoffMessage={handoffMessage}
         onHandoffMessageChange={setHandoffMessage}
         showHandoff={usesHandoff}
+      />
+      <RoutineCompletionExportPanel
+        idPrefix="routineProseTab"
+        value={completionExport}
+        onChange={setCompletionExport}
+        webhookDestinations={webhookDestinations}
+        isLoading={isWebhookDestinationsLoading}
+        error={webhookDestinationsError}
       />
     </div>
   )

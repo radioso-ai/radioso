@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import {
+  baseWebhookDestination,
   defaultAgentId,
   installDashboardApiMocks,
   seedDashboardStorage,
@@ -78,6 +79,40 @@ test("author a routine with variable and skill chips, set a type, and save", asy
   // The completion message persists on the complete terminal.
   const completeTerminal = (created?.body?.terminals ?? []).find((terminal: { kind: string; instruction?: string | null }) => terminal.kind === "complete");
   expect(completeTerminal?.instruction).toBe("Thanks, your refund is on the way.");
+});
+
+test("completion export is configured and saved from the prose composer", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+  const destination = baseWebhookDestination();
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates, webhookDestinations: [destination] });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "New routine" }).click();
+  await expect(page.getByRole("tab", { name: "Prose" })).toHaveAttribute("data-state", "active");
+
+  await page.getByLabel("Name", { exact: true }).fill("Capture lead");
+  await page.getByLabel("Activation trigger", { exact: true }).fill("When a visitor shares contact details");
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+  await editor.pressSequentially("Collect the visitor's email.");
+
+  // Completion export is a routine-level config the prose view now owns (parity with Form).
+  await page.getByRole("button", { name: "Enable" }).click();
+  await page.getByRole("combobox", { name: "Webhook destination" }).click();
+  await page.getByRole("option", { name: destination.name }).click();
+
+  await page.getByRole("button", { name: "Save draft" }).click();
+
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  const created = routineUpdates.find((update) => update.method === "POST");
+  expect(created?.body?.completionExport).toMatchObject({
+    enabled: true,
+    destinationRef: destination.id,
+    triggerKinds: ["complete"],
+  });
 });
 
 test("a blank form draft can switch back to prose without advanced fallback", async ({ page }) => {

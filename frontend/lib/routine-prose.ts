@@ -149,6 +149,18 @@ const HANDOFF_TERMINAL_ID = 'handoff'
 // The default message a handoff terminal carries when the author hasn't set one.
 const DEFAULT_HANDOFF_INSTRUCTION = 'Bringing in a teammate.'
 
+// A condition chip whose refId is this sentinel is an outcome guard, not a variable
+// comparison: it branches on the preceding tool step's result status (carried in the chip's
+// `value`), compiling to a `guardKind: 'outcome'` transition. The sentinel can't collide with
+// a real variable id — slugifyVariableKey strips leading/trailing underscores, so it never
+// produces `__outcome__`.
+export const OUTCOME_GUARD_REF = '__outcome__'
+
+// True when a condition chip is an outcome guard (refId sentinel + a status in `value`).
+function isOutcomeConditionChip(chip: { refId: string; value?: RoutineFieldGuardValue | null }): boolean {
+  return chip.refId === OUTCOME_GUARD_REF && typeof chip.value === 'string' && chip.value.trim().length > 0
+}
+
 // The terminal id + message the prose editor preserves outside the chip body (the body only
 // references the canonical `done`/`handoff`). Fields are optional: an omitted id defaults to
 // the canonical terminal id, and an omitted completion message defaults to null / the handoff
@@ -244,9 +256,10 @@ export function draftFromChipDoc(input: {
       usedSlotIds.add(match[1]!)
     }
     // A condition chip branches on a variable — that's a slot reference too. A condition on a
-    // decision is not a slot (the capture key isn't a declared variable), so skip those.
+    // decision is not a slot (the capture key isn't a declared variable), and an outcome guard
+    // branches on a step result, not a slot, so skip both.
     for (const chip of block.chips) {
-      if (chip.kind === 'condition' && !decisionOptions.has(chip.refId)) usedSlotIds.add(chip.refId)
+      if (chip.kind === 'condition' && !decisionOptions.has(chip.refId) && chip.refId !== OUTCOME_GUARD_REF) usedSlotIds.add(chip.refId)
       if (chip.kind === 'skill') {
         for (const binding of Object.values(chip.inputBindings ?? {})) {
           if (binding.kind === 'variableRef') usedSlotIds.add(binding.ref)
@@ -297,7 +310,19 @@ export function draftFromChipDoc(input: {
   const branchFrom = (fromStep: string, toRef: string, block: RoutineDocBlock) => {
     const condition = block.chips.find((chip) => chip.kind === 'condition')
     const stepChip = block.chips.find((chip) => chip.kind === 'step')
-    if (condition?.op) {
+    if (condition && isOutcomeConditionChip(condition)) {
+      // An outcome guard branches on the preceding tool step's result status (held in the
+      // chip's `value`). The backend validates that fromStep is actually a tool step.
+      transitions.push({
+        fromStep,
+        toRef,
+        guardKind: 'outcome',
+        guardText: null,
+        outcomeStatus: String(condition.value).trim(),
+        counterLimit: null,
+        ordinal: ordinal++,
+      })
+    } else if (condition?.op) {
       // A condition on a decision branches on the chosen option id: `<captureKey>.id`. A
       // condition on an ordinary slot branches on the slot itself.
       const fieldRef = decisionOptions.has(condition.refId) ? `${condition.refId}.id` : condition.refId
@@ -640,6 +665,11 @@ function branchGuardSegments(edge: RoutineTransition, nameByRef: Map<string, str
     // decided-in-code after a reload (issue: "once decided by AI, can't go back").
     return [{ kind: 'chip', chipKind: 'condition', refId: '', label: edge.guardText, value: edge.guardText }]
   }
+  if (edge.guardKind === 'outcome' && edge.outcomeStatus) {
+    // An outcome guard renders as an outcome-mode condition chip: the sentinel refId marks it
+    // as a step-result branch (not a variable comparison) and the status rides in `value`.
+    return [{ kind: 'chip', chipKind: 'condition', refId: OUTCOME_GUARD_REF, label: `outcome is ${edge.outcomeStatus}`, value: edge.outcomeStatus }]
+  }
   return []
 }
 
@@ -651,11 +681,11 @@ function branchParagraph(edge: RoutineTransition, nameByRef: Map<string, string>
 
 // Inverse of draftFromChipDoc: rebuild the chip document (variables + paragraphs with
 // inline chips) from a routine, so an existing routine can be edited in the prose editor.
-// Chat steps and skill-bound tool steps are representable; it returns null for shapes the
-// prose editor can't show — action (outbox) steps, counter/outcome/slot guards, multi-way
-// forks, a non-handoff branch target, multiple complete/handoff terminals, an activation
-// gate, or completion export — so the caller falls back to the form editor rather than
-// silently dropping that configuration. The complete/handoff terminal's id and message are
+// Chat steps and skill-bound tool steps are representable, and field/llm/counter/outcome
+// guards round-trip; it returns null for shapes the prose editor can't show — action (outbox)
+// steps, slot_filled guards, an outcome guard with no status, a jump to an untitled step,
+// multiple complete/handoff terminals, an activation gate, or completion export — so the
+// caller falls back to the form editor rather than silently dropping that configuration. The complete/handoff terminal's id and message are
 // not dropped: the host reads them with readProseTerminals and feeds them back to
 // draftFromChipDoc, so a custom id or copy round-trips even though the body only references
 // the canonical `done`/`handoff`.
@@ -816,21 +846,25 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
     }
 
     // A step continues via exactly one default edge (to the next step, or the complete
-    // terminal for the last step). Non-default edges are branches: llm/field to a terminal
-    // (handoff/end), or llm/field/counter to another step (a jump — a counter bound makes it
-    // a safe backward loop). A jump can only target a titled step (it needs a stable name).
-    // Anything else isn't prose-shaped.
+    // terminal for the last step). Non-default edges are branches: llm/field/outcome to a
+    // terminal (handoff/end), or llm/field/counter/outcome to another step (a jump — a counter
+    // bound makes it a safe backward loop). A jump can only target a titled step (it needs a
+    // stable name). An outcome guard must carry a status. Anything else isn't prose-shaped.
     const chainTarget = steps[index + 1]?.stableStepId ?? completeId
+    // True when a guard prefix (condition chip / AI prose / outcome chip) can render. An
+    // outcome guard with no status can't, so it falls back to Form.
+    const guardRenders = (edge: RoutineTransition): boolean =>
+      edge.guardKind === 'llm' || edge.guardKind === 'field' || (edge.guardKind === 'outcome' && Boolean(edge.outcomeStatus))
     let sawChain = false
     for (const edge of [...(outgoing.get(step.stableStepId) ?? [])].sort((left, right) => left.ordinal - right.ordinal)) {
       if (edge.guardKind === 'default') {
         if (sawChain || edge.toRef !== chainTarget) return null
         sawChain = true
-      } else if (handoffId && edge.toRef === handoffId && (edge.guardKind === 'llm' || edge.guardKind === 'field')) {
+      } else if (handoffId && edge.toRef === handoffId && guardRenders(edge)) {
         paragraphs.push(branchParagraph(edge, nameByRef, { kind: 'chip', chipKind: 'handoff', refId: HANDOFF_TERMINAL_ID, label: HANDOFF_CHIP_LABEL }))
-      } else if (edge.toRef === completeId && (edge.guardKind === 'llm' || edge.guardKind === 'field')) {
+      } else if (edge.toRef === completeId && guardRenders(edge)) {
         paragraphs.push(branchParagraph(edge, nameByRef, { kind: 'chip', chipKind: 'end', refId: DONE_TERMINAL_ID, label: 'end' }))
-      } else if (stepIds.has(edge.toRef) && (edge.guardKind === 'llm' || edge.guardKind === 'field' || edge.guardKind === 'counter')) {
+      } else if (stepIds.has(edge.toRef) && (guardRenders(edge) || edge.guardKind === 'counter')) {
         const targetTitle = titleByStepId.get(edge.toRef)
         if (!targetTitle) return null
         paragraphs.push(branchParagraph(edge, nameByRef, {

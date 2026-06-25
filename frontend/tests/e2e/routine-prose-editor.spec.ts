@@ -347,6 +347,52 @@ test("a handoff chip on its own line compiles a forking routine", async ({ page 
   expect(transitions.some((transition: { guardKind: string; toRef: string }) => transition.guardKind === "llm" && transition.toRef === "handoff")).toBe(true);
 });
 
+test("an outcome chip compiles a branch on the preceding skill's result", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Refund with outcome");
+  await page.getByLabel("Trigger", { exact: true }).fill("When a customer wants a refund");
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+  // A skill step: its result is what the outcome branch keys on.
+  await editor.pressSequentially("Issue the ");
+  await editor.pressSequentially("@refund");
+  await expect(page.getByRole("option", { name: "Skill (not in catalog): refund" })).toBeVisible();
+  await page.getByRole("option", { name: "Skill (not in catalog): refund" }).click();
+  await expect(page.locator('[data-routine-chip="skill"]')).toBeVisible();
+  await page.keyboard.press("Enter"); // new line for the branch
+
+  // Add a handoff target on the branch line.
+  await page.keyboard.type("@human");
+  await expect(page.getByRole("option", { name: "Handoff: human" })).toBeVisible();
+  await page.getByRole("option", { name: "Handoff: human" }).click();
+  await expect(page.locator('[data-routine-chip="handoff"]')).toBeVisible();
+
+  // Author the outcome guard via the toolbar dialog.
+  await page.getByRole("button", { name: "Outcome" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Outcome status").fill("failed");
+  await dialog.getByRole("button", { name: "Add outcome branch" }).click();
+  await expect(page.locator('[data-routine-chip="condition"][data-guard-mode="outcome"]')).toBeVisible();
+
+  await page.getByRole("button", { name: "Save routine" }).click();
+
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  const created = routineUpdates.find((update) => update.method === "POST");
+  const steps = created?.body?.steps ?? [];
+  const toolStep = steps.find((step: { kind: string; stableStepId: string }) => step.kind === "tool");
+  expect(toolStep).toBeTruthy();
+  const transitions = created?.body?.transitions ?? [];
+  const outcomeEdge = transitions.find((transition: { guardKind: string }) => transition.guardKind === "outcome");
+  expect(outcomeEdge).toMatchObject({ guardKind: "outcome", outcomeStatus: "failed", toRef: "handoff", fromStep: toolStep.stableStepId });
+});
+
 test("a condition chip compiles a decided-in-code (field) branch", async ({ page }) => {
   const routineUpdates: RoutineMutationFixture[] = [];
 

@@ -96,6 +96,10 @@ inline reference, not raw syntax. Each kind has its own colour:
   button (see [Approval gates](#approval-gates)).
 - **Condition** - a decided-in-code comparison on a variable. Build it from the
   **Condition** toolbar button (see below).
+- **Outcome** - a branch on the result of the skill step before it. Insert it from
+  the **Outcome** toolbar button on a branch line after a skill step, and give the
+  result status (for example `succeeded` or `failed`); the branch fires when the
+  skill returns that status (see [Branch on a skill outcome](#branch-on-a-skill-outcome)).
 - **Step title** - names a step so a jump can target it. Use the **Step** toolbar
   button to turn the current line into a titled step; its title becomes a stable
   id, and the following lines are that step's instruction. Untitled lines are
@@ -219,6 +223,24 @@ slot you collected, set `channel` to a fixed value, and store the returned
 
 A required input must resolve to a literal, or to a variable that is always set
 before the step runs. If it cannot, validation reports it (see below).
+
+## Branch on a skill outcome
+
+A skill step returns a result status - its **outcome** - such as `succeeded` or
+`failed`. An outcome branch forks on that status: it fires when the skill the
+step ran returns the status you name.
+
+In **Prose**, put the branch on a line after a skill step, click the **Outcome**
+toolbar button, and type the status. Statuses the agent's skills declare are
+offered as suggestions, but any status is allowed. Add a target on the same line
+(End, Handoff, or a step) the way you would for any branch.
+
+The outcome branch must sit on a line after a skill step - the status comes from
+that step's result. Validation reports an outcome branch that is not on a skill
+step.
+
+In practice: issue a refund, then branch on `failed` to hand off to a person and
+let the default path continue when it succeeds.
 
 ## Branch rows
 
@@ -364,6 +386,10 @@ chips:
 - an end is `-> end`, a handoff is `-> handoff`, and a jump is `-> step:<id>`
 - a decided-in-code check is `[if amount >= 100]`
 
+The portable text form has no marker for approval gates or outcome branches, so a
+routine that uses either copies in-app only (paste it back into a prose editor in
+the same app) rather than as portable text.
+
 To restore the routine, paste the text back into the prose editor. The markers
 become chips again, and the name and trigger fill in from the text. The text
 carries the body, the name, the trigger, and each variable's type and flags, but
@@ -391,11 +417,12 @@ The form exposes:
 - completion export through a `webhook_call` skill
 
 A routine that uses any of these advanced shapes - an action (outbox) step, a
-counter, outcome, or slot-filled branch, more than one completion or handoff, an
-activation gate, or a completion export - opens in **Form** automatically. The
-**Prose** tab shows a short note pointing you to **Form** for that routine.
-(Optional and editable-after-completion slots, custom completion or handoff
-messages, and custom terminal ids are all authored in **Prose** too.)
+slot-filled branch, a jump to an untitled step, more than one completion or
+handoff, an activation gate, or a completion export - opens in **Form**
+automatically. The **Prose** tab shows a short note pointing you to **Form** for
+that routine. (Optional and editable-after-completion slots, custom completion or
+handoff messages, custom terminal ids, and outcome branches are all authored in
+**Prose** too.)
 
 ### Completion export
 

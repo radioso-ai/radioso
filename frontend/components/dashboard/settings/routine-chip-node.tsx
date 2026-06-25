@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState, type ComponentType, type JSX } from 'react'
-import { AlertTriangle, BadgeCheck, ChevronDown, CornerUpRight, Flag, Gavel, Plus, Sparkles, Trash2, Zap, type LucideIcon } from 'lucide-react'
+import { AlertTriangle, BadgeCheck, ChevronDown, CornerUpRight, Flag, Gavel, Plus, Sparkles, Trash2, Workflow, Zap, type LucideIcon } from 'lucide-react'
 import {
   $getNodeByKey,
   $getRoot,
@@ -40,7 +40,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { APPROVAL_OPTION_LIMIT } from '@/lib/routine-approval'
 import type { RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineSlotType } from '@/lib/api-types'
-import { ROUTINE_SLOT_TYPES, slugifyVariableKey, type ApprovalDocOption, type RoutineInputBinding, type RoutineSkillBindingState, type RoutineStepMode } from '@/lib/routine-prose'
+import { OUTCOME_GUARD_REF, ROUTINE_SLOT_TYPES, slugifyVariableKey, type ApprovalDocOption, type RoutineInputBinding, type RoutineSkillBindingState, type RoutineStepMode } from '@/lib/routine-prose'
 
 import { useRoutineVariables } from '@/components/dashboard/settings/routine-variables-context'
 
@@ -626,6 +626,32 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
     )
   }
 
+  if (kind === 'condition' && refId === OUTCOME_GUARD_REF) {
+    // An outcome guard branches on the preceding tool step's result status. It is neither a
+    // decided-in-code rule nor an AI phrase, so it shows its own badge and only offers Remove.
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button type="button" contentEditable={false} data-routine-chip={kind} data-guard-mode="outcome" className="mx-0.5 cursor-pointer align-baseline outline-none">
+            <ChipBadge
+              kind={kind}
+              label={label}
+              type={null}
+              icon={Workflow}
+              suffix="outcome"
+              className="border-amber-300 bg-amber-100 text-amber-900"
+            />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-56">
+          <DropdownMenuLabel>Branch on the skill outcome</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={removeSelf}>Remove</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )
+  }
+
   if (kind === 'condition') {
     // A condition shows its decision mode and can be switched either way: decided-in-code
     // (a structured rule, op set) ⇄ decided-by-AI (a free phrase, no op). The mode is read
@@ -988,6 +1014,14 @@ export function $createConditionChipNode(
 // and shown as the label). Compiles to an `llm` guard; togglable to a decided-in-code chip.
 export function $createAiConditionChipNode(phrase: string): ChipNode {
   return new ChipNode('condition', '', phrase, undefined, null, phrase)
+}
+
+// An outcome guard chip: a condition that branches on the preceding tool step's result
+// status (held in `value`). The sentinel refId marks it as a step-result branch rather than
+// a variable comparison; it compiles to an `outcome` guard.
+export function $createOutcomeConditionChipNode(status: string): ChipNode {
+  const trimmed = status.trim()
+  return new ChipNode('condition', OUTCOME_GUARD_REF, `outcome is ${trimmed}`, undefined, null, trimmed)
 }
 
 export function $isChipNode(node: LexicalNode | null | undefined): node is ChipNode {

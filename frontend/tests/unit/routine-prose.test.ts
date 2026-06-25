@@ -5,6 +5,7 @@ import {
   createEmptyRoutineProseDraft,
   draftFromChipDoc,
   formatConditionLabel,
+  OUTCOME_GUARD_REF,
   readProseTerminals,
   routineToChipDoc,
   slugifyVariableKey,
@@ -475,6 +476,53 @@ describe('routineToChipDoc (inverse serializer)', () => {
     // A new prose draft emits a null completion instruction so routines do not say "All set."
     // as an extra final step.
     expect(base.terminals[0]?.instruction).toBeNull()
+  })
+
+  it('compiles and round-trips an outcome guard branch from a tool step', () => {
+    const draft = draftFromChipDoc({
+      name: 'Refund',
+      trigger: 'wants a refund',
+      blocks: [
+        { text: 'Issue the refund ', chips: [{ kind: 'skill', refId: 'issue_refund' }] },
+        { text: '', chips: [
+          { kind: 'condition', refId: OUTCOME_GUARD_REF, value: 'failed' },
+          { kind: 'handoff', refId: 'handoff' },
+        ] },
+      ],
+      variables: [],
+    })
+    const toolStep = draft.steps.find((step) => step.kind === 'tool')!
+    const outcomeEdge = draft.transitions.find((transition) => transition.guardKind === 'outcome')
+    expect(outcomeEdge).toMatchObject({ fromStep: toolStep.stableStepId, guardKind: 'outcome', outcomeStatus: 'failed' })
+    // The outcome sentinel is not collected as a slot.
+    expect(draft.slots).toEqual([])
+
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    const redraft = draftFromChipDoc({ name: 'Refund', trigger: 'wants a refund', blocks: paragraphsToBlocks(doc!.paragraphs), variables: doc!.variables })
+    expect(redraft.transitions.find((transition) => transition.guardKind === 'outcome')).toMatchObject({ guardKind: 'outcome', outcomeStatus: 'failed' })
+  })
+
+  it('falls back to Form for an outcome guard that carries no status', () => {
+    const base = draftFromChipDoc({
+      name: 'Refund',
+      trigger: 'wants a refund',
+      blocks: [
+        { text: 'Issue the refund ', chips: [{ kind: 'skill', refId: 'issue_refund' }] },
+        { text: '', chips: [
+          { kind: 'condition', refId: OUTCOME_GUARD_REF, value: 'failed' },
+          { kind: 'handoff', refId: 'handoff' },
+        ] },
+      ],
+      variables: [],
+    })
+    expect(routineToChipDoc(base)).not.toBeNull()
+    const stripped = {
+      ...base,
+      transitions: base.transitions.map((transition) =>
+        transition.guardKind === 'outcome' ? { ...transition, outcomeStatus: null } : transition),
+    }
+    expect(routineToChipDoc(stripped)).toBeNull()
   })
 
   it('reads and round-trips a custom completion message and terminal id', () => {

@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
+import type { Kysely, Transaction } from "kysely";
 
 import { currentTimestamp } from "../../../shared/infra/kysely/sqlHelpers.js";
-import type { Db } from "../../../shared/infra/kysely/types.js";
+import type { DB, Db } from "../../../shared/infra/kysely/types.js";
 import { conflict, notFound } from "../../../shared/domain/errors.js";
 import type {
   CreateOauthConnectionInput,
@@ -17,6 +18,7 @@ import type {
   IntegrationConnectionRecord,
   IntegrationConnectionRepositoryPort,
 } from "../../integrationConnections/public.js";
+import { slackBotScopes } from "../manifest/slackManifest.js";
 
 export interface SlackInstallationRecord {
   id: string;
@@ -35,6 +37,7 @@ export interface SlackChannelBindingRecord {
   workspaceId: string;
   answeringAgentId: string;
   escalationChannelId: string | null;
+  gapEscalationEnabled: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -52,6 +55,7 @@ export interface UpsertSlackBindingInput {
   workspaceId: string;
   answeringAgentId: string;
   escalationChannelId?: string | null;
+  gapEscalationEnabled?: boolean;
 }
 
 export interface SlackInstallationRepositoryPort {
@@ -88,6 +92,7 @@ export interface SaveSlackInstallationInput {
   grantedScopes: string[];
   answeringAgentId?: string;
   escalationChannelId?: string | null;
+  gapEscalationEnabled?: boolean;
 }
 
 export interface SaveSlackInstallationResult {
@@ -112,6 +117,14 @@ const toStoredTokens = (input: SaveSlackInstallationInput): StoredOauthTokens =>
   tokenType: "bot",
   ...(input.grantedScopes.length > 0 ? { scope: input.grantedScopes.join(" ") } : {}),
 });
+
+const normalizeGrantedScopes = (grantedScopes: readonly string[]): Set<string> =>
+  new Set(grantedScopes.flatMap((scope) => scope.split(/[,\s]+/u)).filter(Boolean));
+
+const hasRequiredSlackBotScopes = (grantedScopes: readonly string[]): boolean => {
+  const granted = normalizeGrantedScopes(grantedScopes);
+  return slackBotScopes.every((scope) => granted.has(scope));
+};
 
 export class SlackInstallationService {
   constructor(private readonly options: SlackInstallationServiceOptions) {}
@@ -160,6 +173,7 @@ export class SlackInstallationService {
           workspaceId: input.workspaceId,
           answeringAgentId: input.answeringAgentId,
           escalationChannelId: input.escalationChannelId ?? null,
+          gapEscalationEnabled: input.gapEscalationEnabled ?? false,
         })
       : await this.options.bindings.findByInstallationId(installation.id);
 
@@ -175,13 +189,17 @@ export class SlackInstallationService {
     if (!connection) {
       return { status: "not_configured" };
     }
+    const oauthConnection = await this.options.oauthConnections.findById(workspaceId, connection.oauthConnectionId);
     const binding = await this.options.bindings.findByInstallationId(installation.id);
-    return {
-      status: connection.status === "authorized"
+    const status = connection.status === "authorized" && oauthConnection && !hasRequiredSlackBotScopes(oauthConnection.grantedScopes)
+      ? "needs_reauth"
+      : connection.status === "authorized"
         ? "connected"
         : connection.status === "error"
           ? "needs_reauth"
-          : connection.status,
+          : connection.status;
+    return {
+      status,
       installationId: installation.id,
       ...(installation.teamName ? { teamName: installation.teamName } : {}),
       ...(binding?.answeringAgentId ? { answeringAgentId: binding.answeringAgentId } : {}),
@@ -197,6 +215,7 @@ export class SlackInstallationService {
     workspaceId: string;
     answeringAgentId: string;
     escalationChannelId?: string | null;
+    gapEscalationEnabled?: boolean;
   }): Promise<SlackChannelBindingRecord> {
     const installation = await this.options.installations.findByWorkspaceId(input.workspaceId);
     if (!installation) {
@@ -206,7 +225,8 @@ export class SlackInstallationService {
       installationId: installation.id,
       workspaceId: input.workspaceId,
       answeringAgentId: input.answeringAgentId,
-      escalationChannelId: input.escalationChannelId ?? null,
+      escalationChannelId: input.escalationChannelId,
+      gapEscalationEnabled: input.gapEscalationEnabled,
     });
   }
 
@@ -446,9 +466,17 @@ interface SlackChannelBindingRow {
   workspace_id: string;
   answering_agent_id: string;
   escalation_channel_id: string | null;
+  gap_escalation_enabled: boolean;
   created_at: Date;
   updated_at: Date;
 }
+
+type SlackBindingDb = Omit<DB, "slack_channel_bindings"> & {
+  slack_channel_bindings: DB["slack_channel_bindings"] & {
+    gap_escalation_enabled: boolean;
+  };
+};
+type SlackBindingDbExecutor = Kysely<SlackBindingDb> | Transaction<SlackBindingDb>;
 
 const bindingColumns = [
   "id",
@@ -466,41 +494,60 @@ const mapBinding = (row: SlackChannelBindingRow): SlackChannelBindingRecord => (
   workspaceId: row.workspace_id,
   answeringAgentId: row.answering_agent_id,
   escalationChannelId: row.escalation_channel_id,
+  gapEscalationEnabled: row.gap_escalation_enabled,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
 });
 
 export class SlackChannelBindingRepository implements SlackBindingRepositoryPort {
-  constructor(private readonly db: Db) {}
+  private readonly db: SlackBindingDbExecutor;
+
+  constructor(db: Db) {
+    // Migration 112 owns this column; generated Kysely types are refreshed by the orchestrator.
+    this.db = db as unknown as SlackBindingDbExecutor;
+  }
 
   async findByInstallationId(installationId: string): Promise<SlackChannelBindingRecord | null> {
     const row = await this.db
       .selectFrom("slack_channel_bindings")
-      .select(bindingColumns)
+      .select((eb) => [
+        ...bindingColumns,
+        eb.ref("gap_escalation_enabled").as("gap_escalation_enabled"),
+      ])
       .where("installation_id", "=", installationId)
       .executeTakeFirst();
     return row ? mapBinding(row as SlackChannelBindingRow) : null;
   }
 
   async upsert(input: UpsertSlackBindingInput): Promise<SlackChannelBindingRecord> {
+    const bindingValues = {
+      id: randomUUID(),
+      installation_id: input.installationId,
+      workspace_id: input.workspaceId,
+      answering_agent_id: input.answeringAgentId,
+      escalation_channel_id: input.escalationChannelId ?? null,
+      gap_escalation_enabled: input.gapEscalationEnabled ?? false,
+    };
     const row = await this.db
       .insertInto("slack_channel_bindings")
-      .values({
-        id: randomUUID(),
-        installation_id: input.installationId,
-        workspace_id: input.workspaceId,
-        answering_agent_id: input.answeringAgentId,
-        escalation_channel_id: input.escalationChannelId ?? null,
-      })
+      .values(bindingValues)
       .onConflict((oc) =>
-        oc.column("installation_id").doUpdateSet({
-          workspace_id: (eb) => eb.ref("excluded.workspace_id"),
-          answering_agent_id: (eb) => eb.ref("excluded.answering_agent_id"),
-          escalation_channel_id: (eb) => eb.ref("excluded.escalation_channel_id"),
+        oc.column("installation_id").doUpdateSet((eb) => ({
+          workspace_id: eb.ref("excluded.workspace_id"),
+          answering_agent_id: eb.ref("excluded.answering_agent_id"),
+          ...(input.escalationChannelId !== undefined
+            ? { escalation_channel_id: eb.ref("excluded.escalation_channel_id") }
+            : {}),
+          ...(input.gapEscalationEnabled !== undefined
+            ? { gap_escalation_enabled: eb.ref("excluded.gap_escalation_enabled") }
+            : {}),
           updated_at: currentTimestamp(),
-        }),
+        })),
       )
-      .returning(bindingColumns)
+      .returning((eb) => [
+        ...bindingColumns,
+        eb.ref("gap_escalation_enabled").as("gap_escalation_enabled"),
+      ])
       .executeTakeFirstOrThrow();
     return mapBinding(row as SlackChannelBindingRow);
   }

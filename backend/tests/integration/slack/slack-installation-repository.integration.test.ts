@@ -72,6 +72,7 @@ describeIfDatabase("slack installation + binding repositories (postgres, kysely)
     await client.query(await readFile(path.join(testMigrationsPath, "095_integration_oauth_connections.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "105_integration_connections.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "107_slack_keystone.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "112_slack_gap_escalation_optin.sql"), "utf8"));
 
     await client.query(`INSERT INTO workspaces (id) VALUES ($1)`, [workspaceId]);
     await client.query(`INSERT INTO agents (id, workspace_id) VALUES ($1, $2)`, [agentId, workspaceId]);
@@ -153,6 +154,7 @@ describeIfDatabase("slack installation + binding repositories (postgres, kysely)
       workspaceId,
       answeringAgentId: agentId,
       escalationChannelId: "C123",
+      gapEscalationEnabled: false,
     });
 
     const updated = await bindings.upsert({
@@ -160,11 +162,34 @@ describeIfDatabase("slack installation + binding repositories (postgres, kysely)
       workspaceId,
       answeringAgentId: agentId,
       escalationChannelId: null,
+      gapEscalationEnabled: true,
     });
     expect(updated.id).toBe(created.id);
     expect(updated.escalationChannelId).toBeNull();
+    expect(updated.gapEscalationEnabled).toBe(true);
 
-    expect((await bindings.findByInstallationId(installation!.id))?.id).toBe(created.id);
+    expect(await bindings.findByInstallationId(installation!.id)).toMatchObject({
+      id: created.id,
+      gapEscalationEnabled: true,
+    });
+
+    const renamedChannel = await bindings.upsert({
+      installationId: installation!.id,
+      workspaceId,
+      answeringAgentId: agentId,
+      escalationChannelId: "C456",
+      gapEscalationEnabled: true,
+    });
+    expect(renamedChannel.escalationChannelId).toBe("C456");
+
+    const preserved = await bindings.upsert({
+      installationId: installation!.id,
+      workspaceId,
+      answeringAgentId: agentId,
+      gapEscalationEnabled: false,
+    });
+    expect(preserved.escalationChannelId).toBe("C456");
+    expect(preserved.gapEscalationEnabled).toBe(false);
   });
 
   it("removes binding then installation and reports the deletions", async () => {

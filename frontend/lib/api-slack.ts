@@ -22,11 +22,13 @@ export type SlackInstallStatusResponse = {
 export type SlackBinding = {
   answeringAgentId: string | null
   escalationChannelId: string | null
+  gapEscalationEnabled: boolean
 }
 
 export type SlackBindingUpdate = {
   answeringAgentId: string
   escalationChannelId?: string | null
+  gapEscalationEnabled?: boolean
 }
 
 export type SlackManifestResponse = {

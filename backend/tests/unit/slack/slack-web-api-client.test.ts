@@ -89,6 +89,36 @@ describe("SlackWebApiClient", () => {
     );
   });
 
+  it("adds a reaction to a message", async () => {
+    const fetchImpl = vi.fn<SlackFetchLike>().mockResolvedValue(jsonResponse(200, { ok: true }));
+    const client = new SlackWebApiClient({ botToken: "xoxb-token", fetchImpl });
+
+    await expect(client.addReaction({ channel: "C123", timestamp: "1710000000.000001", name: "eyes" })).resolves.toBeUndefined();
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://slack.com/api/reactions.add",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ channel: "C123", timestamp: "1710000000.000001", name: "eyes" }),
+      }),
+    );
+  });
+
+  it("removes a reaction from a message", async () => {
+    const fetchImpl = vi.fn<SlackFetchLike>().mockResolvedValue(jsonResponse(200, { ok: true }));
+    const client = new SlackWebApiClient({ botToken: "xoxb-token", fetchImpl });
+
+    await expect(
+      client.removeReaction({ channel: "C123", timestamp: "1710000000.000001", name: "eyes" }),
+    ).resolves.toBeUndefined();
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://slack.com/api/reactions.remove",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ channel: "C123", timestamp: "1710000000.000001", name: "eyes" }),
+      }),
+    );
+  });
+
   it("maps Slack ok:false envelopes into typed errors", async () => {
     const fetchImpl = vi.fn<SlackFetchLike>().mockResolvedValue(jsonResponse(200, {
       ok: false,

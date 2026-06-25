@@ -10761,6 +10761,7 @@ export interface operations {
                         /** Format: uuid */
                         answeringAgentId: string | null;
                         escalationChannelId: string | null;
+                        gapEscalationEnabled: boolean;
                     };
                 };
             };
@@ -10799,6 +10800,7 @@ export interface operations {
                     /** Format: uuid */
                     answeringAgentId: string;
                     escalationChannelId?: string | null;
+                    gapEscalationEnabled?: boolean;
                 };
             };
         };
@@ -10813,6 +10815,7 @@ export interface operations {
                         /** Format: uuid */
                         answeringAgentId: string | null;
                         escalationChannelId: string | null;
+                        gapEscalationEnabled: boolean;
                     };
                 };
             };

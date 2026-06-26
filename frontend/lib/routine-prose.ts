@@ -161,10 +161,14 @@ function stepMetadataIsRepresentable(step: RoutineDefinitionDraft['steps'][numbe
   const metadata = (step.metadata ?? {}) as Record<string, unknown>
   const allowed = step.kind === 'tool' ? PRESERVED_TOOL_METADATA_KEYS : OUTLINE_LABEL_ONLY
   if (Object.keys(metadata).some((key) => !allowed.has(key))) return false
-  const label = metadata.outlineLabel
-  // The label becomes the step's heading, which draftFromChipDoc slugifies back into the id —
-  // so it must already slugify to the existing id, or the id (and its jump targets) would move.
-  if (typeof label === 'string' && label.trim() && slugifyVariableKey(label.trim()) !== step.stableStepId) return false
+  // An outline label round-trips only as a heading whose text draftFromChipDoc slugifies back
+  // into the step id. So whenever the key is present it must be a non-empty string that
+  // slugifies to the existing id; an empty or non-string label would be silently dropped (it
+  // is authored metadata the compiler keeps), and a mismatching one would rename the step.
+  if ('outlineLabel' in metadata) {
+    const label = metadata.outlineLabel
+    if (typeof label !== 'string' || !label.trim() || slugifyVariableKey(label.trim()) !== step.stableStepId) return false
+  }
   return true
 }
 
@@ -702,10 +706,13 @@ function branchGuardSegments(edge: RoutineTransition, nameByRef: Map<string, str
     // decided-in-code after a reload (issue: "once decided by AI, can't go back").
     return [{ kind: 'chip', chipKind: 'condition', refId: '', label: edge.guardText, value: edge.guardText }]
   }
-  if (edge.guardKind === 'outcome' && edge.outcomeStatus) {
+  // An outcome guard's status is in `outcomeStatus`, or (legacy/Form-equivalent) in `guardText`
+  // — the compiler reads `outcomeStatus ?? guardText`, so accept either.
+  const outcomeStatus = edge.guardKind === 'outcome' ? (edge.outcomeStatus ?? edge.guardText) : null
+  if (outcomeStatus) {
     // An outcome guard renders as an outcome-mode condition chip: the sentinel refId marks it
     // as a step-result branch (not a variable comparison) and the status rides in `value`.
-    return [{ kind: 'chip', chipKind: 'condition', refId: OUTCOME_GUARD_REF, label: `outcome is ${edge.outcomeStatus}`, value: edge.outcomeStatus }]
+    return [{ kind: 'chip', chipKind: 'condition', refId: OUTCOME_GUARD_REF, label: `outcome is ${outcomeStatus}`, value: outcomeStatus }]
   }
   return []
 }
@@ -835,7 +842,10 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
       const declaredOptions = step.options ?? []
       const declaredOptionIds = new Set(declaredOptions.map((option) => option.id))
       // Every edge must be a decision field guard on `<captureKey>.id` to a declared option.
-      const cleanEdges = stepOutgoing.length > 0 && stepOutgoing.every((edge) =>
+      // Zero edges is allowed: a fully-unwired gate (choices declared, no branches routed yet)
+      // renders as just the declaration, the same way a partially-wired one renders only its
+      // routed options — so the author can finish wiring it in prose instead of being bounced.
+      const cleanEdges = stepOutgoing.every((edge) =>
         edge.guardKind === 'field'
         && edge.fieldRef === decisionRef
         && edge.fieldOp === 'equals'
@@ -938,7 +948,7 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
     const guardRenders = (edge: RoutineTransition): boolean =>
       (edge.guardKind === 'llm' && edge.guardText != null)
       || (edge.guardKind === 'field' && Boolean(edge.fieldRef) && Boolean(edge.fieldOp))
-      || (edge.guardKind === 'outcome' && Boolean(edge.outcomeStatus))
+      || (edge.guardKind === 'outcome' && Boolean(edge.outcomeStatus ?? edge.guardText))
     // A counter jump's bound rides on the step chip's counterLimit; one whose limit lives only
     // in guardText would round-trip to an unbounded (llm) jump, so require the explicit limit.
     const counterRenders = (edge: RoutineTransition): boolean =>

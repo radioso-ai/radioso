@@ -567,6 +567,8 @@ describe('routineToChipDoc (inverse serializer)', () => {
     expect(routineToChipDoc({ ...base, steps: [{ ...base.steps[0]!, stableStepId: 'step_1', metadata: { outlineLabel: 'Step 1' } }] })).not.toBeNull()
     // ...but one that would rename the step (slugifies to a different id) falls back.
     expect(routineToChipDoc({ ...base, steps: [{ ...base.steps[0]!, stableStepId: 'step_1', metadata: { outlineLabel: 'Totally different name' } }] })).toBeNull()
+    // An empty outline label (present but blank) would be dropped on a round-trip, so fall back.
+    expect(routineToChipDoc({ ...base, steps: [{ ...base.steps[0]!, stableStepId: 'step_1', metadata: { outlineLabel: '' } }] })).toBeNull()
     // A handoff terminal no transition targets would be dropped on a round-trip.
     expect(routineToChipDoc({ ...base, terminals: [...base.terminals, { stableStepId: 'handoff', kind: 'handoff', instruction: 'x', ordinal: 1 }] })).toBeNull()
   })
@@ -590,6 +592,58 @@ describe('routineToChipDoc (inverse serializer)', () => {
         transition.guardKind === 'llm' ? { ...transition, guardText: null } : transition),
     }
     expect(routineToChipDoc(nulled)).toBeNull()
+  })
+
+  it('reads an outcome guard whose status lives in guardText (compiler reads outcomeStatus ?? guardText)', () => {
+    const draft = draftFromChipDoc({
+      name: 'Refund',
+      trigger: 'wants a refund',
+      blocks: [
+        { text: 'Issue the refund ', chips: [{ kind: 'skill', refId: 'issue_refund' }] },
+        { text: '', chips: [
+          { kind: 'condition', refId: OUTCOME_GUARD_REF, value: 'failed' },
+          { kind: 'handoff', refId: 'handoff' },
+        ] },
+      ],
+      variables: [],
+    })
+    // Move the status from outcomeStatus into guardText, as a Form/legacy routine may store it.
+    const legacy = {
+      ...draft,
+      transitions: draft.transitions.map((transition) =>
+        transition.guardKind === 'outcome' ? { ...transition, outcomeStatus: null, guardText: 'failed' } : transition),
+    }
+    const doc = routineToChipDoc(legacy)
+    expect(doc).not.toBeNull()
+    const outcomeChip = doc!.paragraphs.flatMap((p) => p.segments)
+      .find((s) => s.kind === 'chip' && s.chipKind === 'condition' && s.refId === OUTCOME_GUARD_REF)
+    expect(outcomeChip).toMatchObject({ value: 'failed' })
+  })
+
+  it('renders a fully-unwired approval gate (choices declared, no branches routed yet)', () => {
+    const draft = draftFromChipDoc({
+      name: 'Refund approval',
+      trigger: 'wants a large refund',
+      blocks: [{
+        text: 'Get a manager decision.',
+        chips: [{
+          kind: 'approval',
+          refId: 'refund_decision',
+          captureKey: 'refund_decision',
+          options: [
+            { id: 'approve', label: 'Approve', target: '' },
+            { id: 'deny', label: 'Deny', target: '' },
+          ],
+        }],
+      }],
+      variables: [],
+    })
+    // No option is routed yet → no decision edges leave the approval step.
+    expect(draft.transitions.some((transition) => transition.fromStep === draft.steps[0]!.stableStepId)).toBe(false)
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    const decision = doc!.paragraphs.flatMap((p) => p.segments).find((s) => s.kind === 'chip' && s.chipKind === 'decision')
+    expect(decision).toMatchObject({ options: [{ id: 'approve' }, { id: 'deny' }] })
   })
 
   it('falls back to Form for a counter jump whose limit lives only in guardText', () => {

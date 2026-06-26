@@ -451,11 +451,16 @@ export function useHistoryDetailState({
         const anchoredMessage = anchorMessageId
           ? detail.messages.find((message) => message.id === anchorMessageId && message.role === 'assistant') ?? null
           : null
+        // Prefer the most recent assistant turn that recorded diagnostics, but
+        // fall back to the latest assistant turn even when none did. Otherwise the
+        // Debug panel opens to "select a message" for turns without a trace
+        // (suspended/action-required, human-handled), making the button look dead.
+        const reversedMessages = [...detail.messages].reverse()
         const traceBearingMessage =
           anchoredMessage ??
-          [...detail.messages]
-            .reverse()
-            .find((message) => message.role === 'assistant' && message.debug) ?? null
+          reversedMessages.find((message) => message.role === 'assistant' && message.debug) ??
+          reversedMessages.find((message) => message.role === 'assistant') ??
+          null
         setSelectedThreadMessageId(traceBearingMessage?.id ?? null)
         setSelectedAssistantMessageId(traceBearingMessage?.id ?? null)
         const trace = traceBearingMessage?.debug?.activityTrace

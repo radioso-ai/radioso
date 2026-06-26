@@ -596,7 +596,13 @@ export function ConversationDrawer({
                     Flow
                   </Button>
                 ) : null}
-                {activeTrace || activeEnvelope ? (
+                {/* The Debug button is always available once a conversation/search
+                    detail is loaded — not gated on trace presence. Turns without a
+                    trace envelope (routine, direct-reply, suspended/action-required,
+                    human-handled) still open the panel, which renders a graceful
+                    "unavailable" state. Gating on trace data hid the button for whole
+                    classes of turns. */}
+                {(selectedItem?.kind === 'search' ? searchDetail : conversationDetail) ? (
                   <Button
                     type="button"
                     size="sm"

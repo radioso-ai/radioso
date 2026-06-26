@@ -556,6 +556,80 @@ test("routine-driven turn without a retrieval leaf still exposes the debug panel
   await expect(page.getByText("Turn flow", { exact: true })).toBeVisible();
 });
 
+test("Debug button stays available for a turn with no recorded diagnostics", async ({ page }) => {
+  const conversationId = "conversation-no-debug";
+  const assistantMessageId = "assistant-message-no-debug";
+  const historyList = {
+    conversations: [
+      {
+        id: conversationId,
+        sourceChannel: null,
+        sourceOrigin: null,
+        anonymousSessionId: null,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        messageCount: 2,
+        userMessageCount: 1,
+        assistantMessageCount: 1,
+        preview: "Where is my order",
+      },
+    ],
+    total: 1,
+    nextCursor: null,
+    hasMore: false,
+  };
+  // The assistant turn carries NO `debug` payload at all — e.g. a human-handled or
+  // suspended turn whose trace wasn't recorded. The Debug button must still appear
+  // (it is no longer gated on trace presence) and open a graceful empty state.
+  const conversationDetail = {
+    conversationId,
+    workspaceId,
+    sourceChannel: null,
+    sourceOrigin: null,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    messageCount: 2,
+    userMessageCount: 1,
+    assistantMessageCount: 1,
+    messagesTotal: 2,
+    messageWindowOffset: 0,
+    messageWindowLimit: 50,
+    hasOlderMessages: false,
+    nextCursor: null,
+    messages: [
+      {
+        id: "user-message-no-debug",
+        role: "user",
+        content: "Where is my order",
+        createdAt: nowIso,
+      },
+      {
+        id: assistantMessageId,
+        role: "assistant",
+        content: "A teammate is handling this.",
+        createdAt: nowIso,
+        citations: [],
+        answerSegments: [{ text: "A teammate is handling this." }],
+      },
+    ],
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList,
+    conversationDetail,
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity?tab=all`);
+  await page.getByRole("button", { name: /Where is my order/ }).click();
+  await expect(page).toHaveURL(/itemKind=chat/);
+
+  // The Debug button is present even though this turn recorded no trace...
+  await page.getByRole("button", { name: "Debug", exact: true }).click();
+  // ...and the panel renders a graceful unavailable state instead of being hidden.
+  await expect(page.getByText("Activity trace unavailable for this turn.")).toBeVisible();
+});
+
 test("activity filtered pages request one offset-backed page", async ({ page }) => {
   const requestLog: string[] = [];
   const historyList = {

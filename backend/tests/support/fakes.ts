@@ -3120,6 +3120,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     anonymousSessionId: string | null = null,
     sourceOrigin: string | null = null,
     channelContext: ConversationRecord["channelContext"] = null,
+    verifiedCustomerId: string | null = null,
   ): Promise<ConversationRecord> {
     const record: ConversationRecord = {
       id: randomUUID(),
@@ -3130,6 +3131,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
       sourceOrigin,
       channelContext,
       anonymousSessionId,
+      verifiedCustomerId,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -3144,6 +3146,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
     channelContext?: ConversationRecord["channelContext"];
+    verifiedCustomerId?: string | null;
     content: string;
   }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }> {
     const conversation = await this.create(
@@ -3153,6 +3156,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
       input.anonymousSessionId ?? null,
       input.sourceOrigin ?? null,
       input.channelContext ?? null,
+      input.verifiedCustomerId ?? null,
     );
     const assistantMessage: MessageRecord = {
       id: randomUUID(),
@@ -3286,6 +3290,13 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     const item = this.items.get(conversationId);
     if (item && item.workspaceId === workspaceId) {
       item.updatedAt = new Date();
+    }
+  }
+
+  async setVerifiedCustomerId(conversationId: string, workspaceId: string, customerId: string): Promise<void> {
+    const item = this.items.get(conversationId);
+    if (item && item.workspaceId === workspaceId && !item.verifiedCustomerId) {
+      this.items.set(conversationId, { ...item, verifiedCustomerId: customerId, updatedAt: new Date() });
     }
   }
 }

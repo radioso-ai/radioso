@@ -15,6 +15,7 @@ export interface ConversationRecord {
   sourceOrigin: string | null;
   channelContext: ConversationChannelContext | null;
   anonymousSessionId: string | null;
+  verifiedCustomerId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -27,6 +28,7 @@ export interface ConversationRepositoryPort {
     anonymousSessionId?: string | null,
     sourceOrigin?: string | null,
     channelContext?: ConversationChannelContext | null,
+    verifiedCustomerId?: string | null,
   ): Promise<ConversationRecord>;
   createWithInitialAssistantMessage(input: {
     workspaceId: string;
@@ -35,6 +37,7 @@ export interface ConversationRepositoryPort {
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
     channelContext?: ConversationChannelContext | null;
+    verifiedCustomerId?: string | null;
     content: string;
   }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }>;
   listPageByWorkspaceId(
@@ -54,6 +57,7 @@ export interface ConversationRepositoryPort {
     anonymousSessionId: string,
     agentId?: string | null,
   ): Promise<ConversationRecord | null>;
+  setVerifiedCustomerId(conversationId: string, workspaceId: string, customerId: string): Promise<void>;
   touch(conversationId: string, workspaceId: string): Promise<void>;
 }
 
@@ -67,6 +71,7 @@ interface ConversationRow {
   source_origin: string | null;
   channel_context?: ConversationChannelContext | null;
   anonymous_session_id: string | null;
+  verified_customer_id: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -88,6 +93,7 @@ const conversationColumns = [
   "source_origin",
   "channel_context",
   "anonymous_session_id",
+  "verified_customer_id",
   "created_at",
   "updated_at",
 ] as const;
@@ -101,6 +107,7 @@ const conversationSelectColumns = [
   "c.source_origin as source_origin",
   "c.channel_context as channel_context",
   "c.anonymous_session_id as anonymous_session_id",
+  "c.verified_customer_id as verified_customer_id",
   "c.created_at as created_at",
   "c.updated_at as updated_at",
 ] as const;
@@ -123,6 +130,7 @@ const mapConversation = (row: ConversationRow): ConversationRecord => ({
   sourceOrigin: row.source_origin ?? null,
   channelContext: (row.channel_context as ConversationChannelContext | null) ?? null,
   anonymousSessionId: row.anonymous_session_id ?? null,
+  verifiedCustomerId: row.verified_customer_id ?? null,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
 });
@@ -137,6 +145,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
     anonymousSessionId: string | null = null,
     sourceOrigin: string | null = null,
     channelContext: ConversationChannelContext | null = null,
+    verifiedCustomerId: string | null = null,
   ): Promise<ConversationRecord> {
     const row = await this.db
       .insertInto("conversations")
@@ -148,6 +157,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
         source_origin: sourceOrigin,
         channel_context: channelContext ? toJsonb(channelContext) : null,
         anonymous_session_id: anonymousSessionId,
+        verified_customer_id: verifiedCustomerId,
       })
       .returning(conversationColumns)
       .executeTakeFirstOrThrow();
@@ -162,6 +172,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
     channelContext?: ConversationChannelContext | null;
+    verifiedCustomerId?: string | null;
     content: string;
   }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }> {
     return this.db.transaction().execute(async (trx) => {
@@ -177,6 +188,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
           source_origin: input.sourceOrigin ?? null,
           channel_context: input.channelContext ? toJsonb(input.channelContext) : null,
           anonymous_session_id: input.anonymousSessionId ?? null,
+          verified_customer_id: input.verifiedCustomerId ?? null,
         })
         .returning(conversationColumns)
         .executeTakeFirstOrThrow();
@@ -386,6 +398,16 @@ export class ConversationRepository implements ConversationRepositoryPort {
       .set({ updated_at: currentTimestamp() })
       .where("id", "=", conversationId)
       .where("workspace_id", "=", workspaceId)
+      .execute();
+  }
+
+  async setVerifiedCustomerId(conversationId: string, workspaceId: string, customerId: string): Promise<void> {
+    await this.db
+      .updateTable("conversations")
+      .set({ verified_customer_id: customerId, updated_at: currentTimestamp() })
+      .where("id", "=", conversationId)
+      .where("workspace_id", "=", workspaceId)
+      .where("verified_customer_id", "is", null)
       .execute();
   }
 }

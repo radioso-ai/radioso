@@ -24,6 +24,17 @@ GET    /api/v1/agents/{agentId}/skills
 POST   /api/v1/agents/{agentId}/skills
 PATCH  /api/v1/agents/{agentId}/skills/{skillId}
 DELETE /api/v1/agents/{agentId}/skills/{skillId}
+GET    /api/v1/context-variables
+POST   /api/v1/context-variables
+GET    /api/v1/context-variables/{id}
+PATCH  /api/v1/context-variables/{id}
+DELETE /api/v1/context-variables/{id}
+GET    /api/v1/agents/{agentId}/context-variables
+PUT    /api/v1/agents/{agentId}/context-variables/{variableId}
+DELETE /api/v1/agents/{agentId}/context-variables/{variableId}
+GET    /api/v1/context-variables/{id}/values
+PUT    /api/v1/context-variables/{id}/values
+DELETE /api/v1/context-variables/{id}/values
 GET    /api/v1/skills
 GET    /api/v1/skills/{skillName}
 ```
@@ -61,6 +72,48 @@ If an agent has `retrievalEnabled: true`, assistant chat may use retrieval and r
 - `enabled`
 
 Create skills with `POST /api/v1/agents/{agentId}/skills`. In the dashboard, **Add new skill** first opens a capability picker; enabled tiles then open the configuration form for that capability. The form shows only the skill name, required target or tool fields, and essential capability settings by default. Invocation mode, input binding, outcomes, enabled state, advanced JSON, and tuning settings live under **Advanced** and have working defaults. The form and API use the same model for `retrieve`, `mcp_tool`, `email`, `slack_post`, `webhook_call`, and `notify`.
+
+## Context variables
+
+Context variables are workspace declarations that an agent may enable per agent.
+They are separate from skills. A skill is something the assistant can do; a
+context variable is data the turn may resolve and use.
+
+The catalog endpoints create and update host-defined variable declarations:
+
+- `name`
+- `description`
+- `valueType`: `string` or `json`
+- `trustTier`: `unverified` or `signed`
+- `sensitivity`: `normal` or `sensitive`
+- `defaultSurfacing`: `always`, `on_reference`, or `operator_only`
+
+The per-agent enablement endpoints choose how a catalog variable is wired for
+one agent:
+
+- `source`: `pushed` or `resolver`
+- `surfacing`: `always`, `on_reference`, or `operator_only`
+- `enabled`
+
+The dashboard currently exposes the `pushed` source. Resolver-backed variables
+are part of the API contract, but the operator UI does not configure them yet.
+
+Host backends push runtime values through
+`PUT /api/v1/context-variables/{id}/values`. The request identifies the scope:
+
+```json
+{
+  "scope": { "type": "session", "id": "public-session-id" },
+  "data": {
+    "items": [{ "sku": "course-101", "quantity": 1 }]
+  }
+}
+```
+
+Values resolve from most specific to least specific scope:
+`session`, `customer`, `agent`, then `workspace`. Use the narrowest scope that
+matches the data. For example, a cart usually belongs to a session or customer;
+a market-wide promotion may belong to an agent or workspace.
 
 ## Contact requests
 

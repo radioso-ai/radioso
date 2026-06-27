@@ -16,6 +16,7 @@ export class AssistantChatService {
   ) {}
 
   async answer(input: AssistantChatRequest): Promise<AssistantChatResponse | null> {
+    const chatSessionId = input.chatSessionId ?? input.anonymousSessionId;
     if (input.startConversation) {
       const response = await this.chatBootstrapService.startConversation({
         workspaceId: input.workspaceId,
@@ -23,7 +24,7 @@ export class AssistantChatService {
         accountId: input.accountId,
         sourceChannel: input.sourceChannel ?? input.sourceContext?.surface ?? null,
         channelContext: input.channelContext ?? input.sourceContext?.channelContext ?? null,
-        anonymousSessionId: input.anonymousSessionId,
+        chatSessionId,
         sourceOrigin: input.sourceOrigin ?? input.sourceContext?.sourceOrigin ?? null,
         userExpectedLocale: input.userExpectedLocale,
         pageContext: input.pageContext,
@@ -53,9 +54,11 @@ export class AssistantChatService {
       inputMetadata: input.inputMetadata,
       metadataFilter: input.metadataFilter,
       pageContext: input.pageContext,
+      verifiedCustomerId: input.verifiedCustomerId,
+      verifiedIdentity: input.verifiedIdentity,
       sourceChannel: input.sourceChannel ?? input.sourceContext?.surface ?? null,
       channelContext: input.channelContext ?? input.sourceContext?.channelContext ?? null,
-      anonymousSessionId: input.anonymousSessionId,
+      chatSessionId,
       sourceOrigin: input.sourceOrigin ?? input.sourceContext?.sourceOrigin ?? null,
     });
 
@@ -63,6 +66,7 @@ export class AssistantChatService {
   }
 
   streamAnswer(input: AssistantChatRequest): AsyncIterable<AssistantChatStreamEvent> {
+    const chatSessionId = input.chatSessionId ?? input.anonymousSessionId;
     const query = input.message?.trim();
     if (!query) {
       throw badRequest("message is required for streaming assistant chat");
@@ -80,9 +84,11 @@ export class AssistantChatService {
       inputMetadata: input.inputMetadata,
       metadataFilter: input.metadataFilter,
       pageContext: input.pageContext,
+      verifiedCustomerId: input.verifiedCustomerId,
+      verifiedIdentity: input.verifiedIdentity,
       sourceChannel: input.sourceChannel ?? input.sourceContext?.surface ?? null,
       channelContext: input.channelContext ?? input.sourceContext?.channelContext ?? null,
-      anonymousSessionId: input.anonymousSessionId,
+      chatSessionId,
       sourceOrigin: input.sourceOrigin ?? input.sourceContext?.sourceOrigin ?? null,
     });
   }

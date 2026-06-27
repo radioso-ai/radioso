@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import request from "supertest";
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 import { resetRateLimiterState } from "../../src/app/http/middleware/anonymousRateLimiter.js";
 import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
+import { signVisitorIdentity } from "../../src/modules/context-variables/public.js";
 
 describe("public chat contract", () => {
   beforeEach(() => {
@@ -176,6 +177,88 @@ describe("public chat contract", () => {
     expect(response.body.answer).toBe("The current page mentions summer retreats.");
     expect(prompts.some((prompt) => prompt.includes("Current page URL: https://example.com/retreats"))).toBe(true);
     expect(prompts.some((prompt) => prompt.includes("Visible page excerpt"))).toBe(true);
+  });
+
+  it("uses a valid signed identity to unlock customer-scoped context and treats invalid identity as anonymous", async () => {
+    const prompts: string[] = [];
+    const contextualGateway: ChatGateway = {
+      async answer(input) {
+        prompts.push(input.prompt);
+        return "ok";
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const { app, dependencies } = createTestApp({ chatGateway: contextualGateway });
+    const session = await issueTestSession(app, "public-chat-signed-identity@example.com");
+    const settings = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        websiteEmbedEnabled: true,
+        websiteEmbedAllowedOrigins: ["https://example.com"],
+      });
+    expect(settings.status).toBe(200);
+    const embedToken = settings.body.websiteEmbedToken as string;
+    const agent = await dependencies.agentService.resolve(session.workspaceId);
+    const resolveForAgent = vi.spyOn(dependencies.contextVariableRepository, "resolveForAgent")
+      .mockImplementation(async (_workspaceId, _agentId, scopes) =>
+        scopes.some((scope) => scope.type === "customer" && scope.id === "customer-123")
+          ? [{
+              name: "cart",
+              description: "current cart",
+              value: { items: ["sku-1"] },
+              surfacing: "always",
+              sensitive: false,
+              trust: "verified",
+            }]
+          : [],
+      );
+    const publicSession = await request(app)
+      .post(`/api/v1/public/chat/${embedToken}/sessions`)
+      .set("Origin", "https://example.com")
+      .send({ channel: "website_embed" });
+    expect(publicSession.status).toBe(200);
+    const signedIdentity = signVisitorIdentity(
+      dependencies.env.WORKSPACE_TOKEN_SECRET!,
+      session.workspaceId,
+      agent.id,
+      {
+        customerId: "customer-123",
+        sessionId: publicSession.body.publicSessionId,
+        origin: "https://example.com",
+        issuedAt: Date.now(),
+        nonce: "nonce-route-valid",
+        attributes: { plan: "pro" },
+      },
+    );
+
+    const valid = await request(app)
+      .post(`/api/v1/public/chat/${embedToken}`)
+      .set("Origin", "https://example.com")
+      .set("x-radioso-public-session", publicSession.body.publicSessionToken)
+      .send({ message: "What is in my cart?", stream: false, signedIdentity });
+    expect(valid.status).toBe(200);
+    expect(resolveForAgent).toHaveBeenLastCalledWith(session.workspaceId, agent.id, [
+      { type: "session", id: publicSession.body.publicSessionId },
+      { type: "customer", id: "customer-123" },
+      { type: "agent", id: agent.id },
+      { type: "workspace", id: session.workspaceId },
+    ]);
+    expect(prompts.at(-1)).toContain('"items"');
+
+    const invalid = await request(app)
+      .post(`/api/v1/public/chat/${embedToken}`)
+      .set("Origin", "https://example.com")
+      .set("x-radioso-public-session", publicSession.body.publicSessionToken)
+      .send({ message: "What is in my cart now?", stream: false, signedIdentity: `${signedIdentity}x` });
+    expect(invalid.status).toBe(200);
+    expect(resolveForAgent).toHaveBeenLastCalledWith(session.workspaceId, agent.id, [
+      { type: "session", id: publicSession.body.publicSessionId },
+      { type: "agent", id: agent.id },
+      { type: "workspace", id: session.workspaceId },
+    ]);
   });
 
   it("subsequent requests with cookie reuse the same session", async () => {

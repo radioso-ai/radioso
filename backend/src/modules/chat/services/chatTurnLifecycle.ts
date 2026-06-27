@@ -38,6 +38,7 @@ import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import { appendDirectiveSteeringStage } from "./directiveTracePresenter.js";
 import {
   attachCapabilitySubTrace,
+  attachContextVariablesToGather,
   buildTurnTraceEnvelope,
   type TurnTraceEnvelope,
 } from "./turnTraceEnvelope.js";
@@ -246,12 +247,18 @@ export const buildTurnTraceForPresentation = (
     input.session.directiveSteering,
   );
   const resolvedActivitySummary = activityTrace.summary ?? activitySummary;
+  const contextVariablesSnapshot = input.session.resolvedContext.snapshot;
+  const hasContextVariablesSnapshot = Object.keys(contextVariablesSnapshot).length > 0;
   // The conversation spine is the root span; retrieval rides as a typed leaf on
-  // its dispatch stage. Engine always runs the assistant turn, so engineTrace is
+  // its dispatch stage, and the resolved (redacted) visitor context rides on the
+  // gather stage. Engine always runs the assistant turn, so engineTrace is
   // present — but stay defensive: no spine means no envelope this turn.
   const turnTrace = input.engineTrace
     ? buildTurnTraceEnvelope({
-        spine: attachRetrievalActivityTrace(input.engineTrace, activityTrace),
+        spine: attachContextVariablesToGather(
+          attachRetrievalActivityTrace(input.engineTrace, activityTrace),
+          contextVariablesSnapshot,
+        ),
       })
     : undefined;
 
@@ -289,6 +296,9 @@ export const buildTurnTraceForPresentation = (
       modelId: input.session.agent.chatModelOverride?.model,
       citations: input.presentation.citations ?? [],
       answerSegments: input.presentation.answerSegments,
+      ...(hasContextVariablesSnapshot
+        ? { contextVariables: contextVariablesSnapshot }
+        : {}),
       // Raw model grounding verdict, retained for observability even when the
       // grounded-miss path reclassifies the skill outcome.
       groundingVerdict: input.presentation.grounding,

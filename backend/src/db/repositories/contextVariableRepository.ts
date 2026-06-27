@@ -1,0 +1,449 @@
+import { randomUUID } from "node:crypto";
+
+import type { ResolvedVariableInput } from "../../modules/context-variables/public.js";
+import type {
+  AgentContextVariableEnablement,
+  ContextVariable,
+  ContextVariableScope,
+  ContextVariableSensitivity,
+  ContextVariableSource,
+  ContextVariableTrustTier,
+  ContextVariableValue,
+  ContextVariableValueType,
+} from "../../modules/context-variables/public.js";
+import type { ContextVariableSurfacing } from "../../modules/context-variables/public.js";
+import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
+
+export interface ContextVariableCreateRecord {
+  workspaceId: string;
+  name: string;
+  description?: string | null;
+  valueType: ContextVariableValueType;
+  trustTier: ContextVariableTrustTier;
+  sensitivity: ContextVariableSensitivity;
+  defaultSurfacing: ContextVariableSurfacing;
+}
+
+export interface ContextVariableUpdateRecord {
+  name?: string;
+  description?: string | null;
+  valueType?: ContextVariableValueType;
+  trustTier?: ContextVariableTrustTier;
+  sensitivity?: ContextVariableSensitivity;
+  defaultSurfacing?: ContextVariableSurfacing;
+}
+
+export interface AgentContextVariableEnablementRecord {
+  agentId: string;
+  variableId: string;
+  source: ContextVariableSource;
+  resolverSkillId?: string | null;
+  maxAgeSeconds?: number | null;
+  resolverTimeoutMs?: number | null;
+  surfacing: ContextVariableSurfacing;
+  enabled?: boolean;
+}
+
+export interface ContextVariableRepositoryPort {
+  create(input: ContextVariableCreateRecord): Promise<ContextVariable>;
+  update(workspaceId: string, id: string, input: ContextVariableUpdateRecord): Promise<ContextVariable | null>;
+  delete(workspaceId: string, id: string): Promise<boolean>;
+  listByWorkspace(workspaceId: string): Promise<ContextVariable[]>;
+  get(workspaceId: string, id: string): Promise<ContextVariable | null>;
+
+  upsertEnablement(input: AgentContextVariableEnablementRecord): Promise<AgentContextVariableEnablement>;
+  deleteEnablement(agentId: string, variableId: string): Promise<boolean>;
+  listByAgent(workspaceId: string, agentId: string): Promise<AgentContextVariableEnablement[]>;
+
+  upsertValue(variableId: string, scope: ContextVariableScope, data: unknown): Promise<ContextVariableValue>;
+  readValue(variableId: string, scope: ContextVariableScope): Promise<ContextVariableValue | null>;
+  deleteValue(variableId: string, scope: ContextVariableScope): Promise<boolean>;
+
+  resolveForAgent(
+    workspaceId: string,
+    agentId: string,
+    scopes: ContextVariableScope[],
+  ): Promise<ResolvedVariableInput[]>;
+}
+
+interface ContextVariableRow {
+  id: string;
+  workspace_id: string;
+  name: string;
+  description: string | null;
+  value_type: string;
+  trust_tier: string;
+  sensitivity: string;
+  default_surfacing: string;
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+interface AgentContextVariableRow {
+  id: string;
+  agent_id: string;
+  variable_id: string;
+  source: string;
+  resolver_skill_id: string | null;
+  max_age_seconds: number | null;
+  resolver_timeout_ms: number | null;
+  surfacing: string;
+  enabled: boolean;
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+interface AgentContextVariableWithVariableRow extends AgentContextVariableRow {
+  variable_workspace_id: string;
+  variable_name: string;
+  variable_description: string | null;
+  variable_value_type: string;
+  variable_trust_tier: string;
+  variable_sensitivity: string;
+  variable_default_surfacing: string;
+  variable_created_at: Date | string;
+  variable_updated_at: Date | string;
+}
+
+interface ContextVariableValueRow {
+  id: string;
+  workspace_id: string;
+  variable_id: string;
+  scope_type: string;
+  scope_id: string;
+  data: unknown;
+  last_modified: Date | string;
+}
+
+const contextVariableColumns = [
+  "id",
+  "workspace_id",
+  "name",
+  "description",
+  "value_type",
+  "trust_tier",
+  "sensitivity",
+  "default_surfacing",
+  "created_at",
+  "updated_at",
+] as const;
+
+const agentContextVariableColumns = [
+  "id",
+  "agent_id",
+  "variable_id",
+  "source",
+  "resolver_skill_id",
+  "max_age_seconds",
+  "resolver_timeout_ms",
+  "surfacing",
+  "enabled",
+  "created_at",
+  "updated_at",
+] as const;
+
+const contextVariableValueColumns = [
+  "id",
+  "workspace_id",
+  "variable_id",
+  "scope_type",
+  "scope_id",
+  "data",
+  "last_modified",
+] as const;
+
+const mapContextVariableRow = (row: ContextVariableRow): ContextVariable => ({
+  id: row.id,
+  workspaceId: row.workspace_id,
+  name: row.name,
+  description: row.description,
+  valueType: row.value_type as ContextVariableValueType,
+  trustTier: row.trust_tier as ContextVariableTrustTier,
+  sensitivity: row.sensitivity as ContextVariableSensitivity,
+  defaultSurfacing: row.default_surfacing as ContextVariableSurfacing,
+  createdAt: new Date(row.created_at),
+  updatedAt: new Date(row.updated_at),
+});
+
+const mapAgentContextVariableRow = (
+  row: AgentContextVariableRow,
+  variable?: ContextVariable,
+): AgentContextVariableEnablement => ({
+  id: row.id,
+  agentId: row.agent_id,
+  variableId: row.variable_id,
+  source: row.source as ContextVariableSource,
+  resolverSkillId: row.resolver_skill_id,
+  maxAgeSeconds: row.max_age_seconds,
+  resolverTimeoutMs: row.resolver_timeout_ms,
+  surfacing: row.surfacing as ContextVariableSurfacing,
+  enabled: row.enabled,
+  createdAt: new Date(row.created_at),
+  updatedAt: new Date(row.updated_at),
+  variable,
+});
+
+const mapAgentContextVariableWithVariableRow = (
+  row: AgentContextVariableWithVariableRow,
+): AgentContextVariableEnablement => mapAgentContextVariableRow(row, {
+  id: row.variable_id,
+  workspaceId: row.variable_workspace_id,
+  name: row.variable_name,
+  description: row.variable_description,
+  valueType: row.variable_value_type as ContextVariableValueType,
+  trustTier: row.variable_trust_tier as ContextVariableTrustTier,
+  sensitivity: row.variable_sensitivity as ContextVariableSensitivity,
+  defaultSurfacing: row.variable_default_surfacing as ContextVariableSurfacing,
+  createdAt: new Date(row.variable_created_at),
+  updatedAt: new Date(row.variable_updated_at),
+});
+
+const mapContextVariableValueRow = (row: ContextVariableValueRow): ContextVariableValue => ({
+  id: row.id,
+  workspaceId: row.workspace_id,
+  variableId: row.variable_id,
+  scope: {
+    type: row.scope_type as ContextVariableScope["type"],
+    id: row.scope_id,
+  },
+  data: row.data,
+  lastModified: new Date(row.last_modified),
+});
+
+export class ContextVariableRepository implements ContextVariableRepositoryPort {
+  constructor(private readonly db: Db) {}
+
+  async create(input: ContextVariableCreateRecord): Promise<ContextVariable> {
+    const row = await this.db
+      .insertInto("context_variables")
+      .values({
+        id: randomUUID(),
+        workspace_id: input.workspaceId,
+        name: input.name,
+        description: input.description ?? null,
+        value_type: input.valueType,
+        trust_tier: input.trustTier,
+        sensitivity: input.sensitivity,
+        default_surfacing: input.defaultSurfacing,
+      })
+      .returning(contextVariableColumns)
+      .executeTakeFirstOrThrow();
+    return mapContextVariableRow(row as ContextVariableRow);
+  }
+
+  async update(workspaceId: string, id: string, input: ContextVariableUpdateRecord): Promise<ContextVariable | null> {
+    const row = await this.db
+      .updateTable("context_variables")
+      .set({
+        updated_at: currentTimestamp(),
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...("description" in input ? { description: input.description ?? null } : {}),
+        ...(input.valueType !== undefined ? { value_type: input.valueType } : {}),
+        ...(input.trustTier !== undefined ? { trust_tier: input.trustTier } : {}),
+        ...(input.sensitivity !== undefined ? { sensitivity: input.sensitivity } : {}),
+        ...(input.defaultSurfacing !== undefined ? { default_surfacing: input.defaultSurfacing } : {}),
+      })
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", id)
+      .returning(contextVariableColumns)
+      .executeTakeFirst();
+    return row ? mapContextVariableRow(row as ContextVariableRow) : null;
+  }
+
+  async delete(workspaceId: string, id: string): Promise<boolean> {
+    const result = await this.db
+      .deleteFrom("context_variables")
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", id)
+      .executeTakeFirst();
+    return (result?.numDeletedRows ?? 0n) > 0n;
+  }
+
+  async listByWorkspace(workspaceId: string): Promise<ContextVariable[]> {
+    const rows = await this.db
+      .selectFrom("context_variables")
+      .select(contextVariableColumns)
+      .where("workspace_id", "=", workspaceId)
+      .orderBy("name", "asc")
+      .execute();
+    return rows.map((row) => mapContextVariableRow(row as ContextVariableRow));
+  }
+
+  async get(workspaceId: string, id: string): Promise<ContextVariable | null> {
+    const row = await this.db
+      .selectFrom("context_variables")
+      .select(contextVariableColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", id)
+      .executeTakeFirst();
+    return row ? mapContextVariableRow(row as ContextVariableRow) : null;
+  }
+
+  async upsertEnablement(input: AgentContextVariableEnablementRecord): Promise<AgentContextVariableEnablement> {
+    const row = await this.db
+      .insertInto("agent_context_variables")
+      .values({
+        id: randomUUID(),
+        agent_id: input.agentId,
+        variable_id: input.variableId,
+        source: input.source,
+        resolver_skill_id: input.resolverSkillId ?? null,
+        max_age_seconds: input.maxAgeSeconds ?? null,
+        resolver_timeout_ms: input.resolverTimeoutMs ?? null,
+        surfacing: input.surfacing,
+        enabled: input.enabled ?? true,
+      })
+      .onConflict((oc) =>
+        oc.columns(["agent_id", "variable_id"]).doUpdateSet((eb) => ({
+          source: eb.ref("excluded.source"),
+          resolver_skill_id: eb.ref("excluded.resolver_skill_id"),
+          max_age_seconds: eb.ref("excluded.max_age_seconds"),
+          resolver_timeout_ms: eb.ref("excluded.resolver_timeout_ms"),
+          surfacing: eb.ref("excluded.surfacing"),
+          enabled: eb.ref("excluded.enabled"),
+          updated_at: currentTimestamp(),
+        })),
+      )
+      .returning(agentContextVariableColumns)
+      .executeTakeFirstOrThrow();
+    return mapAgentContextVariableRow(row as AgentContextVariableRow);
+  }
+
+  async deleteEnablement(agentId: string, variableId: string): Promise<boolean> {
+    const result = await this.db
+      .deleteFrom("agent_context_variables")
+      .where("agent_id", "=", agentId)
+      .where("variable_id", "=", variableId)
+      .executeTakeFirst();
+    return (result?.numDeletedRows ?? 0n) > 0n;
+  }
+
+  async listByAgent(workspaceId: string, agentId: string): Promise<AgentContextVariableEnablement[]> {
+    const rows = await this.db
+      .selectFrom("agent_context_variables")
+      .innerJoin("context_variables", "context_variables.id", "agent_context_variables.variable_id")
+      .select([
+        "agent_context_variables.id",
+        "agent_context_variables.agent_id",
+        "agent_context_variables.variable_id",
+        "agent_context_variables.source",
+        "agent_context_variables.resolver_skill_id",
+        "agent_context_variables.max_age_seconds",
+        "agent_context_variables.resolver_timeout_ms",
+        "agent_context_variables.surfacing",
+        "agent_context_variables.enabled",
+        "agent_context_variables.created_at",
+        "agent_context_variables.updated_at",
+        "context_variables.workspace_id as variable_workspace_id",
+        "context_variables.name as variable_name",
+        "context_variables.description as variable_description",
+        "context_variables.value_type as variable_value_type",
+        "context_variables.trust_tier as variable_trust_tier",
+        "context_variables.sensitivity as variable_sensitivity",
+        "context_variables.default_surfacing as variable_default_surfacing",
+        "context_variables.created_at as variable_created_at",
+        "context_variables.updated_at as variable_updated_at",
+      ])
+      .where("context_variables.workspace_id", "=", workspaceId)
+      .where("agent_context_variables.agent_id", "=", agentId)
+      .orderBy("context_variables.name", "asc")
+      .execute();
+    return rows.map((row) => mapAgentContextVariableWithVariableRow(row as AgentContextVariableWithVariableRow));
+  }
+
+  async upsertValue(variableId: string, scope: ContextVariableScope, data: unknown): Promise<ContextVariableValue> {
+    const variable = await this.db
+      .selectFrom("context_variables")
+      .select(["workspace_id"])
+      .where("id", "=", variableId)
+      .executeTakeFirstOrThrow();
+
+    const row = await this.db
+      .insertInto("context_variable_values")
+      .values({
+        id: randomUUID(),
+        workspace_id: variable.workspace_id,
+        variable_id: variableId,
+        scope_type: scope.type,
+        scope_id: scope.id,
+        data: toJsonb(data),
+        last_modified: currentTimestamp(),
+      })
+      .onConflict((oc) =>
+        oc.columns(["variable_id", "scope_type", "scope_id"]).doUpdateSet((eb) => ({
+          workspace_id: eb.ref("excluded.workspace_id"),
+          data: eb.ref("excluded.data"),
+          last_modified: currentTimestamp(),
+        })),
+      )
+      .returning(contextVariableValueColumns)
+      .executeTakeFirstOrThrow();
+    return mapContextVariableValueRow(row as ContextVariableValueRow);
+  }
+
+  async readValue(variableId: string, scope: ContextVariableScope): Promise<ContextVariableValue | null> {
+    const row = await this.db
+      .selectFrom("context_variable_values")
+      .select(contextVariableValueColumns)
+      .where("variable_id", "=", variableId)
+      .where("scope_type", "=", scope.type)
+      .where("scope_id", "=", scope.id)
+      .executeTakeFirst();
+    return row ? mapContextVariableValueRow(row as ContextVariableValueRow) : null;
+  }
+
+  async deleteValue(variableId: string, scope: ContextVariableScope): Promise<boolean> {
+    const result = await this.db
+      .deleteFrom("context_variable_values")
+      .where("variable_id", "=", variableId)
+      .where("scope_type", "=", scope.type)
+      .where("scope_id", "=", scope.id)
+      .executeTakeFirst();
+    return (result?.numDeletedRows ?? 0n) > 0n;
+  }
+
+  async resolveForAgent(
+    workspaceId: string,
+    agentId: string,
+    scopes: ContextVariableScope[],
+  ): Promise<ResolvedVariableInput[]> {
+    const enablements = (await this.listByAgent(workspaceId, agentId))
+      .filter((enablement) => enablement.enabled && enablement.source === "pushed" && enablement.variable);
+    const resolved: ResolvedVariableInput[] = [];
+
+    for (const enablement of enablements) {
+      const variable = enablement.variable;
+      if (!variable) {
+        continue;
+      }
+      const value = await this.readFirstScopedValue(variable.id, scopes);
+      if (!value) {
+        continue;
+      }
+      resolved.push({
+        name: variable.name,
+        description: variable.description,
+        value: value.data,
+        surfacing: enablement.surfacing,
+        sensitive: variable.sensitivity === "sensitive",
+        trust: variable.trustTier === "signed" ? "verified" : "unverified",
+      });
+    }
+
+    return resolved;
+  }
+
+  private async readFirstScopedValue(
+    variableId: string,
+    scopes: readonly ContextVariableScope[],
+  ): Promise<ContextVariableValue | null> {
+    for (const scope of scopes) {
+      const value = await this.readValue(variableId, scope);
+      if (value) {
+        return value;
+      }
+    }
+    return null;
+  }
+}

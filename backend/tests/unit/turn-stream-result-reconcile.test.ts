@@ -53,6 +53,7 @@ const baseSession = (
     userMessage: { id: "message-1", content: "Tell me about the page." } as never,
     turnRoute: "retrieval",
     pageContext: null,
+    resolvedContext: { fragments: [], renderFragments: [], staged: [], snapshot: {} },
     directiveSteering: { rules: [], matches: [], omissions: [] },
     retrieval: {
       systemPrompt: "system",

@@ -14,6 +14,7 @@ import {
 import { HANDOFF_NOTIFY_ACTION_TYPE } from "../../src/modules/chat/services/routines/contactRoutine.js";
 import type { ChatPresentedAnswer } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
+import { resolveContextForTurn } from "../../src/modules/context-variables/public.js";
 import { TURN_TRACE_ENVELOPE_VERSION } from "../../src/modules/chat/services/turnTraceEnvelope.js";
 import { capabilityNames, type CapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../src/shared/domain/actionCapabilities.js";
@@ -40,7 +41,7 @@ const harness = () => {
   } as unknown as MessageRepositoryPort;
 
   const lifecycle = new ChatTurnLifecycle(conversationRepository, messageRepository, auditService);
-  return { lifecycle, records };
+  return { lifecycle, records, messageRepository };
 };
 
 const session = (): PreparedSession =>
@@ -52,6 +53,7 @@ const session = (): PreparedSession =>
     turnRoute: "direct",
     directiveSteering: { rules: [], matches: [], omissions: [] },
     stagedContext: [],
+    resolvedContext: resolveContextForTurn(null),
     retrieval: {
       contexts: [],
       diagnostics: {},
@@ -116,6 +118,42 @@ const engineTrace = (): ConversationTrace => ({
 });
 
 describe("ChatTurnLifecycle — engine turn envelope", () => {
+  it("persists the redacted page context snapshot on assistant message metadata", async () => {
+    const { lifecycle, messageRepository } = harness();
+    const prepared = {
+      ...session(),
+      resolvedContext: resolveContextForTurn({
+        pageUrl: "https://example.test/docs",
+        pageTitle: "Docs",
+        pageLocale: "en-US",
+        browserLocale: "en",
+        content: "Visible page text.",
+      }),
+    };
+
+    await lifecycle.completeAssistantTurn({
+      workspaceId: "workspace_1",
+      session: prepared,
+      presentation: presentation(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      engineTrace: engineTrace(),
+    });
+
+    const create = vi.mocked(messageRepository.create);
+    const assistantMessage = create.mock.calls[0]?.[0];
+    expect(assistantMessage?.metadata?.contextVariables).toEqual({
+      page_context: {
+        kind: "page_context",
+        pageUrl: "https://example.test/docs",
+        pageTitle: "Docs",
+        pageLocale: "en-US",
+        browserLocale: "en",
+        content: "Visible page text.",
+      },
+    });
+  });
+
   it("builds the same turn trace envelope through the extracted presentation helper", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:02.000Z"));

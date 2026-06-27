@@ -54,6 +54,8 @@ export interface ChatAnswerPort {
     pageContext?: unknown;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
+    chatSessionId?: string | null;
+    /** @deprecated Use chatSessionId. */
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
   }): Promise<ChatResponse>;

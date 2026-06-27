@@ -59,6 +59,44 @@ test("routine prose survives a copy to an external file and back", async ({ page
   await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Greeter");
 });
 
+// Action / outcome / approval / decision chips used to have no text token, so a routine
+// using them fell back to an in-app-only copy. This proves an action step now survives the
+// portable-text copy and paste like every other element.
+test("an action step survives a copy to an external file and back", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {});
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Escalate");
+  await page.getByLabel("Trigger", { exact: true }).fill("When the visitor asks for a person");
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+  await editor.pressSequentially("Email the team ");
+  await page.getByRole("button", { name: "Action" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Action type").fill("contact.send");
+  await dialog.getByRole("button", { name: "Add action step" }).click();
+  await expect(page.locator('[data-routine-chip="action"]')).toBeVisible();
+
+  // Copy the whole routine as portable text — the action step is now a token.
+  await editor.click();
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.press("ControlOrMeta+c");
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toContain("[action contact.send]");
+
+  // Wipe and paste back — the action chip is reconstructed from the text alone.
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.press("Delete");
+  await expect(page.locator('[data-routine-chip="action"]')).toHaveCount(0);
+  await editor.click();
+  await page.keyboard.press("ControlOrMeta+v");
+  await expect(page.locator('[data-routine-chip="action"]')).toBeVisible();
+});
+
 // A pasted document replaces the routine only when it carries our routine frontmatter. A
 // foreign markdown doc that merely opens with `---` and happens to contain an @mention must
 // be inserted, never wipe the routine the author is editing.

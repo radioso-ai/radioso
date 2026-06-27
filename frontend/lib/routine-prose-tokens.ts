@@ -8,7 +8,9 @@
 // (`backend/.../routines/document`) so the two surfaces stay one grammar: `@ref` mentions,
 // `-> #step` / end targets, and bracketed guards. Keep them in sync when either moves.
 
+import { OUTCOME_GUARD_REF } from './routine-prose'
 import type {
+  ApprovalDocOption,
   ChipDocVariable,
   ProseChipKind,
   ProseParagraph,
@@ -44,6 +46,10 @@ export type ChipTokenInput = {
   inputBindings?: Record<string, RoutineInputBinding>
   outputAssignments?: Record<string, string>
   mode?: RoutineStepMode | null
+  // Approval / decision gates: the captured slot and the choices (each with an optional
+  // description, and — for the block `approval` form — a routing target).
+  captureKey?: string | null
+  options?: ApprovalDocOption[]
 }
 
 // The frontmatter fence and the readable comparison operators. The operator tokens are
@@ -84,6 +90,14 @@ const opNeedsUnit = (op: RoutineFieldGuardOp): boolean => op === 'older_than' ||
 const formatLiteral = (value: RoutineFieldGuardValue): string =>
   typeof value === 'string' ? value : String(value)
 
+const escapeQuoted = (value: string): string =>
+  value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+
+const unescapeQuoted = (value: string): string =>
+  value.replace(/\\(.)/g, '$1')
+
+const BARE_ACTION_REF = /^[A-Za-z_][A-Za-z0-9_.-]*$/
+
 const formatBinding = (binding: RoutineInputBinding): string =>
   binding.kind === 'variableRef' ? `@${binding.ref}` : formatLiteral(binding.value)
 
@@ -107,6 +121,8 @@ const formatSkillSuffix = (chip: ChipTokenInput): string => {
 }
 
 const formatConditionToken = (chip: ChipTokenInput): string => {
+  // An outcome guard is a condition chip with the sentinel ref; its status rides in `value`.
+  if (chip.refId === OUTCOME_GUARD_REF) return `[outcome ${formatLiteral(chip.value ?? '')}]`
   const op = chip.op
   if (!op) return `[if ${chip.refId}]`
   const token = OP_TOKENS[op]
@@ -115,6 +131,29 @@ const formatConditionToken = (chip: ChipTokenInput): string => {
   if (opNeedsUnit(op)) return `[if ${chip.refId} ${token} ${formatLiteral(chip.value ?? '')} ${chip.unit ?? ''}]`.replace(/\s+/g, ' ').trimEnd()
   return `[if ${chip.refId} ${token} ${formatLiteral(chip.value ?? '')}]`
 }
+
+// A target an approval option routes to, in the same spelling branch lines use.
+const formatTarget = (target: string): string =>
+  target === 'done' ? 'end' : target === 'handoff' ? 'handoff' : `step:${target}`
+
+// One choice of a gate: `id="Label"`, an optional `("Description")`, and — for the block
+// approval form — an optional `-> target`. Quotes and backslashes are escaped so authored
+// labels/descriptions survive portable text copy/paste.
+const formatOption = (option: ApprovalDocOption, includeTarget: boolean): string => {
+  let token = `${option.id}="${escapeQuoted(option.label)}"`
+  if (option.description) token += ` ("${escapeQuoted(option.description)}")`
+  if (includeTarget && option.target) token += ` -> ${formatTarget(option.target)}`
+  return token
+}
+
+const formatGateToken = (keyword: 'decision' | 'approval', chip: ChipTokenInput): string => {
+  const captureKey = chip.captureKey ?? chip.refId
+  const options = (chip.options ?? []).map((option) => formatOption(option, keyword === 'approval')).join(', ')
+  return `[${keyword} ${captureKey}: ${options}]`
+}
+
+const formatActionToken = (refId: string): string =>
+  BARE_ACTION_REF.test(refId) ? `[action ${refId}]` : `[action "${escapeQuoted(refId)}"]`
 
 // One chip → its canonical inline token. Shared by the editor's copy path (live node) and
 // document serialization (parsed segment).
@@ -132,6 +171,12 @@ export const tokenForChip = (chip: ChipTokenInput): string => {
       return `-> step:${chip.refId}${chip.counterLimit != null ? ` (max ${chip.counterLimit})` : ''}`
     case 'condition':
       return formatConditionToken(chip)
+    case 'action':
+      return formatActionToken(chip.refId)
+    case 'decision':
+      return formatGateToken('decision', chip)
+    case 'approval':
+      return formatGateToken('approval', chip)
     default:
       return ''
   }
@@ -145,11 +190,22 @@ const formatParagraph = (paragraph: ProseParagraph): string => {
 }
 
 const referencedVariableIds = (paragraphs: ProseParagraph[]): Set<string> => {
+  // A gate's capture key isn't a variable, and neither is the branch condition that tests it
+  // (its refId is the capture key) nor the outcome sentinel — exclude all of those.
+  const captureKeys = new Set<string>()
+  for (const paragraph of paragraphs) {
+    for (const segment of paragraph.segments) {
+      if (segment.kind === 'chip' && (segment.chipKind === 'decision' || segment.chipKind === 'approval')) {
+        captureKeys.add(segment.captureKey ?? segment.refId)
+      }
+    }
+  }
   const ids = new Set<string>()
   for (const paragraph of paragraphs) {
     for (const segment of paragraph.segments) {
       if (segment.kind !== 'chip') continue
-      if (segment.chipKind === 'variable' || segment.chipKind === 'condition') ids.add(segment.refId)
+      if (segment.chipKind === 'variable') ids.add(segment.refId)
+      if (segment.chipKind === 'condition' && segment.refId !== OUTCOME_GUARD_REF && !captureKeys.has(segment.refId)) ids.add(segment.refId)
       if (segment.chipKind === 'skill') {
         for (const binding of Object.values(segment.inputBindings ?? {})) {
           if (binding.kind === 'variableRef') ids.add(binding.ref)
@@ -168,13 +224,23 @@ export const serializeProseDoc = (input: {
   paragraphs: ProseParagraph[]
 }): string => {
   const referenced = referencedVariableIds(input.paragraphs)
-  // Only non-default-typed variables need a declaration — a plain `@name` round-trips as
-  // text, so we don't clutter the header with the common case.
-  const typedVars = input.variables.filter((variable) => referenced.has(variable.id) && variable.type !== 'text')
+  // A variable needs a declaration only when it carries something a bare `@name` can't —
+  // a non-text type, or an optional/mutable flag. The common case (required, non-mutable,
+  // text) round-trips as plain text, so the header stays uncluttered.
+  const declaredVars = input.variables.filter((variable) =>
+    referenced.has(variable.id)
+    && (variable.type !== 'text' || variable.required === false || variable.mutable === true))
 
   const front = [FENCE, `name: ${input.name}`, `trigger: ${input.trigger}`]
-  if (typedVars.length > 0) {
-    front.push(`vars: ${typedVars.map((variable) => `${variable.id}:${variable.type}`).join(', ')}`)
+  if (declaredVars.length > 0) {
+    // Each declaration is `key:type` plus optional `:optional` / `:mutable` flag tokens.
+    front.push(`vars: ${declaredVars.map((variable) => {
+      const flags = [
+        ...(variable.required === false ? ['optional'] : []),
+        ...(variable.mutable === true ? ['mutable'] : []),
+      ]
+      return [variable.id, variable.type, ...flags].join(':')
+    }).join(', ')}`)
   }
   front.push(FENCE)
 
@@ -233,6 +299,74 @@ const parseConditionBody = (body: string): Extract<ProseSegment, { kind: 'chip' 
   return { kind: 'chip', chipKind: 'condition', refId, op, value: coerceLiteral(tail), label: `${refId} ${token} ${tail}` }
 }
 
+// Map a target token (`end` / `handoff` / `step:<id>`) back to its stored ref.
+const parseTarget = (token: string | undefined): string | undefined => {
+  if (!token) return undefined
+  if (token === 'end') return 'done'
+  if (token === 'handoff') return 'handoff'
+  return token.startsWith('step:') ? token.slice('step:'.length) : undefined
+}
+
+// Parse a gate's option list: `id="Label" ("Description") -> target, ...`. Description and
+// target are optional; whitespace and the comma separators are tolerated.
+const QUOTED_VALUE = '"((?:\\\\.|[^"\\\\])*)"'
+const GATE_OPTION = new RegExp(`([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*${QUOTED_VALUE}(?:\\s*\\(${QUOTED_VALUE}\\))?(?:\\s*->\\s*(end|handoff|step:[A-Za-z_][A-Za-z0-9_.-]*))?`, 'g')
+const parseGateOptions = (body: string): ApprovalDocOption[] => {
+  const options: ApprovalDocOption[] = []
+  for (const match of body.matchAll(GATE_OPTION)) {
+    const target = parseTarget(match[4])
+    options.push({
+      id: match[1]!,
+      label: unescapeQuoted(match[2] ?? ''),
+      ...(match[3] ? { description: unescapeQuoted(match[3]) } : {}),
+      ...(target ? { target } : {}),
+    })
+  }
+  return options
+}
+
+const findBracketClose = (value: string): number => {
+  let quoted = false
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index]
+    if (quoted && char === '\\') {
+      index += 1
+      continue
+    }
+    if (char === '"') {
+      quoted = !quoted
+      continue
+    }
+    if (!quoted && char === ']') return index
+  }
+  return -1
+}
+
+const parseActionBody = (body: string): string | null => {
+  const trimmed = body.trim()
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    return unescapeQuoted(trimmed.slice(1, -1))
+  }
+  const idMatch = IDENTIFIER.exec(trimmed)
+  return idMatch && idMatch[0] === trimmed ? idMatch[0] : null
+}
+
+// Parse a `[decision key: ...]` / `[approval key: ...]` gate body (brackets already stripped).
+const parseGateBody = (chipKind: 'decision' | 'approval', body: string): Extract<ProseSegment, { kind: 'chip' }> | null => {
+  const colon = body.indexOf(':')
+  if (colon === -1) return null
+  const captureKey = body.slice(0, colon).trim()
+  if (!captureKey) return null
+  return {
+    kind: 'chip',
+    chipKind,
+    refId: captureKey,
+    captureKey,
+    label: chipKind,
+    options: parseGateOptions(body.slice(colon + 1)),
+  }
+}
+
 const parseSkillSuffix = (suffix: string): Pick<Extract<ProseSegment, { kind: 'chip' }>, 'inputBindings' | 'outputAssignments' | 'mode'> => {
   const inputBindings: Record<string, RoutineInputBinding> = {}
   const outputAssignments: Record<string, string> = {}
@@ -282,10 +416,35 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
     }
 
     if (rest.startsWith('[if ')) {
-      const close = rest.indexOf(']')
+      const close = findBracketClose(rest)
       if (close !== -1) {
         const condition = parseConditionBody(rest.slice('[if '.length, close))
         if (condition) { flush(); segments.push(condition); index += close + 1; continue }
+      }
+    }
+
+    if (rest.startsWith('[outcome ')) {
+      const close = findBracketClose(rest)
+      if (close !== -1) {
+        const status = rest.slice('[outcome '.length, close).trim()
+        if (status) { flush(); segments.push({ kind: 'chip', chipKind: 'condition', refId: OUTCOME_GUARD_REF, value: status, label: `outcome is ${status}` }); index += close + 1; continue }
+      }
+    }
+
+    if (rest.startsWith('[action ')) {
+      const close = findBracketClose(rest)
+      if (close !== -1) {
+        const actionRef = parseActionBody(rest.slice('[action '.length, close))
+        if (actionRef) { flush(); segments.push({ kind: 'chip', chipKind: 'action', refId: actionRef, label: actionRef }); index += close + 1; continue }
+      }
+    }
+
+    if (rest.startsWith('[decision ') || rest.startsWith('[approval ')) {
+      const close = findBracketClose(rest)
+      if (close !== -1) {
+        const chipKind = rest.startsWith('[decision ') ? 'decision' as const : 'approval' as const
+        const gate = parseGateBody(chipKind, rest.slice(`[${chipKind} `.length, close))
+        if (gate) { flush(); segments.push(gate); index += close + 1; continue }
       }
     }
 
@@ -329,7 +488,7 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
 export const looksLikeRoutineProse = (text: string): boolean => {
   const trimmed = text.trim()
   if (trimmed.startsWith(`${FENCE}\nname:`) || trimmed.startsWith(`${FENCE}\r\nname:`)) return true
-  return /(^|\s)(-> (end|handoff|step:)|\[if )/.test(text) || /(^|\s)@[A-Za-z_]/.test(text)
+  return /(^|\s)(-> (end|handoff|step:)|\[(if|outcome|action|decision|approval) )/.test(text) || /(^|\s)@[A-Za-z_]/.test(text)
 }
 
 export const parseProseDoc = (
@@ -341,6 +500,9 @@ export const parseProseDoc = (
   let trigger: string | null = null
   let hadFrontmatter = false
   const declaredTypes = new Map<string, RoutineSlotType>()
+  // Slot flags declared alongside the type (`key:type:optional:mutable`). Absent = default
+  // (required, non-mutable), so we only record the non-default flags we actually saw.
+  const declaredFlags = new Map<string, { required?: boolean; mutable?: boolean }>()
 
   let bodyStart = 0
   if (lines[0]?.trim() === FENCE) {
@@ -356,9 +518,17 @@ export const parseProseDoc = (
         else if (key === 'vars') {
           hadFrontmatter = true
           for (const declaration of splitList(value)) {
-            const [varKey, varType] = declaration.split(':').map((part) => part.trim())
+            const [varKey, varType, ...flags] = declaration.split(':').map((part) => part.trim())
             if (varKey && varType && (SLOT_TYPES as readonly string[]).includes(varType)) {
               declaredTypes.set(varKey, varType as RoutineSlotType)
+              const required = flags.includes('optional') ? false : undefined
+              const mutable = flags.includes('mutable') ? true : undefined
+              if (required !== undefined || mutable !== undefined) {
+                declaredFlags.set(varKey, {
+                  ...(required !== undefined ? { required } : {}),
+                  ...(mutable !== undefined ? { mutable } : {}),
+                })
+              }
             }
           }
         }
@@ -392,6 +562,7 @@ export const parseProseDoc = (
     id,
     name: id,
     type: declaredTypes.get(id) ?? 'text',
+    ...declaredFlags.get(id),
   }))
 
   return { name, trigger, variables, paragraphs, hadFrontmatter }

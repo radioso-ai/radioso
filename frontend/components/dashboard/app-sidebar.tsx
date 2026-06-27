@@ -12,6 +12,7 @@ import {
   SidebarGroupContent,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
@@ -28,6 +29,8 @@ import {
   type DashboardSection,
   type DashboardRouteState,
 } from '@/lib/dashboard-routes'
+import { useInboxCount } from '@/hooks/use-inbox-count'
+import { cn } from '@/lib/utils'
 import { WorkspaceSwitcher } from './workspace-switcher'
 import { useWorkspace } from '@/lib/workspace-context'
 
@@ -35,14 +38,16 @@ interface AppSidebarProps {
   accountId: string
   currentView: DashboardSection
   routeState: DashboardRouteState
-  /** The active area's second column, shown inside the mobile drawer only. */
+  /** The active section's nested sub-navigation, rendered under its rail row. */
   areaSubNav?: ReactNode
 }
 
+// Activity sits second — directly under Agents — because it carries the operator's
+// "needs attention" inbox and other time-sensitive items.
 const navItems = [
   { id: 'agents' as const, label: 'Agents', icon: Bot },
-  { id: 'knowledge' as const, label: 'Knowledge Base', icon: BookOpen },
   { id: 'activity' as const, label: 'Activity', icon: Activity },
+  { id: 'knowledge' as const, label: 'Knowledge Base', icon: BookOpen },
   { id: 'eval' as const, label: 'Eval', icon: FlaskConical },
   { id: 'settings' as const, label: 'Settings', icon: Settings },
 ]
@@ -50,16 +55,18 @@ const navItems = [
 export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: AppSidebarProps) {
   const { user } = useAuth()
   const { activeWorkspace, activeWorkspaceId, accounts } = useWorkspace()
+  const inboxCount = useInboxCount()
   const organizationName =
     user?.accountId === accountId && user.organizationName
       ? user.organizationName
       : accounts.find((account) => account.accountId === accountId)?.organizationName ?? 'radioso'
   const userDisplayName = user?.email?.split('@')[0] || 'User'
   const userInitial = userDisplayName.charAt(0).toUpperCase() || 'U'
+  const isAccountActive = currentView === 'account'
 
   return (
-    <Sidebar collapsible="icon">
-      <SidebarHeader className="h-14 flex-row items-center gap-2 border-b border-sidebar-border px-4 py-0 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+    <Sidebar collapsible="offcanvas">
+      <SidebarHeader className="h-14 flex-row items-center gap-2 border-b border-sidebar-border px-4 py-0">
         <Image
           src="/radioso-icon.svg"
           alt="radioso logo"
@@ -69,7 +76,7 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
           loading="eager"
           className="h-7 w-7 flex-shrink-0"
         />
-        <span className="truncate font-display text-lg font-semibold text-foreground group-data-[collapsible=icon]:hidden">
+        <span className="truncate font-display text-lg font-semibold text-foreground">
           {organizationName}
         </span>
       </SidebarHeader>
@@ -83,43 +90,56 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
                 const isActive = item.id === 'activity'
                   ? currentView === 'activity' || currentView === 'quality'
                   : currentView === item.id
+                const showBadge = item.id === 'activity' && inboxCount > 0
+                // In the Agents section the row IS the agent picker (rendered inline by
+                // areaSubNav), so there's a single agent entry instead of a picker above an
+                // "Agents" row. Until areaSubNav is ready (e.g. workspace still loading) we
+                // keep the plain row so the entry never collapses to an empty gap.
+                const isAgentsPicker = item.id === 'agents' && isActive && Boolean(areaSubNav)
 
                 return (
                   <SidebarMenuItem key={item.id}>
-                  <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
-                    <Link
-                      href={buildDashboardHref(accountId, {
-                        section: item.id,
-                        workspaceId: activeWorkspaceId ?? undefined,
-                        workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
-                      })}
-                    >
-                      <item.icon className="w-4 h-4" />
-                      <span>{item.label}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
+                    {isAgentsPicker ? null : (
+                      <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
+                        <Link
+                          href={buildDashboardHref(accountId, {
+                            section: item.id,
+                            workspaceId: activeWorkspaceId ?? undefined,
+                            workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
+                          })}
+                        >
+                          <item.icon className="w-4 h-4" />
+                          <span>{item.label}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    )}
+                    {showBadge ? (
+                      <SidebarMenuBadge
+                        className="bg-secondary text-secondary-foreground"
+                        aria-label={`${inboxCount} items need attention`}
+                      >
+                        {inboxCount > 99 ? '99+' : inboxCount}
+                      </SidebarMenuBadge>
+                    ) : null}
+                    {isActive && areaSubNav ? areaSubNav : null}
+                  </SidebarMenuItem>
                 )
               })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-
-        {areaSubNav ? (
-          <SidebarGroup className="md:hidden">
-            <SidebarGroupContent className="[&>aside]:w-full [&>aside]:border-r-0">{areaSubNav}</SidebarGroupContent>
-          </SidebarGroup>
-        ) : null}
       </SidebarContent>
 
       <SidebarFooter>
+        {isAccountActive && areaSubNav ? <div className="pb-1">{areaSubNav}</div> : null}
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
-              isActive={currentView === 'account'}
+              size="lg"
+              isActive={isAccountActive}
               tooltip={user?.email || userDisplayName}
-              className="group/user"
+              className={cn('group/user', isAccountActive && 'bg-sidebar-accent')}
             >
               <Link
                 href={buildDashboardHref(accountId, {

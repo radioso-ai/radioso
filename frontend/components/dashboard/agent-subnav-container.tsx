@@ -225,30 +225,31 @@ export function AgentSubNavContainer({
     }
   }
 
+  // The switcher is the Agents section's row itself; its nav items render nested below it.
   return (
     <>
+      <div className="relative">
+        <AgentSwitcher
+          agentName={agentName}
+          agents={agents.map((agent) => ({ id: agent.id, name: agent.name }))}
+          open={switcherOpen}
+          onOpenChange={setSwitcherOpen}
+          hrefForAgent={hrefForAgent}
+          onSelectAgent={(agentId) => {
+            setLastSelectedAgentId(activeWorkspaceId, agentId)
+            setSwitcherOpen(false)
+          }}
+          onCreateAgent={() => {
+            setSwitcherOpen(false)
+            setCreateAgentError(null)
+            setCreateDialogOpen(true)
+          }}
+        />
+      </div>
       <DashboardSubNav
         activeSection={activeSection}
         hrefFor={hrefForSection}
         channelStatus={channelStatus}
-        switcher={
-          <AgentSwitcher
-            agentName={agentName}
-            agents={agents.map((agent) => ({ id: agent.id, name: agent.name }))}
-            open={switcherOpen}
-            onOpenChange={setSwitcherOpen}
-            hrefForAgent={hrefForAgent}
-            onSelectAgent={(agentId) => {
-              setLastSelectedAgentId(activeWorkspaceId, agentId)
-              setSwitcherOpen(false)
-            }}
-            onCreateAgent={() => {
-              setSwitcherOpen(false)
-              setCreateAgentError(null)
-              setCreateDialogOpen(true)
-            }}
-          />
-        }
       />
 
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>

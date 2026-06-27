@@ -1,7 +1,6 @@
 'use client'
 
 import Link from 'next/link'
-import type { ReactNode } from 'react'
 import {
   Bot,
   ChevronDown,
@@ -23,17 +22,21 @@ import {
 
 import { cn } from '@/lib/utils'
 import { type AgentSectionId } from '@/lib/dashboard-areas'
-import { SubNavColumn, SubNavRow, type SubNavGroup } from '@/components/dashboard/subnav-column'
+import { SectionNavBody, SubNavRow, type SubNavGroup } from '@/components/dashboard/subnav-column'
 
 /** Status dots only apply to channels that have a clear on/off toggle. */
 export type ChannelStatus = Partial<Record<AgentSectionId, boolean>>
 
 type AgentItem = { id: AgentSectionId; label: string; icon: LucideIcon }
 
-const AGENT_GROUPS: { label: string | null; items: AgentItem[] }[] = [
+type AgentGroup = { label: string | null; items: AgentItem[]; collapsible?: boolean; defaultOpen?: boolean }
+
+const AGENT_GROUPS: AgentGroup[] = [
   { label: null, items: [{ id: 'chat', label: 'Chat', icon: MessageSquare }] },
   {
     label: 'Assistant',
+    collapsible: true,
+    defaultOpen: true,
     items: [
       { id: 'identity', label: 'Identity & appearance', icon: UserRound },
       { id: 'behavior', label: 'Behavior', icon: SlidersHorizontal },
@@ -43,7 +46,10 @@ const AGENT_GROUPS: { label: string | null; items: AgentItem[] }[] = [
     ],
   },
   {
+    // One-time setup — collapsed by default, auto-opens when a channel is active.
     label: 'Channels',
+    collapsible: true,
+    defaultOpen: false,
     items: [
       { id: 'public-chat-link', label: 'Public chat link', icon: LinkIcon },
       { id: 'website-embed', label: 'Website widget', icon: Globe },
@@ -60,16 +66,16 @@ const AGENT_FOOTER: AgentItem = { id: 'danger', label: 'Danger zone', icon: Tras
 export function DashboardSubNav({
   activeSection,
   hrefFor,
-  switcher,
   channelStatus,
 }: {
   activeSection: AgentSectionId
   hrefFor: (section: AgentSectionId) => string
-  switcher: ReactNode
   channelStatus?: ChannelStatus
 }) {
   const groups: SubNavGroup[] = AGENT_GROUPS.map((group) => ({
     label: group.label,
+    collapsible: group.collapsible,
+    defaultOpen: group.defaultOpen,
     items: group.items.map((item) => ({
       id: item.id,
       label: item.label,
@@ -81,8 +87,7 @@ export function DashboardSubNav({
   }))
 
   return (
-    <SubNavColumn
-      header={switcher}
+    <SectionNavBody
       groups={groups}
       footer={
         <SubNavRow
@@ -122,16 +127,16 @@ export function AgentSwitcher({
       <button
         type="button"
         onClick={() => onOpenChange(!open)}
-        className="flex w-full items-center gap-2 rounded-md border border-sidebar-border bg-background px-2.5 py-2 text-left text-sm transition-colors hover:bg-sidebar-accent"
+        // The agents section's row IS the agent picker — styled like the active nav row
+        // (accent background + left bar) so it reads as "you are in Agents", not a box.
+        className="relative flex w-full items-center gap-2 rounded-md bg-sidebar-accent px-2 py-2 text-left text-sm font-medium text-sidebar-accent-foreground transition-colors before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-secondary before:content-['']"
       >
-        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-          <Bot className="h-4 w-4" />
-        </div>
-        <span className="min-w-0 flex-1 truncate font-medium">{agentName}</span>
-        <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', open && 'rotate-180')} />
+        <Bot className="h-4 w-4 shrink-0 text-secondary" />
+        <span className="min-w-0 flex-1 truncate">{agentName}</span>
+        <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
       </button>
       {open ? (
-        <div className="absolute inset-x-4 top-full z-20 mt-1 max-h-80 overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-md">
+        <div className="absolute inset-x-0 top-full z-20 mt-1 max-h-80 overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-md">
           {agents.map((agent) => (
             <Link
               key={agent.id}

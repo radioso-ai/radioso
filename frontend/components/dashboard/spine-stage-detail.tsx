@@ -211,7 +211,11 @@ function GatherStageDetail({
       <StageHeader stage={stage} />
       {contextVariables ? (
         <Section label="Visitor context">
-          <KeyValueGrid record={contextVariables} />
+          <div className="space-y-2">
+            {Object.entries(contextVariables).map(([name, value]) => (
+              <RawJson key={name} label={name} value={value} />
+            ))}
+          </div>
         </Section>
       ) : null}
       <Section label={`History (${total} total${omitted > 0 ? `, showing last ${refs.length}` : ''})`}>

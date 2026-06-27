@@ -168,6 +168,37 @@ function RawBlock({
   )
 }
 
+/**
+ * Resolved visitor context variables — one collapsible, pretty-printed block per variable
+ * (e.g. "page_context"). Values are already redacted upstream.
+ */
+function VisitorContextBlock({ value }: { value: unknown }) {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+  const entries = Object.entries(value as Record<string, unknown>)
+  if (entries.length === 0) {
+    return null
+  }
+  return (
+    <div className="space-y-2 select-text">
+      <p className="font-medium text-foreground">Visitor context</p>
+      <div className="space-y-2">
+        {entries.map(([name, varValue]) => (
+          <details key={name} className="rounded-lg border border-border/70 bg-background/70 p-3">
+            <summary className="cursor-pointer font-mono text-[11px] font-medium text-foreground">
+              {name}
+            </summary>
+            <pre className="mt-2 cursor-text select-text overflow-x-auto whitespace-pre-wrap break-words text-[11px] text-muted-foreground">
+              {formatJson(varValue)}
+            </pre>
+          </details>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 const getSelectedStage = (trace: ActivityTrace, selectedStageId: string): ActivityStage | undefined =>
   trace.stages.find((stage) => stage.stageId === selectedStageId)
 
@@ -861,7 +892,7 @@ export function ActivityTraceDetail({
   if (!activityTrace) {
     return (
       <div className="space-y-4 select-text">
-        <RawBlock label="Visitor context" value={visitorContext} />
+        <VisitorContextBlock value={visitorContext} />
         <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
           Detailed activity trace unavailable for this answer.
         </div>
@@ -883,7 +914,7 @@ export function ActivityTraceDetail({
   return (
     <ChunkInspectorContext.Provider value={setChunkInspectorRequest}>
       <div className="space-y-4 select-text">
-        <RawBlock label="Visitor context" value={visitorContext} />
+        <VisitorContextBlock value={visitorContext} />
         <StageOverview stage={selectedStage} trace={activityTrace} />
 
       <details className="group rounded-lg border border-border/70 bg-background/60 p-3 text-xs text-muted-foreground">

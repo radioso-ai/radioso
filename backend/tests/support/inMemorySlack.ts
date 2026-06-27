@@ -82,7 +82,10 @@ export class InMemorySlackBindingRepository implements SlackBindingRepositoryPor
       installationId: input.installationId,
       workspaceId: input.workspaceId,
       answeringAgentId: input.answeringAgentId,
-      escalationChannelId: input.escalationChannelId ?? null,
+      escalationChannelId: input.escalationChannelId === undefined
+        ? existing?.escalationChannelId ?? null
+        : input.escalationChannelId,
+      gapEscalationEnabled: input.gapEscalationEnabled ?? existing?.gapEscalationEnabled ?? false,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     };

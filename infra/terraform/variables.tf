@@ -349,6 +349,29 @@ variable "posthog_host" {
   default     = null
 }
 
+variable "otel_logs_enabled" {
+  description = "Whether backend Cloud Run services export structured logs to the OTLP logs endpoint."
+  type        = bool
+  default     = false
+}
+
+variable "otel_logs_endpoint" {
+  description = "Optional OTLP HTTP logs endpoint. Defaults to <posthog_host>/i/v1/logs when logs are enabled for the PostHog sink."
+  type        = string
+  default     = null
+}
+
+variable "otel_logs_min_level" {
+  description = "Minimum backend log level exported through OpenTelemetry logs."
+  type        = string
+  default     = "info"
+
+  validation {
+    condition     = contains(["trace", "debug", "info", "warn", "error", "fatal"], var.otel_logs_min_level)
+    error_message = "otel_logs_min_level must be one of trace, debug, info, warn, error, or fatal."
+  }
+}
+
 variable "openai_chat_model" {
   description = "OpenAI chat model name"
   type        = string

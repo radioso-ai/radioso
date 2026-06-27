@@ -1726,7 +1726,8 @@ CREATE TABLE public.slack_channel_bindings (
     answering_agent_id uuid NOT NULL,
     escalation_channel_id text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    gap_escalation_enabled boolean DEFAULT false NOT NULL
 );
 
 

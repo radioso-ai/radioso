@@ -3697,7 +3697,7 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
     return true;
   }
 
-  async listChatAnswerEventsByAssistantMessageIds(
+  async listChatTurnEventsByAssistantMessageIds(
     workspaceId: string,
     conversationId: string,
     assistantMessageIds: string[],
@@ -3705,7 +3705,7 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
     return this.items.filter((event) => {
       return (
         event.workspaceId === workspaceId &&
-        event.eventType === "chat.answer" &&
+        (event.eventType === "chat.answer" || event.eventType === "chat.suspended") &&
         event.metadata.conversationId === conversationId &&
         typeof event.metadata.assistantMessageId === "string" &&
         assistantMessageIds.includes(event.metadata.assistantMessageId)

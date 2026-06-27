@@ -10,6 +10,7 @@ import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import {
   getWebsiteEmbedSurfaceSettings,
   isAgentBootstrapActive,
+  resolveEffectiveContactDelivery,
   type AgentInput,
   type AgentRecord,
 } from "../domain.js";
@@ -59,7 +60,14 @@ export class AgentService {
       if (notifySkill?.kind !== "notify") {
         return agent;
       }
-      return { ...agent, contactRequestsEnabled: notifySkill.enabled };
+      return {
+        ...agent,
+        contactRequestsEnabled: notifySkill.enabled,
+        // Resolve delivery from the same source dispatch sends to, so the contact
+        // gate doesn't hide a working notify-skill destination behind a stale
+        // legacy contactRequestDelivery (or vice versa).
+        contactRequestDelivery: resolveEffectiveContactDelivery(notifySkill, agent.contactRequestDelivery),
+      };
     };
     if (agentId) {
       const agent = await this.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);

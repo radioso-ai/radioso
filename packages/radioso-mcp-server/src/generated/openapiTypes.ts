@@ -1368,6 +1368,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/email-oauth-connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List OAuth connections eligible to back a customer email connection */
+        get: operations["listWorkspaceEmailOauthConnections"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/email-connections/{connectionId}": {
         parameters: {
             query?: never;
@@ -10695,6 +10712,58 @@ export interface operations {
             };
         };
     };
+    listWorkspaceEmailOauthConnections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Email-eligible OAuth connections */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        connections: {
+                            /** Format: uuid */
+                            id: string;
+                            provider: string;
+                            displayName: string;
+                            /** @enum {string} */
+                            status: "pending" | "authorized" | "needs_reauth" | "disabled" | "error";
+                            grantedScopes: string[];
+                            providerAccountId: string | null;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace settings permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     deleteWorkspaceEmailConnection: {
         parameters: {
             query?: never;
@@ -11547,6 +11616,7 @@ export interface operations {
                         /** Format: uuid */
                         answeringAgentId: string | null;
                         escalationChannelId: string | null;
+                        gapEscalationEnabled: boolean;
                     };
                 };
             };
@@ -11585,6 +11655,7 @@ export interface operations {
                     /** Format: uuid */
                     answeringAgentId: string;
                     escalationChannelId?: string | null;
+                    gapEscalationEnabled?: boolean;
                 };
             };
         };
@@ -11599,6 +11670,7 @@ export interface operations {
                         /** Format: uuid */
                         answeringAgentId: string | null;
                         escalationChannelId: string | null;
+                        gapEscalationEnabled: boolean;
                     };
                 };
             };

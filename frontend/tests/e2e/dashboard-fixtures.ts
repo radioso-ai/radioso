@@ -102,6 +102,7 @@ export type SlackInstallStatusFixture = {
 export type SlackBindingFixture = {
   answeringAgentId: string | null;
   escalationChannelId: string | null;
+  gapEscalationEnabled: boolean;
 };
 
 export type SlackManifestFixture = {
@@ -774,7 +775,11 @@ export const installDashboardApiMocks = async (
   const emailActivity = options.emailActivity ?? [];
   const slackReady = { configured: true, missingEnvVars: [] };
   let slackStatus = { readiness: slackReady, ...(options.slackStatus ?? { status: "not_configured" as const }) };
-  let slackBinding = options.slackBinding ?? { answeringAgentId: null, escalationChannelId: null };
+  let slackBinding = options.slackBinding ?? {
+    answeringAgentId: null,
+    escalationChannelId: null,
+    gapEscalationEnabled: false,
+  };
   const slackManifest = options.slackManifest ?? {
     manifest: {
       display_information: { name: "Radioso" },
@@ -1130,6 +1135,7 @@ export const installDashboardApiMocks = async (
       slackBinding = {
         answeringAgentId: defaultAgentId,
         escalationChannelId: null,
+        gapEscalationEnabled: false,
       };
       await json(route, {
         authorizationUrl: "/oauth/connections/callback?status=authorized&provider=slack",
@@ -1155,7 +1161,10 @@ export const installDashboardApiMocks = async (
         options.slackRequests?.push({ method: request.method(), path, body });
         slackBinding = {
           answeringAgentId: body.answeringAgentId,
-          escalationChannelId: body.escalationChannelId ?? null,
+          escalationChannelId: body.escalationChannelId === undefined
+            ? slackBinding.escalationChannelId
+            : body.escalationChannelId,
+          gapEscalationEnabled: body.gapEscalationEnabled ?? slackBinding.gapEscalationEnabled,
         };
         slackStatus = {
           ...slackStatus,
@@ -1170,7 +1179,7 @@ export const installDashboardApiMocks = async (
     if (path === `/workspaces/${workspaceId}/slack/installation` && request.method() === "DELETE") {
       options.slackRequests?.push({ method: request.method(), path });
       slackStatus = { status: "not_configured", readiness: slackReady };
-      slackBinding = { answeringAgentId: null, escalationChannelId: null };
+      slackBinding = { answeringAgentId: null, escalationChannelId: null, gapEscalationEnabled: false };
       slackSkills = [];
       await route.fulfill({ status: 204 });
       return;

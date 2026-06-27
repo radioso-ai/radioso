@@ -94,6 +94,7 @@ import { WebhookSkillDefinitionService } from "../../src/modules/webhookSkills/p
 import {
   SlackInstallationService,
   buildSlackOauthProviderDefinition,
+  slackBotScopes,
   type SlackOauthMetadata,
 } from "../../src/modules/slack/public.js";
 import {
@@ -226,6 +227,10 @@ export const createTestEnv = (): Env => ({
   METRICS_AUTH_TOKEN: undefined,
   OTEL_ENABLED: false,
   OTEL_EXPORTER_OTLP_ENDPOINT: undefined,
+  OTEL_LOGS_ENABLED: false,
+  OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: undefined,
+  OTEL_EXPORTER_OTLP_LOGS_AUTH_BEARER: undefined,
+  OTEL_LOGS_MIN_LEVEL: undefined,
   PRODUCT_ANALYTICS_SINKS: "audit",
   ERROR_SINKS: "audit",
   GOOGLE_CLOUD_PROJECT: "radioso-test",
@@ -964,7 +969,7 @@ export const createTestDependencies = (overrides: {
             ok: true,
             access_token: "xoxb-test-slack-token",
             token_type: "bot",
-            scope: "chat:write,im:history,im:read,im:write",
+            scope: slackBotScopes.join(","),
             team: { id: "TTEST", name: "Test Slack" },
             bot_user_id: "UTESTBOT",
             authed_user: { id: "UINSTALLER" },

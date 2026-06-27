@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
+import { Switch } from '@/components/ui/switch'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { slackApi, type SlackBinding, type SlackInstallStatusResponse, type SlackManifestResponse } from '@/lib/api-slack'
 
@@ -79,6 +80,7 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
           const updated = await slackApi.updateBinding(workspaceId, agentId, {
             answeringAgentId: agentId,
             escalationChannelId: nextBinding.escalationChannelId,
+            gapEscalationEnabled: nextBinding.gapEscalationEnabled,
           })
           setBinding(updated)
           setEscalationChannelDraft(updated.escalationChannelId ?? '')
@@ -150,6 +152,7 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
       const updated = await slackApi.updateBinding(workspaceId, agentId, {
         answeringAgentId: nextAgentId,
         escalationChannelId: binding?.escalationChannelId ?? null,
+        gapEscalationEnabled: binding?.gapEscalationEnabled ?? false,
       })
       setBinding(updated)
       setEscalationChannelDraft(updated.escalationChannelId ?? '')
@@ -169,11 +172,32 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
       const updated = await slackApi.updateBinding(workspaceId, agentId, {
         answeringAgentId: agentId,
         escalationChannelId: trimmedChannel || null,
+        gapEscalationEnabled: binding?.gapEscalationEnabled ?? false,
       })
       setBinding(updated)
       setEscalationChannelDraft(updated.escalationChannelId ?? '')
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to update Slack escalation channel.'))
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  const updateGapEscalation = async (enabled: boolean) => {
+    if (!workspaceId || !agentId) return
+    setBusyAction('binding')
+    setError(null)
+    try {
+      const trimmedChannel = escalationChannelDraft.trim()
+      const updated = await slackApi.updateBinding(workspaceId, agentId, {
+        answeringAgentId: agentId,
+        escalationChannelId: trimmedChannel || (binding?.escalationChannelId ?? null),
+        gapEscalationEnabled: enabled,
+      })
+      setBinding(updated)
+      setEscalationChannelDraft(updated.escalationChannelId ?? '')
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to update Slack escalation policy.'))
     } finally {
       setBusyAction(null)
     }
@@ -346,8 +370,26 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                The agent posts there when it has no grounded answer.
+                Where the agent posts handoffs and escalations.
               </p>
+            </div>
+
+            <div className="flex max-w-2xl items-start justify-between gap-4 py-1">
+              <div className="space-y-1">
+                <Label htmlFor="slack-gap-escalation" className="text-sm font-medium text-foreground">
+                  Auto-escalate when the agent has no grounded answer
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Routines and directives decide handoffs; turn this on to also escalate automatically when the agent is stuck.
+                </p>
+              </div>
+              <Switch
+                id="slack-gap-escalation"
+                checked={binding?.gapEscalationEnabled ?? false}
+                onCheckedChange={updateGapEscalation}
+                disabled={busyAction === 'binding'}
+                aria-label="Auto-escalate when the agent has no grounded answer"
+              />
             </div>
           </div>
         ) : null}

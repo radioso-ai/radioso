@@ -16,7 +16,7 @@ export class PosthogAnalyticsSink implements ProductAnalyticsSink {
   private readonly fetchImpl: typeof fetch;
 
   constructor(private readonly options: PosthogAnalyticsSinkOptions) {
-    this.endpoint = `${normalizeHost(options.host)}/capture/`;
+    this.endpoint = `${normalizeHost(options.host)}/i/v0/e/`;
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 

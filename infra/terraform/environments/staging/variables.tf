@@ -199,6 +199,18 @@ variable "posthog_host" {
   default     = "https://us.i.posthog.com"
 }
 
+variable "otel_logs_enabled" {
+  description = "Whether staging backend services export structured logs to PostHog through OTLP."
+  type        = bool
+  default     = false
+}
+
+variable "otel_logs_min_level" {
+  description = "Minimum staging backend log level exported through OpenTelemetry logs."
+  type        = string
+  default     = "info"
+}
+
 variable "openai_chat_model" {
   description = "OpenAI chat model name."
   type        = string

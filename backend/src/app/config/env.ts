@@ -29,6 +29,7 @@ const otelTraceSampler = emptyStringToUndefined(z.enum([
   "parentbased_always_off",
   "parentbased_traceidratio",
 ]));
+const otelLogsMinLevel = emptyStringToUndefined(z.enum(["trace", "debug", "info", "warn", "error", "fatal"]));
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -45,6 +46,10 @@ const envSchema = z.object({
   OTEL_EXPORTER_OTLP_ENDPOINT: emptyStringToUndefined(z.string().url()),
   OTEL_TRACES_SAMPLER: otelTraceSampler,
   OTEL_TRACES_SAMPLER_ARG: emptyStringToUndefined(z.string().min(1)),
+  OTEL_LOGS_ENABLED: booleanish(false),
+  OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: emptyStringToUndefined(z.string().url()),
+  OTEL_EXPORTER_OTLP_LOGS_AUTH_BEARER: emptyStringToUndefined(z.string().min(1)),
+  OTEL_LOGS_MIN_LEVEL: otelLogsMinLevel,
   PRODUCT_ANALYTICS_SINKS: z.string().min(1).default("audit"),
   ERROR_SINKS: z.string().min(1).default("audit"),
   RADIOSO_EDITION: z.enum(["oss", "enterprise"]).default("oss"),
@@ -203,6 +208,14 @@ const envSchema = z.object({
         message: "OTEL_TRACES_SAMPLER_ARG is only supported with traceidratio samplers",
       });
     }
+  }
+
+  if (value.OTEL_LOGS_ENABLED && !value.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"],
+      message: "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT is required when OTEL_LOGS_ENABLED is true",
+    });
   }
 
   if (value.DOCUMENT_STORAGE_DRIVER === "gcs" && !value.DOCUMENT_STORAGE_BUCKET) {

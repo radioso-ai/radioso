@@ -2,7 +2,6 @@
 
 import { Activity, FileText, MessageSquareText } from 'lucide-react'
 
-import { ActivityTabs } from '@/components/dashboard/activity-tabs'
 import { DashboardPaginatedContent } from '@/components/dashboard/shared/dashboard-paginated-content'
 import { DashboardPagination } from '@/components/dashboard/shared/dashboard-pagination'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
@@ -430,8 +429,6 @@ export function HistoryList({
       description={
         editionController.getActivityDescription()
       }
-      actions={<ActivityTabs accountId={accountId} routeState={routeState} />}
-      actionsClassName="xl:self-start"
     >
         {isLoading && !hasAnyHistory ? (
           <div className="flex h-full items-center justify-center">

@@ -7,6 +7,7 @@ export {
   type SlackFetchLike,
   type SlackPostMessageInput,
   type SlackPostMessageResult,
+  type SlackReactionInput,
   type SlackUpdateMessageInput,
   type SlackUrlGuard,
   type SlackUserInfo,

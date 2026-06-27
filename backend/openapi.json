@@ -20390,6 +20390,120 @@
         }
       }
     },
+    "/api/v1/workspaces/{workspaceId}/email-oauth-connections": {
+      "get": {
+        "tags": [
+          "Customer Email Connections"
+        ],
+        "summary": "List OAuth connections eligible to back a customer email connection",
+        "operationId": "listWorkspaceEmailOauthConnections",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Email-eligible OAuth connections",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "connections": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "provider": {
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "authorized",
+                              "needs_reauth",
+                              "disabled",
+                              "error"
+                            ]
+                          },
+                          "grantedScopes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "providerAccountId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "provider",
+                          "displayName",
+                          "status",
+                          "grantedScopes",
+                          "providerAccountId",
+                          "updatedAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "connections"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace settings permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/workspaces/{workspaceId}/email-connections/{connectionId}": {
       "patch": {
         "tags": [
@@ -22140,11 +22254,15 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "gapEscalationEnabled": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "answeringAgentId",
-                    "escalationChannelId"
+                    "escalationChannelId",
+                    "gapEscalationEnabled"
                   ]
                 }
               }
@@ -22210,6 +22328,9 @@
                       "string",
                       "null"
                     ]
+                  },
+                  "gapEscalationEnabled": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -22239,11 +22360,15 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "gapEscalationEnabled": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "answeringAgentId",
-                    "escalationChannelId"
+                    "escalationChannelId",
+                    "gapEscalationEnabled"
                   ]
                 }
               }

@@ -155,10 +155,14 @@ export class AccessGrantService {
 
   async resolvePublicLaunchGrant(token: string): Promise<AccessGrant | null> {
     const grant = await this.dependencies.repository.findByTokenHash(sha256(token));
-    if (!grant || grant.principalKind !== "public-launch") {
+    if (!grant || grant.principalKind !== "public-launch" || grant.channel === "mcp-converse") {
       return null;
     }
     return grant;
+  }
+
+  async findGrantById(grantId: string): Promise<AccessGrant | null> {
+    return this.dependencies.repository.findById(grantId);
   }
 
   async resolveConverseGrant(token: string): Promise<AccessGrant | null> {
@@ -216,7 +220,7 @@ export class AccessGrantService {
     grant?: Pick<AccessGrant, "id" | "workspaceId" | "agentId" | "principalKind"> | null;
     workspaceId?: string | null;
     reason: string;
-    surface: "anonymous-chat" | "website-embed" | "public-session" | "bearer";
+    surface: "anonymous-chat" | "website-embed" | "public-session" | "bearer" | "mcp-converse";
   }): Promise<void> {
     await this.dependencies.auditService?.record({
       workspaceId: input.grant?.workspaceId ?? input.workspaceId ?? undefined,

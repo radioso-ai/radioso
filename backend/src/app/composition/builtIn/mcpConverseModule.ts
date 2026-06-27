@@ -7,8 +7,8 @@ export const createMcpConverseApplicationModule = (): ApplicationModule => ({
   register(context) {
     context.registerRouteMount({
       path: "/api/v1/mcp/converse",
-      createRouter() {
-        return createMcpConverseRoutes();
+      createRouter(dependencies) {
+        return createMcpConverseRoutes(dependencies);
       },
     });
   },

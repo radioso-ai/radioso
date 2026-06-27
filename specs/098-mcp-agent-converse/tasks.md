@@ -59,26 +59,26 @@
 
 ### Tests for User Story 1
 
-- [ ] T022 [P] [US1] Add failing backend contract tests for `POST /api/v1/mcp/converse/session`, `/session/validate`, and `/ask` in `backend/tests/contract/mcp-converse.contract.test.ts`
-- [ ] T023 [P] [US1] Add failing backend integration test for launch-token exchange plus two-turn `ask_agent` continuity in `backend/tests/integration/mcp-converse.integration.test.ts`
-- [ ] T024 [P] [US1] Add failing backend integration tests for workspace API token rejection and embed/public-link token rejection in `backend/tests/integration/mcp-converse-auth.integration.test.ts`
-- [ ] T025 [P] [US1] Add failing backend integration tests for per-request grant revoke/disable/rotate/expiry invalidation in `backend/tests/integration/mcp-converse-session-revalidation.integration.test.ts`
-- [ ] T026 [P] [US1] Add failing MCP package tests for public converse tool list exposing `ask_agent` and denying document-management tools in `packages/radioso-mcp-server/tests/converseTools.test.ts`
-- [ ] T027 [P] [US1] Add failing MCP package tests for backend HTTP adapter exchange/validate/ask calls in `packages/radioso-mcp-server/tests/converseApiAdapter.test.ts`
+- [x] T022 [P] [US1] Add failing backend contract tests for `POST /api/v1/mcp/converse/session`, `/session/validate`, and `/ask` in `backend/tests/contract/mcp-converse.contract.test.ts`
+- [x] T023 [P] [US1] Add failing backend integration test for launch-token exchange plus two-turn `ask_agent` continuity in `backend/tests/integration/mcp-converse.integration.test.ts`
+- [x] T024 [P] [US1] Add failing backend integration tests for workspace API token rejection and embed/public-link token rejection in `backend/tests/integration/mcp-converse-auth.integration.test.ts`
+- [x] T025 [P] [US1] Add failing backend integration tests for per-request grant revoke/disable/rotate/expiry invalidation in `backend/tests/integration/mcp-converse-session-revalidation.integration.test.ts`
+- [x] T026 [P] [US1] Add failing MCP package tests for public converse tool list exposing `ask_agent` and denying document-management tools in `packages/radioso-mcp-server/tests/converseTools.test.ts`
+- [x] T027 [P] [US1] Add failing MCP package tests for backend HTTP adapter exchange/validate/ask calls in `packages/radioso-mcp-server/tests/converseApiAdapter.test.ts`
 
 ### Implementation for User Story 1
 
-- [ ] T028 [US1] Implement `AgentConverseSessionService` for exchange and per-request validation in `backend/src/modules/settings/services/agentConverseSessionService.ts`
-- [ ] T029 [US1] Implement `AgentConverseService.askAgent` as a thin adapter over the existing chat turn loop in `backend/src/modules/chat/services/agentConverseService.ts`
-- [ ] T030 [US1] Implement converse session middleware that rejects workspace bearer tokens in `backend/src/app/http/middleware/requireMcpConverseSession.ts`
-- [ ] T031 [US1] Implement exchange, validate, and ask route handlers in `backend/src/app/http/routes/mcpConverseRoutes.ts`
-- [ ] T032 [US1] Register US1 request/response/error schemas in `backend/src/app/http/schemas/mcpConverseSchemas.ts`
-- [ ] T033 [US1] Register US1 OpenAPI paths in `backend/src/app/http/openapi/document.ts`
-- [ ] T034 [US1] Wire converse services/routes/default dependencies in `backend/src/app/composition/defaultComposition.ts`
-- [ ] T035 [US1] Implement MCP `ask_agent` tool and public-converse policy denial of legacy document-management tools in `packages/radioso-mcp-server/src/tools/converseTools.ts`
-- [ ] T036 [US1] Implement MCP backend converse adapter methods in `packages/radioso-mcp-server/src/converseApiAdapter.ts`
-- [ ] T037 [US1] Add audit/logging for exchange, validation denial, workspace-token rejection, grant revocation, and ask turn outcomes in `backend/src/modules/chat/services/agentConverseAudit.ts`
-- [ ] T038 [US1] Regenerate backend OpenAPI and sync MCP/SDK generated contract artifacts in `backend/openapi.json`, `backend/openapi.yaml`, `packages/radioso-mcp-server/src/generated/openapiTypes.ts`, and `typescript-sdk/src/generated/types.ts`
+- [x] T028 [US1] Implement `AgentConverseSessionService` for exchange and per-request validation in `backend/src/modules/settings/services/agentConverseSessionService.ts`
+- [x] T029 [US1] Implement `AgentConverseService.askAgent` as a thin adapter over the existing chat turn loop in `backend/src/modules/chat/services/agentConverseService.ts`
+- [x] T030 [US1] Implement converse session middleware that rejects workspace bearer tokens in `backend/src/app/http/middleware/requireMcpConverseSession.ts`
+- [x] T031 [US1] Implement exchange, validate, and ask route handlers in `backend/src/app/http/routes/mcpConverseRoutes.ts`
+- [x] T032 [US1] Register US1 request/response/error schemas in `backend/src/app/http/schemas/mcpConverseSchemas.ts`
+- [x] T033 [US1] Register US1 OpenAPI paths in `backend/src/app/http/openapi/document.ts`
+- [x] T034 [US1] Wire converse services/routes/default dependencies in `backend/src/app/composition/defaultComposition.ts`
+- [x] T035 [US1] Implement MCP `ask_agent` tool and public-converse policy denial of legacy document-management tools in `packages/radioso-mcp-server/src/tools/converseTools.ts`
+- [x] T036 [US1] Implement MCP backend converse adapter methods in `packages/radioso-mcp-server/src/converseApiAdapter.ts`
+- [x] T037 [US1] Add audit/logging for exchange, validation denial, workspace-token rejection, grant revocation, and ask turn outcomes in `backend/src/modules/chat/services/agentConverseAudit.ts`
+- [x] T038 [US1] Regenerate backend OpenAPI and sync MCP/SDK generated contract artifacts in `backend/openapi.json`, `backend/openapi.yaml`, `packages/radioso-mcp-server/src/generated/openapiTypes.ts`, and `typescript-sdk/src/generated/types.ts`
 
 **Checkpoint**: US1 MVP is independently functional and demoable.
 

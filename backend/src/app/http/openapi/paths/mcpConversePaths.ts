@@ -1,32 +1,26 @@
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
-import { z } from "zod";
 
 import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
-
-const mcpConverseSessionRequestSchema = z.object({
-  launchToken: z.string().min(1),
-  client: z.object({
-    name: z.string().min(1),
-    version: z.string().min(1).optional(),
-  }).optional(),
-});
-
-const mcpConverseSessionResponseSchema = z.object({
-  sessionToken: z.string(),
-  expiresAt: z.string().datetime(),
-  resumeToken: z.string().optional(),
-  agent: z.object({
-    id: z.string().uuid(),
-    name: z.string(),
-  }),
-  conversationId: z.string().uuid(),
-});
+import {
+  mcpConverseAskRequestSchema,
+  mcpConverseAskResponseSchema,
+  mcpConverseSessionRequestSchema,
+  mcpConverseSessionResponseSchema,
+  mcpConverseSessionValidateRequestSchema,
+  mcpConverseSessionValidateResponseSchema,
+} from "../../schemas/mcpConverseSchemas.js";
 
 export const registerMcpConversePaths = (
   registry: OpenAPIRegistry,
   schemas: OpenApiSchemas,
-  _security: OpenApiSecurity,
+  security: OpenApiSecurity,
 ) => {
+  const json = <T>(schema: T) => ({ "application/json": { schema } });
+  const errorResponse = (description: string) => ({
+    description,
+    content: json(schemas.ErrorResponseSchema),
+  });
+
   registry.registerPath({
     method: "post",
     path: "/api/v1/mcp/converse/session",
@@ -37,9 +31,7 @@ export const registerMcpConversePaths = (
       body: {
         required: true,
         content: {
-          "application/json": {
-            schema: mcpConverseSessionRequestSchema,
-          },
+          ...json(mcpConverseSessionRequestSchema),
         },
       },
     },
@@ -47,27 +39,56 @@ export const registerMcpConversePaths = (
       201: {
         description: "MCP converse session issued",
         content: {
-          "application/json": {
-            schema: mcpConverseSessionResponseSchema,
-          },
+          ...json(mcpConverseSessionResponseSchema),
         },
       },
-      401: {
-        description: "Invalid converse grant",
-        content: {
-          "application/json": {
-            schema: schemas.ErrorResponseSchema,
-          },
-        },
+      401: errorResponse("Invalid converse grant"),
+      403: errorResponse("Grant channel or bound agent is not allowed"),
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/mcp/converse/session/validate",
+    tags: ["MCP Converse"],
+    summary: "Validate and re-evaluate an MCP converse session",
+    operationId: "validateMcpConverseSession",
+    request: {
+      body: {
+        required: true,
+        content: json(mcpConverseSessionValidateRequestSchema),
       },
-      403: {
-        description: "Grant channel or bound agent is not allowed",
-        content: {
-          "application/json": {
-            schema: schemas.ErrorResponseSchema,
-          },
-        },
+    },
+    responses: {
+      200: {
+        description: "MCP converse session is valid",
+        content: json(mcpConverseSessionValidateResponseSchema),
       },
+      401: errorResponse("Invalid or expired converse session"),
+      403: errorResponse("Underlying converse grant is no longer valid"),
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/mcp/converse/ask",
+    tags: ["MCP Converse"],
+    summary: "Run one MCP ask_agent turn through the bound agent",
+    operationId: "askMcpConverseAgent",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      body: {
+        required: true,
+        content: json(mcpConverseAskRequestSchema),
+      },
+    },
+    responses: {
+      200: {
+        description: "Agent answer",
+        content: json(mcpConverseAskResponseSchema),
+      },
+      401: errorResponse("Invalid converse session"),
+      403: errorResponse("Converse session is no longer authorized"),
     },
   });
 };

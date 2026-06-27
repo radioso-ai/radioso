@@ -3,7 +3,9 @@ import { McpServer } from "@modelcontextprotocol/server";
 
 import { toStructuredToolError } from "./errors.js";
 import { createRadiosoApiAdapter, type RadiosoApiAdapter } from "./radiosoApiAdapter.js";
+import { createConverseApiAdapter } from "./converseApiAdapter.js";
 import { toCallToolResult, toErrorCallToolResult } from "./toolResult.js";
+import { createConverseToolDefinitions } from "./tools/converseTools.js";
 import { createReadToolDefinitions } from "./tools/readTools.js";
 import { createWriteToolDefinitions } from "./tools/writeTools.js";
 import type {
@@ -63,10 +65,20 @@ export const createStaticExecutionContextResolver = (
       ...baseConfig,
       apiToken,
     });
+    const converseSessionToken = typeof authInfo?.converseSessionToken === "string" && authInfo.converseSessionToken.length > 0
+      ? authInfo.converseSessionToken
+      : undefined;
 
     return {
       adapter,
       authInfo,
+      converseAdapter: converseSessionToken
+        ? createConverseApiAdapter({
+            baseUrl: baseConfig.baseUrl,
+            requestTimeoutMs: baseConfig.requestTimeoutMs,
+          })
+        : undefined,
+      converseSessionToken,
       serverContext: ctx,
     };
   };
@@ -85,7 +97,10 @@ export const createRadiosoMcpServer = ({
     version: "0.1.0",
   });
 
-  const allToolDefinitions = [...createReadToolDefinitions(), ...createWriteToolDefinitions()];
+  const legacyToolDefinitions = [...createReadToolDefinitions(), ...createWriteToolDefinitions()];
+  const allToolDefinitions = allowedTools?.includes("ask_agent")
+    ? [...legacyToolDefinitions, ...createConverseToolDefinitions()]
+    : legacyToolDefinitions;
   const toolDefinitions = typeof allowedTools === "undefined"
     ? allToolDefinitions
     : allToolDefinitions.filter((tool) => allowedTools.includes(tool.name));

@@ -274,6 +274,24 @@ describe('routine prose token grammar', () => {
     expect(chipShape(parsed.paragraphs)).toEqual(chipShape(input.paragraphs))
   })
 
+  it('quotes action types that do not fit the bare token grammar', () => {
+    const input = {
+      name: 'Escalate',
+      trigger: 'notify a downstream system',
+      variables: [],
+      paragraphs: [
+        { segments: [
+          { kind: 'text' as const, text: 'Notify ops ' },
+          { kind: 'chip' as const, chipKind: 'action' as const, refId: 'ops/send:urgent 2', label: 'ops/send:urgent 2' },
+        ] },
+      ],
+    }
+    const { text, parsed } = roundTrip(input)
+
+    expect(text).toContain('[action "ops/send:urgent 2"]')
+    expect(chipShape(parsed.paragraphs)).toEqual(chipShape(input.paragraphs))
+  })
+
   it('round-trips a decision gate declaration (capture key + choices) as a text token', () => {
     const input = {
       name: 'Refund approval',
@@ -300,6 +318,33 @@ describe('routine prose token grammar', () => {
       options: [
         { id: 'approve', label: 'Approve' },
         { id: 'deny', label: 'Deny', description: 'Decline the refund' },
+      ],
+    })
+  })
+
+  it('escapes quotes and brackets in decision labels and descriptions', () => {
+    const input = {
+      name: 'Refund approval',
+      trigger: 'wants a large refund',
+      variables: [],
+      paragraphs: [
+        { segments: [
+          { kind: 'chip' as const, chipKind: 'decision' as const, refId: 'refund_decision', captureKey: 'refund_decision', label: 'decision', options: [
+            { id: 'approve', label: 'Manager says "yes"', description: 'Use the [fast] path\\now' },
+            { id: 'deny', label: 'Deny' },
+          ] },
+        ] },
+      ],
+    }
+    const { text, parsed } = roundTrip(input)
+
+    expect(text).toContain('approve="Manager says \\"yes\\""')
+    expect(text).toContain('("Use the [fast] path\\\\now")')
+    const decision = parsed.paragraphs.flatMap((p) => p.segments).find((s) => s.kind === 'chip' && s.chipKind === 'decision')
+    expect(decision).toMatchObject({
+      options: [
+        { id: 'approve', label: 'Manager says "yes"', description: 'Use the [fast] path\\now' },
+        { id: 'deny', label: 'Deny' },
       ],
     })
   })

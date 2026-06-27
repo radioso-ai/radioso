@@ -266,6 +266,15 @@ export function draftFromChipDoc(input: {
   const completeInstruction = input.terminals?.complete?.instruction?.trim() || null
   const handoffId = input.terminals?.handoff?.id?.trim() || HANDOFF_TERMINAL_ID
   const handoffInstruction = input.terminals?.handoff?.instruction?.trim() || DEFAULT_HANDOFF_INSTRUCTION
+  const completionExport: RoutineCompletionExport | undefined = input.completionExport?.enabled
+    ? {
+        enabled: true,
+        triggerKinds: input.completionExport.triggerKinds.length > 0
+          ? input.completionExport.triggerKinds
+          : ['complete'],
+        destinationRef: input.completionExport.destinationRef.trim(),
+      }
+    : undefined
   // Map a canonical terminal ref carried on a chip to the configured terminal id.
   const resolveTerminalRef = (ref: string): string =>
     ref === DONE_TERMINAL_ID ? completeId : ref === HANDOFF_TERMINAL_ID ? handoffId : ref
@@ -633,7 +642,7 @@ export function draftFromChipDoc(input: {
     transitions,
     terminals,
     // Carry completion export through only when enabled, so a routine without it stays clean.
-    ...(input.completionExport?.enabled ? { completionExport: input.completionExport } : {}),
+    ...(completionExport ? { completionExport } : {}),
   }
 }
 

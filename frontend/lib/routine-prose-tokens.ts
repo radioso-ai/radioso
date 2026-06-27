@@ -90,6 +90,14 @@ const opNeedsUnit = (op: RoutineFieldGuardOp): boolean => op === 'older_than' ||
 const formatLiteral = (value: RoutineFieldGuardValue): string =>
   typeof value === 'string' ? value : String(value)
 
+const escapeQuoted = (value: string): string =>
+  value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+
+const unescapeQuoted = (value: string): string =>
+  value.replace(/\\(.)/g, '$1')
+
+const BARE_ACTION_REF = /^[A-Za-z_][A-Za-z0-9_.-]*$/
+
 const formatBinding = (binding: RoutineInputBinding): string =>
   binding.kind === 'variableRef' ? `@${binding.ref}` : formatLiteral(binding.value)
 
@@ -129,10 +137,11 @@ const formatTarget = (target: string): string =>
   target === 'done' ? 'end' : target === 'handoff' ? 'handoff' : `step:${target}`
 
 // One choice of a gate: `id="Label"`, an optional `("Description")`, and — for the block
-// approval form — an optional `-> target`. (Labels/descriptions are assumed quote-free.)
+// approval form — an optional `-> target`. Quotes and backslashes are escaped so authored
+// labels/descriptions survive portable text copy/paste.
 const formatOption = (option: ApprovalDocOption, includeTarget: boolean): string => {
-  let token = `${option.id}="${option.label}"`
-  if (option.description) token += ` ("${option.description}")`
+  let token = `${option.id}="${escapeQuoted(option.label)}"`
+  if (option.description) token += ` ("${escapeQuoted(option.description)}")`
   if (includeTarget && option.target) token += ` -> ${formatTarget(option.target)}`
   return token
 }
@@ -142,6 +151,9 @@ const formatGateToken = (keyword: 'decision' | 'approval', chip: ChipTokenInput)
   const options = (chip.options ?? []).map((option) => formatOption(option, keyword === 'approval')).join(', ')
   return `[${keyword} ${captureKey}: ${options}]`
 }
+
+const formatActionToken = (refId: string): string =>
+  BARE_ACTION_REF.test(refId) ? `[action ${refId}]` : `[action "${escapeQuoted(refId)}"]`
 
 // One chip → its canonical inline token. Shared by the editor's copy path (live node) and
 // document serialization (parsed segment).
@@ -160,7 +172,7 @@ export const tokenForChip = (chip: ChipTokenInput): string => {
     case 'condition':
       return formatConditionToken(chip)
     case 'action':
-      return `[action ${chip.refId}]`
+      return formatActionToken(chip.refId)
     case 'decision':
       return formatGateToken('decision', chip)
     case 'approval':
@@ -297,19 +309,46 @@ const parseTarget = (token: string | undefined): string | undefined => {
 
 // Parse a gate's option list: `id="Label" ("Description") -> target, ...`. Description and
 // target are optional; whitespace and the comma separators are tolerated.
-const GATE_OPTION = /([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"([^"]*)"(?:\s*\("([^"]*)"\))?(?:\s*->\s*(end|handoff|step:[A-Za-z_][A-Za-z0-9_.-]*))?/g
+const QUOTED_VALUE = '"((?:\\\\.|[^"\\\\])*)"'
+const GATE_OPTION = new RegExp(`([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*${QUOTED_VALUE}(?:\\s*\\(${QUOTED_VALUE}\\))?(?:\\s*->\\s*(end|handoff|step:[A-Za-z_][A-Za-z0-9_.-]*))?`, 'g')
 const parseGateOptions = (body: string): ApprovalDocOption[] => {
   const options: ApprovalDocOption[] = []
   for (const match of body.matchAll(GATE_OPTION)) {
     const target = parseTarget(match[4])
     options.push({
       id: match[1]!,
-      label: match[2] ?? '',
-      ...(match[3] ? { description: match[3] } : {}),
+      label: unescapeQuoted(match[2] ?? ''),
+      ...(match[3] ? { description: unescapeQuoted(match[3]) } : {}),
       ...(target ? { target } : {}),
     })
   }
   return options
+}
+
+const findBracketClose = (value: string): number => {
+  let quoted = false
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index]
+    if (quoted && char === '\\') {
+      index += 1
+      continue
+    }
+    if (char === '"') {
+      quoted = !quoted
+      continue
+    }
+    if (!quoted && char === ']') return index
+  }
+  return -1
+}
+
+const parseActionBody = (body: string): string | null => {
+  const trimmed = body.trim()
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    return unescapeQuoted(trimmed.slice(1, -1))
+  }
+  const idMatch = IDENTIFIER.exec(trimmed)
+  return idMatch && idMatch[0] === trimmed ? idMatch[0] : null
 }
 
 // Parse a `[decision key: ...]` / `[approval key: ...]` gate body (brackets already stripped).
@@ -377,7 +416,7 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
     }
 
     if (rest.startsWith('[if ')) {
-      const close = rest.indexOf(']')
+      const close = findBracketClose(rest)
       if (close !== -1) {
         const condition = parseConditionBody(rest.slice('[if '.length, close))
         if (condition) { flush(); segments.push(condition); index += close + 1; continue }
@@ -385,7 +424,7 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
     }
 
     if (rest.startsWith('[outcome ')) {
-      const close = rest.indexOf(']')
+      const close = findBracketClose(rest)
       if (close !== -1) {
         const status = rest.slice('[outcome '.length, close).trim()
         if (status) { flush(); segments.push({ kind: 'chip', chipKind: 'condition', refId: OUTCOME_GUARD_REF, value: status, label: `outcome is ${status}` }); index += close + 1; continue }
@@ -393,15 +432,15 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
     }
 
     if (rest.startsWith('[action ')) {
-      const close = rest.indexOf(']')
+      const close = findBracketClose(rest)
       if (close !== -1) {
-        const idMatch = IDENTIFIER.exec(rest.slice('[action '.length, close).trim())
-        if (idMatch) { flush(); segments.push({ kind: 'chip', chipKind: 'action', refId: idMatch[0], label: idMatch[0] }); index += close + 1; continue }
+        const actionRef = parseActionBody(rest.slice('[action '.length, close))
+        if (actionRef) { flush(); segments.push({ kind: 'chip', chipKind: 'action', refId: actionRef, label: actionRef }); index += close + 1; continue }
       }
     }
 
     if (rest.startsWith('[decision ') || rest.startsWith('[approval ')) {
-      const close = rest.indexOf(']')
+      const close = findBracketClose(rest)
       if (close !== -1) {
         const chipKind = rest.startsWith('[decision ') ? 'decision' as const : 'approval' as const
         const gate = parseGateBody(chipKind, rest.slice(`[${chipKind} `.length, close))

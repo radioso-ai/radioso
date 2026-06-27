@@ -29,6 +29,7 @@ export function RoutineCompletionExportPanel({
   error: string | null
 }) {
   const toggleTrigger = (kind: RoutineTerminalKind, checked: boolean) => {
+    if (!checked && value.triggerKinds.length <= 1 && value.triggerKinds.includes(kind)) return
     const triggerKinds = checked
       ? [...new Set([...value.triggerKinds, kind])]
       : value.triggerKinds.filter((item) => item !== kind)
@@ -82,6 +83,7 @@ export function RoutineCompletionExportPanel({
                   <Switch
                     id={`${idPrefix}-exportTrigger-${kind}`}
                     checked={value.triggerKinds.includes(kind)}
+                    disabled={value.triggerKinds.length <= 1 && value.triggerKinds.includes(kind)}
                     onCheckedChange={(checked) => toggleTrigger(kind, checked)}
                   />
                   <Label htmlFor={`${idPrefix}-exportTrigger-${kind}`} className="text-sm">{kind}</Label>

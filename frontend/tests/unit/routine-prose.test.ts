@@ -819,6 +819,18 @@ describe('routineToChipDoc (inverse serializer)', () => {
     expect(redraft.completionExport).toEqual(draft.completionExport)
   })
 
+  it('defaults enabled completion export to the complete trigger when all triggers are toggled off', () => {
+    const draft = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: [{ text: 'Do a thing.', chips: [] }],
+      variables: [],
+      completionExport: { enabled: true, triggerKinds: [], destinationRef: 'dest_1' },
+    })
+
+    expect(draft.completionExport).toEqual({ enabled: true, triggerKinds: ['complete'], destinationRef: 'dest_1' })
+  })
+
   it('omits completion export when it is disabled or absent', () => {
     const none = draftFromChipDoc({ name: 'x', trigger: 'y', blocks: [{ text: 'Do a thing.', chips: [] }], variables: [] })
     expect(none.completionExport).toBeUndefined()

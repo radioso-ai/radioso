@@ -45,6 +45,29 @@ describe('mergeTailMessages', () => {
     ])
   })
 
+  it('preserves enrichment fields the lightweight tail omits', () => {
+    const existing: ChatConversationMessage[] = [
+      {
+        ...message('message-1', '2026-06-18T10:00:00.000Z', 'answer'),
+        citations: [{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Doc' }],
+        debug: {
+          eventStatus: 'success',
+          recordedAt: '2026-06-18T10:00:00.000Z',
+          stream: false,
+          citationCount: 1,
+          turnTrace: { version: 1, spine: { traceId: 'spine-1', startedAt: '2026-06-18T10:00:00.000Z', stages: [] } },
+        },
+      } as ChatConversationMessage,
+    ]
+    // The tail returns the same message without debug/citations.
+    const incoming = [message('message-1', '2026-06-18T10:00:00.000Z', 'answer')]
+
+    const [merged] = mergeTailMessages(existing, incoming)
+
+    expect(merged.citations).toEqual([{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Doc' }])
+    expect(merged.debug?.turnTrace?.spine.traceId).toBe('spine-1')
+  })
+
   it('orders equal timestamps by id', () => {
     const existing = [message('message-b', '2026-06-18T10:00:00.000Z')]
     const incoming = [message('message-a', '2026-06-18T10:00:00.000Z')]

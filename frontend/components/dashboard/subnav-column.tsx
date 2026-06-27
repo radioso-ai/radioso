@@ -1,15 +1,16 @@
 'use client'
 
 import Link from 'next/link'
-import type { ReactNode } from 'react'
-import { type LucideIcon } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { ChevronDown, type LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
 /**
- * The second navigation column, shared across every area. Each row is a label +
- * icon that either links (href) or acts (onClick). The header band height is
- * fixed so the column header lines up with the rail logo and the content title.
+ * The active section's sub-navigation, rendered nested inside the sidebar rail
+ * (no longer a separate column). Each row is a label + icon that either links
+ * (href) or acts (onClick). A section can supply an optional header and footer,
+ * and groups can be made collapsible (e.g. one-time-setup Channels).
  */
 
 export type SubNavEntry = {
@@ -24,50 +25,83 @@ export type SubNavEntry = {
   onClick?: () => void
 }
 
-export type SubNavGroup = { label?: string | null; items: SubNavEntry[] }
-
-export const SUBNAV_HEADER = 'flex h-14 shrink-0 items-center'
-
-export function SubNavHeading({ children }: { children: ReactNode }) {
-  return <span className="truncate font-display text-lg font-semibold">{children}</span>
+export type SubNavGroup = {
+  label?: string | null
+  items: SubNavEntry[]
+  /** Render the group label as a collapse toggle. */
+  collapsible?: boolean
+  /** Initial open state for a collapsible group (ignored when an item is active). */
+  defaultOpen?: boolean
 }
 
-export function SubNavColumn({
+export function SectionNavBody({
   header,
   groups,
   footer,
 }: {
-  header: ReactNode
+  header?: ReactNode
   groups: SubNavGroup[]
   footer?: ReactNode
 }) {
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
-      <div className={cn(SUBNAV_HEADER, 'relative border-b border-sidebar-border px-4')}>{header}</div>
+    <div className="ml-3.5 mt-0.5 space-y-1 border-l border-sidebar-border pl-2">
+      {header ? <div className="relative px-1 pb-1">{header}</div> : null}
 
-      <div className="flex-1 overflow-y-auto p-2">
-        {groups.map((group, index) => (
-          <div key={group.label ?? `group-${index}`} className={cn(index > 0 && 'mt-3')}>
-            {group.label ? (
-              <p className="px-3 pb-1 pt-1 text-xs font-medium text-sidebar-foreground/50">{group.label}</p>
-            ) : null}
-            <div className="space-y-0.5">
-              {group.items.map((entry) => (
-                <SubNavRow key={entry.id} entry={entry} />
-              ))}
-            </div>
-          </div>
-        ))}
+      {groups.map((group, index) => (
+        <SubNavGroupBlock key={group.label ?? `group-${index}`} group={group} isFirst={index === 0} />
+      ))}
+
+      {footer ? <div className="pt-2">{footer}</div> : null}
+    </div>
+  )
+}
+
+function SubNavGroupBlock({ group, isFirst }: { group: SubNavGroup; isFirst: boolean }) {
+  const hasActiveItem = group.items.some((item) => item.active)
+  // A collapsed group still reveals itself when it owns the active route.
+  const [open, setOpen] = useState(group.defaultOpen ?? true)
+  const expanded = group.collapsible ? open || hasActiveItem : true
+
+  const items = (
+    <div className="space-y-0.5">
+      {group.items.map((entry) => (
+        <SubNavRow key={entry.id} entry={entry} />
+      ))}
+    </div>
+  )
+
+  if (group.collapsible && group.label) {
+    return (
+      <div className={cn(!isFirst && 'pt-2')}>
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={expanded}
+          className="flex w-full items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-sidebar-foreground/45 transition-colors hover:text-sidebar-foreground/70"
+        >
+          <ChevronDown className={cn('h-3 w-3 shrink-0 transition-transform', !expanded && '-rotate-90')} />
+          <span className="min-w-0 flex-1 truncate text-left">{group.label}</span>
+        </button>
+        {expanded ? items : null}
       </div>
+    )
+  }
 
-      {footer ? <div className="border-t border-sidebar-border p-2">{footer}</div> : null}
-    </aside>
+  return (
+    <div className={cn(!isFirst && 'pt-2')}>
+      {group.label ? (
+        <p className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-sidebar-foreground/45">
+          {group.label}
+        </p>
+      ) : null}
+      {items}
+    </div>
   )
 }
 
 export function SubNavRow({ entry }: { entry: SubNavEntry }) {
   const className = cn(
-    'flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors',
+    'flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors',
     entry.active
       ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
       : entry.danger
@@ -94,7 +128,7 @@ export function SubNavRow({ entry }: { entry: SubNavEntry }) {
 
   if (entry.href) {
     return (
-      <Link href={entry.href} className={className}>
+      <Link href={entry.href} aria-current={entry.active ? 'page' : undefined} className={className}>
         {inner}
       </Link>
     )

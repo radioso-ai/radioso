@@ -100,10 +100,19 @@ const mapRecord = (row: OauthConnectionRow): OauthConnectionRecord => ({
   updatedAt: new Date(row.updated_at),
 });
 
+export interface ListOauthConnectionsOptions {
+  /**
+   * Restrict the result to these providers. The connections table is a
+   * provider-neutral spine shared by customer email, Slack, and future
+   * integrations, so each consumer scopes the list to the providers it owns.
+   */
+  providers?: string[];
+}
+
 export interface OauthConnectionRepositoryPort {
   create(input: CreateOauthConnectionInput): Promise<OauthConnectionRecord>;
   findById(workspaceId: string, id: string): Promise<OauthConnectionRecord | null>;
-  listByWorkspace(workspaceId: string): Promise<OauthConnectionRecord[]>;
+  listByWorkspace(workspaceId: string, options?: ListOauthConnectionsOptions): Promise<OauthConnectionRecord[]>;
   updateStatus(workspaceId: string, id: string, status: OauthConnectionStatus): Promise<OauthConnectionRecord | null>;
   update(workspaceId: string, id: string, input: UpdateOauthConnectionInput): Promise<OauthConnectionRecord | null>;
   setOauthFlow(workspaceId: string, id: string, oauthFlowCiphertext: string): Promise<OauthConnectionRecord | null>;
@@ -151,13 +160,18 @@ export class OauthConnectionRepository implements OauthConnectionRepositoryPort 
     return row ? mapRecord(row as OauthConnectionRow) : null;
   }
 
-  async listByWorkspace(workspaceId: string): Promise<OauthConnectionRecord[]> {
-    const rows = await this.db
+  async listByWorkspace(
+    workspaceId: string,
+    options?: ListOauthConnectionsOptions,
+  ): Promise<OauthConnectionRecord[]> {
+    let query = this.db
       .selectFrom("integration_oauth_connections")
       .select(oauthColumns)
-      .where("workspace_id", "=", workspaceId)
-      .orderBy("created_at", "asc")
-      .execute();
+      .where("workspace_id", "=", workspaceId);
+    if (options?.providers && options.providers.length > 0) {
+      query = query.where("provider", "in", options.providers);
+    }
+    const rows = await query.orderBy("created_at", "asc").execute();
     return rows.map((row) => mapRecord(row as OauthConnectionRow));
   }
 

@@ -138,6 +138,9 @@ describe("PasswordResetService", () => {
         get: async () => {
           throw new Error("customer email OAuth must not be used by password reset");
         },
+        list: async () => {
+          throw new Error("customer email OAuth must not be used by password reset");
+        },
       },
       providers: {
         get: () => ({

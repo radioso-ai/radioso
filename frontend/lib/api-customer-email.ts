@@ -173,9 +173,11 @@ export const customerEmailApi = {
     )
   },
 
+  // OAuth connections eligible to back a customer email connection. The backend
+  // owns which providers count as email, so this never enumerates provider IDs.
   async listOauthConnections(workspaceId: string): Promise<{ connections: WorkspaceOauthConnection[] }> {
     return request<{ connections: WorkspaceOauthConnection[] }>(
-      `/workspaces/${workspaceId}/oauth-connections`,
+      `/workspaces/${workspaceId}/email-oauth-connections`,
       { method: 'GET' },
       { withApiToken: true },
     )

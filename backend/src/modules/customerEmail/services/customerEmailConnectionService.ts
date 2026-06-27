@@ -22,15 +22,20 @@ import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js
 
 export interface CustomerEmailOauthStatusPort {
   get(workspaceId: string, connectionId: string): Promise<OauthConnectionSummary>;
+  list(
+    workspaceId: string,
+    options?: { providers?: string[] },
+  ): Promise<OauthConnectionSummary[]>;
 }
 
 export interface CustomerEmailConnectionServiceOptions {
   repository: CustomerEmailConnectionRepositoryPort;
-  oauthConnections: CustomerEmailOauthStatusPort | Pick<OauthConnectionService, "get">;
+  oauthConnections: CustomerEmailOauthStatusPort | Pick<OauthConnectionService, "get" | "list">;
   providers: CustomerEmailProviderRegistryPort;
 }
 
 const customerEmailProviderSet = new Set<string>(customerEmailOauthProviderIds);
+const customerEmailProviderList: string[] = [...customerEmailOauthProviderIds];
 
 const toSummary = (record: CustomerEmailConnectionRecord): CustomerEmailConnectionSummary => ({
   id: record.id,
@@ -57,6 +62,16 @@ export class CustomerEmailConnectionService {
   async list(workspaceId: string): Promise<CustomerEmailConnectionSummary[]> {
     const records = await this.options.repository.listByWorkspace(workspaceId);
     return records.map(toSummary);
+  }
+
+  /**
+   * OAuth connections that can back an email connection. This module owns which
+   * providers count as email (`customerEmailOauthProviderIds`), so the scope is
+   * resolved here rather than by the caller naming providers — the same set this
+   * service enforces when a connection is created.
+   */
+  async listOauthConnections(workspaceId: string): Promise<OauthConnectionSummary[]> {
+    return this.options.oauthConnections.list(workspaceId, { providers: customerEmailProviderList });
   }
 
   async get(workspaceId: string, connectionId: string): Promise<CustomerEmailConnectionSummary> {

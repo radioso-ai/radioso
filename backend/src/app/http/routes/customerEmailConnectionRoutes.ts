@@ -53,6 +53,23 @@ export const createCustomerEmailConnectionRoutes = (
     },
   );
 
+  // OAuth connections eligible to back an email connection. Scoped to the email
+  // providers inside the service so callers never enumerate provider IDs.
+  router.get(
+    "/workspaces/:workspaceId/email-oauth-connections",
+    workspaceSession,
+    settingsRead,
+    async (req, res, next) => {
+      try {
+        const workspaceId = parseUuid(req.params.workspaceId, "workspaceId");
+        const connections = await dependencies.customerEmailConnectionService.listOauthConnections(workspaceId);
+        res.status(200).json({ connections });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   router.post(
     "/workspaces/:workspaceId/email-connections",
     workspaceSession,

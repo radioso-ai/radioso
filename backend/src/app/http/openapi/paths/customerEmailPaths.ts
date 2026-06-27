@@ -128,6 +128,16 @@ const EmailSkillActivitySummarySchema = z.object({
   createdAt: z.string(),
 });
 
+const EmailOauthConnectionSummarySchema = z.object({
+  id: z.string().uuid(),
+  provider: z.string(),
+  displayName: z.string(),
+  status: z.enum(["pending", "authorized", "needs_reauth", "disabled", "error"]),
+  grantedScopes: z.array(z.string()),
+  providerAccountId: z.string().nullable(),
+  updatedAt: z.string(),
+});
+
 const CONNECTION_TAGS = ["Customer Email Connections"];
 const SKILL_TAGS = ["Customer Email Skills"];
 const ACTIVITY_TAGS = ["Customer Email Activity"];
@@ -168,6 +178,21 @@ export const registerCustomerEmailPaths = (
     request: { params: WorkspaceParams },
     responses: {
       200: { description: "Customer email connections", content: json(z.object({ connections: z.array(CustomerEmailConnectionSummarySchema) })) },
+      401: errorResponse("Authentication required"),
+      403: errorResponse("Workspace settings permission required"),
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/workspaces/{workspaceId}/email-oauth-connections",
+    tags: CONNECTION_TAGS,
+    summary: "List OAuth connections eligible to back a customer email connection",
+    operationId: "listWorkspaceEmailOauthConnections",
+    security: sec,
+    request: { params: WorkspaceParams },
+    responses: {
+      200: { description: "Email-eligible OAuth connections", content: json(z.object({ connections: z.array(EmailOauthConnectionSummarySchema) })) },
       401: errorResponse("Authentication required"),
       403: errorResponse("Workspace settings permission required"),
     },

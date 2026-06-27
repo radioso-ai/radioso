@@ -23,6 +23,7 @@ import {
   encryptOauthTokens,
 } from "./oauthCrypto.js";
 import type {
+  ListOauthConnectionsOptions as OauthConnectionListOptions,
   OauthConnectionRecord,
   OauthConnectionRepositoryPort,
 } from "../../../db/repositories/oauthConnectionRepository.js";
@@ -165,8 +166,8 @@ export class OauthConnectionService {
     return toSummary(await this.requireConnection(workspaceId, connectionId));
   }
 
-  async list(workspaceId: string): Promise<OauthConnectionSummary[]> {
-    const records = await this.options.repository.listByWorkspace(workspaceId);
+  async list(workspaceId: string, options?: OauthConnectionListOptions): Promise<OauthConnectionSummary[]> {
+    const records = await this.options.repository.listByWorkspace(workspaceId, options);
     return records.map(toSummary);
   }
 

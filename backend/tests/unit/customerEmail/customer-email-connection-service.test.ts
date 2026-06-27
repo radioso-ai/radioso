@@ -107,15 +107,21 @@ const oauthSummary = (overrides: Partial<OauthConnectionSummary> = {}): OauthCon
 
 const createService = (options: {
   oauth?: OauthConnectionSummary;
+  oauthList?: OauthConnectionSummary[];
   repository?: InMemoryCustomerEmailConnectionRepository;
   health?: Awaited<ReturnType<CustomerEmailProviderAdapter["checkHealth"]>>;
 } = {}) => {
   const repository = options.repository ?? new InMemoryCustomerEmailConnectionRepository();
   const oauth = options.oauth ?? oauthSummary();
+  const oauthList = options.oauthList ?? [oauth];
   const service = new CustomerEmailConnectionService({
     repository,
     oauthConnections: {
       get: async () => oauth,
+      list: async (_workspaceId, listOptions) =>
+        oauthList.filter(
+          (connection) => !listOptions?.providers || listOptions.providers.includes(connection.provider),
+        ),
     },
     providers: {
       get: (provider) =>
@@ -131,6 +137,16 @@ const createService = (options: {
 };
 
 describe("CustomerEmailConnectionService", () => {
+  it("lists only OAuth connections whose provider is an email provider", async () => {
+    const mail = oauthSummary({ id: "oauth-mail", provider: "google_mail" });
+    const slack = oauthSummary({ id: "oauth-slack", provider: "slack" });
+    const { service } = createService({ oauthList: [mail, slack] });
+
+    const connections = await service.listOauthConnections("workspace-1");
+
+    expect(connections).toEqual([mail]);
+  });
+
   it("creates a connection only for an authorized OAuth mail connection with required scopes", async () => {
     const { service, oauth } = createService();
 

@@ -1,7 +1,7 @@
 import type { ChatGatewayUsageContext } from "../contracts/chatGateway.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
-import { AssistantInstructionBuilder } from "./assistantInstructionBuilder.js";
+import { SharedAnswerInstructionBuilder } from "../../retrieval/public.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 
 /**
@@ -12,7 +12,7 @@ import type { PreparedSession } from "./chatSessionPreparer.js";
  * generation; this just removes the boilerplate they share.
  */
 export class ChatAnswerSupport {
-  private readonly assistantInstructionBuilder = new AssistantInstructionBuilder();
+  private readonly assistantInstructionBuilder = new SharedAnswerInstructionBuilder();
 
   buildChatWorkspaceContext(session: PreparedSession): LlmCapabilityResolveInput {
     return {

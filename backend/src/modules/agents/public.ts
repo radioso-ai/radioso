@@ -32,7 +32,13 @@ export {
   type NormalizedAgentInput,
   type WebsiteEmbedSurfaceSettings,
 } from "./domain.js";
-export { DEFAULT_CONTACT_REQUEST_DELIVERY, hasConfiguredContactDestination } from "./domain.js";
+export {
+  DEFAULT_CONTACT_REQUEST_DELIVERY,
+  hasConfiguredContactDestination,
+  readNotifyContactDelivery,
+  resolveEffectiveContactDelivery,
+} from "./domain.js";
+export type { ContactNotifySkillView } from "./domain.js";
 export {
   AgentService,
   type AgentSettingsResource,

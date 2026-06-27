@@ -1,3 +1,4 @@
+import { readNotifyContactDelivery } from "../../../agents/public.js";
 import type { AgentContactRequestDelivery, AgentContactWebhook } from "../../../agents/public.js";
 import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js";
 import {
@@ -117,7 +118,7 @@ export class ConfiguredContactDeliveryResolver implements ContactRecipientResolv
       if (!notifySkill.enabled) {
         return { emails: [], webhook: null };
       }
-      const delivery = readNotifyDelivery(notifySkill.config);
+      const delivery = readNotifyContactDelivery(notifySkill.config);
       if (delivery) {
         if (delivery.recipientEmails.length > 0) {
           return {
@@ -153,21 +154,6 @@ export class ConfiguredContactDeliveryResolver implements ContactRecipientResolv
   }
 }
 
-const readNotifyDelivery = (config: Record<string, unknown> | undefined): AgentContactRequestDelivery | null => {
-  const delivery = config?.delivery;
-  if (!delivery || typeof delivery !== "object" || Array.isArray(delivery)) {
-    return null;
-  }
-  const record = delivery as { recipientEmails?: unknown; webhook?: unknown };
-  const recipientEmails = Array.isArray(record.recipientEmails)
-    ? record.recipientEmails.filter((email): email is string => typeof email === "string")
-    : [];
-  const webhook = record.webhook && typeof record.webhook === "object" && !Array.isArray(record.webhook)
-    && typeof (record.webhook as { url?: unknown }).url === "string"
-    ? { url: (record.webhook as { url: string }).url }
-    : null;
-  return { recipientEmails, webhook };
-};
 
 export class FetchContactWebhookHttpClient extends FetchWebhookHttpClient {}
 

@@ -86,10 +86,63 @@ export const DEFAULT_CONTACT_REQUEST_DELIVERY: AgentContactRequestDelivery = {
  * destinations are not yet represented on the agent record — extending this
  * predicate to cover every available contact capability is tracked as a
  * follow-up.
+ *
+ * Pass the *effective* delivery from {@link resolveEffectiveContactDelivery} so
+ * the gate matches the source dispatch sends to, not just the legacy field.
  */
 export const hasConfiguredContactDestination = (
   delivery: AgentContactRequestDelivery,
 ): boolean => delivery.recipientEmails.length > 0 || delivery.webhook !== null;
+
+/** Minimal view of a `contact_human` notify skill needed to resolve its delivery. */
+export interface ContactNotifySkillView {
+  kind: string;
+  enabled?: boolean;
+  config?: Record<string, unknown>;
+}
+
+/**
+ * Parses the delivery target carried on a `contact_human` notify skill
+ * (`config.delivery`). Returns null when the skill has no delivery object, which
+ * signals that the legacy agent-level delivery should be consulted instead. This
+ * is the single reader shared with dispatch's contact delivery resolver so the
+ * activation gate and the actual send cannot drift apart.
+ */
+export const readNotifyContactDelivery = (
+  config?: Record<string, unknown>,
+): AgentContactRequestDelivery | null => {
+  const delivery = config?.delivery;
+  if (!delivery || typeof delivery !== "object" || Array.isArray(delivery)) {
+    return null;
+  }
+  const record = delivery as { recipientEmails?: unknown; webhook?: unknown };
+  const recipientEmails = Array.isArray(record.recipientEmails)
+    ? record.recipientEmails.filter((email): email is string => typeof email === "string")
+    : [];
+  const webhook =
+    record.webhook && typeof record.webhook === "object" && !Array.isArray(record.webhook)
+    && typeof (record.webhook as { url?: unknown }).url === "string"
+      ? { url: (record.webhook as { url: string }).url }
+      : null;
+  return { recipientEmails, webhook };
+};
+
+/**
+ * The effective contact delivery for an agent, mirroring dispatch precedence: an
+ * enabled `contact_human` notify skill that carries its own `config.delivery` is
+ * authoritative; otherwise the legacy agent-level `contactRequestDelivery`
+ * applies. The workspace-owner fallback is not folded in — callers decide whether
+ * an explicit destination exists via {@link hasConfiguredContactDestination}.
+ */
+export const resolveEffectiveContactDelivery = (
+  notifySkill: ContactNotifySkillView | null | undefined,
+  legacyDelivery: AgentContactRequestDelivery,
+): AgentContactRequestDelivery => {
+  if (notifySkill?.kind !== "notify" || !notifySkill.enabled) {
+    return legacyDelivery;
+  }
+  return readNotifyContactDelivery(notifySkill.config) ?? legacyDelivery;
+};
 
 export interface AgentBehaviorSettings {
   customInstruction: string;

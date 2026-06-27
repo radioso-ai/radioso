@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import {
   DropdownMenu,
@@ -18,7 +19,6 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar'
 import { useWorkspace } from '@/lib/workspace-context'
 import { accountApi, seedWorkspaceSession, setPendingAccountSwitchId } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
@@ -147,25 +147,36 @@ export function WorkspaceSwitcher({ accountId, currentView, routeState }: Worksp
       : accounts
   const currentAccount = displayedAccounts.find((account) => account.accountId === accountId) ?? null
   const otherAccounts = displayedAccounts.filter((account) => account.accountId !== accountId)
+  const organizationName =
+    currentAccount?.organizationName ??
+    (user?.accountId === accountId ? user?.organizationName : undefined) ??
+    'radioso'
 
   return (
     <>
-      <SidebarMenu>
-        <SidebarMenuItem>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <SidebarMenuButton
-                className="w-full"
-                tooltip={activeWorkspace?.name ?? 'Workspace'}
-              >
-                <Layers className="w-4 h-4" />
-                <span className="truncate ">
-                  {activeWorkspace?.name ?? 'Workspace'}
-                </span>
-                <ChevronsUpDown className="ml-auto w-4 h-4 text-muted-foreground " />
-              </SidebarMenuButton>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-72">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          {/* The header brand doubles as the org/workspace picker — selection arrows on the title. */}
+          <button
+            type="button"
+            className="flex h-14 w-full items-center gap-2 px-4 text-left outline-none transition-colors hover:bg-sidebar-accent focus-visible:bg-sidebar-accent"
+          >
+            <Image
+              src="/radioso-icon.svg"
+              alt="radioso logo"
+              width={28}
+              height={28}
+              priority
+              loading="eager"
+              className="h-7 w-7 flex-shrink-0"
+            />
+            <span className="min-w-0 flex-1 truncate font-display text-lg font-semibold text-foreground">
+              {organizationName}
+            </span>
+            <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-72">
               {accountsLoaded ? (
                 displayedAccounts.length > 0 ? (
                   <>
@@ -236,8 +247,6 @@ export function WorkspaceSwitcher({ accountId, currentView, routeState }: Worksp
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        </SidebarMenuItem>
-      </SidebarMenu>
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent className="sm:max-w-sm">

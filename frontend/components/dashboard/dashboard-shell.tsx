@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { AppSidebar } from './app-sidebar'
 import { AgentSubNavContainer } from './agent-subnav-container'
-import { AccountSubNav, KnowledgeSubNav, SettingsSubNav } from './area-subnavs'
+import { AccountSubNav, ActivitySubNav, KnowledgeSubNav, SettingsSubNav } from './area-subnavs'
 import { AgentView } from './agent-view'
 import { AccountView } from './account-view'
 import { ChatHistoryView } from './chat-history-view'
@@ -28,7 +28,6 @@ import {
 } from '@/lib/dashboard-workspace-sync'
 import { useWorkspace } from '@/lib/workspace-context'
 import { useWorkspaceOnboarding } from '@/lib/onboarding'
-import { useIsMobile } from '@/hooks/use-mobile'
 import { LogoSpinner } from '@/components/ui/spinner'
 
 interface DashboardShellProps {
@@ -41,7 +40,6 @@ export function DashboardShell({
   routeState,
 }: DashboardShellProps) {
   const router = useRouter()
-  const isMobile = useIsMobile()
   const routeWorkspaceSyncKeyRef = useRef<string | null>(null)
   const pendingRouteWorkspaceIdRef = useRef<string | null>(null)
   const { activeWorkspaceId, workspaces, isLoading: isWorkspaceLoading, switchWorkspace } = useWorkspace()
@@ -55,9 +53,9 @@ export function DashboardShell({
     : undefined
   const currentView = routeState.section
   const isAgentChatView = currentView === 'agents' && (routeState.agentTab ?? 'chat') === 'chat'
-  // The icon rail is always collapsed for a stable first column; only the
-  // second column appears or disappears per area. The first-run takeover shows
-  // full-width with no second column.
+  // The labeled sidebar is the single nav surface: the active section's sub-nav
+  // nests under its rail row instead of occupying a second column. The first-run
+  // takeover still shows full-width content.
   const showFirstRun = isAgentChatView && onboarding.shouldShowFirstRun
   const area = activeArea(routeState)
   const hasSubNav = area !== null && !showFirstRun
@@ -141,7 +139,7 @@ export function DashboardShell({
     })
   ) {
     return (
-      <SidebarProvider open={false} onOpenChange={() => {}} className="h-svh min-h-0 overflow-hidden">
+      <SidebarProvider open onOpenChange={() => {}} className="h-svh min-h-0 overflow-hidden">
         <AppSidebar accountId={accountId} currentView={currentView} routeState={routeState} />
         <SidebarInset className="min-h-0 overflow-hidden">
           <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden">
@@ -155,18 +153,23 @@ export function DashboardShell({
     )
   }
 
-  // The sub-nav renders in exactly one place per breakpoint: inline beside the
-  // content on desktop, or inside the rail drawer on mobile. Computing it once
-  // keeps stateful containers (e.g. the agent switcher) from mounting twice.
-  const subNav = !hasSubNav ? null : area === 'agents' ? (
+  // The active section's sub-nav renders in exactly one place — nested inside the
+  // sidebar, under its rail row (desktop column and mobile drawer share it).
+  // Computing it once keeps stateful containers (e.g. the agent switcher) from
+  // mounting twice.
+  const subNav = showFirstRun ? null : area === 'agents' ? (
     <AgentSubNavContainer accountId={accountId} routeState={routeState} />
   ) : area === 'knowledge' ? (
     <KnowledgeSubNav accountId={accountId} routeState={routeState} />
   ) : area === 'settings' ? (
     <SettingsSubNav accountId={accountId} routeState={routeState} />
-  ) : (
+  ) : area === 'account' ? (
     <AccountSubNav accountId={accountId} routeState={routeState} />
-  )
+  ) : currentView === 'activity' || currentView === 'quality' ? (
+    // Activity/Quality have no content "area", but their views (Needs attention / All
+    // activity / Quality) are now sidebar items nested under the Activity rail row.
+    <ActivitySubNav accountId={accountId} routeState={routeState} />
+  ) : null
 
   const areaContent = area === 'agents' ? (
     <AgentView accountId={accountId} routeState={routeState} onboarding={onboarding} onOpenDocument={openDocument} />
@@ -185,12 +188,12 @@ export function DashboardShell({
   )
 
   return (
-    <SidebarProvider open={false} onOpenChange={() => {}} className="h-svh min-h-0 overflow-hidden">
+    <SidebarProvider open onOpenChange={() => {}} className="h-svh min-h-0 overflow-hidden">
       <AppSidebar
         accountId={accountId}
         currentView={currentView}
         routeState={routeState}
-        areaSubNav={isMobile ? subNav : undefined}
+        areaSubNav={subNav}
       />
       <SidebarInset className="min-h-0 overflow-hidden">
         <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden">
@@ -200,10 +203,7 @@ export function DashboardShell({
           {showFirstRun ? (
             <FirstRunExperience accountId={accountId} onboarding={onboarding} />
           ) : hasSubNav ? (
-            <div className="flex min-h-0 flex-1">
-              {isMobile ? null : subNav}
-              <div className="flex min-w-0 flex-1 flex-col">{areaContent}</div>
-            </div>
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">{areaContent}</div>
           ) : currentView === 'activity' ? (
             routeState.activityTab === 'all' ? (
               <ChatHistoryView accountId={accountId} onboarding={onboarding} routeState={routeState} />

@@ -3,13 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 
-import { ActivityTabs } from './activity-tabs'
 import { ConversationDrawer } from './conversation-drawer'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { DashboardTable, DashboardTableBody, DashboardTableCell, DashboardTableHead, DashboardTableHeader, DashboardTableRow } from '@/components/dashboard/shared/dashboard-table'
 import type { SelectedHistoryItem } from '@/components/dashboard/history/history-list'
 import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
+import { LogoSpinner } from '@/components/ui/spinner'
 import { useNeedsAttentionActivity } from '@/hooks/use-needs-attention-activity'
 import { chatApi, qualityApi, skillsApi, type LowQualityTurn, type PendingApprovalDecision, type QualityTriageState } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
@@ -305,19 +304,16 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         title="Needs attention"
         description={`${needsAttentionCount} item${needsAttentionCount === 1 ? '' : 's'} needing operator attention`}
         actions={
-          <>
-            <Button
-              type="button"
-              variant={hasNewActivity ? 'default' : 'outline'}
-              size="sm"
-              onClick={handleRefresh}
-              disabled={isLoading}
-            >
-              <RefreshCw className="h-4 w-4" aria-hidden />
-              {hasNewActivity ? `Refresh (${newItemCount})` : 'Refresh'}
-            </Button>
-            <ActivityTabs accountId={accountId} routeState={routeState} />
-          </>
+          <Button
+            type="button"
+            variant={hasNewActivity ? 'default' : 'outline'}
+            size="sm"
+            onClick={handleRefresh}
+            disabled={isLoading}
+          >
+            <RefreshCw className="h-4 w-4" aria-hidden />
+            {hasNewActivity ? `Refresh (${newItemCount})` : 'Refresh'}
+          </Button>
         }
       >
         <div className="space-y-4">
@@ -333,10 +329,8 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
           ) : null}
 
           {isLoading ? (
-            <div className="space-y-3">
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-full" />
+            <div className="flex min-h-48 items-center justify-center">
+              <LogoSpinner imageClassName="h-7 w-7" />
             </div>
           ) : showEmptyState ? (
             <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">

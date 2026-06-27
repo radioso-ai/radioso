@@ -41,6 +41,8 @@ export const publicChatApi = {
     token: string,
     data: {
       channel: 'anonymous_link' | 'website_embed'
+      chatSessionId?: string | null
+      /** @deprecated Use chatSessionId. */
       anonymousSessionId?: string | null
       resumeToken?: string | null
       pageContext?: WebsiteEmbedPageContext | null
@@ -58,6 +60,7 @@ export const publicChatApi = {
         body: JSON.stringify({
           channel: data.channel,
           resumeToken: resumeToken ?? undefined,
+          chatSessionId: data.chatSessionId ?? data.anonymousSessionId ?? undefined,
           anonymousSessionId: data.anonymousSessionId ?? undefined,
           pageContext: data.pageContext,
         }),

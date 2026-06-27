@@ -1214,6 +1214,8 @@ export class ChatService {
     pageContext?: AssistantPageContext | null;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
+    chatSessionId?: string | null;
+    /** @deprecated Use chatSessionId. */
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
     verifiedCustomerId?: string | null;
@@ -1240,6 +1242,8 @@ export class ChatService {
     pageContext?: AssistantPageContext | null;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
+    chatSessionId?: string | null;
+    /** @deprecated Use chatSessionId. */
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
     verifiedCustomerId?: string | null;
@@ -1406,6 +1410,8 @@ export class ChatService {
     pageContext?: AssistantPageContext | null;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
+    chatSessionId?: string | null;
+    /** @deprecated Use chatSessionId. */
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
     verifiedCustomerId?: string | null;
@@ -1432,6 +1438,8 @@ export class ChatService {
     pageContext?: AssistantPageContext | null;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
+    chatSessionId?: string | null;
+    /** @deprecated Use chatSessionId. */
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
     verifiedCustomerId?: string | null;

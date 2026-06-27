@@ -6379,6 +6379,10 @@
             "type": "string",
             "minLength": 1
           },
+          "chatSessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
           "anonymousSessionId": {
             "type": "string",
             "format": "uuid"

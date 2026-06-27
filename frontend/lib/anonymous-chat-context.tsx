@@ -179,11 +179,11 @@ const isRateLimitError = (error: unknown): { message: string; retryAfterSeconds:
 
 const resolveOwnFeedback = (
   entries: AnswerFeedbackEntry[] | undefined,
-  anonymousSessionId: string | null | undefined,
+  chatSessionId: string | null | undefined,
 ): AnswerFeedbackState | undefined => {
   const entry = entries?.find((feedback) =>
     feedback.actorType === 'anonymous_user' &&
-    feedback.anonymousSessionId === anonymousSessionId,
+    feedback.anonymousSessionId === chatSessionId,
   )
   return entry ? { value: entry.value, comment: entry.comment } : undefined
 }
@@ -205,7 +205,7 @@ const toPublicAnswerSegments = (answerSegments?: AnswerSegment[]) =>
 
 const toChatMessagesFromTurns = (
   messages: ChatConversationDetail['messages'],
-  anonymousSessionId?: string | null,
+  chatSessionId?: string | null,
 ): ChatMessage[] =>
   messages
     .filter((message): message is typeof message & { role: 'user' | 'assistant' } => message.role !== 'system')
@@ -219,7 +219,7 @@ const toChatMessagesFromTurns = (
       answerSegments: toPublicAnswerSegments(message.answerSegments),
       suggestions: stripPublicSuggestionCitations(message.suggestions),
       answerFeedback: message.role === 'assistant'
-        ? resolveOwnFeedback(message.answerFeedbackEntries, anonymousSessionId)
+        ? resolveOwnFeedback(message.answerFeedbackEntries, chatSessionId)
         : undefined,
       answerFeedbackEntries: message.role === 'assistant' ? message.answerFeedbackEntries : undefined,
       activitySummary: message.debug?.activitySummary,
@@ -232,8 +232,8 @@ const toChatMessagesFromTurns = (
 
 const toChatMessages = (
   detail: ChatConversationDetail,
-  anonymousSessionId?: string | null,
-): ChatMessage[] => toChatMessagesFromTurns(detail.messages, anonymousSessionId)
+  chatSessionId?: string | null,
+): ChatMessage[] => toChatMessagesFromTurns(detail.messages, chatSessionId)
 
 const isHumanAgentReply = (message: ChatConversationDetail['messages'][number]) =>
   message.role === 'assistant' &&
@@ -271,9 +271,9 @@ const restoreMessageSuggestions = (
 
 const getLatestAssistantMessage = (
   detail: ChatConversationDetail,
-  anonymousSessionId?: string | null,
+  chatSessionId?: string | null,
 ): ChatMessage | null => {
-  const assistantMessages = toChatMessages(detail, anonymousSessionId).filter((message) => message.role === 'assistant')
+  const assistantMessages = toChatMessages(detail, chatSessionId).filter((message) => message.role === 'assistant')
   return assistantMessages.at(-1) ?? null
 }
 

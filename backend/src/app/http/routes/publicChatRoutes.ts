@@ -66,7 +66,7 @@ const verifyRequestSignedIdentity = async (
     token?: string;
     workspaceId: string;
     agentId: string;
-    anonymousSessionId: string;
+    chatSessionId: string;
     sourceOrigin: string | null;
   },
 ) => {
@@ -79,7 +79,7 @@ const verifyRequestSignedIdentity = async (
       token: input.token,
       workspaceId: input.workspaceId,
       agentId: input.agentId,
-      boundSessionId: input.anonymousSessionId,
+      boundSessionId: input.chatSessionId,
       boundOrigin: input.sourceOrigin,
       now: Date.now(),
       secrets: [
@@ -572,10 +572,10 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     validateBody(anonymousChatSchema),
     async (req, res, next) => {
       try {
-        const { workspaceId, agentId, anonymousSessionId, sourceChannel, sourceOrigin, citationDisplayEnabled } = res.locals as {
+        const { workspaceId, agentId, chatSessionId, sourceChannel, sourceOrigin, citationDisplayEnabled } = res.locals as {
           workspaceId: string;
           agentId: string;
-          anonymousSessionId: string;
+          chatSessionId: string;
           sourceChannel: string | null;
           sourceOrigin: string | null;
           citationDisplayEnabled: boolean;
@@ -592,7 +592,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
             startConversation: true,
             stream: false,
             sourceChannel,
-            anonymousSessionId,
+            chatSessionId,
             sourceOrigin,
             userExpectedLocale: req.body.userExpectedLocale,
             pageContext: req.body.pageContext,
@@ -614,7 +614,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           token: req.body.signedIdentity,
           workspaceId,
           agentId,
-          anonymousSessionId,
+          chatSessionId,
           sourceOrigin,
         });
 
@@ -629,7 +629,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           inputMetadata: req.body.inputMetadata,
           pageContext: req.body.pageContext,
           sourceChannel,
-          anonymousSessionId,
+          chatSessionId,
           sourceOrigin,
           verifiedCustomerId: verifiedIdentity?.customerId,
           verifiedIdentity: verifiedIdentity
@@ -654,14 +654,14 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     },
   );
 
-  // GET /api/v1/public/chat/:token — list conversations for this anonymous session
+  // GET /api/v1/public/chat/:token — list conversations for this chat session
   router.get("/:token", sessionMiddleware, requirePublicChatPermission(dependencies, "public_chat.session.read.own"), async (req, res, next) => {
     try {
-      const { workspaceId, agentId, workspaceName, anonymousSessionId } = res.locals as {
+      const { workspaceId, agentId, workspaceName, chatSessionId } = res.locals as {
         workspaceId: string;
         agentId: string;
         workspaceName: string;
-        anonymousSessionId: string;
+        chatSessionId: string;
       };
       const parsedQuery = collectionPageQuerySchema.safeParse(req.query);
       if (!parsedQuery.success) {
@@ -670,7 +670,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       }
       const page = await dependencies.chatHistoryService.listAnonymousConversations(
         workspaceId,
-        anonymousSessionId,
+        chatSessionId,
         {
           ...parsedQuery.data,
           agentId,
@@ -697,10 +697,10 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     }
   });
 
-  // GET /api/v1/public/chat/:token/tail/:conversationId — poll new messages for this anonymous session
+  // GET /api/v1/public/chat/:token/tail/:conversationId — poll new messages for this chat session
   router.get("/:token/tail/:conversationId", sessionMiddleware, requirePublicChatPermission(dependencies, "public_chat.history.read.own"), async (req, res, next) => {
     try {
-      const { agentId, anonymousSessionId, citationDisplayEnabled } = res.locals as { agentId: string; anonymousSessionId: string; citationDisplayEnabled: boolean };
+      const { agentId, chatSessionId, citationDisplayEnabled } = res.locals as { agentId: string; chatSessionId: string; citationDisplayEnabled: boolean };
       const parsedParams = publicConversationParamsSchema.safeParse(req.params);
       if (!parsedParams.success) {
         next(badRequest("Invalid request params", parsedParams.error.flatten()));
@@ -716,7 +716,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       const conversation = await dependencies.conversationRepository.findByIdAndAnonymousSession(
         conversationId,
         res.locals.workspaceId as string,
-        anonymousSessionId,
+        chatSessionId,
         agentId,
       );
       if (!conversation) {
@@ -735,10 +735,10 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     }
   });
 
-  // GET /api/v1/public/chat/:token/events/:conversationId — push notifications for this anonymous session
+  // GET /api/v1/public/chat/:token/events/:conversationId — push notifications for this chat session
   router.get("/:token/events/:conversationId", sessionMiddleware, requirePublicChatPermission(dependencies, "public_chat.history.read.own"), async (req, res, next) => {
     try {
-      const { agentId, anonymousSessionId } = res.locals as { agentId: string; anonymousSessionId: string };
+      const { agentId, chatSessionId } = res.locals as { agentId: string; chatSessionId: string };
       const parsedParams = publicConversationParamsSchema.safeParse(req.params);
       if (!parsedParams.success) {
         next(badRequest("Invalid request params", parsedParams.error.flatten()));
@@ -750,7 +750,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       const conversation = await dependencies.conversationRepository.findByIdAndAnonymousSession(
         conversationId,
         workspaceId,
-        anonymousSessionId,
+        chatSessionId,
         agentId,
       );
       if (!conversation) {
@@ -807,7 +807,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
   // GET /api/v1/public/chat/:token/history/:conversationId — get conversation detail
   router.get("/:token/history/:conversationId", sessionMiddleware, requirePublicChatPermission(dependencies, "public_chat.history.read.own"), async (req, res, next) => {
     try {
-      const { agentId, anonymousSessionId, citationDisplayEnabled } = res.locals as { agentId: string; anonymousSessionId: string; citationDisplayEnabled: boolean };
+      const { agentId, chatSessionId, citationDisplayEnabled } = res.locals as { agentId: string; chatSessionId: string; citationDisplayEnabled: boolean };
       const parsedParams = publicConversationParamsSchema.safeParse(req.params);
       if (!parsedParams.success) {
         next(badRequest("Invalid request params", parsedParams.error.flatten()));
@@ -820,11 +820,11 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       }
       const { conversationId } = parsedParams.data;
 
-      // Verify the conversation belongs to this anonymous session, not just the workspace
+      // Verify the conversation belongs to this chat session, not just the workspace.
       const conversation = await dependencies.conversationRepository.findByIdAndAnonymousSession(
         conversationId,
         res.locals.workspaceId as string,
-        anonymousSessionId,
+        chatSessionId,
         agentId,
       );
       if (!conversation) {
@@ -838,7 +838,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         parsedQuery.data,
         { includeAnswerFeedback: true },
       );
-      res.status(200).json(stripPublicConversationCitationArtifacts(detail, anonymousSessionId, citationDisplayEnabled));
+      res.status(200).json(stripPublicConversationCitationArtifacts(detail, chatSessionId, citationDisplayEnabled));
     } catch (error) {
       next(error);
     }

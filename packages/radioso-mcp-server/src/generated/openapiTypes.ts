@@ -3922,6 +3922,8 @@ export interface components {
             agentId?: string;
             resumeToken?: string;
             /** Format: uuid */
+            chatSessionId?: string;
+            /** Format: uuid */
             anonymousSessionId?: string;
             pageContext?: {
                 pageUrl?: string | null;

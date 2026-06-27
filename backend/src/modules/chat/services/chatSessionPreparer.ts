@@ -94,6 +94,8 @@ export interface PrepareChatSessionInput {
   pageContext?: AssistantPageContext | null;
   sourceChannel?: string | null;
   channelContext?: ConversationChannelContext | null;
+  chatSessionId?: string | null;
+  /** @deprecated Use chatSessionId. */
   anonymousSessionId?: string | null;
   sourceOrigin?: string | null;
   verifiedCustomerId?: string | null;
@@ -119,8 +121,9 @@ export class ChatSessionPreparer {
   ) {}
 
   async prepare(input: PrepareChatSessionInput, options: PrepareChatSessionOptions = {}): Promise<PreparedSession> {
+    const chatSessionId = input.chatSessionId ?? input.anonymousSessionId ?? null;
     const conversation = input.conversationId
-      ? await this.ensureConversation(input.conversationId, input.workspaceId, input.anonymousSessionId)
+      ? await this.ensureConversation(input.conversationId, input.workspaceId, chatSessionId)
       : null;
     const agent = options.preResolvedAgent ?? (this.agentService
       ? await this.agentService.resolve(input.workspaceId, input.agentId ?? conversation?.agentId ?? null)
@@ -144,7 +147,7 @@ export class ChatSessionPreparer {
         input.workspaceId,
         agent.id,
         input.sourceChannel ?? null,
-        input.anonymousSessionId ?? null,
+        chatSessionId,
         input.sourceOrigin ?? null,
         input.channelContext ?? null,
         input.verifiedCustomerId ?? null,
@@ -175,7 +178,7 @@ export class ChatSessionPreparer {
     });
     // The direct-only (non-grounded) base turn. Used as-is when retrieval is
     // skipped, otherwise as the throwaway base `prepareRetrieval` recomputes from.
-    const hostVariables = await this.resolveHostVariables(input, agent, effectiveVerifiedCustomerId);
+    const hostVariables = await this.resolveHostVariables(input, agent, effectiveVerifiedCustomerId, chatSessionId);
     const directOnlyTurn = this.prepareDirectOnlyTurn(
       this.buildPipelineInput(input, agent, turnHistory, conversationForTurn, userMessage),
       agent,
@@ -270,13 +273,14 @@ export class ChatSessionPreparer {
     input: PrepareChatSessionInput,
     agent: AgentRecord,
     effectiveVerifiedCustomerId: string | null = input.verifiedCustomerId ?? null,
+    chatSessionId: string | null = input.chatSessionId ?? input.anonymousSessionId ?? null,
   ): Promise<ResolvedVariableInput[]> {
     if (!this.contextVariableRepository) {
       return [];
     }
     const scopes: ContextVariableScope[] = [];
-    if (input.anonymousSessionId) {
-      scopes.push({ type: "session", id: input.anonymousSessionId });
+    if (chatSessionId) {
+      scopes.push({ type: "session", id: chatSessionId });
     }
     if (effectiveVerifiedCustomerId) {
       scopes.push({ type: "customer", id: effectiveVerifiedCustomerId });
@@ -325,6 +329,7 @@ export class ChatSessionPreparer {
       input,
       session.agent,
       input.verifiedCustomerId ?? session.conversation.verifiedCustomerId ?? null,
+      input.chatSessionId ?? input.anonymousSessionId ?? session.conversation.anonymousSessionId ?? null,
     ));
     const pipelineInput = this.buildPipelineInput(
       input,
@@ -365,6 +370,7 @@ export class ChatSessionPreparer {
       input,
       session.agent,
       input.verifiedCustomerId ?? session.conversation.verifiedCustomerId ?? null,
+      input.chatSessionId ?? input.anonymousSessionId ?? session.conversation.anonymousSessionId ?? null,
     ));
     const pipelineInput = {
       ...this.buildPipelineInput(
@@ -651,12 +657,12 @@ export class ChatSessionPreparer {
     };
   }
 
-  private async ensureConversation(conversationId: string, workspaceId: string, anonymousSessionId?: string | null) {
-    if (anonymousSessionId) {
+  private async ensureConversation(conversationId: string, workspaceId: string, chatSessionId?: string | null) {
+    if (chatSessionId) {
       const conversation = await this.conversationRepository.findByIdAndAnonymousSession(
         conversationId,
         workspaceId,
-        anonymousSessionId,
+        chatSessionId,
       );
       if (!conversation) {
         throw notFound("Conversation not found");

@@ -127,6 +127,8 @@ class StubConversationRepository implements ConversationRepositoryPort {
     throw new Error("not implemented");
   }
 
+  async setVerifiedCustomerId(): Promise<void> {}
+
   async touch(): Promise<void> {}
 }
 
@@ -338,6 +340,7 @@ describe("EvalSnapshotService.capture", () => {
       sourceOrigin: null,
       channelContext: null,
       anonymousSessionId: null,
+      verifiedCustomerId: null,
       createdAt: fixedDate,
       updatedAt: fixedDate,
     };
@@ -473,6 +476,7 @@ describe("EvalSnapshotService.capture", () => {
       sourceOrigin: null,
       channelContext: null,
       anonymousSessionId: null,
+      verifiedCustomerId: null,
       createdAt: fixedDate,
       updatedAt: fixedDate,
     };

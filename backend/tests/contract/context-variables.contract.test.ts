@@ -125,6 +125,16 @@ describe("context variable HTTP API", () => {
       .put(`/api/v1/agents/${agent.body.id}/context-variables/${variable.body.contextVariable.id}`)
       .set("Authorization", authorization)
       .send({
+        source: "browser",
+        surfacing: "always",
+        enabled: true,
+      })
+      .expect(400);
+
+    await request(app)
+      .put(`/api/v1/agents/${agent.body.id}/context-variables/${variable.body.contextVariable.id}`)
+      .set("Authorization", authorization)
+      .send({
         source: "pushed",
         maxAgeSeconds: 60,
         surfacing: "always",
@@ -199,6 +209,28 @@ describe("context variable HTTP API", () => {
       .send({
         scope: { type: "session", id: "session-oversized" },
         data: "x".repeat(33 * 1024),
+      })
+      .expect(400);
+
+    const stringVariable = await request(app)
+      .post("/api/v1/context-variables")
+      .set("Authorization", firstAuthorization)
+      .send({
+        name: "status",
+        description: "Current status.",
+        valueType: "string",
+        trustTier: "unverified",
+        sensitivity: "normal",
+        defaultSurfacing: "always",
+      })
+      .expect(201);
+
+    await request(app)
+      .put(`/api/v1/context-variables/${stringVariable.body.contextVariable.id}/values`)
+      .set("Authorization", firstAuthorization)
+      .send({
+        scope: { type: "session", id: "session-string" },
+        data: { state: "not-a-string" },
       })
       .expect(400);
 

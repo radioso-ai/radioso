@@ -17,6 +17,7 @@ export {
   signVisitorIdentity,
   verifySignedIdentity,
 } from "./identitySigning.js";
+export { isValueCompatibleWithType } from "./valueCompatibility.js";
 export type {
   SignedVisitorIdentityPayload,
   VerifiedVisitorIdentity,

@@ -37,6 +37,7 @@ const buildSession = (): PreparedSession => {
     sourceOrigin: "https://example.com",
     channelContext: null,
     anonymousSessionId: null,
+    verifiedCustomerId: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   };

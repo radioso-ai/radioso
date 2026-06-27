@@ -182,6 +182,21 @@ describe("ContextVariableResolverService", () => {
     expect(repository.upsertValue).not.toHaveBeenCalled();
   });
 
+  it("skips incompatible cached resolver values without calling the resolver", async () => {
+    const repository = new FakeContextVariableRepository();
+    repository.resolveForAgent.mockResolvedValue([]);
+    repository.listByAgent.mockResolvedValue([
+      enablement({ maxAgeSeconds: 60, variable: variable({ valueType: "string" }) }),
+    ]);
+    repository.readValue.mockResolvedValue(value({ state: "cached" }, new Date(nowMs - 30_000)));
+    const resolver: ContextResolverPort = { resolve: vi.fn(async () => ({ value: "fresh" })) };
+    const { service } = createService({ repository, resolver });
+
+    await expect(service.resolveForAgent(workspaceId, agentId, scopes)).resolves.toEqual([]);
+    expect(resolver.resolve).not.toHaveBeenCalled();
+    expect(repository.upsertValue).not.toHaveBeenCalled();
+  });
+
   it("fetches and caches stale or absent resolver values using the most-specific scope", async () => {
     const repository = new FakeContextVariableRepository();
     repository.resolveForAgent.mockResolvedValue([]);
@@ -220,6 +235,20 @@ describe("ContextVariableResolverService", () => {
 
     expect(resolver.resolve).toHaveBeenCalledTimes(1);
     expect(repository.upsertValue).toHaveBeenCalledWith("var-1", sessionScope, { state: "new" });
+  });
+
+  it("skips incompatible fetched resolver values without caching them", async () => {
+    const repository = new FakeContextVariableRepository();
+    repository.resolveForAgent.mockResolvedValue([]);
+    repository.listByAgent.mockResolvedValue([
+      enablement({ variable: variable({ valueType: "string" }) }),
+    ]);
+    repository.readValue.mockResolvedValue(null);
+    const resolver: ContextResolverPort = { resolve: vi.fn(async () => ({ value: { state: "object" } })) };
+    const { service } = createService({ repository, resolver });
+
+    await expect(service.resolveForAgent(workspaceId, agentId, scopes)).resolves.toEqual([]);
+    expect(repository.upsertValue).not.toHaveBeenCalled();
   });
 
   it("skips resolver failures without throwing and preserves pushed values", async () => {

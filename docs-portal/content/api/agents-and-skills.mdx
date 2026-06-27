@@ -91,13 +91,12 @@ The catalog endpoints create and update host-defined variable declarations:
 The per-agent enablement endpoints choose how a catalog variable is wired for
 one agent:
 
-- `source`: `pushed`, `browser`, or `resolver`
+- `source`: `pushed` or `resolver`
 - `surfacing`: `always`, `on_reference`, or `operator_only`
 - `enabled`
 
-The dashboard currently exposes `pushed` and `browser` sources. Resolver-backed
-variables are part of the API contract, but the operator UI does not configure
-them yet.
+The dashboard currently exposes the `pushed` source. Resolver-backed variables
+are part of the API contract, but the operator UI does not configure them yet.
 
 Host backends push runtime values through
 `PUT /api/v1/context-variables/{id}/values`. The request identifies the scope:
@@ -105,7 +104,7 @@ Host backends push runtime values through
 ```json
 {
   "scope": { "type": "session", "id": "public-session-id" },
-  "value": {
+  "data": {
     "items": [{ "sku": "course-101", "quantity": 1 }]
   }
 }

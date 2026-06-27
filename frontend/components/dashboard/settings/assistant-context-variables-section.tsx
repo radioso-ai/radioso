@@ -37,7 +37,7 @@ import {
 import { cn } from '@/lib/utils'
 
 type SaveState = { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }
-type SourceOption = Extract<AgentContextVariableEnablementRequest['source'], 'pushed' | 'browser'>
+type SourceOption = Extract<AgentContextVariableEnablementRequest['source'], 'pushed'>
 type SurfacingOption = AgentContextVariableEnablementRequest['surfacing']
 type ValueTypeOption = ContextVariableCreateRequest['valueType']
 type TrustTierOption = ContextVariableCreateRequest['trustTier']
@@ -63,7 +63,6 @@ const emptyForm: VariableFormState = {
 
 const sourceLabels: Record<SourceOption, string> = {
   pushed: 'Pushed API',
-  browser: 'Browser',
 }
 
 const surfacingLabels: Record<SurfacingOption, string> = {
@@ -88,7 +87,7 @@ const sensitivityLabels: Record<SensitivityOption, string> = {
 }
 
 const isUiSource = (source: AgentContextVariableEnablement['source']): source is SourceOption =>
-  source === 'pushed' || source === 'browser'
+  source === 'pushed'
 
 const variableToForm = (variable: ContextVariable): VariableFormState => ({
   name: variable.name,
@@ -417,7 +416,6 @@ export function AssistantContextVariablesSection({
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="pushed">{sourceLabels.pushed}</SelectItem>
-                            <SelectItem value="browser">{sourceLabels.browser}</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>

@@ -128,6 +128,7 @@ export class ChatSessionPreparer {
     if (conversation?.agentId && conversation.agentId !== agent.id) {
       throw notFound("Conversation not found");
     }
+    const effectiveVerifiedCustomerId = input.verifiedCustomerId ?? conversation?.verifiedCustomerId ?? null;
     const history = options.preResolvedHistory ?? (conversation
       ? await this.messageRepository.listRecentByConversationId(
           input.workspaceId,
@@ -146,10 +147,21 @@ export class ChatSessionPreparer {
         input.anonymousSessionId ?? null,
         input.sourceOrigin ?? null,
         input.channelContext ?? null,
+        input.verifiedCustomerId ?? null,
       );
+    if (conversation && input.verifiedCustomerId && !conversation.verifiedCustomerId) {
+      await this.conversationRepository.setVerifiedCustomerId(
+        conversation.id,
+        input.workspaceId,
+        input.verifiedCustomerId,
+      );
+    }
+    const conversationForTurn = persistedConversation.verifiedCustomerId === effectiveVerifiedCustomerId
+      ? persistedConversation
+      : { ...persistedConversation, verifiedCustomerId: effectiveVerifiedCustomerId };
     const promotedBootstrapGreeting = conversation
       ? null
-      : await this.promoteBootstrapGreeting(input, agent, persistedConversation);
+      : await this.promoteBootstrapGreeting(input, agent, conversationForTurn);
     const turnHistory = promotedBootstrapGreeting
       ? [...history, promotedBootstrapGreeting]
       : history;
@@ -163,16 +175,16 @@ export class ChatSessionPreparer {
     });
     // The direct-only (non-grounded) base turn. Used as-is when retrieval is
     // skipped, otherwise as the throwaway base `prepareRetrieval` recomputes from.
-    const hostVariables = await this.resolveHostVariables(input, agent);
+    const hostVariables = await this.resolveHostVariables(input, agent, effectiveVerifiedCustomerId);
     const directOnlyTurn = this.prepareDirectOnlyTurn(
-      this.buildPipelineInput(input, agent, turnHistory, persistedConversation, userMessage),
+      this.buildPipelineInput(input, agent, turnHistory, conversationForTurn, userMessage),
       agent,
     );
     const { retrieval, turnRoute } = options.skipRetrieval
       ? directOnlyTurn
       : await this.prepareRetrieval(input, {
           agent,
-          conversation: persistedConversation,
+          conversation: conversationForTurn,
           history: turnHistory,
           retrieval: directOnlyTurn.retrieval,
           turnRoute: CHAT_TURN_ROUTE.DIRECT,
@@ -188,7 +200,7 @@ export class ChatSessionPreparer {
 
     return {
       agent,
-      conversation: persistedConversation,
+      conversation: conversationForTurn,
       history: turnHistory,
       retrieval,
       turnRoute,
@@ -257,6 +269,7 @@ export class ChatSessionPreparer {
   private async resolveHostVariables(
     input: PrepareChatSessionInput,
     agent: AgentRecord,
+    effectiveVerifiedCustomerId: string | null = input.verifiedCustomerId ?? null,
   ): Promise<ResolvedVariableInput[]> {
     if (!this.contextVariableRepository) {
       return [];
@@ -265,8 +278,8 @@ export class ChatSessionPreparer {
     if (input.anonymousSessionId) {
       scopes.push({ type: "session", id: input.anonymousSessionId });
     }
-    if (input.verifiedCustomerId) {
-      scopes.push({ type: "customer", id: input.verifiedCustomerId });
+    if (effectiveVerifiedCustomerId) {
+      scopes.push({ type: "customer", id: effectiveVerifiedCustomerId });
     }
     scopes.push({ type: "agent", id: agent.id });
     scopes.push({ type: "workspace", id: input.workspaceId });
@@ -275,6 +288,7 @@ export class ChatSessionPreparer {
       if (!input.verifiedIdentity) {
         return resolved;
       }
+      // visitor_identity is exposed only on turns where a signed identity token freshly verifies.
       return [
         ...resolved,
         {
@@ -307,7 +321,11 @@ export class ChatSessionPreparer {
     framing: TurnRouting["framing"] = defaultTurnFraming(),
     hostVariables?: readonly ResolvedVariableInput[],
   ): Promise<PreparedSession> {
-    const variables = hostVariables ?? (await this.resolveHostVariables(input, session.agent));
+    const variables = hostVariables ?? (await this.resolveHostVariables(
+      input,
+      session.agent,
+      input.verifiedCustomerId ?? session.conversation.verifiedCustomerId ?? null,
+    ));
     const pipelineInput = this.buildPipelineInput(
       input,
       session.agent,
@@ -343,7 +361,11 @@ export class ChatSessionPreparer {
     framing: TurnRouting["framing"] = defaultTurnFraming(),
     hostVariables?: readonly ResolvedVariableInput[],
   ): Promise<PreparedSession> {
-    const variables = hostVariables ?? (await this.resolveHostVariables(input, session.agent));
+    const variables = hostVariables ?? (await this.resolveHostVariables(
+      input,
+      session.agent,
+      input.verifiedCustomerId ?? session.conversation.verifiedCustomerId ?? null,
+    ));
     const pipelineInput = {
       ...this.buildPipelineInput(
         input,

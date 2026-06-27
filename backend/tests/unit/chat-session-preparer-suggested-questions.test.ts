@@ -149,6 +149,7 @@ describe("ChatSessionPreparer suggested-question settings", () => {
       sourceOrigin: null,
       channelContext: null,
       anonymousSessionId: null,
+      verifiedCustomerId: null,
       createdAt: new Date("2026-01-01T00:00:00.000Z"),
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
     };
@@ -475,5 +476,111 @@ describe("ChatSessionPreparer suggested-question settings", () => {
       },
     });
     expect(session.resolvedContext.snapshot).toMatchObject({ visitor_identity: "[redacted]" });
+  });
+
+  it("binds a verified customer id to a new conversation and resolves the customer scope", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const agentRepository = new InMemoryAgentRepository();
+    const agent = await agentRepository.create("ws-1", { name: "Shop Bot" });
+    const retrievalTurn: RetrievalTurnPort = {
+      async interpret(request: RetrievalPipelineRequest) {
+        return {
+          request,
+          traceStartedAtMs: Date.now(),
+          context: { result: {} as never, startedAt: Date.now(), durationMs: 0 },
+          interpretation: { result: {}, startedAt: Date.now(), durationMs: 0 },
+        };
+      },
+      async dispatch(input) {
+        return fixedRetrievalResult(input.interpreted.request);
+      },
+    };
+    const resolveForAgent = vi.fn(async () => []);
+    const preparer = new ChatSessionPreparer(
+      conversationRepository,
+      messageRepository,
+      retrievalTurn,
+      createAuditService(),
+      undefined,
+      { async resolve() { return agent; } },
+      undefined,
+      { resolveForAgent },
+    );
+
+    const session = await preparer.prepare({
+      workspaceId: "ws-1",
+      agentId: agent.id,
+      query: "What is my plan?",
+      anonymousSessionId: "sess-1",
+      verifiedCustomerId: "cust-1",
+      verifiedIdentity: { customerId: "cust-1", plan: "pro" },
+    });
+
+    expect(session.conversation.verifiedCustomerId).toBe("cust-1");
+    expect(resolveForAgent).toHaveBeenCalledWith("ws-1", agent.id, [
+      { type: "session", id: "sess-1" },
+      { type: "customer", id: "cust-1" },
+      { type: "agent", id: agent.id },
+      { type: "workspace", id: "ws-1" },
+    ]);
+  });
+
+  it("uses the bound verified customer id on follow-up turns without a fresh verified token", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const agentRepository = new InMemoryAgentRepository();
+    const agent = await agentRepository.create("ws-1", { name: "Shop Bot" });
+    const retrievalTurn: RetrievalTurnPort = {
+      async interpret(request: RetrievalPipelineRequest) {
+        return {
+          request,
+          traceStartedAtMs: Date.now(),
+          context: { result: {} as never, startedAt: Date.now(), durationMs: 0 },
+          interpretation: { result: {}, startedAt: Date.now(), durationMs: 0 },
+        };
+      },
+      async dispatch(input) {
+        return fixedRetrievalResult(input.interpreted.request);
+      },
+    };
+    const resolveForAgent = vi.fn(async () => []);
+    const preparer = new ChatSessionPreparer(
+      conversationRepository,
+      messageRepository,
+      retrievalTurn,
+      createAuditService(),
+      undefined,
+      { async resolve() { return agent; } },
+      undefined,
+      { resolveForAgent },
+    );
+
+    const first = await preparer.prepare({
+      workspaceId: "ws-1",
+      agentId: agent.id,
+      query: "What is my plan?",
+      anonymousSessionId: "sess-1",
+      verifiedCustomerId: "cust-1",
+      verifiedIdentity: { customerId: "cust-1", plan: "pro" },
+    });
+    resolveForAgent.mockClear();
+
+    const followUp = await preparer.prepare({
+      workspaceId: "ws-1",
+      agentId: agent.id,
+      conversationId: first.conversation.id,
+      query: "And my order?",
+      anonymousSessionId: "sess-1",
+    });
+
+    expect(followUp.conversation.verifiedCustomerId).toBe("cust-1");
+    expect(resolveForAgent).toHaveBeenCalledWith("ws-1", agent.id, [
+      { type: "session", id: "sess-1" },
+      { type: "customer", id: "cust-1" },
+      { type: "agent", id: agent.id },
+      { type: "workspace", id: "ws-1" },
+    ]);
+    expect(followUp.stagedContext.some((entry) => entry.id === "visitor_identity")).toBe(false);
   });
 });

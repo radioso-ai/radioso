@@ -7,7 +7,7 @@ import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../m
 import { validateBody } from "../middleware/validate.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import type { ContextVariableScope } from "../../../modules/context-variables/public.js";
-import { deriveVisitorIdentitySigningKey } from "../../../modules/context-variables/public.js";
+import { deriveVisitorIdentitySigningKey, isValueCompatibleWithType } from "../../../modules/context-variables/public.js";
 
 const MAX_CONTEXT_VARIABLE_VALUE_BYTES = 32 * 1024;
 
@@ -76,6 +76,15 @@ const agentContextVariableEnablementBodySchema = z.object({
   surfacing: z.enum(contextVariableSurfacings),
   enabled: z.boolean().optional(),
 }).strict().superRefine((value, ctx) => {
+  if (value.source === "browser") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["source"],
+      message: "browser-sourced context variables are not yet supported",
+    });
+    return;
+  }
+
   if (value.source === "resolver") {
     if (!value.resolverSkillId) {
       ctx.addIssue({
@@ -331,7 +340,10 @@ export const createContextVariableRoutes = (dependencies: ContextVariableRouteDe
       try {
         const { workspaceId } = res.locals as { workspaceId: string };
         const { id } = parseParams(contextVariableParamsSchema, req.params);
-        await requireVariable(dependencies, workspaceId, id);
+        const variable = await requireVariable(dependencies, workspaceId, id);
+        if (!isValueCompatibleWithType(variable.valueType, req.body.data)) {
+          throw badRequest(`Context variable value must match declared valueType '${variable.valueType}'`);
+        }
         assertValueSize(req.body.data);
         const value = await dependencies.contextVariableRepository.upsertValue(id, req.body.scope, req.body.data);
         res.status(200).json({ value });

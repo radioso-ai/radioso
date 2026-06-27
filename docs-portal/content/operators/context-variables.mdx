@@ -1,7 +1,7 @@
 ---
 title: Context variables
 description: How operators configure page, identity, and host-defined context for agent turns.
-last_updated: 2026-06-24
+last_updated: 2026-06-27
 ---
 
 # Context variables
@@ -11,7 +11,7 @@ They are meant for facts such as the current page, visitor identity, cart,
 order status, account tier, or another value supplied by the host system.
 
 The key point is that operators configure declarations and agent wiring. Runtime
-values come from the host backend, the browser, or a resolver.
+values come from the host backend or a resolver.
 
 ## Built-in context
 
@@ -41,11 +41,9 @@ Each declaration belongs to the workspace catalog:
 Then each agent enables the variables it should use. In the agent **Context**
 section, choose the source and surfacing policy for that agent.
 
-The current dashboard supports two sources:
+The current dashboard supports one source:
 
 - **Pushed API** — the host backend writes values through the REST API.
-- **Browser** — the website sends the value from the browser. Treat this as
-  untrusted unless it is backed by signing.
 
 Resolver-backed variables exist in the API model, but are not configurable in
 the dashboard yet.
@@ -54,13 +52,13 @@ the dashboard yet.
 
 Trust tier describes how much the system should trust the value.
 
-- `unverified` is suitable for page state and browser-supplied hints. Do not use
+- `unverified` is suitable for page state and host-supplied hints. Do not use
   it to unlock account-specific answers.
 - `signed` is for values the host can prove came from a trusted backend or a
   signed identity flow.
 
 In practice, identity-sensitive behavior should depend on signed or backend
-pushed values, not on plain browser input.
+pushed values.
 
 ## Signed visitor identity
 
@@ -153,12 +151,12 @@ A host backend pushes a value to:
 PUT /api/v1/context-variables/{id}/values
 ```
 
-The body includes a scope and a value:
+The body includes a scope and data:
 
 ```json
 {
   "scope": { "type": "session", "id": "public-session-id" },
-  "value": {
+  "data": {
     "items": [
       { "sku": "course-101", "quantity": 1 }
     ]

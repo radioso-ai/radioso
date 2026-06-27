@@ -1143,7 +1143,8 @@ CREATE TABLE public.conversations (
     anonymous_session_id text,
     source_origin text,
     agent_id uuid,
-    channel_context jsonb
+    channel_context jsonb,
+    verified_customer_id text
 );
 
 

@@ -8,6 +8,7 @@ import type {
   ContextVariableValue,
 } from "./domain.js";
 import type { ResolvedVariableInput } from "./contextResolutionService.js";
+import { isValueCompatibleWithType } from "./valueCompatibility.js";
 
 export interface ContextResolverPort {
   resolve(input: {
@@ -28,7 +29,7 @@ export interface ContextVariableResolverServiceOptions {
   now?: () => number;
 }
 
-type ResolverOutcome = "cache_hit" | "cache_miss" | "fetch" | "timeout" | "error" | "null";
+type ResolverOutcome = "cache_hit" | "cache_miss" | "fetch" | "timeout" | "error" | "null" | "incompatible_value";
 
 const DEFAULT_RESOLVER_TIMEOUT_MS = 2_500;
 const RESOLVE_METRIC_HELP = "Context variable resolver outcomes.";
@@ -103,6 +104,17 @@ export class ContextVariableResolverService {
     try {
       const cached = await this.repository.readValue(variable.id, scope);
       if (isFresh(cached, enablement.maxAgeSeconds, this.now())) {
+        if (!isValueCompatibleWithType(variable.valueType, cached.data)) {
+          this.recordResolution({
+            outcome: "incompatible_value",
+            latencyMs: this.now() - startedAt,
+            workspaceId,
+            agentId,
+            variableId: variable.id,
+            variableName: variable.name,
+          });
+          return null;
+        }
         this.recordResolution({
           outcome: "cache_hit",
           latencyMs: this.now() - startedAt,
@@ -133,6 +145,17 @@ export class ContextVariableResolverService {
         timeoutMs: enablement.resolverTimeoutMs ?? DEFAULT_RESOLVER_TIMEOUT_MS,
       });
       if (!fetched) {
+        return null;
+      }
+      if (!isValueCompatibleWithType(variable.valueType, fetched.value)) {
+        this.recordResolution({
+          outcome: "incompatible_value",
+          latencyMs: this.now() - startedAt,
+          workspaceId,
+          agentId,
+          variableId: variable.id,
+          variableName: variable.name,
+        });
         return null;
       }
       await this.repository.upsertValue(variable.id, scope, fetched.value);

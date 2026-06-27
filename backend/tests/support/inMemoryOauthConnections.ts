@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type {
   CreateOauthConnectionInput,
+  ListOauthConnectionsOptions,
   OauthConnectionRecord,
   OauthConnectionRepositoryPort,
   UpdateOauthConnectionInput,
@@ -47,8 +48,15 @@ export class InMemoryOauthConnectionRepository implements OauthConnectionReposit
     return record && record.workspaceId === workspaceId ? clone(record) : null;
   }
 
-  async listByWorkspace(workspaceId: string): Promise<OauthConnectionRecord[]> {
-    return [...this.rows.values()].filter((row) => row.workspaceId === workspaceId).map(clone);
+  async listByWorkspace(
+    workspaceId: string,
+    options?: ListOauthConnectionsOptions,
+  ): Promise<OauthConnectionRecord[]> {
+    const providers = options?.providers;
+    return [...this.rows.values()]
+      .filter((row) => row.workspaceId === workspaceId)
+      .filter((row) => !providers || providers.length === 0 || providers.includes(row.provider))
+      .map(clone);
   }
 
   async updateStatus(

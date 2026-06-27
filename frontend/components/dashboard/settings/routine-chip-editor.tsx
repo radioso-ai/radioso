@@ -2,7 +2,7 @@
 
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
-import { AtSign, BadgeCheck, Bold, CornerUpRight, Database, Flag, Gavel, Heading1, Italic } from 'lucide-react'
+import { AtSign, BadgeCheck, Bold, CornerUpRight, Database, Flag, Gavel, Heading1, Italic, Send, Workflow } from 'lucide-react'
 
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
 import { ContentEditable } from '@lexical/react/LexicalContentEditable'
@@ -33,7 +33,7 @@ import {
 
 import { $createHeadingNode, $isHeadingNode, HeadingNode } from '@lexical/rich-text'
 
-import { $createAiConditionChipNode, $createApprovalChipNode, $createChipNode, $createConditionChipNode, $createDecisionChipNode, $createStepChipNode, $isChipNode, ApprovalChipDialog, approvalChipTargets, ChipNode, type ApprovalChipState, type ApprovalChipTarget, type RoutineChipKind } from '@/components/dashboard/settings/routine-chip-node'
+import { $createAiConditionChipNode, $createApprovalChipNode, $createChipNode, $createConditionChipNode, $createDecisionChipNode, $createOutcomeConditionChipNode, $createStepChipNode, $isChipNode, ApprovalChipDialog, approvalChipTargets, ChipNode, type ApprovalChipState, type ApprovalChipTarget, type RoutineChipKind } from '@/components/dashboard/settings/routine-chip-node'
 import { ConditionBuilderDialog, type ConditionDraft } from '@/components/dashboard/settings/routine-condition-builder-dialog'
 import { findRoutineSkillDescriptor, normalizeSkillName, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { RoutineVariablesProvider } from '@/components/dashboard/settings/routine-variables-context'
@@ -62,6 +62,7 @@ import type { RoutineSkillCategory, SkillAuthoringDescriptor } from '@/lib/api-r
 import { cn } from '@/lib/utils'
 import type { RoutineFieldGuardOp, RoutineSlotType } from '@/lib/api-types'
 import {
+  OUTCOME_GUARD_REF,
   slugifyVariableKey,
   type ApprovalDocOption,
   type ChipDocVariable,
@@ -181,6 +182,106 @@ function JumpDialog({
   )
 }
 
+// Author an outcome branch: the branch fires when the preceding tool step's skill returns
+// this result status. Known statuses (from the agent's skills) are offered as suggestions,
+// but any status can be typed — the backend validates the branch sits on a tool step.
+function OutcomeDialog({
+  open,
+  onOpenChange,
+  statuses,
+  onConfirm,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  statuses: string[]
+  onConfirm: (status: string) => void
+}) {
+  const [status, setStatus] = useState('')
+  const reset = () => setStatus('')
+  const confirm = () => {
+    const trimmed = status.trim()
+    if (!trimmed) return
+    onConfirm(trimmed)
+    reset()
+    onOpenChange(false)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => { if (!next) reset(); onOpenChange(next) }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Branch on a skill outcome</DialogTitle>
+          <DialogDescription>Place this on a branch line after a skill step. The branch fires when that skill returns the given result status.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1.5">
+          <Label htmlFor="outcomeStatus">Outcome status</Label>
+          <Input
+            id="outcomeStatus"
+            value={status}
+            onChange={(event) => setStatus(event.target.value)}
+            list="outcomeStatusOptions"
+            placeholder="succeeded"
+          />
+          <datalist id="outcomeStatusOptions">
+            {statuses.map((candidate) => (
+              <option key={candidate} value={candidate} />
+            ))}
+          </datalist>
+        </div>
+        <DialogFooter>
+          <Button type="button" onClick={confirm} disabled={!status.trim()}>Add outcome branch</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// Author an action step: a step that emits an outbox action (an email to a teammate, a
+// webhook, a Slack post) named by its action type. The action type is a free identifier the
+// runtime resolves to a registered handler, the same as the Form view's action field.
+function ActionDialog({
+  open,
+  onOpenChange,
+  onConfirm,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onConfirm: (actionType: string) => void
+}) {
+  const [actionType, setActionType] = useState('')
+  const reset = () => setActionType('')
+  const confirm = () => {
+    const trimmed = actionType.trim()
+    if (!trimmed) return
+    onConfirm(trimmed)
+    reset()
+    onOpenChange(false)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => { if (!next) reset(); onOpenChange(next) }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add an action step</DialogTitle>
+          <DialogDescription>An action step emits an outbox action when the routine reaches it, then continues. Name the action type the runtime should dispatch.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1.5">
+          <Label htmlFor="actionType">Action type</Label>
+          <Input
+            id="actionType"
+            value={actionType}
+            onChange={(event) => setActionType(event.target.value)}
+            placeholder="contact.send"
+          />
+        </div>
+        <DialogFooter>
+          <Button type="button" onClick={confirm} disabled={!actionType.trim()}>Add action step</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // A clearly visible "on" state for the toggle buttons (Bold/Italic/Step). The default
 // `secondary` button variant is a washed-out grey that reads as inactive against the
 // toolbar, so an active toggle gets the solid accent instead.
@@ -208,12 +309,20 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
   const [editor] = useLexicalComposerContext()
   const skillCatalog = useContext(RoutineSkillCatalogContext)
   const [conditionOpen, setConditionOpen] = useState(false)
+  const [outcomeOpen, setOutcomeOpen] = useState(false)
+  const [actionOpen, setActionOpen] = useState(false)
   const [jumpOpen, setJumpOpen] = useState(false)
   const [jumpTargets, setJumpTargets] = useState<{ id: string; title: string }[]>([])
   const [approvalOpen, setApprovalOpen] = useState(false)
   const [approvalTargets, setApprovalTargets] = useState<ApprovalChipTarget[]>([])
   const [formats, setFormats] = useState({ bold: false, italic: false, step: false })
   const skillGroups = useMemo(() => groupSkillsByCategory(skillCatalog.skills), [skillCatalog.skills])
+  // Distinct outcome statuses across the agent's skills, offered as suggestions when authoring
+  // an outcome branch (any status is still allowed).
+  const outcomeStatuses = useMemo(
+    () => [...new Set(skillCatalog.skills.flatMap((skill) => skill.outcomes.map((outcome) => outcome.status)))].sort(),
+    [skillCatalog.skills],
+  )
 
   // Track the caret's active formats so Bold/Italic/Step show their pressed state. `step`
   // is whether the caret's line is a titled step (an h1 heading).
@@ -280,6 +389,38 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
         const selection = $getSelection()
         if (!$isRangeSelection(selection)) return
         const chip = $createChipNode('end', 'done', 'end')
+        selection.insertNodes([chip])
+        const trailing = $createTextNode(' ')
+        chip.insertAfter(trailing)
+        trailing.select()
+      })
+    })
+  }
+
+  // Insert an action chip — turns the line into an action step that emits the named outbox
+  // action. The line's prose is the step instruction.
+  const insertAction = (actionType: string) => {
+    editor.focus(() => {
+      editor.update(() => {
+        const selection = $getSelection()
+        if (!$isRangeSelection(selection)) return
+        const chip = $createChipNode('action', actionType, actionType)
+        selection.insertNodes([chip])
+        const trailing = $createTextNode(' ')
+        chip.insertAfter(trailing)
+        trailing.select()
+      })
+    })
+  }
+
+  // Insert an outcome chip — a branch guard that fires on the preceding tool step's result
+  // status. Like a condition chip, it pairs with a target chip (end/handoff/step) on the line.
+  const insertOutcome = (status: string) => {
+    editor.focus(() => {
+      editor.update(() => {
+        const selection = $getSelection()
+        if (!$isRangeSelection(selection)) return
+        const chip = $createOutcomeConditionChipNode(status)
         selection.insertNodes([chip])
         const trailing = $createTextNode(' ')
         chip.insertAfter(trailing)
@@ -412,6 +553,14 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
         <BadgeCheck className="h-4 w-4" />
         Condition
       </Button>
+      <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={() => setOutcomeOpen(true)}>
+        <Workflow className="h-4 w-4" />
+        Outcome
+      </Button>
+      <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={() => setActionOpen(true)}>
+        <Send className="h-4 w-4" />
+        Action
+      </Button>
       <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={insertEnd}>
         <Flag className="h-4 w-4" />
         End
@@ -430,6 +579,8 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
         Jump
       </Button>
       <ConditionBuilderDialog open={conditionOpen} onOpenChange={setConditionOpen} variables={variables} onConfirm={insertCondition} onSetVariableType={onSetVariableType} />
+      <OutcomeDialog open={outcomeOpen} onOpenChange={setOutcomeOpen} statuses={outcomeStatuses} onConfirm={insertOutcome} />
+      <ActionDialog open={actionOpen} onOpenChange={setActionOpen} onConfirm={insertAction} />
       <JumpDialog open={jumpOpen} onOpenChange={setJumpOpen} targets={jumpTargets} onConfirm={insertJump} />
       <ApprovalChipDialog open={approvalOpen} onOpenChange={setApprovalOpen} targets={approvalTargets} initial={{ captureKey: '', options: [] }} onConfirm={insertApproval} />
     </div>
@@ -687,6 +838,10 @@ function $proseParagraphToNode(paragraph: ProseParagraph): LexicalNode {
   for (const segment of paragraph.segments) {
     if (segment.kind === 'text') {
       node.append($createTextNode(segment.text))
+    } else if (segment.chipKind === 'condition' && segment.refId === OUTCOME_GUARD_REF) {
+      // An outcome guard (branches on the preceding tool step's result): the status rides in
+      // `value`. Recreated via its own node so the sentinel refId survives the round-trip.
+      node.append($createOutcomeConditionChipNode(typeof segment.value === 'string' ? segment.value : segment.label))
     } else if (segment.chipKind === 'condition' && segment.op) {
       node.append($createConditionChipNode(segment.refId, segment.op, segment.label, segment.value ?? null, segment.values ?? null, segment.unit ?? null))
     } else if (segment.chipKind === 'condition') {
@@ -779,6 +934,8 @@ function ClipboardRoundTripPlugin({
   variables,
   onCreateVariable,
   onSetVariableType,
+  onSetVariableRequired,
+  onSetVariableMutable,
   onPasteFrontmatter,
 }: {
   name: string
@@ -786,6 +943,8 @@ function ClipboardRoundTripPlugin({
   variables: ChipDocVariable[]
   onCreateVariable: (variable: RoutineEditorVariable) => void
   onSetVariableType: (refId: string, type: RoutineSlotType) => void
+  onSetVariableRequired?: (refId: string, required: boolean) => void
+  onSetVariableMutable?: (refId: string, mutable: boolean) => void
   onPasteFrontmatter?: (frontmatter: { name: string | null; trigger: string | null }) => void
 }) {
   const [editor] = useLexicalComposerContext()
@@ -795,7 +954,7 @@ function ClipboardRoundTripPlugin({
   // header, variables, skill catalog, and the paste callbacks — through this ref so they
   // always see fresh values without re-registering on every render. The ref is synced after
   // each render (not during).
-  const stateRef = useRef({ name, trigger, variables, skillNames: new Set<string>(), onCreateVariable, onSetVariableType, onPasteFrontmatter })
+  const stateRef = useRef({ name, trigger, variables, skillNames: new Set<string>(), onCreateVariable, onSetVariableType, onSetVariableRequired, onSetVariableMutable, onPasteFrontmatter })
   useEffect(() => {
     stateRef.current = {
       name,
@@ -804,6 +963,8 @@ function ClipboardRoundTripPlugin({
       skillNames: new Set(skillCatalog.skills.map((skill) => skill.skillName)),
       onCreateVariable,
       onSetVariableType,
+      onSetVariableRequired,
+      onSetVariableMutable,
       onPasteFrontmatter,
     }
   })
@@ -820,12 +981,6 @@ function ClipboardRoundTripPlugin({
         if (!state.read($selectionSpansDocument)) return false
         const { name: currentName, trigger: currentTrigger, variables: currentVariables } = stateRef.current
         const paragraphs = state.read($readProseParagraphs)
-        // The plain-text token grammar has no approval/decision form, so a routine with a
-        // gate isn't exported as tokens — fall through to Lexical's native clipboard, which
-        // round-trips losslessly in-app via the JSON flavour.
-        if (paragraphs.some((paragraph) => paragraph.segments.some((segment) => segment.kind === 'chip' && (segment.chipKind === 'approval' || segment.chipKind === 'decision')))) {
-          return false
-        }
         const text = serializeProseDoc({ name: currentName, trigger: currentTrigger, variables: currentVariables, paragraphs })
         event.preventDefault()
         clipboardData.setData('text/plain', text)
@@ -844,7 +999,7 @@ function ClipboardRoundTripPlugin({
         if (!text || !looksLikeRoutineProse(text)) return false
         event.preventDefault()
 
-        const { variables: currentVariables, skillNames, onCreateVariable, onSetVariableType, onPasteFrontmatter } = stateRef.current
+        const { variables: currentVariables, skillNames, onCreateVariable, onSetVariableType, onSetVariableRequired, onSetVariableMutable, onPasteFrontmatter } = stateRef.current
         const parsed = parseProseDoc(text, (candidate) => skillNames.has(candidate))
 
         for (const variable of parsed.variables) {
@@ -853,6 +1008,8 @@ function ClipboardRoundTripPlugin({
           if (currentVariables.some((existing) => existing.id === variable.id)) continue
           onCreateVariable({ id: variable.id, name: variable.name })
           if (variable.type !== 'text') onSetVariableType(variable.id, variable.type)
+          if (variable.required === false) onSetVariableRequired?.(variable.id, false)
+          if (variable.mutable === true) onSetVariableMutable?.(variable.id, true)
         }
         if (onPasteFrontmatter && (parsed.name !== null || parsed.trigger !== null)) {
           onPasteFrontmatter({ name: parsed.name, trigger: parsed.trigger })
@@ -947,6 +1104,8 @@ export function RoutineChipEditor({
   onCreateVariable,
   onDocChange,
   onSetVariableType,
+  onSetVariableRequired,
+  onSetVariableMutable,
   onPasteFrontmatter,
 }: {
   variables: ChipDocVariable[]
@@ -959,6 +1118,8 @@ export function RoutineChipEditor({
   onCreateVariable: (variable: RoutineEditorVariable) => void
   onDocChange: (blocks: RoutineDocBlock[]) => void
   onSetVariableType: (refId: string, type: RoutineSlotType) => void
+  onSetVariableRequired?: (refId: string, required: boolean) => void
+  onSetVariableMutable?: (refId: string, mutable: boolean) => void
   onPasteFrontmatter?: (frontmatter: { name: string | null; trigger: string | null }) => void
 }): JSX.Element {
   const variablesContext = useMemo(
@@ -966,8 +1127,12 @@ export function RoutineChipEditor({
       variables,
       getType: (refId: string): RoutineSlotType => variables.find((variable) => variable.id === refId)?.type ?? 'text',
       setType: onSetVariableType,
+      getRequired: (refId: string): boolean => variables.find((variable) => variable.id === refId)?.required ?? true,
+      setRequired: (refId: string, required: boolean) => onSetVariableRequired?.(refId, required),
+      getMutable: (refId: string): boolean => variables.find((variable) => variable.id === refId)?.mutable ?? false,
+      setMutable: (refId: string, mutable: boolean) => onSetVariableMutable?.(refId, mutable),
     }),
-    [variables, onSetVariableType],
+    [variables, onSetVariableType, onSetVariableRequired, onSetVariableMutable],
   )
 
   return (
@@ -1013,6 +1178,8 @@ export function RoutineChipEditor({
             variables={variables}
             onCreateVariable={onCreateVariable}
             onSetVariableType={onSetVariableType}
+            onSetVariableRequired={onSetVariableRequired}
+            onSetVariableMutable={onSetVariableMutable}
             onPasteFrontmatter={onPasteFrontmatter}
           />
         </div>

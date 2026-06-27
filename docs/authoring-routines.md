@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "How to create and edit routines in the dashboard using the prose and form editors, bind skill inputs/outputs, copy a routine to text, and manage lifecycle."
-last_updated: 2026-06-22
+last_updated: 2026-06-25
 ---
 
 # Authoring Routines
@@ -96,6 +96,14 @@ inline reference, not raw syntax. Each kind has its own colour:
   button (see [Approval gates](#approval-gates)).
 - **Condition** - a decided-in-code comparison on a variable. Build it from the
   **Condition** toolbar button (see below).
+- **Outcome** - a branch on the result of the skill step before it. Insert it from
+  the **Outcome** toolbar button on a branch line after a skill step, and give the
+  result status (for example `succeeded` or `failed`); the branch fires when the
+  skill returns that status (see [Branch on a skill outcome](#branch-on-a-skill-outcome)).
+- **Action** - turns the line into an action step that emits an outbox action (an
+  email to a teammate, a webhook, a Slack post) when the routine reaches it, then
+  continues. Insert it from the **Action** toolbar button and name the action type
+  (for example `contact.send`). The line's prose is the step instruction.
 - **Step title** - names a step so a jump can target it. Use the **Step** toolbar
   button to turn the current line into a titled step; its title becomes a stable
   id, and the following lines are that step's instruction. Untitled lines are
@@ -108,21 +116,32 @@ inline reference, not raw syntax. Each kind has its own colour:
 The key point: chips for structure, prose for instruction. You never type curly
 braces or arrows.
 
-### Variable types
+### Variable types and flags
 
 A variable has a type: `text`, `number`, `boolean`, `email`, or `date`. The type
 is shown on the variable chip. Click the chip to change it, or set it inside the
 **Condition** dialog when you build a comparison. The type decides which exact
 comparisons are available.
 
+The same chip menu carries two flags:
+
+- **Optional** - by default a variable is required, and a step that asks for it
+  waits until the user provides it. Mark it optional when the routine can finish
+  without that value.
+- **Editable after completion** - see the next section.
+
+Both flags are also available in the Form view; the prose chip menu and the form
+edit the same slot.
+
 A name identifies one thing. Once a name is used by a chip, the `@` menu will not
 let a second chip of a different kind reuse it.
 
 ### Editable after completion
 
-A variable can be marked **editable after** in the Form view. This controls one
-thing: whether the visitor can correct that value after the routine has finished,
-without running the whole routine again.
+A variable can be marked **editable after completion**, either from its chip menu
+in the Prose view or from the Form view. This controls one thing: whether the
+visitor can correct that value after the routine has finished, without running the
+whole routine again.
 
 When a variable is editable and the visitor's next message changes it, the
 assistant updates the stored value in place and confirms the change. The new value
@@ -208,6 +227,24 @@ slot you collected, set `channel` to a fixed value, and store the returned
 
 A required input must resolve to a literal, or to a variable that is always set
 before the step runs. If it cannot, validation reports it (see below).
+
+## Branch on a skill outcome
+
+A skill step returns a result status - its **outcome** - such as `succeeded` or
+`failed`. An outcome branch forks on that status: it fires when the skill the
+step ran returns the status you name.
+
+In **Prose**, put the branch on a line after a skill step, click the **Outcome**
+toolbar button, and type the status. Statuses the agent's skills declare are
+offered as suggestions, but any status is allowed. Add a target on the same line
+(End, Handoff, or a step) the way you would for any branch.
+
+The outcome branch must sit on a line after a skill step - the status comes from
+that step's result. Validation reports an outcome branch that is not on a skill
+step.
+
+In practice: issue a refund, then branch on `failed` to hand off to a person and
+let the default path continue when it succeeds.
 
 ## Branch rows
 
@@ -308,9 +345,14 @@ The default flow ends at a normal completion, so a simple linear routine needs
 no end chip. Use end and handoff chips on branch lines when a condition should
 finish or escalate early.
 
-The prose editor regenerates the completion and handoff messages from defaults.
-If you need custom completion or handoff wording, edit the routine in the
-**Form** view, which keeps that copy.
+The **Completion message** field below the editor sets what the agent says when
+the routine finishes; leave it blank to use the default. When the routine can
+hand off, a **Handoff message** field sets what it says as it escalates. The Form
+view edits the same messages in its terminal rows.
+
+The key point: routines that branch to several distinct endings — more than one
+completion or more than one handoff — are still authored in the **Form** view.
+Prose collapses to one completion and at most one handoff.
 
 ## Validate and publish
 
@@ -347,9 +389,19 @@ chips:
 - a step title is a line starting with `# `
 - an end is `-> end`, a handoff is `-> handoff`, and a jump is `-> step:<id>`
 - a decided-in-code check is `[if amount >= 100]`
+- a skill-outcome branch is `[outcome failed]`
+- an action step is `[action contact.send]`
+- an approval gate is `[approval key: approve="Approve" -> end, deny="Deny" -> handoff]`,
+  and the inline decision form is `[decision key: approve="Approve", deny="Deny"]`
+
+Every element a routine can use has a marker, so any routine the prose editor can
+open copies as portable text.
 
 To restore the routine, paste the text back into the prose editor. The markers
-become chips again, and the name and trigger fill in from the text.
+become chips again, and the name and trigger fill in from the text. The text
+carries the body, the name, the trigger, and each variable's type and flags, but
+not routine-level settings such as priority, reentry, the completion and handoff
+messages, or completion export — set those again after pasting.
 
 The text carries names, not internal ids. Pasting into the same agent resolves
 every skill cleanly. Pasting into a different agent that does not have a referenced
@@ -371,17 +423,24 @@ The form exposes:
 - terminal kind and message: `complete` or `handoff`
 - completion export through a `webhook_call` skill
 
-A routine that uses any of these advanced shapes - an action (outbox) step, a
-counter or outcome branch, a custom terminal message, a non-required slot, or a
-completion export - opens in **Form** automatically. The **Prose** tab shows a
-short note pointing you to **Form** for that routine.
+A routine that uses any of these advanced shapes - a slot-filled branch, more than
+one completion or handoff, or an activation gate - opens in **Form**
+automatically. The **Prose** tab shows a short note pointing you to **Form** for
+that routine. (Optional and editable-after-completion slots, custom completion or
+handoff messages, custom terminal ids, outcome branches, action steps, and
+completion export are all authored in **Prose** too.)
 
 ### Completion export
 
-Completion export is configured as an agent skill. Create or edit a
-`webhook_call` skill, commonly named `completion_export`, and bind it to a
-workspace webhook destination. The routine runtime invokes that skill when a
-published routine reaches completion.
+You turn completion export on from the **Completion export** panel below the
+editor, in either the **Prose** or the **Form** view: enable it, pick a workspace
+webhook destination, and choose which terminal kinds (`complete`, `handoff`)
+trigger it. When the routine reaches a matching terminal, it sends the collected
+slot data to that destination.
+
+The destination itself is a workspace webhook destination, surfaced to routines
+through a `webhook_call` skill, commonly named `completion_export`. The routine
+runtime invokes that skill when a published routine reaches a matching terminal.
 
 The stored routine shape still contains completion export metadata:
 

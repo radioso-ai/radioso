@@ -216,11 +216,9 @@ Legacy workspace-token MCP remains only for trusted local/stdio/self-host mode a
 
 ## Message-Queue Impact
 
-Expected impact: none.
+Review completed during the Phase 2 foundation slice: no queue changes are required.
 
 - Document worker dispatch: unchanged.
 - AMQP payloads: unchanged.
 - Retry semantics: unchanged.
-- Queue docs/tests: update only if implementation discovery finds a queue touchpoint.
-
-Implementation must still include an explicit review task and record the conclusion in PR notes.
+- Queue docs/tests: unchanged.

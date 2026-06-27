@@ -50,6 +50,7 @@ describeIntegration("AccessGrantRepository (Postgres)", () => {
       label: "primary",
       principalKind: "public-launch",
       role: "public",
+      channel: "public-link",
       tokenPrefix: "rdso_aaa",
       tokenHash: "grant-hash-1",
       encryptedToken: "enc-1",
@@ -59,10 +60,39 @@ describeIntegration("AccessGrantRepository (Postgres)", () => {
     savedId = saved.id;
     expect(saved.agentId).toBe(agentId);
     expect(saved.label).toBe("primary");
+    expect(saved.channel).toBe("public-link");
     expect(saved.originConstraint).toEqual({ mode: "list", origins: ["https://a.example", "https://b.example"] });
     expect(saved.enabled).toBe(true);
     expect(saved.revokedAt).toBeNull();
     expect(saved.createdAt).toBeInstanceOf(Date);
+  });
+
+  it("save inserts an agent-role MCP converse grant and round-trips its channel", async () => {
+    const saved = await repository.save({
+      agentId,
+      workspaceId,
+      label: "claudio converse",
+      principalKind: "public-launch",
+      role: "agent",
+      channel: "mcp-converse",
+      tokenPrefix: "rdso_mcp",
+      tokenHash: "grant-hash-mcp",
+      encryptedToken: "enc-mcp",
+      originConstraint: { mode: "allow-all", origins: [] },
+    });
+
+    expect(saved).toMatchObject({
+      agentId,
+      workspaceId,
+      label: "claudio converse",
+      principalKind: "public-launch",
+      role: "agent",
+      channel: "mcp-converse",
+    });
+    await expect(repository.findByTokenHash("grant-hash-mcp")).resolves.toMatchObject({
+      role: "agent",
+      channel: "mcp-converse",
+    });
   });
 
   it("save with allow-all stores an empty allowlist", async () => {
@@ -71,6 +101,7 @@ describeIntegration("AccessGrantRepository (Postgres)", () => {
       workspaceId,
       principalKind: "agent-api",
       role: "public",
+      channel: "embed",
       tokenPrefix: "rdso_bbb",
       tokenHash: "grant-hash-2",
       encryptedToken: "enc-2",
@@ -91,6 +122,7 @@ describeIntegration("AccessGrantRepository (Postgres)", () => {
       label: "ignored",
       principalKind: "public-launch",
       role: "public",
+      channel: "public-link",
       tokenPrefix: "rdso_zzz",
       tokenHash: "grant-hash-1",
       encryptedToken: "enc-other",

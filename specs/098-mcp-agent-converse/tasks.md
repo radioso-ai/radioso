@@ -11,12 +11,12 @@
 
 **Purpose**: Establish exact implementation references before code work starts.
 
-- [ ] T001 Read `docs/agent-context-workflow.md` and `docs/architecture/code-map.md` before opening broad source directories
-- [ ] T002 [P] Read backend HTTP ownership brief in `backend/src/app/http/README.md`
-- [ ] T003 [P] Read composition ownership brief in `backend/src/app/composition/README.md`
-- [ ] T004 [P] Read persistence ownership brief in `backend/src/db/repositories/README.md`
-- [ ] T005 [P] Read MCP package ownership brief in `packages/radioso-mcp-server/src/README.md`
-- [ ] T006 [P] Read documentation authoring rules in `docs/document-writer-prompt.md` before later docs edits
+- [x] T001 Read `docs/agent-context-workflow.md` and `docs/architecture/code-map.md` before opening broad source directories
+- [x] T002 [P] Read backend HTTP ownership brief in `backend/src/app/http/README.md`
+- [x] T003 [P] Read composition ownership brief in `backend/src/app/composition/README.md`
+- [x] T004 [P] Read persistence ownership brief in `backend/src/db/repositories/README.md`
+- [x] T005 [P] Read MCP package ownership brief in `packages/radioso-mcp-server/src/README.md`
+- [x] T006 [P] Read documentation authoring rules in `docs/document-writer-prompt.md` before later docs edits
 
 ---
 
@@ -28,24 +28,24 @@
 
 ### Tests First
 
-- [ ] T007 [P] Add failing migration/repository integration tests for `agent_access_grants.channel` and `role = agent` in `backend/tests/integration/access-grants-repository.integration.test.ts`
-- [ ] T008 [P] Add failing account permission unit tests for `AGENT_CONVERSE_PERMISSIONS` and denied workspace/document-management permissions in `backend/tests/unit/account-access-service.test.ts`
-- [ ] T009 [P] Add failing access-grant service unit tests for `resolveConverseGrant`, `mcp-converse` channel enforcement, and embed/public-link rejection in `backend/tests/unit/access-grant-service.test.ts`
-- [ ] T010 [P] Add failing public-chat-session contract tests for converse payload fields `grantId`, grant version, and sourceChannel `mcp` in `backend/tests/contract/public-chat-session.contract.test.ts`
-- [ ] T011 [P] Add failing architecture-boundary test preventing `packages/radioso-mcp-server` from importing `backend/src` in `backend/tests/unit/architecture-boundaries.test.ts`
+- [x] T007 [P] Add failing migration/repository integration tests for `agent_access_grants.channel` and `role = agent` in `backend/tests/integration/access-grants-repository.integration.test.ts`
+- [x] T008 [P] Add failing account permission unit tests for `AGENT_CONVERSE_PERMISSIONS` and denied workspace/document-management permissions in `backend/tests/unit/account-access-service.test.ts`
+- [x] T009 [P] Add failing access-grant service unit tests for `resolveConverseGrant`, `mcp-converse` channel enforcement, and embed/public-link rejection in `backend/tests/unit/access-grant-service.test.ts`
+- [x] T010 [P] Add failing public-chat-session contract tests for converse payload fields `grantId`, grant version, and sourceChannel `mcp` in `backend/tests/contract/public-chat-session.contract.test.ts`
+- [x] T011 [P] Add failing architecture-boundary test preventing `packages/radioso-mcp-server` from importing `backend/src` in `backend/tests/unit/architecture-boundaries.test.ts`
 
 ### Implementation Substrate
 
-- [ ] T012 Add migration for `agent_access_grants.channel` and widened role CHECK in `backend/src/db/migrations/1xx_agent_access_grants_mcp_converse.sql`
-- [ ] T013 Update access-grant domain types for `AccessGrantRole = "public" | "agent"` and `channel` in `backend/src/modules/settings/contracts/accessGrants/domain.ts`
-- [ ] T014 Update access-grant repository row mapping and Kysely schema usage for `channel` in `backend/src/db/repositories/accessGrantRepository.ts`
-- [ ] T015 Update `AccessGrantService` defaults and add `resolveConverseGrant` in `backend/src/modules/settings/services/accessGrantService.ts`
-- [ ] T016 Add `public_chat.retrieval.query`, `public_chat.documents.read.scoped`, and `AGENT_CONVERSE_PERMISSIONS` in `backend/src/modules/account/services/accountAccessService.ts`
-- [ ] T017 Add `agent` branch to `AccountAccessService.principalRoleAllows` in `backend/src/modules/account/services/accountAccessService.ts`
-- [ ] T018 Extend public-chat session issuer/verifier with converse session payload and grant version in `backend/src/modules/settings/contracts/publicChatSession.ts`
-- [ ] T019 Add `mcp` to source-channel vocabulary and conversation/history mapping in `backend/src/modules/chat/contracts/sourceChannel.ts`
-- [ ] T020 Register initial converse route group and OpenAPI path shell in `backend/src/app/http/routes/mcpConverseRoutes.ts` and `backend/src/app/http/openapi/document.ts`
-- [ ] T021 Complete message-queue impact review and record the no-change conclusion in `specs/098-mcp-agent-converse/contracts/mcp-converse-http.md`
+- [x] T012 Add migration for `agent_access_grants.channel` and widened role CHECK in `backend/src/db/migrations/1xx_agent_access_grants_mcp_converse.sql`
+- [x] T013 Update access-grant domain types for `AccessGrantRole = "public" | "agent"` and `channel` in `backend/src/modules/settings/contracts/accessGrants/domain.ts`
+- [x] T014 Update access-grant repository row mapping and Kysely schema usage for `channel` in `backend/src/db/repositories/accessGrantRepository.ts`
+- [x] T015 Update `AccessGrantService` defaults and add `resolveConverseGrant` in `backend/src/modules/settings/services/accessGrantService.ts`
+- [x] T016 Add `public_chat.retrieval.query`, `public_chat.documents.read.scoped`, and `AGENT_CONVERSE_PERMISSIONS` in `backend/src/modules/account/services/accountAccessService.ts`
+- [x] T017 Add `agent` branch to `AccountAccessService.principalRoleAllows` in `backend/src/modules/account/services/accountAccessService.ts`
+- [x] T018 Extend public-chat session issuer/verifier with converse session payload and grant version in `backend/src/modules/settings/contracts/publicChatSession.ts`
+- [x] T019 Add `mcp` to source-channel vocabulary and conversation/history mapping in `backend/src/modules/chat/contracts/sourceChannel.ts`
+- [x] T020 Register initial converse route group and OpenAPI path shell in `backend/src/app/http/routes/mcpConverseRoutes.ts` and `backend/src/app/http/openapi/document.ts`
+- [x] T021 Complete message-queue impact review and record the no-change conclusion in `specs/098-mcp-agent-converse/contracts/mcp-converse-http.md`
 
 **Checkpoint**: Foundation ready. User story implementation can begin in active priority order.
 

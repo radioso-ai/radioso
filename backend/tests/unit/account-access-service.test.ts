@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   AccountAccessService,
+  AGENT_CONVERSE_PERMISSIONS,
   PUBLIC_CHAT_PERMISSIONS,
   type AccountPermission,
   type PublicChatPermission,
@@ -19,9 +20,18 @@ describe("AccountAccessService", () => {
     "public_chat.history.read.own",
     "public_chat.feedback.write.own",
   ];
+  const agentConversePermissions: PublicChatPermission[] = [
+    ...publicPermissions,
+    "public_chat.retrieval.query",
+    "public_chat.documents.read.scoped",
+  ];
 
   it("defines the public chat permission set exactly", () => {
     expect([...PUBLIC_CHAT_PERMISSIONS].sort()).toEqual([...publicPermissions].sort());
+  });
+
+  it("defines the agent converse permission set as public chat plus scoped retrieval reads", () => {
+    expect([...AGENT_CONVERSE_PERMISSIONS].sort()).toEqual([...agentConversePermissions].sort());
   });
 
   it("allows public chat session principals exactly the public chat permissions", async () => {
@@ -45,6 +55,38 @@ describe("AccountAccessService", () => {
       "workspace.chat.use",
       "workspace.settings.read",
       "workspace.documents.read",
+      "workspace.token.read",
+      "account.users.manage",
+    ] as AccountPermission[]) {
+      await expect(service.hasPermission({
+        principal,
+        permission,
+      })).resolves.toBe(false);
+    }
+  });
+
+  it("allows agent converse principals only public chat and scoped retrieval permissions", async () => {
+    const service = new AccountAccessService(new InMemoryAccountMembershipRepository(), createAuditService());
+    const principal = {
+      type: "public_chat_session" as const,
+      role: "agent" as const,
+      workspaceId: "11111111-1111-1111-1111-111111111111",
+      agentId: "22222222-2222-2222-2222-222222222222",
+      publicSessionId: "33333333-3333-3333-3333-333333333333",
+    };
+
+    for (const permission of agentConversePermissions) {
+      await expect(service.hasPermission({
+        principal,
+        permission,
+      })).resolves.toBe(true);
+    }
+
+    for (const permission of [
+      "workspace.chat.use",
+      "workspace.settings.read",
+      "workspace.documents.read",
+      "workspace.documents.manage",
       "workspace.token.read",
       "account.users.manage",
     ] as AccountPermission[]) {

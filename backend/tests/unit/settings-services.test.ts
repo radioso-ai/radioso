@@ -115,6 +115,7 @@ describe("settings services", () => {
     label: "website-embed",
     principalKind: "public-launch",
     role: "public",
+    channel: "public-link",
     tokenPrefix: "",
     tokenHash: "hash",
     encryptedToken: "encrypted",

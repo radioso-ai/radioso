@@ -12,6 +12,7 @@ import {
 import type { AuditService } from "../../audit/contracts/index.js";
 import type {
   AccessGrant,
+  AccessGrantChannel,
   AccessGrantEvaluation,
   AccessGrantRole,
   AccessGrantSecret,
@@ -34,6 +35,7 @@ export interface AccessGrantIssueInput {
   label?: string | null;
   principalKind: GrantPrincipalKind;
   role?: AccessGrantRole;
+  channel?: AccessGrantChannel;
   originConstraint: OriginConstraint;
   expiresAt?: Date | null;
 }
@@ -44,6 +46,7 @@ export interface PublicLaunchMigrationInput {
   label?: string | null;
   token: string;
   originConstraint: OriginConstraint;
+  channel?: AccessGrantChannel;
 }
 
 export class AccessGrantService {
@@ -56,7 +59,8 @@ export class AccessGrantService {
       workspaceId: input.workspaceId,
       label: input.label ?? null,
       principalKind: input.principalKind,
-      role: input.role ?? this.defaultRole(input.principalKind),
+      role: input.role ?? this.defaultRole(input.principalKind, input.channel),
+      channel: input.channel ?? this.defaultChannel(input.principalKind),
       tokenPrefix: tokenPrefix(),
       tokenHash: sha256(token),
       encryptedToken: encryptSecret(token, this.workspaceTokenSecret()),
@@ -78,6 +82,7 @@ export class AccessGrantService {
       label: input.label ?? null,
       principalKind: "public-launch",
       role: "public",
+      channel: input.channel ?? "public-link",
       tokenPrefix: "",
       tokenHash: sha256(input.token),
       encryptedToken: encryptSecret(input.token, this.workspaceTokenSecret()),
@@ -156,6 +161,18 @@ export class AccessGrantService {
     return grant;
   }
 
+  async resolveConverseGrant(token: string): Promise<AccessGrant | null> {
+    const grant = await this.dependencies.repository.findByTokenHash(sha256(token));
+    if (
+      !grant ||
+      grant.principalKind !== "public-launch" ||
+      grant.channel !== "mcp-converse"
+    ) {
+      return null;
+    }
+    return grant;
+  }
+
   async resolveOrCreatePublicLaunchGrant(input: PublicLaunchMigrationInput): Promise<AccessGrant> {
     const existing = await this.resolvePublicLaunchGrant(input.token);
     if (existing) {
@@ -224,11 +241,21 @@ export class AccessGrantService {
     return this.dependencies.workspaceTokenSecret;
   }
 
-  private defaultRole(kind: GrantPrincipalKind): AccessGrantRole {
+  private defaultRole(kind: GrantPrincipalKind, channel?: AccessGrantChannel): AccessGrantRole {
+    if (kind === "public-launch" && channel === "mcp-converse") {
+      return "agent";
+    }
     if (kind === "public-launch") {
       return "public";
     }
     throw serviceUnavailable(`No default role is configured for ${kind} access grants.`);
+  }
+
+  private defaultChannel(kind: GrantPrincipalKind): AccessGrantChannel {
+    if (kind === "public-launch") {
+      return "public-link";
+    }
+    return "embed";
   }
 
   private async recordLifecycleEvent(

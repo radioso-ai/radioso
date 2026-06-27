@@ -201,12 +201,19 @@ function GatherStageDetail({
   const total = asNumber(outputs.historyCount) ?? 0
   const refs = asArray(outputs.history).filter(isRecord) as HistoryRef[]
   const omitted = Math.max(total - refs.length, 0)
+  // Resolved visitor context variables for the turn (already redacted upstream).
+  const contextVariables = isRecord(outputs.contextVariables) ? outputs.contextVariables : null
   // History entries are referenced by messageId; the actual text comes from
   // the drawer's conversation messages (already authorized for the viewer).
   const byId = new Map((ctx.messages ?? []).map((m) => [m.id, m] as const))
   return (
     <div className="space-y-4">
       <StageHeader stage={stage} />
+      {contextVariables ? (
+        <Section label="Visitor context">
+          <KeyValueGrid record={contextVariables} />
+        </Section>
+      ) : null}
       <Section label={`History (${total} total${omitted > 0 ? `, showing last ${refs.length}` : ''})`}>
         {refs.length === 0 ? (
           <p className="text-sm text-muted-foreground">No prior turns loaded.</p>

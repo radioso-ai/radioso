@@ -60,7 +60,7 @@ describe("edge cases", () => {
       contexts: [],
     });
 
-    expect(result.systemPrompt).toContain("Stable response identity:");
+    expect(result.systemPrompt).toContain("Stable assistant identity:");
     expect(result.systemPrompt).toContain("Response identity name: Marta");
   });
 

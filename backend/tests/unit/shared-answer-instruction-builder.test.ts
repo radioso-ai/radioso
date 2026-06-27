@@ -15,8 +15,9 @@ describe("shared answer instruction builder", () => {
       responseLanguage: "French",
     });
 
-    expect(result).toContain("Stable response identity:");
+    expect(result).toContain("Stable assistant identity:");
     expect(result).toContain("Vikram");
+    expect(result).toContain("Introduce yourself by name only at the start of a new conversation");
     expect(result).toContain("Configured response instructions:");
     expect(result).toContain("Keep the tone calm.");
     expect(result).toContain("Respond in French.");
@@ -68,7 +69,7 @@ describe("shared answer instruction builder", () => {
       responseLanguagePolicy: "match_user_question",
     });
 
-    expect(result).not.toContain("Stable response identity:");
+    expect(result).not.toContain("Stable assistant identity:");
     expect(result).not.toContain("Configured response instructions:");
     expect(result).not.toContain("Conversation mode:");
   });

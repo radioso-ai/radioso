@@ -8,7 +8,7 @@ import type {
 } from "@radioso/conversation-contract";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type { AgentRecord } from "../../agents/public.js";
+import { hasConfiguredContactDestination, type AgentRecord } from "../../agents/public.js";
 import type { ActivityTrace, RetrievalPipelineResult } from "../../retrieval/public.js";
 
 export const toConversationMessage = (message: MessageRecord): ConversationMessage => ({
@@ -47,6 +47,9 @@ export const toConversationAgentConfig = (agent: AgentRecord): ConversationAgent
     skillSettings: agent.skillSettings,
     // Read by the contact routine activator to gate activation on the per-agent flag.
     contactRequestsEnabled: agent.contactRequestsEnabled,
+    // Gates contact activation on an explicitly configured destination, so the
+    // routine never collects a visitor's details with nowhere to send them.
+    hasContactDestination: hasConfiguredContactDestination(agent.contactRequestDelivery),
     webhookExportsEnabled: agent.webhookExportsEnabled,
   },
 });

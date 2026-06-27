@@ -118,10 +118,10 @@ describe("settings contract", () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
-      queryRewriteEnabled: false,
+      queryRewriteEnabled: true,
       suggestedQuestionsEnabled: true,
       suggestedQuestionsCount: 3,
-      rerankEnabled: false,
+      rerankEnabled: true,
       vectorTopK: 15,
       rerankTopK: 5,
       retrievalStrategy: "fixed",

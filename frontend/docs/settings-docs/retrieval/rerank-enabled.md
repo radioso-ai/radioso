@@ -1,7 +1,7 @@
 ---
 title: "Reranking"
 description: "Retrieval setting to enable model-based reranking of the candidate pool for improved answer grounding after semantic search."
-last_updated: 2026-04-02
+last_updated: 2026-06-27
 ---
 
 # Reranking
@@ -13,6 +13,10 @@ Use the reranker to reorder retrieved candidates before context selection.
 ### Overview
 
 Reranking is the stage that reorders retrieved candidates with a stricter relevance judgment after the initial candidate pool has been assembled.
+
+### Default
+
+Reranking is on by default. It reorders the retrieved pool with the question in mind before the answer is written, which usually improves grounding. Turn it off when you favor speed or your candidate pool is small and already clean.
 
 ### What Changes
 

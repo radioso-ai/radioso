@@ -4,6 +4,7 @@ import {
 } from "../../../shared/domain/responseIdentity.js";
 import { renderCustomResponseInstructionBlock } from "../../../shared/domain/customResponseInstructionBlock.js";
 import { normalizeLlmClassifierLanguageLabel } from "../../../shared/domain/llmClassifierFields.js";
+import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
 
 export interface SharedAnswerInstructionBlocks {
@@ -66,11 +67,15 @@ export class SharedAnswerInstructionBuilder {
       return null;
     }
 
-    return [
-      "Stable response identity:",
-      ...identityLines,
-      "When the caller asks about the configured name, answer consistently with this identity.",
-    ].join("\n");
+    // Identity instructions live in prompts/shared/assistant-identity-instructions.md
+    // and are shared with the direct-answer path. They keep the identity in
+    // context every turn so tone stays stable, while limiting the
+    // self-introduction to the first turn — re-greeting on every reply reads as
+    // a memory failure, and conversation history already shows whether the
+    // assistant has greeted.
+    return renderPromptTemplate("shared/assistant-identity-instructions.md", {
+      identity_lines: identityLines.join("\n"),
+    });
   }
 
   private renderResponseLanguageInstruction(

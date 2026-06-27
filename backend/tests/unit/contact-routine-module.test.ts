@@ -15,8 +15,14 @@ import { APPROVAL_REQUEST_ACTION_TYPE } from "../../src/modules/chat/services/ac
 import { compileRoutineDefinition } from "../../src/modules/routines/public.js";
 import { capabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 
-const agentServiceWith = (contactRequestsEnabled: boolean) => ({
-  resolve: async () => ({ contactRequestsEnabled }),
+const withDestination = { recipientEmails: ["ops@example.com"], webhook: null };
+const noDestination = { recipientEmails: [], webhook: null };
+
+const agentServiceWith = (
+  contactRequestsEnabled: boolean,
+  contactRequestDelivery = withDestination,
+) => ({
+  resolve: async () => ({ contactRequestsEnabled, contactRequestDelivery }),
 });
 
 const applyModule = () => {
@@ -59,24 +65,26 @@ describe("contact routine application module", () => {
     expect(registry.publicChatActionAdvertiserRegistrations).toHaveLength(1);
   });
 
-  it("advertises the contact action only when the agent enabled it", async () => {
+  it("advertises the contact action only when the agent enabled it and has a destination", async () => {
     const registration = applyModule().publicChatActionAdvertiserRegistrations[0]!;
-    const build = (enabled: boolean) =>
+    const build = (enabled: boolean, delivery = withDestination) =>
       typeof registration === "function"
-        ? registration({ agentService: agentServiceWith(enabled) } as never)
+        ? registration({ agentService: agentServiceWith(enabled, delivery) } as never)
         : registration;
 
     expect(await build(true).getPublicIntakeActions?.({ workspaceId: "ws_1", agentId: "a" })).toEqual([
       { skillName: CONTACT_INTENT_SKILL_NAME, intentName: CONTACT_INTENT_NAME },
     ]);
+    // Enabled but no configured destination → do not advertise (nothing to send to).
+    expect(await build(true, noDestination).getPublicIntakeActions?.({ workspaceId: "ws_1", agentId: "a" })).toEqual([]);
     expect(await build(false).getPublicIntakeActions?.({ workspaceId: "ws_1", agentId: "a" })).toEqual([]);
     expect("handle" in build(true)).toBe(false);
   });
 
-  it("keeps contact activation behind the agent flag and claims intent-click metadata deterministically", () => {
+  it("keeps contact activation behind the agent flag plus a destination, and claims intent-click metadata deterministically", () => {
     const registration = applyModule().routineRegistrations[0]!;
     const baseTurn = {
-      agent: { id: "agent_1", metadata: { contactRequestsEnabled: true } },
+      agent: { id: "agent_1", metadata: { contactRequestsEnabled: true, hasContactDestination: true } },
       sessionId: "conv_1",
       inputEvent: { kind: "message" as const, content: "ignored" },
       history: [],
@@ -86,7 +94,12 @@ describe("contact routine application module", () => {
 
     expect(registration.trigger.eligible?.({ turn: {
       ...baseTurn,
-      agent: { id: "agent_1", metadata: { contactRequestsEnabled: false } },
+      agent: { id: "agent_1", metadata: { contactRequestsEnabled: false, hasContactDestination: true } },
+    } })).toBe(false);
+    // Enabled but no destination configured → not eligible (would collect with nowhere to send).
+    expect(registration.trigger.eligible?.({ turn: {
+      ...baseTurn,
+      agent: { id: "agent_1", metadata: { contactRequestsEnabled: true, hasContactDestination: false } },
     } })).toBe(false);
     expect(registration.trigger.eligible?.({ turn: baseTurn })).toBe(true);
     expect(registration.trigger.explicitClaim?.({ turn: {

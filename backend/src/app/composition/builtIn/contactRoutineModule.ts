@@ -17,6 +17,7 @@ import {
   type PublicChatIntakeAction,
 } from "../../../modules/chat/composition.js";
 import { compileRoutineDefinition } from "../../../modules/routines/public.js";
+import { hasConfiguredContactDestination, type AgentRecord } from "../../../modules/agents/public.js";
 import { WorkspaceRepository } from "../../../db/repositories/workspaceRepository.js";
 import { AccountMembershipRepository } from "../../../db/repositories/accountMembershipRepository.js";
 import { AgentRepository } from "../../../db/repositories/agentRepository.js";
@@ -34,15 +35,20 @@ import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { Database } from "../../../shared/infra/database.js";
 import type { ApplicationModule, MailTransportPort } from "../applicationModule.js";
 
-/** Reads the per-agent contact-requests flag for the advertiser. */
+/** Reads the per-agent contact-requests flag and delivery config for the advertiser. */
 interface AgentContactFlagLookup {
-  resolve(workspaceId: string, agentId?: string | null): Promise<{ contactRequestsEnabled: boolean }>;
+  resolve(
+    workspaceId: string,
+    agentId?: string | null,
+  ): Promise<Pick<AgentRecord, "contactRequestsEnabled" | "contactRequestDelivery">>;
 }
 
 /**
  * Surfaces the "contact a human" affordance to the public chat UI (the existing button
  * is gated on this advertised action), but only for agents that enabled contact
- * requests. The contact routine itself owns turn handling.
+ * requests AND have an explicitly configured destination — collecting a visitor's
+ * details with nowhere to send them is worse than not offering the affordance at all.
+ * The contact routine itself owns turn handling.
  */
 class ContactIntakeActionAdvertiser implements PublicChatActionAdvertiserPort {
   constructor(private readonly agents: AgentContactFlagLookup) {}
@@ -52,7 +58,7 @@ class ContactIntakeActionAdvertiser implements PublicChatActionAdvertiserPort {
     agentId?: string | null;
   }): Promise<PublicChatIntakeAction[]> {
     const agent = await this.agents.resolve(input.workspaceId, input.agentId ?? null);
-    return agent.contactRequestsEnabled
+    return agent.contactRequestsEnabled && hasConfiguredContactDestination(agent.contactRequestDelivery)
       ? [{ skillName: CONTACT_INTENT_SKILL_NAME, intentName: CONTACT_INTENT_NAME }]
       : [];
   }
@@ -118,7 +124,9 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
         ...(contactRoutineDefinition.activation.gateRef
           ? { gateRef: contactRoutineDefinition.activation.gateRef }
           : {}),
-        eligible: ({ turn }) => turn.agent.metadata?.contactRequestsEnabled === true,
+        eligible: ({ turn }) =>
+          turn.agent.metadata?.contactRequestsEnabled === true &&
+          turn.agent.metadata?.hasContactDestination === true,
         explicitClaim: ({ turn }) => isContactIntentClick(turn.inputEvent.metadata) ? {} : null,
       },
     });

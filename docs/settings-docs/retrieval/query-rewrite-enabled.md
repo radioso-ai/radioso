@@ -1,7 +1,7 @@
 ---
 title: "Query Rewrite"
 description: "How query rewrite converts conversational user messages into optimized semantic and lexical search queries for better recall."
-last_updated: 2026-06-09
+last_updated: 2026-06-27
 ---
 
 # Query Rewrite
@@ -13,6 +13,10 @@ Rewrite the user request into optimized semantic and lexical search queries.
 ### Overview
 
 Query rewrite converts the user request into retrieval-oriented semantic and lexical queries before this agent searches.
+
+### Default
+
+Query rewrite is on by default. Short, vague, or follow-up questions recall poorly when searched word for word, so rewriting them first is the safer starting point. Turn it off when the user's exact phrasing must be preserved.
 
 ### Why It Exists
 

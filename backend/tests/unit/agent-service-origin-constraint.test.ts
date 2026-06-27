@@ -71,6 +71,31 @@ describe("AgentService public launch origin constraints", () => {
     await expect(skillBacked.service.resolve("workspace-1", skillBackedAgent.id))
       .resolves.toMatchObject({ contactRequestsEnabled: false });
   });
+
+  it("folds the enabled notify skill's delivery into contactRequestDelivery so the contact gate matches dispatch", async () => {
+    const harness = createService({
+      findByName: async () => ({
+        id: "skill-1",
+        workspaceId: "workspace-1",
+        agentId: "agent",
+        skillName: "contact_human",
+        kind: "notify",
+        targetType: "notify_delivery",
+        targetId: null,
+        config: { delivery: { recipientEmails: ["notify@example.com"], webhook: null } },
+        invocationMode: "routine_named",
+        enabled: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    });
+    // Legacy contactRequestDelivery is empty — only the notify skill has a destination.
+    const agent = await harness.service.create("workspace-1", { contactRequestsEnabled: true });
+
+    const resolved = await harness.service.resolve("workspace-1", agent.id);
+    expect(resolved.contactRequestsEnabled).toBe(true);
+    expect(resolved.contactRequestDelivery.recipientEmails).toEqual(["notify@example.com"]);
+  });
 });
 
 const createService = (agentSkills?: ConstructorParameters<typeof AgentService>[5]) => {

@@ -1,6 +1,7 @@
 import type {
   ConversationRoutineSkillDispatcher,
   RoutineSkillResult,
+  StagedContext,
 } from "@radioso/conversation-contract";
 import {
   noopSkillEmitPort,
@@ -29,6 +30,45 @@ const routineDispatchFailureReasons = new Set([
   "executor_error",
   "deferred",
 ]);
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const contextVariableNameFor = (staged: StagedContext): string | null => {
+  const metadataName = isRecord(staged.metadata) && typeof staged.metadata.variableName === "string"
+    ? staged.metadata.variableName
+    : null;
+  const fallbackName = typeof staged.id === "string" ? staged.id : null;
+  const name = metadataName ?? fallbackName;
+  return name && name.trim().length > 0 ? name : null;
+};
+
+const contextVariableValueFor = (name: string, data: unknown): unknown => {
+  if (name === "page_context") {
+    return data;
+  }
+  if (isRecord(data) && data.kind === "variable" && "value" in data) {
+    return data.value;
+  }
+  return data;
+};
+
+export const contextValuesFromStagedContext = (
+  stagedContext: readonly StagedContext[],
+): Record<string, unknown> => {
+  const contextValues: Record<string, unknown> = {};
+  for (const staged of stagedContext) {
+    if (staged.kind !== "context_variable") {
+      continue;
+    }
+    const name = contextVariableNameFor(staged);
+    if (!name) {
+      continue;
+    }
+    contextValues[name] = contextVariableValueFor(name, staged.data);
+  }
+  return contextValues;
+};
 
 /**
  * Resolves an authored routine skill reference (its `@name`) to the runtime skill
@@ -126,7 +166,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
 
     let result: SkillDispatchResult;
     const collected = inputBindings && Object.keys(inputBindings).length > 0
-      ? resolveSkillArguments(inputBindings, state.variables ?? {})
+      ? resolveSkillArguments(inputBindings, state.variables ?? {}, contextValuesFromStagedContext(turn.stagedContext))
       : state.variables ?? {};
     try {
       result = await executor.dispatch({

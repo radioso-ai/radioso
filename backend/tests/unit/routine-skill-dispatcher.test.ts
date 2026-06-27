@@ -19,7 +19,7 @@ import {
 import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
 import { capabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 import { initializeTracing, shutdownTracing } from "../../src/shared/observability/tracing/index.js";
-import type { RoutineState, TurnContext } from "@radioso/conversation-contract";
+import type { RoutineState, StagedContext, TurnContext } from "@radioso/conversation-contract";
 
 const TEST_EXECUTION = { kind: "internal" as const, adapter: "test-adapter" };
 
@@ -38,7 +38,10 @@ const routineState = (variables: Record<string, unknown>): RoutineState =>
     status: "active",
   }) as unknown as RoutineState;
 
-const turn = { agent: { id: "agent-1" } } as unknown as TurnContext;
+const turn = { agent: { id: "agent-1" }, stagedContext: [], sessionId: "session-1" } as unknown as TurnContext;
+
+const turnWithStagedContext = (stagedContext: StagedContext[]): TurnContext =>
+  ({ ...turn, stagedContext }) as TurnContext;
 
 const settledExecutor = (
   outcome: SkillOutcome,
@@ -188,6 +191,54 @@ describe("RoutineSkillExecutorDispatcher", () => {
     });
 
     expect(captured?.collected).toEqual({ email: "a@b.com", duration: 30 });
+  });
+
+  it("resolves context-variable input bindings from the turn staged context", async () => {
+    let captured: SkillInvocation | undefined;
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([skillNamed("checkout_lookup")]),
+      registryWith(
+        settledExecutor({ status: "completed" } as unknown as SkillOutcome, (invocation) => {
+          captured = invocation;
+        }),
+      ),
+    );
+
+    await dispatcher.dispatch({
+      skillName: "checkout_lookup",
+      state: routineState({}),
+      inputBindings: {
+        page: { kind: "contextVariableRef", contextVariable: "page_context" },
+        cart: { kind: "contextVariableRef", contextVariable: "cart" },
+        plan: { kind: "contextVariableRef", contextVariable: "plan" },
+      },
+      turn: turnWithStagedContext([
+        {
+          kind: "context_variable",
+          id: "page_context",
+          data: { kind: "page_context", pageUrl: "https://example.test/cart" },
+          metadata: { variableName: "page_context" },
+        },
+        {
+          kind: "context_variable",
+          id: "cart",
+          data: { kind: "variable", name: "cart", value: { items: 2 } },
+          metadata: { variableName: "cart" },
+        },
+        {
+          kind: "context_variable",
+          id: "plan",
+          data: "enterprise",
+          metadata: {},
+        },
+      ]),
+    });
+
+    expect(captured?.collected).toEqual({
+      page: { kind: "page_context", pageUrl: "https://example.test/cart" },
+      cart: { items: 2 },
+      plan: "enterprise",
+    });
   });
 
   it("threads the turn and agent id into the executor context", async () => {

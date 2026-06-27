@@ -41,6 +41,8 @@ export const publicChatApi = {
     token: string,
     data: {
       channel: 'anonymous_link' | 'website_embed'
+      chatSessionId?: string | null
+      /** @deprecated Use chatSessionId. */
       anonymousSessionId?: string | null
       resumeToken?: string | null
       pageContext?: WebsiteEmbedPageContext | null
@@ -58,6 +60,7 @@ export const publicChatApi = {
         body: JSON.stringify({
           channel: data.channel,
           resumeToken: resumeToken ?? undefined,
+          chatSessionId: data.chatSessionId ?? data.anonymousSessionId ?? undefined,
           anonymousSessionId: data.anonymousSessionId ?? undefined,
           pageContext: data.pageContext,
         }),
@@ -90,7 +93,7 @@ export const publicChatApi = {
 
   async sendMessage(
     token: string,
-    data: { message: string; stream: boolean; conversationId?: string; bootstrapGreetingId?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string; pageContext?: WebsiteEmbedPageContext | null },
+    data: { message: string; stream: boolean; conversationId?: string; bootstrapGreetingId?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string; pageContext?: WebsiteEmbedPageContext | null; signedIdentity?: string | null },
   ): Promise<ChatResponse> {
     const response = await fetch(`${API_BASE}/public/chat/${token}`, {
       method: 'POST',
@@ -113,7 +116,7 @@ export const publicChatApi = {
 
   async streamMessage(
     token: string,
-    data: { message: string; stream: boolean; conversationId?: string; bootstrapGreetingId?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string; pageContext?: WebsiteEmbedPageContext | null },
+    data: { message: string; stream: boolean; conversationId?: string; bootstrapGreetingId?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string; pageContext?: WebsiteEmbedPageContext | null; signedIdentity?: string | null },
     handlers: ChatStreamHandlers = {},
   ): Promise<ChatResponse> {
     const response = await fetch(`${PUBLIC_CHAT_STREAMING_API_PATH}/${encodeURIComponent(token)}`, {

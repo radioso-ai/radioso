@@ -937,6 +937,7 @@ export function PublicChatShell({
   themeOverrides,
   surface = 'public',
   pageContext,
+  signedIdentity,
   onAnalyticsEvent,
 }: {
   token: string
@@ -951,6 +952,7 @@ export function PublicChatShell({
   themeOverrides?: WebsiteEmbedThemeOverrides | null
   surface?: PublicChatSurface
   pageContext?: WebsiteEmbedPageContext | null
+  signedIdentity?: string | null
   onAnalyticsEvent?: (event: WebsiteEmbedAnalyticsInput) => void
 }) {
   const theme = getWebsiteEmbedTheme(themeOverrides)
@@ -963,6 +965,7 @@ export function PublicChatShell({
       consumeSessionHandoff={surface === 'public'}
       localeOverride={localeOverride}
       pageContext={pageContext}
+      signedIdentity={signedIdentity}
       onAnalyticsEvent={surface === 'embed' ? onAnalyticsEvent : undefined}
     >
       <div

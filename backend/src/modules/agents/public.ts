@@ -32,7 +32,7 @@ export {
   type NormalizedAgentInput,
   type WebsiteEmbedSurfaceSettings,
 } from "./domain.js";
-export { DEFAULT_CONTACT_REQUEST_DELIVERY } from "./domain.js";
+export { DEFAULT_CONTACT_REQUEST_DELIVERY, hasConfiguredContactDestination } from "./domain.js";
 export {
   AgentService,
   type AgentSettingsResource,

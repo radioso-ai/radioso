@@ -78,6 +78,19 @@ export const DEFAULT_CONTACT_REQUEST_DELIVERY: AgentContactRequestDelivery = {
   webhook: null,
 };
 
+/**
+ * True when contact requests have an explicitly configured delivery destination
+ * (recipient emails or a webhook). The workspace-owner email fallback is
+ * intentionally NOT counted here: collecting a visitor's details should only be
+ * offered when an operator has actually pointed contact somewhere. Slack and MCP
+ * destinations are not yet represented on the agent record — extending this
+ * predicate to cover every available contact capability is tracked as a
+ * follow-up.
+ */
+export const hasConfiguredContactDestination = (
+  delivery: AgentContactRequestDelivery,
+): boolean => delivery.recipientEmails.length > 0 || delivery.webhook !== null;
+
 export interface AgentBehaviorSettings {
   customInstruction: string;
   suggestedQuestionsEnabled: boolean;

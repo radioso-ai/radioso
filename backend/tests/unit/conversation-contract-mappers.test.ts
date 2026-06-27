@@ -113,6 +113,7 @@ describe("conversation contract mappers", () => {
         workspaceId: "workspace_1",
         retrievalEnabled: true,
         contactRequestsEnabled: false,
+        hasContactDestination: false,
         webhookExportsEnabled: false,
         skillSettings: {},
       },

@@ -1,12 +1,28 @@
 import { describe, expect, it } from "vitest";
 
-import { validateAgentInput } from "../../src/modules/agents/public.js";
+import { hasConfiguredContactDestination, validateAgentInput } from "../../src/modules/agents/public.js";
 
 describe("agent contact request delivery settings", () => {
   it("defaults to owner-email fallback delivery when omitted", () => {
     expect(validateAgentInput({}).contactRequestDelivery).toEqual({
       recipientEmails: [],
       webhook: null,
+    });
+  });
+
+  describe("hasConfiguredContactDestination", () => {
+    it("is false when no recipients and no webhook are configured", () => {
+      expect(hasConfiguredContactDestination({ recipientEmails: [], webhook: null })).toBe(false);
+    });
+
+    it("is true with recipient emails", () => {
+      expect(hasConfiguredContactDestination({ recipientEmails: ["ops@example.com"], webhook: null })).toBe(true);
+    });
+
+    it("is true with a configured webhook", () => {
+      expect(
+        hasConfiguredContactDestination({ recipientEmails: [], webhook: { url: "https://example.com/hook" } }),
+      ).toBe(true);
     });
   });
 

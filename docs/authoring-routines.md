@@ -389,16 +389,19 @@ chips:
 - a step title is a line starting with `# `
 - an end is `-> end`, a handoff is `-> handoff`, and a jump is `-> step:<id>`
 - a decided-in-code check is `[if amount >= 100]`
+- a skill-outcome branch is `[outcome failed]`
+- an action step is `[action contact.send]`
+- an approval gate is `[approval key: approve="Approve" -> end, deny="Deny" -> handoff]`,
+  and the inline decision form is `[decision key: approve="Approve", deny="Deny"]`
 
-The portable text form has no marker for approval gates, outcome branches, or
-action steps, so a routine that uses any of them copies in-app only (paste it back
-into a prose editor in the same app) rather than as portable text.
+Every element a routine can use has a marker, so any routine the prose editor can
+open copies as portable text.
 
 To restore the routine, paste the text back into the prose editor. The markers
 become chips again, and the name and trigger fill in from the text. The text
 carries the body, the name, the trigger, and each variable's type and flags, but
-not routine-level settings such as priority, reentry, or the completion and
-handoff messages — set those again after pasting.
+not routine-level settings such as priority, reentry, the completion and handoff
+messages, or completion export — set those again after pasting.
 
 The text carries names, not internal ids. Pasting into the same agent resolves
 every skill cleanly. Pasting into a different agent that does not have a referenced

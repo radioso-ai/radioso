@@ -981,15 +981,6 @@ function ClipboardRoundTripPlugin({
         if (!state.read($selectionSpansDocument)) return false
         const { name: currentName, trigger: currentTrigger, variables: currentVariables } = stateRef.current
         const paragraphs = state.read($readProseParagraphs)
-        // The plain-text token grammar has no approval/decision/outcome/action form, so a
-        // routine with a gate, an outcome branch, or an action step isn't exported as tokens —
-        // fall through to Lexical's native clipboard, which round-trips losslessly in-app via
-        // the JSON flavour.
-        if (paragraphs.some((paragraph) => paragraph.segments.some((segment) =>
-          segment.kind === 'chip'
-          && (segment.chipKind === 'approval' || segment.chipKind === 'decision' || segment.chipKind === 'action' || (segment.chipKind === 'condition' && segment.refId === OUTCOME_GUARD_REF))))) {
-          return false
-        }
         const text = serializeProseDoc({ name: currentName, trigger: currentTrigger, variables: currentVariables, paragraphs })
         event.preventDefault()
         clipboardData.setData('text/plain', text)

@@ -12,6 +12,13 @@ export type RoutineVariablesContextValue = {
   variables: ChipDocVariable[]
   getType: (refId: string) => RoutineSlotType
   setType: (refId: string, type: RoutineSlotType) => void
+  // Whether a slot must be filled before the routine completes. Defaults to required; the
+  // chip lets the author mark it optional.
+  getRequired: (refId: string) => boolean
+  setRequired: (refId: string, required: boolean) => void
+  // Whether a slot stays editable after the routine completes (issue #746). Defaults off.
+  getMutable: (refId: string) => boolean
+  setMutable: (refId: string, mutable: boolean) => void
 }
 
 const RoutineVariablesContext = createContext<RoutineVariablesContextValue | null>(null)
@@ -27,5 +34,13 @@ export function RoutineVariablesProvider({
 }
 
 export function useRoutineVariables(): RoutineVariablesContextValue {
-  return useContext(RoutineVariablesContext) ?? { variables: [], getType: () => 'text', setType: () => {} }
+  return useContext(RoutineVariablesContext) ?? {
+    variables: [],
+    getType: () => 'text',
+    setType: () => {},
+    getRequired: () => true,
+    setRequired: () => {},
+    getMutable: () => false,
+    setMutable: () => {},
+  }
 }

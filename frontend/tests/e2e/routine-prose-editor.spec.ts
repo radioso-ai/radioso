@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import {
+  baseWebhookDestination,
   defaultAgentId,
   installDashboardApiMocks,
   seedDashboardStorage,
@@ -48,12 +49,20 @@ test("author a routine with variable and skill chips, set a type, and save", asy
   await page.getByRole("option", { name: "Skill (not in catalog): refund" }).click();
   await expect(page.locator('[data-routine-chip="skill"]')).toBeVisible();
 
-  // Set the variable's type from its own inline menu (no separate list).
+  // The variable's inline menu owns its type plus the slot flags (optional, editable after
+  // completion) — prose parity with the Form composer. The checkbox items keep the menu open,
+  // so toggle them first, then the type radio (which closes the menu) last.
   await variableChip.click();
+  await page.getByRole("menuitemcheckbox", { name: "Optional" }).click();
+  await page.getByRole("menuitemcheckbox", { name: "Editable after completion" }).click();
   await expect(page.getByRole("menuitemradio", { name: "date" })).toBeVisible();
   await page.getByRole("menuitemradio", { name: "date" }).click();
   // The new type is reflected on the chip face.
   await expect(variableChip).toContainText("date");
+
+  // The completion message is a terminal-level field the prose view now owns (parity with the
+  // Form composer's terminal rows).
+  await page.getByLabel("Completion message").fill("Thanks, your refund is on the way.");
 
   await page.screenshot({ path: "demo-screenshots/routine-chip-editor-demo.png", fullPage: true });
 
@@ -62,8 +71,48 @@ test("author a routine with variable and skill chips, set a type, and save", asy
   await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
   const created = routineUpdates.find((update) => update.method === "POST");
   expect(created?.body?.name).toBe("Process a refund request");
-  const orderSlot = (created?.body?.slots ?? []).find((slot: { key: string; type: string }) => slot.key === "order_id");
+  const orderSlot = (created?.body?.slots ?? []).find((slot: { key: string; type: string; required?: boolean; mutable?: boolean }) => slot.key === "order_id");
   expect(orderSlot?.type).toBe("date");
+  // The slot flags persist through prose save (no Form fallback).
+  expect(orderSlot?.required).toBe(false);
+  expect(orderSlot?.mutable).toBe(true);
+  // The completion message persists on the complete terminal.
+  const completeTerminal = (created?.body?.terminals ?? []).find((terminal: { kind: string; instruction?: string | null }) => terminal.kind === "complete");
+  expect(completeTerminal?.instruction).toBe("Thanks, your refund is on the way.");
+});
+
+test("completion export is configured and saved from the prose composer", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+  const destination = baseWebhookDestination();
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates, webhookDestinations: [destination] });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "New routine" }).click();
+  await expect(page.getByRole("tab", { name: "Prose" })).toHaveAttribute("data-state", "active");
+
+  await page.getByLabel("Name", { exact: true }).fill("Capture lead");
+  await page.getByLabel("Activation trigger", { exact: true }).fill("When a visitor shares contact details");
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+  await editor.pressSequentially("Collect the visitor's email.");
+
+  // Completion export is a routine-level config the prose view now owns (parity with Form).
+  await page.getByRole("button", { name: "Enable" }).click();
+  await page.getByRole("combobox", { name: "Webhook destination" }).click();
+  await page.getByRole("option", { name: destination.name }).click();
+
+  await page.getByRole("button", { name: "Save draft" }).click();
+
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  const created = routineUpdates.find((update) => update.method === "POST");
+  expect(created?.body?.completionExport).toMatchObject({
+    enabled: true,
+    destinationRef: destination.id,
+    triggerKinds: ["complete"],
+  });
 });
 
 test("a blank form draft can switch back to prose without advanced fallback", async ({ page }) => {
@@ -333,6 +382,52 @@ test("a handoff chip on its own line compiles a forking routine", async ({ page 
   expect(transitions.some((transition: { guardKind: string; toRef: string }) => transition.guardKind === "llm" && transition.toRef === "handoff")).toBe(true);
 });
 
+test("an outcome chip compiles a branch on the preceding skill's result", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Refund with outcome");
+  await page.getByLabel("Trigger", { exact: true }).fill("When a customer wants a refund");
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+  // A skill step: its result is what the outcome branch keys on.
+  await editor.pressSequentially("Issue the ");
+  await editor.pressSequentially("@refund");
+  await expect(page.getByRole("option", { name: "Skill (not in catalog): refund" })).toBeVisible();
+  await page.getByRole("option", { name: "Skill (not in catalog): refund" }).click();
+  await expect(page.locator('[data-routine-chip="skill"]')).toBeVisible();
+  await page.keyboard.press("Enter"); // new line for the branch
+
+  // Add a handoff target on the branch line.
+  await page.keyboard.type("@human");
+  await expect(page.getByRole("option", { name: "Handoff: human" })).toBeVisible();
+  await page.getByRole("option", { name: "Handoff: human" }).click();
+  await expect(page.locator('[data-routine-chip="handoff"]')).toBeVisible();
+
+  // Author the outcome guard via the toolbar dialog.
+  await page.getByRole("button", { name: "Outcome" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Outcome status").fill("failed");
+  await dialog.getByRole("button", { name: "Add outcome branch" }).click();
+  await expect(page.locator('[data-routine-chip="condition"][data-guard-mode="outcome"]')).toBeVisible();
+
+  await page.getByRole("button", { name: "Save routine" }).click();
+
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  const created = routineUpdates.find((update) => update.method === "POST");
+  const steps = created?.body?.steps ?? [];
+  const toolStep = steps.find((step: { kind: string; stableStepId: string }) => step.kind === "tool");
+  expect(toolStep).toBeTruthy();
+  const transitions = created?.body?.transitions ?? [];
+  const outcomeEdge = transitions.find((transition: { guardKind: string }) => transition.guardKind === "outcome");
+  expect(outcomeEdge).toMatchObject({ guardKind: "outcome", outcomeStatus: "failed", toRef: "handoff", fromStep: toolStep.stableStepId });
+});
+
 test("a condition chip compiles a decided-in-code (field) branch", async ({ page }) => {
   const routineUpdates: RoutineMutationFixture[] = [];
 
@@ -475,6 +570,38 @@ test("a name can't be claimed by a second chip kind", async ({ page }) => {
   await expect(page.getByRole("option", { name: "Skill: refund" })).toHaveCount(0);
   await expect(page.getByRole("option", { name: "Skill (not in catalog): refund" })).toHaveCount(0);
   await expect(page.getByRole("option", { name: "Handoff: refund" })).toHaveCount(0);
+});
+
+test("an action chip compiles to an action step naming the action type", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Escalate to a human");
+  await page.getByLabel("Trigger", { exact: true }).fill("When the visitor asks for a person");
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+  await editor.pressSequentially("Email the team the request ");
+  // The action step emits an outbox action named by its type.
+  await page.getByRole("button", { name: "Action" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Action type").fill("contact.send");
+  await dialog.getByRole("button", { name: "Add action step" }).click();
+  await expect(page.locator('[data-routine-chip="action"]')).toBeVisible();
+
+  await page.getByRole("button", { name: "Save routine" }).click();
+
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  const created = routineUpdates.find((update) => update.method === "POST");
+  const actionStep = (created?.body?.steps ?? []).find((step: { kind: string }) => step.kind === "action");
+  expect(actionStep).toMatchObject({ kind: "action", actionType: "contact.send" });
+  // The action step has a follow-up edge (the validator requires one).
+  const transitions = created?.body?.transitions ?? [];
+  expect(transitions.some((transition: { fromStep: string }) => transition.fromStep === actionStep.stableStepId)).toBe(true);
 });
 
 test("a skill chip compiles to a tool step naming the skill", async ({ page }) => {

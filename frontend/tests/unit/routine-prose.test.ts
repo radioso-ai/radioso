@@ -5,6 +5,9 @@ import {
   createEmptyRoutineProseDraft,
   draftFromChipDoc,
   formatConditionLabel,
+  OUTCOME_GUARD_REF,
+  readProseCompletionExport,
+  readProseTerminals,
   routineToChipDoc,
   slugifyVariableKey,
   type ChipDocVariable,
@@ -270,6 +273,55 @@ describe('titled steps and jumps', () => {
     expect(loop).toMatchObject({ guardKind: 'counter', counterLimit: 3 })
   })
 
+  it('synthesizes a heading for an untitled jump target so a Form-shaped routine opens in prose', () => {
+    // A routine that jumps to a step which has a clean id but no author label — the shape a
+    // Form-authored routine has (Form does not set outline labels).
+    const titled = draftFromChipDoc({
+      name: 'Support',
+      trigger: 'needs help',
+      blocks: [
+        { text: 'Triage', chips: [], headingLevel: 1 },
+        { text: 'If it is a billing question,', chips: [{ kind: 'step', refId: 'resolve_billing' }] },
+        { text: 'Resolve billing', chips: [], headingLevel: 1 },
+      ],
+      variables: [],
+    })
+    const formish = { ...titled, steps: titled.steps.map((step) => ({ ...step, metadata: {} })) }
+
+    const doc = routineToChipDoc(formish)
+    expect(doc).not.toBeNull()
+    // The jump target gets a synthesized heading derived from its id.
+    expect(doc!.paragraphs.some((paragraph) =>
+      paragraph.headingLevel === 1 && paragraph.segments.some((segment) => segment.kind === 'text' && segment.text === 'Resolve Billing'))).toBe(true)
+    // The jump round-trips to the same target id (the synthesized title slugifies back to it).
+    const redraft = draftFromChipDoc({ name: 'Support', trigger: 'needs help', blocks: paragraphsToBlocks(doc!.paragraphs), variables: doc!.variables })
+    expect(redraft.transitions.some((transition) => transition.toRef === 'resolve_billing' && transition.guardKind === 'llm')).toBe(true)
+  })
+
+  it('still falls back to Form when an untitled jump target id is not a clean slug', () => {
+    const titled = draftFromChipDoc({
+      name: 'Support',
+      trigger: 'needs help',
+      blocks: [
+        { text: 'Triage', chips: [], headingLevel: 1 },
+        { text: 'If it is a billing question,', chips: [{ kind: 'step', refId: 'resolve_billing' }] },
+        { text: 'Resolve billing', chips: [], headingLevel: 1 },
+      ],
+      variables: [],
+    })
+    // Give the jump target an id that no title slugifies back to (mixed case), and drop labels.
+    const exotic = {
+      ...titled,
+      steps: titled.steps.map((step) =>
+        step.stableStepId === 'resolve_billing'
+          ? { ...step, stableStepId: 'ResolveBilling', metadata: {} }
+          : { ...step, metadata: {} }),
+      transitions: titled.transitions.map((transition) =>
+        transition.toRef === 'resolve_billing' ? { ...transition, toRef: 'ResolveBilling' } : transition),
+    }
+    expect(routineToChipDoc(exotic)).toBeNull()
+  })
+
   it('keeps untitled blocks on the original positional-id behavior (no regression)', () => {
     const draft = draftFromChipDoc({
       name: 'Plain',
@@ -410,6 +462,40 @@ describe('routineToChipDoc (inverse serializer)', () => {
     expect(redraft.transitions).toEqual(draft.transitions)
   })
 
+  it('compiles an action chip to an action step and round-trips it', () => {
+    const draft = draftFromChipDoc({
+      name: 'Escalate',
+      trigger: 'wants a human',
+      blocks: [
+        { text: 'Email the team the request ', chips: [{ kind: 'action', refId: 'contact.send' }] },
+        { text: 'Let them know a teammate will follow up.', chips: [] },
+      ],
+      variables: [],
+    })
+    // An action chip names an outbox action; it compiles to an action step.
+    expect(draft.steps[0]).toMatchObject({ kind: 'action', actionType: 'contact.send', instruction: 'Email the team the request' })
+    // The action step has a follow-up edge (the validator requires one).
+    expect(draft.transitions.some((transition) => transition.fromStep === draft.steps[0]!.stableStepId)).toBe(true)
+
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    const redraft = draftFromChipDoc({ name: 'Escalate', trigger: 'wants a human', blocks: paragraphsToBlocks(doc!.paragraphs), variables: doc!.variables })
+    expect(redraft.steps).toEqual(draft.steps)
+    expect(redraft.transitions).toEqual(draft.transitions)
+  })
+
+  it('falls back to Form for an action step with no action type', () => {
+    const base = draftFromChipDoc({
+      name: 'Escalate',
+      trigger: 'wants a human',
+      blocks: [{ text: 'Email the team ', chips: [{ kind: 'action', refId: 'contact.send' }] }],
+      variables: [],
+    })
+    expect(routineToChipDoc(base)).not.toBeNull()
+    const stripped = { ...base, steps: base.steps.map((step) => step.kind === 'action' ? { ...step, actionType: null } : step) }
+    expect(routineToChipDoc(stripped)).toBeNull()
+  })
+
   it('compiles an end chip to a branch that completes the routine, and round-trips it', () => {
     const draft = draftFromChipDoc({
       name: 'Refund',
@@ -453,48 +539,350 @@ describe('routineToChipDoc (inverse serializer)', () => {
   it('returns null for routines the prose editor cannot represent (form fallback)', () => {
     const base = draftFromChipDoc({ name: 'x', trigger: 'y', blocks: [{ text: 'Do a thing.', chips: [] }], variables: [] })
 
-    // An action (outbox) step has no prose chip.
-    expect(routineToChipDoc({ ...base, steps: [{ ...base.steps[0]!, kind: 'action', actionType: 'contact.send' }] })).toBeNull()
+    // An action (outbox) step with no action type can't render as an action chip.
+    expect(routineToChipDoc({ ...base, steps: [{ ...base.steps[0]!, kind: 'action', actionType: null }] })).toBeNull()
     // A tool step must name the skill it dispatches.
     expect(routineToChipDoc({ ...base, steps: [{ ...base.steps[0]!, kind: 'tool', toolRef: null }] })).toBeNull()
     // A counter guard has no prose chip.
     expect(routineToChipDoc({ ...base, transitions: [{ ...base.transitions[0]!, guardKind: 'counter', counterLimit: 2 }] })).toBeNull()
     // An activation gate would be silently dropped on a prose round-trip.
     expect(routineToChipDoc({ ...base, activation: { ...base.activation, gateRef: 'gate_1' } })).toBeNull()
-    // Completion export would be silently dropped on a prose round-trip.
-    expect(routineToChipDoc({ ...base, completionExport: { enabled: true, triggerKinds: ['complete'], destinationRef: 'dest_1' } })).toBeNull()
-    // More than one complete terminal isn't a prose shape.
+    // More than one complete terminal isn't a prose shape (branches target distinct endings).
     expect(routineToChipDoc({ ...base, terminals: [...base.terminals, { stableStepId: 'done2', kind: 'complete', instruction: 'x', ordinal: 1 }] })).toBeNull()
-    // Legacy prose completion copy still loads, but new prose drafts emit a null
-    // completion instruction so routines do not say "All set." as an extra final step.
-    expect(routineToChipDoc({ ...base, terminals: [{ ...base.terminals[0]!, instruction: 'All set.' }] })).not.toBeNull()
+    // More than one handoff terminal isn't a prose shape either.
+    expect(routineToChipDoc({ ...base, terminals: [
+      ...base.terminals,
+      { stableStepId: 'handoff1', kind: 'handoff', instruction: 'a', ordinal: 1 },
+      { stableStepId: 'handoff2', kind: 'handoff', instruction: 'b', ordinal: 2 },
+    ] })).toBeNull()
+    // A new prose draft emits a null completion instruction so routines do not say "All set."
+    // as an extra final step.
     expect(base.terminals[0]?.instruction).toBeNull()
-    // A custom completion message can't be shown in prose — would be silently overwritten.
-    expect(routineToChipDoc({ ...base, terminals: [{ ...base.terminals[0]!, instruction: 'Thanks, all done!' }] })).toBeNull()
-    // A non-default terminal id would be renamed on a prose round-trip.
-    expect(routineToChipDoc({ ...base, terminals: [{ ...base.terminals[0]!, stableStepId: 'complete_1' }] })).toBeNull()
+
+    // Authored step metadata the chips can't carry would be dropped on a round-trip.
+    expect(routineToChipDoc({ ...base, steps: [{ ...base.steps[0]!, metadata: { custom: 'x' } }] })).toBeNull()
+    // Skill-binding metadata only round-trips on a tool step, not a chat step.
+    expect(routineToChipDoc({ ...base, steps: [{ ...base.steps[0]!, metadata: { inputBindings: {} } }] })).toBeNull()
+    // An outline label that slugifies back to the step id is preserved (no fallback)...
+    expect(routineToChipDoc({ ...base, steps: [{ ...base.steps[0]!, stableStepId: 'step_1', metadata: { outlineLabel: 'Step 1' } }] })).not.toBeNull()
+    // ...but one that would rename the step (slugifies to a different id) falls back.
+    expect(routineToChipDoc({ ...base, steps: [{ ...base.steps[0]!, stableStepId: 'step_1', metadata: { outlineLabel: 'Totally different name' } }] })).toBeNull()
+    // An empty outline label (present but blank) would be dropped on a round-trip, so fall back.
+    expect(routineToChipDoc({ ...base, steps: [{ ...base.steps[0]!, stableStepId: 'step_1', metadata: { outlineLabel: '' } }] })).toBeNull()
+    // A handoff terminal no transition targets would be dropped on a round-trip.
+    expect(routineToChipDoc({ ...base, terminals: [...base.terminals, { stableStepId: 'handoff', kind: 'handoff', instruction: 'x', ordinal: 1 }] })).toBeNull()
   })
 
-  it('falls back to Form for a non-required slot (prose would flip it to required)', () => {
+  it('falls back to Form for an llm branch whose phrase (guardText) is empty', () => {
+    const llmBranch = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: [
+        { text: 'Check the request.', chips: [] },
+        { text: 'If it is urgent,', chips: [{ kind: 'handoff', refId: 'handoff' }] },
+      ],
+      variables: [],
+    })
+    expect(routineToChipDoc(llmBranch)).not.toBeNull()
+    // A null guardText compiles to condition "llm"; rendering it as a bare branch would
+    // round-trip to "" — a different compiled condition — so fall back instead.
+    const nulled = {
+      ...llmBranch,
+      transitions: llmBranch.transitions.map((transition) =>
+        transition.guardKind === 'llm' ? { ...transition, guardText: null } : transition),
+    }
+    expect(routineToChipDoc(nulled)).toBeNull()
+  })
+
+  it('reads an outcome guard whose status lives in guardText (compiler reads outcomeStatus ?? guardText)', () => {
+    const draft = draftFromChipDoc({
+      name: 'Refund',
+      trigger: 'wants a refund',
+      blocks: [
+        { text: 'Issue the refund ', chips: [{ kind: 'skill', refId: 'issue_refund' }] },
+        { text: '', chips: [
+          { kind: 'condition', refId: OUTCOME_GUARD_REF, value: 'failed' },
+          { kind: 'handoff', refId: 'handoff' },
+        ] },
+      ],
+      variables: [],
+    })
+    // Move the status from outcomeStatus into guardText, as a Form/legacy routine may store it.
+    const legacy = {
+      ...draft,
+      transitions: draft.transitions.map((transition) =>
+        transition.guardKind === 'outcome' ? { ...transition, outcomeStatus: null, guardText: 'failed' } : transition),
+    }
+    const doc = routineToChipDoc(legacy)
+    expect(doc).not.toBeNull()
+    const outcomeChip = doc!.paragraphs.flatMap((p) => p.segments)
+      .find((s) => s.kind === 'chip' && s.chipKind === 'condition' && s.refId === OUTCOME_GUARD_REF)
+    expect(outcomeChip).toMatchObject({ value: 'failed' })
+  })
+
+  it('renders a fully-unwired approval gate (choices declared, no branches routed yet)', () => {
+    const draft = draftFromChipDoc({
+      name: 'Refund approval',
+      trigger: 'wants a large refund',
+      blocks: [{
+        text: 'Get a manager decision.',
+        chips: [{
+          kind: 'approval',
+          refId: 'refund_decision',
+          captureKey: 'refund_decision',
+          options: [
+            { id: 'approve', label: 'Approve', target: '' },
+            { id: 'deny', label: 'Deny', target: '' },
+          ],
+        }],
+      }],
+      variables: [],
+    })
+    // No option is routed yet → no decision edges leave the approval step.
+    expect(draft.transitions.some((transition) => transition.fromStep === draft.steps[0]!.stableStepId)).toBe(false)
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    const decision = doc!.paragraphs.flatMap((p) => p.segments).find((s) => s.kind === 'chip' && s.chipKind === 'decision')
+    expect(decision).toMatchObject({ options: [{ id: 'approve' }, { id: 'deny' }] })
+  })
+
+  it('falls back to Form for a counter jump whose limit lives only in guardText', () => {
+    const looped = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: [
+        { text: 'Ask for code', chips: [], headingLevel: 1 },
+        { text: 'Check the code', chips: [], headingLevel: 1 },
+        { text: 'If the code is wrong,', chips: [{ kind: 'step', refId: 'ask_for_code', counterLimit: 3 }] },
+      ],
+      variables: [],
+    })
+    expect(routineToChipDoc(looped)).not.toBeNull()
+    const guardTextOnly = {
+      ...looped,
+      transitions: looped.transitions.map((transition) =>
+        transition.guardKind === 'counter' ? { ...transition, counterLimit: null, guardText: '3' } : transition),
+    }
+    expect(routineToChipDoc(guardTextOnly)).toBeNull()
+  })
+
+  it('falls back to Form for a field guard missing its ref or operator', () => {
+    const field = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: [
+        { text: 'Look up the {{slot.status}}.', chips: [{ kind: 'variable', refId: 'status' }] },
+        { text: '', chips: [
+          { kind: 'condition', refId: 'status', op: 'equals', value: 'final' },
+          { kind: 'end', refId: 'done' },
+        ] },
+      ],
+      variables: [{ id: 'status', name: 'status', type: 'text' }],
+    })
+    expect(routineToChipDoc(field)).not.toBeNull()
+    const broken = {
+      ...field,
+      transitions: field.transitions.map((transition) =>
+        transition.guardKind === 'field' ? { ...transition, fieldRef: undefined, fieldOp: undefined } : transition),
+    }
+    expect(routineToChipDoc(broken)).toBeNull()
+  })
+
+  it('compiles and round-trips an outcome guard branch from a tool step', () => {
+    const draft = draftFromChipDoc({
+      name: 'Refund',
+      trigger: 'wants a refund',
+      blocks: [
+        { text: 'Issue the refund ', chips: [{ kind: 'skill', refId: 'issue_refund' }] },
+        { text: '', chips: [
+          { kind: 'condition', refId: OUTCOME_GUARD_REF, value: 'failed' },
+          { kind: 'handoff', refId: 'handoff' },
+        ] },
+      ],
+      variables: [],
+    })
+    const toolStep = draft.steps.find((step) => step.kind === 'tool')!
+    const outcomeEdge = draft.transitions.find((transition) => transition.guardKind === 'outcome')
+    expect(outcomeEdge).toMatchObject({ fromStep: toolStep.stableStepId, guardKind: 'outcome', outcomeStatus: 'failed' })
+    // The outcome sentinel is not collected as a slot.
+    expect(draft.slots).toEqual([])
+
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    const redraft = draftFromChipDoc({ name: 'Refund', trigger: 'wants a refund', blocks: paragraphsToBlocks(doc!.paragraphs), variables: doc!.variables })
+    expect(redraft.transitions.find((transition) => transition.guardKind === 'outcome')).toMatchObject({ guardKind: 'outcome', outcomeStatus: 'failed' })
+  })
+
+  it('falls back to Form for an outcome guard that carries no status', () => {
+    const base = draftFromChipDoc({
+      name: 'Refund',
+      trigger: 'wants a refund',
+      blocks: [
+        { text: 'Issue the refund ', chips: [{ kind: 'skill', refId: 'issue_refund' }] },
+        { text: '', chips: [
+          { kind: 'condition', refId: OUTCOME_GUARD_REF, value: 'failed' },
+          { kind: 'handoff', refId: 'handoff' },
+        ] },
+      ],
+      variables: [],
+    })
+    expect(routineToChipDoc(base)).not.toBeNull()
+    const stripped = {
+      ...base,
+      transitions: base.transitions.map((transition) =>
+        transition.guardKind === 'outcome' ? { ...transition, outcomeStatus: null } : transition),
+    }
+    expect(routineToChipDoc(stripped)).toBeNull()
+  })
+
+  it('reads and round-trips a custom completion message and terminal id', () => {
+    const draft = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: [{ text: 'Do a thing.', chips: [] }],
+      variables: [],
+      terminals: { complete: { id: 'complete_1', instruction: 'Thanks, all done!' } },
+    })
+    expect(draft.terminals).toEqual([
+      { stableStepId: 'complete_1', kind: 'complete', instruction: 'Thanks, all done!', ordinal: 0 },
+    ])
+    // The single-step chain completes into the configured terminal id.
+    expect(draft.transitions.at(-1)).toMatchObject({ toRef: 'complete_1', guardKind: 'default' })
+
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    const config = readProseTerminals(draft)
+    expect(config.complete).toEqual({ id: 'complete_1', instruction: 'Thanks, all done!' })
+
+    const redraft = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: paragraphsToBlocks(doc!.paragraphs),
+      variables: doc!.variables,
+      terminals: config,
+    })
+    expect(redraft.terminals).toEqual(draft.terminals)
+  })
+
+  it('reads and round-trips a custom handoff message and terminal id', () => {
+    const draft = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: [
+        { text: 'Check the order.', chips: [] },
+        { text: '', chips: [{ kind: 'handoff', refId: 'handoff' }] },
+      ],
+      variables: [],
+      terminals: { handoff: { id: 'escalate', instruction: 'Let me get a teammate.' } },
+    })
+    const handoff = draft.terminals.find((terminal) => terminal.kind === 'handoff')
+    expect(handoff).toEqual({ stableStepId: 'escalate', kind: 'handoff', instruction: 'Let me get a teammate.', ordinal: 1 })
+    // The handoff branch targets the configured terminal id.
+    expect(draft.transitions.some((transition) => transition.toRef === 'escalate')).toBe(true)
+
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    const config = readProseTerminals(draft)
+    expect(config.handoff).toEqual({ id: 'escalate', instruction: 'Let me get a teammate.' })
+
+    const redraft = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: paragraphsToBlocks(doc!.paragraphs),
+      variables: doc!.variables,
+      terminals: config,
+    })
+    expect(redraft.terminals.find((terminal) => terminal.kind === 'handoff')).toEqual(handoff)
+  })
+
+  it('reads and round-trips completion export config', () => {
+    const draft = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: [{ text: 'Do a thing.', chips: [] }],
+      variables: [],
+      completionExport: { enabled: true, triggerKinds: ['complete'], destinationRef: 'dest_1' },
+    })
+    expect(draft.completionExport).toEqual({ enabled: true, triggerKinds: ['complete'], destinationRef: 'dest_1' })
+    // A routine with completion export now opens in prose instead of falling back to Form.
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    expect(readProseCompletionExport(draft)).toEqual({ enabled: true, triggerKinds: ['complete'], destinationRef: 'dest_1' })
+
+    const redraft = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: paragraphsToBlocks(doc!.paragraphs),
+      variables: doc!.variables,
+      completionExport: readProseCompletionExport(draft),
+    })
+    expect(redraft.completionExport).toEqual(draft.completionExport)
+  })
+
+  it('defaults enabled completion export to the complete trigger when all triggers are toggled off', () => {
+    const draft = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: [{ text: 'Do a thing.', chips: [] }],
+      variables: [],
+      completionExport: { enabled: true, triggerKinds: [], destinationRef: 'dest_1' },
+    })
+
+    expect(draft.completionExport).toEqual({ enabled: true, triggerKinds: ['complete'], destinationRef: 'dest_1' })
+  })
+
+  it('omits completion export when it is disabled or absent', () => {
+    const none = draftFromChipDoc({ name: 'x', trigger: 'y', blocks: [{ text: 'Do a thing.', chips: [] }], variables: [] })
+    expect(none.completionExport).toBeUndefined()
+    expect(readProseCompletionExport(none)).toBeNull()
+  })
+
+  it('defaults to a done terminal with null instruction when no terminal config is given', () => {
+    const draft = draftFromChipDoc({ name: 'x', trigger: 'y', blocks: [{ text: 'Do a thing.', chips: [] }], variables: [] })
+    expect(draft.terminals).toEqual([{ stableStepId: 'done', kind: 'complete', instruction: null, ordinal: 0 }])
+  })
+
+  it('round-trips an optional (non-required) slot through prose', () => {
+    const draft = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: [{ text: 'Ask for {{slot.email}}.', chips: [{ kind: 'variable', refId: 'email' }] }],
+      variables: [{ id: 'email', name: 'email', type: 'email', required: false }],
+    })
+    expect(draft.slots[0]!.required).toBe(false)
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    expect(doc!.variables[0]).toMatchObject({ id: 'email', required: false })
+    const redraft = draftFromChipDoc({ name: 'x', trigger: 'y', blocks: paragraphsToBlocks(doc!.paragraphs), variables: doc!.variables })
+    expect(redraft.slots[0]!.required).toBe(false)
+  })
+
+  it('round-trips a mutable slot through prose', () => {
+    const draft = draftFromChipDoc({
+      name: 'x',
+      trigger: 'y',
+      blocks: [{ text: 'Ask for {{slot.email}}.', chips: [{ kind: 'variable', refId: 'email' }] }],
+      variables: [{ id: 'email', name: 'email', type: 'email', mutable: true }],
+    })
+    expect(draft.slots[0]!.mutable).toBe(true)
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    expect(doc!.variables[0]).toMatchObject({ id: 'email', mutable: true })
+    const redraft = draftFromChipDoc({ name: 'x', trigger: 'y', blocks: paragraphsToBlocks(doc!.paragraphs), variables: doc!.variables })
+    expect(redraft.slots[0]!.mutable).toBe(true)
+  })
+
+  it('defaults a slot to required and non-mutable, omitting the flags from the chip variable', () => {
     const draft = draftFromChipDoc({
       name: 'x',
       trigger: 'y',
       blocks: [{ text: 'Ask for {{slot.email}}.', chips: [{ kind: 'variable', refId: 'email' }] }],
       variables: [{ id: 'email', name: 'email', type: 'email' }],
     })
-    expect(routineToChipDoc(draft)).not.toBeNull()
-    expect(routineToChipDoc({ ...draft, slots: draft.slots.map((slot) => ({ ...slot, required: false })) })).toBeNull()
-  })
-
-  it('falls back to Form for a mutable slot (prose would drop the flag)', () => {
-    const draft = draftFromChipDoc({
-      name: 'x',
-      trigger: 'y',
-      blocks: [{ text: 'Ask for {{slot.email}}.', chips: [{ kind: 'variable', refId: 'email' }] }],
-      variables: [{ id: 'email', name: 'email', type: 'email' }],
-    })
-    expect(routineToChipDoc(draft)).not.toBeNull()
-    expect(routineToChipDoc({ ...draft, slots: draft.slots.map((slot) => ({ ...slot, mutable: true })) })).toBeNull()
+    expect(draft.slots[0]!.required).toBe(true)
+    expect(draft.slots[0]!.mutable).toBeUndefined()
+    const doc = routineToChipDoc(draft)
+    expect(doc!.variables[0]).toEqual({ id: 'email', name: 'email', type: 'email' })
   })
 
   it('compiles an approval chip into an approval step with one field guard per option', () => {

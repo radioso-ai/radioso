@@ -924,6 +924,9 @@ function RoutineEditorScreen({
               key={proseKey}
               source={proseSource}
               header={draftHeader}
+              webhookDestinations={webhookDestinations}
+              isWebhookDestinationsLoading={isWebhookDestinationsLoading}
+              webhookDestinationsError={webhookDestinationsError}
               onDraftChange={setProseDraft}
               onHeaderChange={setDraftHeader}
             />

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { looksLikeRoutineProse, parseProseDoc, serializeProseDoc } from '@/lib/routine-prose-tokens'
-import type { ChipDocVariable, ProseParagraph } from '@/lib/routine-prose'
+import { OUTCOME_GUARD_REF, type ChipDocVariable, type ProseParagraph } from '@/lib/routine-prose'
 
 // A round-trip projects through text and back. The token grammar carries a variable's
 // key + type but not its display description, so reconstructed variables key off the id;
@@ -125,6 +125,43 @@ describe('routine prose token grammar', () => {
     expect(parsed.variables).toContainEqual({ id: 'vip', name: 'vip', type: 'boolean' })
   })
 
+  it('round-trips optional and mutable slot flags through the vars declaration', () => {
+    const input = {
+      name: 'intake',
+      trigger: 'when collecting details',
+      variables: [
+        { id: 'email', name: 'email', type: 'email' as const, required: false },
+        { id: 'note', name: 'note', type: 'text' as const, mutable: true },
+        { id: 'phone', name: 'phone', type: 'text' as const, required: false, mutable: true },
+        { id: 'name', name: 'name', type: 'text' as const },
+      ],
+      paragraphs: [
+        { segments: [
+          { kind: 'text' as const, text: 'Collect ' },
+          { kind: 'chip' as const, chipKind: 'variable' as const, refId: 'email', label: '@email' },
+          { kind: 'text' as const, text: ', ' },
+          { kind: 'chip' as const, chipKind: 'variable' as const, refId: 'note', label: '@note' },
+          { kind: 'text' as const, text: ', ' },
+          { kind: 'chip' as const, chipKind: 'variable' as const, refId: 'phone', label: '@phone' },
+          { kind: 'text' as const, text: ', ' },
+          { kind: 'chip' as const, chipKind: 'variable' as const, refId: 'name', label: '@name' },
+          { kind: 'text' as const, text: '.' },
+        ] },
+      ],
+    }
+    const { text, parsed } = roundTrip(input)
+
+    expect(text).toContain('email:email:optional')
+    expect(text).toContain('note:text:mutable')
+    expect(text).toContain('phone:text:optional:mutable')
+
+    expect(parsed.variables).toContainEqual({ id: 'email', name: 'email', type: 'email', required: false })
+    expect(parsed.variables).toContainEqual({ id: 'note', name: 'note', type: 'text', mutable: true })
+    expect(parsed.variables).toContainEqual({ id: 'phone', name: 'phone', type: 'text', required: false, mutable: true })
+    // A required, non-mutable text variable round-trips bare — no flags, no declaration needed.
+    expect(parsed.variables).toContainEqual({ id: 'name', name: 'name', type: 'text' })
+  })
+
   it('round-trips a capped backward jump', () => {
     const input = {
       name: 'retry',
@@ -211,5 +248,131 @@ describe('routine prose token grammar', () => {
     expect(parseProseDoc('---\ntitle: Notes\ntags: x\n---\nPing @world about it.', () => false).hadFrontmatter).toBe(false)
     // A bare fragment with a token but no fence is an insert, never a replace.
     expect(parseProseDoc('Ask for @email then -> handoff', () => false).hadFrontmatter).toBe(false)
+  })
+
+  it('round-trips an outcome guard and an action step as text tokens', () => {
+    const input = {
+      name: 'Escalate',
+      trigger: 'wants a human',
+      variables: [],
+      paragraphs: [
+        { segments: [
+          { kind: 'text' as const, text: 'Email the team ' },
+          { kind: 'chip' as const, chipKind: 'action' as const, refId: 'contact.send', label: 'contact.send' },
+        ] },
+        { segments: [
+          { kind: 'chip' as const, chipKind: 'condition' as const, refId: OUTCOME_GUARD_REF, value: 'failed', label: 'outcome is failed' },
+          { kind: 'chip' as const, chipKind: 'handoff' as const, refId: 'handoff', label: 'handoff' },
+        ] },
+      ],
+    }
+    const { text, parsed } = roundTrip(input)
+    expect(text).toContain('[action contact.send]')
+    expect(text).toContain('[outcome failed]')
+    // The action ref isn't mistaken for a variable.
+    expect(parsed.variables).toEqual([])
+    expect(chipShape(parsed.paragraphs)).toEqual(chipShape(input.paragraphs))
+  })
+
+  it('quotes action types that do not fit the bare token grammar', () => {
+    const input = {
+      name: 'Escalate',
+      trigger: 'notify a downstream system',
+      variables: [],
+      paragraphs: [
+        { segments: [
+          { kind: 'text' as const, text: 'Notify ops ' },
+          { kind: 'chip' as const, chipKind: 'action' as const, refId: 'ops/send:urgent 2', label: 'ops/send:urgent 2' },
+        ] },
+      ],
+    }
+    const { text, parsed } = roundTrip(input)
+
+    expect(text).toContain('[action "ops/send:urgent 2"]')
+    expect(chipShape(parsed.paragraphs)).toEqual(chipShape(input.paragraphs))
+  })
+
+  it('round-trips a decision gate declaration (capture key + choices) as a text token', () => {
+    const input = {
+      name: 'Refund approval',
+      trigger: 'wants a large refund',
+      variables: [],
+      paragraphs: [
+        { segments: [
+          { kind: 'text' as const, text: 'Get a manager decision. ' },
+          { kind: 'chip' as const, chipKind: 'decision' as const, refId: 'refund_decision', captureKey: 'refund_decision', label: 'decision', options: [
+            { id: 'approve', label: 'Approve' },
+            { id: 'deny', label: 'Deny', description: 'Decline the refund' },
+          ] },
+        ] },
+      ],
+    }
+    const { text, parsed } = roundTrip(input)
+    expect(text).toContain('[decision refund_decision: approve="Approve", deny="Deny" ("Decline the refund")]')
+    // The capture key is not collected as a variable.
+    expect(parsed.variables).toEqual([])
+    const decision = parsed.paragraphs.flatMap((p) => p.segments).find((s) => s.kind === 'chip' && s.chipKind === 'decision')
+    expect(decision).toMatchObject({
+      chipKind: 'decision',
+      captureKey: 'refund_decision',
+      options: [
+        { id: 'approve', label: 'Approve' },
+        { id: 'deny', label: 'Deny', description: 'Decline the refund' },
+      ],
+    })
+  })
+
+  it('escapes quotes and brackets in decision labels and descriptions', () => {
+    const input = {
+      name: 'Refund approval',
+      trigger: 'wants a large refund',
+      variables: [],
+      paragraphs: [
+        { segments: [
+          { kind: 'chip' as const, chipKind: 'decision' as const, refId: 'refund_decision', captureKey: 'refund_decision', label: 'decision', options: [
+            { id: 'approve', label: 'Manager says "yes"', description: 'Use the [fast] path\\now' },
+            { id: 'deny', label: 'Deny' },
+          ] },
+        ] },
+      ],
+    }
+    const { text, parsed } = roundTrip(input)
+
+    expect(text).toContain('approve="Manager says \\"yes\\""')
+    expect(text).toContain('("Use the [fast] path\\\\now")')
+    const decision = parsed.paragraphs.flatMap((p) => p.segments).find((s) => s.kind === 'chip' && s.chipKind === 'decision')
+    expect(decision).toMatchObject({
+      options: [
+        { id: 'approve', label: 'Manager says "yes"', description: 'Use the [fast] path\\now' },
+        { id: 'deny', label: 'Deny' },
+      ],
+    })
+  })
+
+  it('round-trips an approval gate (choices with routing targets) as a text token', () => {
+    const input = {
+      name: 'Refund approval',
+      trigger: 'wants a large refund',
+      variables: [],
+      paragraphs: [
+        { segments: [
+          { kind: 'chip' as const, chipKind: 'approval' as const, refId: 'refund_decision', captureKey: 'refund_decision', label: 'approval', options: [
+            { id: 'approve', label: 'Approve', target: 'done' },
+            { id: 'deny', label: 'Deny', target: 'handoff' },
+          ] },
+        ] },
+      ],
+    }
+    const { text, parsed } = roundTrip(input)
+    expect(text).toContain('[approval refund_decision: approve="Approve" -> end, deny="Deny" -> handoff]')
+    const approval = parsed.paragraphs.flatMap((p) => p.segments).find((s) => s.kind === 'chip' && s.chipKind === 'approval')
+    expect(approval).toMatchObject({
+      chipKind: 'approval',
+      captureKey: 'refund_decision',
+      options: [
+        { id: 'approve', label: 'Approve', target: 'done' },
+        { id: 'deny', label: 'Deny', target: 'handoff' },
+      ],
+    })
   })
 })

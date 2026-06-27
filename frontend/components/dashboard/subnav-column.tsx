@@ -128,7 +128,7 @@ export function SubNavRow({ entry }: { entry: SubNavEntry }) {
 
   if (entry.href) {
     return (
-      <Link href={entry.href} className={className}>
+      <Link href={entry.href} aria-current={entry.active ? 'page' : undefined} className={className}>
         {inner}
       </Link>
     )

@@ -42,11 +42,11 @@ interface AppSidebarProps {
   areaSubNav?: ReactNode
 }
 
-// Activity sits second — directly under Agents — because it carries the operator's
-// "needs attention" inbox and other time-sensitive items.
+// Activity sits first and is visually separated from the build/config sections below —
+// it's the operator's home: the "needs attention" inbox and other time-sensitive work.
 const navItems = [
-  { id: 'agents' as const, label: 'Agents', icon: Bot },
   { id: 'activity' as const, label: 'Activity', icon: Activity },
+  { id: 'agents' as const, label: 'Agents', icon: Bot },
   { id: 'knowledge' as const, label: 'Knowledge Base', icon: BookOpen },
   { id: 'eval' as const, label: 'Eval', icon: FlaskConical },
   { id: 'settings' as const, label: 'Settings', icon: Settings },
@@ -98,7 +98,10 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
                 const isAgentsPicker = item.id === 'agents' && isActive && Boolean(areaSubNav)
 
                 return (
-                  <SidebarMenuItem key={item.id}>
+                  <SidebarMenuItem
+                    key={item.id}
+                    className={item.id === 'activity' ? 'mb-1 border-b border-sidebar-border pb-1' : undefined}
+                  >
                     {isAgentsPicker ? null : (
                       <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
                         <Link

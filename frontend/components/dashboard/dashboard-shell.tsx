@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { AppSidebar } from './app-sidebar'
 import { AgentSubNavContainer } from './agent-subnav-container'
-import { AccountSubNav, KnowledgeSubNav, SettingsSubNav } from './area-subnavs'
+import { AccountSubNav, ActivitySubNav, KnowledgeSubNav, SettingsSubNav } from './area-subnavs'
 import { AgentView } from './agent-view'
 import { AccountView } from './account-view'
 import { ChatHistoryView } from './chat-history-view'
@@ -157,15 +157,19 @@ export function DashboardShell({
   // sidebar, under its rail row (desktop column and mobile drawer share it).
   // Computing it once keeps stateful containers (e.g. the agent switcher) from
   // mounting twice.
-  const subNav = !hasSubNav ? null : area === 'agents' ? (
+  const subNav = showFirstRun ? null : area === 'agents' ? (
     <AgentSubNavContainer accountId={accountId} routeState={routeState} />
   ) : area === 'knowledge' ? (
     <KnowledgeSubNav accountId={accountId} routeState={routeState} />
   ) : area === 'settings' ? (
     <SettingsSubNav accountId={accountId} routeState={routeState} />
-  ) : (
+  ) : area === 'account' ? (
     <AccountSubNav accountId={accountId} routeState={routeState} />
-  )
+  ) : currentView === 'activity' || currentView === 'quality' ? (
+    // Activity/Quality have no content "area", but their views (Needs attention / All
+    // activity / Quality) are now sidebar items nested under the Activity rail row.
+    <ActivitySubNav accountId={accountId} routeState={routeState} />
+  ) : null
 
   const areaContent = area === 'agents' ? (
     <AgentView accountId={accountId} routeState={routeState} onboarding={onboarding} onOpenDocument={openDocument} />

@@ -7,7 +7,10 @@ import {
   FileText,
   FolderOpen,
   Gauge,
+  Inbox,
   LogOut,
+  MessagesSquare,
+  MessageSquareWarning,
   Monitor,
   Moon,
   Sun,
@@ -15,6 +18,7 @@ import {
 } from 'lucide-react'
 
 import { SectionNavBody, SubNavRow, type SubNavGroup } from '@/components/dashboard/subnav-column'
+import { buildActivityTabHref, type ActivitySurfaceTab } from '@/components/dashboard/activity-tabs'
 import { useTheme } from '@/components/theme-provider'
 import { useAuth } from '@/lib/auth-context'
 import { useWorkspace } from '@/lib/workspace-context'
@@ -32,6 +36,24 @@ function useWorkspaceRouteParts() {
     workspaceId: activeWorkspaceId ?? undefined,
     workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
   }
+}
+
+export function ActivitySubNav({ accountId, routeState }: { accountId: string; routeState: DashboardRouteState }) {
+  const activeTab: ActivitySurfaceTab =
+    routeState.section === 'quality' ? 'quality' : routeState.activityTab === 'all' ? 'all' : 'needs-attention'
+  const href = (target: ActivitySurfaceTab) => buildActivityTabHref(accountId, routeState, activeTab, target)
+
+  const groups: SubNavGroup[] = [
+    {
+      items: [
+        { id: 'needs-attention', label: 'Needs attention', icon: Inbox, href: href('needs-attention'), active: activeTab === 'needs-attention' },
+        { id: 'all', label: 'All activity', icon: MessagesSquare, href: href('all'), active: activeTab === 'all' },
+        { id: 'quality', label: 'Quality', icon: MessageSquareWarning, href: href('quality'), active: activeTab === 'quality' },
+      ],
+    },
+  ]
+
+  return <SectionNavBody groups={groups} />
 }
 
 export function KnowledgeSubNav({ accountId, routeState }: { accountId: string; routeState: DashboardRouteState }) {

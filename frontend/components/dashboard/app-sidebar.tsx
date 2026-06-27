@@ -1,6 +1,5 @@
 'use client'
 
-import Image from 'next/image'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
@@ -54,37 +53,21 @@ const navItems = [
 
 export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: AppSidebarProps) {
   const { user } = useAuth()
-  const { activeWorkspace, activeWorkspaceId, accounts } = useWorkspace()
+  const { activeWorkspace, activeWorkspaceId } = useWorkspace()
   const inboxCount = useInboxCount()
-  const organizationName =
-    user?.accountId === accountId && user.organizationName
-      ? user.organizationName
-      : accounts.find((account) => account.accountId === accountId)?.organizationName ?? 'radioso'
   const userDisplayName = user?.email?.split('@')[0] || 'User'
   const userInitial = userDisplayName.charAt(0).toUpperCase() || 'U'
   const isAccountActive = currentView === 'account'
 
   return (
     <Sidebar collapsible="offcanvas">
-      <SidebarHeader className="h-14 flex-row items-center gap-2 border-b border-sidebar-border px-4 py-0">
-        <Image
-          src="/radioso-icon.svg"
-          alt="radioso logo"
-          width={28}
-          height={28}
-          priority
-          loading="eager"
-          className="h-7 w-7 flex-shrink-0"
-        />
-        <span className="truncate font-display text-lg font-semibold text-foreground">
-          {organizationName}
-        </span>
+      <SidebarHeader className="border-b border-sidebar-border p-0">
+        <WorkspaceSwitcher accountId={accountId} currentView={currentView} routeState={routeState} />
       </SidebarHeader>
 
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupContent>
-            <WorkspaceSwitcher accountId={accountId} currentView={currentView} routeState={routeState} />
             <SidebarMenu>
               {navItems.map((item) => {
                 const isActive = item.id === 'activity'

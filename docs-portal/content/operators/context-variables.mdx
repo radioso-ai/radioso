@@ -1,0 +1,182 @@
+---
+title: Context variables
+description: How operators configure page, identity, and host-defined context for agent turns.
+last_updated: 2026-06-27
+---
+
+# Context variables
+
+Context variables let an agent use structured visitor context during a turn.
+They are meant for facts such as the current page, visitor identity, cart,
+order status, account tier, or another value supplied by the host system.
+
+The key point is that operators configure declarations and agent wiring. Runtime
+values come from the host backend or a resolver.
+
+## Built-in context
+
+Radioso provides built-in context for the website experience.
+
+- `page_context` is one bundle for the current page. It can include the URL,
+  title, locale, browser locale, and page content when the host supplies it.
+- `visitor_identity` represents identity context when the host provides it.
+
+Built-ins are not listed in the host-defined catalog and cannot be edited there.
+They are code-owned platform context.
+
+## Host-defined variables
+
+Use host-defined variables for data Radioso cannot know by itself. Common
+examples are `cart`, `order_status`, `subscription_plan`, or `account_region`.
+
+Each declaration belongs to the workspace catalog:
+
+- **Name** is the stable variable key.
+- **Description** tells operators what the value means.
+- **Value type** is `string` or `json`.
+- **Trust tier** is `unverified` or `signed`.
+- **Sensitivity** is `normal` or `sensitive`.
+- **Default surfacing** is the default prompt visibility policy.
+
+Then each agent enables the variables it should use. In the agent **Context**
+section, choose the source and surfacing policy for that agent.
+
+The current dashboard supports one source:
+
+- **Pushed API** — the host backend writes values through the REST API.
+
+Resolver-backed variables exist in the API model, but are not configurable in
+the dashboard yet.
+
+## Trust tiers
+
+Trust tier describes how much the system should trust the value.
+
+- `unverified` is suitable for page state and host-supplied hints. Do not use
+  it to unlock account-specific answers.
+- `signed` is for values the host can prove came from a trusted backend or a
+  signed identity flow.
+
+In practice, identity-sensitive behavior should depend on signed or backend
+pushed values.
+
+## Signed visitor identity
+
+Signed visitor identity lets a website backend prove which customer is using an
+embedded chat session. This is the only browser path that unlocks
+customer-scoped context values.
+
+First, reveal the per-agent signing key from an authenticated workspace-admin
+session:
+
+```text
+GET /api/v1/agents/{agentId}/context-variables/signing-key
+```
+
+The response contains a hex HMAC key derived for that workspace and agent. It is
+not stored as a separate database secret.
+
+Your backend signs this payload:
+
+```json
+{
+  "customerId": "cus_123",
+  "sessionId": "public-session-id",
+  "origin": "https://example.com",
+  "issuedAt": 1782398400000,
+  "nonce": "unique-random-value",
+  "attributes": {
+    "plan": "pro"
+  }
+}
+```
+
+Create the token as:
+
+```text
+payload = base64url(JSON.stringify(payloadObject))
+signature = base64url(HMAC_SHA256(signingKeyBytes, payload))
+token = payload + "." + signature
+```
+
+Then pass it to the launcher:
+
+```js
+window.Radioso.identify(token)
+```
+
+Radioso verifies the token on each message. Verification is strict:
+
+- the signature must match the current or previous workspace token secret
+- `issuedAt` must be within the acceptance window, currently five minutes
+- `sessionId` must match the established public chat session
+- `origin` must match the approved embed origin
+- `nonce` must not have been used before inside the acceptance window
+
+If any check fails, the identity is treated as absent. The visitor turn still
+continues as anonymous. Radioso does not expose token, payload, or secret values
+in logs.
+
+When verification succeeds, Radioso adds the `customer` scope to context
+resolution:
+
+```text
+session -> customer -> agent -> workspace
+```
+
+It also exposes a sensitive built-in `visitor_identity` context value with
+verified trust. Unsigned browser identity never gets verified trust and never
+unlocks customer-scoped data.
+
+## Surfacing
+
+Surfacing controls whether a resolved value is shown to the model as part of
+the prompt context.
+
+- `always` includes the value whenever it resolves.
+- `on_reference` keeps the value available for turn logic and includes it only
+  when the turn needs it.
+- `operator_only` stores it for operator inspection and logic, but does not
+  surface it into the answer prompt.
+
+Sensitive variables should use the narrowest surfacing that works. Redacted
+values may still appear in Activity so operators can debug what happened without
+exposing raw sensitive data.
+
+## Pushing values
+
+A host backend pushes a value to:
+
+```text
+PUT /api/v1/context-variables/{id}/values
+```
+
+The body includes a scope and data:
+
+```json
+{
+  "scope": { "type": "session", "id": "public-session-id" },
+  "data": {
+    "items": [
+      { "sku": "course-101", "quantity": 1 }
+    ]
+  }
+}
+```
+
+Radioso resolves values from most specific to least specific:
+
+1. `session`
+2. `customer`
+3. `agent`
+4. `workspace`
+
+Use session scope for short-lived visitor state, customer scope for account data,
+agent scope for agent-specific defaults, and workspace scope for shared defaults.
+
+## Activity view
+
+Open a conversation in Activity and inspect the assistant turn. When context
+variables were resolved for that turn, the debug panel shows a read-only
+**Visitor context** block. Sensitive values are already redacted by the backend
+before they reach the dashboard.

@@ -59,7 +59,7 @@ export const anonymousRateLimiters = (dependencies: AnonymousRateLimiterDependen
     resolveAuditContext: (_req, res) => ({
       workspaceId: res.locals.workspaceId as string | undefined,
       metadata: {
-        anonymousSessionId: res.locals.anonymousSessionId as string | undefined,
+        chatSessionId: res.locals.chatSessionId as string | undefined,
       },
     }),
   }),
@@ -76,7 +76,7 @@ export const anonymousRateLimiters = (dependencies: AnonymousRateLimiterDependen
     resolveAuditContext: (_req, res) => ({
       workspaceId: res.locals.workspaceId as string | undefined,
       metadata: {
-        anonymousSessionId: res.locals.anonymousSessionId as string | undefined,
+        chatSessionId: res.locals.chatSessionId as string | undefined,
       },
     }),
   }),

@@ -62,10 +62,12 @@ type BootstrapState =
       expiresAt: string
       workspaceName?: string | null
       pageContext?: WebsiteEmbedPageContext | null
+      signedIdentity?: string | null
     }
 
 const READY_MESSAGE = 'radioso:embed:ready'
 const SESSION_MESSAGE = 'radioso:embed:session'
+const IDENTITY_MESSAGE = 'radioso:embed:identity'
 const ERROR_MESSAGE = 'radioso:embed:error'
 const HANDSHAKE_TIMEOUT_MS = 30_000
 const FULLSCREEN_MESSAGE = 'radioso:embed:fullscreen'
@@ -185,6 +187,12 @@ export function EmbeddedChatFrame({
         return
       }
 
+      if (event.data.type === IDENTITY_MESSAGE && !isDisposed) {
+        const signedIdentity = typeof event.data.signedIdentity === 'string' ? event.data.signedIdentity : null
+        setState((current) => current.status === 'ready' ? { ...current, signedIdentity } : current)
+        return
+      }
+
       if (event.data.type === SESSION_MESSAGE) {
         if (isBootstrappedRef.current) {
           return
@@ -221,6 +229,7 @@ export function EmbeddedChatFrame({
           resumeExpiresAt,
         })
         const pageContext = sanitizePageContext(event.data.pageContext)
+        const signedIdentity = typeof event.data.signedIdentity === 'string' ? event.data.signedIdentity : null
         setState({
           status: 'ready',
           publicChatToken: session.publicChatToken,
@@ -229,6 +238,7 @@ export function EmbeddedChatFrame({
           expiresAt,
           workspaceName: session.workspaceName,
           pageContext,
+          signedIdentity,
         })
         postWebsiteEmbedAnalyticsEvent({
           event: 'website_embed.loaded',
@@ -377,6 +387,7 @@ export function EmbeddedChatFrame({
       themeOverrides={themeOverrides}
       surface="embed"
       pageContext={state.pageContext}
+      signedIdentity={state.signedIdentity}
       onAnalyticsEvent={handleAnalyticsEvent}
     />
   )

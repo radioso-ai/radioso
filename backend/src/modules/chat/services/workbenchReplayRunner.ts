@@ -92,6 +92,7 @@ const ephemeralConversation = (
     sourceOrigin: null,
     channelContext: null,
     anonymousSessionId: null,
+    verifiedCustomerId: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -119,6 +120,7 @@ const createNoopConversationRepository = (): ConversationRepositoryPort => ({
   async findByIdAndAnonymousSession() {
     return null;
   },
+  async setVerifiedCustomerId() {},
   async touch() {},
 });
 

@@ -11,6 +11,7 @@ import {
   type RoutineDefinitionRepositoryPort,
 } from "../../src/modules/routines/public.js";
 import type { SkillAuthoringCatalog, SkillAuthoringDescriptor } from "../../src/modules/skills/public.js";
+import type { AgentContextVariableEnablement, ContextVariable } from "../../src/modules/context-variables/public.js";
 import { capabilityNames, type CapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../src/shared/domain/actionCapabilities.js";
 
@@ -329,6 +330,38 @@ const skillDescriptor = (skillName: string): SkillAuthoringDescriptor => ({
   hasDataOutputs: false,
 });
 
+const contextVariable = (name: string, valueType: ContextVariable["valueType"]): ContextVariable => ({
+  id: randomUUID(),
+  workspaceId,
+  name,
+  description: null,
+  valueType,
+  trustTier: "unverified",
+  sensitivity: "normal",
+  defaultSurfacing: "on_reference",
+  createdAt: new Date("2026-06-24T00:00:00.000Z"),
+  updatedAt: new Date("2026-06-24T00:00:00.000Z"),
+});
+
+const contextVariableEnablement = (
+  variable: ContextVariable,
+  enabled = true,
+): AgentContextVariableEnablement => ({
+  id: randomUUID(),
+  agentId,
+  variableId: variable.id,
+  source: "pushed",
+  resolverSkillId: null,
+  maxAgeSeconds: null,
+  resolverTimeoutMs: null,
+  surfacing: "on_reference",
+  enabled,
+  createdAt: new Date("2026-06-24T00:00:00.000Z"),
+  updatedAt: new Date("2026-06-24T00:00:00.000Z"),
+  variable,
+});
+
+
 const createService = (options: {
   actionCapabilities?: ActionCapabilityMap;
   capabilityPolicy?: CapabilityPolicy;
@@ -336,6 +369,7 @@ const createService = (options: {
   directiveScopeTags?: ConstructorParameters<typeof RoutineDefinitionService>[0]["directiveScopeTags"];
   skillAuthoringCatalog?: SkillAuthoringCatalog;
   additionalRoutineSkillNames?: (input: { workspaceId: string; agentId: string }) => Promise<readonly string[]>;
+  contextVariableReader?: ConstructorParameters<typeof RoutineDefinitionService>[0]["contextVariableReader"];
 } = {}) => {
   const repository = new FakeRoutineDefinitionRepository();
   const auditService = { record: vi.fn().mockResolvedValue(undefined) };
@@ -505,6 +539,45 @@ describe("RoutineDefinitionService", () => {
         ]),
       },
     });
+  });
+
+  it("passes available context variables and built-ins into strict validation", async () => {
+    const catalog = {
+      listForAgent: vi.fn(async () => [{
+        ...skillDescriptor("account.lookup"),
+        inputs: [
+          { key: "cart", type: "text", required: false },
+          { key: "page", type: "text", required: false },
+        ],
+      } satisfies SkillAuthoringDescriptor]),
+      getForAgent: vi.fn(),
+    };
+    const contextVariableReader = {
+      listByAgent: vi.fn(async () => [contextVariableEnablement(contextVariable("cart", "json"))]),
+    };
+    const { service } = createService({ skillAuthoringCatalog: catalog, contextVariableReader });
+    const draft = await service.createDraft(workspaceId, agentId, {
+      ...toolDraft(),
+      steps: toolDraft().steps.map((step) =>
+        step.stableStepId === "step_lookup"
+          ? {
+            ...step,
+            metadata: {
+              inputBindings: {
+                cart: { kind: "contextVariableRef", contextVariable: "cart" },
+                page: { kind: "contextVariableRef", contextVariable: "page_context" },
+              },
+            },
+          }
+          : step
+      ),
+    });
+
+    const validate = await service.validate(workspaceId, agentId, { id: draft.routine.id });
+
+    expect(validate.diagnostics.find((diagnostic) => diagnostic.code === "unknown_context_variable")).toBeUndefined();
+    expect(validate.diagnostics.find((diagnostic) => diagnostic.code === "input_type_mismatch")).toBeUndefined();
+    expect(contextVariableReader.listByAgent).toHaveBeenCalledWith(workspaceId, agentId);
   });
 
   it("rejects publishing an action step with no follow-up", async () => {

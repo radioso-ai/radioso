@@ -124,6 +124,32 @@ export const attachCapabilitySubTrace = (
 };
 
 /**
+ * Surface the turn's resolved visitor context variables on the spine's `gather`
+ * stage so they are part of the activity trace (observable in the debug panel),
+ * not only on the assistant message metadata. Returns a new spine (input is not
+ * mutated); no-ops when there is no gather stage or no context. The snapshot MUST
+ * already be redacted (sensitive values masked) — pass `resolvedContext.snapshot`,
+ * never the raw staged context.
+ */
+export const attachContextVariablesToGather = (
+  spine: ConversationTrace,
+  contextVariables: Record<string, unknown>,
+): ConversationTrace => {
+  if (Object.keys(contextVariables).length === 0) {
+    return spine;
+  }
+  let attached = false;
+  const stages = spine.stages.map((stage) => {
+    if (!attached && stage.kind === "gather") {
+      attached = true;
+      return { ...stage, outputs: { ...(stage.outputs ?? {}), contextVariables } };
+    }
+    return stage;
+  });
+  return attached ? { ...spine, stages } : spine;
+};
+
+/**
  * Build a minimal spine for a turn that did not run through the engine's
  * select/dispatch loop (e.g. a pre-engine intake turn, or an old persisted turn
  * read back without a spine). The single `dispatch:<skillName>` stage carries the

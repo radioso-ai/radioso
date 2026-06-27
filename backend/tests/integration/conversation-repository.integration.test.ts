@@ -75,6 +75,19 @@ describeIntegration("ConversationRepository (Postgres)", () => {
     expect((await repository.findByIdAndWorkspaceId(without.id, workspaceId))?.channelContext).toBeNull();
   });
 
+  it("binds verified customer ids once without overwriting an existing binding", async () => {
+    const createdBound = await repository.create(workspaceId, null, null, null, null, null, "customer-created");
+    expect((await repository.findByIdAndWorkspaceId(createdBound.id, workspaceId))?.verifiedCustomerId)
+      .toBe("customer-created");
+
+    const conversation = await repository.create(workspaceId);
+    await repository.setVerifiedCustomerId(conversation.id, workspaceId, "customer-first");
+    await repository.setVerifiedCustomerId(conversation.id, workspaceId, "customer-second");
+
+    expect((await repository.findByIdAndWorkspaceId(conversation.id, workspaceId))?.verifiedCustomerId)
+      .toBe("customer-first");
+  });
+
   it("paginates newest-first with a keyset cursor, total, and hasMore", async () => {
     const ids = await seedOrdered();
 

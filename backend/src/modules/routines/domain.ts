@@ -73,6 +73,10 @@ export const routineInputBindingSchema = z.discriminatedUnion("kind", [
     kind: z.literal("variableRef"),
     ref: routineVariableNameSchema,
   }).strict(),
+  z.object({
+    kind: z.literal("contextVariableRef"),
+    contextVariable: routineVariableNameSchema,
+  }).strict(),
 ]);
 
 export const routineStepModeSchema = z.enum(["typed", "untyped"]);

@@ -19,6 +19,13 @@ import type {
   RetrievalPipelineService,
   RewriteContinuityState,
 } from "../../retrieval/public.js";
+import { resolveContextForTurn } from "../../context-variables/public.js";
+import type {
+  ResolvedTurnContext,
+  ResolvedVariableInput,
+  ContextVariableScope,
+} from "../../context-variables/public.js";
+import type { ContextVariableRepositoryPort } from "../../../db/repositories/contextVariableRepository.js";
 import type { AgentRecord, AgentService } from "../../agents/public.js";
 import { DEFAULT_CONTACT_REQUEST_DELIVERY, defaultAgentBrandingSettings, isAgentRetrievalEnabled } from "../../agents/public.js";
 import { defaultWebsiteEmbedSettings } from "../../settings/contracts/websiteEmbed.js";
@@ -63,6 +70,12 @@ export interface PreparedSession {
    */
   stagedContext: StagedContext[];
   /**
+   * Resolved visitor context variables for this turn (page context + host-defined variables).
+   * The single source of truth for what the answer composers render and what the lifecycle
+   * persists; its `staged` entries are also merged into `stagedContext` for the matcher.
+   */
+  resolvedContext: ResolvedTurnContext;
+  /**
    * Pre-answer dispatch trace (neutral `ConversationTrace`) that rides on the turn
    * outcome. Distinct from the lifecycle's post-answer `ActivityTrace`.
    */
@@ -81,8 +94,12 @@ export interface PrepareChatSessionInput {
   pageContext?: AssistantPageContext | null;
   sourceChannel?: string | null;
   channelContext?: ConversationChannelContext | null;
+  chatSessionId?: string | null;
+  /** @deprecated Use chatSessionId. */
   anonymousSessionId?: string | null;
   sourceOrigin?: string | null;
+  verifiedCustomerId?: string | null;
+  verifiedIdentity?: Record<string, unknown> | null;
 }
 
 export interface PrepareChatSessionOptions {
@@ -100,11 +117,13 @@ export class ChatSessionPreparer {
     private readonly workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">,
     private readonly agentService?: Pick<AgentService, "resolve">,
     private readonly bootstrapGreetingCacheRepository?: BootstrapGreetingCacheRepositoryPort,
+    private readonly contextVariableRepository?: Pick<ContextVariableRepositoryPort, "resolveForAgent">,
   ) {}
 
   async prepare(input: PrepareChatSessionInput, options: PrepareChatSessionOptions = {}): Promise<PreparedSession> {
+    const chatSessionId = input.chatSessionId ?? input.anonymousSessionId ?? null;
     const conversation = input.conversationId
-      ? await this.ensureConversation(input.conversationId, input.workspaceId, input.anonymousSessionId)
+      ? await this.ensureConversation(input.conversationId, input.workspaceId, chatSessionId)
       : null;
     const agent = options.preResolvedAgent ?? (this.agentService
       ? await this.agentService.resolve(input.workspaceId, input.agentId ?? conversation?.agentId ?? null)
@@ -112,6 +131,7 @@ export class ChatSessionPreparer {
     if (conversation?.agentId && conversation.agentId !== agent.id) {
       throw notFound("Conversation not found");
     }
+    const effectiveVerifiedCustomerId = input.verifiedCustomerId ?? conversation?.verifiedCustomerId ?? null;
     const history = options.preResolvedHistory ?? (conversation
       ? await this.messageRepository.listRecentByConversationId(
           input.workspaceId,
@@ -127,13 +147,24 @@ export class ChatSessionPreparer {
         input.workspaceId,
         agent.id,
         input.sourceChannel ?? null,
-        input.anonymousSessionId ?? null,
+        chatSessionId,
         input.sourceOrigin ?? null,
         input.channelContext ?? null,
+        input.verifiedCustomerId ?? null,
       );
+    if (conversation && input.verifiedCustomerId && !conversation.verifiedCustomerId) {
+      await this.conversationRepository.setVerifiedCustomerId(
+        conversation.id,
+        input.workspaceId,
+        input.verifiedCustomerId,
+      );
+    }
+    const conversationForTurn = persistedConversation.verifiedCustomerId === effectiveVerifiedCustomerId
+      ? persistedConversation
+      : { ...persistedConversation, verifiedCustomerId: effectiveVerifiedCustomerId };
     const promotedBootstrapGreeting = conversation
       ? null
-      : await this.promoteBootstrapGreeting(input, agent, persistedConversation);
+      : await this.promoteBootstrapGreeting(input, agent, conversationForTurn);
     const turnHistory = promotedBootstrapGreeting
       ? [...history, promotedBootstrapGreeting]
       : history;
@@ -147,15 +178,16 @@ export class ChatSessionPreparer {
     });
     // The direct-only (non-grounded) base turn. Used as-is when retrieval is
     // skipped, otherwise as the throwaway base `prepareRetrieval` recomputes from.
+    const hostVariables = await this.resolveHostVariables(input, agent, effectiveVerifiedCustomerId, chatSessionId);
     const directOnlyTurn = this.prepareDirectOnlyTurn(
-      this.buildPipelineInput(input, agent, turnHistory, persistedConversation, userMessage),
+      this.buildPipelineInput(input, agent, turnHistory, conversationForTurn, userMessage),
       agent,
     );
     const { retrieval, turnRoute } = options.skipRetrieval
       ? directOnlyTurn
       : await this.prepareRetrieval(input, {
           agent,
-          conversation: persistedConversation,
+          conversation: conversationForTurn,
           history: turnHistory,
           retrieval: directOnlyTurn.retrieval,
           turnRoute: CHAT_TURN_ROUTE.DIRECT,
@@ -166,12 +198,12 @@ export class ChatSessionPreparer {
           priorRewriteContinuityState: rewriteContinuityState,
           // Only present to satisfy the PreparedSession shape; prepareRetrieval
           // recomputes the spine from the real retrieval result.
-          ...this.stagedSpineFor(directOnlyTurn.retrieval),
-        });
+          ...this.stagedSpineFor(directOnlyTurn.retrieval, input.pageContext, hostVariables),
+        }, defaultTurnFraming(), hostVariables);
 
     return {
       agent,
-      conversation: persistedConversation,
+      conversation: conversationForTurn,
       history: turnHistory,
       retrieval,
       turnRoute,
@@ -180,7 +212,7 @@ export class ChatSessionPreparer {
       effectiveQuery: input.query,
       pageContext: input.pageContext ?? null,
       priorRewriteContinuityState: rewriteContinuityState,
-      ...this.stagedSpineFor(retrieval),
+      ...this.stagedSpineFor(retrieval, input.pageContext, hostVariables),
     };
   }
 
@@ -220,18 +252,85 @@ export class ChatSessionPreparer {
    */
   private stagedSpineFor(
     retrieval: PreparedSession["retrieval"],
-  ): Pick<PreparedSession, "stagedContext" | "turnTrace"> {
+    pageContext?: AssistantPageContext | null,
+    variables: readonly ResolvedVariableInput[] = [],
+  ): Pick<PreparedSession, "stagedContext" | "resolvedContext" | "turnTrace"> {
+    const resolvedContext = resolveContextForTurn(pageContext, variables);
     return {
-      stagedContext: [toPreparedStagedContext(retrieval)],
+      stagedContext: [toPreparedStagedContext(retrieval), ...resolvedContext.staged],
+      resolvedContext,
       turnTrace: toConversationTrace(retrieval.trace),
     };
+  }
+
+  /**
+   * Resolve the agent's enabled host-defined context variables for this turn, walking the
+   * scope ladder (session → agent → workspace; customer scope arrives with verified identity).
+   * Best-effort: a missing repository or a read failure degrades to no host variables so the
+   * turn always proceeds (page context still renders).
+   */
+  private async resolveHostVariables(
+    input: PrepareChatSessionInput,
+    agent: AgentRecord,
+    effectiveVerifiedCustomerId: string | null = input.verifiedCustomerId ?? null,
+    chatSessionId: string | null = input.chatSessionId ?? input.anonymousSessionId ?? null,
+  ): Promise<ResolvedVariableInput[]> {
+    if (!this.contextVariableRepository) {
+      return [];
+    }
+    const scopes: ContextVariableScope[] = [];
+    if (chatSessionId) {
+      scopes.push({ type: "session", id: chatSessionId });
+    }
+    if (effectiveVerifiedCustomerId) {
+      scopes.push({ type: "customer", id: effectiveVerifiedCustomerId });
+    }
+    scopes.push({ type: "agent", id: agent.id });
+    scopes.push({ type: "workspace", id: input.workspaceId });
+    try {
+      const resolved = await this.contextVariableRepository.resolveForAgent(input.workspaceId, agent.id, scopes);
+      if (!input.verifiedIdentity) {
+        return resolved;
+      }
+      // visitor_identity is exposed only on turns where a signed identity token freshly verifies.
+      return [
+        ...resolved,
+        {
+          name: "visitor_identity",
+          description: "Verified visitor identity supplied by the host.",
+          value: input.verifiedIdentity,
+          surfacing: "on_reference",
+          sensitive: true,
+          trust: "verified",
+        },
+      ];
+    } catch {
+      if (!input.verifiedIdentity) {
+        return [];
+      }
+      return [{
+        name: "visitor_identity",
+        description: "Verified visitor identity supplied by the host.",
+        value: input.verifiedIdentity,
+        surfacing: "on_reference",
+        sensitive: true,
+        trust: "verified",
+      }];
+    }
   }
 
   async prepareRetrieval(
     input: PrepareChatSessionInput,
     session: PreparedSession,
     framing: TurnRouting["framing"] = defaultTurnFraming(),
+    hostVariables?: readonly ResolvedVariableInput[],
   ): Promise<PreparedSession> {
+    const variables = hostVariables ?? (await this.resolveHostVariables(
+      input,
+      session.agent,
+      input.verifiedCustomerId ?? session.conversation.verifiedCustomerId ?? null,
+      input.chatSessionId ?? input.anonymousSessionId ?? session.conversation.anonymousSessionId ?? null,
+    ));
     const pipelineInput = this.buildPipelineInput(
       input,
       session.agent,
@@ -250,7 +349,7 @@ export class ChatSessionPreparer {
       turnRoute,
       turnFraming: framing,
       effectiveQuery: input.query,
-      ...this.stagedSpineFor(retrieval),
+      ...this.stagedSpineFor(retrieval, input.pageContext, variables),
     };
   }
 
@@ -265,7 +364,14 @@ export class ChatSessionPreparer {
     input: PrepareChatSessionInput,
     session: PreparedSession,
     framing: TurnRouting["framing"] = defaultTurnFraming(),
+    hostVariables?: readonly ResolvedVariableInput[],
   ): Promise<PreparedSession> {
+    const variables = hostVariables ?? (await this.resolveHostVariables(
+      input,
+      session.agent,
+      input.verifiedCustomerId ?? session.conversation.verifiedCustomerId ?? null,
+      input.chatSessionId ?? input.anonymousSessionId ?? session.conversation.anonymousSessionId ?? null,
+    ));
     const pipelineInput = {
       ...this.buildPipelineInput(
         input,
@@ -285,7 +391,7 @@ export class ChatSessionPreparer {
         turnRoute,
         turnFraming: framing,
         effectiveQuery: input.query,
-        ...this.stagedSpineFor(retrieval),
+        ...this.stagedSpineFor(retrieval, input.pageContext, variables),
       };
     }
     const interpretation = await this.retrievalTurn.interpret(pipelineInput);
@@ -307,7 +413,7 @@ export class ChatSessionPreparer {
       turnRoute: CHAT_TURN_ROUTE.DIRECT,
       turnFraming: framing,
       effectiveQuery: input.query,
-      ...this.stagedSpineFor(retrieval),
+      ...this.stagedSpineFor(retrieval, input.pageContext, variables),
     };
   }
 
@@ -551,12 +657,12 @@ export class ChatSessionPreparer {
     };
   }
 
-  private async ensureConversation(conversationId: string, workspaceId: string, anonymousSessionId?: string | null) {
-    if (anonymousSessionId) {
+  private async ensureConversation(conversationId: string, workspaceId: string, chatSessionId?: string | null) {
+    if (chatSessionId) {
       const conversation = await this.conversationRepository.findByIdAndAnonymousSession(
         conversationId,
         workspaceId,
-        anonymousSessionId,
+        chatSessionId,
       );
       if (!conversation) {
         throw notFound("Conversation not found");

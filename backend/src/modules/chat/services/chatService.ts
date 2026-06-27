@@ -28,6 +28,7 @@ import type { CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.j
 import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilities.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
+import type { ContextVariableRepositoryPort } from "../../../db/repositories/contextVariableRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
@@ -105,6 +106,7 @@ import {
   toConversationMessages,
   toPreparedStagedContext,
 } from "./conversationContractMappers.js";
+import { resolveContextForTurn } from "../../context-variables/public.js";
 import type { TurnRouter, TurnRouting } from "./turnRouter.js";
 import type { ResponseLanguageDetector } from "../../../shared/services/responseLanguageDetector.js";
 import type { HandoffWaitingMessageGenerator } from "../../../shared/services/handoffWaitingMessageGenerator.js";
@@ -371,6 +373,8 @@ export interface ChatServiceOptions {
   bootstrapGreetingCacheRepository?: BootstrapGreetingCacheRepositoryPort;
   usageLimitPolicy?: UsageLimitPolicy;
   agentService?: Pick<AgentService, "resolve">;
+  /** Optional: resolves the agent's enabled host context variables per turn. */
+  contextVariableRepository?: Pick<ContextVariableRepositoryPort, "resolveForAgent">;
   directiveSteering?: RouteScopedDirectiveRuntime;
   selectionStrategy?: TurnSelectionStrategy;
   turnRouter: TurnRouter;
@@ -446,6 +450,7 @@ export class ChatService {
       bootstrapGreetingCacheRepository,
       usageLimitPolicy = new NoopUsageLimitPolicy(),
       agentService,
+      contextVariableRepository,
       directiveSteering = noopRouteScopedDirectiveRuntime,
       selectionStrategy = new DefaultTurnSelectionStrategy(),
       turnRouter,
@@ -519,6 +524,7 @@ export class ChatService {
       workspaceRepository,
       agentService,
       bootstrapGreetingCacheRepository,
+      contextVariableRepository,
     );
     // One selection seam shared by the engine turn and the host streaming path, so
     // streamed and non-streamed turns resolve the terminal skill identically.
@@ -862,6 +868,7 @@ export class ChatService {
       effectiveQuery: userMessage.content,
       pageContext: null,
       stagedContext: [toPreparedStagedContext(retrieval)],
+      resolvedContext: resolveContextForTurn(null),
       turnTrace: {
         traceId: `approval-resume-${record.handle}`,
         startedAt: new Date().toISOString(),
@@ -1207,8 +1214,12 @@ export class ChatService {
     pageContext?: AssistantPageContext | null;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
+    chatSessionId?: string | null;
+    /** @deprecated Use chatSessionId. */
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
+    verifiedCustomerId?: string | null;
+    verifiedIdentity?: Record<string, unknown> | null;
   }): Promise<ChatResponse> {
     return traceOperation({
       name: "chat.turn",
@@ -1231,8 +1242,12 @@ export class ChatService {
     pageContext?: AssistantPageContext | null;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
+    chatSessionId?: string | null;
+    /** @deprecated Use chatSessionId. */
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
+    verifiedCustomerId?: string | null;
+    verifiedIdentity?: Record<string, unknown> | null;
   }): Promise<ChatResponse> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
@@ -1395,8 +1410,12 @@ export class ChatService {
     pageContext?: AssistantPageContext | null;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
+    chatSessionId?: string | null;
+    /** @deprecated Use chatSessionId. */
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
+    verifiedCustomerId?: string | null;
+    verifiedIdentity?: Record<string, unknown> | null;
   }): AsyncIterable<ChatStreamEvent> {
     yield* traceAsyncIterable({
       name: "chat.turn",
@@ -1419,8 +1438,12 @@ export class ChatService {
     pageContext?: AssistantPageContext | null;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
+    chatSessionId?: string | null;
+    /** @deprecated Use chatSessionId. */
     anonymousSessionId?: string | null;
     sourceOrigin?: string | null;
+    verifiedCustomerId?: string | null;
+    verifiedIdentity?: Record<string, unknown> | null;
   }): AsyncIterable<ChatStreamEvent> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;

@@ -39,6 +39,7 @@ interface HistoryItemsRow {
   source_origin: string | null;
   channel_context: ConversationChannelContext | null;
   anonymous_session_id: string | null;
+  verified_customer_id: string | null;
   conversation_created_at: Date | null;
   conversation_updated_at: Date | null;
   audit_id: string | null;
@@ -78,6 +79,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
            c.source_origin,
            c.channel_context,
            c.anonymous_session_id,
+           c.verified_customer_id,
            c.created_at AS conversation_created_at,
            c.updated_at AS conversation_updated_at,
            NULL::uuid AS audit_id,
@@ -108,6 +110,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
            NULL::text AS source_origin,
            NULL::jsonb AS channel_context,
            NULL::text AS anonymous_session_id,
+           NULL::text AS verified_customer_id,
            NULL::timestamptz AS conversation_created_at,
            NULL::timestamptz AS conversation_updated_at,
            a.id AS audit_id,
@@ -162,6 +165,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
             sourceOrigin: row.source_origin,
             channelContext: (row.channel_context as ConversationChannelContext | null) ?? null,
             anonymousSessionId: row.anonymous_session_id,
+            verifiedCustomerId: row.verified_customer_id,
             createdAt: new Date(row.conversation_created_at),
             updatedAt: new Date(row.conversation_updated_at),
           },

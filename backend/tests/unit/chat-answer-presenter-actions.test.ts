@@ -37,6 +37,7 @@ const buildSession = (): PreparedSession => {
     sourceOrigin: "https://example.com",
     channelContext: null,
     anonymousSessionId: null,
+    verifiedCustomerId: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -69,6 +70,7 @@ const buildSession = (): PreparedSession => {
     userMessage,
     effectiveQuery: userMessage.content,
     stagedContext: [],
+    resolvedContext: { fragments: [], renderFragments: [], staged: [], snapshot: {} },
     turnTrace: { traceId: "trace-1", startedAt: new Date(0).toISOString(), stages: [] },
   };
 };

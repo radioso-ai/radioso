@@ -4,6 +4,8 @@ import { AccountRepository } from "../../db/repositories/accountRepository.js";
 import { ActionRequestRepository } from "../../db/repositories/actionRequestRepository.js";
 import { AccessGrantRepository } from "../../db/repositories/accessGrantRepository.js";
 import { AgentRepository } from "../../db/repositories/agentRepository.js";
+import { ContextVariableRepository } from "../../db/repositories/contextVariableRepository.js";
+import { IdentityNonceRepository } from "../../db/repositories/identityNonceRepository.js";
 import { RoutineDefinitionRepository } from "../../db/repositories/routineDefinitionRepository.js";
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
 import { PendingDecisionRepository } from "../../db/repositories/pendingDecisionRepository.js";
@@ -210,6 +212,8 @@ import { ContextualDirectiveMatchGatewayFactory } from "../../shared/infra/llm/c
 import { TextGenerationClientCache } from "../../shared/infra/llm/textClientFactory.js";
 import { createMailService } from "../../modules/mail/public.js";
 import { AgentSkillRepository } from "../../modules/agentSkills/public.js";
+import { ContextVariableResolverService } from "../../modules/context-variables/public.js";
+import { SkillBackedContextResolver } from "../composition/builtIn/contextResolverModule.js";
 import { createLogger, type AppLogger } from "../../shared/observability/logger.js";
 import { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
 import { createPublishedRoutineRegistrationSource } from "../composition/routineDefinitionSource.js";
@@ -342,6 +346,7 @@ export const buildRepositories = (
   // migrated to Kysely in a later pass, so it keeps the raw Database here.
   customerEmailConnectionRepository: new CustomerEmailConnectionRepository(database.kysely),
   integrationConnectionRepository: new IntegrationConnectionRepository(database.kysely),
+  identityNonceRepository: new IdentityNonceRepository(database.kysely),
   slackInstallationRepository: new SlackInstallationRepository(database.kysely),
   slackChannelBindingRepository: new SlackChannelBindingRepository(database.kysely),
   emailSkillDefinitionRepository: new EmailSkillDefinitionRepository(database.kysely),
@@ -1339,6 +1344,16 @@ export const buildChatServices = (input: {
     input.llmRegistry.createRewriteInferencePipeline(input.usageEventRecorder),
   );
   const routineStateRepository = new RoutineStateRepository(input.database.kysely);
+  const contextVariableRepository = new ContextVariableRepository(input.database.kysely);
+  const contextVariableResolver = new ContextVariableResolverService({
+    repository: contextVariableRepository,
+    resolver: new SkillBackedContextResolver({
+      agentSkills: new AgentSkillRepository(input.database.kysely),
+      skillExecutorRegistry: input.composition.skillExecutorRegistry,
+    }),
+    logger: input.logger,
+    metrics: input.metricsRegistry ?? null,
+  });
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
     messageRepository: input.messageRepository,
@@ -1354,6 +1369,7 @@ export const buildChatServices = (input: {
     bootstrapGreetingCacheRepository: input.bootstrapGreetingCacheRepository,
     usageLimitPolicy: input.usageLimitPolicy,
     agentService: input.agentService,
+    contextVariableRepository: contextVariableResolver,
     // 067: behavioral steering. The standing set is supplied by application
     // composition; default answer behavior is registered by a built-in module.
     // Contextual matching is created per turn so the model call carries the

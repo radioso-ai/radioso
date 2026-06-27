@@ -42,7 +42,7 @@ export class AssistantReplyComposer {
       query,
       framing: session.turnFraming,
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
-      pageContextBlock: this.support.buildPageContextBlock(session.pageContext),
+      pageContextBlock: this.support.buildContextBlock(session),
       steering: session.directiveSteering?.rules ?? [],
     });
   }

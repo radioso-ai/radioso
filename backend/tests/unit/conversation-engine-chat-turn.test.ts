@@ -46,6 +46,7 @@ const conversation = (): ConversationRecord => ({
   sourceOrigin: null,
   channelContext: null,
   anonymousSessionId: null,
+  verifiedCustomerId: null,
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
   updatedAt: new Date("2026-01-01T00:00:00.000Z"),
 });
@@ -142,6 +143,7 @@ const session = (): PreparedSession => {
       omissions: [],
     },
     stagedContext: [toPreparedStagedContext(retrieval)],
+    resolvedContext: { fragments: [], renderFragments: [], staged: [], snapshot: {} },
     turnTrace: toConversationTrace(retrieval.trace),
   };
 };

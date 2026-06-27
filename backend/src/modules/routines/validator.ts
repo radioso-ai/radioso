@@ -30,6 +30,7 @@ export const routineValidationCodes = [
   "input_type_mismatch",
   "unknown_input_binding",
   "unknown_variable_ref",
+  "unknown_context_variable",
   "variable_name_collision",
 ] as const;
 
@@ -49,6 +50,7 @@ export interface RoutineValidationResult {
 export interface RoutineValidationContext {
   availableSkillNames?: ReadonlySet<string>;
   skillDescriptors?: ReadonlyMap<string, SkillAuthoringDescriptor>;
+  availableContextVariables?: ReadonlyMap<string, { valueType: "string" | "json" }>;
 }
 
 const slotReferencePattern = /\{\{\s*slot\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu;
@@ -94,6 +96,16 @@ const isSlotTypeCompatibleWithInput = (
   if (inputType === "number") return slotType === "number";
   if (inputType === "boolean") return slotType === "boolean";
   return slotType === "text" || slotType === "email" || slotType === "date";
+};
+
+const isContextVariableTypeCompatibleWithInput = (
+  valueType: "string" | "json",
+  inputType: SkillAuthoringInput["type"],
+): boolean => {
+  if (valueType === "json") {
+    return true;
+  }
+  return inputType === "text" || inputType === "email" || inputType === "date" || inputType === "enum";
 };
 
 const parsePositiveInteger = (value: string | null): number | null => {
@@ -307,6 +319,21 @@ export const validateRoutineDefinition = (
               message: `input type mismatch: binding for "${inputKey}" must be a ${input.type} value accepted by skill "${step.toolRef}".`,
             });
           }
+        } else if (binding.kind === "contextVariableRef") {
+          const contextVariable = context.availableContextVariables?.get(binding.contextVariable);
+          if (context.availableContextVariables && !contextVariable) {
+            diagnostics.push({
+              code: "unknown_context_variable",
+              location: `step:${step.stableStepId}.inputBindings.${inputKey}`,
+              message: `unknown context variable: binding for "${inputKey}" references context variable "${binding.contextVariable}", which is not available to this agent.`,
+            });
+          } else if (contextVariable && !isContextVariableTypeCompatibleWithInput(contextVariable.valueType, input.type)) {
+            diagnostics.push({
+              code: "input_type_mismatch",
+              location: `step:${step.stableStepId}.inputBindings.${inputKey}`,
+              message: `input type mismatch: context variable "${binding.contextVariable}" has type ${contextVariable.valueType}, but skill "${step.toolRef}" input "${inputKey}" expects ${input.type}.`,
+            });
+          }
         } else if (!knownVariableNames.has(binding.ref)) {
           diagnostics.push({
             code: "unknown_variable_ref",
@@ -335,6 +362,12 @@ export const validateRoutineDefinition = (
             code: "unsatisfiable_required_input",
             location: `step:${step.stableStepId}.inputBindings.${input.key}`,
             message: `unsatisfiable required input: skill "${step.toolRef}" requires input "${input.key}", but the routine does not bind it.`,
+          });
+        } else if (binding.kind === "contextVariableRef") {
+          diagnostics.push({
+            code: "unsatisfiable_required_input",
+            location: `step:${step.stableStepId}.inputBindings.${input.key}`,
+            message: `unsatisfiable required input: context variable "${binding.contextVariable}" is optional and is not guaranteed before step "${step.stableStepId}".`,
           });
         } else if (
           binding.kind === "variableRef" &&

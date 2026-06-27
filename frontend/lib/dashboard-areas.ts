@@ -30,6 +30,7 @@ export type AgentSectionId =
   | 'directives'
   | 'routines'
   | 'skills'
+  | 'context-variables'
   | 'public-chat-link'
   | 'website-embed'
   | 'api-channel'
@@ -47,6 +48,7 @@ const AGENT_SECTION_ROUTES: Record<AgentSectionId, AgentSectionRoute> = {
   directives: { agentTab: 'behavior', anchor: 'assistant-directives' },
   routines: { agentTab: 'behavior', anchor: 'assistant-routines' },
   skills: { agentTab: 'behavior', anchor: 'assistant-skills' },
+  'context-variables': { agentTab: 'behavior', anchor: 'assistant-context-variables' },
   'public-chat-link': { agentTab: 'channels', anchor: 'public-chat-link' },
   'website-embed': { agentTab: 'channels', anchor: 'website-embed' },
   'api-channel': { agentTab: 'channels', anchor: 'api-channel' },
@@ -84,6 +86,7 @@ export function agentSectionFromRoute(routeState: Pick<DashboardRouteState, 'age
   }
   if (anchor === 'assistant-behavior') return 'behavior'
   if (anchor === 'assistant-skills') return 'skills'
+  if (anchor === 'assistant-context-variables') return 'context-variables'
   if (anchor === 'assistant-directives') return 'directives'
   if (anchor === 'assistant-routines') return 'routines'
   if (anchor === 'agent-danger-zone') return 'danger'

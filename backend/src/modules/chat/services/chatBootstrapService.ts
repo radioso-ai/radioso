@@ -73,7 +73,7 @@ export class ChatBootstrapService {
     accountId?: string;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
-    anonymousSessionId?: string | null;
+    chatSessionId?: string | null;
     sourceOrigin?: string | null;
     userExpectedLocale?: string | null;
     pageContext?: AssistantPageContext | null;

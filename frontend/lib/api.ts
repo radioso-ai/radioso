@@ -26,6 +26,7 @@ export {
 export { accountApi, answerFeedbackApi, enterpriseUsageApi } from './api-account'
 export { authApi } from './api-auth'
 export { chatApi } from './api-chat'
+export { contextVariablesApi } from './api-context-variables'
 export { directivesApi } from './api-directives'
 export { RoutinePublishRejectedError, routinesApi } from './api-routines'
 export { routineSkillCatalogApi } from './api-routine-skill-catalog'

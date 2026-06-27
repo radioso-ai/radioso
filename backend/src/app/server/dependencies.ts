@@ -84,6 +84,7 @@ import {
 import { WebhookSkillDefinitionService } from "../../modules/webhookSkills/public.js";
 import { SlackSkillDefinitionService } from "../../modules/slackSkills/public.js";
 import { ActionRequestRepository } from "../../db/repositories/actionRequestRepository.js";
+import { ContextVariableRepository } from "../../db/repositories/contextVariableRepository.js";
 import { CustomerReplyDeliveryDispatcher } from "../../modules/customerReplyDelivery/public.js";
 import { OperatorReplyService } from "../../modules/handoff/public.js";
 import { SlackCustomerReplyDeliverer } from "../../modules/slack/public.js";
@@ -475,6 +476,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repositories,
   });
   const connectorRegistry = buildConnectorRegistry({ composition, env, logger });
+  const contextVariableRepository = new ContextVariableRepository(infrastructure.database.kysely);
 
   // Lazy-loaded crawler utility provider for EE agent wizard, also reused by
   // the connector ingestion port for HTML-to-text normalisation.
@@ -503,6 +505,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     actionCapabilities: composition.actionCapabilityMap,
     capabilityPolicy: composition.capabilityPolicy,
     skillAuthoringCatalog,
+    contextVariableReader: contextVariableRepository,
     // Mirror the runtime routine-skill resolver's name set (enabled webhook +
     // customer-email skills) so publish validation accepts what runtime routes.
     additionalRoutineSkillNames: async ({ workspaceId, agentId }) => {
@@ -691,6 +694,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     userRepository: repositories.userRepository,
     workspaceRepository: repositories.workspaceRepository,
     agentRepository: repositories.agentRepository,
+    contextVariableRepository,
+    identityNonceRepository: repositories.identityNonceRepository,
     bootstrapGreetingCacheRepository: repositories.bootstrapGreetingCacheRepository,
     conversationRepository: repositories.conversationRepository,
     conversationOwnershipRepository: repositories.conversationOwnershipRepository,

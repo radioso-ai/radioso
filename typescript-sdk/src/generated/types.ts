@@ -980,6 +980,114 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/context-variables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List workspace context variable declarations */
+        get: operations["listContextVariables"];
+        put?: never;
+        /** Create a workspace context variable declaration */
+        post: operations["createContextVariable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/context-variables/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a workspace context variable declaration */
+        get: operations["getContextVariable"];
+        put?: never;
+        post?: never;
+        /** Delete a workspace context variable declaration */
+        delete: operations["deleteContextVariable"];
+        options?: never;
+        head?: never;
+        /** Update a workspace context variable declaration */
+        patch: operations["updateContextVariable"];
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/context-variables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List context variable enablements for an agent */
+        get: operations["listAgentContextVariables"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/context-variables/signing-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Reveal the per-agent signed visitor identity key */
+        get: operations["getAgentContextVariableSigningKey"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/context-variables/{variableId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Upsert a context variable enablement for an agent */
+        put: operations["upsertAgentContextVariable"];
+        post?: never;
+        /** Delete a context variable enablement for an agent */
+        delete: operations["deleteAgentContextVariable"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/context-variables/{id}/values": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a pushed context variable value */
+        get: operations["getContextVariableValue"];
+        /** Upsert a pushed context variable value */
+        put: operations["upsertContextVariableValue"];
+        post?: never;
+        /** Delete a pushed context variable value */
+        delete: operations["deleteContextVariableValue"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/retrieval/search": {
         parameters: {
             query?: never;
@@ -3351,6 +3459,10 @@ export interface components {
                             /** @enum {string} */
                             kind: "variableRef";
                             ref: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "contextVariableRef";
+                            contextVariable: string;
                         };
                     };
                     outputAssignments?: {
@@ -3442,6 +3554,10 @@ export interface components {
                             /** @enum {string} */
                             kind: "variableRef";
                             ref: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "contextVariableRef";
+                            contextVariable: string;
                         };
                     };
                     outputAssignments?: {
@@ -3492,7 +3608,7 @@ export interface components {
             ok: boolean;
             diagnostics: {
                 /** @enum {string} */
-                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "variable_name_collision";
+                code: "unreachable_step" | "missing_terminal" | "dangling_action_reference" | "dangling_step_reference" | "unbounded_back_edge" | "missing_action_follow_up" | "declared_unused_slot" | "referenced_undeclared_slot" | "unregistered_action_type" | "unknown_skill" | "action_capability_denied" | "invalid_webhook_destination_ref" | "unknown_webhook_destination" | "attempt_limit_without_fallback" | "outcome_guard_on_non_tool_step" | "structured_guard_missing_parameter" | "field_guard_unknown_reference" | "field_guard_incompatible_type" | "completion_export_missing_destination" | "approval_step_llm_edge" | "approval_step_no_decision_edge" | "approval_step_unknown_option" | "approval_step_unreachable_option" | "unsatisfiable_required_input" | "input_type_mismatch" | "unknown_input_binding" | "unknown_variable_ref" | "unknown_context_variable" | "variable_name_collision";
                 location: string;
                 message: string;
             }[];
@@ -3545,6 +3661,10 @@ export interface components {
                             /** @enum {string} */
                             kind: "variableRef";
                             ref: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "contextVariableRef";
+                            contextVariable: string;
                         };
                     };
                     outputAssignments?: {
@@ -3677,6 +3797,10 @@ export interface components {
                                 /** @enum {string} */
                                 kind: "variableRef";
                                 ref: string;
+                            } | {
+                                /** @enum {string} */
+                                kind: "contextVariableRef";
+                                contextVariable: string;
                             };
                         };
                         outputAssignments?: {
@@ -3797,6 +3921,8 @@ export interface components {
             /** Format: uuid */
             agentId?: string;
             resumeToken?: string;
+            /** Format: uuid */
+            chatSessionId?: string;
             /** Format: uuid */
             anonymousSessionId?: string;
             pageContext?: {
@@ -4709,6 +4835,7 @@ export interface components {
                 browserLocale?: string | null;
                 content?: string | null;
             };
+            signedIdentity?: string;
             inputMetadata?: {
                 /** @enum {string} */
                 method: "typed" | "suggestion_click" | "intent_click";
@@ -5159,6 +5286,127 @@ export interface components {
                 agentId: string | null;
             };
             buckets: components["schemas"]["UsageTrendBucket"][];
+        };
+        ContextVariable: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            workspaceId: string;
+            name: string;
+            description: string | null;
+            /** @enum {string} */
+            valueType: "string" | "json";
+            /** @enum {string} */
+            trustTier: "unverified" | "signed";
+            /** @enum {string} */
+            sensitivity: "normal" | "sensitive";
+            /** @enum {string} */
+            defaultSurfacing: "always" | "on_reference" | "operator_only";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ContextVariableCreateRequest: {
+            name: string;
+            description?: string | null;
+            /** @enum {string} */
+            valueType: "string" | "json";
+            /** @enum {string} */
+            trustTier: "unverified" | "signed";
+            /** @enum {string} */
+            sensitivity: "normal" | "sensitive";
+            /** @enum {string} */
+            defaultSurfacing: "always" | "on_reference" | "operator_only";
+        };
+        ContextVariableUpdateRequest: {
+            name?: string;
+            description?: string | null;
+            /** @enum {string} */
+            valueType?: "string" | "json";
+            /** @enum {string} */
+            trustTier?: "unverified" | "signed";
+            /** @enum {string} */
+            sensitivity?: "normal" | "sensitive";
+            /** @enum {string} */
+            defaultSurfacing?: "always" | "on_reference" | "operator_only";
+        };
+        ContextVariableResponse: {
+            contextVariable: components["schemas"]["ContextVariable"];
+        };
+        ContextVariableListResponse: {
+            contextVariables: components["schemas"]["ContextVariable"][];
+        };
+        AgentContextVariableEnablement: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            agentId: string;
+            /** Format: uuid */
+            variableId: string;
+            /** @enum {string} */
+            source: "pushed" | "browser" | "resolver";
+            /** Format: uuid */
+            resolverSkillId: string | null;
+            maxAgeSeconds: number | null;
+            resolverTimeoutMs: number | null;
+            /** @enum {string} */
+            surfacing: "always" | "on_reference" | "operator_only";
+            enabled: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            variable?: components["schemas"]["ContextVariable"];
+        };
+        AgentContextVariableEnablementRequest: {
+            /** @enum {string} */
+            source: "pushed" | "browser" | "resolver";
+            /** Format: uuid */
+            resolverSkillId?: string | null;
+            maxAgeSeconds?: number | null;
+            resolverTimeoutMs?: number | null;
+            /** @enum {string} */
+            surfacing: "always" | "on_reference" | "operator_only";
+            enabled?: boolean;
+        };
+        AgentContextVariableEnablementResponse: {
+            enablement: components["schemas"]["AgentContextVariableEnablement"];
+        };
+        AgentContextVariableEnablementListResponse: {
+            enablements: components["schemas"]["AgentContextVariableEnablement"][];
+        };
+        ContextVariableScope: {
+            /** @enum {string} */
+            type: "session" | "customer" | "agent" | "workspace";
+            id: string;
+        };
+        ContextVariableValue: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            workspaceId: string;
+            /** Format: uuid */
+            variableId: string;
+            scope: components["schemas"]["ContextVariableScope"];
+            /** @description Arbitrary JSON value. The HTTP API rejects values above the serialized size limit. */
+            data?: unknown;
+            /** Format: date-time */
+            lastModified: string;
+        };
+        ContextVariableValueUpsertRequest: {
+            scope: components["schemas"]["ContextVariableScope"];
+            /** @description Arbitrary JSON value. The HTTP API rejects values above the serialized size limit. */
+            data?: unknown;
+        };
+        ContextVariableValueDeleteRequest: {
+            scope: components["schemas"]["ContextVariableScope"];
+        };
+        ContextVariableValueResponse: {
+            value: components["schemas"]["ContextVariableValue"];
+        };
+        ContextVariableSigningKeyResponse: {
+            signingKey: string;
         };
         PendingApprovalDecisionOption: {
             id: string;
@@ -8435,6 +8683,546 @@ export interface operations {
                 };
             };
             /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listContextVariables: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Context variables returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextVariableListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createContextVariable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContextVariableCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Context variable created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextVariableResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getContextVariable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Context variable returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextVariableResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Context variable not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteContextVariable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Context variable deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Context variable not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateContextVariable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContextVariableUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Context variable updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextVariableResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Context variable not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentContextVariables: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Context variable enablements returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentContextVariableEnablementListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentContextVariableSigningKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signing key returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextVariableSigningKeyResponse"];
+                };
+            };
+            /** @description Signing is not configured */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    upsertAgentContextVariable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                variableId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentContextVariableEnablementRequest"];
+            };
+        };
+        responses: {
+            /** @description Context variable enablement saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentContextVariableEnablementResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or context variable not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAgentContextVariable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                variableId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Context variable enablement deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent, context variable, or enablement not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getContextVariableValue: {
+        parameters: {
+            query: {
+                scopeType: "session" | "customer" | "agent" | "workspace";
+                scopeId: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Context variable value returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextVariableValueResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Context variable or value not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    upsertContextVariableValue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContextVariableValueUpsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Context variable value saved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContextVariableValueResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Context variable not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteContextVariableValue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContextVariableValueDeleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Context variable value deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Context variable or value not found */
             404: {
                 headers: {
                     [name: string]: unknown;

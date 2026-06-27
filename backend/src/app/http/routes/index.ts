@@ -5,6 +5,7 @@ import { createAccountRoutes } from "./accountRoutes.js";
 import { createAccountUserRoutes } from "./accountUserRoutes.js";
 import { createAuthRoutes } from "./authRoutes.js";
 import { createConversationOwnershipRoutes } from "./conversationOwnershipRoutes.js";
+import { createContextVariableRoutes } from "./contextVariableRoutes.js";
 import { createDecisionRoutes } from "./decisionRoutes.js";
 import { createDecisionsQueryRoutes } from "./decisionsQueryRoutes.js";
 import { createAssistantRoutes } from "./assistantRoutes.js";
@@ -64,6 +65,7 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   router.use("/api/v1", createSlackConnectionRoutes(dependencies));
   router.use("/api/v1", createEmailSkillActivityRoutes(dependencies));
   router.use("/api/v1/agents", createAgentRoutes(dependencies));
+  router.use("/api/v1", createContextVariableRoutes(dependencies));
   router.use("/api/v1/agents", createDecisionRoutes(dependencies));
   router.use("/api/v1/decisions", createDecisionsQueryRoutes(dependencies));
   router.use("/api/v1/agents", createAgentExternalSkillsRoutes(dependencies));

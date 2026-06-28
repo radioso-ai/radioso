@@ -476,6 +476,7 @@ export interface EvalSnapshots {
   original_model_id: string | null;
   original_retrieval_result: Json | null;
   original_retrieval_settings: Json | null;
+  original_routine_state: Json | null;
   source_agent_id: string | null;
   source_conversation_id: string;
   source_message_id: string | null;

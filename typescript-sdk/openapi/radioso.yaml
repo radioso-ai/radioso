@@ -18690,6 +18690,39 @@ paths:
                             type: object
                             additionalProperties: {}
                       additionalProperties: false
+                    routineStartState:
+                      type: object
+                      properties:
+                        routineId:
+                          type: string
+                        path:
+                          type: array
+                          items:
+                            type: string
+                          minItems: 1
+                        variables:
+                          type: object
+                          additionalProperties: {}
+                        attempts:
+                          type: object
+                          additionalProperties:
+                            type: integer
+                        status:
+                          type: string
+                          enum:
+                            - active
+                            - suspended
+                            - completed
+                            - expired
+                        metadata:
+                          type: object
+                          additionalProperties: {}
+                      required:
+                        - routineId
+                        - path
+                        - variables
+                        - status
+                      additionalProperties: false
                   additionalProperties: false
                 agentConfigOverride:
                   type: object

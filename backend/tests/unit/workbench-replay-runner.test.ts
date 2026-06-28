@@ -1,14 +1,45 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { DefaultConversationEngine } from "@radioso/conversation-engine";
+import type {
+  AttemptRoutineInput,
+  ConversationEngine,
+  ProcessTurnInput,
+  ProcessTurnResult,
+} from "@radioso/conversation-contract";
 import type { ConversationAgent } from "../../src/modules/agents/domain.js";
 import { projectInternalAgentConfig } from "../../src/modules/agents/agentConfig.js";
 import { WorkbenchReplayRunner } from "../../src/modules/chat/services/workbenchReplayRunner.js";
+import type { ChatRoutineProvider } from "../../src/modules/chat/services/chatService.js";
+import type { ChatAnswerPresenter } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import type { TurnRouter } from "../../src/modules/chat/services/turnRouter.js";
 import type { RetrievalTurnPort } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import type { TurnSkill } from "../../src/modules/chat/services/turnOutcome.js";
 import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 import { createAuditService } from "../support/fakes.js";
+
+const emptyTrace = () => {
+  const now = new Date().toISOString();
+  return { traceId: "t", startedAt: now, completedAt: now, totalDurationMs: 0, stages: [], links: [] };
+};
+
+// Stubs sufficient for the runner's routine wiring — the runner only forwards these to
+// the (faked) engine, which is what we assert against.
+const routineProviderStub = (): ChatRoutineProvider => ({
+  async forTurn() {
+    return { activator: {} as never, runner: {} as never };
+  },
+});
+const chatGatewayStub = () => ({ answer: async () => "" });
+const presenterStub = (): ChatAnswerPresenter =>
+  ({
+    presentNonRetrievalAnswer: (answer: string) => ({
+      answer,
+      skillName: "routine",
+      skillOutcome: "completed",
+      skillStatus: "completed",
+    }),
+  }) as unknown as ChatAnswerPresenter;
 
 const agent = (): ConversationAgent => ({
   id: "agent-1",
@@ -243,5 +274,126 @@ describe("WorkbenchReplayRunner", () => {
     expect(attemptRoutine.mock.calls[0]?.[0].routineActivator).toBeUndefined();
     expect(result.turnTrace?.spine.stages.map((stage) => stage.kind)).not.toContain("routine_activate");
     expect(result.turnTrace?.spine.stages.map((stage) => stage.kind)).not.toContain("routine_resume");
+  });
+
+  it("returns the routine's reply and skips grounding when a routine claims the turn", async () => {
+    const processTurn = vi.fn(async (): Promise<ProcessTurnResult> => {
+      throw new Error("grounding must not run when a routine claims the turn");
+    });
+    const fakeEngine = {
+      async attemptRoutine(): Promise<ProcessTurnResult | null> {
+        return {
+          response: { answer: "It seems you'd like follow-up — what's your email?" },
+          trace: emptyTrace(),
+          decision: { reason: "routine_activated:ask_email_on_interest" },
+          actions: [],
+        } as unknown as ProcessTurnResult;
+      },
+      processTurn,
+    } as unknown as ConversationEngine;
+
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: fakeEngine,
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: routineProviderStub(),
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+    });
+
+    const result = await runner.run({
+      workspaceId: "ws-1",
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "How does yearly billing save?",
+      history: [],
+    });
+
+    expect(result.answer).toBe("It seems you'd like follow-up — what's your email?");
+    expect(processTurn).not.toHaveBeenCalled();
+  });
+
+  it("seeds the in-memory routine store so the engine resumes mid-routine", async () => {
+    let seen: AttemptRoutineInput | null = null;
+    const fakeEngine = {
+      async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
+        seen = input;
+        const active = await input.routineStore!.loadActive({ sessionId: input.sessionId });
+        return {
+          response: { answer: `resumed:${active?.routineId}:${JSON.stringify(active?.variables ?? {})}` },
+          trace: emptyTrace(),
+          decision: { reason: "routine_resumed" },
+          actions: [],
+        } as unknown as ProcessTurnResult;
+      },
+      async processTurn(): Promise<ProcessTurnResult> {
+        throw new Error("grounding must not run on resume");
+      },
+    } as unknown as ConversationEngine;
+
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: fakeEngine,
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: routineProviderStub(),
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+    });
+
+    const result = await runner.run({
+      workspaceId: "ws-1",
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "Here's my email",
+      history: [],
+      routineStartState: {
+        routineId: "ask_email_on_interest",
+        path: ["step_1_ask"],
+        variables: { customer_email: "buyer@example.com" },
+        status: "active",
+      },
+    });
+
+    expect(result.answer).toBe('resumed:ask_email_on_interest:{"customer_email":"buyer@example.com"}');
+    // The store is keyed by the ephemeral conversation id the runner injects.
+    expect(seen!.sessionId).toBeTruthy();
+  });
+
+  it("falls through to grounding when routine ports are wired but no routine claims the turn", async () => {
+    const fakeEngine = {
+      async attemptRoutine(): Promise<ProcessTurnResult | null> {
+        return null;
+      },
+      async processTurn(input: ProcessTurnInput): Promise<ProcessTurnResult> {
+        const outcome = await input.dispatcher.dispatch({ skill: { name: "replay.answer" } } as never);
+        await input.composer.compose({ outcomes: [outcome] } as never);
+        return { trace: emptyTrace(), decision: { reason: "answered" }, actions: [] } as unknown as ProcessTurnResult;
+      },
+    } as unknown as ConversationEngine;
+
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: fakeEngine,
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: routineProviderStub(),
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+    });
+
+    const result = await runner.run({
+      workspaceId: "ws-1",
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "What is the refund policy?",
+      history: [],
+    });
+
+    expect(result.answer).toContain("Answer from the operator baseline.");
   });
 });

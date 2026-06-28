@@ -21,9 +21,13 @@ const hasWorkbenchReplayOverride = (body: unknown): boolean => {
   }
   const record = body as {
     agentConfigOverride?: unknown;
-    overrides?: { agentConfigOverride?: unknown };
+    overrides?: { agentConfigOverride?: unknown; routineStartState?: unknown };
   };
-  return Boolean(record.agentConfigOverride || record.overrides?.agentConfigOverride);
+  return Boolean(
+    record.agentConfigOverride
+      || record.overrides?.agentConfigOverride
+      || record.overrides?.routineStartState,
+  );
 };
 
 export const workbenchReplayRateLimiter = (

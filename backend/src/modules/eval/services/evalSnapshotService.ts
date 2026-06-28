@@ -1,3 +1,4 @@
+import type { RoutineState } from "@radioso/conversation-contract";
 import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { ExternalSkillDefinitionRepositoryPort } from "../../../db/repositories/externalSkillDefinitionRepository.js";
@@ -26,6 +27,12 @@ export interface EvalSnapshotCaptureInput {
 export interface EvalSnapshotExternalSkillsPort {
   connections: Pick<McpConnectionRepositoryPort, "listByAgent">;
   skillDefinitions: Pick<ExternalSkillDefinitionRepositoryPort, "listByAgent">;
+}
+
+/** Reads the active routine position for a conversation so it can be frozen into the
+ * snapshot for faithful mid-routine replay. Keyed by sessionId (= conversation id). */
+export interface EvalSnapshotRoutineStateReader {
+  loadActive(input: { sessionId: string }): Promise<RoutineState | null>;
 }
 
 const truncateMessages = (
@@ -154,6 +161,7 @@ export class EvalSnapshotService {
     private readonly skillSettingsResolver: SkillSettingsResolver,
     private readonly repository: EvalRepositoryPort,
     private readonly externalSkills?: EvalSnapshotExternalSkillsPort,
+    private readonly routineStateReader?: EvalSnapshotRoutineStateReader,
   ) {}
 
   async getById(workspaceId: string, snapshotId: string): Promise<EvalSnapshot> {
@@ -206,6 +214,17 @@ export class EvalSnapshotService {
     const agentConfig = agent
       ? projectInternalAgentConfig(agent, externalSkills ? { externalSkills } : {})
       : null;
+    // Capture the conversation's current routine position as reference data (sessionId
+    // stripped). This is the post-turn/current state — NOT a faithful pre-turn seed for
+    // the captured assistant turn — so the run service does not auto-apply it; it is
+    // surfaced for operators and as a starting point for an explicit override.
+    const activeRoutine = this.routineStateReader
+      ? await this.routineStateReader.loadActive({ sessionId: conversation.id })
+      : null;
+    const originalRoutineState = activeRoutine
+      ? (({ sessionId: _sessionId, ...rest }) => rest)(activeRoutine)
+      : null;
+
     const defaults = this.retrievalDefaultsProvider.getDefaults(input.workspaceId);
     const settingsSnapshot = freezeRetrievalSettings(
       agent
@@ -230,6 +249,7 @@ export class EvalSnapshotService {
       originalAgent: null,
       originalAgentConfig: agentConfig,
       sourceAgentId: agentConfig ? conversation.agentId : null,
+      originalRoutineState,
       capturedBy: input.capturedBy ?? null,
     });
   }

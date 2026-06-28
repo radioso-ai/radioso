@@ -44,6 +44,17 @@ const EvalRunOverridesSchema = z
       .optional(),
     retrievalSettingsOverride: z.record(z.string(), z.unknown()).optional(),
     agentConfigOverride: AgentConfigOverrideSchema.optional(),
+    routineStartState: z
+      .object({
+        routineId: z.string(),
+        path: z.array(z.string()).min(1),
+        variables: z.record(z.string(), z.unknown()),
+        attempts: z.record(z.string(), z.number().int()).optional(),
+        status: z.enum(["active", "suspended", "completed", "expired"]),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

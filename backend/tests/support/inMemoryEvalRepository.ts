@@ -73,6 +73,20 @@ export class InMemoryEvalRepository implements EvalRepositoryPort {
     return [...this.cases.values()].filter((c) => c.workspaceId === workspaceId);
   }
 
+  async deleteCase(workspaceId: string, caseId: string): Promise<boolean> {
+    const existing = this.cases.get(caseId);
+    if (!existing || existing.workspaceId !== workspaceId) {
+      return false;
+    }
+    this.cases.delete(caseId);
+    this.runs.forEach((run, index) => {
+      if (run.workspaceId === workspaceId && run.caseId === caseId) {
+        this.runs[index] = { ...run, caseId: null };
+      }
+    });
+    return true;
+  }
+
   async updateCaseAssertions(
     workspaceId: string,
     caseId: string,
@@ -127,8 +141,11 @@ export class InMemoryEvalRepository implements EvalRepositoryPort {
     caseId: string,
     lastRunId: string,
     status: EvalCaseStatus,
-  ): Promise<EvalCase> {
-    const existing = this.requireCase(workspaceId, caseId);
+  ): Promise<EvalCase | null> {
+    const existing = this.cases.get(caseId);
+    if (!existing || existing.workspaceId !== workspaceId) {
+      return null;
+    }
     const updated: EvalCase = {
       ...existing,
       lastRunId,

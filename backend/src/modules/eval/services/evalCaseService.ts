@@ -105,6 +105,13 @@ export class EvalCaseService {
     return this.repository.listCases(workspaceId);
   }
 
+  async delete(workspaceId: string, caseId: string): Promise<void> {
+    const deleted = await this.repository.deleteCase(workspaceId, caseId);
+    if (!deleted) {
+      throw notFound("Eval case not found");
+    }
+  }
+
   async getWithRuns(workspaceId: string, caseId: string): Promise<EvalCaseWithRuns> {
     const evalCase = await this.repository.findCase(workspaceId, caseId);
     if (!evalCase) {

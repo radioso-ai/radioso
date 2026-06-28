@@ -17,12 +17,42 @@ import type {
   EvalRunRetrievedChunk,
   EvalSnapshot,
 } from "../../src/modules/eval/domain/types.js";
+import type { ActivityTrace } from "../../src/modules/retrieval/public.js";
 import type { AnswerSegment, ChatCitation } from "../../src/modules/chat/contracts/answerTypes.js";
 import type { WorkbenchReplayResult } from "../../src/modules/chat/composition.js";
 import type { EvalRetrievalRunnerPort } from "../../src/modules/eval/services/evalRunner.js";
 import type { EvalLlmJudgePort } from "../../src/modules/eval/services/evalJudge.js";
+import type { RetrievalSettingsSnapshot } from "../../src/modules/settings/contracts/retrieval.js";
 
 const fixedDate = "2026-05-23T12:00:00.000Z";
+
+const activityTrace = (): ActivityTrace => ({
+  traceId: "eval-trace",
+  startedAt: fixedDate,
+  completedAt: fixedDate,
+  summary: {
+    path: "retrieval",
+    status: "success",
+    candidateCounts: {
+      semantic: 1,
+      lexical: 0,
+      merged: 1,
+      final: 1,
+    },
+    retrievalSkipped: false,
+    fallbackApplied: false,
+  },
+  stages: [
+    {
+      stageId: "context",
+      kind: "context",
+      label: "Context",
+      status: "applied",
+      startedAt: fixedDate,
+    },
+  ],
+  links: [],
+});
 
 const makeSnapshot = (overrides: Partial<EvalSnapshot> = {}): EvalSnapshot => ({
   id: "snap-1",
@@ -43,6 +73,24 @@ const makeSnapshot = (overrides: Partial<EvalSnapshot> = {}): EvalSnapshot => ({
   sourceAgentId: null,
   capturedAt: fixedDate,
   capturedBy: null,
+  ...overrides,
+});
+
+const retrievalSettingsSnapshot = (
+  overrides: Partial<RetrievalSettingsSnapshot> = {},
+): RetrievalSettingsSnapshot => ({
+  queryRewriteEnabled: true,
+  semanticRewriteInstructions: "captured semantic rewrite",
+  lexicalRewriteInstructions: "captured lexical rewrite",
+  suggestedQuestionsEnabled: true,
+  suggestedQuestionsCount: 2,
+  rerankEnabled: true,
+  vectorTopK: 11,
+  similarityThreshold: 0.42,
+  rerankTopK: 6,
+  metadataRules: [],
+  customInstruction: "captured retrieval instruction",
+  retrievalStrategy: "fixed",
   ...overrides,
 });
 
@@ -112,6 +160,8 @@ class InMemoryEvalRepository implements EvalRepositoryPort {
   private cases = new Map<string, EvalCase>();
   private runs: EvalRun[] = [];
   private idCounter = 0;
+  public deleteCaseBeforeCreateRun = false;
+  public deleteCaseBeforeLastRunUpdate = false;
 
   constructor(initial?: { snapshots?: EvalSnapshot[]; cases?: EvalCase[] }) {
     for (const s of initial?.snapshots ?? []) this.snapshots.set(s.id, s);
@@ -161,6 +211,16 @@ class InMemoryEvalRepository implements EvalRepositoryPort {
     return [...this.cases.values()].filter((c) => c.workspaceId === workspaceId);
   }
 
+  async deleteCase(workspaceId: string, caseId: string): Promise<boolean> {
+    const existing = this.cases.get(caseId);
+    if (!existing || existing.workspaceId !== workspaceId) return false;
+    this.cases.delete(caseId);
+    this.runs = this.runs.map((r) =>
+      r.workspaceId === workspaceId && r.caseId === caseId ? { ...r, caseId: null } : r,
+    );
+    return true;
+  }
+
   async updateCaseAssertions(workspaceId: string, caseId: string, assertions: EvalAssertion[]) {
     const existing = this.cases.get(caseId);
     if (!existing || existing.workspaceId !== workspaceId) throw new Error("case not found");
@@ -178,12 +238,16 @@ class InMemoryEvalRepository implements EvalRepositoryPort {
   }
 
   async createRun(input: CreateRunInput): Promise<EvalRun> {
+    if (this.deleteCaseBeforeCreateRun && input.caseId) {
+      this.deleteCaseBeforeCreateRun = false;
+      await this.deleteCase(input.workspaceId, input.caseId);
+    }
     const id = this.nextId("run");
     const run: EvalRun = {
       id,
       workspaceId: input.workspaceId,
       snapshotId: input.snapshotId,
-      caseId: input.caseId,
+      caseId: input.caseId && this.cases.has(input.caseId) ? input.caseId : null,
       mode: input.mode,
       overrides: input.overrides,
       resolvedConfig: input.resolvedConfig,
@@ -207,9 +271,13 @@ class InMemoryEvalRepository implements EvalRepositoryPort {
     caseId: string,
     lastRunId: string,
     status: EvalCaseStatus,
-  ): Promise<EvalCase> {
+  ): Promise<EvalCase | null> {
+    if (this.deleteCaseBeforeLastRunUpdate) {
+      this.deleteCaseBeforeLastRunUpdate = false;
+      await this.deleteCase(workspaceId, caseId);
+    }
     const existing = this.cases.get(caseId);
-    if (!existing || existing.workspaceId !== workspaceId) throw new Error("case not found");
+    if (!existing || existing.workspaceId !== workspaceId) return null;
     const updated: EvalCase = { ...existing, lastRunId, status, updatedAt: fixedDate };
     this.cases.set(caseId, updated);
     return updated;
@@ -233,6 +301,7 @@ type StubRunnerCall = {
   agentCitationDisplayEnabled?: boolean;
   customInstruction?: string;
   retrievalSkillSettings?: unknown;
+  retrievalSettingsOverride?: unknown;
 };
 
 class StubRunner implements EvalRetrievalRunnerPort {
@@ -245,6 +314,7 @@ class StubRunner implements EvalRetrievalRunnerPort {
     private readonly answerText?: string,
     private readonly citations?: ChatCitation[],
     private readonly answerSegments?: AnswerSegment[],
+    private readonly trace: ActivityTrace = activityTrace(),
   ) {}
 
   private capture(input: {
@@ -264,6 +334,7 @@ class StubRunner implements EvalRetrievalRunnerPort {
       } | null;
       customInstructionOverride?: string;
     };
+    retrievalSettingsOverride?: unknown;
   }): StubRunnerCall {
     return {
       query: input.query,
@@ -282,13 +353,14 @@ class StubRunner implements EvalRetrievalRunnerPort {
         input.context?.customInstructionOverride ??
         input.context?.agent?.customInstruction,
       retrievalSkillSettings: input.context?.agent?.skillSettings?.["retrieval.answer"],
+      retrievalSettingsOverride: input.retrievalSettingsOverride,
     };
   }
 
   async retrieve(input: any) {
     this.lastRetrieveCall = this.capture(input);
     if (this.error) throw this.error;
-    return { chunks: this.chunks };
+    return { chunks: this.chunks, activityTrace: this.trace };
   }
 
   async answer(input: any) {
@@ -299,6 +371,7 @@ class StubRunner implements EvalRetrievalRunnerPort {
       answer: this.answerText ?? "",
       citations: this.citations,
       answerSegments: this.answerSegments,
+      activityTrace: this.trace,
     };
   }
 }
@@ -381,10 +454,65 @@ describe("EvalRunService.execute (retrieval_only)", () => {
 
     expect(run.status).toBe("pass");
     expect(run.outcomeReason).toContain("doc-refund");
+    expect(run.observedOutput.activityTrace?.summary?.retrievalSkipped).toBe(false);
     expect(run.assertionVerdicts).toHaveLength(1);
     expect(run.assertionVerdicts[0]!.status).toBe("pass");
     expect(updated?.status).toBe("passing");
     expect(updated?.lastRunId).toBe(run.id);
+  });
+
+  it("records the run detached when its case is deleted before run insert", async () => {
+    const snapshot = makeSnapshot();
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const evalCase = await repo.createCase({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      name: "deleted while running",
+      assertions: [refundIncludes],
+    });
+    repo.deleteCaseBeforeCreateRun = true;
+    const runner = new StubRunner([
+      { chunkId: "c1", documentId: "doc-refund", title: "Refund Policy", rank: 0 },
+    ]);
+    const service = new EvalRunService(repo, runner, passJudge());
+
+    const { run, case: updated } = await service.execute({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      caseId: evalCase.id,
+      mode: "retrieval_only",
+    });
+
+    expect(run.caseId).toBeNull();
+    expect(run.status).toBe("pass");
+    expect(updated).toBeNull();
+  });
+
+  it("returns a detached run when its case is deleted before last-run linking", async () => {
+    const snapshot = makeSnapshot();
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const evalCase = await repo.createCase({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      name: "deleted while linking",
+      assertions: [refundIncludes],
+    });
+    repo.deleteCaseBeforeLastRunUpdate = true;
+    const runner = new StubRunner([
+      { chunkId: "c1", documentId: "doc-refund", title: "Refund Policy", rank: 0 },
+    ]);
+    const service = new EvalRunService(repo, runner, passJudge());
+
+    const { run, case: updated } = await service.execute({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      caseId: evalCase.id,
+      mode: "retrieval_only",
+    });
+
+    expect(run.caseId).toBeNull();
+    expect(run.status).toBe("pass");
+    expect(updated).toBeNull();
   });
 
   it("records a failing run when any assertion fails", async () => {
@@ -653,6 +781,68 @@ describe("EvalRunService.execute (retrieval_only)", () => {
     expect(runner.lastRetrieveCall?.customInstruction).toBe("Reply tersely.");
   });
 
+  it("uses the snapshot's captured retrieval settings as the replay base", async () => {
+    const capturedSettings = retrievalSettingsSnapshot({
+      queryRewriteEnabled: false,
+      vectorTopK: 4,
+      rerankEnabled: false,
+      similarityThreshold: 0.31,
+    });
+    const snapshot = makeSnapshot({
+      originalRetrievalSettings: capturedSettings,
+    });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const runner = new StubRunner([
+      { chunkId: "c1", documentId: "doc-refund", title: "Refund Policy", rank: 0 },
+    ]);
+    const service = new EvalRunService(repo, runner, passJudge());
+
+    await service.execute({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      mode: "retrieval_only",
+    });
+
+    expect(runner.lastRetrieveCall?.retrievalSettingsOverride).toMatchObject({
+      queryRewriteEnabled: false,
+      vectorTopK: 4,
+      rerankEnabled: false,
+      similarityThreshold: 0.31,
+    });
+  });
+
+  it("layers per-run retrieval overrides over captured retrieval settings", async () => {
+    const snapshot = makeSnapshot({
+      originalRetrievalSettings: retrievalSettingsSnapshot({
+        vectorTopK: 4,
+        rerankEnabled: false,
+        similarityThreshold: 0.31,
+      }),
+    });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const runner = new StubRunner([
+      { chunkId: "c1", documentId: "doc-refund", title: "Refund Policy", rank: 0 },
+    ]);
+    const service = new EvalRunService(repo, runner, passJudge());
+
+    await service.execute({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      mode: "retrieval_only",
+      overrides: {
+        retrievalSettingsOverride: {
+          vectorTopK: 9,
+        },
+      },
+    });
+
+    expect(runner.lastRetrieveCall?.retrievalSettingsOverride).toMatchObject({
+      vectorTopK: 9,
+      rerankEnabled: false,
+      similarityThreshold: 0.31,
+    });
+  });
+
   it("materializes full agent config snapshots before passing replay context to the runner", async () => {
     const agent = configuredAgent();
     const snapshot = makeSnapshot({
@@ -720,6 +910,7 @@ describe("EvalRunService.execute (retrieval_only)", () => {
     expect(run.observedOutput.answerSegments).toEqual([
       { text: "Our refund window is 30 days from purchase.", citationIndices: [0] },
     ]);
+    expect(run.observedOutput.activityTrace?.summary?.retrievalSkipped).toBe(false);
     expect(run.status).toBe("pass");
   });
 
@@ -776,6 +967,39 @@ describe("EvalRunService.execute (retrieval_only)", () => {
       modelId: "gpt-5-mini",
     });
     expect(run.status).toBe("pass");
+  });
+
+  it("returns a detached Workbench replay run when its case is deleted before last-run linking", async () => {
+    const agent = configuredAgent();
+    const snapshot = makeSnapshot({
+      sourceAgentId: agent.id,
+      originalAgentConfig: projectInternalAgentConfig(agent),
+    });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const evalCase = await repo.createCase({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      name: "workbench deleted case",
+      assertions: [refundIncludes],
+    });
+    repo.deleteCaseBeforeLastRunUpdate = true;
+    const service = new EvalRunService(
+      repo,
+      new StubRunner([]),
+      passJudge(),
+      new StubWorkbenchReplayRunner(),
+    );
+
+    const { run, case: updated } = await service.executeWorkbenchReplay({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      caseId: evalCase.id,
+      mode: "full_assistant",
+    });
+
+    expect(run.caseId).toBeNull();
+    expect(run.status).toBe("pass");
+    expect(updated).toBeNull();
   });
 
   it("emits one sanitized Workbench replay observability record", async () => {

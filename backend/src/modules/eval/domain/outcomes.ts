@@ -54,7 +54,7 @@ export const evaluateAssertion = (
         return {
           assertion,
           status: "pass",
-          reason: `Retrieval included chunk ${hit.chunkId} from document ${assertion.documentId} at rank ${hit.rank}.`,
+          reason: `Retrieval included a chunk from document ${assertion.documentId} at rank ${hit.rank}.`,
         };
       }
       return {
@@ -77,7 +77,7 @@ export const evaluateAssertion = (
       return {
         assertion,
         status: "fail",
-        reason: `Retrieval still included chunk ${hit.chunkId} from document ${assertion.documentId} at rank ${hit.rank}.`,
+        reason: `Retrieval still included a chunk from document ${assertion.documentId} at rank ${hit.rank}.`,
       };
     }
     case "retrieval_top_k_includes_document": {
@@ -94,7 +94,7 @@ export const evaluateAssertion = (
         return {
           assertion,
           status: "pass",
-          reason: `Document ${assertion.documentId} appeared in the top ${assertion.k} at position ${positionInTopK} (chunk ${topK[positionInTopK]!.chunkId}).`,
+          reason: `Document ${assertion.documentId} appeared in the top ${assertion.k} at rank ${positionInTopK + 1}.`,
         };
       }
       const anywhere = output.retrievedChunks.findIndex(
@@ -102,7 +102,7 @@ export const evaluateAssertion = (
       );
       const tail = anywhere === -1
         ? "It was not retrieved at all."
-        : `It appeared at position ${anywhere} but was outside the top ${assertion.k}.`;
+        : `It appeared at rank ${anywhere + 1} but was outside the top ${assertion.k}.`;
       return {
         assertion,
         status: "fail",

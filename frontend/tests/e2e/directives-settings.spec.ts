@@ -71,6 +71,44 @@ test("agent directives settings create, edit, delete, and persist", async ({ pag
   await expect(page.locator("#directive-44444444-4444-4444-8444-000000000001")).toBeHidden();
 });
 
+test("agent directive editor can override built-in behaviors", async ({ page }) => {
+  const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { directiveUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-directives`);
+
+  await page.getByRole("button", { name: "New directive" }).click();
+  await page.getByLabel("Name").fill("visitor-distress-care");
+  await page.getByLabel("Action").fill("Drop everything else and care for the person.");
+
+  await page.getByRole("switch", { name: "Override inline-supported-links" }).click();
+  await page.getByRole("switch", { name: "Override concise-readable-formatting" }).click();
+  await page.getByRole("button", { name: "Save directive" }).click();
+
+  await expect(
+    page.locator("#directive-44444444-4444-4444-8444-000000000001"),
+  ).toBeVisible();
+  await expect(page.getByText("Replaces: inline-supported-links")).toBeVisible();
+  await expect(page.getByText("Replaces: concise-readable-formatting")).toBeVisible();
+  await expect.poll(() => directiveUpdates.length).toBe(1);
+  expect(directiveUpdates[0]).toMatchObject({
+    method: "POST",
+    body: {
+      name: "visitor-distress-care",
+      action: "Drop everything else and care for the person.",
+      excludes: ["inline-supported-links", "concise-readable-formatting"],
+    },
+  });
+
+  // The selection round-trips when reopening the editor.
+  await page.getByRole("button", { name: "Edit visitor-distress-care" }).click();
+  await expect(page.getByRole("switch", { name: "Override inline-supported-links" })).toBeChecked();
+  await expect(page.getByRole("switch", { name: "Override concise-readable-formatting" })).toBeChecked();
+  await expect(page.getByRole("switch", { name: "Override represent-organization" })).not.toBeChecked();
+});
+
 test("agent directives settings can replace and restore a built-in directive", async ({ page }) => {
   const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
 

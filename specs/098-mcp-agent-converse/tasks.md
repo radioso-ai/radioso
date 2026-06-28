@@ -153,10 +153,10 @@
 
 **Purpose**: Documentation, generated artifacts, final verification, and release readiness.
 
-- [ ] T065 [P] Update MCP client setup docs for converse grants, launch-token exchange, OAuth, resources, and rejected token classes in `docs/mcp-client-setup.md`
-- [ ] T066 [P] Update MCP package README for public converse vs trusted workspace-token/stdio modes in `packages/radioso-mcp-server/README.md`
+- [x] T065 [P] Update MCP client setup docs for converse grants, launch-token exchange, OAuth, resources, and rejected token classes in `docs/mcp-client-setup.md`
+- [x] T066 [P] Update MCP package README for public converse vs trusted workspace-token/stdio modes in `packages/radioso-mcp-server/README.md`
 - [ ] T067 [P] Update SDK/API docs that mention MCP setup or generated contract use in `docs/typescript-sdk-basic-usage.md`
-- [ ] T068 Update `readme.md` only if common Docker run flow, authentication setup, or operator-facing MCP setup changes
+- [x] T068 Update `readme.md` only if common Docker run flow, authentication setup, or operator-facing MCP setup changes
 - [ ] T069 Run focused verification without `pnpm run build` in this sandbox: backend targeted tests, MCP package tests, OpenAPI contract check, and quickstart walkthrough from `specs/098-mcp-agent-converse/quickstart.md`
 - [ ] T070 Update final validation notes for observability, message-queue impact, generated OpenAPI/SDK/MCP artifacts, docs updates, US3 blocked status, and local CI limitations in `specs/098-mcp-agent-converse/quickstart.md`
 

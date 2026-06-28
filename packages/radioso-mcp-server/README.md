@@ -1,16 +1,26 @@
 # Radioso MCP Server
 
-MCP server package for workspace-scoped Radioso reads and writes.
+MCP server package for the per-agent converse surface and workspace-scoped Radioso reads and writes.
 
 ## What It Does
 
-The package connects to an existing Radioso deployment over its public HTTP API and exposes a focused MCP tool catalog for:
+The package connects to an existing Radioso deployment over its public HTTP API and exposes two surfaces.
+
+**Agent converse surface.** A client talks to one agent through that agent's turn loop, using a per-agent converse grant. Tools:
+
+- `ask_agent` for a full agent reply (persona, directives, routines, history)
+- `answer_grounded` over the bound agent's retrieval settings
+- the agent's documents as read-only MCP resources
+
+**Workspace document tools.** Retrieval-first tools scoped to a whole workspace, using a workspace API token:
 
 - grounded answers with citations
 - document listing, lookup, and search
 - document create, update, delete, and reprocess
 
-The package owns MCP protocol handling, token verification seams, capability policy enforcement, and audit logging. Authorization comes from the workspace API token and the tools the MCP session was granted at exchange time; the package does not implement a separate server-side approval gate. Tools that should prompt the user before execution are advertised with `requiresApproval: true` so the MCP host (Cursor, Claude Desktop, ChatGPT) can show its own confirmation UI. The package does not import backend domain modules and does not access the database directly.
+The two surfaces use separate credentials and do not cross. A workspace API token is rejected by the converse surface, and a converse grant is rejected by the workspace tools.
+
+The package owns MCP protocol handling, token verification seams, capability policy enforcement, and audit logging. For the workspace tools, authorization comes from the workspace API token and the tools the MCP session was granted at exchange time; the package does not implement a separate server-side approval gate. Tools that should prompt the user before execution are advertised with `requiresApproval: true` so the MCP host (Cursor, Claude Desktop, ChatGPT) can show its own confirmation UI. For the converse surface, the backend owns session issuance and per-request grant checks; the package calls the backend converse endpoints over HTTP. The package does not import backend domain modules and does not access the database directly.
 
 ## Remote Runtime
 

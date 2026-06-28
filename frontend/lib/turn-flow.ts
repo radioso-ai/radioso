@@ -155,6 +155,52 @@ const activityTraceSubFlow = (
   }
 }
 
+export const activityTraceToFlowGraph = (
+  trace: ActivityTrace,
+  namespace = 'activity',
+): TurnFlowGraph => {
+  const nodes: TurnFlowNode[] = []
+  const edges: TurnFlowEdge[] = []
+  const sub = activityTraceSubFlow(trace, namespace)
+  const firstStage = trace.stages[0]
+  const terminalStage = sub.terminalId
+    ? trace.stages.find((stage) => `stage:${stage.stageId}` === sub.terminalId)
+    : trace.stages.at(-1)
+
+  const skillId = 'skill'
+  nodes.push({
+    id: skillId,
+    nodeKind: 'skill',
+    label: titleCase(namespace),
+    sublabel: 'activity trace',
+    status: firstStage?.status,
+    capabilityNamespace: namespace,
+    detail: { kind: 'none' },
+  })
+
+  nodes.push(...sub.nodes)
+  edges.push(...sub.edges)
+
+  let tailId = skillId
+  if (sub.entryId) {
+    edges.push({ id: `e:${skillId}->${sub.entryId}`, source: skillId, target: sub.entryId, kind: 'sequence' })
+  }
+  if (sub.terminalId) tailId = sub.terminalId
+
+  const outcomeId = 'outcome'
+  nodes.push({
+    id: outcomeId,
+    nodeKind: 'outcome',
+    label: 'Outcome',
+    sublabel: terminalStage?.status,
+    status: terminalStage?.status ?? firstStage?.status ?? 'unavailable',
+    detail: terminalStage ? { kind: 'leaf', leafStageId: terminalStage.stageId } : { kind: 'none' },
+  })
+  edges.push({ id: `e:${tailId}->${outcomeId}`, source: tailId, target: outcomeId, kind: 'sequence' })
+
+  return { nodes, edges }
+}
+
 export const envelopeToFlowGraph = (envelope: TurnTraceEnvelope): TurnFlowGraph => {
   const spine = envelope.spine
   const nodes: TurnFlowNode[] = []

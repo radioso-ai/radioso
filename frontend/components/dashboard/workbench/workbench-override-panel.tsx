@@ -57,10 +57,12 @@ export function WorkbenchOverridePanel({
   baseline,
   state,
   dispatch,
+  variant = 'sidebar',
 }: {
   baseline: WorkbenchOverrideValues
   state: WorkbenchOverrideState
   dispatch: (action: WorkbenchOverrideAction) => void
+  variant?: 'sidebar' | 'embedded' | 'drawer'
 }) {
   const [knownModels, setKnownModels] = useState<KnownModelsByProvider>(emptyKnownModelsByProvider)
 
@@ -112,9 +114,8 @@ export function WorkbenchOverridePanel({
     [baseline.authoredDirectives.length],
   )
 
-  return (
-    <aside className="min-h-0 overflow-y-auto border-r border-border bg-background">
-      <div className="space-y-5 p-4">
+  const content = (
+    <div className="space-y-5 p-4">
         <div className="flex items-center gap-2">
           <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
           <div>
@@ -322,6 +323,27 @@ export function WorkbenchOverridePanel({
           </Button>
         </section>
       </div>
+  )
+
+  if (variant === 'embedded') {
+    return (
+      <div className="max-h-[min(70vh,720px)] overflow-y-auto rounded-md border border-border bg-background/50">
+        {content}
+      </div>
+    )
+  }
+
+  if (variant === 'drawer') {
+    return (
+      <div className="rounded-md border border-border bg-background/50">
+        {content}
+      </div>
+    )
+  }
+
+  return (
+    <aside className="min-h-0 overflow-y-auto border-r border-border bg-background">
+      {content}
     </aside>
   )
 }

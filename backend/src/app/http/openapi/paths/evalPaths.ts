@@ -66,11 +66,51 @@ const EvalWorkbenchReplayRunResponseSchema = z
     resolvedConfig: z.unknown(),
   });
 
+const EvalCaseParamsSchema = z.object({
+  id: z.string().uuid(),
+});
+
 export const registerEvalPaths = (
   registry: OpenAPIRegistry,
   schemas: OpenApiSchemas,
   security: OpenApiSecurity,
 ) => {
+  registry.registerPath({
+    method: "delete",
+    path: "/api/v1/evals/cases/{id}",
+    tags: ["Evals"],
+    summary: "Delete an eval case",
+    operationId: "deleteEvalCase",
+    security: [
+      { [security.sessionCookieScheme.name]: [], [security.workspaceSelectionScheme.name]: [] },
+      { [security.bearerAuthScheme.name]: [] },
+    ],
+    request: {
+      params: EvalCaseParamsSchema,
+    },
+    responses: {
+      204: {
+        description: "Eval case deleted. Historical runs are retained without a case association.",
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Eval case not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
   registry.registerPath({
     method: "post",
     path: "/api/v1/evals/runs",

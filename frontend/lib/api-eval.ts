@@ -36,6 +36,8 @@ export interface EvalSnapshot {
   originalRetrievalSettings: Record<string, unknown> | null
   originalRetrievalResult: EvalSnapshotOriginalRetrievalChunk[] | null
   originalAgent: Record<string, unknown> | null
+  originalAgentConfig: AgentConfigOverrideInput | null
+  sourceAgentId: string | null
   capturedAt: string
   capturedBy: string | null
 }
@@ -213,6 +215,12 @@ export const evalsApi = {
     }, { withApiToken: true })
   },
 
+  async deleteCase(caseId: string): Promise<void> {
+    await request<void>(`/evals/cases/${caseId}`, {
+      method: 'DELETE',
+    }, { withApiToken: true })
+  },
+
   async replaceAssertions(caseId: string, assertions: EvalAssertion[]): Promise<EvalCase> {
     return request<EvalCase>(`/evals/cases/${caseId}/assertions`, {
       method: 'PUT',
@@ -238,7 +246,7 @@ export const evalsApi = {
   ): Promise<{ run: EvalRun; case: EvalCase | null }> {
     return request<{ run: EvalRun; case: EvalCase | null }>(`/evals/cases/${caseId}/runs`, {
       method: 'POST',
-      body: JSON.stringify({ mode: input.mode ?? 'retrieval_only', overrides: input.overrides }),
+      body: JSON.stringify({ mode: input.mode ?? 'full_assistant', overrides: input.overrides }),
     }, { withApiToken: true })
   },
 
@@ -252,7 +260,7 @@ export const evalsApi = {
     return request<WorkbenchReplayRunResponse>('/evals/runs', {
       method: 'POST',
       body: JSON.stringify({
-        mode: input.mode ?? 'retrieval_only',
+        mode: input.mode ?? 'full_assistant',
         ...rest,
         ...(agentConfigOverride ? { agentConfigOverride } : {}),
       }),

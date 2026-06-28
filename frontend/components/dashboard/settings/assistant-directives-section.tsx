@@ -24,7 +24,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
-import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
@@ -42,7 +41,6 @@ type DirectiveFormState = {
   conditionKind: DirectiveCondition['kind']
   conditionDescription: string
   action: string
-  excludes: string[]
 }
 
 type OverrideTarget = BuiltInDirective
@@ -52,7 +50,6 @@ const emptyForm: DirectiveFormState = {
   conditionKind: 'always',
   conditionDescription: '',
   action: '',
-  excludes: [],
 }
 
 const directiveToForm = (directive: Directive): DirectiveFormState => ({
@@ -60,28 +57,26 @@ const directiveToForm = (directive: Directive): DirectiveFormState => ({
   conditionKind: directive.condition.kind,
   conditionDescription: directive.condition.kind === 'contextual' ? directive.condition.description : '',
   action: directive.action,
-  excludes: directive.excludes ?? [],
 })
 
 const overrideNameFor = (builtInName: string): string => `Override: ${builtInName}`
 
 const formToPayload = (
   form: DirectiveFormState,
-  options: { name?: string } = {},
+  options: { name?: string; excludes?: string[] } = {},
 ): DirectiveCreateRequest => {
   const condition: DirectiveCondition =
     form.conditionKind === 'contextual'
       ? { kind: 'contextual', description: form.conditionDescription.trim() }
       : { kind: 'always' }
 
-  const excludes = dedupeNames(form.excludes.map((name) => name.trim()).filter(Boolean))
   const payload: DirectiveCreateRequest = {
     name: options.name ?? form.name.trim(),
     condition,
     action: form.action.trim(),
   }
-  if (excludes.length > 0) {
-    payload.excludes = excludes
+  if (options.excludes && options.excludes.length > 0) {
+    payload.excludes = options.excludes
   }
   return payload
 }
@@ -385,19 +380,9 @@ export function AssistantDirectivesSection({
     setForm({
       ...emptyForm,
       name: overrideNameFor(directive.name),
-      excludes: [directive.name],
     })
     setError(null)
     setDialogOpen(true)
-  }
-
-  const toggleExclude = (name: string, checked: boolean) => {
-    setForm((current) => ({
-      ...current,
-      excludes: checked
-        ? dedupeNames([...current.excludes, name])
-        : current.excludes.filter((excluded) => excluded !== name),
-    }))
   }
 
   const focusDirective = (directiveId: string) => {
@@ -454,6 +439,7 @@ export function AssistantDirectivesSection({
     if (formError) return
     const payload = formToPayload(form, {
       name: overrideTarget ? overrideNameFor(overrideTarget.name) : undefined,
+      excludes: overrideTarget ? [overrideTarget.name] : editingDirective?.excludes,
     })
     const saveId = beginSave()
     setIsSaving(true)
@@ -652,37 +638,6 @@ export function AssistantDirectivesSection({
                 className="min-h-28"
               />
             </div>
-            {!overrideTarget && builtIns.length > 0 ? (
-              <div className="space-y-2">
-                <Label>Overrides built-in behaviors</Label>
-                <p className="text-xs text-muted-foreground">
-                  When this directive applies, the selected default behaviors are suppressed for that reply.
-                </p>
-                <div className="space-y-2 rounded-lg border border-border p-3">
-                  {builtIns.map((builtIn) => {
-                    const switchId = `directive-override-${builtIn.name}`
-                    return (
-                      <div key={builtIn.name} className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 space-y-0.5">
-                          <Label htmlFor={switchId} className="text-sm font-medium text-foreground">
-                            {builtIn.name}
-                          </Label>
-                          {builtIn.description ? (
-                            <p className="text-xs text-muted-foreground">{builtIn.description}</p>
-                          ) : null}
-                        </div>
-                        <Switch
-                          id={switchId}
-                          checked={form.excludes.includes(builtIn.name)}
-                          onCheckedChange={(checked) => toggleExclude(builtIn.name, checked)}
-                          aria-label={`Override ${builtIn.name}`}
-                        />
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            ) : null}
             {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
           </div>
           <DialogFooter>

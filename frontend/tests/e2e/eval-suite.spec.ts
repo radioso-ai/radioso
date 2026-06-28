@@ -91,3 +91,66 @@ test("Run all reports a suite pass rate and refreshes the list", async ({ page }
   await expect(page.getByText("2 of 2 cases passing")).toBeVisible();
   expect(runAllBodies).toContainEqual({ mode: "full_assistant" });
 });
+
+// A case can error during Run all before any run is recorded (broken snapshot),
+// which never persists — so the post-run list refresh still reports it passing.
+// The headline must keep the run's summary (1 error) and not flip back.
+test("Run all keeps run errors in the headline after the list refresh", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+
+  const latestRun = {
+    id: "run-pass",
+    status: "pass",
+    mode: "full_assistant",
+    startedAt: nowIso,
+    completedAt: nowIso,
+    modelId: "gpt-5-mini",
+    outcomeReason: null,
+  };
+
+  await page.route("**/backend/api/v1/evals/cases/run-all", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        results: [
+          { caseId: passingCaseId, name: "Healthy case", status: "pass", run: null, error: null },
+          { caseId: failingCaseId, name: "Broken snapshot", status: "error", run: null, error: "Snapshot not found" },
+        ],
+        // The run summary counts the pre-run failure as an error.
+        summary: { total: 2, scored: 2, passing: 1, failing: 0, error: 1, pending: 0, unscored: 0 },
+      }),
+    });
+  });
+
+  // The persisted list NEVER reflects the broken case's error — both cases read
+  // back as passing, since the error was never recorded as a run.
+  await page.route("**/backend/api/v1/evals/cases", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        cases: [
+          { ...baseCase(passingCaseId, "Healthy case"), status: "passing", latestRun },
+          { ...baseCase(failingCaseId, "Broken snapshot"), status: "passing", latestRun },
+        ],
+        summary: { total: 2, scored: 2, passing: 2, failing: 0, error: 0, pending: 0, unscored: 0 },
+      }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/eval`);
+  await expect(page.getByText("2 of 2 cases passing")).toBeVisible();
+
+  await page.getByRole("button", { name: "Run all" }).click();
+
+  // The headline reflects the run (1 error), not the persisted "all passing".
+  await expect(page.getByText("1 of 2 cases passing")).toBeVisible();
+  await expect(page.getByText("1 error")).toBeVisible();
+  await expect(page.getByText("2 of 2 cases passing")).toHaveCount(0);
+});

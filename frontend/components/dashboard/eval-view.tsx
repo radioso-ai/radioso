@@ -519,9 +519,13 @@ function EvalList({ accountId, routeState }: EvalListProps) {
     setRunError(null)
     try {
       const result = await evalsApi.runAll()
-      setSummary(result.summary)
-      // Re-read the list so the per-case "last run" column reflects the run.
+      // Refresh the rows (last-run column) from persisted state, then keep the
+      // run's summary as the headline. The GET summary is derived from persisted
+      // case status, which does not capture a case that errored before a run was
+      // recorded (a missing/broken snapshot) — letting it win here would silently
+      // flip such a case back to passing in the pass rate.
       await loadCases()
+      setSummary(result.summary)
     } catch (err) {
       setRunError(getApiErrorMessage(err, 'Failed to run eval suite'))
     } finally {

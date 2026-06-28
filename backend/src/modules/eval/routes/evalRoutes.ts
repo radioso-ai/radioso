@@ -83,6 +83,19 @@ const overridesSchema = z
       .strict()
       .optional(),
     agentConfigOverride: z.lazy(() => agentConfigOverrideSchema).optional(),
+    // Seeds a starting routine position for a full_assistant replay (mid-routine resume).
+    // The full RoutineState minus sessionId; the replay injects the conversation id.
+    routineStartState: z
+      .object({
+        routineId: z.string().min(1).max(200),
+        path: z.array(z.string().min(1).max(200)).min(1).max(200),
+        variables: z.record(z.string(), z.unknown()),
+        attempts: z.record(z.string(), z.number().int()).optional(),
+        status: z.enum(["active", "suspended", "completed", "expired"]),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -320,7 +333,12 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
         const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
         const caseId = String(req.params.id);
         const evalCase = await dependencies.caseService.getWithRuns(workspaceId, caseId);
-        if (req.body.mode === "full_assistant" && req.body.overrides?.agentConfigOverride) {
+        // A routine start state is a workbench-replay override too: it only takes effect
+        // through the conversation-engine replay path, never the plain retrieval runner.
+        const wantsWorkbenchReplay = Boolean(
+          req.body.overrides?.agentConfigOverride || req.body.overrides?.routineStartState,
+        );
+        if (req.body.mode === "full_assistant" && wantsWorkbenchReplay) {
           const result = await dependencies.runService.executeWorkbenchReplay({
             workspaceId,
             accountId: accountId ?? null,
@@ -359,10 +377,13 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
         const agentConfigOverride = (req.body.agentConfigOverride ?? req.body.overrides?.agentConfigOverride) as
           | Partial<InternalAgentConfig>
           | undefined;
-        if (agentConfigOverride && req.body.mode !== "full_assistant") {
-          throw badRequest("agentConfigOverride requires full_assistant mode");
+        // Either override routes through the conversation-engine replay path; a routine
+        // start state never takes effect through the plain retrieval runner.
+        const wantsWorkbenchReplay = Boolean(agentConfigOverride || req.body.overrides?.routineStartState);
+        if (wantsWorkbenchReplay && req.body.mode !== "full_assistant") {
+          throw badRequest("agentConfigOverride and routineStartState require full_assistant mode");
         }
-        if (agentConfigOverride) {
+        if (wantsWorkbenchReplay) {
           const result = await dependencies.runService.executeWorkbenchReplay({
             workspaceId,
             accountId: accountId ?? null,
@@ -370,7 +391,7 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
             mode: req.body.mode,
             overrides: {
               ...req.body.overrides,
-              agentConfigOverride,
+              ...(agentConfigOverride ? { agentConfigOverride } : {}),
             },
           });
           res.status(201).json(presentWorkbenchReplayRun(result));

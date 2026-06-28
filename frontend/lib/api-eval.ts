@@ -38,6 +38,8 @@ export interface EvalSnapshot {
   originalAgent: Record<string, unknown> | null
   originalAgentConfig: AgentConfigOverrideInput | null
   sourceAgentId: string | null
+  // The agent's active routine position frozen at capture time (mid-routine replay).
+  originalRoutineState?: EvalRunRoutineStartStateInput | null
   capturedAt: string
   capturedBy: string | null
 }
@@ -154,6 +156,19 @@ export interface EvalRunOverridesInput {
   assistantInstructionsOverride?: { customInstruction?: string }
   retrievalSettingsOverride?: Record<string, unknown>
   agentConfigOverride?: AgentConfigOverrideInput
+  routineStartState?: EvalRunRoutineStartStateInput
+}
+
+// A starting routine position for a full_assistant replay (mid-routine resume). The
+// full RoutineState minus sessionId; the replay injects the conversation id. Mirrors
+// EvalRunRoutineStartState in backend/src/modules/eval/domain/types.ts.
+export interface EvalRunRoutineStartStateInput {
+  routineId: string
+  path: string[]
+  variables: Record<string, unknown>
+  attempts?: Record<string, number>
+  status: 'active' | 'suspended' | 'completed' | 'expired'
+  metadata?: Record<string, unknown>
 }
 
 export interface AgentConfigOverrideInput {

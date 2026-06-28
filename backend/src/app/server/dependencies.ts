@@ -2,6 +2,7 @@ import { getEnv, type Env } from "../config/env.js";
 import { McpConnectionService } from "../../modules/externalSkills/services/mcpConnectionService.js";
 import { ExternalSkillDefinitionService } from "../../modules/externalSkills/services/externalSkillDefinitionService.js";
 import { McpConnectionRepository } from "../../db/repositories/mcpConnectionRepository.js";
+import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
 import { OauthConnectionRepository } from "../../db/repositories/oauthConnectionRepository.js";
 import { ExternalSkillDefinitionRepository } from "../../db/repositories/externalSkillDefinitionRepository.js";
 import { createMcpToolServiceFactory } from "../../modules/externalSkills/composition.js";
@@ -570,6 +571,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       connections: mcpConnectionRepository,
       skillDefinitions: externalSkillDefinitionRepository,
     },
+    // Freeze the active routine position at capture time for faithful mid-routine replay.
+    new RoutineStateRepository(infrastructure.database.kysely),
   );
   const evalCaseService = new EvalCaseService(evalRepository);
   const evalRunService = new EvalRunService(

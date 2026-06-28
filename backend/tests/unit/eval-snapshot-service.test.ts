@@ -524,4 +524,94 @@ describe("EvalSnapshotService.capture", () => {
       freezeRetrievalSettings(defaults.getDefaults("ws-1")),
     );
   });
+
+  it("freezes the active routine position into the snapshot, stripping sessionId", async () => {
+    const conversation: ConversationRecord = {
+      id: "conv-routine",
+      workspaceId: "ws-1",
+      agentId: null,
+      agentName: null,
+      sourceChannel: null,
+      sourceOrigin: null,
+      channelContext: null,
+      anonymousSessionId: null,
+      verifiedCustomerId: null,
+      createdAt: fixedDate,
+      updatedAt: fixedDate,
+    };
+    const messages: MessageRecord[] = [
+      { id: "m1", conversationId: conversation.id, workspaceId: "ws-1", role: "user", content: "Hi", createdAt: fixedDate },
+    ];
+    const repository = new CapturingEvalRepository();
+    const service = new EvalSnapshotService(
+      new StubConversationRepository(conversation),
+      new StubMessageRepository(messages),
+      new StubAgentRepository(null),
+      new StubRetrievalDefaultsProvider(),
+      createRetrievalSkillSettingsResolver(),
+      repository,
+      undefined,
+      {
+        loadActive: async ({ sessionId }) => ({
+          sessionId,
+          routineId: "ask_email_on_interest",
+          path: ["step_1_ask"],
+          variables: { customer_email: "buyer@example.com" },
+          attempts: { step_1_ask: 1 },
+          status: "active",
+        }),
+      },
+    );
+
+    const snapshot = await service.capture({
+      workspaceId: "ws-1",
+      conversationId: conversation.id,
+      capturedBy: "account-1",
+    });
+
+    expect(snapshot.originalRoutineState).toEqual({
+      routineId: "ask_email_on_interest",
+      path: ["step_1_ask"],
+      variables: { customer_email: "buyer@example.com" },
+      attempts: { step_1_ask: 1 },
+      status: "active",
+    });
+  });
+
+  it("captures a null routine state when no routine is active", async () => {
+    const conversation: ConversationRecord = {
+      id: "conv-no-routine",
+      workspaceId: "ws-1",
+      agentId: null,
+      agentName: null,
+      sourceChannel: null,
+      sourceOrigin: null,
+      channelContext: null,
+      anonymousSessionId: null,
+      verifiedCustomerId: null,
+      createdAt: fixedDate,
+      updatedAt: fixedDate,
+    };
+    const messages: MessageRecord[] = [
+      { id: "m1", conversationId: conversation.id, workspaceId: "ws-1", role: "user", content: "Hi", createdAt: fixedDate },
+    ];
+    const service = new EvalSnapshotService(
+      new StubConversationRepository(conversation),
+      new StubMessageRepository(messages),
+      new StubAgentRepository(null),
+      new StubRetrievalDefaultsProvider(),
+      createRetrievalSkillSettingsResolver(),
+      new CapturingEvalRepository(),
+      undefined,
+      { loadActive: async () => null },
+    );
+
+    const snapshot = await service.capture({
+      workspaceId: "ws-1",
+      conversationId: conversation.id,
+      capturedBy: "account-1",
+    });
+
+    expect(snapshot.originalRoutineState).toBeNull();
+  });
 });

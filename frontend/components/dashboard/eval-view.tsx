@@ -44,12 +44,15 @@ import { WorkbenchOverridePanel } from './workbench/workbench-override-panel'
 import {
   buildWorkbenchBaseline,
   createWorkbenchOverrideState,
+  isRoutineStartStateReady,
   workbenchOverrideReducer,
   type WorkbenchOverrideState,
   type WorkbenchOverrideValues,
   type WorkbenchSeedTurn,
 } from './workbench/use-workbench-state'
-import { evalsApi, documentsApi, agentsApi, directivesApi, type AgentSettings, type ChatConversationDetail, type ChatConversationTurn, type Directive } from '@/lib/api'
+import { evalsApi, documentsApi, agentsApi, directivesApi, routinesApi, type AgentSettings, type ChatConversationDetail, type ChatConversationTurn, type Directive } from '@/lib/api'
+import type { EvalRunRoutineStartStateInput } from '@/lib/api-eval'
+import type { RoutineDefinition } from '@/lib/api-types'
 import type {
   AssertionVerdictStatus,
   AgentConfigOverrideInput,
@@ -225,6 +228,7 @@ const emptyReplayBaseline: WorkbenchOverrideValues = {
   customInstruction: '',
   retrievalSkillSettings: {},
   authoredDirectives: [],
+  routineStartState: null,
 }
 
 const asDirectiveOverride = (
@@ -261,6 +265,7 @@ const buildSnapshotReplayBaseline = (snapshot: EvalSnapshot | null): WorkbenchOv
     authoredDirectives: Array.isArray(config.authoredDirectives)
       ? config.authoredDirectives.map((directive) => asDirectiveOverride(directive as unknown as Record<string, unknown>))
       : [],
+    routineStartState: null,
   }
 }
 
@@ -704,6 +709,10 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
   const [snapshot, setSnapshot] = useState<EvalSnapshot | null>(null)
   const [currentAgent, setCurrentAgent] = useState<AgentSettings | null>(null)
   const [currentDirectives, setCurrentDirectives] = useState<Directive[]>([])
+  const [replayRoutineState, setReplayRoutineState] = useState<{
+    agentId: string | null
+    routines: RoutineDefinition[]
+  }>({ agentId: null, routines: [] })
   const [agentSettingsStatus, setAgentSettingsStatus] = useState<'idle' | 'loading' | 'ready' | 'fallback'>('idle')
   const [docTitlesById, setDocTitlesById] = useState<Map<string, string>>(new Map())
   const [error, setError] = useState<string | null>(null)
@@ -807,6 +816,9 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
       : buildSnapshotReplayBaseline(snapshot),
     [currentAgent, currentDirectives, snapshot],
   )
+  const replayRoutines = replayRoutineState.agentId === snapshot?.sourceAgentId
+    ? replayRoutineState.routines
+    : []
 
   useEffect(() => {
     dispatchReplayOverride({ type: 'reset', baseline: replayBaseline })
@@ -819,6 +831,40 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
       : undefined,
     [agentReplayAvailable, replayBaseline, replayOverrideState],
   )
+  const replayRoutineStartState = useMemo<EvalRunRoutineStartStateInput | undefined>(
+    () => agentReplayAvailable
+      && replayOverrideState.touched.routineStartState
+      && isRoutineStartStateReady(replayOverrideState.values.routineStartState)
+      ? replayOverrideState.values.routineStartState
+      : undefined,
+    [agentReplayAvailable, replayOverrideState],
+  )
+  const invalidReplayRoutineStartState = Boolean(
+    replayOverrideState.touched.routineStartState
+      && replayOverrideState.values.routineStartState
+      && !isRoutineStartStateReady(replayOverrideState.values.routineStartState),
+  )
+
+  useEffect(() => {
+    const agentId = snapshot?.sourceAgentId
+    if (!agentId) return
+    let cancelled = false
+    void routinesApi.listRoutines(agentId)
+      .then((response) => {
+        if (!cancelled) {
+          setReplayRoutineState({
+            agentId,
+            routines: response.routines.filter((routine) => routine.status === 'published'),
+          })
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setReplayRoutineState({ agentId, routines: [] })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [snapshot?.sourceAgentId])
 
   const evalSeedTurn = useMemo(
     () => (snapshot ? buildEvalSeedTurn(snapshot) : null),
@@ -835,11 +881,17 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
     setRunning(true)
     setError(null)
     try {
+      if (invalidReplayRoutineStartState) {
+        setError('Select a routine step before running the eval.')
+        return
+      }
+      const overrides = {
+        ...(effectiveAgentConfigOverride ? { agentConfigOverride: effectiveAgentConfigOverride } : {}),
+        ...(replayRoutineStartState ? { routineStartState: replayRoutineStartState } : {}),
+      }
       await evalsApi.runCase(caseId, {
         mode: 'full_assistant',
-        overrides: effectiveAgentConfigOverride
-          ? { agentConfigOverride: effectiveAgentConfigOverride }
-          : undefined,
+        overrides: Object.keys(overrides).length > 0 ? overrides : undefined,
       })
       const { c, snap } = await loadCase()
       setCaseWithRuns(c)
@@ -849,7 +901,7 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
     } finally {
       setRunning(false)
     }
-  }, [caseId, caseWithRuns, effectiveAgentConfigOverride, loadCase])
+  }, [caseId, caseWithRuns, effectiveAgentConfigOverride, invalidReplayRoutineStartState, loadCase, replayRoutineStartState])
 
   const refreshLoadedCase = useCallback(async () => {
     const { c, snap } = await loadCase()
@@ -1048,6 +1100,7 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
                 baseline={replayBaseline}
                 state={replayOverrideState}
                 dispatch={dispatchReplayOverride}
+                routines={replayRoutines}
                 variant="drawer"
               />
             </div>

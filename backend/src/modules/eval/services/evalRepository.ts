@@ -36,6 +36,7 @@ type SnapshotRow = {
   original_agent: unknown;
   original_agent_config: unknown;
   source_agent_id: string | null;
+  original_routine_state: unknown;
   captured_at: Date | string;
   captured_by: string | null;
 };
@@ -102,6 +103,7 @@ const mapSnapshot = (row: SnapshotRow): EvalSnapshot => ({
   originalAgent: asObject<AgentSnapshot | null>(row.original_agent, null),
   originalAgentConfig: asObject<InternalAgentConfig | null>(row.original_agent_config, null),
   sourceAgentId: row.source_agent_id,
+  originalRoutineState: asObject<EvalSnapshot["originalRoutineState"]>(row.original_routine_state, null),
   capturedAt: isoDate(row.captured_at),
   capturedBy: row.captured_by,
 });
@@ -149,6 +151,7 @@ export interface CreateSnapshotInput {
   originalAgent: AgentSnapshot | null;
   originalAgentConfig: InternalAgentConfig | null;
   sourceAgentId: string | null;
+  originalRoutineState: EvalSnapshot["originalRoutineState"];
   capturedBy: string | null;
 }
 
@@ -221,6 +224,7 @@ const snapshotColumns = [
   "original_agent",
   "original_agent_config",
   "source_agent_id",
+  "original_routine_state",
   "captured_at",
   "captured_by",
 ] as const;
@@ -278,6 +282,7 @@ export class EvalRepository implements EvalRepositoryPort {
         original_agent: input.originalAgent ? toJsonb(input.originalAgent) : null,
         original_agent_config: input.originalAgentConfig ? toJsonb(input.originalAgentConfig) : null,
         source_agent_id: input.sourceAgentId,
+        original_routine_state: input.originalRoutineState ? toJsonb(input.originalRoutineState) : null,
         captured_by: input.capturedBy,
       })
       .returning(snapshotColumns)

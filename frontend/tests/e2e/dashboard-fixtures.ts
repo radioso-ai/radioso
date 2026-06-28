@@ -54,6 +54,15 @@ export type McpConnectionFixture = {
   createdAt: string;
   updatedAt: string;
 };
+export type McpConverseGrantFixture = {
+  id: string;
+  label: string | null;
+  tokenPrefix: string;
+  enabled: boolean;
+  createdAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+};
 export type CustomerEmailSkillFixture = {
   id: string;
   workspaceId: string;
@@ -717,6 +726,9 @@ export const installDashboardApiMocks = async (
     usageTrends?: unknown;
     mcpConnections?: McpConnectionFixture[];
     mcpConnectionRequests?: string[];
+    mcpConverseGrants?: McpConverseGrantFixture[];
+    mcpConverseGrantRequests?: Array<{ method: "GET" | "POST" | "DELETE"; path: string; body?: unknown }>;
+    mcpHealth?: { enabled: boolean; standalone: boolean; path: string };
     emailSkills?: CustomerEmailSkillFixture[];
     emailActivity?: CustomerEmailActivityFixture[];
     slackStatus?: SlackInstallStatusFixture;
@@ -809,6 +821,9 @@ export const installDashboardApiMocks = async (
   const mcpConnections = options.mcpConnections ?? [];
   const mcpConnectionRequests = options.mcpConnectionRequests;
   let nextMcpConnectionIndex = mcpConnections.length + 1;
+  let mcpConverseGrants = options.mcpConverseGrants ?? [];
+  const mcpConverseGrantRequests = options.mcpConverseGrantRequests;
+  let nextMcpConverseGrantIndex = mcpConverseGrants.length + 1;
   const webhookDestinationUpdates = options.webhookDestinationUpdates;
   const coherenceFor = (directive: AuthoredDirectiveFixture): ApiSchemas["DirectiveCoherenceVerdict"] => {
     const hasConflict =
@@ -895,6 +910,13 @@ export const installDashboardApiMocks = async (
       },
     ],
   };
+
+  await page.route("**/backend/health", async (route) => {
+    await json(route, {
+      status: "ok",
+      mcp: options.mcpHealth ?? { enabled: true, standalone: false, path: "/mcp" },
+    });
+  });
 
   await page.route("**/backend/api/v1/**", async (route) => {
     const request = route.request();
@@ -1997,6 +2019,59 @@ export const installDashboardApiMocks = async (
 
     if (request.method() === "GET" && path === `/agents/${defaultAgentId}/mcp-connections`) {
       await json(route, { connections: mcpConnections });
+      return;
+    }
+
+    if (request.method() === "GET" && path === `/agents/${defaultAgentId}/mcp-converse-grants`) {
+      mcpConverseGrantRequests?.push({ method: "GET", path });
+      await json(route, { grants: mcpConverseGrants });
+      return;
+    }
+
+    if (request.method() === "POST" && path === `/agents/${defaultAgentId}/mcp-converse-grants`) {
+      const body = request.postDataJSON() as { label?: string };
+      mcpConverseGrantRequests?.push({ method: "POST", path, body });
+      const token = `radioso_mcp_converse_${nextMcpConverseGrantIndex}_plaintext`;
+      const grant: McpConverseGrantFixture = {
+        id: `mcp-converse-grant-${nextMcpConverseGrantIndex++}`,
+        label: body.label ?? null,
+        tokenPrefix: token.slice(0, 18),
+        enabled: true,
+        createdAt: nowIso,
+        lastUsedAt: null,
+        revokedAt: null,
+      };
+      mcpConverseGrants = [grant, ...mcpConverseGrants];
+      await json(route, { grant: { id: grant.id, label: grant.label, tokenPrefix: grant.tokenPrefix, createdAt: grant.createdAt }, token }, 201);
+      return;
+    }
+
+    if (request.method() === "POST" && /\/agents\/[^/]+\/mcp-converse-grants\/[^/]+\/rotate$/.test(path)) {
+      const grantId = path.split("/")[4];
+      mcpConverseGrantRequests?.push({ method: "POST", path });
+      const grant = mcpConverseGrants.find((entry) => entry.id === grantId);
+      const token = `radioso_mcp_converse_rotated_${grantId}`;
+      if (grant) {
+        grant.tokenPrefix = token.slice(0, 18);
+        grant.createdAt = nowIso;
+      }
+      await json(route, {
+        grant: grant ?? {
+          id: grantId,
+          label: null,
+          tokenPrefix: token.slice(0, 18),
+          createdAt: nowIso,
+        },
+        token,
+      });
+      return;
+    }
+
+    if (request.method() === "DELETE" && /\/agents\/[^/]+\/mcp-converse-grants\/[^/]+$/.test(path)) {
+      const grantId = path.split("/")[4];
+      mcpConverseGrantRequests?.push({ method: "DELETE", path });
+      mcpConverseGrants = mcpConverseGrants.filter((entry) => entry.id !== grantId);
+      await route.fulfill({ status: 204, contentType: "application/json", body: "" });
       return;
     }
 

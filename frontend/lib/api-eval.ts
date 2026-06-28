@@ -130,6 +130,50 @@ export interface EvalCaseWithRuns extends EvalCase {
   runs: EvalRun[]
 }
 
+// Compact view of a run for the suite list's "last run" column. Distinct from
+// EvalCase.status: the case status is the configured verdict (reset to pending
+// when expectations change), while latestRun reflects the most recent execution.
+export interface EvalRunSummary {
+  id: string
+  status: EvalRunStatus
+  mode: EvalRunMode
+  startedAt: string
+  completedAt: string | null
+  modelId: string | null
+  outcomeReason: string | null
+}
+
+export interface EvalCaseListItem extends EvalCase {
+  latestRun: EvalRunSummary | null
+}
+
+// Aggregate over the workspace's cases. Only cases with at least one expectation
+// are "scored"; the rate is passing / scored.
+export interface EvalSuiteSummary {
+  total: number
+  scored: number
+  passing: number
+  failing: number
+  error: number
+  pending: number
+  unscored: number
+}
+
+export type EvalSuiteCaseStatus = EvalRunStatus | 'skipped'
+
+export interface EvalSuiteCaseResult {
+  caseId: string
+  name: string
+  status: EvalSuiteCaseStatus
+  run: EvalRun | null
+  error: string | null
+}
+
+export interface EvalSuiteRunResult {
+  results: EvalSuiteCaseResult[]
+  summary: EvalSuiteSummary
+}
+
 export interface EvalRunModelOverride {
   provider: 'openai' | 'openai-compatible' | 'gemini' | 'claude'
   model: string
@@ -228,9 +272,16 @@ export const evalsApi = {
     }, { withApiToken: true })
   },
 
-  async listCases(): Promise<{ cases: EvalCase[] }> {
-    return request<{ cases: EvalCase[] }>('/evals/cases', {
+  async listCases(): Promise<{ cases: EvalCaseListItem[]; summary: EvalSuiteSummary }> {
+    return request<{ cases: EvalCaseListItem[]; summary: EvalSuiteSummary }>('/evals/cases', {
       method: 'GET',
+    }, { withApiToken: true })
+  },
+
+  async runAll(input: { mode?: EvalRunMode } = {}): Promise<EvalSuiteRunResult> {
+    return request<EvalSuiteRunResult>('/evals/cases/run-all', {
+      method: 'POST',
+      body: JSON.stringify({ mode: input.mode ?? 'full_assistant' }),
     }, { withApiToken: true })
   },
 

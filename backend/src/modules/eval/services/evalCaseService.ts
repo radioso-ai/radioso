@@ -2,6 +2,7 @@ import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import type {
   EvalAssertion,
   EvalCase,
+  EvalCaseListItem,
   EvalCaseWithRuns,
 } from "../domain/types.js";
 import type { EvalRepositoryPort } from "./evalRepository.js";
@@ -103,6 +104,10 @@ export class EvalCaseService {
 
   async list(workspaceId: string): Promise<EvalCase[]> {
     return this.repository.listCases(workspaceId);
+  }
+
+  async listWithLatestRun(workspaceId: string): Promise<EvalCaseListItem[]> {
+    return this.repository.listCasesWithLatestRun(workspaceId);
   }
 
   async delete(workspaceId: string, caseId: string): Promise<void> {

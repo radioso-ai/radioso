@@ -123,6 +123,56 @@ describeIntegration("EvalRepository (Postgres)", () => {
     expect(ids.indexOf(second.id)).toBeLessThan(ids.indexOf(first.id));
   });
 
+  it("lists cases with the most recent run per case", async () => {
+    const snapshot = await createSnapshot();
+    const assertions: EvalAssertion[] = [
+      { type: "answer_contains", pattern: "refund", matchMode: "substring" },
+    ];
+    const scored = await repository.createCase({
+      workspaceId,
+      snapshotId: snapshot.id,
+      name: "Scored with runs",
+      assertions,
+    });
+    const neverRun = await repository.createCase({
+      workspaceId,
+      snapshotId: snapshot.id,
+      name: "Never run",
+      assertions,
+    });
+
+    const makeRun = (status: "pass" | "fail", resolvedConfig: EvalRunResolvedConfig, completedAt: Date) =>
+      repository.createRun({
+        workspaceId,
+        snapshotId: snapshot.id,
+        caseId: scored.id,
+        mode: "full_assistant",
+        overrides: {} as EvalRunOverrides,
+        resolvedConfig,
+        observedOutput: { retrievedChunks: [] } as EvalRunObservedOutput,
+        assertionVerdicts: [] as AssertionVerdict[],
+        status,
+        outcomeReason: status === "fail" ? "Did not match" : null,
+        completedAt,
+      });
+
+    await makeRun("fail", {} as EvalRunResolvedConfig, new Date(Date.now() - 60_000));
+    const latest = await makeRun("pass", { modelId: "gpt-5-mini" } as EvalRunResolvedConfig, new Date());
+
+    const items = await repository.listCasesWithLatestRun(workspaceId);
+    const byId = new Map(items.map((item) => [item.id, item]));
+
+    // The latest run wins, carrying its status and resolved model.
+    expect(byId.get(scored.id)?.latestRun).toMatchObject({
+      id: latest.id,
+      status: "pass",
+      mode: "full_assistant",
+      modelId: "gpt-5-mini",
+    });
+    // A case that has never run reports no latest run.
+    expect(byId.get(neverRun.id)?.latestRun).toBeNull();
+  });
+
   it("resets status and clears last_run_id when assertions are edited", async () => {
     const snapshot = await createSnapshot();
     const created = await repository.createCase({

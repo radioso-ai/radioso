@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useReducer, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, ArrowLeft, Bug, CheckCircle2, ChevronDown, ChevronRight, CircleDashed, Minimize2, RefreshCw, Trash2, Workflow, XCircle } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Bug, CheckCircle2, ChevronDown, ChevronRight, CircleDashed, Minimize2, Play, RefreshCw, Trash2, Workflow, XCircle } from 'lucide-react'
 
 import {
   AlertDialog,
@@ -55,11 +55,13 @@ import type {
   AgentConfigOverrideInput,
   EvalAssertion,
   EvalCase,
+  EvalCaseListItem,
   EvalCaseStatus,
   EvalCaseWithRuns,
   EvalRun,
   EvalRunStatus,
   EvalSnapshot,
+  EvalSuiteSummary,
   WorkbenchReplayRunResponse,
 } from '@/lib/api-eval'
 import type { DocumentSummary } from '@/lib/api-types'
@@ -478,30 +480,54 @@ interface EvalListProps {
 
 function EvalList({ accountId, routeState }: EvalListProps) {
   const router = useRouter()
-  const [cases, setCases] = useState<EvalCase[] | null>(null)
+  const [cases, setCases] = useState<EvalCaseListItem[] | null>(null)
+  const [summary, setSummary] = useState<EvalSuiteSummary | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [running, setRunning] = useState(false)
+  const [runError, setRunError] = useState<string | null>(null)
   const [deleteCandidate, setDeleteCandidate] = useState<EvalCase | null>(null)
   const [deletingCaseId, setDeletingCaseId] = useState<string | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      try {
-        const response = await evalsApi.listCases()
-        if (cancelled) return
-        setCases(response.cases)
-        setError(null)
-      } catch (err) {
-        if (cancelled) return
-        setError(getApiErrorMessage(err, 'Eval request failed'))
-        setCases([])
-      }
-    })()
-    return () => {
-      cancelled = true
+  const loadCases = useCallback(async (signal?: { cancelled: boolean }) => {
+    try {
+      const response = await evalsApi.listCases()
+      if (signal?.cancelled) return
+      setCases(response.cases)
+      setSummary(response.summary)
+      setError(null)
+    } catch (err) {
+      if (signal?.cancelled) return
+      setError(getApiErrorMessage(err, 'Eval request failed'))
+      setCases([])
+      setSummary(null)
     }
   }, [])
+
+  useEffect(() => {
+    const signal = { cancelled: false }
+    void (async () => {
+      await loadCases(signal)
+    })()
+    return () => {
+      signal.cancelled = true
+    }
+  }, [loadCases])
+
+  const runAll = useCallback(async () => {
+    setRunning(true)
+    setRunError(null)
+    try {
+      const result = await evalsApi.runAll()
+      setSummary(result.summary)
+      // Re-read the list so the per-case "last run" column reflects the run.
+      await loadCases()
+    } catch (err) {
+      setRunError(getApiErrorMessage(err, 'Failed to run eval suite'))
+    } finally {
+      setRunning(false)
+    }
+  }, [loadCases])
 
   const openCase = (caseId: string) => {
     router.push(buildDashboardHref(accountId, { ...routeState, section: 'eval', evalCaseId: caseId }))
@@ -539,6 +565,22 @@ function EvalList({ accountId, routeState }: EvalListProps) {
     </div>
   )
 
+  const passRateText = summary
+    ? summary.scored === 0
+      ? 'No scored cases yet'
+      : `${summary.passing} of ${summary.scored} ${summary.scored === 1 ? 'case' : 'cases'} passing`
+    : ''
+  const passRateDetailParts: string[] = []
+  if (summary) {
+    if (summary.failing) passRateDetailParts.push(`${summary.failing} failing`)
+    if (summary.error) passRateDetailParts.push(`${summary.error} error`)
+    if (summary.pending) passRateDetailParts.push(`${summary.pending} not run`)
+    if (summary.unscored) passRateDetailParts.push(`${summary.unscored} without expectations`)
+  }
+  const passRateDetail = passRateDetailParts.join(' · ')
+  const hasCases = cases !== null && cases.length > 0
+  const canRunAll = (summary?.scored ?? 0) > 0
+
   return (
     <DashboardPage
       title="Eval"
@@ -546,6 +588,30 @@ function EvalList({ accountId, routeState }: EvalListProps) {
       headerContent={howToHint}
     >
       {error ? <p className="mb-4 text-sm text-rose-600">{error}</p> : null}
+      {hasCases ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+            <span className="font-medium text-foreground">{passRateText}</span>
+            {passRateDetail ? <span className="text-muted-foreground">{passRateDetail}</span> : null}
+          </div>
+          <div className="flex items-center gap-3">
+            {runError ? <span className="text-sm text-rose-600">{runError}</span> : null}
+            <Button type="button" onClick={runAll} disabled={running || !canRunAll}>
+              {running ? (
+                <>
+                  <Spinner className="mr-2 h-4 w-4" />
+                  Running all…
+                </>
+              ) : (
+                <>
+                  <Play className="mr-2 h-4 w-4" />
+                  Run all
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      ) : null}
       <EvalCaseDeleteDialog
         candidate={deleteCandidate}
         deleting={Boolean(deletingCaseId)}
@@ -567,10 +633,11 @@ function EvalList({ accountId, routeState }: EvalListProps) {
           No eval cases yet. Capture one from chat or activity using the steps above.
         </div>
       ) : (
-        <DashboardTable aria-label="Eval cases" minWidth="min-w-[640px]">
+        <DashboardTable aria-label="Eval cases" minWidth="min-w-[760px]">
           <DashboardTableHead>
             <DashboardTableHeader>Case</DashboardTableHeader>
             <DashboardTableHeader className="w-32">Status</DashboardTableHeader>
+            <DashboardTableHeader className="w-40">Last run</DashboardTableHeader>
             <DashboardTableHeader className="w-40">Expectations</DashboardTableHeader>
             <DashboardTableHeader className="w-44">Updated</DashboardTableHeader>
             <DashboardTableHeader className="w-16">
@@ -597,6 +664,20 @@ function EvalList({ accountId, routeState }: EvalListProps) {
                 </DashboardTableCell>
                 <DashboardTableCell className="w-32">
                   <Badge variant="outline" className={statusBadgeClass(c.status)}>{c.status}</Badge>
+                </DashboardTableCell>
+                <DashboardTableCell className="w-40">
+                  {c.latestRun ? (
+                    <div className="flex flex-col gap-1">
+                      <Badge variant="outline" className={`w-fit ${statusBadgeClass(c.latestRun.status)}`}>
+                        {c.latestRun.status}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        {formatRelative(c.latestRun.completedAt ?? c.latestRun.startedAt)}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
                 </DashboardTableCell>
                 <DashboardTableCell className="w-40 text-muted-foreground">
                   {c.assertions.length === 0

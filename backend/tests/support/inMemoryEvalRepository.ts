@@ -9,6 +9,7 @@ import type {
 import type {
   EvalAssertion,
   EvalCase,
+  EvalCaseListItem,
   EvalCaseStatus,
   EvalRun,
   EvalSnapshot,
@@ -71,6 +72,30 @@ export class InMemoryEvalRepository implements EvalRepositoryPort {
 
   async listCases(workspaceId: string): Promise<EvalCase[]> {
     return [...this.cases.values()].filter((c) => c.workspaceId === workspaceId);
+  }
+
+  async listCasesWithLatestRun(workspaceId: string): Promise<EvalCaseListItem[]> {
+    return [...this.cases.values()]
+      .filter((c) => c.workspaceId === workspaceId)
+      .map((evalCase) => {
+        const latest = this.runs
+          .filter((r) => r.workspaceId === workspaceId && r.caseId === evalCase.id)
+          .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
+        return {
+          ...evalCase,
+          latestRun: latest
+            ? {
+                id: latest.id,
+                status: latest.status,
+                mode: latest.mode,
+                startedAt: latest.startedAt,
+                completedAt: latest.completedAt,
+                modelId: latest.resolvedConfig.modelId ?? null,
+                outcomeReason: latest.outcomeReason,
+              }
+            : null,
+        };
+      });
   }
 
   async deleteCase(workspaceId: string, caseId: string): Promise<boolean> {

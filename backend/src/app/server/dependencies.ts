@@ -62,6 +62,7 @@ import {
   EvalRepository,
   EvalRunService,
   EvalSnapshotService,
+  EvalSuiteService,
   RetrievalPipelineEvalRunner,
 } from "../../modules/eval/composition.js";
 import type { ConversationModelGateway } from "@radioso/conversation-contract";
@@ -586,6 +587,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     chat.workbenchReplayRunner,
     logger,
   );
+  const evalSuiteService = new EvalSuiteService(evalRepository, evalRunService, logger);
   const customerReplyDelivery = new CustomerReplyDeliveryDispatcher({
     slack: new SlackCustomerReplyDeliverer({
       installations: repositories.slackInstallationRepository,
@@ -679,6 +681,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     evalSnapshotService,
     evalCaseService,
     evalRunService,
+    evalSuiteService,
     platformSettingsService,
     agentService,
     authoredDirectiveService,

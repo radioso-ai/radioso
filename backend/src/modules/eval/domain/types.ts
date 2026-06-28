@@ -178,3 +178,23 @@ export interface EvalRun {
 export interface EvalCaseWithRuns extends EvalCase {
   runs: EvalRun[];
 }
+
+/**
+ * Compact view of a run for the suite list's "last run" column. Distinct from
+ * {@link EvalCase.status}: the case status is the *configured* verdict (reset to
+ * `pending` whenever expectations change), whereas `latestRun` reflects the most
+ * recent *execution* regardless of later edits.
+ */
+export interface EvalRunSummary {
+  id: string;
+  status: EvalRunStatus;
+  mode: EvalRunMode;
+  startedAt: string;
+  completedAt: string | null;
+  modelId: string | null;
+  outcomeReason: string | null;
+}
+
+export interface EvalCaseListItem extends EvalCase {
+  latestRun: EvalRunSummary | null;
+}

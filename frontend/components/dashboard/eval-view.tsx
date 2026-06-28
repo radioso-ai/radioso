@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useReducer, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, ArrowLeft, Bug, CheckCircle2, ChevronDown, ChevronRight, CircleDashed, Minimize2, RefreshCw, Trash2, Workflow, XCircle } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Bug, CheckCircle2, ChevronDown, ChevronRight, CircleDashed, Minimize2, Play, RefreshCw, Trash2, Workflow, XCircle } from 'lucide-react'
 
 import {
   AlertDialog,
@@ -55,11 +55,13 @@ import type {
   AgentConfigOverrideInput,
   EvalAssertion,
   EvalCase,
+  EvalCaseListItem,
   EvalCaseStatus,
   EvalCaseWithRuns,
   EvalRun,
   EvalRunStatus,
   EvalSnapshot,
+  EvalSuiteSummary,
   WorkbenchReplayRunResponse,
 } from '@/lib/api-eval'
 import type { DocumentSummary } from '@/lib/api-types'
@@ -478,29 +480,72 @@ interface EvalListProps {
 
 function EvalList({ accountId, routeState }: EvalListProps) {
   const router = useRouter()
-  const [cases, setCases] = useState<EvalCase[] | null>(null)
+  const [cases, setCases] = useState<EvalCaseListItem[] | null>(null)
+  const [summary, setSummary] = useState<EvalSuiteSummary | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [running, setRunning] = useState(false)
+  const [runError, setRunError] = useState<string | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [deleteCandidate, setDeleteCandidate] = useState<EvalCase | null>(null)
   const [deletingCaseId, setDeletingCaseId] = useState<string | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
+  const loadCases = useCallback(async (signal?: { cancelled: boolean }) => {
+    try {
+      const response = await evalsApi.listCases()
+      if (signal?.cancelled) return
+      setCases(response.cases)
+      setSummary(response.summary)
+      setError(null)
+    } catch (err) {
+      if (signal?.cancelled) return
+      setError(getApiErrorMessage(err, 'Eval request failed'))
+      setCases([])
+      setSummary(null)
+    }
+  }, [])
+
   useEffect(() => {
-    let cancelled = false
+    const signal = { cancelled: false }
     void (async () => {
-      try {
-        const response = await evalsApi.listCases()
-        if (cancelled) return
-        setCases(response.cases)
-        setError(null)
-      } catch (err) {
-        if (cancelled) return
-        setError(getApiErrorMessage(err, 'Eval request failed'))
-        setCases([])
-      }
+      await loadCases(signal)
     })()
     return () => {
-      cancelled = true
+      signal.cancelled = true
     }
+  }, [loadCases])
+
+  // Run the whole suite (caseIds omitted) or a selected subset.
+  const runSuite = useCallback(async (caseIds?: string[]) => {
+    setRunning(true)
+    setRunError(null)
+    try {
+      const result = await evalsApi.runSuite(caseIds ? { caseIds } : {})
+      // Refresh the rows (last-run column) from persisted state, then keep the
+      // run's summary as the headline. The GET summary is derived from persisted
+      // case status, which does not capture a case that errored before a run was
+      // recorded (a missing/broken snapshot) — letting it win here would silently
+      // flip such a case back to passing in the pass rate.
+      await loadCases()
+      setSummary(result.summary)
+      setSelected(new Set())
+    } catch (err) {
+      setRunError(getApiErrorMessage(err, 'Failed to run eval suite'))
+    } finally {
+      setRunning(false)
+    }
+  }, [loadCases])
+
+  const toggleSelected = useCallback((caseId: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(caseId)) {
+        next.delete(caseId)
+      } else {
+        next.add(caseId)
+      }
+      return next
+    })
   }, [])
 
   const openCase = (caseId: string) => {
@@ -539,6 +584,29 @@ function EvalList({ accountId, routeState }: EvalListProps) {
     </div>
   )
 
+  const passRateText = summary
+    ? summary.scored === 0
+      ? 'No scored cases yet'
+      : `${summary.passing} of ${summary.scored} ${summary.scored === 1 ? 'case' : 'cases'} passing`
+    : ''
+  const passRateDetailParts: string[] = []
+  if (summary) {
+    if (summary.failing) passRateDetailParts.push(`${summary.failing} failing`)
+    if (summary.error) passRateDetailParts.push(`${summary.error} error`)
+    if (summary.pending) passRateDetailParts.push(`${summary.pending} not run`)
+    if (summary.unscored) passRateDetailParts.push(`${summary.unscored} without expectations`)
+  }
+  const passRateDetail = passRateDetailParts.join(' · ')
+  const hasCases = cases !== null && cases.length > 0
+  const canRunAll = (summary?.scored ?? 0) > 0
+  // Only scored cases (with expectations) are selectable — running a case with
+  // no expectations would do nothing.
+  const scoredIds = (cases ?? []).filter((c) => c.assertions.length > 0).map((c) => c.id)
+  const allScoredSelected = scoredIds.length > 0 && scoredIds.every((id) => selected.has(id))
+  const toggleSelectAll = () => {
+    setSelected(allScoredSelected ? new Set() : new Set(scoredIds))
+  }
+
   return (
     <DashboardPage
       title="Eval"
@@ -546,6 +614,41 @@ function EvalList({ accountId, routeState }: EvalListProps) {
       headerContent={howToHint}
     >
       {error ? <p className="mb-4 text-sm text-rose-600">{error}</p> : null}
+      {hasCases ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+            <span className="font-medium text-foreground">{passRateText}</span>
+            {passRateDetail ? <span className="text-muted-foreground">{passRateDetail}</span> : null}
+          </div>
+          <div className="flex items-center gap-3">
+            {runError ? <span className="text-sm text-rose-600">{runError}</span> : null}
+            {selected.size > 0 ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => runSuite([...selected])}
+                disabled={running}
+              >
+                <Play className="mr-2 h-4 w-4" />
+                Run selected ({selected.size})
+              </Button>
+            ) : null}
+            <Button type="button" onClick={() => runSuite()} disabled={running || !canRunAll}>
+              {running ? (
+                <>
+                  <Spinner className="mr-2 h-4 w-4" />
+                  Running…
+                </>
+              ) : (
+                <>
+                  <Play className="mr-2 h-4 w-4" />
+                  Run all
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      ) : null}
       <EvalCaseDeleteDialog
         candidate={deleteCandidate}
         deleting={Boolean(deletingCaseId)}
@@ -567,10 +670,21 @@ function EvalList({ accountId, routeState }: EvalListProps) {
           No eval cases yet. Capture one from chat or activity using the steps above.
         </div>
       ) : (
-        <DashboardTable aria-label="Eval cases" minWidth="min-w-[640px]">
+        <DashboardTable aria-label="Eval cases" minWidth="min-w-[800px]">
           <DashboardTableHead>
+            <DashboardTableHeader className="w-10">
+              <input
+                type="checkbox"
+                aria-label="Select all scored cases"
+                className="h-4 w-4 rounded border-border"
+                checked={allScoredSelected}
+                disabled={scoredIds.length === 0}
+                onChange={toggleSelectAll}
+              />
+            </DashboardTableHeader>
             <DashboardTableHeader>Case</DashboardTableHeader>
             <DashboardTableHeader className="w-32">Status</DashboardTableHeader>
+            <DashboardTableHeader className="w-40">Last run</DashboardTableHeader>
             <DashboardTableHeader className="w-40">Expectations</DashboardTableHeader>
             <DashboardTableHeader className="w-44">Updated</DashboardTableHeader>
             <DashboardTableHeader className="w-16">
@@ -592,11 +706,37 @@ function EvalList({ accountId, routeState }: EvalListProps) {
                 }}
                 className="cursor-pointer"
               >
+                <DashboardTableCell className="w-10">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select eval case ${c.name}`}
+                    className="h-4 w-4 rounded border-border disabled:opacity-40"
+                    checked={selected.has(c.id)}
+                    disabled={c.assertions.length === 0}
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    onChange={() => toggleSelected(c.id)}
+                  />
+                </DashboardTableCell>
                 <DashboardTableCell>
                   <span className="block truncate font-medium text-foreground">{c.name}</span>
                 </DashboardTableCell>
                 <DashboardTableCell className="w-32">
                   <Badge variant="outline" className={statusBadgeClass(c.status)}>{c.status}</Badge>
+                </DashboardTableCell>
+                <DashboardTableCell className="w-40">
+                  {c.latestRun ? (
+                    <div className="flex flex-col gap-1">
+                      <Badge variant="outline" className={`w-fit ${statusBadgeClass(c.latestRun.status)}`}>
+                        {c.latestRun.status}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        {formatRelative(c.latestRun.completedAt ?? c.latestRun.startedAt)}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
                 </DashboardTableCell>
                 <DashboardTableCell className="w-40 text-muted-foreground">
                   {c.assertions.length === 0

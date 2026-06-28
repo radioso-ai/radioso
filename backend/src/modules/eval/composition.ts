@@ -3,10 +3,12 @@ export type {
   AssertionVerdictStatus,
   EvalAssertion,
   EvalCase,
+  EvalCaseListItem,
   EvalCaseStatus,
   EvalCaseWithRuns,
   EvalRun,
   EvalRunMode,
+  EvalRunSummary,
   EvalRunObservedOutput,
   EvalRunOverrides,
   EvalRunResolvedConfig,
@@ -43,6 +45,13 @@ export {
   type EvalRunOutcome,
   type EvalWorkbenchReplayRunnerPort,
 } from "./services/evalRunService.js";
+export {
+  EvalSuiteService,
+  type EvalSuiteCaseResult,
+  type EvalSuiteRunInput,
+  type EvalSuiteRunResult,
+} from "./services/evalSuiteService.js";
+export { summarizeSuite, type EvalSuiteSummary } from "./domain/suite.js";
 export {
   findLastUserMessage,
   type EvalRetrievalRunnerPort,

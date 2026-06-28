@@ -85,6 +85,7 @@ import type { EmailService } from "../../modules/mail/public.js";
 import type {
   EvalCaseService,
   EvalRunService,
+  EvalSuiteService,
   EvalSnapshotService,
 } from "../../modules/eval/composition.js";
 import type { ApprovalDecisionService } from "../../modules/approvals/public.js";
@@ -164,6 +165,7 @@ export interface AppDependencies {
   evalSnapshotService: EvalSnapshotService;
   evalCaseService: EvalCaseService;
   evalRunService: EvalRunService;
+  evalSuiteService: EvalSuiteService;
   platformSettingsService: PlatformSettingsService;
   skillCatalogService: SkillCatalogService;
   skillAuthoringCatalog: SkillAuthoringCatalog;

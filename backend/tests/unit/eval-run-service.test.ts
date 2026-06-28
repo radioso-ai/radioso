@@ -211,6 +211,30 @@ class InMemoryEvalRepository implements EvalRepositoryPort {
     return [...this.cases.values()].filter((c) => c.workspaceId === workspaceId);
   }
 
+  async listCasesWithLatestRun(workspaceId: string) {
+    return [...this.cases.values()]
+      .filter((c) => c.workspaceId === workspaceId)
+      .map((evalCase) => {
+        const latest = this.runs
+          .filter((r) => r.workspaceId === workspaceId && r.caseId === evalCase.id)
+          .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
+        return {
+          ...evalCase,
+          latestRun: latest
+            ? {
+                id: latest.id,
+                status: latest.status,
+                mode: latest.mode,
+                startedAt: latest.startedAt,
+                completedAt: latest.completedAt,
+                modelId: latest.resolvedConfig.modelId ?? null,
+                outcomeReason: latest.outcomeReason,
+              }
+            : null,
+        };
+      });
+  }
+
   async deleteCase(workspaceId: string, caseId: string): Promise<boolean> {
     const existing = this.cases.get(caseId);
     if (!existing || existing.workspaceId !== workspaceId) return false;

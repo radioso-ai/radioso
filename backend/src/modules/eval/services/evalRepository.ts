@@ -6,6 +6,7 @@ import type {
   AssertionVerdict,
   EvalAssertion,
   EvalCase,
+  EvalCaseListItem,
   EvalCaseStatus,
   EvalRun,
   EvalRunMode,
@@ -13,6 +14,7 @@ import type {
   EvalRunOverrides,
   EvalRunResolvedConfig,
   EvalRunStatus,
+  EvalRunSummary,
   EvalSnapshot,
   EvalSnapshotFidelity,
   EvalSnapshotMessage,
@@ -183,6 +185,7 @@ export interface EvalRepositoryPort {
   createCase(input: CreateCaseInput): Promise<EvalCase>;
   findCase(workspaceId: string, id: string): Promise<EvalCase | null>;
   listCases(workspaceId: string): Promise<EvalCase[]>;
+  listCasesWithLatestRun(workspaceId: string): Promise<EvalCaseListItem[]>;
   deleteCase(workspaceId: string, caseId: string): Promise<boolean>;
   updateCaseAssertions(
     workspaceId: string,
@@ -332,6 +335,58 @@ export class EvalRepository implements EvalRepositoryPort {
       .orderBy("id", "desc")
       .execute();
     return rows.map((row) => mapCase(row as CaseRow));
+  }
+
+  async listCasesWithLatestRun(workspaceId: string): Promise<EvalCaseListItem[]> {
+    const caseRows = await this.db
+      .selectFrom("eval_cases")
+      .select(caseColumns)
+      .where("workspace_id", "=", workspaceId)
+      .orderBy("updated_at", "desc")
+      .orderBy("id", "desc")
+      .execute();
+
+    // One row per case: the most recent run, via DISTINCT ON. The case_id is the
+    // leading order key (DISTINCT ON requires it) and started_at DESC picks the
+    // latest. This stays a single query — no per-case round-trips.
+    const runRows = await this.db
+      .selectFrom("eval_runs")
+      .select([
+        "id",
+        "case_id",
+        "mode",
+        "status",
+        "resolved_config",
+        "outcome_reason",
+        "started_at",
+        "completed_at",
+      ])
+      .distinctOn("case_id")
+      .where("workspace_id", "=", workspaceId)
+      .where("case_id", "is not", null)
+      .orderBy("case_id")
+      .orderBy("started_at", "desc")
+      .orderBy("id", "desc")
+      .execute();
+
+    const latestByCase = new Map<string, EvalRunSummary>();
+    for (const row of runRows) {
+      if (!row.case_id) continue;
+      latestByCase.set(row.case_id, {
+        id: row.id,
+        status: row.status as EvalRunStatus,
+        mode: row.mode as EvalRunMode,
+        startedAt: isoDate(row.started_at as Date | string),
+        completedAt: row.completed_at ? isoDate(row.completed_at as Date | string) : null,
+        modelId: asObject<EvalRunResolvedConfig>(row.resolved_config, {}).modelId ?? null,
+        outcomeReason: (row.outcome_reason as string | null) ?? null,
+      });
+    }
+
+    return caseRows.map((row) => ({
+      ...mapCase(row as CaseRow),
+      latestRun: latestByCase.get((row as CaseRow).id) ?? null,
+    }));
   }
 
   async deleteCase(workspaceId: string, caseId: string): Promise<boolean> {

@@ -90,9 +90,13 @@ export class EvalSuiteService {
         finalStates.push(outcome.case ?? evalCase);
       } catch (error) {
         // One case failing to run must not abort the rest of the suite.
+        // `execute` can throw before any run is recorded (missing snapshot,
+        // lost agent identity, …), leaving the case's persisted status stale.
+        // The summary must reflect *this run* — count the case as errored, not
+        // its prior (possibly passing) status, so the rate matches the results.
         const message = error instanceof Error ? error.message : "Unknown run error";
         results.push({ caseId: evalCase.id, name: evalCase.name, status: "error", run: null, error: message });
-        finalStates.push(evalCase);
+        finalStates.push({ assertions: evalCase.assertions, status: "error" });
       }
     }
 

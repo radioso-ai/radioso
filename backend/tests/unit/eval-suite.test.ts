@@ -146,8 +146,11 @@ describe("EvalSuiteService.runAll", () => {
   });
 
   it("isolates a single failing case run so the rest of the suite still completes", async () => {
+    // case-1 was passing before, but its run now throws before any run is
+    // recorded (e.g. its snapshot went missing). It must NOT still count as
+    // passing in the aggregate — the rate has to match the per-case result.
     const cases = [
-      makeCase({ id: "case-1", snapshotId: "snap-1" }),
+      makeCase({ id: "case-1", snapshotId: "snap-1", status: "passing" }),
       makeCase({ id: "case-2", snapshotId: "snap-2", status: "passing" }),
     ];
     const runner = new RecordingRunner((input) => {
@@ -162,9 +165,9 @@ describe("EvalSuiteService.runAll", () => {
 
     expect(result.results[0]).toMatchObject({ caseId: "case-1", status: "error", error: "snapshot exploded" });
     expect(result.results[1]).toMatchObject({ caseId: "case-2", status: "pass" });
-    // The thrown case keeps its prior status (pending); the other reflects its
-    // fresh passing run.
-    expect(result.summary).toMatchObject({ total: 2, scored: 2, passing: 1, pending: 1 });
+    // The thrown case is counted as errored (not its stale passing status); the
+    // other reflects its fresh passing run.
+    expect(result.summary).toMatchObject({ total: 2, scored: 2, passing: 1, error: 1 });
   });
 
   it("forwards an explicit run mode to each case", async () => {

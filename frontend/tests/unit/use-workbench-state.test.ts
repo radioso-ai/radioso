@@ -4,6 +4,7 @@ import {
   buildAgentConfigOverrideDelta,
   createWorkbenchOverrideState,
   findSeedTurn,
+  isRoutineStartStateReady,
   isWorkbenchOverrideDeltaEmpty,
   mapReplayResultToRunCard,
   workbenchOverrideReducer,
@@ -18,7 +19,8 @@ const baseline: WorkbenchOverrideValues = {
   customInstruction: 'Default instruction',
   retrievalSkillSettings: { vectorTopK: 8, retrievalStrategy: 'auto' },
   authoredDirectives: [{ id: 'directive-1', title: 'Default directive' }],
-}
+  routineStartState: null,
+} as unknown as WorkbenchOverrideValues
 
 describe('workbench override state', () => {
   it('starts with an empty delta even when baseline fields have values', () => {
@@ -62,6 +64,43 @@ describe('workbench override state', () => {
     )
 
     expect(buildAgentConfigOverrideDelta(state)).toEqual({ authoredDirectives: [] })
+  })
+
+  it('tracks a mid-routine start state separately from the agent config delta', () => {
+    let state = createWorkbenchOverrideState(baseline)
+    expect(state.values.routineStartState).toBeNull()
+    expect(state.touched.routineStartState).toBe(false)
+
+    state = workbenchOverrideReducer(state, {
+      type: 'set-routine-start-state',
+      value: { routineId: 'ask_email', path: ['step_1'], variables: { email: 'a@b.com' }, status: 'active' },
+    })
+
+    expect(state.touched.routineStartState).toBe(true)
+    expect(state.values.routineStartState).toEqual({
+      routineId: 'ask_email',
+      path: ['step_1'],
+      variables: { email: 'a@b.com' },
+      status: 'active',
+    })
+    // The routine seed is a separate replay override, not part of agentConfigOverride.
+    expect(buildAgentConfigOverrideDelta(state)).toEqual({})
+  })
+
+  it('does not treat a routine start state as ready until a step is selected', () => {
+    expect(isRoutineStartStateReady(null)).toBe(false)
+    expect(isRoutineStartStateReady({
+      routineId: 'ask_email',
+      path: [],
+      variables: {},
+      status: 'active',
+    })).toBe(false)
+    expect(isRoutineStartStateReady({
+      routineId: 'ask_email',
+      path: ['step_1'],
+      variables: {},
+      status: 'active',
+    })).toBe(true)
   })
 })
 

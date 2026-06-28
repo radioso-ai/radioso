@@ -24,6 +24,8 @@ import {
   type LlmProviderName,
 } from '@/lib/api-llm-providers'
 import type { RetrievalSkillSettingsOverride, RetrievalStrategy } from '@/lib/retrieval-skill-settings'
+import type { EvalRunRoutineStartStateInput } from '@/lib/api-eval'
+import type { RoutineDefinition } from '@/lib/api-types'
 import type {
   WorkbenchOverrideAction,
   WorkbenchOverrideState,
@@ -31,6 +33,139 @@ import type {
 } from './use-workbench-state'
 
 const retrievalStrategies: RetrievalStrategy[] = ['auto', 'fixed', 'reasoning']
+
+const stepLabel = (step: RoutineDefinition['steps'][number]): string => {
+  const outline = step.metadata?.outlineLabel
+  if (typeof outline === 'string' && outline.length > 0) return outline
+  return step.instruction || step.stableStepId
+}
+
+/**
+ * Authors a mid-routine starting position for a replay: pick a published routine, the
+ * step to resume at, and any slot values already collected. Emits the full
+ * RoutineState (status "active", path = [step]) so the replay resumes there. Capturing
+ * an exact routine position from a real conversation is the snapshot's job; this is for
+ * synthetic "what if we were at step X with these slots" testing.
+ */
+function RoutineStartStateSection({
+  routines,
+  enabled,
+  value,
+  dispatch,
+}: {
+  routines: RoutineDefinition[]
+  enabled: boolean
+  value: EvalRunRoutineStartStateInput | null
+  dispatch: (action: WorkbenchOverrideAction) => void
+}) {
+  const selectedRoutine = routines.find((routine) => routine.id === value?.routineId) ?? null
+  const selectedStepId = value?.path[value.path.length - 1] ?? ''
+
+  const emit = (next: Partial<EvalRunRoutineStartStateInput> & { routineId: string }) => {
+    dispatch({
+      type: 'set-routine-start-state',
+      value: {
+        routineId: next.routineId,
+        path: next.path ?? (next.routineId === value?.routineId ? value?.path ?? [] : []),
+        variables: next.variables ?? (next.routineId === value?.routineId ? value?.variables ?? {} : {}),
+        status: 'active',
+      },
+    })
+  }
+
+  return (
+    <section className="space-y-3 rounded-lg border border-border p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-medium text-foreground">Resume mid-routine</h3>
+          <p className="text-xs text-muted-foreground">
+            Start this replay inside a routine, at a chosen step with slots pre-filled, to test a later step.
+          </p>
+        </div>
+        <OverrideToggle
+          checked={enabled}
+          label="Resume mid-routine"
+          onCheckedChange={(checked) => {
+            dispatch({ type: 'set-routine-start-state', value: checked ? value : null })
+          }}
+        />
+      </div>
+
+      {enabled ? (
+        routines.length === 0 ? (
+          <p className="text-xs text-muted-foreground">This agent has no published routines to resume.</p>
+        ) : (
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-foreground">Routine</label>
+              <Select
+                value={value?.routineId ?? ''}
+                onValueChange={(routineId) => emit({ routineId, path: [], variables: {} })}
+              >
+                <SelectTrigger aria-label="Routine">
+                  <SelectValue placeholder="Select a routine" />
+                </SelectTrigger>
+                <SelectContent>
+                  {routines.map((routine) => (
+                    <SelectItem key={routine.id} value={routine.id}>
+                      {routine.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {selectedRoutine ? (
+              <>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-foreground">Resume at step</label>
+                  <Select
+                    value={selectedStepId}
+                    onValueChange={(stepId) => emit({ routineId: selectedRoutine.id, path: [stepId] })}
+                  >
+                    <SelectTrigger aria-label="Resume at step">
+                      <SelectValue placeholder="Select a step" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {selectedRoutine.steps.map((step) => (
+                        <SelectItem key={step.stableStepId} value={step.stableStepId}>
+                          {stepLabel(step)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {selectedRoutine.slots.length > 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-foreground">Collected slots</p>
+                    {selectedRoutine.slots.map((slot) => (
+                      <div key={slot.stableSlotId} className="space-y-1">
+                        <label className="text-xs text-muted-foreground" htmlFor={`slot-${slot.stableSlotId}`}>
+                          {slot.key}
+                        </label>
+                        <Input
+                          id={`slot-${slot.stableSlotId}`}
+                          value={String(value?.variables?.[slot.key] ?? '')}
+                          onChange={(event) =>
+                            emit({
+                              routineId: selectedRoutine.id,
+                              variables: { ...(value?.variables ?? {}), [slot.key]: event.target.value },
+                            })
+                          }
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+          </div>
+        )
+      ) : null}
+    </section>
+  )
+}
 
 function OverrideToggle({
   checked,
@@ -57,11 +192,13 @@ export function WorkbenchOverridePanel({
   baseline,
   state,
   dispatch,
+  routines = [],
   variant = 'sidebar',
 }: {
   baseline: WorkbenchOverrideValues
   state: WorkbenchOverrideState
   dispatch: (action: WorkbenchOverrideAction) => void
+  routines?: RoutineDefinition[]
   variant?: 'sidebar' | 'embedded' | 'drawer'
 }) {
   const [knownModels, setKnownModels] = useState<KnownModelsByProvider>(emptyKnownModelsByProvider)
@@ -322,6 +459,13 @@ export function WorkbenchOverridePanel({
             Reset all overrides
           </Button>
         </section>
+
+        <RoutineStartStateSection
+          routines={routines}
+          enabled={state.touched.routineStartState}
+          value={state.values.routineStartState}
+          dispatch={dispatch}
+        />
       </div>
   )
 

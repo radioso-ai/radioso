@@ -1,3 +1,4 @@
+import type { RoutineState } from "@radioso/conversation-contract";
 import type { AgentSnapshot, InternalAgentConfig } from "../../agents/public.js";
 import type { AnswerSegment, ChatCitation, TurnTraceEnvelope } from "../../chat/contracts/index.js";
 import type { ActivityTrace } from "../../retrieval/public.js";
@@ -48,6 +49,14 @@ export interface EvalSnapshot {
   // originalAgent when present; originalAgent remains readable for legacy rows.
   originalAgentConfig: InternalAgentConfig | null;
   sourceAgentId: string | null;
+  // The conversation's routine position at capture time (full RoutineState minus
+  // sessionId), captured as reference data alongside the other original* fields. NULL
+  // when no routine was active. NOTE: this is the *current* (post-turn) position —
+  // routine_states keeps a single current row per conversation — so it is NOT a faithful
+  // pre-turn seed for replaying an already-completed assistant turn and is intentionally
+  // not auto-applied as a replay seed. Use the explicit routineStartState override to
+  // seed a mid-routine replay.
+  originalRoutineState: EvalRunRoutineStartState | null;
   originalRetrievalResult: EvalSnapshotOriginalRetrievalChunk[] | null;
   capturedAt: string;
   capturedBy: string | null;
@@ -122,7 +131,14 @@ export interface EvalRunOverrides {
   // snapshot or resolvedConfig on the run.
   retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
   agentConfigOverride?: Partial<InternalAgentConfig>;
+  // Seeds a starting routine position for a full_assistant replay so the agent's
+  // routine resumes mid-flight instead of activating fresh. It is the full RoutineState
+  // minus sessionId (the replay injects the ephemeral conversation id), so resume is
+  // exact — path (step/back-edge history) and attempts (counter guards) are honored.
+  routineStartState?: EvalRunRoutineStartState;
 }
+
+export type EvalRunRoutineStartState = Omit<RoutineState, "sessionId">;
 
 export interface EvalRunRetrievedChunk {
   chunkId: string;

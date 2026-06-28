@@ -22,6 +22,7 @@ const snapshot = (workspaceId: string, id = randomUUID()): EvalSnapshot => ({
   originalAgent: null,
   originalAgentConfig: null,
   sourceAgentId: null,
+  originalRoutineState: null,
   capturedAt: now,
   capturedBy: null,
 });

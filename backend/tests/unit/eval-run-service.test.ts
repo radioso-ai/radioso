@@ -71,6 +71,7 @@ const makeSnapshot = (overrides: Partial<EvalSnapshot> = {}): EvalSnapshot => ({
   originalAgent: null,
   originalAgentConfig: null,
   sourceAgentId: null,
+  originalRoutineState: null,
   capturedAt: fixedDate,
   capturedBy: null,
   ...overrides,
@@ -991,6 +992,97 @@ describe("EvalRunService.execute (retrieval_only)", () => {
       modelId: "gpt-5-mini",
     });
     expect(run.status).toBe("pass");
+  });
+
+  it("forwards a routineStartState override to the workbench replay runner for mid-routine resume", async () => {
+    const agent = configuredAgent();
+    const snapshot = makeSnapshot({
+      sourceAgentId: agent.id,
+      originalAgentConfig: projectInternalAgentConfig(agent),
+    });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const evalCase = await repo.createCase({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      name: "mid-routine replay case",
+      assertions: [refundIncludes],
+    });
+    const workbench = new StubWorkbenchReplayRunner();
+    const service = new EvalRunService(repo, new StubRunner([]), passJudge(), workbench);
+
+    await service.executeWorkbenchReplay({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      caseId: evalCase.id,
+      mode: "full_assistant",
+      overrides: {
+        agentConfigOverride: { customInstruction: "Workbench override." },
+        routineStartState: {
+          routineId: "ask_email_on_interest",
+          path: ["step_1_ask"],
+          variables: { customer_email: "buyer@example.com" },
+          status: "active",
+        },
+      },
+    });
+
+    expect(workbench.calls[0]).toMatchObject({
+      routineStartState: {
+        routineId: "ask_email_on_interest",
+        path: ["step_1_ask"],
+        variables: { customer_email: "buyer@example.com" },
+        status: "active",
+      },
+    });
+  });
+
+  it("does NOT auto-seed the replay from the snapshot's captured routine state (it is post-turn)", async () => {
+    const agent = configuredAgent();
+    const snapshot = makeSnapshot({
+      sourceAgentId: agent.id,
+      originalAgentConfig: projectInternalAgentConfig(agent),
+      originalRoutineState: {
+        routineId: "ask_email_on_interest",
+        path: ["step_0"],
+        variables: {},
+        status: "active",
+      },
+    });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const evalCase = await repo.createCase({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      name: "snapshot-routine replay case",
+      assertions: [refundIncludes],
+    });
+    const workbench = new StubWorkbenchReplayRunner();
+    const service = new EvalRunService(repo, new StubRunner([]), passJudge(), workbench);
+
+    // No explicit override → the captured (post-turn) routine state is NOT applied.
+    await service.executeWorkbenchReplay({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      caseId: evalCase.id,
+      mode: "full_assistant",
+      overrides: { agentConfigOverride: { customInstruction: "x" } },
+    });
+    expect(workbench.calls[0]?.routineStartState).toBeUndefined();
+
+    // An explicit override is the only thing that seeds a mid-routine replay.
+    const overrideState = {
+      routineId: "ask_email_on_interest",
+      path: ["step_2"],
+      variables: { customer_email: "a@b.com" },
+      status: "active" as const,
+    };
+    await service.executeWorkbenchReplay({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      caseId: evalCase.id,
+      mode: "full_assistant",
+      overrides: { routineStartState: overrideState },
+    });
+    expect(workbench.calls[1]).toMatchObject({ routineStartState: overrideState });
   });
 
   it("returns a detached Workbench replay run when its case is deleted before last-run linking", async () => {

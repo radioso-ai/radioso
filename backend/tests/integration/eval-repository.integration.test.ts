@@ -69,6 +69,7 @@ describeIntegration("EvalRepository (Postgres)", () => {
       originalAgent: { id: "agent-1", name: "Support" } as never,
       originalAgentConfig: { customInstruction: "Be concise." } as never,
       sourceAgentId: null,
+      originalRoutineState: null,
       capturedBy: null,
     });
 

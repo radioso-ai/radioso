@@ -29,6 +29,7 @@ export interface EvalWorkbenchReplayRunnerPort {
     agentConfigOverride?: NonNullable<EvalRunOverrides["agentConfigOverride"]>;
     query: string;
     history: MessageRecord[];
+    routineStartState?: NonNullable<EvalRunOverrides["routineStartState"]>;
   }): Promise<WorkbenchReplayResult>;
 }
 
@@ -312,6 +313,12 @@ export class EvalRunService {
         agentConfigOverride: overrides.agentConfigOverride,
         query: replay.query,
         history: replay.history,
+        // Only an explicit override seeds the routine. We deliberately do NOT default
+        // from snapshot.originalRoutineState: that is the conversation's *current*
+        // (post-turn) routine position, but a replay regenerates an already-completed
+        // assistant turn from the preceding user message, so seeding it would start the
+        // routine one or more steps ahead. There is no per-turn pre-turn state source.
+        routineStartState: overrides.routineStartState,
       });
       observed = {
         retrievedChunks: result.resolvedConfig.retrievedChunks,

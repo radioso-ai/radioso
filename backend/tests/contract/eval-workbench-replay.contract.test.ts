@@ -177,6 +177,95 @@ describe("eval Workbench replay contract", () => {
     expect(countMessages(repositories.messageRepository.items)).toBe(messagesBeforeReplay);
   });
 
+  it("routes a routine-only override through the Workbench replay path", async () => {
+    const { app } = createTestApp({
+      workbenchReplayRunner: {
+        async run(input) {
+          return {
+            answer: `routine:${input.routineStartState?.routineId ?? "none"}`,
+            citations: [],
+            answerSegments: [],
+            turnTrace: {
+              version: 1,
+              spine: { traceId: "trace-routine-replay", startedAt: new Date(0).toISOString(), stages: [] },
+            },
+            resolvedConfig: {
+              composedInstructions: "resolved replay instructions",
+              modelProvider: "openai",
+              modelId: "gpt-5-mini",
+              retrievedChunks: [],
+            },
+          };
+        },
+      },
+    });
+    const session = await issueTestSession(app, "eval-routine-only-replay@example.com");
+    const headers = adminSessionHeaders(session);
+
+    const chat = await request(app)
+      .post("/api/v1/assistant/chat")
+      .set(headers)
+      .send({ message: "How does yearly billing save?", stream: false })
+      .expect(200);
+    const snapshot = await request(app)
+      .post("/api/v1/evals/snapshots")
+      .set(headers)
+      .send({ conversationId: chat.body.conversationId })
+      .expect(201);
+
+    const replay = await request(app)
+      .post("/api/v1/evals/runs")
+      .set(headers)
+      .send({
+        snapshotId: snapshot.body.id,
+        mode: "full_assistant",
+        overrides: {
+          routineStartState: {
+            routineId: "ask_email_on_interest",
+            path: ["step_1_ask"],
+            variables: { customer_email: "buyer@example.com" },
+            status: "active",
+          },
+        },
+      })
+      .expect(201);
+
+    // A routine-only override must hit the replay path, not the plain retrieval runner.
+    expect(replay.body.answer).toBe("routine:ask_email_on_interest");
+    expect(replay.body.run.overrides.routineStartState).toMatchObject({
+      routineId: "ask_email_on_interest",
+      path: ["step_1_ask"],
+    });
+  });
+
+  it("rejects a routine replay seed without a resume step", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "eval-routine-empty-path@example.com");
+
+    const response = await request(app)
+      .post("/api/v1/evals/runs")
+      .set(adminSessionHeaders(session))
+      .send({
+        snapshotId: "11111111-1111-4111-8111-111111111111",
+        mode: "full_assistant",
+        overrides: {
+          routineStartState: {
+            routineId: "ask_email_on_interest",
+            path: [],
+            variables: {},
+            status: "active",
+          },
+        },
+      })
+      .expect(400);
+
+    expect(response.body.error).toMatchObject({
+      code: "bad_request",
+      message: "Invalid request body",
+    });
+    expect(JSON.stringify(response.body.error.details)).toContain("Array must contain at least 1 element");
+  });
+
   it("rejects unknown top-level agent config override fields", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "eval-workbench-replay-validation@example.com");

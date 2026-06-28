@@ -19,7 +19,7 @@ export const createMcpRouteHandler = ({
   const handler = createMcpRequestHandler({
     config,
     serverManager,
-    verifyBearerToken: (accessToken) => authService.getSession(accessToken),
+    verifyBearerToken: (accessToken) => authService.resolveBearerSession(accessToken),
   });
   const middleware = createExpressMcpMiddleware(handler, {
     fallbackHost: `${config.bindHost}:${config.bindPort}`,

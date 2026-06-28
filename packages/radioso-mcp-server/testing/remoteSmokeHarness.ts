@@ -11,6 +11,7 @@ const backendPackageDir = fileURLToPath(new URL("../../../backend", import.meta.
 
 type JsonRpcPayload = Record<string, unknown>;
 type TestAppModule = typeof import("../../../backend/tests/support/testApp.js");
+type McpConverseRoutesModule = typeof import("../../../backend/src/app/http/routes/mcpConverseRoutes.js");
 
 export interface SmokeLogger {
   step(message: string): void;
@@ -20,6 +21,7 @@ export interface BackendHarness {
   app: unknown;
   baseUrl: string;
   close(): Promise<void>;
+  issueConverseGrant(email?: string): Promise<{ agentId: string; token: string; workspaceId: string }>;
   issueWorkspaceToken(email?: string): Promise<{ cookie: string; token: string; workspaceId: string }>;
 }
 
@@ -33,6 +35,12 @@ export interface SmokeSummary {
   accessToken: string;
   answer: string;
   documentId: string;
+  workspaceId: string;
+}
+
+export interface ConverseSmokeSummary {
+  answer: string;
+  agentId: string;
   workspaceId: string;
 }
 
@@ -73,6 +81,17 @@ const loadTestAppModule = async (): Promise<TestAppModule> => {
   }
 };
 
+const loadMcpConverseRoutesModule = async (): Promise<McpConverseRoutesModule> => {
+  const previousCwd = process.cwd();
+  process.chdir(backendPackageDir);
+
+  try {
+    return await import("../../../backend/src/app/http/routes/mcpConverseRoutes.js");
+  } finally {
+    process.chdir(previousCwd);
+  }
+};
+
 const mcpRequest = async (baseUrl: string, accessToken: string | null, payload: JsonRpcPayload): Promise<Response> =>
   fetch(`${baseUrl}/mcp`, {
     body: JSON.stringify(payload),
@@ -102,8 +121,14 @@ const getStructuredContent = (payload: any): any =>
   })();
 
 export const startBackendHarness = async (): Promise<BackendHarness> => {
-  const { createTestApp, issueTestToken } = await loadTestAppModule();
-  const { app } = createTestApp();
+  const { createTestApp, issueTestSession, issueTestToken } = await loadTestAppModule();
+  const { createMcpConverseRoutes } = await loadMcpConverseRoutesModule();
+  const { app, dependencies } = createTestApp({
+    applicationRouteMounts: [{
+      path: "/api/v1/mcp/converse",
+      createRouter: (routeDependencies) => createMcpConverseRoutes(routeDependencies),
+    }],
+  });
   const server = await new Promise<Server>((resolve, reject) => {
     const instance = app.listen(0, "127.0.0.1", () => resolve(instance));
     instance.once("error", reject);
@@ -114,6 +139,18 @@ export const startBackendHarness = async (): Promise<BackendHarness> => {
     baseUrl: resolveBaseUrl(server),
     async close() {
       await closeServer(server);
+    },
+    async issueConverseGrant(email?: string) {
+      const session = await issueTestSession(app, email);
+      const agent = await dependencies.agentService.resolve(session.workspaceId);
+      const { token } = await dependencies.accessGrantService.issueGrant({
+        agentId: agent.id,
+        workspaceId: session.workspaceId,
+        principalKind: "public-launch",
+        channel: "mcp-converse",
+        originConstraint: { mode: "allow-all", origins: [] },
+      });
+      return { agentId: agent.id, token, workspaceId: session.workspaceId };
     },
     issueWorkspaceToken: (email?: string) => issueTestToken(app, email),
   };
@@ -288,6 +325,7 @@ export const runSingleNodeSmoke = async (logger: SmokeLogger): Promise<SmokeSumm
       tools.result.tools.map((tool) => tool.name).sort(),
       ["answer_grounded", "create_document", "describe_capabilities", "get_document", "list_documents"].sort(),
     );
+    assert.ok(!tools.result.tools.some((tool) => tool.name === "ask_agent"));
     assert.ok(!tools.result.tools.some((tool) => tool.name === "get_retrieval_settings"));
     assert.ok(!tools.result.tools.some((tool) => tool.name === "update_retrieval_settings"));
     const capabilities = await callTool(remote.baseUrl, exchange.accessToken, "describe_capabilities", {});
@@ -349,6 +387,47 @@ export const runSingleNodeSmoke = async (logger: SmokeLogger): Promise<SmokeSumm
       answer: String(answer.structuredContent.answer),
       documentId: created.structuredContent.documentId,
       workspaceId: issued.workspaceId,
+    };
+  } finally {
+    await remote.close();
+    await backend.close();
+  }
+};
+
+export const runConverseGrantSmoke = async (logger: SmokeLogger): Promise<ConverseSmokeSummary> => {
+  const backend = await startBackendHarness();
+  const remote = await startRemoteHarness({ backendBaseUrl: backend.baseUrl });
+
+  try {
+    logger.step("issuing MCP converse grant");
+    const grant = await backend.issueConverseGrant("mcp-converse-smoke@example.com");
+
+    logger.step("initializing MCP session directly with converse grant bearer");
+    await initializeSession(remote.baseUrl, grant.token);
+
+    logger.step("listing converse-only tools");
+    const tools = await listTools(remote.baseUrl, grant.token);
+    assert.deepEqual(
+      tools.result.tools.map((tool) => tool.name).sort(),
+      ["answer_grounded", "ask_agent"].sort(),
+    );
+    assert.ok(!tools.result.tools.some((tool) => tool.name === "describe_capabilities"));
+    assert.ok(!tools.result.tools.some((tool) => tool.name === "list_documents"));
+    assert.ok(!tools.result.tools.some((tool) => tool.name === "get_document"));
+    assert.ok(!tools.result.tools.some((tool) => tool.name === "create_document"));
+
+    logger.step("calling ask_agent with the converse grant bearer");
+    const ask = await callTool(remote.baseUrl, grant.token, "ask_agent", {
+      message: "Hello from the MCP converse smoke test.",
+    });
+    assert.equal(ask.response.status, 200);
+    assert.equal(typeof ask.structuredContent.answer.text, "string");
+    assert.ok(ask.structuredContent.answer.text.length > 0);
+
+    return {
+      answer: ask.structuredContent.answer.text,
+      agentId: grant.agentId,
+      workspaceId: grant.workspaceId,
     };
   } finally {
     await remote.close();

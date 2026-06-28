@@ -8,11 +8,12 @@ export interface AccessSessionRecord {
   grantedProfiles?: string[];
   grantedTools: string[];
   issuedAt: Date;
+  converseSessionToken?: string;
   sessionId: string;
   upstreamApiVersion?: string;
   upstreamMcpContextVersion?: string;
   upstreamSupportedTools?: string[];
-  upstreamApiToken: string;
+  upstreamApiToken?: string;
   workspaceId?: string;
   workspaceHint?: string;
   workspaceName?: string;
@@ -30,11 +31,12 @@ export interface SessionStore {
     grantedProfiles?: string[];
     grantedTools: string[];
     issuedAt: Date;
+    converseSessionToken?: string;
     sessionId: string;
     upstreamApiVersion?: string;
     upstreamMcpContextVersion?: string;
     upstreamSupportedTools?: string[];
-    upstreamApiToken: string;
+    upstreamApiToken?: string;
     workspaceId?: string;
     workspaceHint?: string;
     workspaceName?: string;
@@ -48,6 +50,7 @@ const cloneSession = (session: AccessSessionRecord): AccessSessionRecord => ({
   grantedProfiles: session.grantedProfiles ? [...session.grantedProfiles] : undefined,
   grantedTools: [...session.grantedTools],
   issuedAt: new Date(session.issuedAt),
+  converseSessionToken: session.converseSessionToken,
   upstreamSupportedTools: session.upstreamSupportedTools ? [...session.upstreamSupportedTools] : undefined,
 });
 
@@ -98,6 +101,7 @@ export const createInMemorySessionStore = (): SessionStore => {
         grantedProfiles: input.grantedProfiles ? [...input.grantedProfiles] : undefined,
         grantedTools: [...input.grantedTools],
         issuedAt: new Date(input.issuedAt),
+        converseSessionToken: input.converseSessionToken,
         sessionId: input.sessionId,
         upstreamApiVersion: input.upstreamApiVersion,
         upstreamMcpContextVersion: input.upstreamMcpContextVersion,

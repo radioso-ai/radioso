@@ -25,6 +25,7 @@ const cloneSession = (session: AccessSessionRecord): AccessSessionRecord => ({
   grantedProfiles: session.grantedProfiles ? [...session.grantedProfiles] : undefined,
   grantedTools: [...session.grantedTools],
   issuedAt: new Date(session.issuedAt),
+  converseSessionToken: session.converseSessionToken,
   upstreamSupportedTools: session.upstreamSupportedTools ? [...session.upstreamSupportedTools] : undefined,
 });
 
@@ -70,7 +71,9 @@ const serializeSession = (session: AccessSessionRecord, signingSecret: string): 
     expiresAt: session.expiresAt.toISOString(),
     issuedAt: session.issuedAt.toISOString(),
     upstreamApiToken: undefined,
-    upstreamApiTokenEncrypted: encryptUpstreamApiToken(session.upstreamApiToken, signingSecret),
+    upstreamApiTokenEncrypted: session.upstreamApiToken
+      ? encryptUpstreamApiToken(session.upstreamApiToken, signingSecret)
+      : undefined,
   });
 
 const deserializeSession = (value: string, signingSecret: string): AccessSessionRecord => {
@@ -87,10 +90,6 @@ const deserializeSession = (value: string, signingSecret: string): AccessSession
   const upstreamApiToken = parsed.upstreamApiTokenEncrypted
     ? decryptUpstreamApiToken(parsed.upstreamApiTokenEncrypted, signingSecret)
     : parsed.upstreamApiToken;
-
-  if (!upstreamApiToken) {
-    throw new Error("Stored MCP session is missing an upstream API token.");
-  }
 
   return {
     ...parsed,
@@ -171,6 +170,7 @@ export const createRedisClientHandle = async ({
         grantedProfiles: input.grantedProfiles ? [...input.grantedProfiles] : undefined,
         grantedTools: [...input.grantedTools],
         issuedAt: new Date(input.issuedAt),
+        converseSessionToken: input.converseSessionToken,
         sessionId: input.sessionId,
         upstreamApiVersion: input.upstreamApiVersion,
         upstreamMcpContextVersion: input.upstreamMcpContextVersion,

@@ -32,6 +32,9 @@ export interface EvalSuiteRunInput {
   workspaceId: string;
   accountId?: string | null;
   mode?: EvalRunMode;
+  /** When set, only these cases are run (cost control). Unknown/foreign ids are
+   * ignored. When omitted, the whole workspace runs. */
+  caseIds?: string[];
 }
 
 export interface EvalSuiteRunResult {
@@ -40,9 +43,14 @@ export interface EvalSuiteRunResult {
 }
 
 /**
- * Runs every eval case in a workspace and reports an aggregate pass rate. This
- * is composition over the existing single-case run path — it owns no scoring
- * logic of its own, only the iteration and the rollup.
+ * Runs a batch of eval cases (all of them, or a selected subset) and reports the
+ * workspace's aggregate pass rate. This is composition over the existing
+ * single-case run path — it owns no scoring logic of its own, only the iteration
+ * and the rollup.
+ *
+ * The summary always covers the whole workspace, not just the cases that ran:
+ * running a subset moves those cases, and the headline reflects the resulting
+ * state of the entire suite.
  */
 export class EvalSuiteService {
   constructor(
@@ -51,24 +59,27 @@ export class EvalSuiteService {
     private readonly logger?: EvalSuiteReplayLoggerPort,
   ) {}
 
-  async runAll(input: EvalSuiteRunInput): Promise<EvalSuiteRunResult> {
+  async run(input: EvalSuiteRunInput): Promise<EvalSuiteRunResult> {
     const startedAtMs = Date.now();
     const mode = input.mode ?? "full_assistant";
-    const cases = await this.cases.listCases(input.workspaceId);
+    const allCases = await this.cases.listCases(input.workspaceId);
+
+    const selection = input.caseIds ? new Set(input.caseIds) : null;
+    const toRun = selection ? allCases.filter((c) => selection.has(c.id)) : allCases;
 
     const results: EvalSuiteCaseResult[] = [];
-    // Post-run case states feed the summary so the headline rate reflects this
-    // run's outcomes, not the statuses we started with.
-    const finalStates: Array<Pick<EvalCase, "assertions" | "status">> = [];
+    // Post-run state per case that actually ran. The summary then maps over ALL
+    // cases (ran → updated state, not-run → persisted state) so the headline is
+    // the whole suite's rate, whatever subset was selected.
+    const ranStates = new Map<string, Pick<EvalCase, "assertions" | "status">>();
 
     // Sequential by design: each full_assistant case run makes an LLM call, so
     // fanning out would risk provider rate limits and unbounded concurrent load.
     // Revisit with bounded concurrency if suites grow large.
-    for (const evalCase of cases) {
+    for (const evalCase of toRun) {
       if (evalCase.assertions.length === 0) {
         // Nothing to score — running would only burn an LLM round-trip.
         results.push({ caseId: evalCase.id, name: evalCase.name, status: "skipped", run: null, error: null });
-        finalStates.push(evalCase);
         continue;
       }
 
@@ -87,7 +98,7 @@ export class EvalSuiteService {
           run: outcome.run,
           error: null,
         });
-        finalStates.push(outcome.case ?? evalCase);
+        ranStates.set(evalCase.id, outcome.case ?? evalCase);
       } catch (error) {
         // One case failing to run must not abort the rest of the suite.
         // `execute` can throw before any run is recorded (missing snapshot,
@@ -96,17 +107,19 @@ export class EvalSuiteService {
         // its prior (possibly passing) status, so the rate matches the results.
         const message = error instanceof Error ? error.message : "Unknown run error";
         results.push({ caseId: evalCase.id, name: evalCase.name, status: "error", run: null, error: message });
-        finalStates.push({ assertions: evalCase.assertions, status: "error" });
+        ranStates.set(evalCase.id, { assertions: evalCase.assertions, status: "error" });
       }
     }
 
-    const summary = summarizeSuite(finalStates);
+    const summary = summarizeSuite(allCases.map((c) => ranStates.get(c.id) ?? c));
 
     this.logger?.info(
       {
         workspaceId: input.workspaceId,
         accountId: input.accountId ?? null,
         mode,
+        ran: toRun.length,
+        selected: selection ? selection.size : null,
         total: summary.total,
         scored: summary.scored,
         passing: summary.passing,

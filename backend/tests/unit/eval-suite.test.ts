@@ -109,7 +109,7 @@ const outcomeWithStatus = (caseId: string, runStatus: EvalRunStatus, caseStatus:
   case: makeCase({ id: caseId, status: caseStatus }),
 });
 
-describe("EvalSuiteService.runAll", () => {
+describe("EvalSuiteService.run", () => {
   it("runs every scored case and reports a fresh aggregate", async () => {
     const cases = [
       makeCase({ id: "case-1", snapshotId: "snap-1" }),
@@ -122,7 +122,7 @@ describe("EvalSuiteService.runAll", () => {
     );
     const service = new EvalSuiteService(new FakeCaseSource(cases), runner);
 
-    const result = await service.runAll({ workspaceId: "ws-1", accountId: "acct-1" });
+    const result = await service.run({ workspaceId: "ws-1", accountId: "acct-1" });
 
     expect(runner.calls).toHaveLength(2);
     expect(runner.calls.every((c) => c.mode === "full_assistant")).toBe(true);
@@ -138,7 +138,7 @@ describe("EvalSuiteService.runAll", () => {
     const runner = new RecordingRunner(() => outcomeWithStatus("case-2", "pass", "passing"));
     const service = new EvalSuiteService(new FakeCaseSource(cases), runner);
 
-    const result = await service.runAll({ workspaceId: "ws-1" });
+    const result = await service.run({ workspaceId: "ws-1" });
 
     expect(runner.calls.map((c) => c.caseId)).toEqual(["case-2"]);
     expect(result.results[0]).toMatchObject({ caseId: "case-1", status: "skipped", run: null });
@@ -161,7 +161,7 @@ describe("EvalSuiteService.runAll", () => {
     });
     const service = new EvalSuiteService(new FakeCaseSource(cases), runner);
 
-    const result = await service.runAll({ workspaceId: "ws-1" });
+    const result = await service.run({ workspaceId: "ws-1" });
 
     expect(result.results[0]).toMatchObject({ caseId: "case-1", status: "error", error: "snapshot exploded" });
     expect(result.results[1]).toMatchObject({ caseId: "case-2", status: "pass" });
@@ -174,8 +174,41 @@ describe("EvalSuiteService.runAll", () => {
     const runner = new RecordingRunner(() => outcomeWithStatus("case-1", "pass", "passing"));
     const service = new EvalSuiteService(new FakeCaseSource([makeCase()]), runner);
 
-    await service.runAll({ workspaceId: "ws-1", mode: "retrieval_only" });
+    await service.run({ workspaceId: "ws-1", mode: "retrieval_only" });
 
     expect(runner.calls[0]?.mode).toBe("retrieval_only");
+  });
+
+  it("runs only the selected cases but reports the whole-suite pass rate", async () => {
+    // case-2 starts failing; the operator runs only case-2 after a fix. The
+    // headline must roll up ALL cases (case-1 + case-3 untouched + case-2 now
+    // passing), not just the one that ran.
+    const cases = [
+      makeCase({ id: "case-1", snapshotId: "snap-1", status: "passing" }),
+      makeCase({ id: "case-2", snapshotId: "snap-2", status: "failing" }),
+      makeCase({ id: "case-3", snapshotId: "snap-3", status: "passing" }),
+    ];
+    const runner = new RecordingRunner(() => outcomeWithStatus("case-2", "pass", "passing"));
+    const service = new EvalSuiteService(new FakeCaseSource(cases), runner);
+
+    const result = await service.run({ workspaceId: "ws-1", caseIds: ["case-2"] });
+
+    // Only the selected case ran.
+    expect(runner.calls.map((c) => c.caseId)).toEqual(["case-2"]);
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0]).toMatchObject({ caseId: "case-2", status: "pass" });
+    // But the summary covers all three: case-1 + case-3 stay passing, case-2 now passing.
+    expect(result.summary).toMatchObject({ total: 3, scored: 3, passing: 3, failing: 0 });
+  });
+
+  it("ignores unknown/foreign case ids in the selection", async () => {
+    const cases = [makeCase({ id: "case-1", status: "passing" })];
+    const runner = new RecordingRunner(() => outcomeWithStatus("case-1", "pass", "passing"));
+    const service = new EvalSuiteService(new FakeCaseSource(cases), runner);
+
+    const result = await service.run({ workspaceId: "ws-1", caseIds: ["case-1", "ghost"] });
+
+    expect(runner.calls.map((c) => c.caseId)).toEqual(["case-1"]);
+    expect(result.summary).toMatchObject({ total: 1, scored: 1, passing: 1 });
   });
 });

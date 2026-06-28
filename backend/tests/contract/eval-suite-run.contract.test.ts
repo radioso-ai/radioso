@@ -61,7 +61,7 @@ describe("eval suite run contract", () => {
     expect(before.body.cases.every((c: { latestRun: unknown }) => c.latestRun === null)).toBe(true);
 
     const runAll = await request(app)
-      .post("/api/v1/evals/cases/run-all")
+      .post("/api/v1/evals/cases/run")
       .set(headers)
       .send({})
       .expect(200);
@@ -89,5 +89,49 @@ describe("eval suite run contract", () => {
     expect(afterById.get(passing.body.id)?.latestRun?.status).toBe("pass");
     expect(afterById.get(failing.body.id)?.latestRun?.status).toBe("fail");
     expect(afterById.get(unscored.body.id)?.latestRun).toBeNull();
+  });
+
+  it("runs only the selected cases while reporting the whole-suite rate", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "eval-suite-run-selected@example.com");
+    const headers = adminSessionHeaders(session);
+
+    const snapshotId = await captureSnapshot(app, headers);
+
+    const createCase = async (name: string, pattern: string) =>
+      (
+        await request(app)
+          .post("/api/v1/evals/cases")
+          .set(headers)
+          .send({
+            snapshotId,
+            name,
+            assertions: [{ type: "answer_does_not_contain", pattern, matchMode: "substring" }],
+          })
+          .expect(201)
+      ).body.id as string;
+
+    const selectedId = await createCase("Selected", "alpha");
+    const otherId = await createCase("Other", "beta");
+
+    const run = await request(app)
+      .post("/api/v1/evals/cases/run")
+      .set(headers)
+      .send({ caseIds: [selectedId] })
+      .expect(200);
+
+    // Only the selected case ran...
+    expect(run.body.results).toHaveLength(1);
+    expect(run.body.results[0]).toMatchObject({ caseId: selectedId, status: "pass" });
+    // ...but the summary still covers both cases in the workspace.
+    expect(run.body.summary).toMatchObject({ total: 2, scored: 2, passing: 1, pending: 1 });
+
+    // The case that was not selected has no run recorded.
+    const after = await request(app).get("/api/v1/evals/cases").set(headers).expect(200);
+    const afterById = new Map<string, { latestRun: { status: string } | null }>(
+      after.body.cases.map((c: { id: string; latestRun: { status: string } | null }) => [c.id, c]),
+    );
+    expect(afterById.get(selectedId)?.latestRun?.status).toBe("pass");
+    expect(afterById.get(otherId)?.latestRun).toBeNull();
   });
 });

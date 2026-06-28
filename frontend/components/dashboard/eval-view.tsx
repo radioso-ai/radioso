@@ -485,6 +485,7 @@ function EvalList({ accountId, routeState }: EvalListProps) {
   const [error, setError] = useState<string | null>(null)
   const [running, setRunning] = useState(false)
   const [runError, setRunError] = useState<string | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [deleteCandidate, setDeleteCandidate] = useState<EvalCase | null>(null)
   const [deletingCaseId, setDeletingCaseId] = useState<string | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -514,11 +515,12 @@ function EvalList({ accountId, routeState }: EvalListProps) {
     }
   }, [loadCases])
 
-  const runAll = useCallback(async () => {
+  // Run the whole suite (caseIds omitted) or a selected subset.
+  const runSuite = useCallback(async (caseIds?: string[]) => {
     setRunning(true)
     setRunError(null)
     try {
-      const result = await evalsApi.runAll()
+      const result = await evalsApi.runSuite(caseIds ? { caseIds } : {})
       // Refresh the rows (last-run column) from persisted state, then keep the
       // run's summary as the headline. The GET summary is derived from persisted
       // case status, which does not capture a case that errored before a run was
@@ -526,12 +528,25 @@ function EvalList({ accountId, routeState }: EvalListProps) {
       // flip such a case back to passing in the pass rate.
       await loadCases()
       setSummary(result.summary)
+      setSelected(new Set())
     } catch (err) {
       setRunError(getApiErrorMessage(err, 'Failed to run eval suite'))
     } finally {
       setRunning(false)
     }
   }, [loadCases])
+
+  const toggleSelected = useCallback((caseId: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(caseId)) {
+        next.delete(caseId)
+      } else {
+        next.add(caseId)
+      }
+      return next
+    })
+  }, [])
 
   const openCase = (caseId: string) => {
     router.push(buildDashboardHref(accountId, { ...routeState, section: 'eval', evalCaseId: caseId }))
@@ -584,6 +599,13 @@ function EvalList({ accountId, routeState }: EvalListProps) {
   const passRateDetail = passRateDetailParts.join(' · ')
   const hasCases = cases !== null && cases.length > 0
   const canRunAll = (summary?.scored ?? 0) > 0
+  // Only scored cases (with expectations) are selectable — running a case with
+  // no expectations would do nothing.
+  const scoredIds = (cases ?? []).filter((c) => c.assertions.length > 0).map((c) => c.id)
+  const allScoredSelected = scoredIds.length > 0 && scoredIds.every((id) => selected.has(id))
+  const toggleSelectAll = () => {
+    setSelected(allScoredSelected ? new Set() : new Set(scoredIds))
+  }
 
   return (
     <DashboardPage
@@ -600,11 +622,22 @@ function EvalList({ accountId, routeState }: EvalListProps) {
           </div>
           <div className="flex items-center gap-3">
             {runError ? <span className="text-sm text-rose-600">{runError}</span> : null}
-            <Button type="button" onClick={runAll} disabled={running || !canRunAll}>
+            {selected.size > 0 ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => runSuite([...selected])}
+                disabled={running}
+              >
+                <Play className="mr-2 h-4 w-4" />
+                Run selected ({selected.size})
+              </Button>
+            ) : null}
+            <Button type="button" onClick={() => runSuite()} disabled={running || !canRunAll}>
               {running ? (
                 <>
                   <Spinner className="mr-2 h-4 w-4" />
-                  Running all…
+                  Running…
                 </>
               ) : (
                 <>
@@ -637,8 +670,18 @@ function EvalList({ accountId, routeState }: EvalListProps) {
           No eval cases yet. Capture one from chat or activity using the steps above.
         </div>
       ) : (
-        <DashboardTable aria-label="Eval cases" minWidth="min-w-[760px]">
+        <DashboardTable aria-label="Eval cases" minWidth="min-w-[800px]">
           <DashboardTableHead>
+            <DashboardTableHeader className="w-10">
+              <input
+                type="checkbox"
+                aria-label="Select all scored cases"
+                className="h-4 w-4 rounded border-border"
+                checked={allScoredSelected}
+                disabled={scoredIds.length === 0}
+                onChange={toggleSelectAll}
+              />
+            </DashboardTableHeader>
             <DashboardTableHeader>Case</DashboardTableHeader>
             <DashboardTableHeader className="w-32">Status</DashboardTableHeader>
             <DashboardTableHeader className="w-40">Last run</DashboardTableHeader>
@@ -663,6 +706,18 @@ function EvalList({ accountId, routeState }: EvalListProps) {
                 }}
                 className="cursor-pointer"
               >
+                <DashboardTableCell className="w-10">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select eval case ${c.name}`}
+                    className="h-4 w-4 rounded border-border disabled:opacity-40"
+                    checked={selected.has(c.id)}
+                    disabled={c.assertions.length === 0}
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    onChange={() => toggleSelected(c.id)}
+                  />
+                </DashboardTableCell>
                 <DashboardTableCell>
                   <span className="block truncate font-medium text-foreground">{c.name}</span>
                 </DashboardTableCell>

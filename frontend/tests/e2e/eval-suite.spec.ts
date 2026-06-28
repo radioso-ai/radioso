@@ -33,7 +33,7 @@ test("Run all reports a suite pass rate and refreshes the list", async ({ page }
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page);
 
-  await page.route("**/backend/api/v1/evals/cases/run-all", async (route) => {
+  await page.route("**/backend/api/v1/evals/cases/run", async (route) => {
     runAllBodies.push(route.request().postDataJSON());
     ranAll = true;
     await route.fulfill({
@@ -109,7 +109,7 @@ test("Run all keeps run errors in the headline after the list refresh", async ({
     outcomeReason: null,
   };
 
-  await page.route("**/backend/api/v1/evals/cases/run-all", async (route) => {
+  await page.route("**/backend/api/v1/evals/cases/run", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -153,4 +153,69 @@ test("Run all keeps run errors in the headline after the list refresh", async ({
   await expect(page.getByText("1 of 2 cases passing")).toBeVisible();
   await expect(page.getByText("1 error")).toBeVisible();
   await expect(page.getByText("2 of 2 cases passing")).toHaveCount(0);
+});
+
+// Run selected — check one case and run only it (cost control). The request
+// carries just that case id; the headline still reports the whole-suite rate.
+test("Run selected runs only the checked case", async ({ page }) => {
+  let ran = false;
+  const runBodies: Array<{ caseIds?: string[] }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+
+  await page.route("**/backend/api/v1/evals/cases/run", async (route) => {
+    runBodies.push(route.request().postDataJSON());
+    ran = true;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        results: [{ caseId: failingCaseId, name: "Refund policy fails", status: "pass", run: null, error: null }],
+        summary: { total: 2, scored: 2, passing: 2, failing: 0, error: 0, pending: 0, unscored: 0 },
+      }),
+    });
+  });
+
+  await page.route("**/backend/api/v1/evals/cases", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    const run = (status: string) => ({
+      id: `run-${status}`,
+      status,
+      mode: "full_assistant",
+      startedAt: nowIso,
+      completedAt: nowIso,
+      modelId: "gpt-5-mini",
+      outcomeReason: null,
+    });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        cases: [
+          { ...baseCase(passingCaseId, "Refund policy passes"), status: "passing", latestRun: run("pass") },
+          {
+            ...baseCase(failingCaseId, "Refund policy fails"),
+            status: ran ? "passing" : "failing",
+            latestRun: run(ran ? "pass" : "fail"),
+          },
+        ],
+        summary: ran
+          ? { total: 2, scored: 2, passing: 2, failing: 0, error: 0, pending: 0, unscored: 0 }
+          : { total: 2, scored: 2, passing: 1, failing: 1, error: 0, pending: 0, unscored: 0 },
+      }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/eval`);
+  await expect(page.getByText("1 of 2 cases passing")).toBeVisible();
+
+  await page.getByLabel("Select eval case Refund policy fails").check();
+  await page.getByRole("button", { name: "Run selected (1)" }).click();
+
+  await expect(page.getByText("2 of 2 cases passing")).toBeVisible();
+  expect(runBodies).toEqual([{ mode: "full_assistant", caseIds: [failingCaseId] }]);
 });

@@ -278,10 +278,15 @@ export const evalsApi = {
     }, { withApiToken: true })
   },
 
-  async runAll(input: { mode?: EvalRunMode } = {}): Promise<EvalSuiteRunResult> {
-    return request<EvalSuiteRunResult>('/evals/cases/run-all', {
+  // Run a batch of cases — the whole workspace, or a selected subset via
+  // caseIds (cost control). Either way the summary covers the whole workspace.
+  async runSuite(input: { caseIds?: string[]; mode?: EvalRunMode } = {}): Promise<EvalSuiteRunResult> {
+    return request<EvalSuiteRunResult>('/evals/cases/run', {
       method: 'POST',
-      body: JSON.stringify({ mode: input.mode ?? 'full_assistant' }),
+      body: JSON.stringify({
+        mode: input.mode ?? 'full_assistant',
+        ...(input.caseIds && input.caseIds.length > 0 ? { caseIds: input.caseIds } : {}),
+      }),
     }, { withApiToken: true })
   },
 

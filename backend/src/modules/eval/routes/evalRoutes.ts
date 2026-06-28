@@ -135,8 +135,10 @@ const caseRunSchema = z.object({
   overrides: overridesSchema.optional(),
 });
 
-const runAllSchema = z.object({
+const batchRunSchema = z.object({
   mode: z.enum(["retrieval_only", "full_assistant"]).default("full_assistant"),
+  // Optional subset to run (cost control). Omit to run the whole workspace.
+  caseIds: z.array(z.string().uuid()).min(1).max(500).optional(),
 });
 
 const oneOffRunSchema = z.object({
@@ -305,21 +307,23 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
     }
   });
 
-  // Run every scored case in the workspace and return the per-case outcomes plus
-  // an aggregate pass rate. Cases without expectations are skipped (nothing to
+  // Run a batch of cases — the whole workspace, or a selected subset via
+  // `caseIds` (cost control) — and return per-case outcomes plus the workspace's
+  // aggregate pass rate. Cases without expectations are skipped (nothing to
   // score). Runs sequentially server-side, so this responds once all cases finish.
   router.post(
-    "/cases/run-all",
+    "/cases/run",
     workspaceSession,
     requireQuery,
-    validateBody(runAllSchema),
+    validateBody(batchRunSchema),
     async (req, res, next) => {
       try {
         const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
-        const result = await dependencies.suiteService.runAll({
+        const result = await dependencies.suiteService.run({
           workspaceId,
           accountId: accountId ?? null,
           mode: req.body.mode,
+          caseIds: req.body.caseIds,
         });
         res.status(200).json(result);
       } catch (error) {

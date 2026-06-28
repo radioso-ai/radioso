@@ -107,14 +107,16 @@ export const createRadiosoMcpServer = ({
     ...createConverseToolDefinitions(),
     ...createConverseReadToolDefinitions(),
   ];
-  const allToolDefinitions = allowedTools?.some((toolName) =>
-    converseToolDefinitions.some((tool) => tool.name === toolName)
-  )
-    ? [...legacyToolDefinitions, ...converseToolDefinitions]
-    : legacyToolDefinitions;
+  // A session is either the workspace document surface or the per-agent converse surface,
+  // never both — they use different credentials. Pick exactly one catalog so the two surfaces
+  // never merge into one server. `ask_agent` is unique to the converse surface; the converse
+  // `answer_grounded` shares its name with the legacy workspace tool, so it cannot be the
+  // discriminator (and merging both catalogs would double-register that name and 500).
+  const isConverseSurface = allowedTools?.includes("ask_agent") ?? false;
+  const activeToolDefinitions = isConverseSurface ? converseToolDefinitions : legacyToolDefinitions;
   const toolDefinitions = typeof allowedTools === "undefined"
-    ? allToolDefinitions
-    : allToolDefinitions.filter((tool) => allowedTools.includes(tool.name));
+    ? activeToolDefinitions
+    : activeToolDefinitions.filter((tool) => allowedTools.includes(tool.name));
   const executionResolver = resolveExecutionContext ?? (baseConfig ? createStaticExecutionContextResolver(baseConfig) : null);
 
   if (executionResolver === null) {
@@ -148,15 +150,14 @@ export const createRadiosoMcpServer = ({
     );
   }
 
-  const resourcesEnabled = Boolean(allowedTools) && (
-    allowedTools!.includes("answer_grounded") ||
-    allowedTools.includes("ask_agent")
-  );
+  // Agent resources belong only to the converse surface.
+  const resourcesEnabled = isConverseSurface;
 
   if (resourcesEnabled) {
     const resourceDefinition: ToolDefinition = {
       accessMode: "read",
-      description: "Read sanitized documents visible to the bound Radioso agent.",
+      description:
+        "Read-only access to the documents this Radioso agent can see, exposed as resources to list and fetch. Content is sanitized for sharing (no internal document or chunk IDs). Cannot create, modify, or delete documents.",
       execute: async () => ({ data: null, summary: "" }),
       inputSchema: {},
       name: "agent_resources",
@@ -179,6 +180,8 @@ export const createRadiosoMcpServer = ({
       }),
       {
         title: "Radioso Agent Resources",
+        description:
+          "Documents this Radioso agent can see, available read-only. Sanitized for sharing; use to read source material, not to manage documents.",
         mimeType: "text/markdown",
       },
       async (uri, _variables, ctx) => {

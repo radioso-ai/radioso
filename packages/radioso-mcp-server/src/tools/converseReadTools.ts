@@ -21,7 +21,8 @@ const requireConverse = (context: ToolExecutionContext) => {
 export const createConverseReadToolDefinitions = (): GenericToolDefinition[] => [
   {
     accessMode: "read",
-    description: "Answer a question using the bound Radioso agent's grounded retrieval configuration.",
+    description:
+      "Get a single grounded answer with citations from this Radioso agent's knowledge, using the agent's retrieval configuration (rewrite, rerank, source scope, citation policy). Stateless and read-only — no conversation, persona, or routines. Use this for a one-shot factual lookup rather than an interactive turn.",
     execute: async (args, context) => {
       const { adapter, sessionToken } = requireConverse(context);
       const parsed = answerGroundedSchema.parse(args);

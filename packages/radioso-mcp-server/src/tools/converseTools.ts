@@ -9,7 +9,8 @@ const askAgentSchema = z.object({
 export const createConverseToolDefinitions = (): GenericToolDefinition[] => [
   {
     accessMode: "read",
-    description: "Ask the bound Radioso agent one conversational turn.",
+    description:
+      "Hold a conversation with this Radioso agent. Runs the agent's full behavior — persona, directives, and multi-step routines — and continues the same conversation across calls (stateful). Use this for an interactive agent experience, not just a one-off fact lookup.",
     execute: async (args, context) => {
       if (!context.converseAdapter || !context.converseSessionToken) {
         throw new Error("No MCP converse session is bound to this request.");

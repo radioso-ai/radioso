@@ -33,6 +33,12 @@ export interface OpenApiSchemaCatalog {
   AgentLogoSchema: z.ZodTypeAny;
   AgentChannelLifecycleSchema: z.ZodTypeAny;
   AgentChannelsLifecycleResponseSchema: z.ZodTypeAny;
+  AgentMcpConverseGrantIssueRequestSchema: z.ZodTypeAny;
+  AgentMcpConverseGrantIssueResponseSchema: z.ZodTypeAny;
+  AgentMcpConverseGrantListResponseSchema: z.ZodTypeAny;
+  AgentMcpConverseGrantMetadataSchema: z.ZodTypeAny;
+  AgentMcpConverseGrantParamsSchema: RouteParameterSchema;
+  AgentMcpConverseGrantSecretResponseSchema: z.ZodTypeAny;
   AgentParamsSchema: RouteParameterSchema;
   AgentSchema: z.ZodTypeAny;
   AuthoredDirectiveConditionSchema: z.ZodTypeAny;

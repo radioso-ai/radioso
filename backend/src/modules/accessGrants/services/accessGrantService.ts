@@ -165,6 +165,10 @@ export class AccessGrantService {
     return this.dependencies.repository.findById(grantId);
   }
 
+  async listAgentGrants(agentId: string): Promise<AccessGrant[]> {
+    return this.dependencies.repository.listByAgent(agentId);
+  }
+
   async resolveConverseGrant(token: string): Promise<AccessGrant | null> {
     const grant = await this.dependencies.repository.findByTokenHash(sha256(token));
     if (

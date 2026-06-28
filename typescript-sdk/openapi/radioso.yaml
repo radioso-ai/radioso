@@ -2192,6 +2192,97 @@ components:
       required:
         - anonymousChat
         - websiteEmbed
+    AgentMcpConverseGrantMetadata:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        label:
+          type:
+            - string
+            - "null"
+        tokenPrefix:
+          type: string
+        enabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        revokedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - id
+        - label
+        - tokenPrefix
+        - enabled
+        - createdAt
+        - lastUsedAt
+        - revokedAt
+    AgentMcpConverseGrantSecret:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        label:
+          type:
+            - string
+            - "null"
+        tokenPrefix:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - label
+        - tokenPrefix
+        - createdAt
+    AgentMcpConverseGrantIssueRequest:
+      type: object
+      properties:
+        label:
+          type: string
+          minLength: 1
+          maxLength: 120
+    AgentMcpConverseGrantIssueResponse:
+      type: object
+      properties:
+        grant:
+          $ref: "#/components/schemas/AgentMcpConverseGrantSecret"
+        token:
+          type: string
+      required:
+        - grant
+        - token
+    AgentMcpConverseGrantSecretResponse:
+      type: object
+      properties:
+        grant:
+          $ref: "#/components/schemas/AgentMcpConverseGrantSecret"
+        token:
+          type: string
+      required:
+        - grant
+        - token
+    AgentMcpConverseGrantListResponse:
+      type: object
+      properties:
+        grants:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentMcpConverseGrantMetadata"
+      required:
+        - grants
     AuthoredDirectiveCondition:
       oneOf:
         - type: object
@@ -9732,6 +9823,185 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/mcp-converse-grants:
+    post:
+      tags:
+        - Agents
+      summary: Issue an MCP converse grant for an agent
+      operationId: issueAgentMcpConverseGrant
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentMcpConverseGrantIssueRequest"
+      responses:
+        "201":
+          description: MCP converse grant issued. The token is returned only in this response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentMcpConverseGrantIssueResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Agent manage permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    get:
+      tags:
+        - Agents
+      summary: List MCP converse grants for an agent
+      operationId: listAgentMcpConverseGrants
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      responses:
+        "200":
+          description: MCP converse grant metadata returned without token material
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentMcpConverseGrantListResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Agent manage permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/mcp-converse-grants/{grantId}/rotate:
+    post:
+      tags:
+        - Agents
+      summary: Rotate an MCP converse grant for an agent
+      operationId: rotateAgentMcpConverseGrant
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: grantId
+          in: path
+      responses:
+        "200":
+          description: MCP converse grant rotated. The new token is returned only in this response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentMcpConverseGrantSecretResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Agent manage permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent or MCP converse grant not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/mcp-converse-grants/{grantId}:
+    delete:
+      tags:
+        - Agents
+      summary: Revoke an MCP converse grant for an agent
+      operationId: revokeAgentMcpConverseGrant
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: grantId
+          in: path
+      responses:
+        "204":
+          description: MCP converse grant revoked
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Agent manage permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent or MCP converse grant not found
           content:
             application/json:
               schema:

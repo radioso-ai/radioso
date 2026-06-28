@@ -107,6 +107,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
         input.context?.agent?.skillSettings,
         input.retrievalSettingsOverride,
       ),
+      activityTrace: result.trace,
     };
   }
 
@@ -212,6 +213,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
         input.retrievalSettingsOverride,
       ),
       resolvedModel: { provider: resolvedProvider, model: resolvedModel },
+      activityTrace: pipelineResult.trace,
     };
   }
 

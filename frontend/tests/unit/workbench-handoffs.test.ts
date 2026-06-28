@@ -2,26 +2,19 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildEvalPromotionPayload,
-  buildQualityTurnWorkbenchRoute,
+  buildQualityTurnEvalRoute,
 } from '@/lib/workbench-handoffs'
 
 describe('workbench handoff builders', () => {
-  it('builds a seeded agent workbench route from a quality turn', () => {
-    expect(buildQualityTurnWorkbenchRoute({
-      agentId: 'agent-1',
-      conversationId: 'conversation-1',
-      assistantMessageId: 'assistant-message-1',
-    }, {
+  it('builds an eval case route from a quality-created case', () => {
+    expect(buildQualityTurnEvalRoute('case-1', {
       workspaceId: 'workspace-1',
       workspacePublicRouteKey: 'workspace-key',
     })).toEqual({
-      section: 'agents',
+      section: 'eval',
       workspaceId: 'workspace-1',
       workspacePublicRouteKey: 'workspace-key',
-      agentId: 'agent-1',
-      agentTab: 'chat',
-      workbenchConversationId: 'conversation-1',
-      workbenchMessageId: 'assistant-message-1',
+      evalCaseId: 'case-1',
     })
   })
 

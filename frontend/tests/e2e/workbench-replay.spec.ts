@@ -195,6 +195,15 @@ const installWorkbenchMocks = async (
   });
 
   await page.route("**/backend/api/v1/evals/cases", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ cases: [] }),
+      });
+      return;
+    }
+
     const body = route.request().postDataJSON();
     requestBodies.push(body);
     await route.fulfill({
@@ -344,48 +353,7 @@ test("no-override chat tab sends through the normal chat flow", async ({ page })
   expect(requestBodies.some((body) => JSON.stringify(body).includes("agentConfigOverride"))).toBe(false);
 });
 
-test("seeded override replay creates a run card with answer and flow control", async ({ page }) => {
-  const requestBodies: unknown[] = [];
-  await seedDashboardStorage(page);
-  await installDashboardApiMocks(page, { conversationDetail: seededConversation });
-  await installWorkbenchMocks(page, requestBodies);
-
-  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=chat&replayConversationId=${conversationId}&replayMessageId=${assistantMessageId}`);
-  await page.getByLabel("Override custom instruction").click();
-  await page.getByLabel("Custom instruction override").fill("Answer using release notes only.");
-  await page.getByRole("button", { name: "Run replay" }).click();
-
-  await expect(page.getByRole("article").getByText("Replay answer with the override.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Flow" })).toBeVisible();
-  expect(requestBodies).toContainEqual({
-    mode: "full_assistant",
-    snapshotId,
-    agentConfigOverride: {
-      customInstruction: "Answer using release notes only.",
-    },
-  });
-});
-
-test("seeded replay compare shows original and replay answers side by side", async ({ page }) => {
-  const requestBodies: unknown[] = [];
-  await seedDashboardStorage(page);
-  await installDashboardApiMocks(page, { conversationDetail: seededConversation });
-  await installWorkbenchMocks(page, requestBodies);
-
-  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=chat&replayConversationId=${conversationId}&replayMessageId=${assistantMessageId}`);
-  const compare = page.getByTestId("workbench-compare");
-  await expect(compare.getByRole("heading", { name: "Original" })).toBeVisible();
-  await expect(compare.getByText("Original answer from the saved conversation.")).toBeVisible();
-
-  await page.getByLabel("Override custom instruction").click();
-  await page.getByLabel("Custom instruction override").fill("Prefer implementation details.");
-  await page.getByRole("button", { name: "Run replay" }).click();
-
-  await expect(compare.getByRole("heading", { name: "Replay", exact: true })).toBeVisible();
-  await expect(compare.getByText("Replay answer with the override.")).toBeVisible();
-});
-
-test("quality turn opens seeded workbench and promotes replay to eval case", async ({ page }) => {
+test("quality turn creates and opens an eval case", async ({ page }) => {
   const requestBodies: unknown[] = [];
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, { conversationDetail: seededConversation });
@@ -393,34 +361,18 @@ test("quality turn opens seeded workbench and promotes replay to eval case", asy
   await installQualityMocks(page);
 
   await page.goto(`/w/${workspaceKey}/quality`);
-  await page.getByRole("button", { name: /open .* turn in workbench/i }).click();
-
-  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?replayConversationId=${conversationId}&replayMessageId=${assistantMessageId}`));
-  const compare = page.getByTestId("workbench-compare");
-  await expect(compare.getByRole("heading", { name: "Original" })).toBeVisible();
-  await expect(compare.getByText("Original answer from the saved conversation.")).toBeVisible();
-
-  await page.getByLabel("Override custom instruction").click();
-  await page.getByLabel("Custom instruction override").fill("Prefer implementation details.");
-  await page.getByRole("button", { name: "Run replay" }).click();
-  await expect(page.getByRole("article").getByText("Replay answer with the override.")).toBeVisible();
-
-  await page.getByRole("button", { name: "Save as eval case" }).click();
-  await page.getByLabel("Case name").fill("Workbench replay regression");
-  await page.getByRole("button", { name: "Create and open editor" }).click();
+  await page.getByRole("button", { name: /open .* turn in eval/i }).click();
 
   await expect(page).toHaveURL(`/w/${workspaceKey}/eval/${evalCaseId}`);
+  await expect(page.getByRole("heading", { name: "Workbench replay regression" })).toBeVisible();
   expect(requestBodies).toContainEqual({
-    snapshotId,
-    name: "Workbench replay regression",
-    assertions: [{ type: "llm_judge", expectedAnswer: "Replay answer with the override." }],
+    conversationId,
+    messageId: assistantMessageId,
   });
-  expect(requestBodies).toContainEqual({
-    mode: "full_assistant",
-    overrides: {
-      agentConfigOverride: {
-        customInstruction: "Prefer implementation details.",
-      },
-    },
-  });
+  expect(requestBodies).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      snapshotId,
+      assertions: [],
+    }),
+  ]));
 });

@@ -6,6 +6,7 @@ import { Building2, ChevronLeft, ExternalLink, FolderOpen, Globe, KeyRound, Link
 
 import { ApiChannelCard } from '@/components/dashboard/settings/api-channel-card'
 import { AssistantBehaviorSection } from '@/components/dashboard/settings/assistant-behavior-section'
+import { AssistantContextVariablesSection } from '@/components/dashboard/settings/assistant-context-variables-section'
 import { AssistantDirectivesSection } from '@/components/dashboard/settings/assistant-directives-section'
 import { AssistantIdentityAppearanceSection } from '@/components/dashboard/settings/assistant-identity-appearance-section'
 import { AssistantPreviewRail } from '@/components/dashboard/settings/assistant-preview-rail'
@@ -942,6 +943,12 @@ export function WorkspaceAssistantChannelsTab({
           {mode === 'assistant' && showSection('skills') ? (
           <section id="assistant-skills" className="space-y-6 scroll-mt-24">
             {agentId ? <SkillList agentId={agentId} /> : null}
+          </section>
+          ) : null}
+
+          {mode === 'assistant' && agentId && showSection('context-variables') ? (
+          <section id="assistant-context-variables" className="space-y-6 scroll-mt-24">
+            <AssistantContextVariablesSection agentId={agentId} onSaveStateChange={onSaveStateChange} />
           </section>
           ) : null}
 

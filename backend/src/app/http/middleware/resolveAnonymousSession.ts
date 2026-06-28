@@ -363,6 +363,8 @@ export const resolveAnonymousSession = (
         assistantName: agent.name,
         workspaceName: workspace.name,
       });
+      res.locals.chatSessionId = sessionId;
+      // Compatibility for existing middleware, API presenters, and feedback records.
       res.locals.anonymousSessionId = sessionId;
       res.locals.anonymousRateLimitId = rateLimitId;
       res.locals.anonymousRateLimitIdFromCookie = Boolean(rateLimitIdFromCookie);

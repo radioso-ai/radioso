@@ -116,7 +116,7 @@ export class RetrievalAnswerComposer {
     query: string,
     accountId: string | undefined,
   ): Promise<GroundedAnswerEnvelope | null> {
-    const prompt = this.support.buildPromptWithPageContext(session.retrieval.prompt, session.pageContext);
+    const prompt = this.support.buildPromptWithContext(session.retrieval.prompt, session);
     if (prompt === session.retrieval.prompt) {
       return null;
     }
@@ -170,7 +170,7 @@ export class RetrievalAnswerComposer {
       const envelope = await this.generateGroundedAnswerEnvelope(
         session,
         query,
-        this.support.buildPromptWithPageContext(session.retrieval.prompt, session.pageContext),
+        this.support.buildPromptWithContext(session.retrieval.prompt, session),
         accountId,
         "grounded",
       );
@@ -307,7 +307,7 @@ export class RetrievalAnswerComposer {
         query,
         history: session.history,
         systemPrompt: this.composeGroundedSystemPrompt(session),
-        prompt: this.support.buildPromptWithPageContext(session.retrieval.prompt, session.pageContext),
+        prompt: this.support.buildPromptWithContext(session.retrieval.prompt, session),
         workspaceContext: this.support.buildChatWorkspaceContext(session),
         usageContext: this.support.buildChatUsageContext(session, accountId, "stream_grounded"),
       })) {

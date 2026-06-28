@@ -1,6 +1,7 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { AgentSnapshot, ConversationAgent } from "../../agents/public.js";
 import type { AnswerSegment, ChatCitation } from "../../chat/contracts/answerTypes.js";
+import type { ActivityTrace } from "../../retrieval/public.js";
 import type { RetrievalSettingsRecord, RetrievalSettingsSnapshot } from "../../settings/contracts/retrieval.js";
 import type { EvalRunModelOverride, EvalRunRetrievedChunk, EvalSnapshot, EvalSnapshotMessage } from "../domain/types.js";
 
@@ -33,7 +34,11 @@ export interface EvalRetrievalRunnerPort {
     history: MessageRecord[];
     context?: EvalReplayContext;
     retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
-  }): Promise<{ chunks: EvalRunRetrievedChunk[]; resolvedSettings?: RetrievalSettingsSnapshot }>;
+  }): Promise<{
+    chunks: EvalRunRetrievedChunk[];
+    resolvedSettings?: RetrievalSettingsSnapshot;
+    activityTrace?: ActivityTrace;
+  }>;
 
   answer(input: {
     workspaceId: string;
@@ -52,6 +57,7 @@ export interface EvalRetrievalRunnerPort {
     composedInstructions?: string;
     resolvedSettings?: RetrievalSettingsSnapshot;
     resolvedModel?: { provider: string; model: string };
+    activityTrace?: ActivityTrace;
   }>;
 }
 

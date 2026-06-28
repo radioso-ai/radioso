@@ -127,6 +127,8 @@ class StubConversationRepository implements ConversationRepositoryPort {
     throw new Error("not implemented");
   }
 
+  async setVerifiedCustomerId(): Promise<void> {}
+
   async touch(): Promise<void> {}
 }
 
@@ -300,6 +302,10 @@ class CapturingEvalRepository implements EvalRepositoryPort {
     throw new Error("not implemented");
   }
 
+  async deleteCase(): Promise<boolean> {
+    throw new Error("not implemented");
+  }
+
   async updateCaseAssertions(): Promise<EvalCase> {
     throw new Error("not implemented");
   }
@@ -321,7 +327,7 @@ class CapturingEvalRepository implements EvalRepositoryPort {
     _caseId: string,
     _lastRunId: string,
     _status: EvalCaseStatus,
-  ): Promise<EvalCase> {
+  ): Promise<EvalCase | null> {
     throw new Error("not implemented");
   }
 }
@@ -338,6 +344,7 @@ describe("EvalSnapshotService.capture", () => {
       sourceOrigin: null,
       channelContext: null,
       anonymousSessionId: null,
+      verifiedCustomerId: null,
       createdAt: fixedDate,
       updatedAt: fixedDate,
     };
@@ -473,6 +480,7 @@ describe("EvalSnapshotService.capture", () => {
       sourceOrigin: null,
       channelContext: null,
       anonymousSessionId: null,
+      verifiedCustomerId: null,
       createdAt: fixedDate,
       updatedAt: fixedDate,
     };

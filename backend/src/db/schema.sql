@@ -404,9 +404,34 @@ CREATE TABLE public.agent_access_grants (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     last_used_at timestamp with time zone,
     revoked_at timestamp with time zone,
+    channel text DEFAULT 'public-link'::text NOT NULL,
+    CONSTRAINT agent_access_grants_channel_check CHECK ((channel = ANY (ARRAY['embed'::text, 'public-link'::text, 'mcp-converse'::text]))),
     CONSTRAINT agent_access_grants_origin_mode_check CHECK ((origin_mode = ANY (ARRAY['allow-all'::text, 'list'::text]))),
     CONSTRAINT agent_access_grants_principal_kind_check CHECK ((principal_kind = ANY (ARRAY['workspace-admin'::text, 'agent-api'::text, 'public-launch'::text]))),
-    CONSTRAINT agent_access_grants_role_check CHECK ((role = 'public'::text))
+    CONSTRAINT agent_access_grants_role_check CHECK ((role = ANY (ARRAY['public'::text, 'agent'::text])))
+);
+
+
+--
+-- Name: agent_context_variables; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_context_variables (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    agent_id uuid NOT NULL,
+    variable_id uuid NOT NULL,
+    source text NOT NULL,
+    resolver_skill_id uuid,
+    max_age_seconds integer,
+    resolver_timeout_ms integer,
+    surfacing text NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_context_variables_check CHECK ((((source = 'resolver'::text) AND (resolver_skill_id IS NOT NULL)) OR ((source <> 'resolver'::text) AND (resolver_skill_id IS NULL)))),
+    CONSTRAINT agent_context_variables_check1 CHECK (((source = 'resolver'::text) OR ((max_age_seconds IS NULL) AND (resolver_timeout_ms IS NULL)))),
+    CONSTRAINT agent_context_variables_source_check CHECK ((source = ANY (ARRAY['pushed'::text, 'browser'::text, 'resolver'::text]))),
+    CONSTRAINT agent_context_variables_surfacing_check CHECK ((surfacing = ANY (ARRAY['always'::text, 'on_reference'::text, 'operator_only'::text])))
 );
 
 
@@ -1040,6 +1065,56 @@ CREATE TABLE public.connector_whatsapp_message_log (
 
 
 --
+-- Name: context_identity_nonces; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.context_identity_nonces (
+    nonce text NOT NULL,
+    workspace_id uuid NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: context_variable_values; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.context_variable_values (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    variable_id uuid NOT NULL,
+    scope_type text NOT NULL,
+    scope_id text NOT NULL,
+    data jsonb NOT NULL,
+    last_modified timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT context_variable_values_scope_type_check CHECK ((scope_type = ANY (ARRAY['session'::text, 'customer'::text, 'agent'::text, 'workspace'::text])))
+);
+
+
+--
+-- Name: context_variables; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.context_variables (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    name text NOT NULL,
+    description text,
+    value_type text NOT NULL,
+    trust_tier text NOT NULL,
+    sensitivity text NOT NULL,
+    default_surfacing text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT context_variables_default_surfacing_check CHECK ((default_surfacing = ANY (ARRAY['always'::text, 'on_reference'::text, 'operator_only'::text]))),
+    CONSTRAINT context_variables_sensitivity_check CHECK ((sensitivity = ANY (ARRAY['normal'::text, 'sensitive'::text]))),
+    CONSTRAINT context_variables_trust_tier_check CHECK ((trust_tier = ANY (ARRAY['unverified'::text, 'signed'::text]))),
+    CONSTRAINT context_variables_value_type_check CHECK ((value_type = ANY (ARRAY['string'::text, 'json'::text])))
+);
+
+
+--
 -- Name: conversation_ownership; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1070,7 +1145,8 @@ CREATE TABLE public.conversations (
     anonymous_session_id text,
     source_origin text,
     agent_id uuid,
-    channel_context jsonb
+    channel_context jsonb,
+    verified_customer_id text
 );
 
 
@@ -2067,6 +2143,22 @@ ALTER TABLE ONLY public.agent_access_grants
 
 
 --
+-- Name: agent_context_variables agent_context_variables_agent_id_variable_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_context_variables
+    ADD CONSTRAINT agent_context_variables_agent_id_variable_id_key UNIQUE (agent_id, variable_id);
+
+
+--
+-- Name: agent_context_variables agent_context_variables_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_context_variables
+    ADD CONSTRAINT agent_context_variables_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: agent_directives agent_directives_agent_id_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2496,6 +2588,46 @@ ALTER TABLE ONLY public.connector_whatsapp_message_log
 
 ALTER TABLE ONLY public.connector_whatsapp_message_log
     ADD CONSTRAINT connector_whatsapp_message_log_wamid_key UNIQUE (wamid);
+
+
+--
+-- Name: context_identity_nonces context_identity_nonces_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.context_identity_nonces
+    ADD CONSTRAINT context_identity_nonces_pkey PRIMARY KEY (nonce);
+
+
+--
+-- Name: context_variable_values context_variable_values_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.context_variable_values
+    ADD CONSTRAINT context_variable_values_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: context_variable_values context_variable_values_variable_id_scope_type_scope_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.context_variable_values
+    ADD CONSTRAINT context_variable_values_variable_id_scope_type_scope_id_key UNIQUE (variable_id, scope_type, scope_id);
+
+
+--
+-- Name: context_variables context_variables_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.context_variables
+    ADD CONSTRAINT context_variables_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: context_variables context_variables_workspace_id_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.context_variables
+    ADD CONSTRAINT context_variables_workspace_id_name_key UNIQUE (workspace_id, name);
 
 
 --
@@ -3822,6 +3954,20 @@ CREATE INDEX idx_connector_whatsapp_message_log_created_at ON public.connector_w
 --
 
 CREATE INDEX idx_connector_whatsapp_message_log_workspace_wa_created ON public.connector_whatsapp_message_log USING btree (workspace_id, wa_id, created_at DESC);
+
+
+--
+-- Name: idx_context_identity_nonces_workspace_expires; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_context_identity_nonces_workspace_expires ON public.context_identity_nonces USING btree (workspace_id, expires_at);
+
+
+--
+-- Name: idx_context_variable_values_workspace_variable_scope; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_context_variable_values_workspace_variable_scope ON public.context_variable_values USING btree (workspace_id, variable_id, scope_type, scope_id);
 
 
 --
@@ -5274,6 +5420,14 @@ ALTER TABLE ONLY public.agent_access_grants
 
 
 --
+-- Name: agent_context_variables agent_context_variables_variable_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_context_variables
+    ADD CONSTRAINT agent_context_variables_variable_id_fkey FOREIGN KEY (variable_id) REFERENCES public.context_variables(id) ON DELETE CASCADE;
+
+
+--
 -- Name: agent_directives agent_directives_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5471,6 +5625,22 @@ ALTER TABLE ONLY public.connector_whatsapp_contacts
 
 ALTER TABLE ONLY public.connector_whatsapp_message_log
     ADD CONSTRAINT connector_whatsapp_message_log_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: context_identity_nonces context_identity_nonces_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.context_identity_nonces
+    ADD CONSTRAINT context_identity_nonces_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: context_variable_values context_variable_values_variable_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.context_variable_values
+    ADD CONSTRAINT context_variable_values_variable_id_fkey FOREIGN KEY (variable_id) REFERENCES public.context_variables(id) ON DELETE CASCADE;
 
 
 --

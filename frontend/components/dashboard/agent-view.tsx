@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Globe2, RefreshCw, X } from 'lucide-react'
 
-import { WorkbenchView } from '@/components/dashboard/workbench/workbench-view'
+import { ChatView } from '@/components/dashboard/chat-view'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { AddSkillHeaderButton, SkillsHeaderActionProvider } from '@/components/dashboard/shared/skills-header-action'
 import { SaveStateIndicator } from '@/components/dashboard/shared/save-state-indicator'
@@ -71,6 +71,11 @@ const AGENT_SECTION_META: Record<Exclude<AgentSectionId, 'chat'>, { title: strin
     title: 'Skills',
     mode: 'assistant',
     description: 'Named actions this agent can take — answer from knowledge, send email, post to Slack, call a webhook, or notify a human — usable in routines.',
+  },
+  'context-variables': {
+    title: 'Context',
+    mode: 'assistant',
+    description: 'Host-defined context this agent can resolve for each visitor turn.',
   },
   directives: { title: 'Directives', mode: 'assistant' },
   routines: { title: 'Routines', mode: 'assistant' },
@@ -409,7 +414,7 @@ export function AgentView({
   if (section === 'chat') {
     return (
       <>
-        <WorkbenchView
+        <ChatView
           key={selectedAgentId}
           accountId={accountId}
           agentId={selectedAgentId}
@@ -417,8 +422,6 @@ export function AgentView({
           assistantLinkUtmEnabled={selectedAgent?.assistantLinkUtmEnabled}
           onOpenDocument={onOpenDocument}
           onboarding={onboarding}
-          selectedAgent={selectedAgent}
-          routeState={routeState}
         />
         {wizard}
       </>

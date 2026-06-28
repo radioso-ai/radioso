@@ -50,9 +50,13 @@ export interface AssistantChatRequest {
   metadataFilter?: Record<string, unknown>;
   sourceChannel?: string | null;
   channelContext?: ConversationChannelContext | null;
+  chatSessionId?: string | null;
+  /** @deprecated Use chatSessionId. Kept for older public-chat callers during the rename. */
   anonymousSessionId?: string | null;
   sourceOrigin?: string | null;
   pageContext?: AssistantPageContext | null;
+  verifiedCustomerId?: string | null;
+  verifiedIdentity?: Record<string, unknown> | null;
 }
 
 export type AssistantChatResponse = ChatResponse | ChatBootstrapResponse;

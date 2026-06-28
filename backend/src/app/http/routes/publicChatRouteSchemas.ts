@@ -20,6 +20,7 @@ export const anonymousChatSchema = z.object({
   startConversation: z.boolean().optional(),
   userExpectedLocale: localeHintSchema.optional(),
   pageContext: pageContextSchema,
+  signedIdentity: z.string().max(8192).optional(),
   inputMetadata: z.object({
     method: z.enum(["typed", "suggestion_click", "intent_click"]),
     suggestionSourceMessageId: z.string().uuid().optional(),
@@ -82,6 +83,7 @@ export const publicChatSessionSchema = z.object({
   channel: z.enum(["anonymous_link", "website_embed"]),
   agentId: z.string().uuid().optional(),
   resumeToken: z.string().min(1).optional(),
+  chatSessionId: z.string().uuid().optional(),
   // Accepted for older clients but no longer trusted as a resume credential.
   anonymousSessionId: z.string().uuid().optional(),
   pageContext: pageContextSchema,

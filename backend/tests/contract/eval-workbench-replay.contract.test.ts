@@ -9,6 +9,61 @@ const countMessages = (items: Map<string, unknown[]>): number =>
   [...items.values()].reduce((total, messages) => total + messages.length, 0);
 
 describe("eval Workbench replay contract", () => {
+  it("deletes an eval case through the workspace-scoped API", async () => {
+    const chatGateway: ChatGateway = {
+      async answer({ query }) {
+        return `captured:${query}`;
+      },
+      async *streamAnswer({ query }) {
+        yield `captured:${query}`;
+      },
+    };
+    const { app, repositories } = createTestApp({ chatGateway });
+    const session = await issueTestSession(app, "eval-case-delete@example.com");
+    const headers = adminSessionHeaders(session);
+
+    const chat = await request(app)
+      .post("/api/v1/assistant/chat")
+      .set(headers)
+      .send({ message: "What is the refund policy?", stream: false })
+      .expect(200);
+
+    const snapshot = await request(app)
+      .post("/api/v1/evals/snapshots")
+      .set(headers)
+      .send({ conversationId: chat.body.conversationId })
+      .expect(201);
+
+    const created = await request(app)
+      .post("/api/v1/evals/cases")
+      .set(headers)
+      .send({ snapshotId: snapshot.body.id, name: "Delete from eval" })
+      .expect(201);
+
+    await request(app)
+      .delete(`/api/v1/evals/cases/${created.body.id}`)
+      .set(headers)
+      .expect(204);
+
+    expect(repositories.auditEventRepository.items).toContainEqual(
+      expect.objectContaining({
+        workspaceId: session.workspaceId,
+        eventType: "eval.case.delete",
+        eventStatus: "success",
+        metadata: { caseId: created.body.id },
+      }),
+    );
+
+    const deleted = await request(app)
+      .get(`/api/v1/evals/cases/${created.body.id}`)
+      .set(headers)
+      .expect(404);
+    expect(deleted.body.error).toMatchObject({
+      code: "not_found",
+      message: "Eval case not found",
+    });
+  });
+
   it("runs a one-off full assistant replay with an agent config override and does not persist chat messages", async () => {
     const chatGateway: ChatGateway = {
       async answer({ query }) {
@@ -204,6 +259,82 @@ describe("eval Workbench replay contract", () => {
 
     const blocked = await request(app)
       .post("/api/v1/evals/runs")
+      .set(headers)
+      .send(body)
+      .expect(429);
+
+    expect(blocked.body.error).toMatchObject({
+      code: "rate_limit_exceeded",
+      details: expect.objectContaining({
+        retryAfterSeconds: expect.any(Number),
+      }),
+    });
+  });
+
+  it("rate limits case-scoped Workbench replay runs per workspace", async () => {
+    const { app } = createTestApp({
+      workbenchReplayRunner: {
+        async run() {
+          return {
+            answer: "Replay answer.",
+            citations: [],
+            answerSegments: [],
+            turnTrace: {
+              version: 1,
+              spine: {
+                traceId: "trace-workbench-replay",
+                startedAt: new Date(0).toISOString(),
+                stages: [],
+              },
+            },
+            resolvedConfig: {
+              composedInstructions: "resolved replay instructions",
+              modelProvider: "openai",
+              modelId: "gpt-5-mini",
+              retrievedChunks: [],
+            },
+          };
+        },
+      },
+    });
+    const session = await issueTestSession(app, "eval-workbench-case-rate-limit@example.com");
+    const headers = adminSessionHeaders(session);
+
+    const chat = await request(app)
+      .post("/api/v1/assistant/chat")
+      .set(headers)
+      .send({ message: "What is the refund policy?", stream: false })
+      .expect(200);
+    const snapshot = await request(app)
+      .post("/api/v1/evals/snapshots")
+      .set(headers)
+      .send({ conversationId: chat.body.conversationId })
+      .expect(201);
+    const evalCase = await request(app)
+      .post("/api/v1/evals/cases")
+      .set(headers)
+      .send({ snapshotId: snapshot.body.id, name: "Case-scoped replay limit" })
+      .expect(201);
+
+    const body = {
+      mode: "full_assistant",
+      overrides: {
+        agentConfigOverride: {
+          customInstruction: "Use a replay override.",
+        },
+      },
+    };
+
+    for (let i = 0; i < WORKBENCH_REPLAY_RATE_LIMIT.limit; i += 1) {
+      await request(app)
+        .post(`/api/v1/evals/cases/${evalCase.body.id}/runs`)
+        .set(headers)
+        .send(body)
+        .expect(201);
+    }
+
+    const blocked = await request(app)
+      .post(`/api/v1/evals/cases/${evalCase.body.id}/runs`)
       .set(headers)
       .send(body)
       .expect(429);

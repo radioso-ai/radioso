@@ -82,6 +82,19 @@ const overrideKeyNames = (
 ): string[] =>
   override ? Object.keys(override).sort() : [];
 
+const resolveReplayRetrievalSettingsOverride = (
+  original: EvalSnapshot["originalRetrievalSettings"],
+  override: EvalRunOverrides["retrievalSettingsOverride"],
+): EvalRunOverrides["retrievalSettingsOverride"] => {
+  if (!original) {
+    return override;
+  }
+  return {
+    ...original,
+    ...(override ?? {}),
+  };
+};
+
 export class EvalRunService {
   constructor(
     private readonly repository: EvalRepositoryPort,
@@ -127,6 +140,10 @@ export class EvalRunService {
       agent: resolveSnapshotReplayAgent(snapshot),
       customInstructionOverride: overrides.assistantInstructionsOverride?.customInstruction,
     };
+    const retrievalSettingsOverride = resolveReplayRetrievalSettingsOverride(
+      snapshot.originalRetrievalSettings,
+      overrides.retrievalSettingsOverride,
+    );
 
     try {
       if (input.mode === "full_assistant") {
@@ -138,13 +155,14 @@ export class EvalRunService {
           history: replay.history,
           context: replayContext,
           modelOverride: overrides.modelOverride,
-          retrievalSettingsOverride: overrides.retrievalSettingsOverride,
+          retrievalSettingsOverride,
         });
         observed = {
           retrievedChunks: result.chunks,
           answer: result.answer,
           citations: result.citations,
           answerSegments: result.answerSegments,
+          activityTrace: result.activityTrace,
         };
         resolvedConfig.retrievalSettings = result.resolvedSettings;
         resolvedConfig.composedInstructions = result.composedInstructions;
@@ -158,9 +176,12 @@ export class EvalRunService {
           query: replay.query,
           history: replay.history,
           context: replayContext,
-          retrievalSettingsOverride: overrides.retrievalSettingsOverride,
+          retrievalSettingsOverride,
         });
-        observed = { retrievedChunks: result.chunks };
+        observed = {
+          retrievedChunks: result.chunks,
+          activityTrace: result.activityTrace,
+        };
         resolvedConfig.retrievalSettings = result.resolvedSettings;
       }
     } catch (error) {
@@ -211,11 +232,14 @@ export class EvalRunService {
 
     const aggregate = combineVerdicts(verdicts);
 
+    const attachableCase = evalCase
+      ? await this.repository.findCase(input.workspaceId, evalCase.id)
+      : null;
     const run = await this.repository.createRun({
       id: runId,
       workspaceId: input.workspaceId,
       snapshotId: snapshot.id,
-      caseId: evalCase?.id ?? null,
+      caseId: attachableCase?.id ?? null,
       mode: input.mode,
       overrides,
       resolvedConfig,
@@ -226,20 +250,20 @@ export class EvalRunService {
       completedAt: new Date(),
     });
 
-    let updatedCase: EvalCase | null = evalCase;
-    if (evalCase) {
+    let updatedCase: EvalCase | null = run.caseId ? attachableCase : null;
+    if (run.caseId) {
       const nextStatus = caseStatusFromRun(aggregate.status);
       if (nextStatus !== null) {
         updatedCase = await this.repository.updateCaseLastRun(
           input.workspaceId,
-          evalCase.id,
+          run.caseId,
           run.id,
           nextStatus,
         );
       }
     }
 
-    return { run, case: updatedCase };
+    return { run: updatedCase ? run : { ...run, caseId: null }, case: updatedCase };
   }
 
   async executeWorkbenchReplay(input: EvalRunInput): Promise<EvalRunOutcome> {
@@ -340,11 +364,14 @@ export class EvalRunService {
         );
     const aggregate = combineVerdicts(verdicts);
 
+    const attachableCase = evalCase
+      ? await this.repository.findCase(input.workspaceId, evalCase.id)
+      : null;
     const run = await this.repository.createRun({
       id: runId,
       workspaceId: input.workspaceId,
       snapshotId: snapshot.id,
-      caseId: evalCase?.id ?? null,
+      caseId: attachableCase?.id ?? null,
       mode: input.mode,
       overrides,
       resolvedConfig,
@@ -370,19 +397,19 @@ export class EvalRunService {
       "Workbench replay eval run completed",
     );
 
-    let updatedCase: EvalCase | null = evalCase;
-    if (evalCase) {
+    let updatedCase: EvalCase | null = run.caseId ? attachableCase : null;
+    if (run.caseId) {
       const nextStatus = caseStatusFromRun(aggregate.status);
       if (nextStatus !== null) {
         updatedCase = await this.repository.updateCaseLastRun(
           input.workspaceId,
-          evalCase.id,
+          run.caseId,
           run.id,
           nextStatus,
         );
       }
     }
 
-    return { run, case: updatedCase };
+    return { run: updatedCase ? run : { ...run, caseId: null }, case: updatedCase };
   }
 }

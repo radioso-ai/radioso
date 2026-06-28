@@ -1,18 +1,14 @@
 import type { AgentConfigOverrideInput, EvalAssertion, EvalRunOverridesInput } from './api-eval'
-import type { LowQualityTurn } from './api-quality'
 import type { DashboardRouteState } from './dashboard-routes'
 
-export const buildQualityTurnWorkbenchRoute = (
-  turn: Pick<LowQualityTurn, 'conversationId' | 'assistantMessageId'> & { agentId: string },
+export const buildQualityTurnEvalRoute = (
+  caseId: string,
   routeState: Pick<DashboardRouteState, 'workspaceId' | 'workspacePublicRouteKey'> = {},
 ): DashboardRouteState => ({
-  section: 'agents',
+  section: 'eval',
   workspaceId: routeState.workspaceId,
   workspacePublicRouteKey: routeState.workspacePublicRouteKey,
-  agentId: turn.agentId,
-  agentTab: 'chat',
-  workbenchConversationId: turn.conversationId,
-  workbenchMessageId: turn.assistantMessageId,
+  evalCaseId: caseId,
 })
 
 const hasAgentConfigOverride = (override: AgentConfigOverrideInput | undefined): override is AgentConfigOverrideInput =>
@@ -63,11 +59,11 @@ export const buildEvalPromotionPayload = ({
       name,
       assertions,
     },
-    ...(hasAgentConfigOverride(agentConfigOverride)
+    ...(trimmedAnswer || hasAgentConfigOverride(agentConfigOverride)
       ? {
         runCase: {
           mode: 'full_assistant' as const,
-          overrides: { agentConfigOverride },
+          overrides: hasAgentConfigOverride(agentConfigOverride) ? { agentConfigOverride } : {},
         },
       }
       : {}),

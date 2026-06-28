@@ -5,6 +5,7 @@ import type { ConversationTrace } from "@radioso/conversation-contract";
 import {
   TURN_TRACE_ENVELOPE_VERSION,
   attachCapabilitySubTrace,
+  attachContextVariablesToGather,
   buildTurnTraceEnvelope,
   setTurnTraceOpenTelemetryCorrelationReader,
   synthesizeDispatchSpine,
@@ -20,6 +21,39 @@ const spine = (): ConversationTrace => ({
     { id: "dispatch:retrieval-answer", kind: "skill_dispatch", status: "applied" },
     { id: "compose", kind: "compose", status: "applied" },
   ],
+});
+
+describe("attachContextVariablesToGather", () => {
+  it("attaches the redacted context snapshot onto the gather stage outputs", () => {
+    const result = attachContextVariablesToGather(spine(), {
+      page_context: { kind: "page_context", pageUrl: "https://x.test" },
+      ssn: "[redacted]",
+    });
+
+    const gather = result.stages.find((stage) => stage.id === "gather");
+    expect(gather?.outputs?.contextVariables).toEqual({
+      page_context: { kind: "page_context", pageUrl: "https://x.test" },
+      ssn: "[redacted]",
+    });
+    // Other stages untouched.
+    expect(result.stages.find((stage) => stage.id === "compose")?.outputs).toBeUndefined();
+  });
+
+  it("preserves existing gather outputs and merges context variables", () => {
+    const withHistory: ConversationTrace = {
+      ...spine(),
+      stages: [{ id: "gather", kind: "gather", status: "applied", outputs: { historyCount: 3 } }],
+    };
+    const result = attachContextVariablesToGather(withHistory, { cart: { items: 2 } });
+    expect(result.stages[0]?.outputs).toEqual({ historyCount: 3, contextVariables: { cart: { items: 2 } } });
+  });
+
+  it("no-ops for an empty snapshot or when there is no gather stage", () => {
+    const original = spine();
+    expect(attachContextVariablesToGather(original, {})).toBe(original);
+    const noGather: ConversationTrace = { ...original, stages: original.stages.filter((s) => s.kind !== "gather") };
+    expect(attachContextVariablesToGather(noGather, { cart: 1 })).toBe(noGather);
+  });
 });
 
 describe("attachCapabilitySubTrace", () => {

@@ -30,6 +30,7 @@ import { registerConnectorsPaths } from "./paths/connectorsPaths.js";
 import { registerQualityPaths } from "./paths/qualityPaths.js";
 import { registerEvalPaths } from "./paths/evalPaths.js";
 import { registerMcpConversePaths } from "./paths/mcpConversePaths.js";
+import { registerContextVariablePaths } from "./paths/contextVariablePaths.js";
 
 export const registerOpenApiPaths = (
   registry: OpenAPIRegistry,
@@ -44,6 +45,7 @@ export const registerOpenApiPaths = (
   registerWorkspacePaths(registry, schemas, security);
   registerSettingsPaths(registry, schemas, security);
   registerAgentsPaths(registry, schemas, security);
+  registerContextVariablePaths(registry, schemas, security);
   registerRetrievalSearchPaths(registry, schemas, security);
   registerSkillsPaths(registry, schemas, security);
   registerExternalSkillsPaths(registry, schemas, security);

@@ -544,7 +544,8 @@ export interface RoutineAwaitingDecision {
 
 export type RoutineInputBinding =
   | { kind: "literal"; value: string | number | boolean }
-  | { kind: "variableRef"; ref: string };
+  | { kind: "variableRef"; ref: string }
+  | { kind: "contextVariableRef"; contextVariable: string };
 
 export type RoutineStepMode = "typed" | "untyped";
 

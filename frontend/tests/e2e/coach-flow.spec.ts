@@ -13,6 +13,7 @@ const conversationId = "11111111-1111-4111-8111-111111111111";
 const userMessageId = "22222222-2222-4222-8222-222222222222";
 const assistantMessageId = "33333333-3333-4333-8333-333333333333";
 const snapshotId = "44444444-4444-4444-8444-444444444444";
+const evalCaseId = "55555555-5555-4555-8555-555555555555";
 
 const seededConversation = {
   id: conversationId,
@@ -120,13 +121,70 @@ const installCoachMocks = async (
         originalRetrievalSettings: null,
         originalRetrievalResult: null,
         originalAgent: null,
+        originalAgentConfig: {
+          name: "Marta",
+          customInstruction: "",
+          skillSettings: {},
+          chatModelOverride: null,
+          authoredDirectives: [],
+        },
+        sourceAgentId: defaultAgentId,
         capturedAt: nowIso,
         capturedBy: "operator",
       }),
     });
   });
 
-  await page.route("**/backend/api/v1/evals/runs", async (route) => {
+  await page.route(`**/backend/api/v1/evals/snapshots/${snapshotId}`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: snapshotId,
+        workspaceId,
+        sourceConversationId: conversationId,
+        sourceMessageId: assistantMessageId,
+        fidelity: "full",
+        messages: seededConversation.messages,
+        originalInstructionBlock: null,
+        originalModelId: null,
+        originalRetrievalSettings: null,
+        originalRetrievalResult: null,
+        originalAgent: null,
+        originalAgentConfig: {
+          name: "Marta",
+          customInstruction: "",
+          skillSettings: {},
+          chatModelOverride: null,
+          authoredDirectives: [],
+        },
+        sourceAgentId: defaultAgentId,
+        capturedAt: nowIso,
+        capturedBy: "operator",
+      }),
+    });
+  });
+
+  await page.route(`**/backend/api/v1/evals/cases/${evalCaseId}`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: evalCaseId,
+        workspaceId,
+        snapshotId,
+        name: "Coach captured turn",
+        assertions: [],
+        status: "pending",
+        lastRunId: null,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        runs: [],
+      }),
+    });
+  });
+
+  await page.route(`**/backend/api/v1/evals/cases/${evalCaseId}/runs`, async (route) => {
     const body = route.request().postDataJSON();
     requestBodies.push({ endpoint: "replay", body });
     await route.fulfill({
@@ -137,9 +195,9 @@ const installCoachMocks = async (
           id: "run-1",
           workspaceId,
           snapshotId,
-          caseId: null,
-          mode: "full_assistant",
-          overrides: { agentConfigOverride: body.agentConfigOverride },
+          caseId: evalCaseId,
+          mode: body.mode,
+          overrides: body.overrides ?? {},
           resolvedConfig: { modelProvider: "openai", modelId: "gpt-5.2" },
           observedOutput: {
             retrievedChunks: [],
@@ -153,11 +211,17 @@ const installCoachMocks = async (
           startedAt: nowIso,
           completedAt: nowIso,
         },
-        case: null,
-        answer: "Next time I'll mention replay previews and eval case promotion.",
-        citations: [],
-        answerSegments: [{ text: "Next time I'll mention replay previews and eval case promotion." }],
-        resolvedConfig: { modelProvider: "openai", modelId: "gpt-5.2" },
+        case: {
+          id: evalCaseId,
+          workspaceId,
+          snapshotId,
+          name: "Coach captured turn",
+          assertions: [],
+          status: "pending",
+          lastRunId: "run-1",
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        },
       }),
     });
   });
@@ -178,7 +242,7 @@ test("operator coaches a captured turn, previews a drafted directive, and valida
   });
   await installCoachMocks(page, requestBodies, directivesListReady);
 
-  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=chat&replayConversationId=${conversationId}&replayMessageId=${assistantMessageId}`);
+  await page.goto(`/w/${workspaceKey}/eval/${evalCaseId}`);
 
   await expect(page.getByRole("heading", { name: "Training" })).toBeVisible();
   await expect(page.getByText("It changed some workbench things.").first()).toBeVisible();
@@ -212,9 +276,10 @@ test("operator coaches a captured turn, previews a drafted directive, and valida
     endpoint: "replay",
     body: {
       mode: "full_assistant",
-      snapshotId,
-      agentConfigOverride: {
-        authoredDirectives: [replayDraftDirective],
+      overrides: {
+        agentConfigOverride: {
+          authoredDirectives: [replayDraftDirective],
+        },
       },
     },
   });

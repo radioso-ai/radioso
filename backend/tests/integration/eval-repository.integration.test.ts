@@ -146,8 +146,9 @@ describeIntegration("EvalRepository (Postgres)", () => {
       completedAt: new Date(),
     });
     const linked = await repository.updateCaseLastRun(workspaceId, created.id, run.id, "passing");
-    expect(linked.status).toBe("passing");
-    expect(linked.lastRunId).toBe(run.id);
+    expect(linked).not.toBeNull();
+    expect(linked!.status).toBe("passing");
+    expect(linked!.lastRunId).toBe(run.id);
 
     const newAssertions: EvalAssertion[] = [
       { type: "retrieval_includes_document", documentId: "doc-9" },
@@ -156,6 +157,55 @@ describeIntegration("EvalRepository (Postgres)", () => {
     expect(edited.assertions).toEqual(newAssertions);
     expect(edited.status).toBe("pending");
     expect(edited.lastRunId).toBeNull();
+  });
+
+  it("records a detached run when the requested case was deleted before insert", async () => {
+    const snapshot = await createSnapshot();
+    const missingCaseId = randomUUID();
+
+    const run = await repository.createRun({
+      workspaceId,
+      snapshotId: snapshot.id,
+      caseId: missingCaseId,
+      mode: "retrieval_only",
+      overrides: {} as EvalRunOverrides,
+      resolvedConfig: {} as EvalRunResolvedConfig,
+      observedOutput: { retrievedChunks: [] } as EvalRunObservedOutput,
+      assertionVerdicts: [] as AssertionVerdict[],
+      status: "recorded",
+      outcomeReason: null,
+      completedAt: new Date(),
+    });
+
+    expect(run.caseId).toBeNull();
+  });
+
+  it("returns null when last-run linking loses a delete race", async () => {
+    const snapshot = await createSnapshot();
+    const created = await repository.createCase({
+      workspaceId,
+      snapshotId: snapshot.id,
+      name: "Link race",
+      assertions: [],
+    });
+    const run = await repository.createRun({
+      workspaceId,
+      snapshotId: snapshot.id,
+      caseId: created.id,
+      mode: "retrieval_only",
+      overrides: {} as EvalRunOverrides,
+      resolvedConfig: {} as EvalRunResolvedConfig,
+      observedOutput: { retrievedChunks: [] } as EvalRunObservedOutput,
+      assertionVerdicts: [] as AssertionVerdict[],
+      status: "recorded",
+      outcomeReason: null,
+      completedAt: new Date(),
+    });
+    expect(await repository.deleteCase(workspaceId, created.id)).toBe(true);
+
+    await expect(
+      repository.updateCaseLastRun(workspaceId, created.id, run.id, "passing"),
+    ).resolves.toBeNull();
   });
 
   it("updates the case name without touching assertions", async () => {
@@ -174,6 +224,42 @@ describeIntegration("EvalRepository (Postgres)", () => {
     expect(renamed.name).toBe("New Name");
     expect(renamed.assertions).toEqual(assertions);
     expect(renamed.status).toBe(created.status);
+  });
+
+  it("deletes a workspace-scoped case and detaches its historical runs", async () => {
+    const snapshot = await createSnapshot();
+    const created = await repository.createCase({
+      workspaceId,
+      snapshotId: snapshot.id,
+      name: "Delete Case",
+      assertions: [],
+    });
+    const run = await repository.createRun({
+      workspaceId,
+      snapshotId: snapshot.id,
+      caseId: created.id,
+      mode: "retrieval_only",
+      overrides: {} as EvalRunOverrides,
+      resolvedConfig: {} as EvalRunResolvedConfig,
+      observedOutput: { retrievedChunks: [] } as EvalRunObservedOutput,
+      assertionVerdicts: [] as AssertionVerdict[],
+      status: "recorded",
+      outcomeReason: null,
+      completedAt: new Date(),
+    });
+
+    expect(await repository.deleteCase(randomUUID(), created.id)).toBe(false);
+    expect(await repository.findCase(workspaceId, created.id)).toEqual(created);
+
+    expect(await repository.deleteCase(workspaceId, created.id)).toBe(true);
+    expect(await repository.deleteCase(workspaceId, created.id)).toBe(false);
+    expect(await repository.findCase(workspaceId, created.id)).toBeNull();
+
+    const runRows = await database.query<{ case_id: string | null }>(
+      `SELECT case_id FROM eval_runs WHERE id = $1`,
+      [run.id],
+    );
+    expect(runRows[0]?.case_id).toBeNull();
   });
 
   it("creates runs and lists them for a case ordered by started_at desc", async () => {

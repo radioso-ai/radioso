@@ -183,6 +183,7 @@ export interface EvalRepositoryPort {
   createCase(input: CreateCaseInput): Promise<EvalCase>;
   findCase(workspaceId: string, id: string): Promise<EvalCase | null>;
   listCases(workspaceId: string): Promise<EvalCase[]>;
+  deleteCase(workspaceId: string, caseId: string): Promise<boolean>;
   updateCaseAssertions(
     workspaceId: string,
     caseId: string,
@@ -196,8 +197,15 @@ export interface EvalRepositoryPort {
     caseId: string,
     lastRunId: string,
     status: EvalCaseStatus,
-  ): Promise<EvalCase>;
+  ): Promise<EvalCase | null>;
 }
+
+const isConstraintViolation = (error: unknown, constraintName: string): boolean => {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as { constraint?: unknown; message?: unknown };
+  if (candidate.constraint === constraintName) return true;
+  return typeof candidate.message === "string" && candidate.message.includes(constraintName);
+};
 
 const snapshotColumns = [
   "id",
@@ -326,6 +334,16 @@ export class EvalRepository implements EvalRepositoryPort {
     return rows.map((row) => mapCase(row as CaseRow));
   }
 
+  async deleteCase(workspaceId: string, caseId: string): Promise<boolean> {
+    const rows = await this.db
+      .deleteFrom("eval_cases")
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", caseId)
+      .returning("id")
+      .execute();
+    return rows.length > 0;
+  }
+
   async updateCaseAssertions(
     workspaceId: string,
     caseId: string,
@@ -364,14 +382,14 @@ export class EvalRepository implements EvalRepositoryPort {
     return mapCase(row as CaseRow);
   }
 
-  async createRun(input: CreateRunInput): Promise<EvalRun> {
+  private async insertRun(input: CreateRunInput, caseId: string | null): Promise<EvalRun> {
     const row = await this.db
       .insertInto("eval_runs")
       .values({
         id: input.id ?? randomUUID(),
         workspace_id: input.workspaceId,
         snapshot_id: input.snapshotId,
-        case_id: input.caseId,
+        case_id: caseId,
         mode: input.mode,
         overrides: toJsonb(input.overrides),
         resolved_config: toJsonb(input.resolvedConfig),
@@ -384,6 +402,17 @@ export class EvalRepository implements EvalRepositoryPort {
       .returning(runColumns)
       .executeTakeFirstOrThrow();
     return mapRun(row as RunRow);
+  }
+
+  async createRun(input: CreateRunInput): Promise<EvalRun> {
+    try {
+      return await this.insertRun(input, input.caseId);
+    } catch (error) {
+      if (input.caseId && isConstraintViolation(error, "eval_runs_case_id_fkey")) {
+        return this.insertRun(input, null);
+      }
+      throw error;
+    }
   }
 
   async listRunsForCase(workspaceId: string, caseId: string): Promise<EvalRun[]> {
@@ -403,7 +432,7 @@ export class EvalRepository implements EvalRepositoryPort {
     caseId: string,
     lastRunId: string,
     status: EvalCaseStatus,
-  ): Promise<EvalCase> {
+  ): Promise<EvalCase | null> {
     const row = await this.db
       .updateTable("eval_cases")
       .set({
@@ -414,7 +443,7 @@ export class EvalRepository implements EvalRepositoryPort {
       .where("workspace_id", "=", workspaceId)
       .where("id", "=", caseId)
       .returning(caseColumns)
-      .executeTakeFirstOrThrow();
-    return mapCase(row as CaseRow);
+      .executeTakeFirst();
+    return row ? mapCase(row as CaseRow) : null;
   }
 }

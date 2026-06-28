@@ -129,13 +129,13 @@ const replaceAssertionsSchema = z.object({
 });
 
 const caseRunSchema = z.object({
-  mode: z.enum(["retrieval_only", "full_assistant"]).default("retrieval_only"),
+  mode: z.enum(["retrieval_only", "full_assistant"]).default("full_assistant"),
   overrides: overridesSchema.optional(),
 });
 
 const oneOffRunSchema = z.object({
   snapshotId: z.string().uuid(),
-  mode: z.enum(["retrieval_only", "full_assistant"]).default("retrieval_only"),
+  mode: z.enum(["retrieval_only", "full_assistant"]).default("full_assistant"),
   overrides: overridesSchema.optional(),
   agentConfigOverride: agentConfigOverrideSchema.optional(),
 }).superRefine((input, ctx) => {
@@ -270,6 +270,24 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
     },
   );
 
+  router.delete("/cases/:id", workspaceSession, requireQuery, async (req, res, next) => {
+    try {
+      const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
+      const caseId = String(req.params.id);
+      await dependencies.caseService.delete(workspaceId, caseId);
+      await dependencies.auditService.record({
+        accountId: accountId ?? null,
+        workspaceId,
+        eventType: "eval.case.delete",
+        eventStatus: "success",
+        metadata: { caseId },
+      });
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get("/cases", workspaceSession, requireQuery, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
@@ -296,11 +314,24 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
     workspaceSession,
     requireQuery,
     validateBody(caseRunSchema),
+    rateLimitWorkbenchReplay,
     async (req, res, next) => {
       try {
         const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
         const caseId = String(req.params.id);
         const evalCase = await dependencies.caseService.getWithRuns(workspaceId, caseId);
+        if (req.body.mode === "full_assistant" && req.body.overrides?.agentConfigOverride) {
+          const result = await dependencies.runService.executeWorkbenchReplay({
+            workspaceId,
+            accountId: accountId ?? null,
+            snapshotId: evalCase.snapshotId,
+            caseId: evalCase.id,
+            mode: req.body.mode,
+            overrides: req.body.overrides,
+          });
+          res.status(201).json(result);
+          return;
+        }
         const result = await dependencies.runService.execute({
           workspaceId,
           accountId: accountId ?? null,

@@ -41,7 +41,7 @@ describe('workbench replay API', () => {
     )
   })
 
-  it('preserves normal eval one-off request shape when no agent config override is supplied', async () => {
+  it('defaults normal eval one-off runs to full assistant mode', async () => {
     requestMock.mockResolvedValueOnce({ run: { id: 'run-2' }, case: null })
 
     const { evalsApi } = await import('@/lib/api-eval')
@@ -58,7 +58,7 @@ describe('workbench replay API', () => {
       {
         method: 'POST',
         body: JSON.stringify({
-          mode: 'retrieval_only',
+          mode: 'full_assistant',
           snapshotId: '22222222-2222-4222-8222-222222222222',
           overrides: {
             retrievalSettingsOverride: { vectorTopK: 5 },

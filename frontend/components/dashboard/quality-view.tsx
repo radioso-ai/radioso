@@ -48,6 +48,7 @@ import {
 } from '@/components/dashboard/shared/dashboard-table'
 import {
   qualityApi,
+  evalsApi,
   skillsApi,
   type QualityActionFilter,
   type LowQualityTurn,
@@ -64,7 +65,7 @@ import {
   type QualityStatusFilter,
   type QualityTriageFilter,
 } from '@/lib/dashboard-routes'
-import { buildQualityTurnWorkbenchRoute } from '@/lib/workbench-handoffs'
+import { buildQualityTurnEvalRoute } from '@/lib/workbench-handoffs'
 import { useWorkspace } from '@/lib/workspace-context'
 import {
   activeQualitySignal,
@@ -76,6 +77,18 @@ import {
 } from '@/lib/quality-signals'
 
 const PAGE_SIZE = 25
+
+const defaultEvalCaseName = (turn: LowQualityTurn): string => {
+  const date = new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  }).format(new Date(turn.createdAt))
+  const question = turn.question?.trim()
+  if (!question) return `Eval from quality turn - ${date}`
+  const snippet = question.length > 60 ? `${question.slice(0, 57)}...` : question
+  return `${date} - "${snippet}"`
+}
 
 interface QualityViewProps {
   accountId: string
@@ -516,6 +529,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
   const [isFetching, setIsFetching] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [creatingEvalMessageId, setCreatingEvalMessageId] = useState<string | null>(null)
   const [openedConversation, setOpenedConversation] = useState<{
     conversationId: string
     assistantMessageId: string
@@ -968,14 +982,48 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       assistantMessageId: turn.assistantMessageId,
     })
 
-  const openWorkbench = (turn: LowQualityTurn) => {
-    if (!turn.agentId) {
-      return
+  const openEval = async (turn: LowQualityTurn) => {
+    setCreatingEvalMessageId(turn.assistantMessageId)
+    setError(null)
+    try {
+      const existingCases = await evalsApi.listCases()
+      for (const evalCase of existingCases.cases) {
+        try {
+          const snapshot = await evalsApi.getSnapshot(evalCase.snapshotId)
+          if (
+            snapshot.sourceConversationId === turn.conversationId &&
+            snapshot.sourceMessageId === turn.assistantMessageId
+          ) {
+            router.push(buildDashboardHref(accountId, buildQualityTurnEvalRoute(evalCase.id, {
+              workspaceId: activeWorkspaceId ?? routeState.workspaceId,
+              workspacePublicRouteKey: routeState.workspacePublicRouteKey,
+            })))
+            return
+          }
+        } catch {
+          // A stale or inaccessible snapshot should not block creating a case
+          // for the quality turn the operator explicitly selected.
+        }
+      }
+
+      const snapshot = await evalsApi.captureSnapshot({
+        conversationId: turn.conversationId,
+        messageId: turn.assistantMessageId,
+      })
+      const created = await evalsApi.createCase({
+        snapshotId: snapshot.id,
+        name: defaultEvalCaseName(turn),
+        assertions: [],
+      })
+      router.push(buildDashboardHref(accountId, buildQualityTurnEvalRoute(created.id, {
+        workspaceId: activeWorkspaceId ?? routeState.workspaceId,
+        workspacePublicRouteKey: routeState.workspacePublicRouteKey,
+      })))
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Failed to create eval case')
+    } finally {
+      setCreatingEvalMessageId((current) => (current === turn.assistantMessageId ? null : current))
     }
-    router.push(buildDashboardHref(accountId, buildQualityTurnWorkbenchRoute(turn, {
-      workspaceId: activeWorkspaceId ?? routeState.workspaceId,
-      workspacePublicRouteKey: routeState.workspacePublicRouteKey,
-    })))
   }
 
   // Optimistically reflect the new state on the row and refresh the active
@@ -1140,20 +1188,19 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                         <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                           {turn.answerPreview}
                         </p>
-                        {turn.agentId ? (
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              openWorkbench(turn)
-                            }}
-                            className="mt-2 inline-flex items-center gap-1.5 rounded-md text-xs font-medium text-primary hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                            aria-label={`Open ${turn.agentName ?? 'agent'} turn in Workbench`}
-                          >
-                            <SquareArrowOutUpRight className="h-3.5 w-3.5" />
-                            Open in Workbench
-                          </button>
-                        ) : null}
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            void openEval(turn)
+                          }}
+                          disabled={creatingEvalMessageId === turn.assistantMessageId}
+                          className="mt-2 inline-flex items-center gap-1.5 rounded-md text-xs font-medium text-primary hover:text-primary/80 disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                          aria-label="Open turn in Eval"
+                        >
+                          <SquareArrowOutUpRight className="h-3.5 w-3.5" />
+                          {creatingEvalMessageId === turn.assistantMessageId ? 'Opening Eval...' : 'Open in Eval'}
+                        </button>
                       </DashboardTableCell>
                       <DashboardTableCell className="w-40">
                         {actionLabel ? (

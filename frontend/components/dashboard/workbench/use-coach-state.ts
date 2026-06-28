@@ -39,7 +39,7 @@ export interface CoachStateDeps {
   captureSnapshot: typeof evalsApi.captureSnapshot
 }
 
-const defaultDeps: CoachStateDeps = {
+export const defaultCoachStateDeps: CoachStateDeps = {
   draftDirective: directivesApi.draftDirective,
   createDirective: directivesApi.createDirective,
   replay: workbenchApi.replay,
@@ -90,32 +90,38 @@ export function useCoachState({
   seedTurn,
   existingDirectives = [],
   directivesStatus,
-  deps = defaultDeps,
+  deps,
+  initialSnapshotId = null,
 }: {
   selectedAgent: AgentSettings
   seedTurn: WorkbenchSeedTurn | null
   existingDirectives?: Directive[]
   directivesStatus: DirectivesLoadStatus
-  deps?: CoachStateDeps
+  deps?: Partial<CoachStateDeps>
+  initialSnapshotId?: string | null
 }) {
+  const resolvedDeps = useMemo(
+    () => ({ ...defaultCoachStateDeps, ...(deps ?? {}) }),
+    [deps],
+  )
   const [state, setState] = useState<CoachState>({
     status: 'idle',
     preview: null,
     savedDirective: null,
     error: null,
   })
-  const [snapshotId, setSnapshotId] = useState<string | null>(null)
+  const [snapshotId, setSnapshotId] = useState<string | null>(initialSnapshotId)
   const seedIdentity = `${seedTurn?.conversation.conversationId ?? ''}:${seedTurn?.assistantTurn?.id ?? ''}`
 
   useEffect(() => {
-    setSnapshotId(null)
+    setSnapshotId(initialSnapshotId)
     setState({
       status: 'idle',
       preview: null,
       savedDirective: null,
       error: null,
     })
-  }, [seedIdentity])
+  }, [initialSnapshotId, seedIdentity])
 
   const canSubmit = useMemo(
     () => (
@@ -164,17 +170,17 @@ export function useCoachState({
     })
 
     try {
-      const draft = await deps.draftDirective(
+      const draft = await resolvedDeps.draftDirective(
         selectedAgent.id,
         buildCoachDraftRequest(trimmed, seedTurn),
       )
       const activeSnapshotId = snapshotId
-        ?? (await deps.captureSnapshot({
+        ?? (await resolvedDeps.captureSnapshot({
           conversationId: seedTurn.conversation.conversationId,
           messageId: seedTurn.assistantTurn.id,
         })).id
       setSnapshotId(activeSnapshotId)
-      const replay = await deps.replay({
+      const replay = await resolvedDeps.replay({
         snapshotId: activeSnapshotId,
         agentConfigOverride: buildCoachReplayOverride(draft.directive, existingDirectives),
       })
@@ -192,7 +198,7 @@ export function useCoachState({
         error: getApiErrorMessage(error, 'Failed to draft and preview coaching.'),
       })
     }
-  }, [deps, directivesStatus, existingDirectives, seedTurn, selectedAgent.id, snapshotId])
+  }, [directivesStatus, existingDirectives, resolvedDeps, seedTurn, selectedAgent.id, snapshotId])
 
   const validate = useCallback(async () => {
     if (!state.preview) {
@@ -212,7 +218,7 @@ export function useCoachState({
 
     const { draft } = state.preview
     try {
-      const response = await deps.createDirective(selectedAgent.id, {
+      const response = await resolvedDeps.createDirective(selectedAgent.id, {
         name: draft.directive.name,
         condition: draft.directive.condition,
         action: draft.directive.action,
@@ -235,7 +241,7 @@ export function useCoachState({
         error: getApiErrorMessage(error, 'Failed to validate coaching.'),
       }))
     }
-  }, [deps, selectedAgent.id, state.preview])
+  }, [resolvedDeps, selectedAgent.id, state.preview])
 
   const reset = useCallback(() => {
     setState({

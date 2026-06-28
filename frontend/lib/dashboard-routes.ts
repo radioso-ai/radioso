@@ -69,8 +69,6 @@ export interface DashboardRouteState {
   qualityTriageStates?: QualityTriageFilter[]
   qualityHasComment?: boolean
   evalCaseId?: string
-  workbenchConversationId?: string
-  workbenchMessageId?: string
   anchor?: string
 }
 
@@ -101,8 +99,6 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'qualityTriageStates',
   'qualityHasComment',
   'evalCaseId',
-  'workbenchConversationId',
-  'workbenchMessageId',
   'anchor',
 ]
 
@@ -295,12 +291,6 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     if (state.anchor) {
       normalized.anchor = state.anchor
     }
-    if ((state.agentTab ?? DEFAULT_AGENT_TAB) === 'chat' && state.workbenchConversationId) {
-      normalized.workbenchConversationId = state.workbenchConversationId
-      if (state.workbenchMessageId) {
-        normalized.workbenchMessageId = state.workbenchMessageId
-      }
-    }
     return normalized
   }
 
@@ -422,12 +412,6 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     }
     if (normalized.anchor) {
       searchParams.set('anchor', normalized.anchor)
-    }
-    if (normalized.workbenchConversationId) {
-      searchParams.set('replayConversationId', normalized.workbenchConversationId)
-      if (normalized.workbenchMessageId) {
-        searchParams.set('replayMessageId', normalized.workbenchMessageId)
-      }
     }
   }
 
@@ -679,8 +663,6 @@ export const parseDashboardRoute = (
       ...(fourthSegment ? { agentRoutineId: fourthSegment } : {}),
       agentTab: parseAgentTab(searchParams?.get('tab') ?? null),
       anchor: parseAnchor(searchParams?.get('anchor') ?? null),
-      workbenchConversationId: searchParams?.get('replayConversationId') ?? undefined,
-      workbenchMessageId: searchParams?.get('replayMessageId') ?? undefined,
     })
   }
 

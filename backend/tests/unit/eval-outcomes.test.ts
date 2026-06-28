@@ -16,7 +16,8 @@ describe("evaluateAssertion retrieval_includes_document", () => {
 
     expect(verdict.status).toBe("pass");
     expect(verdict.reason).toContain("doc-1");
-    expect(verdict.reason).toContain("c2");
+    // The reason references the document, not the internal chunk id.
+    expect(verdict.reason).not.toContain("c2");
   });
 
   it("fails when target document is missing from retrieved chunks", () => {
@@ -87,7 +88,8 @@ describe("evaluateAssertion retrieval_excludes_document", () => {
 
     expect(verdict.status).toBe("fail");
     expect(verdict.reason).toContain("doc-stale");
-    expect(verdict.reason).toContain("c2");
+    // The reason references the document, not the internal chunk id.
+    expect(verdict.reason).not.toContain("c2");
   });
 
   it("passes when nothing was retrieved", () => {

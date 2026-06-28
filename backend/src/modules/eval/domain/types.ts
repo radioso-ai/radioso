@@ -1,5 +1,6 @@
 import type { AgentSnapshot, InternalAgentConfig } from "../../agents/public.js";
 import type { AnswerSegment, ChatCitation, TurnTraceEnvelope } from "../../chat/contracts/index.js";
+import type { ActivityTrace } from "../../retrieval/public.js";
 import type { LlmCapabilityOverride } from "../../../shared/infra/llm/workspaceContext.js";
 import type {
   RetrievalSettingsRecord,
@@ -137,6 +138,7 @@ export interface EvalRunObservedOutput {
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
   turnTrace?: TurnTraceEnvelope;
+  activityTrace?: ActivityTrace;
   error?: { message: string; code?: string };
 }
 

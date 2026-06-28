@@ -18551,6 +18551,38 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/evals/cases/{id}:
+    delete:
+      tags:
+        - Evals
+      summary: Delete an eval case
+      operationId: deleteEvalCase
+      security:
+        - sessionCookie: []
+          workspaceSelection: []
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: id
+          in: path
+      responses:
+        "204":
+          description: Eval case deleted. Historical runs are retained without a case association.
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Eval case not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/evals/runs:
     post:
       tags:

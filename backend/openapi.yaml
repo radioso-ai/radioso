@@ -18126,6 +18126,186 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/mcp/converse/grounded-answer:
+    post:
+      tags:
+        - MCP Converse
+      summary: Run an agent-aware grounded answer through the bound agent retrieval configuration
+      operationId: answerMcpConverseGrounded
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+                  minLength: 1
+                maxResults:
+                  type: integer
+                  minimum: 1
+                  maximum: 20
+              required:
+                - query
+      responses:
+        "200":
+          description: Agent-scoped grounded answer
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  answer:
+                    type: string
+                  citations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        documentId:
+                          type: string
+                          enum:
+                            - ""
+                        chunkId:
+                          type: string
+                          enum:
+                            - ""
+                        title:
+                          type: string
+                        sourceUrl:
+                          type: string
+                          format: uri
+                      required:
+                        - documentId
+                        - chunkId
+                        - title
+                  retrieval:
+                    type: object
+                    properties:
+                      agentScoped:
+                        type: boolean
+                        enum:
+                          - true
+                    required:
+                      - agentScoped
+                required:
+                  - answer
+                  - citations
+                  - retrieval
+        "401":
+          description: Invalid converse session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Converse session is not allowed to query retrieval
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/mcp/converse/resources:
+    get:
+      tags:
+        - MCP Converse
+      summary: List read-only resources visible to the bound agent
+      operationId: listMcpConverseResources
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Agent-scoped resources
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  resources:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        uri:
+                          type: string
+                        name:
+                          type: string
+                        mimeType:
+                          type: string
+                      required:
+                        - uri
+                        - name
+                        - mimeType
+                required:
+                  - resources
+        "401":
+          description: Invalid converse session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Converse session is not allowed to read resources
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/mcp/converse/resources/{resourceId}:
+    get:
+      tags:
+        - MCP Converse
+      summary: Read one sanitized resource visible to the bound agent
+      operationId: readMcpConverseResource
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: resourceId
+          in: path
+      responses:
+        "200":
+          description: Sanitized agent-scoped resource
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uri:
+                    type: string
+                  name:
+                    type: string
+                  mimeType:
+                    type: string
+                  text:
+                    type: string
+                required:
+                  - uri
+                  - name
+                  - mimeType
+                  - text
+        "401":
+          description: Invalid converse session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Converse session is not allowed to read resources
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/public/chat/{token}:
     post:
       tags:

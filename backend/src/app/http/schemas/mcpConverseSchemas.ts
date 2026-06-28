@@ -19,6 +19,15 @@ export const mcpConverseAskRequestSchema = z.object({
   stream: z.literal(false).optional(),
 });
 
+export const mcpConverseGroundedAnswerRequestSchema = z.object({
+  query: z.string().trim().min(1),
+  maxResults: z.number().int().min(1).max(20).optional(),
+});
+
+export const mcpConverseResourceParamsSchema = z.object({
+  resourceId: z.string().trim().min(1),
+});
+
 export const mcpConverseSessionResponseSchema = z.object({
   sessionToken: z.string(),
   expiresAt: z.string().datetime(),
@@ -45,4 +54,33 @@ export const mcpConverseAskResponseSchema = z.object({
     citations: z.array(z.unknown()),
   }),
   traceId: z.string().optional(),
+});
+
+const mcpConverseCitationSchema = z.object({
+  documentId: z.literal(""),
+  chunkId: z.literal(""),
+  title: z.string(),
+  sourceUrl: z.string().url().optional(),
+});
+
+export const mcpConverseGroundedAnswerResponseSchema = z.object({
+  answer: z.string(),
+  citations: z.array(mcpConverseCitationSchema),
+  retrieval: z.object({
+    agentScoped: z.literal(true),
+  }),
+});
+
+export const mcpConverseResourceSummarySchema = z.object({
+  uri: z.string(),
+  name: z.string(),
+  mimeType: z.string(),
+});
+
+export const mcpConverseResourceListResponseSchema = z.object({
+  resources: z.array(mcpConverseResourceSummarySchema),
+});
+
+export const mcpConverseResourceResponseSchema = mcpConverseResourceSummarySchema.extend({
+  text: z.string(),
 });

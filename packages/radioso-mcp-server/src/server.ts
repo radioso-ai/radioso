@@ -1,10 +1,15 @@
 import type { ServerContext } from "@modelcontextprotocol/server";
-import { McpServer } from "@modelcontextprotocol/server";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/server";
 
 import { toStructuredToolError } from "./errors.js";
 import { createRadiosoApiAdapter, type RadiosoApiAdapter } from "./radiosoApiAdapter.js";
 import { createConverseApiAdapter } from "./converseApiAdapter.js";
 import { toCallToolResult, toErrorCallToolResult } from "./toolResult.js";
+import {
+  createConverseReadToolDefinitions,
+  listConverseResources,
+  readConverseResource,
+} from "./tools/converseReadTools.js";
 import { createConverseToolDefinitions } from "./tools/converseTools.js";
 import { createReadToolDefinitions } from "./tools/readTools.js";
 import { createWriteToolDefinitions } from "./tools/writeTools.js";
@@ -98,8 +103,14 @@ export const createRadiosoMcpServer = ({
   });
 
   const legacyToolDefinitions = [...createReadToolDefinitions(), ...createWriteToolDefinitions()];
-  const allToolDefinitions = allowedTools?.includes("ask_agent")
-    ? [...legacyToolDefinitions, ...createConverseToolDefinitions()]
+  const converseToolDefinitions = [
+    ...createConverseToolDefinitions(),
+    ...createConverseReadToolDefinitions(),
+  ];
+  const allToolDefinitions = allowedTools?.some((toolName) =>
+    converseToolDefinitions.some((tool) => tool.name === toolName)
+  )
+    ? [...legacyToolDefinitions, ...converseToolDefinitions]
     : legacyToolDefinitions;
   const toolDefinitions = typeof allowedTools === "undefined"
     ? allToolDefinitions
@@ -133,6 +144,55 @@ export const createRadiosoMcpServer = ({
           }
           return toErrorCallToolResult(structuredError);
         }
+      },
+    );
+  }
+
+  const resourcesEnabled = Boolean(allowedTools) && (
+    allowedTools!.includes("answer_grounded") ||
+    allowedTools.includes("ask_agent")
+  );
+
+  if (resourcesEnabled) {
+    const resourceDefinition: ToolDefinition = {
+      accessMode: "read",
+      description: "Read sanitized documents visible to the bound Radioso agent.",
+      execute: async () => ({ data: null, summary: "" }),
+      inputSchema: {},
+      name: "agent_resources",
+    };
+    server.registerResource(
+      "agent_resources",
+      new ResourceTemplate("radioso://agent-resource/{resourceId}", {
+        list: async (ctx) => {
+          const executionContext = await executionResolver(resourceDefinition, {}, ctx);
+          const response = await listConverseResources(executionContext);
+          return {
+            resources: response.resources.map((resource) => ({
+              uri: resource.uri,
+              name: resource.name,
+              title: resource.name,
+              mimeType: resource.mimeType,
+            })),
+          };
+        },
+      }),
+      {
+        title: "Radioso Agent Resources",
+        mimeType: "text/markdown",
+      },
+      async (uri, _variables, ctx) => {
+        const executionContext = await executionResolver(resourceDefinition, { uri: uri.href }, ctx);
+        const resource = await readConverseResource(executionContext, uri.href);
+        return {
+          contents: [{
+            uri: resource.uri,
+            name: resource.name,
+            title: resource.name,
+            mimeType: resource.mimeType,
+            text: resource.text,
+          }],
+        };
       },
     );
   }

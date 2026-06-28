@@ -36,10 +36,35 @@ export interface ConverseAskResponse {
   traceId?: string;
 }
 
+export interface ConverseGroundedAnswerResponse {
+  answer: string;
+  citations: unknown[];
+  retrieval: {
+    agentScoped: true;
+  };
+}
+
+export interface ConverseResourceSummary {
+  uri: string;
+  name: string;
+  mimeType: string;
+}
+
+export interface ConverseResourceListResponse {
+  resources: ConverseResourceSummary[];
+}
+
+export interface ConverseResourceReadResponse extends ConverseResourceSummary {
+  text: string;
+}
+
 export interface ConverseApiAdapter {
   exchange(body: ConverseSessionExchangeRequest): Promise<ConverseSessionExchangeResponse>;
   validate(sessionToken: string): Promise<ConverseSessionValidateResponse>;
   ask(sessionToken: string, body: { message: string }): Promise<ConverseAskResponse>;
+  answerGrounded(sessionToken: string, body: { query: string; maxResults?: number }): Promise<ConverseGroundedAnswerResponse>;
+  listResources(sessionToken: string): Promise<ConverseResourceListResponse>;
+  readResource(sessionToken: string, resourceId: string): Promise<ConverseResourceReadResponse>;
 }
 
 type FetchLike = typeof fetch;
@@ -114,6 +139,28 @@ export const createConverseApiAdapter = (
           authorization: `Bearer ${sessionToken}`,
         },
         body: JSON.stringify(body),
+      }),
+    answerGrounded: (sessionToken, body) =>
+      request("/api/v1/mcp/converse/grounded-answer", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${sessionToken}`,
+        },
+        body: JSON.stringify(body),
+      }),
+    listResources: (sessionToken) =>
+      request("/api/v1/mcp/converse/resources", {
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${sessionToken}`,
+        },
+      }),
+    readResource: (sessionToken, resourceId) =>
+      request(`/api/v1/mcp/converse/resources/${encodeURIComponent(resourceId)}`, {
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${sessionToken}`,
+        },
       }),
   };
 };

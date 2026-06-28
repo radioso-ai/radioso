@@ -92,21 +92,21 @@
 
 ### Tests for User Story 2
 
-- [ ] T039 [P] [US2] Add failing backend integration tests for agent retrieval parity in `backend/tests/integration/mcp-converse-grounded-answer.integration.test.ts`
-- [ ] T040 [P] [US2] Add failing backend contract tests for grounded-answer and resources endpoints in `backend/tests/contract/mcp-converse-resources.contract.test.ts`
-- [ ] T041 [P] [US2] Add failing backend unit tests for sanitized resource presenter hiding internal document/chunk ids in `backend/tests/unit/mcp-converse-resource-presenter.test.ts`
-- [ ] T042 [P] [US2] Add failing MCP package tests for `answer_grounded` using converse backend endpoint and MCP resources list/read in `packages/radioso-mcp-server/tests/converseReadSurface.test.ts`
+- [x] T039 [P] [US2] Add failing backend integration tests for agent retrieval parity in `backend/tests/integration/mcp-converse-grounded-answer.integration.test.ts`
+- [x] T040 [P] [US2] Add failing backend contract tests for grounded-answer and resources endpoints in `backend/tests/contract/mcp-converse-resources.contract.test.ts`
+- [x] T041 [P] [US2] Add failing backend unit tests for sanitized resource presenter hiding internal document/chunk ids in `backend/tests/unit/mcp-converse-resource-presenter.test.ts`
+- [x] T042 [P] [US2] Add failing MCP package tests for `answer_grounded` using converse backend endpoint and MCP resources list/read in `packages/radioso-mcp-server/tests/converseReadSurface.test.ts`
 
 ### Implementation for User Story 2
 
-- [ ] T043 [US2] Implement agent-aware grounded answer service using bound agent retrieval settings in `backend/src/modules/retrieval/services/agentConverseGroundedAnswerService.ts`
-- [ ] T044 [US2] Implement read-only agent document resource service in `backend/src/modules/documents/services/agentConverseResourceService.ts`
-- [ ] T045 [US2] Implement public-surface resource presenter and sanitization in `backend/src/app/http/presenters/mcpConverseResourcePresenter.ts`
-- [ ] T046 [US2] Add grounded-answer and resource route handlers in `backend/src/app/http/routes/mcpConverseRoutes.ts`
-- [ ] T047 [US2] Register US2 schemas and OpenAPI paths in `backend/src/app/http/schemas/mcpConverseSchemas.ts` and `backend/src/app/http/openapi/document.ts`
-- [ ] T048 [US2] Wire retrieval/resource services in `backend/src/app/composition/defaultComposition.ts`
-- [ ] T049 [US2] Implement MCP `answer_grounded` converse call and MCP resources handlers in `packages/radioso-mcp-server/src/tools/converseReadTools.ts`
-- [ ] T050 [US2] Regenerate backend OpenAPI and sync MCP/SDK generated contract artifacts in `backend/openapi.json`, `backend/openapi.yaml`, `packages/radioso-mcp-server/src/generated/openapiTypes.ts`, and `typescript-sdk/src/generated/types.ts`
+- [x] T043 [US2] Implement agent-aware grounded answer service using bound agent retrieval settings in `backend/src/modules/retrieval/services/agentConverseGroundedAnswerService.ts`
+- [x] T044 [US2] Implement read-only agent document resource service in `backend/src/modules/documents/services/agentConverseResourceService.ts`
+- [x] T045 [US2] Implement public-surface resource presenter and sanitization in `backend/src/app/http/presenters/mcpConverseResourcePresenter.ts`
+- [x] T046 [US2] Add grounded-answer and resource route handlers in `backend/src/app/http/routes/mcpConverseRoutes.ts`
+- [x] T047 [US2] Register US2 schemas and OpenAPI paths in `backend/src/app/http/schemas/mcpConverseSchemas.ts` and `backend/src/app/http/openapi/document.ts`
+- [x] T048 [US2] Wire retrieval/resource services in `backend/src/app/composition/defaultComposition.ts`
+- [x] T049 [US2] Implement MCP `answer_grounded` converse call and MCP resources handlers in `packages/radioso-mcp-server/src/tools/converseReadTools.ts`
+- [x] T050 [US2] Regenerate backend OpenAPI and sync MCP/SDK generated contract artifacts in `backend/openapi.json`, `backend/openapi.yaml`, `packages/radioso-mcp-server/src/generated/openapiTypes.ts`, and `typescript-sdk/src/generated/types.ts`
 
 **Checkpoint**: US1 and US2 work independently; document-management tools remain denied.
 

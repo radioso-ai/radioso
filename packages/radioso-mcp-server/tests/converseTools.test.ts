@@ -39,7 +39,10 @@ describe("converse MCP tools", () => {
         conversationId: "conversation-1",
         answer: { text: "Hello", citations: [] },
       }),
+      answerGrounded: vi.fn(),
       exchange: vi.fn(),
+      listResources: vi.fn(),
+      readResource: vi.fn(),
       validate: vi.fn(),
     };
     const [askAgent] = createConverseToolDefinitions();

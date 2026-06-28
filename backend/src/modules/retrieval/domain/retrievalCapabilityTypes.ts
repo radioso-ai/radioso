@@ -1,6 +1,8 @@
 import type { ChatCitation } from "../../chat/contracts/answerTypes.js";
 import type { RetrievalExecutionSurface, ActivityTrace } from "./retrievalPipelineTypes.js";
 import type { ActivitySummary } from "./retrievalPipelineTypes.js";
+import type { RetrievalResponseBehavior } from "../public.js";
+import type { RetrievalSourceScope } from "./retrievalSourceFilter.js";
 
 export interface RetrievalConversationContext {
   previousUserMessages?: string[];
@@ -43,6 +45,10 @@ export interface RetrievalAnswerRequest {
   query: string;
   conversationContext?: RetrievalConversationContext;
   metadataFilter?: Record<string, unknown>;
+  sourceScope?: RetrievalSourceScope;
+  responseBehavior?: RetrievalResponseBehavior;
+  responseBehaviorEnabled?: boolean;
+  agentSkillSettings?: Record<string, unknown>;
   executionSurface?: Extract<RetrievalExecutionSurface, "retrieval" | "mcp_capability">;
 }
 

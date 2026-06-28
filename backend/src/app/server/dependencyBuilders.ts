@@ -822,8 +822,10 @@ export const buildChatServices = (input: {
   // confidences are within this gap are statistically indistinguishable, so leading
   // with an arbitrary pick (even with an offer) would be worse than asking. Bands:
   // gap >= margin (0.15) -> silent auto-pick; askMargin <= gap < margin -> answer + offer;
-  // gap < askMargin -> ask.
-  const retrievalSenseAnswerFirstAskMargin = 0.03;
+  // gap < askMargin -> ask. Kept deliberately tight: near-but-distinguishable senses
+  // (e.g. a ~0.02 confidence gap) should answer-first and offer the alternative rather
+  // than interrupt with a blocking clarifying question, which reads as a non-answer.
+  const retrievalSenseAnswerFirstAskMargin = 0.01;
   const retrievalSensePolicy: RetrievalSensePolicy = {
     minGroupShare: 0.3,
     // Euclidean centroid distance over involved chunk embeddings. The value is

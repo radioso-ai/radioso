@@ -302,6 +302,10 @@ class CapturingEvalRepository implements EvalRepositoryPort {
     throw new Error("not implemented");
   }
 
+  async listCasesWithLatestRun(): Promise<never> {
+    throw new Error("not implemented");
+  }
+
   async deleteCase(): Promise<boolean> {
     throw new Error("not implemented");
   }

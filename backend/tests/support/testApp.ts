@@ -150,6 +150,7 @@ import type {
 import {
   EvalCaseService,
   EvalRunService,
+  EvalSuiteService,
   EvalSnapshotService,
 } from "../../src/modules/eval/composition.js";
 import { createInMemoryEvalRepository } from "./inMemoryEvalRepository.js";
@@ -1411,6 +1412,22 @@ export const createTestDependencies = (overrides: {
     },
   );
   const evalRepository = createInMemoryEvalRepository();
+  const evalRunService = new EvalRunService(
+    evalRepository,
+    {
+      async retrieve(_input: { history: unknown[] }) { return { chunks: [] }; },
+      async answer(_input: { history: unknown[]; runId: string }) {
+        return { chunks: [], answer: "" };
+      },
+    } as any,
+    {
+      async judge({ assertion }) {
+        return { assertion, status: "error" as const, reason: "Judge is not configured in test app." };
+      },
+    },
+    workbenchReplayRunner as any,
+    logger,
+  );
   const dependencies: AppDependencies = {
     env,
     logger,
@@ -1531,22 +1548,8 @@ export const createTestDependencies = (overrides: {
       evalRepository,
     ),
     evalCaseService: new EvalCaseService(evalRepository),
-    evalRunService: new EvalRunService(
-      evalRepository,
-      {
-        async retrieve(_input: { history: unknown[] }) { return { chunks: [] }; },
-        async answer(_input: { history: unknown[]; runId: string }) {
-          return { chunks: [], answer: "" };
-        },
-      } as any,
-      {
-        async judge({ assertion }) {
-          return { assertion, status: "error" as const, reason: "Judge is not configured in test app." };
-        },
-      },
-      workbenchReplayRunner as any,
-      logger,
-    ),
+    evalRunService,
+    evalSuiteService: new EvalSuiteService(evalRepository, evalRunService, logger),
     platformSettingsService,
     agentService,
     authoredDirectiveService,

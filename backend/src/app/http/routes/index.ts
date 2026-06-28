@@ -90,6 +90,7 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
     snapshotService: dependencies.evalSnapshotService,
     caseService: dependencies.evalCaseService,
     runService: dependencies.evalRunService,
+    suiteService: dependencies.evalSuiteService,
   }));
   router.use("/api/v1/public/chat", createPublicChatRoutes(dependencies));
   for (const mount of dependencies.applicationRouteMounts) {

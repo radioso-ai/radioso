@@ -1464,6 +1464,11 @@ export const buildChatServices = (input: {
     selectionStrategy: input.composition.selectionStrategy,
     conversationEngine,
     turnRouter,
+    // Routine ports — let a replayed turn attempt routines before grounding, exactly
+    // as the live chat turn does, so routine-driven behavior is faithfully evaluated.
+    routineProvider,
+    chatGateway,
+    chatAnswerPresenter: chatTurnRuntime.chatAnswerPresenter,
   });
   const approvalDecisionService = new ApprovalDecisionService(
     new PendingDecisionRepository(input.database.kysely),

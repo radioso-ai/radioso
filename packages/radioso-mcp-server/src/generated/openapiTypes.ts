@@ -15647,6 +15647,21 @@ export interface operations {
                                 [key: string]: unknown;
                             }[];
                         };
+                        routineStartState?: {
+                            routineId: string;
+                            path: string[];
+                            variables: {
+                                [key: string]: unknown;
+                            };
+                            attempts?: {
+                                [key: string]: number;
+                            };
+                            /** @enum {string} */
+                            status: "active" | "suspended" | "completed" | "expired";
+                            metadata?: {
+                                [key: string]: unknown;
+                            };
+                        };
                     };
                     agentConfigOverride?: {
                         name?: string;

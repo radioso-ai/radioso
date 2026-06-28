@@ -6,6 +6,7 @@ import {
   chatApi,
   directivesApi,
   evalsApi,
+  routinesApi,
   workbenchApi,
   type AgentSettings,
   type ChatConversationDetail,
@@ -17,8 +18,10 @@ import type {
   AgentConfigAuthoredDirectiveOverride,
   AgentConfigOverrideInput,
   EvalRunModelOverride,
+  EvalRunRoutineStartStateInput,
   WorkbenchReplayRunResponse,
 } from '@/lib/api-eval'
+import type { RoutineDefinition } from '@/lib/api-types'
 import {
   readRetrievalSkillSettingsOverride,
   RETRIEVAL_ANSWER_SKILL_NAME,
@@ -31,12 +34,17 @@ export type WorkbenchOverrideField =
   | 'customInstruction'
   | 'retrievalSkillSettings'
   | 'authoredDirectives'
+  | 'routineStartState'
 
 export interface WorkbenchOverrideValues {
   chatModelOverride: EvalRunModelOverride | null
   customInstruction: string
   retrievalSkillSettings: RetrievalSkillSettingsOverride
   authoredDirectives: AgentConfigAuthoredDirectiveOverride[]
+  // A mid-routine starting position to resume the agent's routine from, or null to let
+  // routines activate fresh. Not part of the agentConfigOverride delta — it is a
+  // separate replay override sent under `overrides.routineStartState`.
+  routineStartState: EvalRunRoutineStartStateInput | null
 }
 
 export interface WorkbenchOverrideState {
@@ -49,6 +57,7 @@ export type WorkbenchOverrideAction =
   | { type: 'set-custom-instruction'; value: string }
   | { type: 'set-retrieval-skill-settings'; value: RetrievalSkillSettingsOverride }
   | { type: 'set-authored-directives'; value: AgentConfigAuthoredDirectiveOverride[] }
+  | { type: 'set-routine-start-state'; value: EvalRunRoutineStartStateInput | null }
   | { type: 'clear-field'; field: WorkbenchOverrideField }
   | { type: 'reset'; baseline: WorkbenchOverrideValues }
 
@@ -82,6 +91,7 @@ const emptyTouched: Record<WorkbenchOverrideField, boolean> = {
   customInstruction: false,
   retrievalSkillSettings: false,
   authoredDirectives: false,
+  routineStartState: false,
 }
 
 const cloneBaseline = (baseline: WorkbenchOverrideValues): WorkbenchOverrideValues => ({
@@ -89,7 +99,13 @@ const cloneBaseline = (baseline: WorkbenchOverrideValues): WorkbenchOverrideValu
   customInstruction: baseline.customInstruction,
   retrievalSkillSettings: { ...baseline.retrievalSkillSettings },
   authoredDirectives: baseline.authoredDirectives.map((directive) => ({ ...directive })),
+  routineStartState: baseline.routineStartState,
 })
+
+export const isRoutineStartStateReady = (
+  value: EvalRunRoutineStartStateInput | null | undefined,
+): value is EvalRunRoutineStartStateInput =>
+  Boolean(value?.routineId && value.path.length > 0)
 
 export const buildWorkbenchBaseline = (
   agent: AgentSettings,
@@ -101,6 +117,8 @@ export const buildWorkbenchBaseline = (
   customInstruction: agent.customInstruction ?? '',
   retrievalSkillSettings: readRetrievalSkillSettingsOverride(agent.skillSettings),
   authoredDirectives: directives.map((directive) => ({ ...directive })),
+  // Replay defaults to no routine seed (routines activate fresh from the turn).
+  routineStartState: null,
 })
 
 export const createWorkbenchOverrideState = (
@@ -165,6 +183,11 @@ export const workbenchOverrideReducer = (
       return {
         touched: { ...state.touched, authoredDirectives: true },
         values: { ...state.values, authoredDirectives: action.value.map((directive) => ({ ...directive })) },
+      }
+    case 'set-routine-start-state':
+      return {
+        touched: { ...state.touched, routineStartState: true },
+        values: { ...state.values, routineStartState: action.value },
       }
     case 'clear-field':
       return {
@@ -236,6 +259,7 @@ export function useWorkbenchState({
   seed?: WorkbenchSeed
 }) {
   const [directives, setDirectives] = useState<Directive[]>([])
+  const [routines, setRoutines] = useState<RoutineDefinition[]>([])
   const baseline = useMemo(
     () => buildWorkbenchBaseline(selectedAgent, directives),
     [directives, selectedAgent],
@@ -264,6 +288,21 @@ export function useWorkbenchState({
       })
       .catch(() => {
         if (!cancelled) setDirectives([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedAgent.id])
+
+  useEffect(() => {
+    let cancelled = false
+    void routinesApi.listRoutines(selectedAgent.id)
+      .then((response) => {
+        // Only published routines can be resumed in a replay.
+        if (!cancelled) setRoutines(response.routines.filter((routine) => routine.status === 'published'))
+      })
+      .catch(() => {
+        if (!cancelled) setRoutines([])
       })
     return () => {
       cancelled = true
@@ -309,13 +348,31 @@ export function useWorkbenchState({
 
   const delta = useMemo(() => buildAgentConfigOverrideDelta(overrideState), [overrideState])
   const isDeltaEmpty = useMemo(() => isWorkbenchOverrideDeltaEmpty(overrideState), [overrideState])
+  const routineStartState = useMemo(
+    () =>
+      overrideState.touched.routineStartState && isRoutineStartStateReady(overrideState.values.routineStartState)
+        ? overrideState.values.routineStartState
+        : undefined,
+    [overrideState],
+  )
+  const invalidRoutineStartState = Boolean(
+    overrideState.touched.routineStartState
+      && overrideState.values.routineStartState
+      && !isRoutineStartStateReady(overrideState.values.routineStartState),
+  )
+  // A run is allowed when any override is active — an agentConfig delta or a routine seed.
+  const canRun = !isDeltaEmpty || Boolean(routineStartState)
 
   const runReplay = useCallback(async () => {
     if (!seedTurn) {
       setError('Load a past turn before running a replay.')
       return
     }
-    if (isDeltaEmpty) {
+    if (invalidRoutineStartState) {
+      setError('Select a routine step before running a replay.')
+      return
+    }
+    if (!canRun) {
       setError('Enable at least one override before running a replay.')
       return
     }
@@ -332,6 +389,7 @@ export function useWorkbenchState({
       const result = await workbenchApi.replay({
         snapshotId: activeSnapshotId,
         agentConfigOverride: delta,
+        ...(routineStartState ? { routineStartState } : {}),
       })
       setRuns((current) => [mapReplayResultToRunCard(result), ...current])
     } catch (runError) {
@@ -339,7 +397,7 @@ export function useWorkbenchState({
     } finally {
       setIsRunning(false)
     }
-  }, [delta, isDeltaEmpty, seedTurn, snapshotId])
+  }, [canRun, delta, invalidRoutineStartState, routineStartState, seedTurn, snapshotId])
 
   return {
     baseline,
@@ -347,10 +405,11 @@ export function useWorkbenchState({
     directives,
     dispatchOverride,
     error,
-    isDeltaEmpty,
+    isDeltaEmpty: !canRun,
     isRunning,
     isSeedLoading,
     overrideState,
+    routines,
     runReplay,
     runs,
     seedTurn,

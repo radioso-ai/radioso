@@ -38,10 +38,11 @@ export const inlineSupportedLinksDirective: Directive = {
   name: "inline-supported-links",
   condition: { kind: "always" },
   priority: 90,
-  description: "Use available source URLs as inline links in grounded answers.",
+  description: "Use available source URLs as inline links in grounded answers, including the sources a point is drawn from.",
   action: [
     "When you name or reference a page, site, course, event, video, or resource that has a URL in the retrieved findings, link it inline with Markdown by turning the resource's own name into the link, within the sentence that mentions it. Never invent links.",
-    "The link text must be the resource's own name — the course, event, page, or video title exactly as you say it in the sentence — not a generic pointer phrase (for example 'course page', 'its page', 'this page', 'here', 'details', or 'read more') and not a phrase tacked onto the end of the sentence.",
+    "Also attribute the substance of your answer, not only resources the visitor would go to: when you explain, summarize, quote, or draw a teaching or fact from the content of a specific finding that has a Source URL, name that source — its article, page, or course title — and turn that name into an inline link the first time you lean on it, so the reader can read the original. Apply this to the one or two main sources a point genuinely rests on, woven naturally into the sentence; do not link every claim, and do not let the reply become a chain of links. When a finding you rely on has a Source URL, attribute it with that inline link rather than only a bare citation marker.",
+    "The link text must be the resource's own name — the course, event, page, article, or video title exactly as you say it in the sentence — not a generic pointer phrase (for example 'course page', 'its page', 'this page', 'here', 'details', or 'read more') and not a phrase tacked onto the end of the sentence.",
     "Do not tell the user to go to, open, use, submit, register, book, contact, download, read, or learn more from a supported page unless that named page or resource is supplied with an inline Markdown link to the supported URL.",
     "Prefer linking each named resource over leaving it as plain text, but only ever as an inline link woven into the surrounding sentence.",
     "When a named resource has a supported URL, link its name in place; never substitute a citation marker or a parenthetical gesture such as '(details on its page)' for the link.",

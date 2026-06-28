@@ -11,12 +11,14 @@ import type {
 
 import { renderPromptTemplate } from "./promptTemplate.js";
 
-export const DEFAULT_CLARIFICATION_QUESTION_PROMPT = `Phrase one short clarifying question in the conversation language.
+export const DEFAULT_CLARIFICATION_QUESTION_PROMPT = `Write one short clarifying lead-in line in {{conversationLanguage}}.
 
-Use only these options:
-{{options}}
+The user's request matched a few different topics. The specific options are listed
+for the user immediately below your line, so do NOT write, restate, number,
+translate, or invent the options yourself — that list is added separately. Write
+only a single short sentence inviting the user to pick which option they mean.
 
-Return only the question.`;
+Return only that one line.`;
 
 export const DEFAULT_CLARIFICATION_REPLY_MAP_PROMPT = `Map the user's latest reply to one of the presented clarification options.
 
@@ -101,6 +103,21 @@ const optionsBlock = (candidates: ClarificationCandidate[]): string =>
       return `${index + 1}. id: ${candidate.id}\nLabel: ${candidate.label}${description}`;
     })
     .join("\n\n");
+
+/**
+ * The user-facing option list, assembled in code so the visitor always sees every
+ * choice in a stable numbered order — the same order {@link DefaultClarifier.mapReply}
+ * resolves positional replies ("the second one", "option 2") against. Labels and
+ * descriptions are already in the conversation language; numbering and the
+ * separator carry no language, so this stays multilingual without echoing ids.
+ */
+const userFacingOptionsList = (candidates: ClarificationCandidate[]): string =>
+  candidates
+    .map((candidate, index) => {
+      const description = candidate.description ? ` — ${candidate.description}` : "";
+      return `${index + 1}. ${candidate.label}${description}`;
+    })
+    .join("\n");
 
 const normalizeReplyChoice = (value: string): string =>
   value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
@@ -204,16 +221,19 @@ export class DefaultClarifier implements ConversationClarifier {
   }
 
   async phraseQuestion(input: { candidates: ClarificationCandidate[]; turn: TurnContext }): Promise<string> {
+    const optionsList = userFacingOptionsList(input.candidates);
     const systemPrompt = renderPromptTemplate("chat/clarification-question.md", this.questionPromptTemplate, {
-      options: optionsBlock(input.candidates),
       conversationLanguage: input.turn.inputEvent.locale ?? "the conversation language",
-      latestReply: input.turn.inputEvent.content,
     });
     const { text } = await this.modelGateway.complete({
       messages: turnMessages(input.turn),
       systemPrompt: appendGuidance(systemPrompt, input.turn.steering),
     });
-    return text.trim();
+    // The model authors only the localized lead-in; the options are appended in
+    // code. This makes the failure mode where the model collapses the question to a
+    // single bare option label structurally impossible — every option always shows.
+    const leadIn = text.trim();
+    return leadIn ? `${leadIn}\n\n${optionsList}` : optionsList;
   }
 
   async mapReply(input: ClarificationReplyMapInput): Promise<ClarificationReplyMapping> {

@@ -35,6 +35,12 @@ candidate labels and descriptions, not from raw document content or hard-coded
 wording. Options are phrased as possible visitor intents, not as document titles.
 Up to four options are considered.
 
+When the assistant does block with a question, the message is a short lead-in
+followed by the options as a numbered list. The lead-in is the only part the
+model writes for that turn; the options are assembled from the candidate labels,
+so the visitor always sees every choice. The visitor can reply by naming an
+option or by its position, such as "the second one".
+
 When a visitor chooses a retrieval-sense option, Radioso answers the original
 question that caused the clarification and limits retrieval to the chosen
 document group. The short choice reply is only used to select the option.

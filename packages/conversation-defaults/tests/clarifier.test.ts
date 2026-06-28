@@ -35,27 +35,66 @@ const gateway = (text: string): ConversationModelGateway => ({
 });
 
 describe("DefaultClarifier", () => {
-  it("phrases a question from labels and descriptions without exposing payloads", async () => {
-    const modelGateway = gateway("¿Quieres ayuda con facturacion o soporte tecnico?");
+  it("returns the localized lead-in followed by every option, without exposing payloads", async () => {
+    const modelGateway = gateway("¿Cuál de estas describe lo que buscas?");
     const clarifier = new DefaultClarifier(modelGateway, {
-      questionPromptTemplate: "Ask in {{conversationLanguage}} using only these options:\n{{options}}",
+      questionPromptTemplate: "Escribe una invitación breve en {{conversationLanguage}}.",
       replyMapPromptTemplate: "unused",
     });
 
     const question = await clarifier.phraseQuestion({ candidates, turn: turn("Necesito ayuda") });
 
-    expect(question).toBe("¿Quieres ayuda con facturacion o soporte tecnico?");
+    expect(question).toBe([
+      "¿Cuál de estas describe lo que buscas?",
+      "",
+      "1. Facturacion — Preguntas sobre pagos y facturas.",
+      "2. Soporte tecnico — Ayuda con un problema tecnico.",
+    ].join("\n"));
+    // The model authors only the lead-in; it is never handed the option labels, so it
+    // cannot echo one back as the whole answer.
     const request = vi.mocked(modelGateway.complete).mock.calls[0]![0];
-    expect(request.systemPrompt).toContain("Facturacion");
-    expect(request.systemPrompt).toContain("Preguntas sobre pagos");
-    expect(request.systemPrompt).toContain("Soporte tecnico");
+    expect(request.systemPrompt).toContain("es");
+    expect(request.systemPrompt).not.toContain("Facturacion");
     expect(request.systemPrompt).not.toContain("payload_billing");
+    expect(question).not.toContain("payload_billing");
+  });
+
+  it("still lists every option when the model collapses to a single bare label", async () => {
+    // Regression for the production failure: the question generator returned just one
+    // sense label ("What spirituality means and how to approach it") as the entire
+    // reply, hiding the other options. The options are now assembled in code, so even
+    // a degenerate model output cannot drop them.
+    const modelGateway = gateway("Facturacion");
+    const clarifier = new DefaultClarifier(modelGateway, {
+      questionPromptTemplate: "Lead-in in {{conversationLanguage}}",
+      replyMapPromptTemplate: "unused",
+    });
+
+    const question = await clarifier.phraseQuestion({ candidates, turn: turn("Necesito ayuda") });
+
+    expect(question).toContain("1. Facturacion — Preguntas sobre pagos y facturas.");
+    expect(question).toContain("2. Soporte tecnico — Ayuda con un problema tecnico.");
+  });
+
+  it("falls back to the bare options list when the model returns nothing", async () => {
+    const modelGateway = gateway("   ");
+    const clarifier = new DefaultClarifier(modelGateway, {
+      questionPromptTemplate: "Lead-in in {{conversationLanguage}}",
+      replyMapPromptTemplate: "unused",
+    });
+
+    const question = await clarifier.phraseQuestion({ candidates, turn: turn("Necesito ayuda") });
+
+    expect(question).toBe([
+      "1. Facturacion — Preguntas sobre pagos y facturas.",
+      "2. Soporte tecnico — Ayuda con un problema tecnico.",
+    ].join("\n"));
   });
 
   it("folds turn steering into the question prompt as guidance", async () => {
     const modelGateway = gateway("¿Facturacion o soporte?");
     const clarifier = new DefaultClarifier(modelGateway, {
-      questionPromptTemplate: "Ask using only these options:\n{{options}}",
+      questionPromptTemplate: "Lead-in in {{conversationLanguage}}",
       replyMapPromptTemplate: "unused",
     });
 
@@ -79,17 +118,14 @@ describe("DefaultClarifier", () => {
   it("leaves the question prompt unchanged when there is no steering", async () => {
     const modelGateway = gateway("¿Facturacion o soporte?");
     const clarifier = new DefaultClarifier(modelGateway, {
-      questionPromptTemplate: "Ask using only these options:\n{{options}}",
+      questionPromptTemplate: "Lead-in in {{conversationLanguage}}",
       replyMapPromptTemplate: "unused",
     });
 
     await clarifier.phraseQuestion({ candidates, turn: turn("Necesito ayuda") });
 
     const systemPrompt = vi.mocked(modelGateway.complete).mock.calls[0]![0].systemPrompt
-    expect(systemPrompt).toBe(`Ask using only these options:\n${[
-      "1. id: billing\nLabel: Facturacion\nDescription: Preguntas sobre pagos y facturas.",
-      "2. id: support\nLabel: Soporte tecnico\nDescription: Ayuda con un problema tecnico.",
-    ].join("\n\n")}`)
+    expect(systemPrompt).toBe("Lead-in in es")
   });
 
   it("maps a multilingual free-text reply to a chosen candidate", async () => {

@@ -424,6 +424,18 @@ export const runConverseGrantSmoke = async (logger: SmokeLogger): Promise<Conver
     assert.equal(typeof ask.structuredContent.answer.text, "string");
     assert.ok(ask.structuredContent.answer.text.length > 0);
 
+    logger.step("listing agent resources with the converse grant bearer");
+    const resourcesResponse = await mcpRequest(remote.baseUrl, grant.token, {
+      id: "resources-list-1",
+      jsonrpc: "2.0",
+      method: "resources/list",
+      params: {},
+    });
+    const resourcesPayload = await readJson(resourcesResponse);
+    // Must NOT be capability_forbidden — the converse grant authorizes the resource surface.
+    assert.equal(resourcesResponse.status, 200, `Expected resources/list to succeed, got ${resourcesResponse.status}: ${JSON.stringify(resourcesPayload)}`);
+    assert.ok(Array.isArray(resourcesPayload?.result?.resources));
+
     return {
       answer: ask.structuredContent.answer.text,
       agentId: grant.agentId,

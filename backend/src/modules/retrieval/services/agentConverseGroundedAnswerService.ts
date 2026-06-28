@@ -37,7 +37,7 @@ export class AgentConverseGroundedAnswerService {
 
   async answer(
     principal: AgentConversePrincipal,
-    input: { query: string },
+    input: { query: string; maxResults?: number },
   ): Promise<AgentConverseGroundedAnswerResult> {
     try {
       const agent = await this.dependencies.agentRepository.findByIdAndWorkspaceId(
@@ -63,18 +63,25 @@ export class AgentConverseGroundedAnswerService {
         executionSurface: "mcp_capability",
       });
 
+      // `maxResults` caps the number of citations returned to the caller (1..N). Retrieval
+      // itself stays driven by the agent's configured top-k; this bounds the response.
+      const visibleCitations = agent.citationDisplayEnabled ? result.citations ?? [] : [];
+      const citations = typeof input.maxResults === "number" && input.maxResults > 0
+        ? visibleCitations.slice(0, input.maxResults)
+        : visibleCitations;
+
       await this.dependencies.audit?.recordGroundedAnswerOutcome({
         workspaceId: principal.workspaceId,
         agentId: principal.agentId,
         grantId: principal.grantId,
         publicSessionId: principal.publicSessionId,
         status: "success",
-        citationCount: result.citations?.length ?? 0,
+        citationCount: citations.length,
       });
 
       return {
         answer: result.answer,
-        citations: agent.citationDisplayEnabled ? result.citations ?? [] : [],
+        citations,
         retrieval: {
           agentScoped: true,
         },

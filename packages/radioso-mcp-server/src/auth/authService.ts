@@ -127,7 +127,10 @@ const toAuditFailure = (
 
 const unique = (values: string[]): string[] => [...new Set(values)];
 
-const CONVERSE_GRANTED_TOOLS = ["ask_agent", "answer_grounded"];
+// `agent_resources` is the synthetic name the resource resolver checks against grantedTools;
+// it must be present or resources/list and resource reads fail with capability_forbidden.
+// It is not a callable tool (not in the converse tool catalog), so it never appears in tools/list.
+const CONVERSE_GRANTED_TOOLS = ["ask_agent", "answer_grounded", "agent_resources"];
 
 const isAuthenticationFailure = (error: unknown): boolean =>
   error instanceof RadiosoApiError && (error.status === 401 || error.status === 403);

@@ -245,7 +245,7 @@ describe("auth foundations", () => {
 
     await expect(auth.resolveBearerSession("mcp-converse-grant")).resolves.toMatchObject({
       converseSessionToken: "converse-session-token",
-      grantedTools: ["ask_agent", "answer_grounded"],
+      grantedTools: ["ask_agent", "answer_grounded", "agent_resources"],
       upstreamApiToken: undefined,
       workspaceId: "workspace-1",
     });
@@ -257,7 +257,7 @@ describe("auth foundations", () => {
 
     await expect(auth.resolveBearerSession("mcp-converse-grant")).resolves.toMatchObject({
       converseSessionToken: "converse-session-token",
-      grantedTools: ["ask_agent", "answer_grounded"],
+      grantedTools: ["ask_agent", "answer_grounded", "agent_resources"],
     });
     expect(converseApi.exchange).toHaveBeenCalledTimes(1);
     expect(converseApi.validate).toHaveBeenCalledTimes(2);

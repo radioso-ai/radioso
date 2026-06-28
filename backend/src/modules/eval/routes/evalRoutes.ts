@@ -6,9 +6,11 @@ import { requireWorkspacePermission } from "../../../app/http/middleware/require
 import { validateBody } from "../../../app/http/middleware/validate.js";
 import type { EvalCaseService } from "../services/evalCaseService.js";
 import type { EvalRunService } from "../services/evalRunService.js";
+import type { EvalSuiteService } from "../services/evalSuiteService.js";
 import type { EvalSnapshotService } from "../services/evalSnapshotService.js";
 import type { InternalAgentConfig } from "../../agents/public.js";
 import { badRequest } from "../../../shared/domain/errors.js";
+import { summarizeSuite } from "../domain/suite.js";
 import { workbenchReplayRateLimiter, type WorkbenchReplayRateLimitDependencies } from "./workbenchReplayRateLimit.js";
 
 const captureSnapshotSchema = z.object({
@@ -133,6 +135,12 @@ const caseRunSchema = z.object({
   overrides: overridesSchema.optional(),
 });
 
+const batchRunSchema = z.object({
+  mode: z.enum(["retrieval_only", "full_assistant"]).default("full_assistant"),
+  // Optional subset to run (cost control). Omit to run the whole workspace.
+  caseIds: z.array(z.string().uuid()).min(1).max(500).optional(),
+});
+
 const oneOffRunSchema = z.object({
   snapshotId: z.string().uuid(),
   mode: z.enum(["retrieval_only", "full_assistant"]).default("full_assistant"),
@@ -164,6 +172,7 @@ export interface EvalRouteDependencies extends WorkspaceSessionDependencies {
   snapshotService: EvalSnapshotService;
   caseService: EvalCaseService;
   runService: EvalRunService;
+  suiteService: EvalSuiteService;
   abuseControlService: WorkbenchReplayRateLimitDependencies["abuseControlService"];
   auditService: WorkbenchReplayRateLimitDependencies["auditService"];
 }
@@ -291,12 +300,37 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
   router.get("/cases", workspaceSession, requireQuery, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const cases = await dependencies.caseService.list(workspaceId);
-      res.status(200).json({ cases });
+      const cases = await dependencies.caseService.listWithLatestRun(workspaceId);
+      res.status(200).json({ cases, summary: summarizeSuite(cases) });
     } catch (error) {
       next(error);
     }
   });
+
+  // Run a batch of cases — the whole workspace, or a selected subset via
+  // `caseIds` (cost control) — and return per-case outcomes plus the workspace's
+  // aggregate pass rate. Cases without expectations are skipped (nothing to
+  // score). Runs sequentially server-side, so this responds once all cases finish.
+  router.post(
+    "/cases/run",
+    workspaceSession,
+    requireQuery,
+    validateBody(batchRunSchema),
+    async (req, res, next) => {
+      try {
+        const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
+        const result = await dependencies.suiteService.run({
+          workspaceId,
+          accountId: accountId ?? null,
+          mode: req.body.mode,
+          caseIds: req.body.caseIds,
+        });
+        res.status(200).json(result);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   router.get("/cases/:id", workspaceSession, requireQuery, async (req, res, next) => {
     try {

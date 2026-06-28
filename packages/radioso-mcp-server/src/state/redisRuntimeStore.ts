@@ -32,14 +32,14 @@ const cloneSession = (session: AccessSessionRecord): AccessSessionRecord => ({
 const deriveSessionEncryptionKey = (signingSecret: string): Buffer =>
   createHash("sha256").update(`radioso-mcp-session:${signingSecret}`).digest();
 
-const encryptUpstreamApiToken = (upstreamApiToken: string, signingSecret: string): {
+const encryptSessionSecret = (value: string, signingSecret: string): {
   authTag: string;
   ciphertext: string;
   iv: string;
 } => {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", deriveSessionEncryptionKey(signingSecret), iv);
-  const ciphertext = Buffer.concat([cipher.update(upstreamApiToken, "utf8"), cipher.final()]);
+  const ciphertext = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
 
   return {
     authTag: cipher.getAuthTag().toString("base64url"),
@@ -48,7 +48,7 @@ const encryptUpstreamApiToken = (upstreamApiToken: string, signingSecret: string
   };
 };
 
-const decryptUpstreamApiToken = (payload: {
+const decryptSessionSecret = (payload: {
   authTag: string;
   ciphertext: string;
   iv: string;
@@ -65,18 +65,24 @@ const decryptUpstreamApiToken = (payload: {
   ]).toString("utf8");
 };
 
-const serializeSession = (session: AccessSessionRecord, signingSecret: string): string =>
+export const serializeSession = (session: AccessSessionRecord, signingSecret: string): string =>
   JSON.stringify({
     ...session,
     expiresAt: session.expiresAt.toISOString(),
     issuedAt: session.issuedAt.toISOString(),
     upstreamApiToken: undefined,
     upstreamApiTokenEncrypted: session.upstreamApiToken
-      ? encryptUpstreamApiToken(session.upstreamApiToken, signingSecret)
+      ? encryptSessionSecret(session.upstreamApiToken, signingSecret)
+      : undefined,
+    // converseSessionToken is a bearer for /api/v1/mcp/converse/* — treat it as secret
+    // material like the upstream API token, never store it plaintext in Redis.
+    converseSessionToken: undefined,
+    converseSessionTokenEncrypted: session.converseSessionToken
+      ? encryptSessionSecret(session.converseSessionToken, signingSecret)
       : undefined,
   });
 
-const deserializeSession = (value: string, signingSecret: string): AccessSessionRecord => {
+export const deserializeSession = (value: string, signingSecret: string): AccessSessionRecord => {
   const parsed = JSON.parse(value) as Omit<AccessSessionRecord, "expiresAt" | "issuedAt"> & {
     expiresAt: string;
     issuedAt: string;
@@ -86,16 +92,26 @@ const deserializeSession = (value: string, signingSecret: string): AccessSession
       ciphertext: string;
       iv: string;
     };
+    converseSessionToken?: string;
+    converseSessionTokenEncrypted?: {
+      authTag: string;
+      ciphertext: string;
+      iv: string;
+    };
   };
   const upstreamApiToken = parsed.upstreamApiTokenEncrypted
-    ? decryptUpstreamApiToken(parsed.upstreamApiTokenEncrypted, signingSecret)
+    ? decryptSessionSecret(parsed.upstreamApiTokenEncrypted, signingSecret)
     : parsed.upstreamApiToken;
+  const converseSessionToken = parsed.converseSessionTokenEncrypted
+    ? decryptSessionSecret(parsed.converseSessionTokenEncrypted, signingSecret)
+    : parsed.converseSessionToken;
 
   return {
     ...parsed,
     expiresAt: new Date(parsed.expiresAt),
     issuedAt: new Date(parsed.issuedAt),
     upstreamApiToken,
+    converseSessionToken,
   };
 };
 

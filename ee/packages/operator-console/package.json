@@ -40,7 +40,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run src --passWithNoTests"
   },
   "dependencies": {
     "@radioso/ui": "workspace:*",

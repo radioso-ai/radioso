@@ -13,6 +13,14 @@ export const AUTHORED_DIRECTIVE_LIMITS = {
   tag: 200,
 } as const;
 
+/**
+ * Authored directives may set a priority that orders them in the steering prompt
+ * and breaks ties when two directives try to replace one another. `null` defers to
+ * the steering default (see authoredDirectiveMapper). Built-in answer directives
+ * currently occupy 60–90.
+ */
+export const AUTHORED_DIRECTIVE_PRIORITY = { min: 0, max: 100 } as const;
+
 export const authoredDirectiveRouteValues = Object.values(CHAT_TURN_ROUTE) as [ChatTurnRoute, ...ChatTurnRoute[]];
 
 const builtInDirectiveNames = new Set(defaultAnswerDirectives.map((directive) => directive.name));
@@ -55,6 +63,13 @@ export const authoredDirectiveInputSchema = z.object({
     }),
   condition: authoredDirectiveConditionSchema,
   action: trimmedText(AUTHORED_DIRECTIVE_LIMITS.action),
+  priority: z.number()
+    .int()
+    .min(AUTHORED_DIRECTIVE_PRIORITY.min)
+    .max(AUTHORED_DIRECTIVE_PRIORITY.max)
+    .nullable()
+    .optional()
+    .transform((value) => value ?? null),
   requiredCapabilities: uniqueTextArray(AUTHORED_DIRECTIVE_LIMITS.capabilityName),
   dependsOn: uniqueTextArray(AUTHORED_DIRECTIVE_LIMITS.relationshipName),
   excludes: uniqueTextArray(AUTHORED_DIRECTIVE_LIMITS.relationshipName),

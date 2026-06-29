@@ -1508,6 +1508,7 @@ export const installDashboardApiMocks = async (
           name: body.name,
           condition: body.condition,
           action: body.action,
+          priority: body.priority ?? null,
           dependsOn: body.dependsOn ?? [],
           excludes: body.excludes ?? [],
           requiredCapabilities: body.requiredCapabilities ?? [],

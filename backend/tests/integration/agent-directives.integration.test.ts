@@ -99,6 +99,33 @@ describeIfDatabase("agent directives persistence", () => {
     await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
   });
 
+  it("persists an authored priority and lets it be cleared back to the default", async () => {
+    const { account, workspace, agent } = await createAgent();
+
+    const created = await agentRepository.createDirective(agent.id, workspace.id, {
+      name: "ranked-tone",
+      condition: { kind: "always" },
+      action: "Outrank the default formatting when they conflict.",
+      priority: 95,
+    });
+    expect(created.priority).toBe(95);
+
+    const loaded = await agentRepository.findByIdAndWorkspaceId(agent.id, workspace.id);
+    expect((loaded?.authoredDirectives ?? [])[0]?.priority).toBe(95);
+
+    const relowered = await agentRepository.updateDirective(agent.id, workspace.id, created.id, {
+      priority: 20,
+    });
+    expect(relowered.priority).toBe(20);
+
+    const cleared = await agentRepository.updateDirective(agent.id, workspace.id, created.id, {
+      priority: null,
+    });
+    expect(cleared.priority).toBeNull();
+
+    await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
+  });
+
   it("reports duplicate directive names as conflicts and cascades when the agent is deleted", async () => {
     const { account, workspace, agent } = await createAgent();
     await agentRepository.createDirective(agent.id, workspace.id, {

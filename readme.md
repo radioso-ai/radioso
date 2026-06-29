@@ -260,9 +260,11 @@ for await (const event of client.chat.stream({ message: "Summarize the FAQ" })) 
 
 ### MCP server
 
+Radioso exposes two MCP surfaces. The **agent converse surface** lets a client talk to one agent through its turn loop (`ask_agent`), request a grounded answer using that agent's retrieval settings, and read the agent's documents as resources. It uses a per-agent converse grant, minted by a workspace admin at `POST /api/v1/agents/{agentId}/mcp-converse-grants` and exchanged for a short-lived session. The **workspace document tools** (`search_documents`, `answer_grounded`, document read/write) are scoped to a whole workspace and use the workspace API token. The two surfaces do not share credentials.
+
 Radioso supports MCP in two deployment shapes. Self-hosted operators can set `RADIOSO_MCP_ENABLED=true` with `RADIOSO_MCP_STANDALONE=false` and serve MCP from the backend at `/mcp`, using the workspace API token directly. Operators who need a separate public connector surface can keep backend MCP disabled and use the standalone `packages/radioso-mcp-server/` process with its token exchange flow.
 
-Cursor can use either same-host merged mode or a local standalone server. Claude Desktop, ChatGPT deep-research, and other hosted remote MCP clients require a public HTTPS deployment plus compatible auth.
+Cursor can use either same-host merged mode or a local standalone server. Claude Desktop, ChatGPT deep-research, and other hosted remote MCP clients require a public HTTPS deployment plus compatible auth. A standard MCP OAuth front door for the converse surface is planned; until then, public connectors use a session token minted through the grant exchange.
 
 ### Website embed
 

@@ -2,6 +2,7 @@ import type { ServerContext } from "@modelcontextprotocol/server";
 
 import type { components } from "./generated/openapiTypes.js";
 import type { RadiosoApiAdapter } from "./radiosoApiAdapter.js";
+import type { ConverseApiAdapter } from "./converseApiAdapter.js";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonRecord = Record<string, JsonPrimitive>;
@@ -29,11 +30,14 @@ export interface RemoteToolAuthInfo {
   workspaceId?: string;
   workspaceHint?: string;
   workspaceName?: string;
+  converseSessionToken?: string;
 }
 
 export interface ToolExecutionContext {
   adapter: RadiosoApiAdapter;
   authInfo: RemoteToolAuthInfo | null;
+  converseAdapter?: ConverseApiAdapter;
+  converseSessionToken?: string;
   serverContext: ServerContext;
 }
 

@@ -164,6 +164,7 @@ export interface DocumentRepositoryPort {
     failureReason?: string | null;
   }): Promise<DocumentRecord | null>;
   findByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<DocumentRecord | null>;
+  listByWorkspaceId(workspaceId: string): Promise<DocumentRecord[]>;
   findByExternalDocumentId(
     workspaceId: string,
     externalDocumentId: string,

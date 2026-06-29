@@ -15,6 +15,17 @@ const publicChatSessionBasePayloadSchema = z.object({
   expiresAt: z.string().datetime(),
 });
 
+const converseChatSessionPayloadSchema = z.object({
+  workspaceId: z.string().uuid(),
+  agentId: z.string().uuid(),
+  publicSessionId: z.string().uuid(),
+  sourceChannel: z.literal("mcp"),
+  sourceOrigin: z.null(),
+  expiresAt: z.string().datetime(),
+  grantId: z.string().uuid(),
+  grantVersion: z.string().min(1),
+});
+
 const publicChatSessionPayloadSchema = z.union([
   publicChatSessionBasePayloadSchema.extend({
     launchTokenBinding: z.string().min(1),
@@ -25,10 +36,12 @@ const publicChatSessionPayloadSchema = z.union([
 ]);
 
 export type PublicChatSessionPayload = z.infer<typeof publicChatSessionPayloadSchema>;
+export type ConverseChatSessionPayload = z.infer<typeof converseChatSessionPayloadSchema>;
 type PublicChatSessionClaims = z.infer<typeof publicChatSessionBasePayloadSchema>;
 type IssuePublicChatSessionInput = Omit<PublicChatSessionClaims, "expiresAt"> & {
   publicChatToken: string;
 };
+type IssueConverseChatSessionInput = Omit<ConverseChatSessionPayload, "expiresAt" | "sourceChannel" | "sourceOrigin">;
 
 const publicChatResumePayloadSchema = publicChatSessionBasePayloadSchema.extend({
   launchTokenBinding: z.string().min(1),
@@ -69,6 +82,26 @@ export const issuePublicChatSession = (
   const payload: Extract<PublicChatSessionPayload, { launchTokenBinding: string }> = {
     ...claims,
     launchTokenBinding: signLaunchTokenBinding(secret, publicChatToken),
+    expiresAt: new Date(Date.now() + PUBLIC_CHAT_SESSION_TTL_MS).toISOString(),
+  };
+
+  const encodedPayload = toBase64Url(JSON.stringify(payload));
+  const signature = signPayload(secret, encodedPayload);
+
+  return {
+    ...payload,
+    token: `${encodedPayload}.${signature}`,
+  };
+};
+
+export const issueConverseChatSession = (
+  secret: string,
+  input: IssueConverseChatSessionInput,
+): ConverseChatSessionPayload & { token: string } => {
+  const payload: ConverseChatSessionPayload = {
+    ...input,
+    sourceChannel: "mcp",
+    sourceOrigin: null,
     expiresAt: new Date(Date.now() + PUBLIC_CHAT_SESSION_TTL_MS).toISOString(),
   };
 
@@ -137,6 +170,40 @@ export const verifyPublicChatSession = (
 
   try {
     const parsed = publicChatSessionPayloadSchema.safeParse(JSON.parse(fromBase64Url(encodedPayload)));
+    if (!parsed.success) {
+      return null;
+    }
+
+    if (Date.parse(parsed.data.expiresAt) <= Date.now()) {
+      return null;
+    }
+
+    return parsed.data;
+  } catch {
+    return null;
+  }
+};
+
+export const verifyConverseChatSession = (
+  token: string | undefined,
+  secret: string | undefined,
+): ConverseChatSessionPayload | null => {
+  if (!token || !secret) {
+    return null;
+  }
+
+  const [encodedPayload, providedSignature] = token.split(".");
+  if (!encodedPayload || !providedSignature) {
+    return null;
+  }
+
+  const expectedSignature = signPayload(secret, encodedPayload);
+  if (!safelyEqual(providedSignature, expectedSignature)) {
+    return null;
+  }
+
+  try {
+    const parsed = converseChatSessionPayloadSchema.safeParse(JSON.parse(fromBase64Url(encodedPayload)));
     if (!parsed.success) {
       return null;
     }

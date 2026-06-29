@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { AuditLogger } from "../audit/auditLogger.js";
 import { createAuditLogger } from "../audit/auditLogger.js";
+import type { ConverseApiAdapter } from "../converseApiAdapter.js";
 import type { CapabilityPolicyRegistry } from "../policy/capabilityPolicy.js";
 import { CapabilityPolicyError } from "../policy/capabilityPolicy.js";
 import { RadiosoApiError } from "../radiosoApiAdapter.js";
@@ -31,6 +32,7 @@ export interface AuthServiceDependencies {
   };
   sessionStore: SessionStore;
   signingSecret: string;
+  converseApi?: ConverseApiAdapter;
   validateWorkspaceToken: (radiosoApiToken: string) => Promise<{
     apiVersion?: string;
     mcpContextVersion?: string;
@@ -65,6 +67,7 @@ export interface ExchangeWorkspaceTokenResult {
 
 export interface AuthService {
   exchangeWorkspaceToken(input: ExchangeWorkspaceTokenInput): Promise<ExchangeWorkspaceTokenResult>;
+  resolveBearerSession(accessToken: string): Promise<AccessSessionRecord | null>;
   getRequestAuthInfo(accessToken: string): Promise<McpRequestAuthInfo | null>;
   getSession(accessToken: string): Promise<AccessSessionRecord | null>;
 }
@@ -124,6 +127,14 @@ const toAuditFailure = (
 
 const unique = (values: string[]): string[] => [...new Set(values)];
 
+// `agent_resources` is the synthetic name the resource resolver checks against grantedTools;
+// it must be present or resources/list and resource reads fail with capability_forbidden.
+// It is not a callable tool (not in the converse tool catalog), so it never appears in tools/list.
+const CONVERSE_GRANTED_TOOLS = ["ask_agent", "answer_grounded", "agent_resources"];
+
+const isAuthenticationFailure = (error: unknown): boolean =>
+  error instanceof RadiosoApiError && (error.status === 401 || error.status === 403);
+
 export const createAuthService = (dependencies: AuthServiceDependencies): AuthService => {
   const now = dependencies.now ?? defaultNow;
   const auditLogger = dependencies.auditLogger ?? createAuditLogger([]);
@@ -131,6 +142,67 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
 
   const emit = async (event: Parameters<AuditLogger["emit"]>[0]) => {
     await auditLogger.emit(event);
+  };
+
+  const validateConverseSession = async (session: AccessSessionRecord): Promise<AccessSessionRecord | null> => {
+    if (!session.converseSessionToken || !dependencies.converseApi) {
+      return session;
+    }
+
+    try {
+      const validation = await dependencies.converseApi.validate(session.converseSessionToken);
+      return {
+        ...session,
+        workspaceId: session.workspaceId ?? validation.workspaceId,
+      };
+    } catch (error) {
+      if (!isAuthenticationFailure(error)) {
+        throw error;
+      }
+
+      await dependencies.sessionStore.delete(session.sessionId);
+      return null;
+    }
+  };
+
+  const resolveConverseGrant = async (accessToken: string): Promise<AccessSessionRecord | null> => {
+    if (!dependencies.converseApi) {
+      return null;
+    }
+
+    try {
+      const issuedAt = now();
+      const exchange = await dependencies.converseApi.exchange({
+        launchToken: accessToken,
+        client: {
+          name: "radioso-mcp-server",
+        },
+      });
+      const validation = await dependencies.converseApi.validate(exchange.sessionToken);
+
+      return dependencies.sessionStore.save({
+        accessToken,
+        approvalRequiredTools: [],
+        clientName: "radioso-mcp-converse",
+        converseSessionToken: exchange.sessionToken,
+        expiresAt: new Date(exchange.expiresAt),
+        grantedTools: CONVERSE_GRANTED_TOOLS,
+        issuedAt,
+        sessionId: `converse_${randomUUID()}`,
+        workspaceId: validation.workspaceId,
+      });
+    } catch (error) {
+      if (isAuthenticationFailure(error)) {
+        return null;
+      }
+
+      throw error;
+    }
+  };
+
+  const getValidatedSession = async (accessToken: string): Promise<AccessSessionRecord | null> => {
+    const session = await dependencies.sessionStore.getByAccessToken(accessToken, now());
+    return session ? validateConverseSession(session) : null;
   };
 
   return {
@@ -235,11 +307,16 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
     },
 
     async getSession(accessToken: string): Promise<AccessSessionRecord | null> {
-      return dependencies.sessionStore.getByAccessToken(accessToken, now());
+      return getValidatedSession(accessToken);
+    },
+
+    async resolveBearerSession(accessToken: string): Promise<AccessSessionRecord | null> {
+      const session = await getValidatedSession(accessToken);
+      return session ?? resolveConverseGrant(accessToken);
     },
 
     async getRequestAuthInfo(accessToken: string): Promise<McpRequestAuthInfo | null> {
-      const session = await dependencies.sessionStore.getByAccessToken(accessToken, now());
+      const session = await getValidatedSession(accessToken);
       return session ? toMcpRequestAuthInfo(session) : null;
     },
   };

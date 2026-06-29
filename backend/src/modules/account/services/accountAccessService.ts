@@ -43,14 +43,16 @@ export type AccountPermission =
   | "workspace.token.rotate";
 
 export type WorkspaceApiTokenRole = "admin" | "member";
-export type PublicAccessRole = "public";
+export type PublicAccessRole = "public" | "agent";
 export type PrincipalAccessRole = WorkspaceApiTokenRole | PublicAccessRole;
 
 export type PublicChatPermission =
   | "public_chat.turn.create"
   | "public_chat.session.read.own"
   | "public_chat.history.read.own"
-  | "public_chat.feedback.write.own";
+  | "public_chat.feedback.write.own"
+  | "public_chat.retrieval.query"
+  | "public_chat.documents.read.scoped";
 
 export type Permission = AccountPermission | PublicChatPermission;
 
@@ -59,6 +61,12 @@ export const PUBLIC_CHAT_PERMISSIONS: ReadonlySet<PublicChatPermission> = new Se
   "public_chat.session.read.own",
   "public_chat.history.read.own",
   "public_chat.feedback.write.own",
+]);
+
+export const AGENT_CONVERSE_PERMISSIONS: ReadonlySet<PublicChatPermission> = new Set([
+  ...PUBLIC_CHAT_PERMISSIONS,
+  "public_chat.retrieval.query",
+  "public_chat.documents.read.scoped",
 ]);
 
 export type AuthenticatedPrincipal =
@@ -546,6 +554,9 @@ export class AccountAccessService {
   private principalRoleAllows(role: PrincipalAccessRole, permission: Permission): boolean {
     if (role === "public") {
       return PUBLIC_CHAT_PERMISSIONS.has(permission as PublicChatPermission);
+    }
+    if (role === "agent") {
+      return AGENT_CONVERSE_PERMISSIONS.has(permission as PublicChatPermission);
     }
 
     return this.tokenRoleAllows(role, permission);

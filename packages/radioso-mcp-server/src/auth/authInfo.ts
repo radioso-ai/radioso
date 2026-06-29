@@ -4,6 +4,7 @@ export interface McpRequestAuthInfo {
   approvalRequiredTools?: string[];
   clientName?: string;
   grantedTools: string[];
+  converseSessionToken?: string;
   sessionExpiresAt: string;
   sessionId: string;
   upstreamApiVersion?: string;
@@ -18,6 +19,7 @@ export const toMcpRequestAuthInfo = (session: AccessSessionRecord): McpRequestAu
   approvalRequiredTools: session.approvalRequiredTools ? [...session.approvalRequiredTools] : undefined,
   clientName: session.clientName,
   grantedTools: [...session.grantedTools],
+  converseSessionToken: session.converseSessionToken,
   sessionExpiresAt: session.expiresAt.toISOString(),
   sessionId: session.sessionId,
   upstreamApiVersion: session.upstreamApiVersion,

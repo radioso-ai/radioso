@@ -1,6 +1,7 @@
 export type {
   AccessGrant,
   AccessGrantAuthFailureReason,
+  AccessGrantChannel,
   AccessGrantEvaluation,
   AccessGrantRole,
   AccessGrantSecret,

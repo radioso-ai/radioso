@@ -11,6 +11,7 @@ const grantWith = (originConstraint: OriginConstraint): AccessGrant => ({
   label: "website-embed",
   principalKind: "public-launch",
   role: "public",
+  channel: "public-link",
   tokenPrefix: "",
   tokenHash: "hash",
   encryptedToken: "encrypted",

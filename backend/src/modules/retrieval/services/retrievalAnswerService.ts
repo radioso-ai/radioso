@@ -82,6 +82,10 @@ export class RetrievalAnswerService {
       history,
       responseIdentity: null,
       metadataFilter: input.metadataFilter,
+      sourceScope: input.sourceScope,
+      responseBehavior: input.responseBehavior,
+      responseBehaviorEnabled: input.responseBehaviorEnabled,
+      agentSkillSettings: input.agentSkillSettings,
       execution,
       usageContext,
     });
@@ -206,12 +210,16 @@ export class RetrievalAnswerService {
       eventStatus: "success",
       metadata: {
         execution,
-        query: input.query,
+        ...(execution.surface === "retrieval" ? { query: input.query } : {}),
         outcome: "answer",
         citationCount: result.citations?.length ?? 0,
-        activitySummary: result.activitySummary,
-        activityTrace: result.activityTrace,
-        retrieval: diagnostics,
+        ...(execution.surface === "retrieval"
+          ? {
+              activitySummary: result.activitySummary,
+              activityTrace: result.activityTrace,
+              retrieval: diagnostics,
+            }
+          : {}),
       },
     });
   }
@@ -232,7 +240,7 @@ export class RetrievalAnswerService {
       eventStatus: "failure",
       metadata: {
         execution,
-        query: input.query,
+        ...(execution.surface === "retrieval" ? { query: input.query } : {}),
         outcome: "error",
         error: { name, message },
       },

@@ -1,5 +1,6 @@
 export type GrantPrincipalKind = "workspace-admin" | "agent-api" | "public-launch";
-export type AccessGrantRole = "public";
+export type AccessGrantRole = "public" | "agent";
+export type AccessGrantChannel = "embed" | "public-link" | "mcp-converse";
 
 export type OriginConstraint =
   | { mode: "allow-all"; origins: [] }
@@ -12,6 +13,7 @@ export interface AccessGrant {
   label: string | null;
   principalKind: GrantPrincipalKind;
   role: AccessGrantRole;
+  channel: AccessGrantChannel;
   tokenPrefix: string;
   tokenHash: string;
   encryptedToken: string;

@@ -22,7 +22,7 @@ export interface AssistantRouteDiagnostics {
 }
 
 export interface AssistantSourceContext {
-  surface?: "authenticated_chat" | "public_chat" | "website_embed";
+  surface?: "authenticated_chat" | "public_chat" | "website_embed" | "mcp";
   sourceOrigin?: string | null;
   channelContext?: ConversationChannelContext | null;
 }

@@ -114,6 +114,25 @@ describe("architecture boundary validation", () => {
     ]);
   });
 
+  it("rejects standalone MCP server imports from backend implementation paths", () => {
+    const result = validateImportRecords([
+      {
+        filePath: "packages/radioso-mcp-server/src/server.ts",
+        specifier: "../../../backend/src/modules/settings/domain/publicChatSession.js",
+      },
+      {
+        filePath: "packages/radioso-mcp-server/src/tools/converseTools.ts",
+        specifier: "../../../../backend/src/modules/chat/services/agentConverseService.js",
+      },
+    ]);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toEqual([
+      expect.stringContaining("Radioso MCP server must call backend over HTTP instead of importing backend code"),
+      expect.stringContaining("Radioso MCP server must call backend over HTTP instead of importing backend code"),
+    ]);
+  });
+
   it("validates the current repository without forbidden boundary imports", async () => {
     const result = await validateRepositoryBoundaries(new URL("../../..", import.meta.url).pathname);
 

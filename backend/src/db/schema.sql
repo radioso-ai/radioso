@@ -404,9 +404,11 @@ CREATE TABLE public.agent_access_grants (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     last_used_at timestamp with time zone,
     revoked_at timestamp with time zone,
+    channel text DEFAULT 'public-link'::text NOT NULL,
+    CONSTRAINT agent_access_grants_channel_check CHECK ((channel = ANY (ARRAY['embed'::text, 'public-link'::text, 'mcp-converse'::text]))),
     CONSTRAINT agent_access_grants_origin_mode_check CHECK ((origin_mode = ANY (ARRAY['allow-all'::text, 'list'::text]))),
     CONSTRAINT agent_access_grants_principal_kind_check CHECK ((principal_kind = ANY (ARRAY['workspace-admin'::text, 'agent-api'::text, 'public-launch'::text]))),
-    CONSTRAINT agent_access_grants_role_check CHECK ((role = 'public'::text))
+    CONSTRAINT agent_access_grants_role_check CHECK ((role = ANY (ARRAY['public'::text, 'agent'::text])))
 );
 
 

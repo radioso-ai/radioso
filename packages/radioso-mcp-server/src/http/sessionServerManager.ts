@@ -6,6 +6,7 @@ import { toMcpRequestAuthInfo } from "../auth/authInfo.js";
 import type { AccessSessionRecord } from "../auth/sessionStore.js";
 import type { RadiosoMcpConfig } from "../config.js";
 import { CapabilityPolicyError } from "../policy/capabilityPolicy.js";
+import { createConverseApiAdapter } from "../converseApiAdapter.js";
 import { createRadiosoApiAdapter } from "../radiosoApiAdapter.js";
 import { createRadiosoMcpServer, getRemoteToolAuthInfo } from "../server.js";
 import type { ToolDefinition } from "../types.js";
@@ -91,7 +92,7 @@ export const createSessionMcpServerManager = ({
       },
       resolveExecutionContext: async (tool: ToolDefinition, _rawArgs, ctx) => {
         const authInfo = getRemoteToolAuthInfo(ctx) as InternalMcpRequestAuthInfo | null;
-        if (!authInfo?.accessToken || !authInfo.upstreamApiToken) {
+        if (!authInfo?.accessToken || (!authInfo.upstreamApiToken && !authInfo.converseSessionToken)) {
           throw new AuthServiceError("MCP request is missing authenticated session context.", "invalid_access_token");
         }
 
@@ -101,13 +102,24 @@ export const createSessionMcpServerManager = ({
           });
         }
 
+        const converseSessionToken = typeof authInfo.converseSessionToken === "string" && authInfo.converseSessionToken.length > 0
+          ? authInfo.converseSessionToken
+          : undefined;
+
         return {
           adapter: createRadiosoApiAdapter({
             ...config,
-            apiToken: authInfo.upstreamApiToken,
+            apiToken: authInfo.upstreamApiToken ?? authInfo.converseSessionToken ?? "",
             mcpSourceSigningSecret: config.signingSecret,
           }),
           authInfo,
+          converseAdapter: converseSessionToken
+            ? createConverseApiAdapter({
+                baseUrl: config.baseUrl,
+                requestTimeoutMs: config.requestTimeoutMs,
+              })
+            : undefined,
+          converseSessionToken,
           serverContext: ctx,
         };
       },

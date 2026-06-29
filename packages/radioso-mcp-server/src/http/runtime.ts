@@ -7,6 +7,7 @@ import {
 } from "../audit/auditLogger.js";
 import { createAuthService } from "../auth/authService.js";
 import type { RadiosoMcpConfig } from "../config.js";
+import { createConverseApiAdapter } from "../converseApiAdapter.js";
 import { createCapabilityPolicyRegistry } from "../policy/capabilityPolicy.js";
 import { createWorkspacePolicyResolver, loadWorkspacePolicyOverrides } from "../policy/workspacePolicy.js";
 import { createRuntimeStoreHandle, type RuntimeStoreHandle } from "../state/runtimeStores.js";
@@ -71,6 +72,10 @@ export const createRemoteHttpRuntime = async ({
     resolvePolicy: (workspaceId) => workspacePolicyResolver.resolve(workspaceId),
     sessionStore: resolvedRuntimeStores.sessionStore,
     signingSecret: config.signingSecret,
+    converseApi: createConverseApiAdapter({
+      baseUrl: config.baseUrl,
+      requestTimeoutMs: config.requestTimeoutMs,
+    }),
     validateWorkspaceToken: (radiosoApiToken) => validateWorkspaceToken(config, radiosoApiToken),
   });
   const server = createHttpServer({

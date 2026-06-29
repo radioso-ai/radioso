@@ -24,9 +24,15 @@ import {
   createAssistantLogoUploadHandler,
 } from "../shared/assistantIdentity.js";
 import { resolvePublicLaunchLifecycle } from "../../../modules/accessGrants/public.js";
+import type { AccessGrant, AccessGrantSecret } from "../../../modules/accessGrants/domain.js";
 
 const agentParamsSchema = z.object({
   agentId: z.string().uuid(),
+});
+
+const agentMcpConverseGrantParamsSchema = z.object({
+  agentId: z.string().uuid(),
+  grantId: z.string().uuid(),
 });
 
 const agentDirectiveParamsSchema = z.object({
@@ -96,6 +102,10 @@ const contactRequestDeliverySchema = z.object({
   ]).optional(),
 }).optional();
 
+const mcpConverseGrantIssueBodySchema = z.object({
+  label: z.string().trim().min(1).max(120).optional(),
+}).strict();
+
 export const agentBodySchema = z.object({
   name: z.string().max(200).optional(),
   customInstruction: z.string().max(2000).optional(),
@@ -120,6 +130,56 @@ export const agentBodySchema = z.object({
 export { llmProviderNames as agentLlmProviderNames, chatModelOverrideSchema as agentChatModelOverrideSchema };
 
 type AgentRouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger">;
+
+const presentMcpConverseGrantMetadata = (grant: AccessGrant) => ({
+  id: grant.id,
+  label: grant.label,
+  tokenPrefix: grant.tokenPrefix,
+  enabled: grant.enabled,
+  createdAt: grant.createdAt.toISOString(),
+  lastUsedAt: grant.lastUsedAt ? grant.lastUsedAt.toISOString() : null,
+  revokedAt: grant.revokedAt ? grant.revokedAt.toISOString() : null,
+});
+
+const presentMcpConverseGrantSecret = ({ grant, token }: AccessGrantSecret) => ({
+  grant: {
+    id: grant.id,
+    label: grant.label,
+    tokenPrefix: grant.tokenPrefix,
+    createdAt: grant.createdAt.toISOString(),
+  },
+  token,
+});
+
+const assertAgentExists = async (
+  dependencies: Pick<AgentRouteDependencies, "agentRepository">,
+  workspaceId: string,
+  agentId: string,
+) => {
+  const agent = await dependencies.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
+  if (!agent) {
+    throw notFound("Agent not found");
+  }
+};
+
+const resolveMcpConverseGrantForAgent = async (
+  dependencies: Pick<AgentRouteDependencies, "accessGrantService">,
+  workspaceId: string,
+  agentId: string,
+  grantId: string,
+): Promise<AccessGrant> => {
+  const grant = await dependencies.accessGrantService.findGrantById(grantId);
+  if (
+    !grant ||
+    grant.workspaceId !== workspaceId ||
+    grant.agentId !== agentId ||
+    grant.principalKind !== "public-launch" ||
+    grant.channel !== "mcp-converse"
+  ) {
+    throw notFound("MCP converse grant not found");
+  }
+  return grant;
+};
 
 export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router => {
   const router = Router();
@@ -173,6 +233,85 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
       ]);
 
       res.status(200).json({ anonymousChat, websiteEmbed });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post(
+    "/:agentId/mcp-converse-grants",
+    workspaceSession,
+    agentManage,
+    validateBody(mcpConverseGrantIssueBodySchema),
+    async (req, res, next) => {
+      try {
+        const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
+        const parsed = agentParamsSchema.parse(req.params);
+        await assertAgentExists(dependencies, workspaceId, parsed.agentId);
+        const secret = await dependencies.accessGrantService.issueGrant({
+          agentId: parsed.agentId,
+          workspaceId,
+          accountId,
+          principalKind: "public-launch",
+          channel: "mcp-converse",
+          originConstraint: { mode: "allow-all", origins: [] },
+          label: req.body.label,
+        });
+        res.status(201).json(presentMcpConverseGrantSecret(secret));
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get("/:agentId/mcp-converse-grants", workspaceSession, agentManage, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const parsed = agentParamsSchema.parse(req.params);
+      await assertAgentExists(dependencies, workspaceId, parsed.agentId);
+      const grants = (await dependencies.accessGrantService.listAgentGrants(parsed.agentId))
+        .filter((grant) =>
+          grant.workspaceId === workspaceId &&
+          grant.agentId === parsed.agentId &&
+          grant.principalKind === "public-launch" &&
+          grant.channel === "mcp-converse"
+        )
+        .map(presentMcpConverseGrantMetadata);
+      res.status(200).json({ grants });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/:agentId/mcp-converse-grants/:grantId/rotate", workspaceSession, agentManage, async (req, res, next) => {
+    try {
+      const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
+      const parsed = agentMcpConverseGrantParamsSchema.parse(req.params);
+      await assertAgentExists(dependencies, workspaceId, parsed.agentId);
+      await resolveMcpConverseGrantForAgent(dependencies, workspaceId, parsed.agentId, parsed.grantId);
+      const secret = await dependencies.accessGrantService.rotateGrant({
+        grantId: parsed.grantId,
+        accountId,
+        reason: "mcp_converse_grant_rotate",
+      });
+      res.status(200).json(presentMcpConverseGrantSecret(secret));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.delete("/:agentId/mcp-converse-grants/:grantId", workspaceSession, agentManage, async (req, res, next) => {
+    try {
+      const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
+      const parsed = agentMcpConverseGrantParamsSchema.parse(req.params);
+      await assertAgentExists(dependencies, workspaceId, parsed.agentId);
+      await resolveMcpConverseGrantForAgent(dependencies, workspaceId, parsed.agentId, parsed.grantId);
+      await dependencies.accessGrantService.revokeGrant({
+        grantId: parsed.grantId,
+        accountId,
+        reason: "mcp_converse_grant_revoke",
+      });
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

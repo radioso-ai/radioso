@@ -1,10 +1,112 @@
 ---
 title: "MCP Client Setup"
-description: "Setup guide covering three MCP deployment modes, Cursor integration, Claude connectors, and authentication flows."
-last_updated: 2026-05-21
+description: "Setup guide covering the agent converse surface, the workspace document tools, MCP deployment modes, and authentication flows."
+last_updated: 2026-06-28
 ---
 
 # MCP Client Setup
+
+Radioso exposes two MCP surfaces. They serve different needs and use different credentials.
+
+- **Agent converse surface**: an MCP client talks to one specific agent, with that agent's persona, directives, routines, history, and configured retrieval. It authenticates with a per-agent converse grant. Use this when the client should behave like the agent.
+- **Workspace document tools**: retrieval-first tools (`search_documents`, `answer_grounded`, document read/write) scoped to a whole workspace. They authenticate with a workspace API token and do not use any agent's persona or configuration. The rest of this guide, from "Deployment Modes" onward, describes this surface.
+
+The two surfaces do not share credentials. A converse grant is rejected by the workspace tools, and a workspace API token is rejected by the converse surface.
+
+## Agent Converse Surface
+
+The converse surface lets an external client hold a conversation with one agent. The client never sees other agents, workspace settings, or document management. It can do three things: ask the agent, request a grounded answer using the agent's retrieval settings, and read the agent's documents as resources.
+
+The key point: a converse credential authorizes exactly one agent and nothing else.
+
+### Mint a converse grant
+
+A converse grant is the per-agent credential a client uses. A workspace admin creates it with the workspace API token. The plaintext token is returned once, on creation. Store it as a secret.
+
+```http
+POST /api/v1/agents/{agentId}/mcp-converse-grants
+Authorization: Bearer <workspace API token>
+Content-Type: application/json
+
+{ "label": "Cursor on my laptop" }
+```
+
+The response includes the token once:
+
+```json
+{
+  "grant": { "id": "...", "label": "Cursor on my laptop", "tokenPrefix": "radioso_", "createdAt": "..." },
+  "token": "radioso_..."
+}
+```
+
+Manage existing grants with the same path:
+
+- `GET /api/v1/agents/{agentId}/mcp-converse-grants` lists grant metadata. It never returns the token.
+- `POST /api/v1/agents/{agentId}/mcp-converse-grants/{grantId}/rotate` issues a new token and invalidates the old one.
+- `DELETE /api/v1/agents/{agentId}/mcp-converse-grants/{grantId}` revokes the grant.
+
+Grant changes take effect on the next request. Revoking, disabling, or rotating a grant stops its existing sessions, because every converse request re-checks the grant.
+
+### Exchange the grant for a session
+
+A client exchanges the grant token for a short-lived session token. The session is bound to the agent.
+
+```http
+POST /api/v1/mcp/converse/session
+Content-Type: application/json
+
+{ "launchToken": "radioso_...", "client": { "name": "cursor" } }
+```
+
+```json
+{
+  "sessionToken": "<session token>",
+  "expiresAt": "...",
+  "agent": { "id": "...", "name": "Support" },
+  "conversationId": "..."
+}
+```
+
+Send the session token as a bearer token on the converse calls below. There is no agent id in the requests; the agent is fixed by the grant. To reconnect after the session expires, exchange the grant again.
+
+### Converse calls
+
+Ask the agent. This runs the agent's full turn loop, so the reply reflects its persona, directives, and routines, and continues the same conversation across calls.
+
+```http
+POST /api/v1/mcp/converse/ask
+Authorization: Bearer <session token>
+
+{ "message": "What is your refund window?" }
+```
+
+Request a grounded answer. This uses the bound agent's retrieval settings (query rewrite, rerank, source scope, citation policy), so the result matches the agent's in-product answers rather than workspace defaults.
+
+```http
+POST /api/v1/mcp/converse/grounded-answer
+Authorization: Bearer <session token>
+
+{ "query": "refund window" }
+```
+
+Read the agent's documents as MCP resources. The list is scoped to what the agent can see, and content is sanitized for a public surface (no internal document or chunk ids).
+
+```http
+GET /api/v1/mcp/converse/resources
+GET /api/v1/mcp/converse/resources/{resourceId}
+Authorization: Bearer <session token>
+```
+
+### Authentication boundaries
+
+- The converse surface accepts only converse grants. A workspace API token is rejected.
+- A converse grant is bound to the `mcp-converse` channel. Embed and public-chat launch tokens are rejected, so a public website token cannot be used to converse over MCP.
+- A converse grant is a secret. Unlike an embed token, it is never exposed in client-side surfaces.
+
+### Authentication roadmap
+
+Today the converse surface uses the grant-for-session exchange described above. This fits self-hosted setups and applications that hold the grant on a server. A standard MCP OAuth 2.1 front door, for public connectors such as Claude or ChatGPT, is planned and not yet available. Until then, public connectors can use a session token minted through the exchange flow.
 
 ## Deployment Modes
 

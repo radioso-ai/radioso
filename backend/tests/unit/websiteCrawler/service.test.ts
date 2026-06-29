@@ -127,6 +127,102 @@ describe("website crawler service", () => {
     expect(ingest).toHaveBeenCalledOnce();
   });
 
+  it("aborts the crawl when document ingestion reports a usage limit", async () => {
+    const usageLimitError = Object.assign(new Error("Usage limit exceeded"), {
+      statusCode: 429,
+      code: "usage_limit_exceeded",
+    });
+    const ingest = vi.fn()
+      .mockResolvedValueOnce({ documentId: "doc-1", status: "queued" })
+      .mockRejectedValueOnce(usageLimitError)
+      .mockResolvedValue({ documentId: "doc-3", status: "queued" });
+    const record = vi.fn();
+    const service = new WebsiteCrawlerService({
+      provider: createProvider([
+        { sourceUrl: "https://example.com/a", title: "A", content: "# A", metadata: {} },
+        { sourceUrl: "https://example.com/b", title: "B", content: "# B", metadata: {} },
+        { sourceUrl: "https://example.com/c", title: "C", content: "# C", metadata: {} },
+      ]),
+      documentIngestionService: { ingest },
+      auditService: { record },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    await expect(
+      service.crawlAndPublish({ workspaceId: "workspace-1", url: "https://example.com", limit: 5 }),
+    ).rejects.toBe(usageLimitError);
+
+    // The third page must never be attempted once the quota is hit.
+    expect(ingest).toHaveBeenCalledTimes(2);
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: "document.website_crawler.crawl", eventStatus: "failure" }),
+    );
+  });
+
+  it("does not checkpoint a streamed page as processed after a usage limit", async () => {
+    const usageLimitError = Object.assign(new Error("Usage limit exceeded"), {
+      statusCode: 429,
+      code: "usage_limit_exceeded",
+    });
+    const checkpoints: Array<{
+      processingUrls: string[];
+      processedCanonicalUrls: string[];
+    }> = [];
+    const service = new WebsiteCrawlerService({
+      provider: {
+        name: "stream-crawler",
+        crawl: vi.fn(),
+        crawlStream: vi.fn(async (request, onPage) => {
+          await request.onCheckpointEvent?.({
+            type: "discovered",
+            url: "https://example.com/quota",
+            canonicalUrl: "https://example.com/quota",
+          });
+          await request.onCheckpointEvent?.({
+            type: "processing",
+            url: "https://example.com/quota",
+            canonicalUrl: "https://example.com/quota",
+          });
+          await onPage({
+            sourceUrl: "https://example.com/quota",
+            canonicalUrl: "https://example.com/quota",
+            title: "Quota",
+            content: "# Quota",
+            metadata: {},
+          });
+          await request.onCheckpointEvent?.({
+            type: "processed",
+            url: "https://example.com/quota",
+            canonicalUrl: "https://example.com/quota",
+          });
+          return { provider: "stream-crawler", status: "completed" };
+        }),
+      },
+      documentIngestionService: { ingest: vi.fn().mockRejectedValue(usageLimitError) },
+      auditService: { record: vi.fn() },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    await expect(
+      service.crawlAndPublish({
+        workspaceId: "workspace-1",
+        url: "https://example.com",
+        limit: 5,
+        onCheckpoint: async (checkpoint) => {
+          checkpoints.push({
+            processingUrls: checkpoint.processingUrls,
+            processedCanonicalUrls: checkpoint.processedCanonicalUrls,
+          });
+        },
+      }),
+    ).rejects.toBe(usageLimitError);
+
+    expect(checkpoints.at(-1)).toEqual({
+      processingUrls: ["https://example.com/quota"],
+      processedCanonicalUrls: [],
+    });
+  });
+
   it("uses stable external document IDs for repeated crawls", async () => {
     const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
     const service = new WebsiteCrawlerService({
@@ -653,7 +749,7 @@ describe("website crawler service", () => {
   });
 
   it("passes request cancellation signals into the abstract provider", async () => {
-    const signal = new AbortController().signal;
+    const controller = new AbortController();
     const crawl = vi.fn().mockResolvedValue({
       provider: "custom-crawler",
       pages: [],
@@ -672,14 +768,20 @@ describe("website crawler service", () => {
       workspaceId: "workspace-1",
       url: "https://example.com",
       limit: 1,
-      signal,
+      signal: controller.signal,
     });
 
     expect(crawl).toHaveBeenCalledWith(expect.objectContaining({
       url: "https://example.com",
       limit: 1,
-      signal,
+      signal: expect.any(AbortSignal),
     }));
+    // The crawl runs under a derived signal (so a mid-crawl quota stop can abort
+    // it), but request cancellation must still propagate to the provider.
+    const forwardedSignal = crawl.mock.calls[0][0].signal as AbortSignal;
+    expect(forwardedSignal.aborted).toBe(false);
+    controller.abort();
+    expect(forwardedSignal.aborted).toBe(true);
   });
 
   it("stops before provider calls when the request signal is already aborted", async () => {

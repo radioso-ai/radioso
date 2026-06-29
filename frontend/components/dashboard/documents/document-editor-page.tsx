@@ -37,6 +37,7 @@ export function DocumentEditorPage({
   document,
   values,
   metadataError,
+  saveError,
   isLoading,
   isSaving,
   isDeleting,
@@ -60,6 +61,7 @@ export function DocumentEditorPage({
   document: DocumentSummary | null
   values: DocumentEditorValues
   metadataError: string | null
+  saveError?: string | null
   isLoading: boolean
   isSaving: boolean
   isDeleting: boolean
@@ -214,6 +216,9 @@ export function DocumentEditorPage({
               ) : null}
               {retryError ? (
                 <p className="text-sm text-destructive">{retryError}</p>
+              ) : null}
+              {saveError && isEditing ? (
+                <p className="text-sm text-destructive">{saveError}</p>
               ) : null}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                 <span>

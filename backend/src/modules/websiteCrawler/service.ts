@@ -17,6 +17,7 @@ import {
   type WebsiteCrawlCheckpoint,
   type WebsiteCrawlPolicy,
 } from "./policy.js";
+import { isUsageLimitExceededError } from "../../shared/domain/usageLimitPolicy.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 
 // Pages exceeding this character count are skipped during ingestion to avoid
@@ -112,6 +113,11 @@ export class WebsiteCrawlerService {
       processed: new Set(checkpoint.processedCanonicalUrls),
       contentHashes: new Set(checkpoint.processedContentHashes ?? []),
     };
+    // Set when ingestion reports a tier-quota rejection mid-crawl. The provider's
+    // per-page error handling swallows callback throws, so instead of throwing we
+    // capture the error, abort the crawl, and rethrow once the run unwinds — the
+    // caller then gets the 429 rather than a frontier full of generic failures.
+    let usageLimitError: unknown = null;
     const persistCheckpoint = async () => {
       checkpoint.discoveredUrls = [...checkpointSets.discovered];
       checkpoint.queuedUrls = [...checkpointSets.queued];
@@ -121,6 +127,9 @@ export class WebsiteCrawlerService {
       await input.onCheckpoint?.({ ...checkpoint });
     };
     const recordCheckpointEvent = async (event: WebsiteCrawlCheckpointEvent) => {
+      if (usageLimitError && event.type === "processed") {
+        return;
+      }
       const canonical = event.canonicalUrl ?? event.url;
       if (event.type === "discovered") {
         checkpointSets.discovered.add(canonical);
@@ -185,7 +194,18 @@ export class WebsiteCrawlerService {
     const remainingLimit = Math.max(input.limit - completedPageCount, 0);
     let pageCount = 0;
 
+    const crawlAbortController = new AbortController();
+    if (input.signal) {
+      if (input.signal.aborted) {
+        crawlAbortController.abort();
+      } else {
+        input.signal.addEventListener("abort", () => crawlAbortController.abort(), { once: true });
+      }
+    }
+    const crawlSignal = crawlAbortController.signal;
+
     const ingestPage = async (page: WebsiteCrawlPage): Promise<void> => {
+      if (usageLimitError) return;
       if (pageCount >= remainingLimit) return;
       pageCount += 1;
 
@@ -319,7 +339,16 @@ export class WebsiteCrawlerService {
           canonicalUrl: safeCanonicalUrl,
         });
         await persistCheckpoint();
-      } catch {
+      } catch (error) {
+        // A usage-limit rejection means the account has exhausted its tier quota.
+        // Every remaining page would fail the same way, so capture it, abort the
+        // crawl (the provider stops fetching the frontier), and rethrow after the
+        // run unwinds instead of churning through pages as generic failures.
+        if (isUsageLimitExceededError(error)) {
+          usageLimitError = error;
+          crawlAbortController.abort();
+          return;
+        }
         result.failed += 1;
         checkpoint.failed += 1;
         result.failures.push({
@@ -339,7 +368,7 @@ export class WebsiteCrawlerService {
           {
             url: websiteBaseUrl,
             limit: remainingLimit,
-            signal: input.signal,
+            signal: crawlSignal,
             policy,
             checkpoint,
             onCheckpointEvent: recordCheckpointEvent,
@@ -353,7 +382,7 @@ export class WebsiteCrawlerService {
         const providerResult = await this.crawlProvider({
           url: websiteBaseUrl,
           limit: remainingLimit,
-          signal: input.signal,
+          signal: crawlSignal,
           policy,
           checkpoint,
           onCheckpointEvent: recordCheckpointEvent,
@@ -378,7 +407,10 @@ export class WebsiteCrawlerService {
       }
       this.throwIfAborted(input.signal);
     } catch (error) {
-      await this.auditCrawlFailure(input, safeWebsiteBaseUrl, error);
+      // A captured tier-quota rejection takes precedence over the abort error the
+      // provider surfaces once we stop it, so the caller sees the real 429 cause.
+      const surfaced = usageLimitError ?? error;
+      await this.auditCrawlFailure(input, safeWebsiteBaseUrl, surfaced);
       if (documentSource) {
         await this.safeUpdateSourceSyncState({
           workspaceId: input.workspaceId,
@@ -386,7 +418,21 @@ export class WebsiteCrawlerService {
           status: "failure",
         });
       }
-      throw error;
+      throw surfaced;
+    }
+
+    // The provider may stop gracefully after we abort rather than throwing; if a
+    // tier-quota rejection was captured mid-crawl, surface it as a crawl failure.
+    if (usageLimitError) {
+      await this.auditCrawlFailure(input, safeWebsiteBaseUrl, usageLimitError);
+      if (documentSource) {
+        await this.safeUpdateSourceSyncState({
+          workspaceId: input.workspaceId,
+          sourceId: documentSource.id,
+          status: "failure",
+        });
+      }
+      throw usageLimitError;
     }
 
     await this.auditResult(input, result);

@@ -125,6 +125,7 @@ export function DocumentsView({
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [metadataError, setMetadataError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [deleteCandidate, setDeleteCandidate] = useState<DocumentSummary | null>(null)
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null)
   const [deleteErrorById, setDeleteErrorById] = useState<Record<string, string>>({})
@@ -425,6 +426,7 @@ export function DocumentsView({
     setIsEditingDetail(false)
     setIsMetadataSheetOpen(false)
     setMetadataError(null)
+    setSaveError(null)
     setIsDocumentLoading(false)
     setFormValues(EMPTY_FORM)
   }, [])
@@ -432,6 +434,7 @@ export function DocumentsView({
   const resetCreateDialog = useCallback(() => {
     setEditingDocumentId(null)
     setMetadataError(null)
+    setSaveError(null)
     setFormValues(EMPTY_FORM)
     setIsSaving(false)
   }, [])
@@ -577,6 +580,7 @@ export function DocumentsView({
     }
 
     setMetadataError(null)
+    setSaveError(null)
     setIsSaving(true)
 
     try {
@@ -603,6 +607,12 @@ export function DocumentsView({
       }
     } catch (error) {
       console.error(`Failed to ${editingDocumentId ? 'update' : 'create'} document:`, error)
+      setSaveError(
+        getApiErrorMessage(
+          error,
+          `Failed to ${editingDocumentId ? 'update' : 'save'} document. Please try again.`,
+        ),
+      )
     } finally {
       setIsSaving(false)
     }
@@ -861,13 +871,18 @@ export function DocumentsView({
         mode="create"
         values={formValues}
         metadataError={metadataError}
+        saveError={saveError}
         isSaving={isSaving}
         isLoading={false}
         onOpenChange={handleCreateDialogChange}
-        onChange={(field, value) => setFormValues((current) => ({ ...current, [field]: value }))}
+        onChange={(field, value) => {
+          setFormValues((current) => ({ ...current, [field]: value }))
+          setSaveError(null)
+        }}
         onMetadataChange={(value) => {
           setFormValues((current) => ({ ...current, metadata: value }))
           setMetadataError(null)
+          setSaveError(null)
         }}
         onSubmit={handleSubmit}
       />
@@ -968,6 +983,7 @@ export function DocumentsView({
           document={activeDetailDocument}
           values={formValues}
           metadataError={metadataError}
+          saveError={saveError}
           isLoading={isDocumentLoading}
           isSaving={isSaving}
           isDeleting={activeDetailDocument ? deletingDocumentId === activeDetailDocument.id : false}
@@ -990,12 +1006,19 @@ export function DocumentsView({
             justClosedDocumentIdRef.current = editingDocumentId
             onSelectedDocumentChange?.(null)
           }}
-          onChange={(field, value) => setFormValues((current) => ({ ...current, [field]: value }))}
+          onChange={(field, value) => {
+            setFormValues((current) => ({ ...current, [field]: value }))
+            setSaveError(null)
+          }}
           onMetadataChange={(value) => {
             setFormValues((current) => ({ ...current, metadata: value }))
             setMetadataError(null)
+            setSaveError(null)
           }}
-          onSourceChange={(sourceId) => setFormValues((current) => ({ ...current, sourceId }))}
+          onSourceChange={(sourceId) => {
+            setFormValues((current) => ({ ...current, sourceId }))
+            setSaveError(null)
+          }}
           onEditingChange={(editing) => {
             if (!editing && editingDocumentId) {
               void openDocumentPage(editingDocumentId)

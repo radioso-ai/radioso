@@ -256,6 +256,7 @@ const sampleOrganizationRows = {
     offset: 0,
     nextOffset: null,
     hasMore: false,
+    total: 1,
   },
 };
 

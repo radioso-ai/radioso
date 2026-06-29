@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@radioso/ui/button";
+import { DashboardPagination } from "@radioso/ui/dashboard-pagination";
 import { Input } from "@radioso/ui/input";
 import { ArrowRight, Search } from "lucide-react";
 import Link from "next/link";
@@ -102,16 +103,18 @@ export function OrganizationsPage() {
         {loading ? <div className="px-4 py-8 text-center text-sm text-zinc-400">Loading organizations</div> : null}
       </div>
       {page ? (
-        <div className="mt-4 flex items-center justify-between text-sm text-zinc-400">
-          <span>Offset {page.pageInfo.offset}</span>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={page.pageInfo.offset === 0} onClick={() => setOffset(Math.max(0, page.pageInfo.offset - page.pageInfo.limit))}>
-              Previous
-            </Button>
-            <Button variant="outline" size="sm" disabled={!page.pageInfo.hasMore || page.pageInfo.nextOffset === null} onClick={() => setOffset(page.pageInfo.nextOffset ?? offset)}>
-              Next
-            </Button>
-          </div>
+        <div className="mt-4">
+          <DashboardPagination
+            summary={`${page.pageInfo.total.toLocaleString()} organization${page.pageInfo.total === 1 ? "" : "s"}`}
+            currentPage={Math.floor(page.pageInfo.offset / page.pageInfo.limit) + 1}
+            totalPages={Math.max(1, Math.ceil(page.pageInfo.total / page.pageInfo.limit))}
+            previousHref="#"
+            nextHref="#"
+            canPrevious={page.pageInfo.offset > 0}
+            canNext={page.pageInfo.hasMore}
+            onPrevious={() => setOffset(Math.max(0, page.pageInfo.offset - page.pageInfo.limit))}
+            onNext={() => setOffset(page.pageInfo.nextOffset ?? offset)}
+          />
         </div>
       ) : null}
     </StaffLayout>

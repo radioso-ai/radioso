@@ -101,7 +101,7 @@ const installOperatorConsoleMocks = async (page: Page, role: StaffRole = "owner"
             },
           },
         ],
-        pageInfo: { limit: 25, offset: Number(url.searchParams.get("offset") ?? 0), nextOffset: null, hasMore: false },
+        pageInfo: { limit: 25, offset: Number(url.searchParams.get("offset") ?? 0), nextOffset: null, hasMore: false, total: 1 },
       });
       return;
     }

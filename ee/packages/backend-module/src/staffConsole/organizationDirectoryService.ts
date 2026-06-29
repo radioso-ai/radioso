@@ -23,6 +23,7 @@ export interface OrganizationDirectoryPage {
     offset: number;
     nextOffset: number | null;
     hasMore: boolean;
+    total: number;
   };
 }
 
@@ -46,6 +47,7 @@ interface OrganizationDirectoryQueryRow {
   profile_display_name: string | null;
   monthly_answer_used: number | string | bigint | null;
   monthly_answer_limit: number | string | bigint | null;
+  total_count: number | string | bigint | null;
 }
 
 const defaultLimit = 25;
@@ -110,7 +112,8 @@ export class OrganizationDirectoryService {
         p.key AS profile_key,
         p.display_name AS profile_display_name,
         coalesce(c.used_count, 0) AS monthly_answer_used,
-        p.monthly_answer_limit AS monthly_answer_limit
+        p.monthly_answer_limit AS monthly_answer_limit,
+        count(*) OVER () AS total_count
       FROM accounts a
       LEFT JOIN active_owners primary_owner
         ON primary_owner.account_id = a.id
@@ -149,6 +152,7 @@ export class OrganizationDirectoryService {
       },
     }));
     const hasMore = fetchedRows.length > limit;
+    const total = fetchedRows.length > 0 ? toNumber(fetchedRows[0].total_count) : 0;
 
     return {
       rows,
@@ -157,6 +161,7 @@ export class OrganizationDirectoryService {
         offset,
         nextOffset: hasMore ? offset + limit : null,
         hasMore,
+        total,
       },
     };
   }

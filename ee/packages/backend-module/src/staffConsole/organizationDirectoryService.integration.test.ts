@@ -181,7 +181,7 @@ describeIfDatabase("organization directory service", () => {
     const firstPage = await service.listOrganizations({ limit: 2 });
 
     expect(firstPage.rows).toHaveLength(2);
-    expect(firstPage.pageInfo).toEqual({ limit: 2, offset: 0, nextOffset: 2, hasMore: true });
+    expect(firstPage.pageInfo).toEqual({ limit: 2, offset: 0, nextOffset: 2, hasMore: true, total: 3 });
     expect(firstPage.rows[0]).toMatchObject({
       accountId: betaAccountId,
       name: "Beta Labs",

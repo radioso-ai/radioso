@@ -62,6 +62,7 @@ export interface OrganizationDirectoryPage {
     offset: number;
     nextOffset: number | null;
     hasMore: boolean;
+    total: number;
   };
 }
 

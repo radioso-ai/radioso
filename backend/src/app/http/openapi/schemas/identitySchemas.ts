@@ -10,6 +10,7 @@ import {
   registerSchema,
 } from "../../routes/authRoutes.js";
 import {
+  accountInvitationParamsSchema,
   accountMembershipParamsSchema,
   accountSwitchSchema,
   createAccountInvitationSchema,
@@ -232,6 +233,7 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
   );
 
   Object.assign(schemas, {
+    accountInvitationParamsSchema,
     accountMembershipParamsSchema,
     accountSwitchSchema,
     RegisterResponseSchema,

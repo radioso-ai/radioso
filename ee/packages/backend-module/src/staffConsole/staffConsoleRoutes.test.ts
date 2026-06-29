@@ -4,10 +4,12 @@ import request from "supertest";
 import { describe, expect, it, vi, afterEach } from "vitest";
 
 import type { ApplicationRouteMount, UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
+import type { AccountUsageSummary, UsageLimitProfile } from "../usageLimits/usageLimitService.js";
 import { hashStaffPassword } from "./staffCrypto.js";
 import { createStaffConsoleRoutes } from "./staffConsoleRoutes.js";
 import type { StaffPrincipal } from "./staffGuards.js";
 import type { StaffSessionRepository, StaffUserRepository } from "./staffRepository.js";
+import type { OrganizationDirectoryService } from "./organizationDirectoryService.js";
 
 class InertDatabase implements UsageLimitDatabasePort {
   readonly pool = new pg.Pool({ connectionString: "postgres://unused:unused@127.0.0.1:1/unused" });
@@ -23,6 +25,10 @@ const createDependencies = (input: {
   users: StaffUserRepository;
   sessions: StaffSessionRepository;
   auditRecord?: ReturnType<typeof vi.fn>;
+  logger?: {
+    info: ReturnType<typeof vi.fn>;
+    warn: ReturnType<typeof vi.fn>;
+  };
 }): RouteDependencies => ({
   connectorDb: new InertDatabase(),
   env: {
@@ -33,11 +39,17 @@ const createDependencies = (input: {
   auditService: {
     record: input.auditRecord ?? vi.fn(async () => undefined),
   },
+  logger: input.logger,
 } as unknown as RouteDependencies);
 
 const createApp = (dependencies: RouteDependencies, repositories: {
   users: StaffUserRepository;
   sessions: StaffSessionRepository;
+  organizationDirectoryService?: OrganizationDirectoryService;
+  usageLimitService?: {
+    getAccountUsage(accountId: string): Promise<AccountUsageSummary>;
+    listProfiles(): Promise<UsageLimitProfile[]>;
+  };
 }) => {
   const app = express();
   app.use(express.json());
@@ -143,6 +155,77 @@ const createMemoryRepositories = async (initialRole: StaffPrincipal["role"] = "o
   };
   return { users, staffSessions, staff };
 };
+
+const sampleOrganizationRows = {
+  rows: [
+    {
+      accountId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      name: "Alpha Research",
+      ownerEmail: "owner@example.com",
+      ownerCount: 2,
+      profileKey: "starter",
+      profileDisplayName: "Starter",
+      monthlyAnswers: { used: 7, limit: 10 },
+    },
+  ],
+  pageInfo: {
+    limit: 25,
+    offset: 0,
+    nextOffset: null,
+    hasMore: false,
+  },
+};
+
+const sampleUsageSummary: AccountUsageSummary = {
+  accountId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  profile: {
+    key: "starter",
+    displayName: "Starter",
+    monthlyAnswerLimit: 10,
+    storedDocumentLimit: 20,
+    storedIndexedByteLimit: null,
+    monthlyIndexedByteLimit: 1_000_000,
+    createdAt: "2026-06-01T00:00:00.000Z",
+    updatedAt: "2026-06-01T00:00:00.000Z",
+  },
+  monthlyAnswers: {
+    periodStart: "2026-06-01",
+    resetAt: "2026-07-01T00:00:00.000Z",
+    used: 7,
+    limit: 10,
+  },
+  storedDocuments: { used: 3, limit: 20 },
+  storedIndexedBytes: { used: 1000, limit: null },
+  monthlyIndexedBytes: {
+    periodStart: "2026-06-01",
+    resetAt: "2026-07-01T00:00:00.000Z",
+    used: 500,
+    limit: 1_000_000,
+  },
+};
+
+const sampleProfiles: UsageLimitProfile[] = [
+  {
+    key: "starter",
+    displayName: "Starter",
+    monthlyAnswerLimit: 10,
+    storedDocumentLimit: 20,
+    storedIndexedByteLimit: null,
+    monthlyIndexedByteLimit: 1_000_000,
+    createdAt: "2026-06-01T00:00:00.000Z",
+    updatedAt: "2026-06-01T00:00:00.000Z",
+  },
+];
+
+const createReadServiceMocks = () => ({
+  organizationDirectoryService: {
+    listOrganizations: vi.fn(async () => sampleOrganizationRows),
+  } as unknown as OrganizationDirectoryService,
+  usageLimitService: {
+    getAccountUsage: vi.fn(async () => sampleUsageSummary),
+    listProfiles: vi.fn(async () => sampleProfiles),
+  },
+});
 
 describe("staff console routes and guards", () => {
   afterEach(() => {
@@ -295,5 +378,133 @@ describe("staff console routes and guards", () => {
       .post("/api/v1/ee/operator-console/auth/login")
       .send({ email: "owner@example.com", password: "new-password-123" })
       .expect(200);
+  });
+
+  it("lists organizations for any staff role and requires a staff session", async () => {
+    const repositories = await createMemoryRepositories("support_read");
+    const readServices = createReadServiceMocks();
+    const app = createApp(createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+    }), { users: repositories.users, sessions: repositories.staffSessions, ...readServices });
+
+    await request(app)
+      .get("/api/v1/ee/operator-console/organizations")
+      .expect(401);
+
+    const login = await request(app)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email: "owner@example.com", password: "password-123" })
+      .expect(200);
+
+    const response = await request(app)
+      .get("/api/v1/ee/operator-console/organizations?limit=25&offset=0&search=Alpha")
+      .set("Cookie", login.headers["set-cookie"][0])
+      .expect(200);
+
+    expect(response.body).toEqual(sampleOrganizationRows);
+    expect(readServices.organizationDirectoryService.listOrganizations).toHaveBeenCalledWith({
+      limit: 25,
+      offset: 0,
+      search: "Alpha",
+    });
+  });
+
+  it("returns per-organization full usage for any staff role and requires a staff session", async () => {
+    const repositories = await createMemoryRepositories("support_read");
+    const readServices = createReadServiceMocks();
+    const app = createApp(createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+    }), { users: repositories.users, sessions: repositories.staffSessions, ...readServices });
+
+    await request(app)
+      .get("/api/v1/ee/operator-console/organizations/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/usage")
+      .expect(401);
+
+    const login = await request(app)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email: "owner@example.com", password: "password-123" })
+      .expect(200);
+
+    const response = await request(app)
+      .get("/api/v1/ee/operator-console/organizations/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/usage")
+      .set("Cookie", login.headers["set-cookie"][0])
+      .expect(200);
+
+    expect(response.body).toEqual(sampleUsageSummary);
+    expect(readServices.usageLimitService.getAccountUsage).toHaveBeenCalledWith(
+      "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    );
+  });
+
+  it("lists usage tiers for any staff role and requires a staff session", async () => {
+    const repositories = await createMemoryRepositories("support_read");
+    const readServices = createReadServiceMocks();
+    const app = createApp(createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+    }), { users: repositories.users, sessions: repositories.staffSessions, ...readServices });
+
+    await request(app)
+      .get("/api/v1/ee/operator-console/tiers")
+      .expect(401);
+
+    const login = await request(app)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email: "owner@example.com", password: "password-123" })
+      .expect(200);
+
+    const response = await request(app)
+      .get("/api/v1/ee/operator-console/tiers")
+      .set("Cookie", login.headers["set-cookie"][0])
+      .expect(200);
+
+    expect(response.body).toEqual({ tiers: sampleProfiles });
+    expect(readServices.usageLimitService.listProfiles).toHaveBeenCalled();
+  });
+
+  it("emits structured read-path auth logs without email fields", async () => {
+    const repositories = await createMemoryRepositories("support_read");
+    const readServices = createReadServiceMocks();
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+    };
+    const app = createApp(createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+      logger,
+    }), { users: repositories.users, sessions: repositories.staffSessions, ...readServices });
+
+    await request(app)
+      .get("/api/v1/ee/operator-console/organizations")
+      .expect(401);
+
+    const login = await request(app)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email: "owner@example.com", password: "password-123" })
+      .expect(200);
+
+    await request(app)
+      .get("/api/v1/ee/operator-console/organizations")
+      .set("Cookie", login.headers["set-cookie"][0])
+      .expect(200);
+
+    expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({
+      event: "staff_console.read_auth",
+      action: "organizations.list",
+      outcome: "failure",
+      reason: "missing_session",
+    }), expect.any(String));
+    expect(logger.info).toHaveBeenCalledWith(expect.objectContaining({
+      event: "staff_console.read_auth",
+      action: "organizations.list",
+      staffId: repositories.staff.id,
+      role: "support_read",
+      outcome: "success",
+    }), expect.any(String));
+    expect(JSON.stringify(logger.info.mock.calls)).not.toContain("owner@example.com");
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("owner@example.com");
   });
 });

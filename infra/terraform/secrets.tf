@@ -4,6 +4,7 @@ locals {
   slack_oauth_client_id_configured      = nonsensitive(try(length(trimspace(var.slack_oauth_client_id)) > 0, false))
   slack_oauth_client_secret_configured  = nonsensitive(try(length(trimspace(var.slack_oauth_client_secret)) > 0, false))
   slack_signing_secret_configured       = nonsensitive(try(length(trimspace(var.slack_signing_secret)) > 0, false))
+  ee_usage_admin_token_configured       = nonsensitive(try(length(trimspace(var.ee_usage_admin_token)) > 0, false))
 
   secret_values = merge(
     {
@@ -35,6 +36,9 @@ locals {
     } : {},
     local.slack_signing_secret_configured ? {
       "slack-signing-secret" = var.slack_signing_secret
+    } : {},
+    local.ee_usage_admin_token_configured ? {
+      "ee-usage-admin-token" = var.ee_usage_admin_token
     } : {},
   )
 
@@ -68,6 +72,9 @@ locals {
     } : {},
     local.slack_signing_secret_configured ? {
       "slack-signing-secret" = true
+    } : {},
+    local.ee_usage_admin_token_configured ? {
+      "ee-usage-admin-token" = true
     } : {},
   ))))
 }

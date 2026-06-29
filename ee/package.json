@@ -9,8 +9,8 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "pnpm --filter @radioso/enterprise-backend-module --filter @radioso/enterprise-auth-frontend run build",
-    "test": "pnpm --filter @radioso/enterprise-backend-module --filter @radioso/enterprise-auth-frontend run test"
+    "build": "pnpm --filter @radioso/enterprise-backend-module --filter @radioso/enterprise-auth-frontend --filter @radioso/enterprise-operator-console run build",
+    "test": "pnpm --filter @radioso/enterprise-backend-module --filter @radioso/enterprise-auth-frontend --filter @radioso/enterprise-operator-console run test"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

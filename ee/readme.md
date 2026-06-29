@@ -112,6 +112,81 @@ PUT    /api/v1/ee/usage-limits/org-creation/users/:userId
 DELETE /api/v1/ee/usage-limits/org-creation/users/:userId
 ```
 
+## Operator console
+
+The operator console is a staff-facing surface for administering customer
+organizations and their usage tiers. It is separate from the customer
+dashboard and runs on its own authority axis: a staff identity, not a customer
+account. Operators sign in with a staff session and act across all
+organizations.
+
+Staff identities are global to the deployment and carry one role:
+
+- `support_read` — read organizations, usage, and tiers.
+- `billing_write` — also change an organization's tier and edit the tier catalog.
+- `owner` — also manage staff identities and their roles.
+
+The console API is mounted at:
+
+```text
+/api/v1/ee/operator-console
+```
+
+It uses a staff session cookie, separate from the customer session. Set its
+name and lifetime:
+
+```bash
+STAFF_SESSION_COOKIE_NAME=radioso_staff_session
+STAFF_SESSION_TTL_HOURS=8
+```
+
+### First owner and recovery
+
+A fresh install has no staff identity. Use the bootstrap endpoint to create the
+first `owner`, or to reset a locked-out owner's password. It is gated only by
+`EE_USAGE_ADMIN_TOKEN` and can do nothing else. After the first owner exists,
+owners create further staff through the console.
+
+```bash
+curl -X POST "$BASE_URL/api/v1/ee/operator-console/bootstrap" \
+  -H "Authorization: Bearer $EE_USAGE_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "ops@example.com", "name": "Ops", "password": "change-me-please"}'
+```
+
+### Console endpoints
+
+All endpoints below use the staff session cookie. Reads allow any role; tier
+changes need `billing_write`; staff management needs `owner`.
+
+```text
+POST   /api/v1/ee/operator-console/auth/login
+POST   /api/v1/ee/operator-console/auth/logout
+GET    /api/v1/ee/operator-console/auth/me
+GET    /api/v1/ee/operator-console/organizations
+GET    /api/v1/ee/operator-console/organizations/:accountId/usage
+PUT    /api/v1/ee/operator-console/organizations/:accountId/tier
+GET    /api/v1/ee/operator-console/tiers
+PUT    /api/v1/ee/operator-console/tiers/:profileKey
+GET    /api/v1/ee/operator-console/staff
+POST   /api/v1/ee/operator-console/staff
+PUT    /api/v1/ee/operator-console/staff/:staffId/role
+PUT    /api/v1/ee/operator-console/staff/:staffId/status
+```
+
+The organization directory derives the owner email from `account_memberships`
+(role `owner`), not from `accounts.email`. Tier changes and staff changes are
+recorded as `staff.*` audit events. The console pages are served under
+`/operator` when Enterprise frontend routes are enabled.
+
+### Known limits
+
+Two hardening items are intentionally left for a later change. Staff login is
+not rate-limited yet; `bcrypt` verification makes brute force slow, but a shared,
+backed limiter is the correct fix. Console actions emit audit events and
+structured logs, but no metrics counters, because the Enterprise module has no
+metrics sink to write to today. Both are tracked as follow-ups.
+
 Signed-in Enterprise users can view their assigned profile and current account
 usage from the dashboard user menu under Usage. The dashboard reads the
 session-scoped endpoint:

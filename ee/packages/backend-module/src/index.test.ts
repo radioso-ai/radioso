@@ -62,10 +62,12 @@ describe("Enterprise backend module aggregation", () => {
 
     expect(module.id).toBe("radioso-enterprise-backend");
     expect(capture.databaseMigrators.map((migrator) => migrator.id).sort()).toEqual([
+      "ee-staff-console",
       "ee-usage-limits",
     ]);
     expect(capture.routeMounts.map((mount) => mount.path).sort()).toEqual([
       "/api/v1/ee/auth/google",
+      "/api/v1/ee/operator-console",
       "/api/v1/ee/usage-limits",
     ]);
     expect(capture.accountCreatedHandlers).toHaveLength(1);

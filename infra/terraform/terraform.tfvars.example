@@ -13,6 +13,7 @@ project_id = "your-gcp-project-id"
 # mail_from_email       = "noreply@your-verified-domain.example"
 # mail_from_name        = "Radioso"
 # metrics_auth_token       = ""
+# ee_usage_admin_token     = ""   # enables EE usage-limits admin API + operator-console owner bootstrap
 
 # Optional overrides (defaults shown)
 # region                  = "us-central1"

@@ -20,6 +20,14 @@
       "types": "./src/input.tsx",
       "default": "./src/input.tsx"
     },
+    "./pagination": {
+      "types": "./src/pagination.tsx",
+      "default": "./src/pagination.tsx"
+    },
+    "./dashboard-pagination": {
+      "types": "./src/dashboard-pagination.tsx",
+      "default": "./src/dashboard-pagination.tsx"
+    },
     "./utils": {
       "types": "./src/utils.ts",
       "default": "./src/utils.ts"
@@ -30,6 +38,7 @@
     "@types/react": "*",
     "class-variance-authority": "*",
     "clsx": "*",
+    "lucide-react": "*",
     "react": "*",
     "tailwind-merge": "*"
   },
@@ -43,6 +52,7 @@
     "@types/react": "^19.2.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "lucide-react": "^0.577.0",
     "react": "19.2.6",
     "tailwind-merge": "^3.3.1"
   }

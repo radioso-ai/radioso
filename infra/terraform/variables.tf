@@ -396,6 +396,19 @@ variable "session_ttl_hours" {
   default     = 168
 }
 
+variable "staff_session_ttl_hours" {
+  description = "Enterprise operator console staff session TTL in hours"
+  type        = number
+  default     = 8
+}
+
+variable "ee_usage_admin_token" {
+  description = "Bearer token for the Enterprise usage-limits admin API and operator-console owner bootstrap. Leave unset to disable those break-glass endpoints."
+  type        = string
+  default     = null
+  sensitive   = true
+}
+
 variable "metrics_enabled" {
   description = "Whether to expose the Prometheus metrics endpoint on the backend service."
   type        = bool

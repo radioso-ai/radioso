@@ -91,6 +91,28 @@ export interface EeOrgCreationOverridesTable {
   updated_at: Generated<Date>;
 }
 
+export interface EeStaffUsersTable {
+  id: string;
+  email: string;
+  name: string;
+  password_hash: string;
+  role: "support_read" | "billing_write" | "owner";
+  status: "active" | "disabled";
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+  last_login_at: Date | null;
+}
+
+export interface EeStaffSessionsTable {
+  id: string;
+  staff_id: string;
+  session_token_hash: string;
+  created_at: Generated<Date>;
+  expires_at: Date;
+  last_seen_at: Generated<Date>;
+  revoked_at: Date | null;
+}
+
 /**
  * Shared (OSS-owned) tables this module only reads to resolve account scope and
  * to count stored documents / persisted assistant answers. EE neither migrates
@@ -117,6 +139,27 @@ export interface EeMessagesTable {
   created_at: Date;
 }
 
+export interface EeAccountsTable {
+  id: string;
+  name: string;
+  email: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface EeAccountMembershipsTable {
+  account_id: string;
+  user_id: string;
+  role: string;
+  status: string;
+  created_at: Date;
+}
+
+export interface EeUsersTable {
+  id: string;
+  email: string;
+}
+
 export interface EeDatabase {
   ee_usage_limit_profiles: EeUsageLimitProfilesTable;
   ee_usage_limit_account_assignments: EeUsageLimitAccountAssignmentsTable;
@@ -126,6 +169,11 @@ export interface EeDatabase {
   ee_usage_limit_monthly_indexed_byte_counters: EeUsageLimitMonthlyIndexedByteCountersTable;
   ee_org_creation_counters: EeOrgCreationCountersTable;
   ee_org_creation_overrides: EeOrgCreationOverridesTable;
+  ee_staff_users: EeStaffUsersTable;
+  ee_staff_sessions: EeStaffSessionsTable;
+  accounts: EeAccountsTable;
+  account_memberships: EeAccountMembershipsTable;
+  users: EeUsersTable;
   workspaces: EeWorkspacesTable;
   documents: EeDocumentsTable;
   messages: EeMessagesTable;

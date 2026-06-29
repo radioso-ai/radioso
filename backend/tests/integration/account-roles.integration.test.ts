@@ -152,6 +152,52 @@ describe("organization roles", () => {
     expect(removeOwner.status).toBe(403);
   });
 
+  it("lets managers revoke a pending invitation so it disappears from the member list", async () => {
+    const { app } = createTestApp();
+    const owner = await issueTestSession(app, `owner-${Date.now()}@example.com`);
+    const inviteeEmail = `pending-${Date.now()}@example.com`;
+
+    const invite = await request(app)
+      .post("/api/v1/account/invitations")
+      .set("Cookie", owner.cookie)
+      .send({ email: inviteeEmail, role: "member" });
+    expect(invite.status).toBe(201);
+
+    const usersBefore = await request(app).get("/api/v1/account/users").set("Cookie", owner.cookie);
+    expect(usersBefore.body.invitations).toContainEqual(expect.objectContaining({
+      id: invite.body.id,
+      email: inviteeEmail,
+      status: "pending",
+    }));
+
+    const revoked = await request(app)
+      .delete(`/api/v1/account/invitations/${invite.body.id}`)
+      .set("Cookie", owner.cookie);
+    expect(revoked.status).toBe(204);
+
+    const usersAfter = await request(app).get("/api/v1/account/users").set("Cookie", owner.cookie);
+    expect(usersAfter.body.invitations.find((invitation: { id: string }) => invitation.id === invite.body.id)).toMatchObject({
+      status: "revoked",
+    });
+  });
+
+  it("returns 404 when revoking an invitation from another organization", async () => {
+    const { app } = createTestApp();
+    const accountA = await issueTestSession(app, `owner-a-${Date.now()}@example.com`);
+    const accountB = await issueTestSession(app, `owner-b-${Date.now()}@example.com`);
+
+    const invite = await request(app)
+      .post("/api/v1/account/invitations")
+      .set("Cookie", accountA.cookie)
+      .send({ email: `pending-${Date.now()}@example.com`, role: "member" });
+    expect(invite.status).toBe(201);
+
+    const response = await request(app)
+      .delete(`/api/v1/account/invitations/${invite.body.id}`)
+      .set("Cookie", accountB.cookie);
+    expect(response.status).toBe(404);
+  });
+
   it("prevents admins from changing their own permissions", async () => {
     const { app } = createTestApp();
     const owner = await issueTestSession(app, `owner-${Date.now()}@example.com`);

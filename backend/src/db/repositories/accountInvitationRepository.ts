@@ -77,6 +77,7 @@ export interface AccountInvitationRepositoryPort {
     status?: AccountInvitationStatus;
     expiresAt: Date;
   }): Promise<AccountInvitationRecord>;
+  findById(id: string): Promise<AccountInvitationRecord | null>;
   findPendingByAccountAndEmail(accountId: string, email: string): Promise<AccountInvitationRecord | null>;
   findByTokenHash(tokenHash: string): Promise<AccountInvitationRecord | null>;
   listByAccount(accountId: string): Promise<AccountInvitationRecord[]>;
@@ -86,6 +87,13 @@ export interface AccountInvitationRepositoryPort {
     acceptedAt?: Date | null;
     acceptedByUserId?: string | null;
   }): Promise<AccountInvitationRecord>;
+  updateIfStatus(params: {
+    id: string;
+    currentStatus: AccountInvitationStatus;
+    status: AccountInvitationStatus;
+    acceptedAt?: Date | null;
+    acceptedByUserId?: string | null;
+  }): Promise<AccountInvitationRecord | null>;
 }
 
 export class AccountInvitationRepository implements AccountInvitationRepositoryPort {
@@ -116,6 +124,16 @@ export class AccountInvitationRepository implements AccountInvitationRepositoryP
       .executeTakeFirstOrThrow();
 
     return mapInvitation(row as AccountInvitationRow);
+  }
+
+  async findById(id: string): Promise<AccountInvitationRecord | null> {
+    const row = await this.db
+      .selectFrom("account_invitations")
+      .select(accountInvitationColumns)
+      .where("id", "=", id)
+      .executeTakeFirst();
+
+    return row ? mapInvitation(row as AccountInvitationRow) : null;
   }
 
   async findPendingByAccountAndEmail(accountId: string, email: string): Promise<AccountInvitationRecord | null> {
@@ -172,5 +190,28 @@ export class AccountInvitationRepository implements AccountInvitationRepositoryP
       .executeTakeFirstOrThrow();
 
     return mapInvitation(row as AccountInvitationRow);
+  }
+
+  async updateIfStatus(params: {
+    id: string;
+    currentStatus: AccountInvitationStatus;
+    status: AccountInvitationStatus;
+    acceptedAt?: Date | null;
+    acceptedByUserId?: string | null;
+  }): Promise<AccountInvitationRecord | null> {
+    const row = await this.db
+      .updateTable("account_invitations")
+      .set({
+        status: params.status,
+        accepted_at: params.acceptedAt ?? null,
+        accepted_by_user_id: params.acceptedByUserId ?? null,
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", params.id)
+      .where("status", "=", params.currentStatus)
+      .returning(accountInvitationColumns)
+      .executeTakeFirst();
+
+    return row ? mapInvitation(row as AccountInvitationRow) : null;
   }
 }

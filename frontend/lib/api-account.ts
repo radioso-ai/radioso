@@ -66,6 +66,12 @@ export const accountApi = {
     }, { withSession: true })
   },
 
+  async revokeInvitation(invitationId: string): Promise<void> {
+    await request<void>(`/account/invitations/${invitationId}`, {
+      method: 'DELETE',
+    }, { withSession: true })
+  },
+
   async updateUserRole(membershipId: string, role: AssignableAccountRole): Promise<AccountUserSummary> {
     return request<AccountUserSummary>(`/account/users/${membershipId}`, {
       method: 'PATCH',

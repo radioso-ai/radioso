@@ -114,6 +114,48 @@ export class AccountInvitationService {
     };
   }
 
+  async revokeInvitation(input: {
+    accountId: string;
+    actorUserId: string;
+    invitationId: string;
+  }): Promise<void> {
+    await this.accountAccessService.requirePermission({
+      accountId: input.accountId,
+      userId: input.actorUserId,
+      permission: "account.users.manage",
+    });
+
+    const invitation = await this.invitationRepository.findById(input.invitationId);
+    if (!invitation || invitation.accountId !== input.accountId) {
+      throw notFound("Invitation not found");
+    }
+
+    const status = await this.resolveStatus(invitation);
+    if (status === "accepted") {
+      return this.rejectAcceptedRevocation(input.accountId, invitation.email);
+    }
+
+    if (status === "pending") {
+      const revoked = await this.invitationRepository.updateIfStatus({
+        id: invitation.id,
+        currentStatus: "pending",
+        status: "revoked",
+      });
+      if (!revoked) {
+        await this.handleRevocationRace(input.accountId, invitation.id);
+      }
+    } else if (status !== "revoked") {
+      await this.invitationRepository.update({ id: invitation.id, status: "revoked" });
+    }
+
+    await this.auditService.record({
+      accountId: input.accountId,
+      eventType: "account.invitation.revoke",
+      eventStatus: "success",
+      metadata: { email: invitation.email },
+    });
+  }
+
   async getInvitation(token: string): Promise<{
     accountId: string;
     email: string;
@@ -144,27 +186,41 @@ export class AccountInvitationService {
       throw conflict("Invitation is no longer valid");
     }
 
-    await this.accountAccessService.ensureMembership({
-      accountId: invitation.accountId,
-      userId,
-      role: invitation.role,
-    });
-
-    await this.invitationRepository.update({
+    const accepted = await this.invitationRepository.updateIfStatus({
       id: invitation.id,
+      currentStatus: "pending",
       status: "accepted",
       acceptedAt: new Date(),
       acceptedByUserId: userId,
     });
+    if (!accepted) {
+      return this.rejectInvalidAcceptance(invitation.id, userId);
+    }
+
+    try {
+      await this.accountAccessService.ensureMembership({
+        accountId: accepted.accountId,
+        userId,
+        role: accepted.role,
+      });
+    } catch (error) {
+      await this.invitationRepository.update({
+        id: accepted.id,
+        status: "pending",
+        acceptedAt: null,
+        acceptedByUserId: null,
+      });
+      throw error;
+    }
 
     await this.auditService.record({
-      accountId: invitation.accountId,
+      accountId: accepted.accountId,
       eventType: "account.invitation.accept",
       eventStatus: "success",
-      metadata: { email: invitation.email, userId },
+      metadata: { email: accepted.email, userId },
     });
 
-    return { accountId: invitation.accountId };
+    return { accountId: accepted.accountId };
   }
 
   async revertAcceptance(token: string, userId: string): Promise<void> {
@@ -197,13 +253,70 @@ export class AccountInvitationService {
     }
 
     if (invitation.expiresAt.getTime() <= Date.now()) {
-      await this.invitationRepository.update({
+      const expired = await this.invitationRepository.updateIfStatus({
         id: invitation.id,
+        currentStatus: "pending",
         status: "expired",
       });
-      return "expired";
+      if (expired) {
+        return "expired";
+      }
+
+      const current = await this.invitationRepository.findById(invitation.id);
+      return current?.status ?? "expired";
     }
 
     return "pending";
+  }
+
+  private async handleRevocationRace(accountId: string, invitationId: string): Promise<void> {
+    const current = await this.invitationRepository.findById(invitationId);
+    if (!current || current.accountId !== accountId) {
+      throw notFound("Invitation not found");
+    }
+
+    const status = await this.resolveStatus(current);
+    if (status === "accepted") {
+      return this.rejectAcceptedRevocation(accountId, current.email);
+    }
+
+    if (status === "revoked") {
+      return;
+    }
+
+    const revoked = await this.invitationRepository.updateIfStatus({
+      id: current.id,
+      currentStatus: status,
+      status: "revoked",
+    });
+    if (!revoked) {
+      throw conflict("Invitation state changed while revoking");
+    }
+  }
+
+  private async rejectAcceptedRevocation(accountId: string, email: string): Promise<never> {
+    await this.auditService.record({
+      accountId,
+      eventType: "account.invitation.revoke",
+      eventStatus: "failure",
+      metadata: { email, reason: "invitation_already_accepted" },
+    });
+    throw conflict("Invitation has already been accepted");
+  }
+
+  private async rejectInvalidAcceptance(invitationId: string, userId: string): Promise<never> {
+    const current = await this.invitationRepository.findById(invitationId);
+    if (!current) {
+      throw notFound("Invitation not found");
+    }
+
+    const status = await this.resolveStatus(current);
+    await this.auditService.record({
+      accountId: current.accountId,
+      eventType: "account.invitation.accept",
+      eventStatus: "failure",
+      metadata: { email: current.email, userId, reason: `invitation_${status}` },
+    });
+    throw conflict("Invitation is no longer valid");
   }
 }

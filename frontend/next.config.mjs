@@ -171,6 +171,19 @@ const nextConfig = {
       '@/components': path.join(frontendRoot, 'components'),
       '@/lib': path.join(frontendRoot, 'lib'),
       '@radioso/agent-creation-contributions': agentCreationContributionsModule,
+      // Enterprise frontend page packages are resolved by edition-gated alias,
+      // not as frontend dependencies, to keep the OSS build free of EE packages.
+      ...(edition === 'enterprise'
+        ? {
+            '@radioso/enterprise-operator-console': path.join(
+              frontendRoot,
+              '..',
+              'ee',
+              'packages',
+              'operator-console',
+            ),
+          }
+        : {}),
     }
     config.module.rules.push({
       test: /\.md$/i,

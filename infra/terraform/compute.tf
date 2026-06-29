@@ -152,6 +152,32 @@ resource "google_cloud_run_v2_service" "backend" {
         name  = "SESSION_TTL_HOURS"
         value = tostring(var.session_ttl_hours)
       }
+      dynamic "env" {
+        for_each = var.radioso_edition == "enterprise" ? ["radioso_staff_session"] : []
+        content {
+          name  = "STAFF_SESSION_COOKIE_NAME"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.radioso_edition == "enterprise" ? [tostring(var.staff_session_ttl_hours)] : []
+        content {
+          name  = "STAFF_SESSION_TTL_HOURS"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = local.ee_usage_admin_token_configured ? [1] : []
+        content {
+          name = "EE_USAGE_ADMIN_TOKEN"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.secrets["ee-usage-admin-token"].secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
       env {
         name  = "DOCUMENT_STORAGE_DRIVER"
         value = "gcs"
@@ -622,6 +648,32 @@ resource "google_cloud_run_v2_service" "document_worker" {
         name  = "SESSION_TTL_HOURS"
         value = tostring(var.session_ttl_hours)
       }
+      dynamic "env" {
+        for_each = var.radioso_edition == "enterprise" ? ["radioso_staff_session"] : []
+        content {
+          name  = "STAFF_SESSION_COOKIE_NAME"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.radioso_edition == "enterprise" ? [tostring(var.staff_session_ttl_hours)] : []
+        content {
+          name  = "STAFF_SESSION_TTL_HOURS"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = local.ee_usage_admin_token_configured ? [1] : []
+        content {
+          name = "EE_USAGE_ADMIN_TOKEN"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.secrets["ee-usage-admin-token"].secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
       env {
         name  = "DOCUMENT_STORAGE_DRIVER"
         value = "gcs"
@@ -927,6 +979,32 @@ resource "google_cloud_run_v2_service" "crawler_worker" {
       env {
         name  = "SESSION_TTL_HOURS"
         value = tostring(var.session_ttl_hours)
+      }
+      dynamic "env" {
+        for_each = var.radioso_edition == "enterprise" ? ["radioso_staff_session"] : []
+        content {
+          name  = "STAFF_SESSION_COOKIE_NAME"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.radioso_edition == "enterprise" ? [tostring(var.staff_session_ttl_hours)] : []
+        content {
+          name  = "STAFF_SESSION_TTL_HOURS"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = local.ee_usage_admin_token_configured ? [1] : []
+        content {
+          name = "EE_USAGE_ADMIN_TOKEN"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.secrets["ee-usage-admin-token"].secret_id
+              version = "latest"
+            }
+          }
+        }
       }
       env {
         name  = "DOCUMENT_STORAGE_DRIVER"

@@ -87,6 +87,13 @@ export interface AccountInvitationRepositoryPort {
     acceptedAt?: Date | null;
     acceptedByUserId?: string | null;
   }): Promise<AccountInvitationRecord>;
+  updateIfStatus(params: {
+    id: string;
+    currentStatus: AccountInvitationStatus;
+    status: AccountInvitationStatus;
+    acceptedAt?: Date | null;
+    acceptedByUserId?: string | null;
+  }): Promise<AccountInvitationRecord | null>;
 }
 
 export class AccountInvitationRepository implements AccountInvitationRepositoryPort {
@@ -183,5 +190,28 @@ export class AccountInvitationRepository implements AccountInvitationRepositoryP
       .executeTakeFirstOrThrow();
 
     return mapInvitation(row as AccountInvitationRow);
+  }
+
+  async updateIfStatus(params: {
+    id: string;
+    currentStatus: AccountInvitationStatus;
+    status: AccountInvitationStatus;
+    acceptedAt?: Date | null;
+    acceptedByUserId?: string | null;
+  }): Promise<AccountInvitationRecord | null> {
+    const row = await this.db
+      .updateTable("account_invitations")
+      .set({
+        status: params.status,
+        accepted_at: params.acceptedAt ?? null,
+        accepted_by_user_id: params.acceptedByUserId ?? null,
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", params.id)
+      .where("status", "=", params.currentStatus)
+      .returning(accountInvitationColumns)
+      .executeTakeFirst();
+
+    return row ? mapInvitation(row as AccountInvitationRow) : null;
   }
 }

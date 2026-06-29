@@ -707,6 +707,21 @@ export class InMemoryAccountInvitationRepository implements AccountInvitationRep
     this.items.set(updated.id, updated);
     return updated;
   }
+
+  async updateIfStatus(params: {
+    id: string;
+    currentStatus: AccountInvitationStatus;
+    status: AccountInvitationStatus;
+    acceptedAt?: Date | null;
+    acceptedByUserId?: string | null;
+  }): Promise<AccountInvitationRecord | null> {
+    const existing = this.items.get(params.id);
+    if (!existing || existing.status !== params.currentStatus) {
+      return null;
+    }
+
+    return this.update(params);
+  }
 }
 
 export class InMemoryWorkspaceGrantRepository implements WorkspaceGrantRepositoryPort {

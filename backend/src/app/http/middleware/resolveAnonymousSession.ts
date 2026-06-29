@@ -379,6 +379,7 @@ export const resolveAnonymousSession = (
       };
       res.locals.assistantBootstrapActive = isAgentBootstrapActive(agent);
       res.locals.assistantLogoAvailable = Boolean(agent.logo);
+      res.locals.assistantLogo = agent.logo;
       res.locals.assistantTheme = agent.theme;
       res.locals.assistantBranding = agent.branding;
       res.locals.assistantLinkUtmEnabled = agent.assistantLinkUtmEnabled;

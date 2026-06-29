@@ -56,7 +56,7 @@ describe('api type mappers', () => {
         bucket: 'assistant-logos',
         objectPath: 'workspaces/ws-1/agents/agent-1/logo.png',
         mimeType: 'image/png',
-        size: 123,
+        sizeBytes: 123,
         generation: null,
       },
       surfaceSettings: {
@@ -82,8 +82,10 @@ describe('api type mappers', () => {
       },
     } as unknown as AgentSettings)
 
-    expect(settings.assistantLogoUrl).toBe(
-      'https://app.example.com/backend/api/v1/public/chat/enabled-embed-token/assistant-logo',
-    )
+    const logoUrl = new URL(settings.assistantLogoUrl ?? '')
+    expect(logoUrl.origin).toBe('https://app.example.com')
+    expect(logoUrl.pathname).toBe('/backend/api/v1/public/chat/enabled-embed-token/assistant-logo')
+    expect(logoUrl.searchParams.get('v')).toMatch(/^[a-z0-9]+::123$/)
+    expect(logoUrl.searchParams.get('v')).not.toContain('workspaces/ws-1/agents/agent-1/logo.png')
   })
 })

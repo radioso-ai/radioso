@@ -17,7 +17,10 @@ describe("shared answer instruction builder", () => {
 
     expect(result).toContain("Stable assistant identity:");
     expect(result).toContain("Vikram");
-    expect(result).toContain("Introduce yourself by name only at the start of a new conversation");
+    expect(result).toContain("Keep this identity in mind silently for ordinary answers");
+    expect(result).toContain("Do not introduce yourself, greet again, restate your name");
+    expect(result).toContain("prepend the assistant name to the person, topic, or entity");
+    expect(result).not.toContain("Introduce yourself by name only at the start of a new conversation");
     expect(result).toContain("Configured response instructions:");
     expect(result).toContain("Keep the tone calm.");
     expect(result).toContain("Respond in French.");

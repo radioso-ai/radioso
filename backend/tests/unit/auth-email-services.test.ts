@@ -33,6 +33,14 @@ class FailingEmailDriver implements EmailDriver {
   }
 }
 
+class RecordingLogger {
+  readonly warnings: Array<{ payload: Record<string, unknown>; message: string }> = [];
+
+  warn(payload: Record<string, unknown>, message: string): void {
+    this.warnings.push({ payload, message });
+  }
+}
+
 const readTokenFromUrl = (url: string): string => new URL(url).searchParams.get("token") ?? "";
 
 const createHarness = async (options: { verified?: boolean } = {}) => {
@@ -206,6 +214,47 @@ describe("PasswordResetService", () => {
       .find((record) => record.tokenHash === sha256(firstToken));
     expect(firstRecord?.usedAt).toBeInstanceOf(Date);
   });
+
+  it("logs failed reset delivery without email addresses, URLs, or tokens", async () => {
+    const harness = await createHarness();
+    const logger = new RecordingLogger();
+    const failingMailService = new EmailService(new FailingEmailDriver(), {
+      fromEmail: "noreply@example.com",
+      fromName: "Radioso",
+    });
+    const passwordResetService = new PasswordResetService({
+      env: { ...createTestEnv(), APP_BASE_URL: "https://app.example.com" },
+      auditService: harness.auditService,
+      accountRepository: new InMemoryAccountRepository(),
+      userRepository: harness.userRepository,
+      sessionRepository: harness.sessionRepository,
+      accountAccessService: new AccountAccessService(new InMemoryAccountMembershipRepository(), harness.auditService),
+      workspaceService: new WorkspaceService(new InMemoryWorkspaceRepository(), harness.auditService),
+      passwordResetTokenRepository: harness.passwordResetTokenRepository,
+      mailService: failingMailService,
+      logger,
+      responsePaddingMs: 0,
+    });
+
+    await expect(passwordResetService.requestReset({ email: "ada@example.com" }))
+      .resolves.toEqual({ accepted: true });
+
+    const tokenRecord = [...harness.passwordResetTokenRepository.items.values()][0];
+    expect(logger.warnings).toEqual([
+      {
+        message: "Transactional auth mail delivery failed",
+        payload: expect.objectContaining({
+          event: "auth_mail_delivery_failed",
+          flow: "password_reset",
+          userId: harness.user.id,
+          tokenRecordId: tokenRecord?.id,
+          errorClass: "Error",
+        }),
+      },
+    ]);
+    expect(JSON.stringify(logger.warnings[0]?.payload)).not.toContain("ada@example.com");
+    expect(JSON.stringify(logger.warnings[0]?.payload)).not.toContain("reset-password");
+  });
 });
 
 describe("EmailVerificationService", () => {
@@ -262,5 +311,42 @@ describe("EmailVerificationService", () => {
       sent: false,
       reason: "delivery_failed",
     });
+  });
+
+  it("logs failed verification delivery without email addresses, URLs, or tokens", async () => {
+    const harness = await createHarness({ verified: false });
+    const logger = new RecordingLogger();
+    const failingMailService = new EmailService(new FailingEmailDriver(), {
+      fromEmail: "noreply@example.com",
+      fromName: "Radioso",
+    });
+    const emailVerificationService = new EmailVerificationService({
+      env: { ...createTestEnv(), APP_BASE_URL: "https://app.example.com" },
+      auditService: harness.auditService,
+      userRepository: harness.userRepository,
+      emailVerificationTokenRepository: harness.emailVerificationTokenRepository,
+      mailService: failingMailService,
+      logger,
+      responsePaddingMs: 0,
+    });
+
+    await expect(emailVerificationService.resend({ email: "ada@example.com" }))
+      .resolves.toEqual({ accepted: true });
+
+    const tokenRecord = [...harness.emailVerificationTokenRepository.items.values()][0];
+    expect(logger.warnings).toEqual([
+      {
+        message: "Transactional auth mail delivery failed",
+        payload: expect.objectContaining({
+          event: "auth_mail_delivery_failed",
+          flow: "email_verification",
+          userId: harness.user.id,
+          tokenRecordId: tokenRecord?.id,
+          errorClass: "Error",
+        }),
+      },
+    ]);
+    expect(JSON.stringify(logger.warnings[0]?.payload)).not.toContain("ada@example.com");
+    expect(JSON.stringify(logger.warnings[0]?.payload)).not.toContain("verify-email");
   });
 });

@@ -1,5 +1,15 @@
 import type { EmailDriver, EmailMessage } from "../emailService.js";
 
+export class ResendEmailDeliveryError extends Error {
+  constructor(
+    readonly statusCode: number,
+    readonly providerErrorName?: string,
+  ) {
+    super(`Resend email delivery failed with status ${statusCode}`);
+    this.name = "ResendEmailDeliveryError";
+  }
+}
+
 export class ResendEmailDriver implements EmailDriver {
   constructor(private readonly apiKey: string) {}
 
@@ -25,8 +35,24 @@ export class ResendEmailDriver implements EmailDriver {
     });
 
     if (!response.ok) {
-      const detail = await response.text();
-      throw new Error(`Resend email delivery failed with status ${response.status}: ${detail}`);
+      const providerErrorName = await readProviderErrorName(response);
+      throw new ResendEmailDeliveryError(response.status, providerErrorName);
     }
   }
 }
+
+const readProviderErrorName = async (response: Response): Promise<string | undefined> => {
+  const detail = await response.text();
+  if (!detail) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(detail) as unknown;
+    if (parsed && typeof parsed === "object" && "name" in parsed && typeof parsed.name === "string") {
+      return parsed.name;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+};

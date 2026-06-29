@@ -468,6 +468,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     auditService: infrastructure.auditService,
     env,
     infrastructure,
+    logger,
     repositories,
     workspaceService: workspace.workspaceService,
   });
@@ -475,6 +476,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     auditService: infrastructure.auditService,
     env,
     infrastructure,
+    logger,
     repositories,
   });
   const connectorRegistry = buildConnectorRegistry({ composition, env, logger });

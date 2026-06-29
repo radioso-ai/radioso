@@ -114,6 +114,45 @@ export class AccountInvitationService {
     };
   }
 
+  async revokeInvitation(input: {
+    accountId: string;
+    actorUserId: string;
+    invitationId: string;
+  }): Promise<void> {
+    await this.accountAccessService.requirePermission({
+      accountId: input.accountId,
+      userId: input.actorUserId,
+      permission: "account.users.manage",
+    });
+
+    const invitation = await this.invitationRepository.findById(input.invitationId);
+    if (!invitation || invitation.accountId !== input.accountId) {
+      throw notFound("Invitation not found");
+    }
+
+    const status = await this.resolveStatus(invitation);
+    if (status === "accepted") {
+      await this.auditService.record({
+        accountId: input.accountId,
+        eventType: "account.invitation.revoke",
+        eventStatus: "failure",
+        metadata: { email: invitation.email, reason: "invitation_already_accepted" },
+      });
+      throw conflict("Invitation has already been accepted");
+    }
+
+    if (status !== "revoked") {
+      await this.invitationRepository.update({ id: invitation.id, status: "revoked" });
+    }
+
+    await this.auditService.record({
+      accountId: input.accountId,
+      eventType: "account.invitation.revoke",
+      eventStatus: "success",
+      metadata: { email: invitation.email },
+    });
+  }
+
   async getInvitation(token: string): Promise<{
     accountId: string;
     email: string;

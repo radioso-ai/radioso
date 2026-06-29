@@ -664,6 +664,10 @@ export class InMemoryAccountInvitationRepository implements AccountInvitationRep
     return record;
   }
 
+  async findById(id: string): Promise<AccountInvitationRecord | null> {
+    return this.items.get(id) ?? null;
+  }
+
   async findPendingByAccountAndEmail(accountId: string, email: string): Promise<AccountInvitationRecord | null> {
     return (
       [...this.items.values()].find(

@@ -77,6 +77,7 @@ export interface AccountInvitationRepositoryPort {
     status?: AccountInvitationStatus;
     expiresAt: Date;
   }): Promise<AccountInvitationRecord>;
+  findById(id: string): Promise<AccountInvitationRecord | null>;
   findPendingByAccountAndEmail(accountId: string, email: string): Promise<AccountInvitationRecord | null>;
   findByTokenHash(tokenHash: string): Promise<AccountInvitationRecord | null>;
   listByAccount(accountId: string): Promise<AccountInvitationRecord[]>;
@@ -116,6 +117,16 @@ export class AccountInvitationRepository implements AccountInvitationRepositoryP
       .executeTakeFirstOrThrow();
 
     return mapInvitation(row as AccountInvitationRow);
+  }
+
+  async findById(id: string): Promise<AccountInvitationRecord | null> {
+    const row = await this.db
+      .selectFrom("account_invitations")
+      .select(accountInvitationColumns)
+      .where("id", "=", id)
+      .executeTakeFirst();
+
+    return row ? mapInvitation(row as AccountInvitationRow) : null;
   }
 
   async findPendingByAccountAndEmail(accountId: string, email: string): Promise<AccountInvitationRecord | null> {

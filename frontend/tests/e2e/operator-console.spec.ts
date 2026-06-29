@@ -70,7 +70,7 @@ const installOperatorConsoleMocks = async (page: Page, role: StaffRole = "owner"
 
   await page.route("**/api/v1/ee/operator-console/**", async (route) => {
     const url = new URL(route.request().url());
-    const path = url.pathname.replace("/api/v1/ee/operator-console", "");
+    const path = url.pathname.replace(/^.*\/api\/v1\/ee\/operator-console/, "");
     requestLog.push(`${route.request().method()} ${path}`);
 
     if (path === "/auth/login" && route.request().method() === "POST") {

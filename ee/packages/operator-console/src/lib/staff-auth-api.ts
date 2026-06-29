@@ -1,4 +1,7 @@
-export const operatorConsoleApiBase = "/api/v1/ee/operator-console";
+// Frontend calls reach the backend through the Next proxy at /backend
+// (see frontend app/backend/[...path]/route.ts and api-client API_BASE),
+// not the bare /api path. Using /api here 404s in the real app.
+export const operatorConsoleApiBase = "/backend/api/v1/ee/operator-console";
 
 export type StaffRole = "support_read" | "billing_write" | "owner";
 export type StaffStatus = "active" | "disabled";

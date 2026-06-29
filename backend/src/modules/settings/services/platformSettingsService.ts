@@ -2,7 +2,7 @@ import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repos
 import type { AccessGrantService } from "../../accessGrants/public.js";
 import type { AgentRecord, AgentService } from "../../agents/public.js";
 import { getWebsiteEmbedSurfaceSettings, isAgentBootstrapActive } from "../../agents/public.js";
-import { buildPublicAssistantLogoUrl } from "../../../app/http/shared/assistantLogoUrl.js";
+import { buildAssistantLogoCacheKey, buildPublicAssistantLogoUrl } from "../../../app/http/shared/assistantLogoUrl.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { validateWebsiteEmbedSettings } from "../domain/websiteEmbedSettings.js";
@@ -266,6 +266,7 @@ export class PlatformSettingsService {
     return buildPublicAssistantLogoUrl({
       token,
       hasLogo: Boolean(agent.logo),
+      cacheKey: buildAssistantLogoCacheKey(agent.logo),
       publicChatBaseUrl: this.dependencies.publicChatBaseUrl,
     });
   }

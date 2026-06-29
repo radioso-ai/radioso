@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { ChevronDown, Pencil, Sparkles, Trash2, Upload } from 'lucide-react'
 
 import {
@@ -70,7 +70,10 @@ export function AssistantIdentityAppearanceSection({
   const branding = assistantBehaviorSettings.branding ?? DEFAULT_BRANDING_SETTINGS
   const canHideBranding = editionController.canHideAssistantBranding()
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const hasLogo = Boolean(anonSettings.assistantLogoUrl)
+  const logoUrl = anonSettings.assistantLogoUrl
+  const [failedLogoUrl, setFailedLogoUrl] = useState<string | null>(null)
+  const hasLogo = Boolean(logoUrl)
+  const showLogo = Boolean(logoUrl && failedLogoUrl !== logoUrl)
   const logoBusy = isAnonSaving || isAssistantLogoSaving
 
   const updateBranding = (next: AgentBrandingSettings) => {
@@ -83,12 +86,13 @@ export function AssistantIdentityAppearanceSection({
   const logoBadge = (
     <div className="relative h-11 w-11">
       <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-2xl border border-border bg-background">
-        {hasLogo ? (
+        {showLogo ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={anonSettings.assistantLogoUrl ?? ''}
+            src={logoUrl ?? ''}
             alt=""
             className="h-full w-full object-contain"
+            onError={() => setFailedLogoUrl(logoUrl)}
           />
         ) : (
           <Sparkles className="h-5 w-5 text-primary" />

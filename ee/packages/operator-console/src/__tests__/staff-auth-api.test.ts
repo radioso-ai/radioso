@@ -30,7 +30,7 @@ describe("staff auth api", () => {
     const result = await staffAuthApi.login({ email: "owner@example.com", password: "password-123" });
 
     expect(result.staff.role).toBe("owner");
-    expect(fetchMock).toHaveBeenCalledWith("/api/v1/ee/operator-console/auth/login", expect.objectContaining({
+    expect(fetchMock).toHaveBeenCalledWith("/backend/api/v1/ee/operator-console/auth/login", expect.objectContaining({
       method: "POST",
       credentials: "include",
       body: JSON.stringify({ email: "owner@example.com", password: "password-123" }),
@@ -50,7 +50,7 @@ describe("staff auth api", () => {
     await staffAuthApi.listOrganizations({ limit: 25, offset: 50, search: " Alpha " });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v1/ee/operator-console/organizations?limit=25&offset=50&search=Alpha",
+      "/backend/api/v1/ee/operator-console/organizations?limit=25&offset=50&search=Alpha",
       expect.objectContaining({ credentials: "include" }),
     );
   });

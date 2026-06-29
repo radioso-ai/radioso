@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 
-import * as bcrypt from "bcryptjs";
+import bcrypt from "bcryptjs";
 
 const BCRYPT_COST = 12;
 

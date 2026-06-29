@@ -221,6 +221,11 @@ trail. Per repo guidance, the explicit review:
 - **Metrics** (low-cardinality counters): staff auth failures, role-denied
   attempts, tier changes, tier catalog edits, bootstrap invocations. Labeled by
   action/role/outcome only — never by org id, staff id, or email.
+  *v1 status: deferred.* The Enterprise backend module exposes no metrics sink
+  today; audit events + structured logs cover the operator-relevant signal.
+  Adding a metrics-sink port is a separate infra change tracked as a follow-up.
+  Staff-login rate-limiting is likewise deferred (a shared, backed limiter is
+  the correct fix; `bcrypt` makes brute force slow in the interim).
 - **Spans** (OpenTelemetry): console mutation endpoints participate in the
   existing request tracing; no new bespoke span taxonomy required for v1.
 - **Privacy constraints**: observability output MUST NOT contain credentials,

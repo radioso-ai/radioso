@@ -576,11 +576,5 @@ export const createStaffConsoleRoutes = (
     },
   );
 
-  if (process.env.NODE_ENV === "test") {
-    router.get("/_test/billing-write", staffSessionGuard, requireStaffRole("billing_write"), (_req, res) => {
-      res.status(204).end();
-    });
-  }
-
   return router;
 };

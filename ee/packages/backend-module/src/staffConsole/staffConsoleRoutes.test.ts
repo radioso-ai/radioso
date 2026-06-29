@@ -7,7 +7,7 @@ import type { ApplicationRouteMount, UsageLimitDatabasePort } from "../radiosoMo
 import type { AccountUsageSummary, UsageLimitProfile } from "../usageLimits/usageLimitService.js";
 import { hashStaffPassword } from "./staffCrypto.js";
 import { createStaffConsoleRoutes } from "./staffConsoleRoutes.js";
-import type { StaffPrincipal } from "./staffGuards.js";
+import { requireStaffRole, type StaffPrincipal } from "./staffGuards.js";
 import type { StaffSessionRepository, StaffUserRepository } from "./staffRepository.js";
 import type { OrganizationDirectoryService } from "./organizationDirectoryService.js";
 import type { StaffRole, StaffStatus, StaffUser } from "./staffTypes.js";
@@ -408,40 +408,30 @@ describe("staff console routes and guards", () => {
       .expect(204);
   });
 
-  it("default-denies role-gated routes", async () => {
-    const repositories = await createMemoryRepositories("support_read");
-    const app = createApp(createDependencies({
-      users: repositories.users,
-      sessions: repositories.staffSessions,
-    }), { users: repositories.users, sessions: repositories.staffSessions });
+  const runRoleGuard = (role: StaffRole) => {
+    const res = {
+      locals: { staff: { id: "s", role, email: "s@example.com", name: "S" } satisfies StaffPrincipal },
+      statusCode: 200,
+      body: undefined as unknown,
+      status(code: number) { this.statusCode = code; return this; },
+      json(payload: unknown) { this.body = payload; return this; },
+    };
+    let passed = false;
+    requireStaffRole("billing_write")({} as never, res as never, () => { passed = true; });
+    return { passed, statusCode: res.statusCode };
+  };
 
-    const login = await request(app)
-      .post("/api/v1/ee/operator-console/auth/login")
-      .send({ email: "owner@example.com", password: "password-123" })
-      .expect(200);
-
-    await request(app)
-      .get("/api/v1/ee/operator-console/_test/billing-write")
-      .set("Cookie", login.headers["set-cookie"][0])
-      .expect(403);
+  it("default-denies a role below the required gate (support_read on billing_write)", () => {
+    const result = runRoleGuard("support_read");
+    expect(result.passed).toBe(false);
+    expect(result.statusCode).toBe(403);
   });
 
-  it("allows billing_write and owner through billing_write role gates", async () => {
+  it("allows billing_write and owner through a billing_write gate", () => {
     for (const role of ["billing_write", "owner"] as const) {
-      const repositories = await createMemoryRepositories(role);
-      const app = createApp(createDependencies({
-        users: repositories.users,
-        sessions: repositories.staffSessions,
-      }), { users: repositories.users, sessions: repositories.staffSessions });
-      const login = await request(app)
-        .post("/api/v1/ee/operator-console/auth/login")
-        .send({ email: "owner@example.com", password: "password-123" })
-        .expect(200);
-
-      await request(app)
-        .get("/api/v1/ee/operator-console/_test/billing-write")
-        .set("Cookie", login.headers["set-cookie"][0])
-        .expect(204);
+      const result = runRoleGuard(role);
+      expect(result.passed).toBe(true);
+      expect(result.statusCode).toBe(200);
     }
   });
 

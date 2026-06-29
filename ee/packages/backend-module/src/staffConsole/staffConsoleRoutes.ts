@@ -37,6 +37,27 @@ const accountIdParamsSchema = z.object({
   accountId: z.string().uuid(),
 });
 
+const profileKeySchema = z.string().trim().regex(/^[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]$/);
+
+const tierAssignmentBodySchema = z.object({
+  profileKey: profileKeySchema.nullable(),
+});
+
+const nullableLimitSchema = z.number().int().min(0).nullable();
+const nullableByteLimitSchema = z.union([z.number().int().min(0), z.null()]).optional();
+
+const tierProfileParamsSchema = z.object({
+  profileKey: profileKeySchema,
+});
+
+const tierProfileBodySchema = z.object({
+  displayName: z.string().trim().min(1).max(120),
+  monthlyAnswerLimit: nullableLimitSchema,
+  storedDocumentLimit: nullableLimitSchema,
+  storedIndexedByteLimit: nullableByteLimitSchema,
+  monthlyIndexedByteLimit: nullableByteLimitSchema,
+});
+
 const parseRequest = <T>(schema: z.ZodType<T>, value: unknown, message: string): T => {
   const parsed = schema.safeParse(value);
   if (parsed.success) {
@@ -115,7 +136,10 @@ export interface StaffConsoleRouteRepositories {
   users?: StaffUserRepository;
   sessions?: StaffSessionRepository;
   organizationDirectoryService?: Pick<OrganizationDirectoryService, "listOrganizations">;
-  usageLimitService?: Pick<EnterpriseUsageLimitService, "getAccountUsage" | "listProfiles">;
+  usageLimitService?: Pick<
+    EnterpriseUsageLimitService,
+    "getAccountUsage" | "listProfiles" | "assignProfile" | "upsertProfile"
+  >;
 }
 
 export const createStaffConsoleRoutes = (
@@ -274,6 +298,79 @@ export const createStaffConsoleRoutes = (
       try {
         const tiers: UsageLimitProfile[] = await usageLimitService.listProfiles();
         res.status(200).json({ tiers });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.put(
+    "/organizations/:accountId/tier",
+    staffSessionGuard,
+    requireStaffRole("billing_write"),
+    async (req, res, next) => {
+      try {
+        const { accountId } = parseRequest(accountIdParamsSchema, req.params, "Invalid organization identifier");
+        const body = parseRequest(tierAssignmentBodySchema, req.body, "Invalid tier assignment payload");
+        const currentUsage = await usageLimitService.getAccountUsage(accountId);
+        const fromProfileKey = currentUsage.profile?.key ?? null;
+        const usage: AccountUsageSummary = await usageLimitService.assignProfile(accountId, body.profileKey);
+        await dependencies.auditService.record({
+          accountId,
+          workspaceId: null,
+          eventType: "staff.tier.assigned",
+          eventStatus: "success",
+          metadata: {
+            actorStaffId: res.locals.staff.id,
+            fromProfileKey,
+            toProfileKey: body.profileKey,
+          },
+        });
+        res.status(200).json(usage);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.put(
+    "/tiers/:profileKey",
+    staffSessionGuard,
+    requireStaffRole("billing_write"),
+    async (req, res, next) => {
+      try {
+        const { profileKey } = parseRequest(tierProfileParamsSchema, req.params, "Invalid tier profile key");
+        const body = parseRequest(tierProfileBodySchema, req.body, "Invalid tier profile payload");
+        const profile = await usageLimitService.upsertProfile({
+          key: profileKey,
+          displayName: body.displayName,
+          monthlyAnswerLimit: body.monthlyAnswerLimit,
+          storedDocumentLimit: body.storedDocumentLimit,
+          storedIndexedByteLimit: body.storedIndexedByteLimit ?? null,
+          monthlyIndexedByteLimit: body.monthlyIndexedByteLimit ?? null,
+        });
+        const fields = [
+          "monthlyAnswerLimit",
+          "storedDocumentLimit",
+          ...(Object.prototype.hasOwnProperty.call(body, "storedIndexedByteLimit")
+            ? ["storedIndexedByteLimit"]
+            : []),
+          ...(Object.prototype.hasOwnProperty.call(body, "monthlyIndexedByteLimit")
+            ? ["monthlyIndexedByteLimit"]
+            : []),
+        ];
+        await dependencies.auditService.record({
+          accountId: null,
+          workspaceId: null,
+          eventType: "staff.tier.upserted",
+          eventStatus: "success",
+          metadata: {
+            actorStaffId: res.locals.staff.id,
+            profileKey,
+            fields,
+          },
+        });
+        res.status(200).json({ profile });
       } catch (error) {
         next(error);
       }

@@ -49,6 +49,15 @@ const createApp = (dependencies: RouteDependencies, repositories: {
   usageLimitService?: {
     getAccountUsage(accountId: string): Promise<AccountUsageSummary>;
     listProfiles(): Promise<UsageLimitProfile[]>;
+    assignProfile?(accountId: string, profileKey: string | null): Promise<AccountUsageSummary>;
+    upsertProfile?(input: {
+      key: string;
+      displayName: string;
+      monthlyAnswerLimit: number | null;
+      storedDocumentLimit: number | null;
+      storedIndexedByteLimit?: number | null;
+      monthlyIndexedByteLimit?: number | null;
+    }): Promise<UsageLimitProfile>;
   };
 }) => {
   const app = express();
@@ -216,6 +225,59 @@ const sampleProfiles: UsageLimitProfile[] = [
     updatedAt: "2026-06-01T00:00:00.000Z",
   },
 ];
+
+const sampleGrowthProfile: UsageLimitProfile = {
+  key: "growth",
+  displayName: "Growth",
+  monthlyAnswerLimit: 100,
+  storedDocumentLimit: 200,
+  storedIndexedByteLimit: 10_000_000,
+  monthlyIndexedByteLimit: null,
+  createdAt: "2026-06-01T00:00:00.000Z",
+  updatedAt: "2026-06-01T00:00:00.000Z",
+};
+
+const sampleGrowthUsageSummary: AccountUsageSummary = {
+  ...sampleUsageSummary,
+  profile: sampleGrowthProfile,
+  monthlyAnswers: {
+    ...sampleUsageSummary.monthlyAnswers,
+    limit: 100,
+  },
+  storedDocuments: {
+    ...sampleUsageSummary.storedDocuments,
+    limit: 200,
+  },
+  storedIndexedBytes: {
+    ...sampleUsageSummary.storedIndexedBytes,
+    limit: 10_000_000,
+  },
+  monthlyIndexedBytes: {
+    ...sampleUsageSummary.monthlyIndexedBytes,
+    limit: null,
+  },
+};
+
+const sampleUnassignedUsageSummary: AccountUsageSummary = {
+  ...sampleUsageSummary,
+  profile: null,
+  monthlyAnswers: {
+    ...sampleUsageSummary.monthlyAnswers,
+    limit: null,
+  },
+  storedDocuments: {
+    ...sampleUsageSummary.storedDocuments,
+    limit: null,
+  },
+  storedIndexedBytes: {
+    ...sampleUsageSummary.storedIndexedBytes,
+    limit: null,
+  },
+  monthlyIndexedBytes: {
+    ...sampleUsageSummary.monthlyIndexedBytes,
+    limit: null,
+  },
+};
 
 const createReadServiceMocks = () => ({
   organizationDirectoryService: {
@@ -506,5 +568,250 @@ describe("staff console routes and guards", () => {
     }), expect.any(String));
     expect(JSON.stringify(logger.info.mock.calls)).not.toContain("owner@example.com");
     expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("owner@example.com");
+  });
+
+  it("assigns and unassigns organization tiers for billing_write staff and rejects support_read", async () => {
+    const billingRepositories = await createMemoryRepositories("billing_write");
+    const assignProfile = vi.fn(async (_accountId: string, profileKey: string | null) =>
+      profileKey === null ? sampleUnassignedUsageSummary : sampleGrowthUsageSummary,
+    );
+    const getAccountUsage = vi.fn(async () => sampleUsageSummary);
+    const billingApp = createApp(createDependencies({
+      users: billingRepositories.users,
+      sessions: billingRepositories.staffSessions,
+    }), {
+      users: billingRepositories.users,
+      sessions: billingRepositories.staffSessions,
+      usageLimitService: {
+        getAccountUsage,
+        listProfiles: vi.fn(async () => sampleProfiles),
+        assignProfile,
+      },
+    });
+    const billingLogin = await request(billingApp)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email: "owner@example.com", password: "password-123" })
+      .expect(200);
+
+    const assigned = await request(billingApp)
+      .put("/api/v1/ee/operator-console/organizations/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/tier")
+      .set("Cookie", billingLogin.headers["set-cookie"][0])
+      .send({ profileKey: "growth" })
+      .expect(200);
+    expect(assigned.body).toEqual(sampleGrowthUsageSummary);
+    expect(getAccountUsage).toHaveBeenCalledWith("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    expect(assignProfile).toHaveBeenCalledWith("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "growth");
+
+    const unassigned = await request(billingApp)
+      .put("/api/v1/ee/operator-console/organizations/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/tier")
+      .set("Cookie", billingLogin.headers["set-cookie"][0])
+      .send({ profileKey: null })
+      .expect(200);
+    expect(unassigned.body).toEqual(sampleUnassignedUsageSummary);
+    expect(assignProfile).toHaveBeenCalledWith("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", null);
+
+    const readOnlyRepositories = await createMemoryRepositories("support_read");
+    const readOnlyAssignProfile = vi.fn(async () => sampleGrowthUsageSummary);
+    const readOnlyApp = createApp(createDependencies({
+      users: readOnlyRepositories.users,
+      sessions: readOnlyRepositories.staffSessions,
+    }), {
+      users: readOnlyRepositories.users,
+      sessions: readOnlyRepositories.staffSessions,
+      usageLimitService: {
+        getAccountUsage: vi.fn(async () => sampleUsageSummary),
+        listProfiles: vi.fn(async () => sampleProfiles),
+        assignProfile: readOnlyAssignProfile,
+      },
+    });
+    const readOnlyLogin = await request(readOnlyApp)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email: "owner@example.com", password: "password-123" })
+      .expect(200);
+
+    await request(readOnlyApp)
+      .put("/api/v1/ee/operator-console/organizations/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/tier")
+      .set("Cookie", readOnlyLogin.headers["set-cookie"][0])
+      .send({ profileKey: "growth" })
+      .expect(403);
+    expect(readOnlyAssignProfile).not.toHaveBeenCalled();
+  });
+
+  it("audits successful organization tier changes with sanitized metadata", async () => {
+    const repositories = await createMemoryRepositories("billing_write");
+    const auditRecord = vi.fn(async () => undefined);
+    const app = createApp(createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+      auditRecord,
+    }), {
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+      usageLimitService: {
+        getAccountUsage: vi.fn(async () => sampleUsageSummary),
+        listProfiles: vi.fn(async () => sampleProfiles),
+        assignProfile: vi.fn(async () => sampleGrowthUsageSummary),
+      },
+    });
+    const login = await request(app)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email: "owner@example.com", password: "password-123" })
+      .expect(200);
+
+    await request(app)
+      .put("/api/v1/ee/operator-console/organizations/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/tier")
+      .set("Cookie", login.headers["set-cookie"][0])
+      .send({ profileKey: "growth" })
+      .expect(200);
+
+    expect(auditRecord).toHaveBeenCalledWith({
+      accountId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      workspaceId: null,
+      eventType: "staff.tier.assigned",
+      eventStatus: "success",
+      metadata: {
+        actorStaffId: repositories.staff.id,
+        fromProfileKey: "starter",
+        toProfileKey: "growth",
+      },
+    });
+    expect(JSON.stringify(auditRecord.mock.calls)).not.toContain("owner@example.com");
+  });
+
+  it("creates or edits tiers for billing_write staff, validates payloads, and rejects support_read", async () => {
+    const billingRepositories = await createMemoryRepositories("billing_write");
+    const upsertProfile = vi.fn(async () => sampleGrowthProfile);
+    const billingApp = createApp(createDependencies({
+      users: billingRepositories.users,
+      sessions: billingRepositories.staffSessions,
+    }), {
+      users: billingRepositories.users,
+      sessions: billingRepositories.staffSessions,
+      usageLimitService: {
+        getAccountUsage: vi.fn(async () => sampleUsageSummary),
+        listProfiles: vi.fn(async () => sampleProfiles),
+        upsertProfile,
+      },
+    });
+    const billingLogin = await request(billingApp)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email: "owner@example.com", password: "password-123" })
+      .expect(200);
+
+    const response = await request(billingApp)
+      .put("/api/v1/ee/operator-console/tiers/growth")
+      .set("Cookie", billingLogin.headers["set-cookie"][0])
+      .send({
+        displayName: "  Growth  ",
+        monthlyAnswerLimit: 100,
+        storedDocumentLimit: null,
+        storedIndexedByteLimit: 10_000_000,
+        monthlyIndexedByteLimit: null,
+      })
+      .expect(200);
+    expect(response.body).toEqual({ profile: sampleGrowthProfile });
+    expect(upsertProfile).toHaveBeenCalledWith({
+      key: "growth",
+      displayName: "Growth",
+      monthlyAnswerLimit: 100,
+      storedDocumentLimit: null,
+      storedIndexedByteLimit: 10_000_000,
+      monthlyIndexedByteLimit: null,
+    });
+
+    await request(billingApp)
+      .put("/api/v1/ee/operator-console/tiers/NOPE")
+      .set("Cookie", billingLogin.headers["set-cookie"][0])
+      .send({
+        displayName: "Growth",
+        monthlyAnswerLimit: 100,
+        storedDocumentLimit: null,
+      })
+      .expect(400);
+    await request(billingApp)
+      .put("/api/v1/ee/operator-console/tiers/growth")
+      .set("Cookie", billingLogin.headers["set-cookie"][0])
+      .send({
+        displayName: "Growth",
+        monthlyAnswerLimit: -1,
+        storedDocumentLimit: null,
+      })
+      .expect(400);
+
+    const readOnlyRepositories = await createMemoryRepositories("support_read");
+    const readOnlyUpsertProfile = vi.fn(async () => sampleGrowthProfile);
+    const readOnlyApp = createApp(createDependencies({
+      users: readOnlyRepositories.users,
+      sessions: readOnlyRepositories.staffSessions,
+    }), {
+      users: readOnlyRepositories.users,
+      sessions: readOnlyRepositories.staffSessions,
+      usageLimitService: {
+        getAccountUsage: vi.fn(async () => sampleUsageSummary),
+        listProfiles: vi.fn(async () => sampleProfiles),
+        upsertProfile: readOnlyUpsertProfile,
+      },
+    });
+    const readOnlyLogin = await request(readOnlyApp)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email: "owner@example.com", password: "password-123" })
+      .expect(200);
+
+    await request(readOnlyApp)
+      .put("/api/v1/ee/operator-console/tiers/growth")
+      .set("Cookie", readOnlyLogin.headers["set-cookie"][0])
+      .send({
+        displayName: "Growth",
+        monthlyAnswerLimit: 100,
+        storedDocumentLimit: null,
+      })
+      .expect(403);
+    expect(readOnlyUpsertProfile).not.toHaveBeenCalled();
+  });
+
+  it("audits tier create and edit with sanitized metadata", async () => {
+    const repositories = await createMemoryRepositories("billing_write");
+    const auditRecord = vi.fn(async () => undefined);
+    const app = createApp(createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+      auditRecord,
+    }), {
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+      usageLimitService: {
+        getAccountUsage: vi.fn(async () => sampleUsageSummary),
+        listProfiles: vi.fn(async () => sampleProfiles),
+        upsertProfile: vi.fn(async () => sampleGrowthProfile),
+      },
+    });
+    const login = await request(app)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email: "owner@example.com", password: "password-123" })
+      .expect(200);
+
+    await request(app)
+      .put("/api/v1/ee/operator-console/tiers/growth")
+      .set("Cookie", login.headers["set-cookie"][0])
+      .send({
+        displayName: "Growth",
+        monthlyAnswerLimit: 100,
+        storedDocumentLimit: null,
+        storedIndexedByteLimit: 10_000_000,
+      })
+      .expect(200);
+
+    expect(auditRecord).toHaveBeenCalledWith({
+      accountId: null,
+      workspaceId: null,
+      eventType: "staff.tier.upserted",
+      eventStatus: "success",
+      metadata: {
+        actorStaffId: repositories.staff.id,
+        profileKey: "growth",
+        fields: ["monthlyAnswerLimit", "storedDocumentLimit", "storedIndexedByteLimit"],
+      },
+    });
+    expect(JSON.stringify(auditRecord.mock.calls)).not.toContain("owner@example.com");
   });
 });

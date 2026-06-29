@@ -357,6 +357,7 @@ const sampleUnassignedUsageSummary: AccountUsageSummary = {
 const createReadServiceMocks = () => ({
   organizationDirectoryService: {
     listOrganizations: vi.fn(async () => sampleOrganizationRows),
+    getOrganizationName: vi.fn(async () => "Alpha Research"),
   } as unknown as OrganizationDirectoryService,
   usageLimitService: {
     getAccountUsage: vi.fn(async () => sampleUsageSummary),
@@ -559,7 +560,7 @@ describe("staff console routes and guards", () => {
       .set("Cookie", login.headers["set-cookie"][0])
       .expect(200);
 
-    expect(response.body).toEqual(sampleUsageSummary);
+    expect(response.body).toEqual({ ...sampleUsageSummary, organizationName: "Alpha Research" });
     expect(readServices.usageLimitService.getAccountUsage).toHaveBeenCalledWith(
       "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
     );

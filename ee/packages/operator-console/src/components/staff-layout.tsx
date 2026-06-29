@@ -87,7 +87,12 @@ export function StaffLayout({ children, active }: { children: ReactNode; active:
                 </Link>
               </Button>
             ) : null}
-            <Button variant="outline" size="sm" onClick={logout}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={logout}
+              className="border-zinc-700 bg-transparent text-zinc-200 hover:bg-zinc-800 hover:text-zinc-100"
+            >
               <LogOut className="size-4" />
               Sign out
             </Button>

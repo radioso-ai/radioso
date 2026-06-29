@@ -112,8 +112,8 @@ export function OrganizationDetailPage({ accountId }: { accountId: string }) {
               Organizations
             </Link>
           </Button>
-          <h1 className="text-2xl font-semibold tracking-normal">Organization usage</h1>
-          <p className="mt-1 text-sm text-zinc-400">{accountId}</p>
+          <h1 className="text-2xl font-semibold tracking-normal">{usage?.organizationName ?? "Organization usage"}</h1>
+          <p className="mt-1 font-mono text-xs text-zinc-500">{accountId}</p>
         </div>
       </div>
       {error ? <ErrorBanner message={error} /> : null}

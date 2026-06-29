@@ -35,6 +35,7 @@ export interface MeterUsage {
 
 export interface AccountUsageSummary {
   accountId: string;
+  organizationName?: string | null;
   profile: UsageLimitProfile | null;
   monthlyAnswers: MeterUsage;
   storedDocuments: MeterUsage;

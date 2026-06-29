@@ -28,6 +28,7 @@ const growthProfile = {
 
 const usage = (profile = starterProfile) => ({
   accountId,
+  organizationName: "Alpha Research",
   profile,
   monthlyAnswers: {
     periodStart: "2026-06-01",

@@ -157,7 +157,7 @@ const resolveLogger = (dependencies: RouteDependencies): StaffConsoleLogger => {
 export interface StaffConsoleRouteRepositories {
   users?: StaffUserRepository;
   sessions?: StaffSessionRepository;
-  organizationDirectoryService?: Pick<OrganizationDirectoryService, "listOrganizations">;
+  organizationDirectoryService?: Pick<OrganizationDirectoryService, "listOrganizations" | "getOrganizationName">;
   usageLimitService?: Pick<
     EnterpriseUsageLimitService,
     "getAccountUsage" | "listProfiles" | "assignProfile" | "upsertProfile"
@@ -305,8 +305,11 @@ export const createStaffConsoleRoutes = (
     async (req, res, next) => {
       try {
         const { accountId } = parseRequest(accountIdParamsSchema, req.params, "Invalid organization identifier");
-        const usage: AccountUsageSummary = await usageLimitService.getAccountUsage(accountId);
-        res.status(200).json(usage);
+        const [usage, organizationName] = await Promise.all([
+          usageLimitService.getAccountUsage(accountId) as Promise<AccountUsageSummary>,
+          organizationDirectoryService.getOrganizationName(accountId),
+        ]);
+        res.status(200).json({ ...usage, organizationName });
       } catch (error) {
         next(error);
       }

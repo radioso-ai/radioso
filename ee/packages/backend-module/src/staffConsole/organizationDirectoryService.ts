@@ -166,6 +166,15 @@ export class OrganizationDirectoryService {
     };
   }
 
+  async getOrganizationName(accountId: string): Promise<string | null> {
+    const row = await this.db
+      .selectFrom("accounts")
+      .select("name")
+      .where("id", "=", accountId)
+      .executeTakeFirst();
+    return row?.name ?? null;
+  }
+
   private resolveOffset(input: OrganizationDirectoryListInput): number {
     if (typeof input.offset === "number" && Number.isFinite(input.offset)) {
       return Math.max(0, Math.floor(input.offset));

@@ -229,6 +229,31 @@ describe("AuthoredDirectiveService", () => {
     expect(repository.created).toHaveLength(1);
     expect(result.coherence).toEqual(conflictVerdict);
   });
+
+  it("persists priority on create and forwards it with has-own semantics on update", async () => {
+    const repository = new StubAgentRepository();
+    const existing = persistedDirective(directiveInput({ name: "ranked" }), { priority: 80 });
+    repository.directives.push(existing);
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(),
+    });
+
+    await service.create(workspaceId, agentId, directiveInput({ priority: 40 }));
+    expect(repository.created.at(-1)?.priority).toBe(40);
+
+    // Omitting priority preserves the existing value rather than clearing it.
+    await service.update(workspaceId, agentId, existing.id, { action: "Reworded." });
+    expect(repository.updated.at(-1)?.input.priority).toBe(80);
+
+    // An explicit value sets it, and explicit null clears it back to the default.
+    await service.update(workspaceId, agentId, existing.id, { priority: 95 });
+    expect(repository.updated.at(-1)?.input.priority).toBe(95);
+
+    await service.update(workspaceId, agentId, existing.id, { priority: null });
+    expect(repository.updated.at(-1)?.input.priority).toBeNull();
+  });
 });
 
 describe("InMemoryAgentRepository directive uniqueness", () => {
@@ -257,5 +282,22 @@ describe("InMemoryAgentRepository directive uniqueness", () => {
         code: "conflict",
         message: 'A directive named "formal-register" already exists for this agent.',
       } as Partial<AppError>);
+  });
+
+  it("round-trips an authored priority and clears it back to the default", async () => {
+    const repository = new InMemoryAgentRepository();
+    const agent = await repository.create(workspaceId, { name: "Test agent" });
+
+    const created = await repository.createDirective(agent.id, workspaceId, directiveInput({ name: "ranked", priority: 70 }));
+    expect(created.priority).toBe(70);
+
+    const untouched = await repository.updateDirective(agent.id, workspaceId, created.id, { action: "Reworded." });
+    expect(untouched.priority).toBe(70);
+
+    const set = await repository.updateDirective(agent.id, workspaceId, created.id, { priority: 95 });
+    expect(set.priority).toBe(95);
+
+    const cleared = await repository.updateDirective(agent.id, workspaceId, created.id, { priority: null });
+    expect(cleared.priority).toBeNull();
   });
 });

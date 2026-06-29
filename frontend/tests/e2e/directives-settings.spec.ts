@@ -24,6 +24,9 @@ test("agent directives settings create, edit, delete, and persist", async ({ pag
   await page.getByLabel("Action").fill("When handing off to support, be calm and specific.");
   await page.getByRole("button", { name: "Save directive" }).click();
 
+  // Wait out the dialog close: a directive name also appears as a Replaces option,
+  // so the name is only unambiguous once the editor has unmounted.
+  await expect(page.getByRole("dialog")).toBeHidden();
   await expect(page.getByText("handoff-tone")).toBeVisible();
   await expect(page.getByText("No directive conflicts were found.")).toBeVisible();
   await expect.poll(() => directiveUpdates.length).toBe(1);
@@ -44,6 +47,7 @@ test("agent directives settings create, edit, delete, and persist", async ({ pag
   await page.getByLabel("Action").fill("Always be verbose, expansive, and include long explanations.");
   await page.getByRole("button", { name: "Save directive" }).click();
 
+  await expect(page.getByRole("dialog")).toBeHidden();
   await expect(page.getByText("conflict-tone")).toBeVisible();
   await expect(page.getByText("Potential directive conflicts")).toBeVisible();
   await expect(page.getByText("concise-readable-formatting:")).toBeVisible();
@@ -79,13 +83,17 @@ test("agent directives settings can replace and restore a built-in directive", a
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-directives`);
 
+  // The Override button is a shortcut into the normal create dialog with the
+  // built-in pre-selected in Replaces, the priority field exposed, everything editable.
   await page.getByRole("button", { name: "Replace inline-supported-links for this agent" }).click();
-  await expect(page.getByRole("heading", { name: 'Replace the default "inline-supported-links"' })).toBeVisible();
-  await page.getByLabel("Scope").click();
-  await page.getByRole("option", { name: "Only when condition matches" }).click();
-  await expect(page.getByText("Not active yet:")).toHaveCount(0);
-  await page.getByLabel("Only when").fill("answering legal policy questions");
+  await expect(page.getByRole("heading", { name: "Create directive" })).toBeVisible();
+  await expect(page.getByLabel("Name")).toHaveValue("Override: inline-supported-links");
+  await expect(page.getByRole("switch", { name: "Replace inline-supported-links" })).toBeChecked();
+  await page.getByRole("combobox", { name: "Condition" }).click();
+  await page.getByRole("option", { name: "Contextual" }).click();
+  await page.getByLabel("Condition description").fill("answering legal policy questions");
   await page.getByLabel("Action").fill("Use the agent's legal-source link policy instead of the default link style.");
+  await page.getByLabel("Priority (optional)").fill("95");
   await page.getByRole("button", { name: "Save directive" }).click();
 
   await expect(page.getByText("Replaced by Override: inline-supported-links")).toBeVisible();
@@ -99,6 +107,7 @@ test("agent directives settings can replace and restore a built-in directive", a
       condition: { kind: "contextual", description: "answering legal policy questions" },
       action: "Use the agent's legal-source link policy instead of the default link style.",
       excludes: ["inline-supported-links"],
+      priority: 95,
     },
   });
 

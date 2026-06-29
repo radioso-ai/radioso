@@ -149,6 +149,13 @@ variable "connector_encryption_key" {
   sensitive   = true
 }
 
+variable "ee_usage_admin_token" {
+  description = "Bearer token for live Enterprise admin and operator-console bootstrap endpoints."
+  type        = string
+  default     = null
+  sensitive   = true
+}
+
 variable "resend_mail_api_key" {
   description = "Resend API key for Enterprise auth mail in live."
   type        = string

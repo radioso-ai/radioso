@@ -151,11 +151,11 @@ describeIfDatabase("organization directory service", () => {
     );
     await database.query(
       `INSERT INTO account_memberships (account_id, user_id, role, status, created_at) VALUES
-        ($1, $2, 'owner', 'active', '2026-01-05T00:00:00.000Z'),
-        ($1, $3, 'owner', 'active', '2026-01-06T00:00:00.000Z'),
-        ($2, $4, 'owner', 'inactive', '2026-01-01T00:00:00.000Z'),
-        ($2, $3, 'member', 'active', '2026-01-01T00:00:00.000Z')`,
-      [alphaAccountId, firstOwnerId, secondOwnerId, inactiveOwnerId],
+        ($1, $3, 'owner', 'active', '2026-01-05T00:00:00.000Z'),
+        ($1, $4, 'owner', 'active', '2026-01-06T00:00:00.000Z'),
+        ($2, $5, 'owner', 'inactive', '2026-01-01T00:00:00.000Z'),
+        ($2, $4, 'member', 'active', '2026-01-01T00:00:00.000Z')`,
+      [alphaAccountId, betaAccountId, firstOwnerId, secondOwnerId, inactiveOwnerId],
     );
     await database.query(
       `INSERT INTO ee_usage_limit_profiles (

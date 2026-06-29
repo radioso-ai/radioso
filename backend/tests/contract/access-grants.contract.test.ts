@@ -12,6 +12,79 @@ const extractToken = (anonymousChatUrl: string): string => {
 };
 
 describe("access grants contract", () => {
+  it("manages per-agent MCP converse credentials without exposing token material in lists", async () => {
+    const { app, dependencies } = createTestApp();
+    const session = await issueTestSession(app, "mcp-converse-grants@example.com");
+    const defaultAgent = await dependencies.agentService.resolve(session.workspaceId);
+
+    await dependencies.accessGrantService.issueGrant({
+      agentId: defaultAgent.id,
+      workspaceId: session.workspaceId,
+      principalKind: "public-launch",
+      channel: "public-link",
+      originConstraint: { mode: "allow-all", origins: [] },
+    });
+
+    const issued = await request(app)
+      .post(`/api/v1/agents/${defaultAgent.id}/mcp-converse-grants`)
+      .set(adminSessionHeaders(session))
+      .send({ label: "Desktop client" });
+
+    expect(issued.status).toBe(201);
+    expect(issued.body.token).toEqual(expect.any(String));
+    expect(issued.body.grant).toEqual({
+      id: expect.any(String),
+      label: "Desktop client",
+      tokenPrefix: expect.any(String),
+      createdAt: expect.any(String),
+    });
+
+    const grantId = issued.body.grant.id as string;
+    const listed = await request(app)
+      .get(`/api/v1/agents/${defaultAgent.id}/mcp-converse-grants`)
+      .set(adminSessionHeaders(session));
+
+    expect(listed.status).toBe(200);
+    expect(listed.body.grants).toEqual([
+      {
+        id: grantId,
+        label: "Desktop client",
+        tokenPrefix: issued.body.grant.tokenPrefix,
+        enabled: true,
+        createdAt: issued.body.grant.createdAt,
+        lastUsedAt: null,
+        revokedAt: null,
+      },
+    ]);
+    expect(JSON.stringify(listed.body)).not.toContain(issued.body.token);
+
+    const rotated = await request(app)
+      .post(`/api/v1/agents/${defaultAgent.id}/mcp-converse-grants/${grantId}/rotate`)
+      .set(adminSessionHeaders(session))
+      .send();
+
+    expect(rotated.status).toBe(200);
+    expect(rotated.body.token).toEqual(expect.any(String));
+    expect(rotated.body.token).not.toBe(issued.body.token);
+
+    const revoked = await request(app)
+      .delete(`/api/v1/agents/${defaultAgent.id}/mcp-converse-grants/${grantId}`)
+      .set(adminSessionHeaders(session));
+
+    expect(revoked.status).toBe(204);
+
+    const afterRevoke = await request(app)
+      .get(`/api/v1/agents/${defaultAgent.id}/mcp-converse-grants`)
+      .set(adminSessionHeaders(session));
+    expect(afterRevoke.status).toBe(200);
+    expect(afterRevoke.body.grants).toEqual([
+      expect.objectContaining({
+        id: grantId,
+        revokedAt: expect.any(String),
+      }),
+    ]);
+  });
+
   it("uses one grant lifecycle for public launch credentials", async () => {
     const { app, dependencies, repositories } = createTestApp();
     const session = await issueTestSession(app, "access-grants@example.com");

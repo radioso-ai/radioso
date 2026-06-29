@@ -71,6 +71,7 @@ export interface Accounts {
 
 export interface AgentAccessGrants {
   agent_id: string;
+  channel: Generated<string>;
   created_at: Generated<Timestamp>;
   enabled: Generated<boolean>;
   encrypted_token: string;

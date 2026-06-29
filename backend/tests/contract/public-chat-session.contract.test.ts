@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import request from "supertest";
 
-import { issuePublicChatSession } from "../../src/modules/settings/contracts/publicChatSession.js";
+import {
+  issueConverseChatSession,
+  issuePublicChatSession,
+  verifyConverseChatSession,
+} from "../../src/modules/settings/contracts/publicChatSession.js";
 import type { PublicChatActionAdvertiserPort } from "../../src/modules/chat/services/publicChatActionAdvertiser.js";
 import { adminSessionHeaders, createTestApp, issueTestSession, issueTestToken } from "../support/testApp.js";
 
@@ -33,6 +37,49 @@ describe("public chat session contract", () => {
       .post(`/api/v1/public/chat/${token}/sessions`)
       .set("Origin", origin)
       .send({ channel: "website_embed", ...body });
+
+  it("issues and verifies MCP converse sessions with grant identity and version fields", () => {
+    const secret = "00112233445566778899aabbccddeeff";
+    const session = issueConverseChatSession(secret, {
+      workspaceId: randomUUID(),
+      agentId: randomUUID(),
+      publicSessionId: randomUUID(),
+      grantId: randomUUID(),
+      grantVersion: "2026-06-27T09:30:00.000Z",
+    });
+
+    const decoded = decodePublicSessionPayload(session.token);
+    expect(decoded).toMatchObject({
+      sourceChannel: "mcp",
+      sourceOrigin: null,
+      grantId: session.grantId,
+      grantVersion: "2026-06-27T09:30:00.000Z",
+    });
+
+    expect(verifyConverseChatSession(session.token, secret)).toMatchObject({
+      workspaceId: session.workspaceId,
+      agentId: session.agentId,
+      publicSessionId: session.publicSessionId,
+      sourceChannel: "mcp",
+      sourceOrigin: null,
+      grantId: session.grantId,
+      grantVersion: "2026-06-27T09:30:00.000Z",
+    });
+  });
+
+  it("does not verify public-chat sessions as MCP converse sessions", () => {
+    const secret = "00112233445566778899aabbccddeeff";
+    const session = issuePublicChatSession(secret, {
+      workspaceId: randomUUID(),
+      agentId: randomUUID(),
+      publicChatToken: "launch-token",
+      publicSessionId: randomUUID(),
+      sourceChannel: "anonymous",
+      sourceOrigin: null,
+    });
+
+    expect(verifyConverseChatSession(session.token, secret)).toBeNull();
+  });
 
   it("creates a website embed session for an approved origin", async () => {
     const { app } = createTestApp();

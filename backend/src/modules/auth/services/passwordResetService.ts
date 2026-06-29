@@ -21,6 +21,7 @@ import {
   sha256,
 } from "../domain/authPrimitives.js";
 import { unauthorized } from "../../../shared/domain/errors.js";
+import { logAuthMailDeliveryFailure, type AuthMailDeliveryLogger } from "./authMailDeliveryLogging.js";
 import { DEFAULT_AUTH_EMAIL_FLOW_MIN_RESPONSE_MS, waitForMinimumElapsed } from "./responsePadding.js";
 
 const generateRecoveryToken = (): string => randomBytes(32).toString("base64url");
@@ -38,6 +39,7 @@ export class PasswordResetService {
     passwordResetTokenRepository: PasswordResetTokenRepositoryPort;
     mailService: EmailService;
     auditService: AuditService;
+    logger?: AuthMailDeliveryLogger;
     responsePaddingMs?: number;
   }) {}
 
@@ -80,7 +82,13 @@ export class PasswordResetService {
           to: email,
           resetUrl: resetUrl.toString(),
         }));
-      } catch {
+      } catch (error) {
+        logAuthMailDeliveryFailure(this.dependencies.logger, {
+          flow: "password_reset",
+          userId: user.id,
+          tokenRecordId: record.id,
+          error,
+        });
         await this.dependencies.passwordResetTokenRepository.markUsed(record.id, now);
         await this.dependencies.auditService.record({
           eventType: "auth.password_reset.request",

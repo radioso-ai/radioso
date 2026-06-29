@@ -10,6 +10,7 @@ import { createStaffConsoleRoutes } from "./staffConsoleRoutes.js";
 import type { StaffPrincipal } from "./staffGuards.js";
 import type { StaffSessionRepository, StaffUserRepository } from "./staffRepository.js";
 import type { OrganizationDirectoryService } from "./organizationDirectoryService.js";
+import type { StaffRole, StaffStatus, StaffUser } from "./staffTypes.js";
 
 class InertDatabase implements UsageLimitDatabasePort {
   readonly pool = new pg.Pool({ connectionString: "postgres://unused:unused@127.0.0.1:1/unused" });
@@ -86,7 +87,7 @@ const createApp = (dependencies: RouteDependencies, repositories: {
 };
 
 const createMemoryRepositories = async (initialRole: StaffPrincipal["role"] = "owner") => {
-  const staff = {
+  const staff: StaffUser = {
     id: "11111111-1111-1111-1111-111111111111",
     email: "owner@example.com",
     name: "Owner",
@@ -97,34 +98,84 @@ const createMemoryRepositories = async (initialRole: StaffPrincipal["role"] = "o
     updatedAt: new Date(),
     lastLoginAt: null,
   };
+  const staffById = new Map<string, StaffUser>([[staff.id, staff]]);
   const sessions = new Map<string, { staffId: string; expiresAt: Date; revokedAt: Date | null }>();
   const users: StaffUserRepository = {
     async findByEmail(email) {
-      return email.toLowerCase() === staff.email ? staff : null;
+      return Array.from(staffById.values()).find((candidate) => candidate.email === email.toLowerCase()) ?? null;
     },
     async findById(id) {
-      return id === staff.id ? staff : null;
+      return staffById.get(id) ?? null;
     },
     async create(input) {
-      Object.assign(staff, input);
-      return staff;
+      const existing = Array.from(staffById.values()).find((candidate) => candidate.email === input.email.toLowerCase());
+      if (existing) {
+        Object.assign(existing, {
+          email: input.email.toLowerCase(),
+          name: input.name,
+          passwordHash: input.passwordHash,
+          role: input.role,
+          status: input.status ?? "active",
+          updatedAt: new Date(),
+        });
+        return existing;
+      }
+      const created: StaffUser = {
+        id: `22222222-2222-4222-8222-${String(staffById.size + 1).padStart(12, "0")}`,
+        email: input.email.toLowerCase(),
+        name: input.name,
+        passwordHash: input.passwordHash,
+        role: input.role,
+        status: input.status ?? "active",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        lastLoginAt: null,
+      };
+      staffById.set(created.id, created);
+      return created;
     },
     async updatePassword(id, passwordHash) {
-      if (id === staff.id) {
-        staff.passwordHash = passwordHash;
-        staff.status = "active";
+      const found = staffById.get(id);
+      if (found) {
+        found.passwordHash = passwordHash;
+        found.status = "active";
+        found.updatedAt = new Date();
       }
-      return staff;
+      return found ?? null;
     },
     async setRole(_id, role) {
-      staff.role = role;
-      return staff;
+      const found = staffById.get(_id);
+      if (!found) {
+        return null;
+      }
+      found.role = role;
+      found.updatedAt = new Date();
+      return found;
     },
     async setStatus(_id, status) {
-      staff.status = status;
-      return staff;
+      const found = staffById.get(_id);
+      if (!found) {
+        return null;
+      }
+      found.status = status;
+      found.updatedAt = new Date();
+      return found;
     },
-    async touchLastLogin() {},
+    async touchLastLogin(id) {
+      const found = staffById.get(id);
+      if (found) {
+        found.lastLoginAt = new Date();
+        found.updatedAt = new Date();
+      }
+    },
+    async listStaff() {
+      return Array.from(staffById.values()).sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
+    },
+    async countActiveOwners() {
+      return Array.from(staffById.values()).filter(
+        (candidate) => candidate.role === "owner" && candidate.status === "active",
+      ).length;
+    },
   };
   const staffSessions: StaffSessionRepository = {
     async create(input) {
@@ -162,7 +213,30 @@ const createMemoryRepositories = async (initialRole: StaffPrincipal["role"] = "o
       }
     },
   };
-  return { users, staffSessions, staff };
+  const addStaff = async (input: {
+    id: string;
+    email: string;
+    name: string;
+    role: StaffRole;
+    status?: StaffStatus;
+    password?: string;
+    createdAt?: Date;
+  }): Promise<StaffUser> => {
+    const created: StaffUser = {
+      id: input.id,
+      email: input.email.toLowerCase(),
+      name: input.name,
+      passwordHash: await hashStaffPassword(input.password ?? "password-123"),
+      role: input.role,
+      status: input.status ?? "active",
+      createdAt: input.createdAt ?? new Date(),
+      updatedAt: input.createdAt ?? new Date(),
+      lastLoginAt: null,
+    };
+    staffById.set(created.id, created);
+    return created;
+  };
+  return { users, staffSessions, staff, addStaff };
 };
 
 const sampleOrganizationRows = {
@@ -387,7 +461,7 @@ describe("staff console routes and guards", () => {
       .send({ email: "first-owner@example.com", name: "First Owner", password: "password-123" })
       .expect(200);
 
-    expect(repositories.staff).toMatchObject({
+    await expect(repositories.users.findByEmail("first-owner@example.com")).resolves.toMatchObject({
       email: "first-owner@example.com",
       role: "owner",
       status: "active",
@@ -813,5 +887,260 @@ describe("staff console routes and guards", () => {
       },
     });
     expect(JSON.stringify(auditRecord.mock.calls)).not.toContain("owner@example.com");
+  });
+
+  it("enforces the mutating endpoint authorization matrix across staff roles", async () => {
+    const roles = ["support_read", "billing_write", "owner"] as const;
+
+    for (const role of roles) {
+      const repositories = await createMemoryRepositories(role);
+      const app = createApp(createDependencies({
+        users: repositories.users,
+        sessions: repositories.staffSessions,
+      }), {
+        users: repositories.users,
+        sessions: repositories.staffSessions,
+        usageLimitService: {
+          getAccountUsage: vi.fn(async () => sampleUsageSummary),
+          listProfiles: vi.fn(async () => sampleProfiles),
+          assignProfile: vi.fn(async () => sampleGrowthUsageSummary),
+          upsertProfile: vi.fn(async () => sampleGrowthProfile),
+        },
+      });
+      const login = await request(app)
+        .post("/api/v1/ee/operator-console/auth/login")
+        .send({ email: "owner@example.com", password: "password-123" })
+        .expect(200);
+      const cookie = login.headers["set-cookie"][0];
+
+      const tierStatus = role === "support_read" ? 403 : 200;
+      await request(app)
+        .put("/api/v1/ee/operator-console/organizations/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/tier")
+        .set("Cookie", cookie)
+        .send({ profileKey: "growth" })
+        .expect(tierStatus);
+      await request(app)
+        .put("/api/v1/ee/operator-console/tiers/growth")
+        .set("Cookie", cookie)
+        .send({
+          displayName: "Growth",
+          monthlyAnswerLimit: 100,
+          storedDocumentLimit: null,
+        })
+        .expect(tierStatus);
+
+      const staffStatus = role === "owner" ? 200 : 403;
+      await request(app)
+        .get("/api/v1/ee/operator-console/staff")
+        .set("Cookie", cookie)
+        .expect(staffStatus);
+      await request(app)
+        .put("/api/v1/ee/operator-console/staff/22222222-2222-4222-8222-222222222222/role")
+        .set("Cookie", cookie)
+        .send({ role: "support_read" })
+        .expect(role === "owner" ? 404 : 403);
+      await request(app)
+        .put("/api/v1/ee/operator-console/staff/22222222-2222-4222-8222-222222222222/status")
+        .set("Cookie", cookie)
+        .send({ status: "disabled" })
+        .expect(role === "owner" ? 404 : 403);
+      await request(app)
+        .post("/api/v1/ee/operator-console/staff")
+        .set("Cookie", cookie)
+        .send({
+          email: `staff-${role}@example.com`,
+          name: "New Staff",
+          role: "support_read",
+          password: "password-123",
+        })
+        .expect(role === "owner" ? 201 : 403);
+    }
+  });
+
+  it("lets owners list and create staff users with audited sanitized metadata", async () => {
+    const repositories = await createMemoryRepositories("owner");
+    await repositories.addStaff({
+      id: "22222222-2222-4222-8222-222222222222",
+      email: "support@example.com",
+      name: "Support",
+      role: "support_read",
+      createdAt: new Date(Date.UTC(2026, 11, 2)),
+    });
+    const auditRecord = vi.fn(async () => undefined);
+    const app = createApp(createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+      auditRecord,
+    }), { users: repositories.users, sessions: repositories.staffSessions });
+    const login = await request(app)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email: "owner@example.com", password: "password-123" })
+      .expect(200);
+    const cookie = login.headers["set-cookie"][0];
+
+    const listResponse = await request(app)
+      .get("/api/v1/ee/operator-console/staff")
+      .set("Cookie", cookie)
+      .expect(200);
+    expect(listResponse.body.staff).toEqual([
+      expect.objectContaining({
+        id: repositories.staff.id,
+        email: "owner@example.com",
+        name: "Owner",
+        role: "owner",
+        status: "active",
+        lastLoginAt: expect.anything(),
+      }),
+      expect.objectContaining({
+        id: "22222222-2222-4222-8222-222222222222",
+        email: "support@example.com",
+        role: "support_read",
+        status: "active",
+        lastLoginAt: null,
+      }),
+    ]);
+
+    const createResponse = await request(app)
+      .post("/api/v1/ee/operator-console/staff")
+      .set("Cookie", cookie)
+      .send({
+        email: "BILLING@EXAMPLE.COM",
+        name: "Billing",
+        role: "billing_write",
+        password: "password-123",
+      })
+      .expect(201);
+    expect(createResponse.body.staff).toMatchObject({
+      email: "billing@example.com",
+      name: "Billing",
+      role: "billing_write",
+      status: "active",
+      lastLoginAt: null,
+    });
+    await request(app)
+      .post("/api/v1/ee/operator-console/staff")
+      .set("Cookie", cookie)
+      .send({
+        email: "billing@example.com",
+        name: "Billing",
+        role: "billing_write",
+        password: "password-123",
+      })
+      .expect(409);
+    expect(auditRecord).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "staff.user.created",
+      eventStatus: "success",
+      metadata: {
+        actorStaffId: repositories.staff.id,
+        targetStaffId: createResponse.body.staff.id,
+        role: "billing_write",
+      },
+    }));
+    expect(JSON.stringify(auditRecord.mock.calls)).not.toContain("billing@example.com");
+    expect(JSON.stringify(auditRecord.mock.calls)).not.toContain("password-123");
+  });
+
+  it("lets owners change staff role and status with 404, self-lockout, last-owner, and audit guards", async () => {
+    const repositories = await createMemoryRepositories("owner");
+    await repositories.addStaff({
+      id: "22222222-2222-4222-8222-222222222222",
+      email: "support@example.com",
+      name: "Support",
+      role: "support_read",
+    });
+    await repositories.addStaff({
+      id: "33333333-3333-4333-8333-333333333333",
+      email: "other-owner@example.com",
+      name: "Other Owner",
+      role: "owner",
+    });
+    const auditRecord = vi.fn(async () => undefined);
+    const app = createApp(createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+      auditRecord,
+    }), { users: repositories.users, sessions: repositories.staffSessions });
+    const login = await request(app)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email: "owner@example.com", password: "password-123" })
+      .expect(200);
+    const cookie = login.headers["set-cookie"][0];
+
+    await request(app)
+      .put("/api/v1/ee/operator-console/staff/99999999-9999-4999-8999-999999999999/role")
+      .set("Cookie", cookie)
+      .send({ role: "billing_write" })
+      .expect(404);
+    await request(app)
+      .put(`/api/v1/ee/operator-console/staff/${repositories.staff.id}/role`)
+      .set("Cookie", cookie)
+      .send({ role: "billing_write" })
+      .expect(409);
+    await request(app)
+      .put(`/api/v1/ee/operator-console/staff/${repositories.staff.id}/status`)
+      .set("Cookie", cookie)
+      .send({ status: "disabled" })
+      .expect(409);
+
+    const roleResponse = await request(app)
+      .put("/api/v1/ee/operator-console/staff/22222222-2222-4222-8222-222222222222/role")
+      .set("Cookie", cookie)
+      .send({ role: "billing_write" })
+      .expect(200);
+    expect(roleResponse.body.staff).toMatchObject({
+      id: "22222222-2222-4222-8222-222222222222",
+      role: "billing_write",
+    });
+    const statusResponse = await request(app)
+      .put("/api/v1/ee/operator-console/staff/22222222-2222-4222-8222-222222222222/status")
+      .set("Cookie", cookie)
+      .send({ status: "disabled" })
+      .expect(200);
+    expect(statusResponse.body.staff).toMatchObject({
+      id: "22222222-2222-4222-8222-222222222222",
+      status: "disabled",
+    });
+    expect(auditRecord).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "staff.user.role_changed",
+      metadata: {
+        actorStaffId: repositories.staff.id,
+        targetStaffId: "22222222-2222-4222-8222-222222222222",
+        fromRole: "support_read",
+        toRole: "billing_write",
+      },
+    }));
+    expect(auditRecord).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "staff.user.status_changed",
+      metadata: {
+        actorStaffId: repositories.staff.id,
+        targetStaffId: "22222222-2222-4222-8222-222222222222",
+        fromStatus: "active",
+        toStatus: "disabled",
+      },
+    }));
+
+    const countActiveOwners = vi.spyOn(repositories.users, "countActiveOwners").mockResolvedValue(1);
+    await request(app)
+      .put("/api/v1/ee/operator-console/staff/33333333-3333-4333-8333-333333333333/role")
+      .set("Cookie", cookie)
+      .send({ role: "billing_write" })
+      .expect(409);
+    await request(app)
+      .put("/api/v1/ee/operator-console/staff/33333333-3333-4333-8333-333333333333/status")
+      .set("Cookie", cookie)
+      .send({ status: "disabled" })
+      .expect(409);
+    countActiveOwners.mockRestore();
+
+    await request(app)
+      .put("/api/v1/ee/operator-console/staff/33333333-3333-4333-8333-333333333333/role")
+      .set("Cookie", cookie)
+      .send({ role: "billing_write" })
+      .expect(200);
+    await request(app)
+      .put(`/api/v1/ee/operator-console/staff/${repositories.staff.id}/role`)
+      .set("Cookie", cookie)
+      .send({ role: "billing_write" })
+      .expect(409);
   });
 });

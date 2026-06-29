@@ -33,6 +33,8 @@ const rowsOf = <T>(result: T[] | { rows: T[] }): T[] =>
 export interface StaffUserRepository {
   findByEmail(email: string): Promise<StaffUser | null>;
   findById(id: string): Promise<StaffUser | null>;
+  listStaff(): Promise<StaffUser[]>;
+  countActiveOwners(): Promise<number>;
   create(input: {
     email: string;
     name: string;
@@ -69,6 +71,24 @@ export class PostgresStaffUserRepository implements StaffUserRepository {
       [id],
     ));
     return rows[0] ? mapStaffUser(rows[0]) : null;
+  }
+
+  async listStaff(): Promise<StaffUser[]> {
+    const rows = rowsOf(await this.database.query<StaffUserRow>(
+      `SELECT id, email, name, password_hash, role, status, created_at, updated_at, last_login_at
+       FROM ee_staff_users
+       ORDER BY created_at ASC, id ASC`,
+    ));
+    return rows.map(mapStaffUser);
+  }
+
+  async countActiveOwners(): Promise<number> {
+    const rows = rowsOf(await this.database.query<{ count: string | number }>(
+      `SELECT COUNT(*) AS count
+       FROM ee_staff_users
+       WHERE role = 'owner' AND status = 'active'`,
+    ));
+    return Number(rows[0]?.count ?? 0);
   }
 
   async create(input: {

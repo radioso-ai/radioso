@@ -8,10 +8,11 @@ import { OrganizationDirectoryService } from "./organizationDirectoryService.js"
 import type { OrganizationDirectoryPage } from "./organizationDirectoryService.js";
 import { StaffAuthService, defaultStaffSessionTtlHours } from "./staffAuthService.js";
 import { StaffBootstrapService } from "./staffBootstrap.js";
+import { hashStaffPassword } from "./staffCrypto.js";
 import { PostgresStaffSessionRepository, type StaffSessionRepository } from "./staffSessionRepository.js";
 import { PostgresStaffUserRepository, type StaffUserRepository } from "./staffRepository.js";
 import { requireStaffRole, requireStaffSession } from "./staffGuards.js";
-import type { StaffUser } from "./staffTypes.js";
+import { staffRoles, staffStatuses, type StaffUser } from "./staffTypes.js";
 
 type RouteDependencies = Parameters<ApplicationRouteMount["createRouter"]>[0];
 
@@ -56,6 +57,25 @@ const tierProfileBodySchema = z.object({
   storedDocumentLimit: nullableLimitSchema,
   storedIndexedByteLimit: nullableByteLimitSchema,
   monthlyIndexedByteLimit: nullableByteLimitSchema,
+});
+
+const staffIdParamsSchema = z.object({
+  staffId: z.string().uuid(),
+});
+
+const staffCreateBodySchema = z.object({
+  email: z.string().trim().email().transform((value) => value.toLowerCase()),
+  name: z.string().trim().min(1).max(120),
+  role: z.enum(staffRoles),
+  password: z.string().min(8),
+});
+
+const staffRoleBodySchema = z.object({
+  role: z.enum(staffRoles),
+});
+
+const staffStatusBodySchema = z.object({
+  status: z.enum(staffStatuses),
 });
 
 const parseRequest = <T>(schema: z.ZodType<T>, value: unknown, message: string): T => {
@@ -120,6 +140,8 @@ const publicStaff = (staff: StaffUser) => ({
   email: staff.email,
   name: staff.name,
   role: staff.role,
+  status: staff.status,
+  lastLoginAt: staff.lastLoginAt ? staff.lastLoginAt.toISOString() : null,
 });
 
 type StaffConsoleLogger = {
@@ -371,6 +393,183 @@ export const createStaffConsoleRoutes = (
           },
         });
         res.status(200).json({ profile });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/staff",
+    staffSessionGuard,
+    requireStaffRole("owner"),
+    async (_req, res, next) => {
+      try {
+        const staff = await users.listStaff();
+        res.status(200).json({ staff: staff.map(publicStaff) });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/staff",
+    staffSessionGuard,
+    requireStaffRole("owner"),
+    async (req, res, next) => {
+      try {
+        const body = parseRequest(staffCreateBodySchema, req.body, "Invalid staff create payload");
+        const existing = await users.findByEmail(body.email);
+        if (existing) {
+          throw {
+            statusCode: 409,
+            code: "conflict",
+            message: "Staff user already exists.",
+          };
+        }
+        const passwordHash = await hashStaffPassword(body.password);
+        const staff = await users.create({
+          email: body.email,
+          name: body.name,
+          passwordHash,
+          role: body.role,
+          status: "active",
+        });
+        await dependencies.auditService.record({
+          accountId: null,
+          workspaceId: null,
+          eventType: "staff.user.created",
+          eventStatus: "success",
+          metadata: {
+            actorStaffId: res.locals.staff.id,
+            targetStaffId: staff.id,
+            role: staff.role,
+          },
+        });
+        res.status(201).json({ staff: publicStaff(staff) });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.put(
+    "/staff/:staffId/role",
+    staffSessionGuard,
+    requireStaffRole("owner"),
+    async (req, res, next) => {
+      try {
+        const { staffId } = parseRequest(staffIdParamsSchema, req.params, "Invalid staff identifier");
+        const body = parseRequest(staffRoleBodySchema, req.body, "Invalid staff role payload");
+        const target = await users.findById(staffId);
+        if (!target) {
+          throw {
+            statusCode: 404,
+            code: "not_found",
+            message: "Staff user not found.",
+          };
+        }
+        if (target.id === res.locals.staff.id && target.role === "owner" && body.role !== "owner") {
+          throw {
+            statusCode: 409,
+            code: "conflict",
+            message: "Owners cannot demote their own account.",
+          };
+        }
+        if (target.role === "owner" && target.status === "active" && body.role !== "owner") {
+          const activeOwners = await users.countActiveOwners();
+          if (activeOwners <= 1) {
+            throw {
+              statusCode: 409,
+              code: "conflict",
+              message: "Cannot demote the last active owner.",
+            };
+          }
+        }
+        const fromRole = target.role;
+        const updated = await users.setRole(staffId, body.role);
+        if (!updated) {
+          throw {
+            statusCode: 404,
+            code: "not_found",
+            message: "Staff user not found.",
+          };
+        }
+        await dependencies.auditService.record({
+          accountId: null,
+          workspaceId: null,
+          eventType: "staff.user.role_changed",
+          eventStatus: "success",
+          metadata: {
+            actorStaffId: res.locals.staff.id,
+            targetStaffId: target.id,
+            fromRole,
+            toRole: updated.role,
+          },
+        });
+        res.status(200).json({ staff: publicStaff(updated) });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.put(
+    "/staff/:staffId/status",
+    staffSessionGuard,
+    requireStaffRole("owner"),
+    async (req, res, next) => {
+      try {
+        const { staffId } = parseRequest(staffIdParamsSchema, req.params, "Invalid staff identifier");
+        const body = parseRequest(staffStatusBodySchema, req.body, "Invalid staff status payload");
+        const target = await users.findById(staffId);
+        if (!target) {
+          throw {
+            statusCode: 404,
+            code: "not_found",
+            message: "Staff user not found.",
+          };
+        }
+        if (target.id === res.locals.staff.id && body.status === "disabled") {
+          throw {
+            statusCode: 409,
+            code: "conflict",
+            message: "Owners cannot disable their own account.",
+          };
+        }
+        if (target.role === "owner" && target.status === "active" && body.status === "disabled") {
+          const activeOwners = await users.countActiveOwners();
+          if (activeOwners <= 1) {
+            throw {
+              statusCode: 409,
+              code: "conflict",
+              message: "Cannot disable the last active owner.",
+            };
+          }
+        }
+        const fromStatus = target.status;
+        const updated = await users.setStatus(staffId, body.status);
+        if (!updated) {
+          throw {
+            statusCode: 404,
+            code: "not_found",
+            message: "Staff user not found.",
+          };
+        }
+        await dependencies.auditService.record({
+          accountId: null,
+          workspaceId: null,
+          eventType: "staff.user.status_changed",
+          eventStatus: "success",
+          metadata: {
+            actorStaffId: res.locals.staff.id,
+            targetStaffId: target.id,
+            fromStatus,
+            toStatus: updated.status,
+          },
+        });
+        res.status(200).json({ staff: publicStaff(updated) });
       } catch (error) {
         next(error);
       }

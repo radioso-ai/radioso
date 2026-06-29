@@ -229,7 +229,7 @@ export function UsersPanel() {
               </p>
             </div>
 
-            <div className="px-6">
+            <div className="min-w-0 px-6">
               <div className="mb-4 space-y-1.5">
                 <Label htmlFor="invite-email" className="text-[13px] font-medium">Email address</Label>
                 <Input

@@ -19,7 +19,13 @@ import type {
   WorkspaceGrantRole,
 } from "../../src/db/repositories/workspaceGrantRepository.js";
 import type { AccessGrantRepositoryPort } from "../../src/db/repositories/accessGrantRepository.js";
-import type { AccessGrant, AccessGrantRole, GrantPrincipalKind, OriginConstraint } from "../../src/modules/accessGrants/public.js";
+import type {
+  AccessGrant,
+  AccessGrantChannel,
+  AccessGrantRole,
+  GrantPrincipalKind,
+  OriginConstraint,
+} from "../../src/modules/accessGrants/public.js";
 import type {
   AccountRecord,
   AccountRepositoryPort,
@@ -300,6 +306,7 @@ export class InMemoryAccessGrantRepository implements AccessGrantRepositoryPort 
     label?: string | null;
     principalKind: GrantPrincipalKind;
     role: AccessGrantRole;
+    channel?: AccessGrantChannel;
     tokenPrefix: string;
     tokenHash: string;
     encryptedToken: string;
@@ -319,6 +326,7 @@ export class InMemoryAccessGrantRepository implements AccessGrantRepositoryPort 
       label: params.label ?? null,
       principalKind: params.principalKind,
       role: params.role,
+      channel: params.channel ?? "public-link",
       tokenPrefix: params.tokenPrefix,
       tokenHash: params.tokenHash,
       encryptedToken: params.encryptedToken,

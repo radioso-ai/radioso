@@ -10,7 +10,7 @@ import { CopyValueField } from '@/components/ui/copy-value-field'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 
-const MCP_URL = process.env.NEXT_PUBLIC_MCP_URL ?? ''
+export const MCP_URL = process.env.NEXT_PUBLIC_MCP_URL ?? ''
 const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL ?? 'http://localhost:3001'
 
 const subscribeBrowserOrigin = () => () => {}
@@ -106,8 +106,7 @@ export const resolveMcpChannelSetup = ({
 
 export const shouldProbeMcpHealth = (setup: McpChannelSetup): boolean => setup.mode === 'same-host'
 
-export function McpChannelCard({ workspaceId }: { workspaceId: string | null | undefined }) {
-  const { apiToken, apiTokenError, isApiTokenLoading } = useInlineWorkspaceToken(workspaceId)
+export const useMcpChannelSetup = () => {
   const dashboardOrigin = useSyncExternalStore(subscribeBrowserOrigin, getBrowserOrigin, getServerOrigin)
   const [runtimeMcpUrl, setRuntimeMcpUrl] = useState(MCP_URL)
   const [runtimeMcpError, setRuntimeMcpError] = useState<string | undefined>()
@@ -116,9 +115,9 @@ export function McpChannelCard({ workspaceId }: { workspaceId: string | null | u
     const controller = new AbortController()
     const configuredSetup = resolveMcpChannelSetup({
       dashboardOrigin: window.location.origin,
-      mcpUrl: MCP_URL,
+      mcpUrl: MCP_URL || '/backend/mcp',
     })
-    if (!shouldProbeMcpHealth(configuredSetup)) {
+    if (MCP_URL && !shouldProbeMcpHealth(configuredSetup)) {
       return () => controller.abort()
     }
 
@@ -143,6 +142,10 @@ export function McpChannelCard({ workspaceId }: { workspaceId: string | null | u
         const path = 'path' in mcp && typeof mcp.path === 'string' ? mcp.path : '/mcp'
         if (enabled && !standalone) {
           setRuntimeMcpUrl(`/backend${path.startsWith('/') ? path : `/${path}`}`)
+          return
+        }
+        if (!MCP_URL) {
+          setRuntimeMcpError('MCP is not enabled on this deployment.')
         }
       })
       .catch((error: unknown) => {
@@ -166,6 +169,13 @@ export function McpChannelCard({ workspaceId }: { workspaceId: string | null | u
         steps: [],
       }
     : setup
+
+  return resolvedSetup
+}
+
+export function McpChannelCard({ workspaceId }: { workspaceId: string | null | undefined }) {
+  const { apiToken, apiTokenError, isApiTokenLoading } = useInlineWorkspaceToken(workspaceId)
+  const resolvedSetup = useMcpChannelSetup()
 
   return (
     <SettingsCard

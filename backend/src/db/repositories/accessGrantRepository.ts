@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type {
+  AccessGrantChannel,
   AccessGrantRole,
   AccessGrant,
   GrantPrincipalKind,
@@ -15,6 +16,7 @@ interface AccessGrantRow {
   label: string | null;
   principal_kind: GrantPrincipalKind;
   role: AccessGrantRole;
+  channel: AccessGrantChannel;
   token_prefix: string;
   token_hash: string;
   encrypted_token: string;
@@ -39,6 +41,7 @@ const mapGrant = (row: AccessGrantRow): AccessGrant => ({
   label: row.label,
   principalKind: row.principal_kind,
   role: row.role,
+  channel: row.channel,
   tokenPrefix: row.token_prefix,
   tokenHash: row.token_hash,
   encryptedToken: row.encrypted_token,
@@ -60,6 +63,7 @@ export interface AccessGrantRepositoryPort {
     label?: string | null;
     principalKind: GrantPrincipalKind;
     role: AccessGrantRole;
+    channel?: AccessGrantChannel;
     tokenPrefix: string;
     tokenHash: string;
     encryptedToken: string;
@@ -88,6 +92,7 @@ const grantColumns = [
   "label",
   "principal_kind",
   "role",
+  "channel",
   "token_prefix",
   "token_hash",
   "encrypted_token",
@@ -138,6 +143,7 @@ export class AccessGrantRepository implements AccessGrantRepositoryPort {
     label?: string | null;
     principalKind: GrantPrincipalKind;
     role: AccessGrantRole;
+    channel?: AccessGrantChannel;
     tokenPrefix: string;
     tokenHash: string;
     encryptedToken: string;
@@ -154,6 +160,7 @@ export class AccessGrantRepository implements AccessGrantRepositoryPort {
         label: params.label ?? null,
         principal_kind: params.principalKind,
         role: params.role,
+        channel: params.channel ?? "public-link",
         token_prefix: params.tokenPrefix,
         token_hash: params.tokenHash,
         encrypted_token: params.encryptedToken,

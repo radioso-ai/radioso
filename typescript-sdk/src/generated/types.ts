@@ -736,6 +736,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{agentId}/mcp-converse-grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List MCP converse grants for an agent */
+        get: operations["listAgentMcpConverseGrants"];
+        put?: never;
+        /** Issue an MCP converse grant for an agent */
+        post: operations["issueAgentMcpConverseGrant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/mcp-converse-grants/{grantId}/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rotate an MCP converse grant for an agent */
+        post: operations["rotateAgentMcpConverseGrant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/mcp-converse-grants/{grantId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke an MCP converse grant for an agent */
+        delete: operations["revokeAgentMcpConverseGrant"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agentId}/directives": {
         parameters: {
             query?: never;
@@ -2401,6 +2453,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mcp/converse/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Exchange an MCP converse launch token for a signed session */
+        post: operations["createMcpConverseSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/converse/session/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate and re-evaluate an MCP converse session */
+        post: operations["validateMcpConverseSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/converse/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run one MCP ask_agent turn through the bound agent */
+        post: operations["askMcpConverseAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/converse/grounded-answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run an agent-aware grounded answer through the bound agent retrieval configuration */
+        post: operations["answerMcpConverseGrounded"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/converse/resources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List read-only resources visible to the bound agent */
+        get: operations["listMcpConverseResources"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mcp/converse/resources/{resourceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read one sanitized resource visible to the bound agent */
+        get: operations["readMcpConverseResource"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/public/chat/{token}": {
         parameters: {
             query?: never;
@@ -3325,6 +3479,41 @@ export interface components {
         AgentChannelsLifecycleResponse: {
             anonymousChat: components["schemas"]["AgentChannelLifecycle"];
             websiteEmbed: components["schemas"]["AgentChannelLifecycle"];
+        };
+        AgentMcpConverseGrantMetadata: {
+            /** Format: uuid */
+            id: string;
+            label: string | null;
+            tokenPrefix: string;
+            enabled: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            lastUsedAt: string | null;
+            /** Format: date-time */
+            revokedAt: string | null;
+        };
+        AgentMcpConverseGrantSecret: {
+            /** Format: uuid */
+            id: string;
+            label: string | null;
+            tokenPrefix: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AgentMcpConverseGrantIssueRequest: {
+            label?: string;
+        };
+        AgentMcpConverseGrantIssueResponse: {
+            grant: components["schemas"]["AgentMcpConverseGrantSecret"];
+            token: string;
+        };
+        AgentMcpConverseGrantSecretResponse: {
+            grant: components["schemas"]["AgentMcpConverseGrantSecret"];
+            token: string;
+        };
+        AgentMcpConverseGrantListResponse: {
+            grants: components["schemas"]["AgentMcpConverseGrantMetadata"][];
         };
         AuthoredDirectiveCondition: {
             /** @enum {string} */
@@ -7724,6 +7913,215 @@ export interface operations {
                 };
             };
             /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAgentMcpConverseGrants: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description MCP converse grant metadata returned without token material */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentMcpConverseGrantListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    issueAgentMcpConverseGrant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentMcpConverseGrantIssueRequest"];
+            };
+        };
+        responses: {
+            /** @description MCP converse grant issued. The token is returned only in this response. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentMcpConverseGrantIssueResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rotateAgentMcpConverseGrant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                grantId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description MCP converse grant rotated. The new token is returned only in this response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentMcpConverseGrantSecretResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or MCP converse grant not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    revokeAgentMcpConverseGrant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                grantId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description MCP converse grant revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or MCP converse grant not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -15737,6 +16135,332 @@ export interface operations {
             };
             /** @description Workbench replay rate limit exceeded */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createMcpConverseSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    launchToken: string;
+                    client?: {
+                        name?: string;
+                        version?: string;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description MCP converse session issued */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        sessionToken: string;
+                        /** Format: date-time */
+                        expiresAt: string;
+                        resumeToken?: string;
+                        agent: {
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                        };
+                        /** Format: uuid */
+                        conversationId: string;
+                    };
+                };
+            };
+            /** @description Invalid converse grant */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Grant channel or bound agent is not allowed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    validateMcpConverseSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    sessionToken: string;
+                };
+            };
+        };
+        responses: {
+            /** @description MCP converse session is valid */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {boolean} */
+                        valid: true;
+                        /** Format: uuid */
+                        workspaceId: string;
+                        /** Format: uuid */
+                        agentId: string;
+                        /** Format: uuid */
+                        conversationId: string;
+                        permissions: string[];
+                    };
+                };
+            };
+            /** @description Invalid or expired converse session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Underlying converse grant is no longer valid */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    askMcpConverseAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    message: string;
+                    /** @enum {boolean} */
+                    stream?: false;
+                };
+            };
+        };
+        responses: {
+            /** @description Agent answer */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        conversationId: string;
+                        answer: {
+                            text: string;
+                            citations: unknown[];
+                        };
+                        traceId?: string;
+                    };
+                };
+            };
+            /** @description Invalid converse session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Converse session is no longer authorized */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    answerMcpConverseGrounded: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    query: string;
+                    maxResults?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Agent-scoped grounded answer */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        answer: string;
+                        citations: {
+                            /** @enum {string} */
+                            documentId: "";
+                            /** @enum {string} */
+                            chunkId: "";
+                            title: string;
+                            /** Format: uri */
+                            sourceUrl?: string;
+                        }[];
+                        retrieval: {
+                            /** @enum {boolean} */
+                            agentScoped: true;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid converse session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Converse session is not allowed to query retrieval */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listMcpConverseResources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent-scoped resources */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        resources: {
+                            uri: string;
+                            name: string;
+                            mimeType: string;
+                        }[];
+                    };
+                };
+            };
+            /** @description Invalid converse session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Converse session is not allowed to read resources */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    readMcpConverseResource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sanitized agent-scoped resource */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        uri: string;
+                        name: string;
+                        mimeType: string;
+                        text: string;
+                    };
+                };
+            };
+            /** @description Invalid converse session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Converse session is not allowed to read resources */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

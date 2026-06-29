@@ -49,6 +49,11 @@ export const validateImportRecords = (
       errors.push(conversationEngineError);
     }
 
+    const mcpServerError = validateMcpServerImport(record);
+    if (mcpServerError) {
+      errors.push(mcpServerError);
+    }
+
     if (options.checkPrivateCrossModuleImports !== false) {
       const crossModuleError = validateCrossModuleImport(record);
       if (crossModuleError) {
@@ -61,6 +66,24 @@ export const validateImportRecords = (
     valid: errors.length === 0,
     errors,
   };
+};
+
+const validateMcpServerImport = (record) => {
+  const filePath = normalizePath(record.filePath);
+  if (!filePath.startsWith("packages/radioso-mcp-server/")) {
+    return null;
+  }
+
+  const resolved = resolveImportPath(record.filePath, record.specifier);
+  if (!resolved) {
+    return null;
+  }
+
+  if (resolved.startsWith("backend/src/")) {
+    return `Radioso MCP server must call backend over HTTP instead of importing backend code: ${record.filePath} -> ${record.specifier}`;
+  }
+
+  return null;
 };
 
 const validateCrossModuleImport = (record) => {

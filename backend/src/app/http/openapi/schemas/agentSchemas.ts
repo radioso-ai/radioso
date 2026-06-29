@@ -217,6 +217,64 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }),
   );
 
+  const AgentMcpConverseGrantMetadataSchema = registry.register(
+    "AgentMcpConverseGrantMetadata",
+    z.object({
+      id: z.string().uuid(),
+      label: z.string().nullable(),
+      tokenPrefix: z.string(),
+      enabled: z.boolean(),
+      createdAt: z.string().datetime(),
+      lastUsedAt: z.string().datetime().nullable(),
+      revokedAt: z.string().datetime().nullable(),
+    }),
+  );
+
+  const AgentMcpConverseGrantSecretSchema = registry.register(
+    "AgentMcpConverseGrantSecret",
+    z.object({
+      id: z.string().uuid(),
+      label: z.string().nullable(),
+      tokenPrefix: z.string(),
+      createdAt: z.string().datetime(),
+    }),
+  );
+
+  const AgentMcpConverseGrantIssueRequestSchema = registry.register(
+    "AgentMcpConverseGrantIssueRequest",
+    z.object({
+      label: z.string().min(1).max(120).optional(),
+    }),
+  );
+
+  const AgentMcpConverseGrantIssueResponseSchema = registry.register(
+    "AgentMcpConverseGrantIssueResponse",
+    z.object({
+      grant: AgentMcpConverseGrantSecretSchema,
+      token: z.string(),
+    }),
+  );
+
+  const AgentMcpConverseGrantSecretResponseSchema = registry.register(
+    "AgentMcpConverseGrantSecretResponse",
+    z.object({
+      grant: AgentMcpConverseGrantSecretSchema,
+      token: z.string(),
+    }),
+  );
+
+  const AgentMcpConverseGrantListResponseSchema = registry.register(
+    "AgentMcpConverseGrantListResponse",
+    z.object({
+      grants: z.array(AgentMcpConverseGrantMetadataSchema),
+    }),
+  );
+
+  const AgentMcpConverseGrantParamsSchema = z.object({
+    agentId: z.string().uuid(),
+    grantId: z.string().uuid(),
+  });
+
   const AuthoredDirectiveParamsSchema = z.object({
     agentId: z.string().uuid(),
     directiveId: z.string().uuid(),
@@ -567,6 +625,12 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     ConversationAgentRequestSchema,
     AgentChannelLifecycleSchema,
     AgentChannelsLifecycleResponseSchema,
+    AgentMcpConverseGrantIssueRequestSchema,
+    AgentMcpConverseGrantIssueResponseSchema,
+    AgentMcpConverseGrantListResponseSchema,
+    AgentMcpConverseGrantMetadataSchema,
+    AgentMcpConverseGrantParamsSchema,
+    AgentMcpConverseGrantSecretResponseSchema,
     AgentParamsSchema,
     AuthoredDirectiveConditionSchema,
     AuthoredDirectiveCreateRequestSchema,

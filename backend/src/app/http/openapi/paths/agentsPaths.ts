@@ -77,6 +77,86 @@ export const registerAgentsPaths = (
   });
 
   registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/{agentId}/mcp-converse-grants",
+    tags: ["Agents"],
+    summary: "Issue an MCP converse grant for an agent",
+    operationId: "issueAgentMcpConverseGrant",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.AgentParamsSchema,
+      body: {
+        required: true,
+        content: { "application/json": { schema: schemas.AgentMcpConverseGrantIssueRequestSchema } },
+      },
+    },
+    responses: {
+      201: {
+        description: "MCP converse grant issued. The token is returned only in this response.",
+        content: { "application/json": { schema: schemas.AgentMcpConverseGrantIssueResponseSchema } },
+      },
+      400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      403: { description: "Agent manage permission required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/agents/{agentId}/mcp-converse-grants",
+    tags: ["Agents"],
+    summary: "List MCP converse grants for an agent",
+    operationId: "listAgentMcpConverseGrants",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.AgentParamsSchema },
+    responses: {
+      200: {
+        description: "MCP converse grant metadata returned without token material",
+        content: { "application/json": { schema: schemas.AgentMcpConverseGrantListResponseSchema } },
+      },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      403: { description: "Agent manage permission required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/{agentId}/mcp-converse-grants/{grantId}/rotate",
+    tags: ["Agents"],
+    summary: "Rotate an MCP converse grant for an agent",
+    operationId: "rotateAgentMcpConverseGrant",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.AgentMcpConverseGrantParamsSchema },
+    responses: {
+      200: {
+        description: "MCP converse grant rotated. The new token is returned only in this response.",
+        content: { "application/json": { schema: schemas.AgentMcpConverseGrantSecretResponseSchema } },
+      },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      403: { description: "Agent manage permission required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent or MCP converse grant not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "delete",
+    path: "/api/v1/agents/{agentId}/mcp-converse-grants/{grantId}",
+    tags: ["Agents"],
+    summary: "Revoke an MCP converse grant for an agent",
+    operationId: "revokeAgentMcpConverseGrant",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.AgentMcpConverseGrantParamsSchema },
+    responses: {
+      204: { description: "MCP converse grant revoked" },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      403: { description: "Agent manage permission required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent or MCP converse grant not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
     method: "put",
     path: "/api/v1/agents/{agentId}",
     tags: ["Agents"],

@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
@@ -41,15 +42,19 @@ type DirectiveFormState = {
   conditionKind: DirectiveCondition['kind']
   conditionDescription: string
   action: string
+  priority: string
+  replaces: string[]
 }
 
-type OverrideTarget = BuiltInDirective
+export const DIRECTIVE_PRIORITY = { min: 0, max: 100 } as const
 
 const emptyForm: DirectiveFormState = {
   name: '',
   conditionKind: 'always',
   conditionDescription: '',
   action: '',
+  priority: '',
+  replaces: [],
 }
 
 const directiveToForm = (directive: Directive): DirectiveFormState => ({
@@ -57,26 +62,34 @@ const directiveToForm = (directive: Directive): DirectiveFormState => ({
   conditionKind: directive.condition.kind,
   conditionDescription: directive.condition.kind === 'contextual' ? directive.condition.description : '',
   action: directive.action,
+  priority: directive.priority == null ? '' : String(directive.priority),
+  replaces: directive.excludes ?? [],
 })
 
 const overrideNameFor = (builtInName: string): string => `Override: ${builtInName}`
 
-const formToPayload = (
-  form: DirectiveFormState,
-  options: { name?: string; excludes?: string[] } = {},
-): DirectiveCreateRequest => {
+const parsePriority = (raw: string): number | null => {
+  const trimmed = raw.trim()
+  if (trimmed === '') return null
+  const value = Number(trimmed)
+  return Number.isInteger(value) ? value : null
+}
+
+const formToPayload = (form: DirectiveFormState): DirectiveCreateRequest => {
   const condition: DirectiveCondition =
     form.conditionKind === 'contextual'
       ? { kind: 'contextual', description: form.conditionDescription.trim() }
       : { kind: 'always' }
 
+  const replaces = dedupeNames(form.replaces.map((name) => name.trim()).filter(Boolean))
   const payload: DirectiveCreateRequest = {
-    name: options.name ?? form.name.trim(),
+    name: form.name.trim(),
     condition,
     action: form.action.trim(),
+    priority: parsePriority(form.priority),
   }
-  if (options.excludes && options.excludes.length > 0) {
-    payload.excludes = options.excludes
+  if (replaces.length > 0) {
+    payload.excludes = replaces
   }
   return payload
 }
@@ -88,6 +101,7 @@ const directiveToPayload = (
   name: directive.name,
   condition: directive.condition,
   action: directive.action,
+  priority: directive.priority,
   requiredCapabilities: directive.requiredCapabilities,
   dependsOn: directive.dependsOn,
   excludes: options.excludes ?? directive.excludes,
@@ -186,6 +200,36 @@ function CoherenceResolver({
   )
 }
 
+function ReplaceToggle({
+  candidate,
+  checked,
+  onToggle,
+}: {
+  candidate: { name: string; description: string | null }
+  checked: boolean
+  onToggle: (checked: boolean) => void
+}) {
+  const switchId = `directive-replace-${candidate.name}`
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0 space-y-0.5">
+        <Label htmlFor={switchId} className="text-sm font-medium text-foreground">
+          {candidate.name}
+        </Label>
+        {candidate.description ? (
+          <p className="text-xs text-muted-foreground">{candidate.description}</p>
+        ) : null}
+      </div>
+      <Switch
+        id={switchId}
+        checked={checked}
+        onCheckedChange={onToggle}
+        aria-label={`Replace ${candidate.name}`}
+      />
+    </div>
+  )
+}
+
 function DirectiveRow({
   id,
   directive,
@@ -222,6 +266,11 @@ function DirectiveRow({
             {readOnly ? (
               <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
                 Read-only
+              </span>
+            ) : null}
+            {directive.priority != null ? (
+              <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
+                Priority {directive.priority}
               </span>
             ) : null}
             {replaces?.map((name) => (
@@ -290,7 +339,6 @@ export function AssistantDirectivesSection({
   const [coherence, setCoherence] = useState<DirectiveCoherence | null>(null)
   const [coherenceSubjectId, setCoherenceSubjectId] = useState<string | null>(null)
   const [editingDirective, setEditingDirective] = useState<Directive | null>(null)
-  const [overrideTarget, setOverrideTarget] = useState<OverrideTarget | null>(null)
   const [deletingDirective, setDeletingDirective] = useState<Directive | null>(null)
   const [form, setForm] = useState<DirectiveFormState>(emptyForm)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -307,14 +355,29 @@ export function AssistantDirectivesSection({
     return replacements
   }, [directives])
 
+  const replaceCandidates = useMemo(() => {
+    const authored = directives
+      .filter((directive) => directive.id !== editingDirective?.id)
+      .map((directive) => ({ name: directive.name, description: directive.description ?? null }))
+    const builtInTargets = builtIns.map((directive) => ({ name: directive.name, description: directive.description ?? null }))
+    return { builtIns: builtInTargets, authored }
+  }, [builtIns, directives, editingDirective])
+
   const formError = useMemo(() => {
-    if (!overrideTarget && !form.name.trim()) return 'Name is required.'
+    if (!form.name.trim()) return 'Name is required.'
     if (!form.action.trim()) return 'Action is required.'
     if (form.conditionKind === 'contextual' && !form.conditionDescription.trim()) {
       return 'Contextual directives need a condition description.'
     }
+    const trimmedPriority = form.priority.trim()
+    if (trimmedPriority !== '') {
+      const value = Number(trimmedPriority)
+      if (!Number.isInteger(value) || value < DIRECTIVE_PRIORITY.min || value > DIRECTIVE_PRIORITY.max) {
+        return `Priority must be a whole number between ${DIRECTIVE_PRIORITY.min} and ${DIRECTIVE_PRIORITY.max}.`
+      }
+    }
     return null
-  }, [form, overrideTarget])
+  }, [form])
 
   useEffect(() => {
     let active = true
@@ -349,7 +412,6 @@ export function AssistantDirectivesSection({
 
   const openCreateDialog = () => {
     setEditingDirective(null)
-    setOverrideTarget(null)
     setForm(emptyForm)
     setError(null)
     setDialogOpen(true)
@@ -357,7 +419,6 @@ export function AssistantDirectivesSection({
 
   const openEditDialog = (directive: Directive) => {
     setEditingDirective(directive)
-    setOverrideTarget(null)
     setForm(directiveToForm(directive))
     setError(null)
     setDialogOpen(true)
@@ -365,7 +426,6 @@ export function AssistantDirectivesSection({
 
   const openConditionalEditDialog = (directive: Directive) => {
     setEditingDirective(directive)
-    setOverrideTarget(null)
     setForm({
       ...directiveToForm(directive),
       conditionKind: 'contextual',
@@ -374,15 +434,27 @@ export function AssistantDirectivesSection({
     setDialogOpen(true)
   }
 
+  // The per-built-in "Override" button is a shortcut into the normal create
+  // dialog with the built-in pre-selected in Replaces, so it reads as
+  // "cancel this built-in and run mine instead" with everything else editable.
   const openOverrideDialog = (directive: BuiltInDirective) => {
     setEditingDirective(null)
-    setOverrideTarget(directive)
     setForm({
       ...emptyForm,
       name: overrideNameFor(directive.name),
+      replaces: [directive.name],
     })
     setError(null)
     setDialogOpen(true)
+  }
+
+  const toggleReplace = (name: string, checked: boolean) => {
+    setForm((current) => ({
+      ...current,
+      replaces: checked
+        ? dedupeNames([...current.replaces, name])
+        : current.replaces.filter((replaced) => replaced !== name),
+    }))
   }
 
   const focusDirective = (directiveId: string) => {
@@ -395,7 +467,6 @@ export function AssistantDirectivesSection({
     if (isSaving) return
     setDialogOpen(false)
     setEditingDirective(null)
-    setOverrideTarget(null)
     setForm(emptyForm)
   }
 
@@ -437,10 +508,7 @@ export function AssistantDirectivesSection({
 
   const handleSubmit = async () => {
     if (formError) return
-    const payload = formToPayload(form, {
-      name: overrideTarget ? overrideNameFor(overrideTarget.name) : undefined,
-      excludes: overrideTarget ? [overrideTarget.name] : editingDirective?.excludes,
-    })
+    const payload = formToPayload(form)
     const saveId = beginSave()
     setIsSaving(true)
     setError(null)
@@ -454,7 +522,6 @@ export function AssistantDirectivesSection({
       setCoherenceSubjectId(response.directive.id)
       setDialogOpen(false)
       setEditingDirective(null)
-      setOverrideTarget(null)
       setForm(emptyForm)
       markSaved()
     } catch (saveError) {
@@ -577,29 +644,25 @@ export function AssistantDirectivesSection({
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>
-              {overrideTarget ? `Replace the default "${overrideTarget.name}"` : editingDirective ? 'Edit directive' : 'Create directive'}
+              {editingDirective ? 'Edit directive' : 'Create directive'}
             </DialogTitle>
             <DialogDescription>
-              {overrideTarget
-                ? 'Replace this default for the current agent. Coherence checks are advisory and do not block saving.'
-                : 'Add a standing rule for this agent. Coherence checks are advisory and do not block saving.'}
+              Add a standing rule for this agent. Coherence checks are advisory and do not block saving.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            {overrideTarget ? null : (
-              <div className="space-y-2">
-                <Label htmlFor="directiveName">Name</Label>
-                <Input
-                  id="directiveName"
-                  value={form.name}
-                  onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                  maxLength={120}
-                />
-              </div>
-            )}
+            <div className="space-y-2">
+              <Label htmlFor="directiveName">Name</Label>
+              <Input
+                id="directiveName"
+                value={form.name}
+                onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                maxLength={120}
+              />
+            </div>
             <div className="space-y-2">
               <div className="space-y-2">
-                <Label htmlFor="directiveConditionKind">{overrideTarget ? 'Scope' : 'Condition'}</Label>
+                <Label htmlFor="directiveConditionKind">Condition</Label>
                 <Select
                   value={form.conditionKind}
                   onValueChange={(value) =>
@@ -611,14 +674,14 @@ export function AssistantDirectivesSection({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="always">Always</SelectItem>
-                    <SelectItem value="contextual">{overrideTarget ? 'Only when condition matches' : 'Contextual'}</SelectItem>
+                    <SelectItem value="contextual">Contextual</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             {form.conditionKind === 'contextual' ? (
               <div className="space-y-2">
-                <Label htmlFor="directiveConditionDescription">{overrideTarget ? 'Only when' : 'Condition description'}</Label>
+                <Label htmlFor="directiveConditionDescription">Condition description</Label>
                 <Textarea
                   id="directiveConditionDescription"
                   value={form.conditionDescription}
@@ -637,6 +700,62 @@ export function AssistantDirectivesSection({
                 onChange={(event) => setForm((current) => ({ ...current, action: event.target.value }))}
                 className="min-h-28"
               />
+            </div>
+            {replaceCandidates.builtIns.length > 0 || replaceCandidates.authored.length > 0 ? (
+              <div className="space-y-2">
+                <Label>Replaces</Label>
+                <p className="text-xs text-muted-foreground">
+                  When this directive applies, the ones you select are cancelled and this one runs in their
+                  place. Outside its condition, they still apply as normal.
+                </p>
+                <div className="space-y-3 rounded-lg border border-border p-3">
+                  {replaceCandidates.builtIns.length > 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">Built-in behaviors</p>
+                      {replaceCandidates.builtIns.map((candidate) => (
+                        <ReplaceToggle
+                          key={candidate.name}
+                          candidate={candidate}
+                          checked={form.replaces.includes(candidate.name)}
+                          onToggle={(checked) => toggleReplace(candidate.name, checked)}
+                        />
+                      ))}
+                    </div>
+                  ) : null}
+                  {replaceCandidates.authored.length > 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">Your other directives</p>
+                      {replaceCandidates.authored.map((candidate) => (
+                        <ReplaceToggle
+                          key={candidate.name}
+                          candidate={candidate}
+                          checked={form.replaces.includes(candidate.name)}
+                          onToggle={(checked) => toggleReplace(candidate.name, checked)}
+                        />
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+            <div className="space-y-2">
+              <Label htmlFor="directivePriority">Priority (optional)</Label>
+              <Input
+                id="directivePriority"
+                type="number"
+                inputMode="numeric"
+                min={DIRECTIVE_PRIORITY.min}
+                max={DIRECTIVE_PRIORITY.max}
+                value={form.priority}
+                placeholder="Default"
+                onChange={(event) => setForm((current) => ({ ...current, priority: event.target.value }))}
+                className="w-32"
+              />
+              <p className="text-xs text-muted-foreground">
+                When two directives apply at once and pull in different directions, the agent follows the
+                higher-priority one. Each built-in shows its priority on its row below, so you can rank above
+                it. Leave blank to use the default.
+              </p>
             </div>
             {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
           </div>

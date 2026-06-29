@@ -327,6 +327,42 @@ describe("public chat contract", () => {
     expect(list.body.hasMore).toBe(false);
   }, 10_000);
 
+  it("GET /api/v1/public/chat/:token returns a cache-keyed assistant logo URL", async () => {
+    const { app, dependencies } = createTestApp({
+      envOverrides: {
+        PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 1,
+        PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 100,
+      },
+    });
+    const session = await issueTestSession(app, "public-chat-list-logo@example.com");
+
+    await request(app)
+      .post("/api/v1/settings/general/assistant-logo")
+      .set(adminSessionHeaders(session))
+      .attach("logo", Buffer.from("fake-logo"), {
+        filename: "assistant.png",
+        contentType: "image/png",
+      })
+      .expect(200);
+
+    const chatToken = await enableAnonymousChat(app, session);
+    const publicSession = await createPublicSession(app, chatToken);
+    const agent = await dependencies.agentService.resolve(session.workspaceId);
+    if (!agent.logo) {
+      throw new Error("Expected uploaded logo");
+    }
+
+    const list = await request(app)
+      .get(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken);
+
+    expect(list.status).toBe(200);
+    const assistantAvatarUrl = new URL(list.body.assistantAvatarUrl, "https://app.example.com");
+    expect(assistantAvatarUrl.pathname).toBe(`/api/v1/public/chat/${chatToken}/assistant-logo`);
+    expect(assistantAvatarUrl.searchParams.get("v")).toMatch(/^[a-z0-9]+:[^:]*:\d+$/);
+    expect(assistantAvatarUrl.searchParams.get("v")).not.toContain(agent.logo.objectPath);
+  }, 10_000);
+
   it("rejects malformed anonymous history cursors with a client error", async () => {
     const { app } = createTestApp({
       envOverrides: {

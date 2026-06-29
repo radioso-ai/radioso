@@ -20,7 +20,7 @@ import {
   type PublicChatResumePayload,
   verifyPublicChatResumeToken,
 } from "../../../modules/settings/contracts/publicChatSession.js";
-import { buildPublicAssistantLogoUrl } from "../shared/assistantLogoUrl.js";
+import { buildAssistantLogoCacheKey, buildPublicAssistantLogoUrl } from "../shared/assistantLogoUrl.js";
 import { resolvePublicChatSessionSecret } from "../shared/publicChatSessionSecret.js";
 import {
   anonymousChatSchema,
@@ -127,10 +127,15 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     websiteEmbed: ReturnType<typeof getWebsiteEmbedSurfaceSettings>,
     origin: string | null,
   ) => origin === null || isAllowedWebsiteEmbedOrigin(websiteEmbed.allowedOrigins, origin);
-  const buildAssistantLogoUrl = (req: { get(name: string): string | undefined }, token: string, hasLogo: boolean) =>
+  const buildAssistantLogoUrl = (
+    req: { get(name: string): string | undefined },
+    token: string,
+    logo: { objectPath: string; generation?: string | null; sizeBytes: number } | boolean | null,
+  ) =>
     buildPublicAssistantLogoUrl({
       token,
-      hasLogo,
+      hasLogo: Boolean(logo),
+      cacheKey: typeof logo === "object" ? buildAssistantLogoCacheKey(logo) : null,
       publicChatBaseUrl: dependencies.env.PUBLIC_CHAT_BASE_URL,
       forwardedPrefix: req.get("x-forwarded-prefix"),
     });
@@ -243,7 +248,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         branding: agent.branding,
         copy: websiteEmbed.copy,
         expertOverrides: websiteEmbed.expertOverrides,
-        assistantLogoUrl: buildAssistantLogoUrl(req, launchToken, Boolean(agent.logo)),
+        assistantLogoUrl: buildAssistantLogoUrl(req, launchToken, agent.logo),
         proactiveGreetingEnabled: agent.proactiveGreetingEnabled,
       });
     } catch (error) {
@@ -376,7 +381,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           publicChatToken,
           session,
           resume: resumeSession,
-          assistantAvatarUrl: buildAssistantLogoUrl(req, publicChatToken, Boolean(agent.logo)),
+          assistantAvatarUrl: buildAssistantLogoUrl(req, publicChatToken, agent.logo),
           intakeActions: await resolvePublicIntakeActions({
             workspaceId: workspace.id,
             agentId: agent.id,
@@ -551,7 +556,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         publicChatToken,
         session,
         resume: resumeSession,
-        assistantAvatarUrl: buildAssistantLogoUrl(req, publicChatToken, Boolean(agent.logo)),
+        assistantAvatarUrl: buildAssistantLogoUrl(req, publicChatToken, agent.logo),
         intakeActions: await resolvePublicIntakeActions({
           workspaceId: workspace.id,
           agentId: agent.id,
@@ -679,7 +684,14 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
 
       res.status(200).json({
         workspaceName,
-        assistantAvatarUrl: buildAssistantLogoUrl(req, String(req.params.token), Boolean((res.locals as { assistantLogoAvailable?: boolean }).assistantLogoAvailable)),
+        assistantAvatarUrl: buildAssistantLogoUrl(
+          req,
+          String(req.params.token),
+          (res.locals as {
+            assistantLogo?: { objectPath: string; generation?: string | null; sizeBytes: number } | null;
+            assistantLogoAvailable?: boolean;
+          }).assistantLogo ?? Boolean((res.locals as { assistantLogoAvailable?: boolean }).assistantLogoAvailable),
+        ),
         theme: (res.locals as { assistantTheme?: unknown }).assistantTheme,
         branding: (res.locals as { assistantBranding?: unknown }).assistantBranding,
         assistantLinkUtmEnabled: Boolean((res.locals as { assistantLinkUtmEnabled?: boolean }).assistantLinkUtmEnabled ?? true),

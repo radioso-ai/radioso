@@ -632,6 +632,14 @@ export type AgentSettingsUpdate = ApiSchemas['ConversationAgentRequest'] & {
 }
 export type WorkspaceTokenResponse = ApiSchemas['WorkspaceTokenResponse']
 
+const hashLogoCacheKeyPart = (value: string): string => {
+  let hash = 5381
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) + hash) ^ value.charCodeAt(index)
+  }
+  return (hash >>> 0).toString(36)
+}
+
 const buildAgentAssistantLogoUrl = (agent: AgentSettings): string | null => {
   if (!agent.logo || typeof window === 'undefined') {
     return null
@@ -648,7 +656,13 @@ const buildAgentAssistantLogoUrl = (agent: AgentSettings): string | null => {
   }
 
   const apiBaseUrl = new URL(API_BASE.endsWith('/') ? API_BASE : `${API_BASE}/`, window.location.origin)
-  return new URL(`public/chat/${encodeURIComponent(publicChatToken)}/assistant-logo`, apiBaseUrl).toString()
+  const logoUrl = new URL(`public/chat/${encodeURIComponent(publicChatToken)}/assistant-logo`, apiBaseUrl)
+  logoUrl.searchParams.set('v', [
+    hashLogoCacheKeyPart(agent.logo.objectPath),
+    agent.logo.generation ?? '',
+    agent.logo.sizeBytes,
+  ].join(':'))
+  return logoUrl.toString()
 }
 
 export const agentToGeneralSettings = (agent: AgentSettings): GeneralSettings => ({

@@ -467,6 +467,9 @@ describe("public chat session contract", () => {
     const agent = await dependencies.agentService.resolve(session.workspaceId);
     const anonymousChatToken = agent.surfaceSettings.anonymousChat.token;
     expect(anonymousChatToken).toEqual(expect.any(String));
+    if (!agent.logo) {
+      throw new Error("Expected uploaded logo");
+    }
 
     const response = await request(app)
       .post(`/api/v1/public/chat/${anonymousChatToken}/sessions`)
@@ -474,9 +477,10 @@ describe("public chat session contract", () => {
       .send({ channel: "anonymous_link" });
 
     expect(response.status).toBe(200);
-    expect(response.body.assistantAvatarUrl).toBe(
-      `/backend/api/v1/public/chat/${anonymousChatToken}/assistant-logo`,
-    );
+    const assistantAvatarUrl = new URL(response.body.assistantAvatarUrl, "https://app.example.com");
+    expect(assistantAvatarUrl.pathname).toBe(`/backend/api/v1/public/chat/${anonymousChatToken}/assistant-logo`);
+    expect(assistantAvatarUrl.searchParams.get("v")).toMatch(/^[a-z0-9]+:[^:]*:\d+$/);
+    expect(assistantAvatarUrl.searchParams.get("v")).not.toContain(agent.logo.objectPath);
 
     const logo = await request(app)
       .get(`/api/v1/public/chat/${anonymousChatToken}/assistant-logo`);

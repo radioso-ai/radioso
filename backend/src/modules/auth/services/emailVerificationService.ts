@@ -8,6 +8,7 @@ import type { EmailService } from "../../mail/public.js";
 import { renderEmailVerificationEmail } from "../../mail/templates/emailVerificationEmail.js";
 import { normalizeEmail, sha256 } from "../domain/authPrimitives.js";
 import { unauthorized } from "../../../shared/domain/errors.js";
+import { logAuthMailDeliveryFailure, type AuthMailDeliveryLogger } from "./authMailDeliveryLogging.js";
 import { DEFAULT_AUTH_EMAIL_FLOW_MIN_RESPONSE_MS, waitForMinimumElapsed } from "./responsePadding.js";
 
 const generateVerificationToken = (): string => randomBytes(32).toString("base64url");
@@ -21,6 +22,7 @@ export class EmailVerificationService {
     emailVerificationTokenRepository: EmailVerificationTokenRepositoryPort;
     mailService: EmailService;
     auditService: AuditService;
+    logger?: AuthMailDeliveryLogger;
     responsePaddingMs?: number;
   }) {}
 
@@ -64,8 +66,14 @@ export class EmailVerificationService {
           to: email,
           verificationUrl: verificationUrl.toString(),
         }));
-      } catch {
+      } catch (error) {
         sent = false;
+        logAuthMailDeliveryFailure(this.dependencies.logger, {
+          flow: "email_verification",
+          userId: user.id,
+          tokenRecordId: record.id,
+          error,
+        });
         await this.dependencies.emailVerificationTokenRepository.markUsed(record.id, now);
       }
 

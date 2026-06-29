@@ -7,4 +7,4 @@ export {
   type EmailMessage,
   type MailEnv,
 } from "./emailService.js";
-export { ResendEmailDriver } from "./adapters/resendDriver.js";
+export { ResendEmailDeliveryError, ResendEmailDriver } from "./adapters/resendDriver.js";

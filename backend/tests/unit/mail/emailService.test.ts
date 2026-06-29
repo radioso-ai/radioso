@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   EmailService,
+  ResendEmailDeliveryError,
   ResendEmailDriver,
   createMailService,
   type EmailDriver,
@@ -139,5 +140,36 @@ describe("mail service", () => {
     expect(init!.headers).toMatchObject({
       "Idempotency-Key": "routine-action:conv_1:contact.send:hash",
     });
+  });
+
+  it("throws sanitized Resend delivery errors without provider response text", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      new Response(JSON.stringify({
+        name: "validation_error",
+        message: "The from domain radioso.dev is not verified for ada@example.com",
+      }), { status: 403 }),
+    ));
+    const driver = new ResendEmailDriver("re_test");
+
+    let error: unknown;
+    try {
+      await driver.send({
+        to: "ada@example.com",
+        from: { email: "noreply@radioso.dev" },
+        subject: "Verify your email",
+        text: "Hello",
+      });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toBeInstanceOf(ResendEmailDeliveryError);
+    expect(error).toMatchObject({
+      statusCode: 403,
+      providerErrorName: "validation_error",
+    });
+    expect(error).toMatchObject({ message: "Resend email delivery failed with status 403" });
+    expect(String((error as Error | undefined)?.message)).not.toContain("radioso.dev");
+    expect(String((error as Error | undefined)?.message)).not.toContain("ada@example.com");
   });
 });

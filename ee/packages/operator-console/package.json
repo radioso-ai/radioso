@@ -1,0 +1,64 @@
+{
+  "name": "@radioso/enterprise-operator-console",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "./dist/src/featureManifest.js",
+  "types": "./dist/src/featureManifest.d.ts",
+  "exports": {
+    "./feature-manifest": {
+      "types": "./dist/src/featureManifest.d.ts",
+      "default": "./dist/src/featureManifest.js"
+    },
+    "./src/pages/index": {
+      "types": "./dist/src/pages/index.d.ts",
+      "default": "./dist/src/pages/index.js"
+    },
+    "./src/pages/login": {
+      "types": "./dist/src/pages/login.d.ts",
+      "default": "./dist/src/pages/login.js"
+    },
+    "./src/pages/organizations": {
+      "types": "./dist/src/pages/organizations.d.ts",
+      "default": "./dist/src/pages/organizations.js"
+    },
+    "./src/pages/organization-detail": {
+      "types": "./dist/src/pages/organization-detail.d.ts",
+      "default": "./dist/src/pages/organization-detail.js"
+    },
+    "./src/pages/tiers": {
+      "types": "./dist/src/pages/tiers.d.ts",
+      "default": "./dist/src/pages/tiers.js"
+    },
+    "./src/pages/staff": {
+      "types": "./dist/src/pages/staff.d.ts",
+      "default": "./dist/src/pages/staff.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@radioso/ui": "workspace:*",
+    "lucide-react": "^0.577.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "next": "16.2.6",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.8"
+  },
+  "peerDependencies": {
+    "next": ">=16",
+    "react": ">=19",
+    "react-dom": ">=19"
+  }
+}

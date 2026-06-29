@@ -3,6 +3,7 @@ import type { ApplicationModule } from "./radiosoModuleTypes.js";
 import { createEnterpriseObservabilityApplicationModule } from "./observability/applicationModule.js";
 import { createUsageLimitsApplicationModule } from "./usageLimits/applicationModule.js";
 import { createGoogleLoginApplicationModule } from "./googleLogin/applicationModule.js";
+import { createStaffConsoleApplicationModule } from "./staffConsole/applicationModule.js";
 
 export {
   collectFrontendRouteContributions,
@@ -13,11 +14,13 @@ export {
 export { createUsageLimitsApplicationModule } from "./usageLimits/applicationModule.js";
 export { createEnterpriseObservabilityApplicationModule } from "./observability/applicationModule.js";
 export { createGoogleLoginApplicationModule } from "./googleLogin/applicationModule.js";
+export { createStaffConsoleApplicationModule } from "./staffConsole/applicationModule.js";
 
 export const createEnterpriseBackendModule = (): ApplicationModule => {
   const featureModules = [
     createEnterpriseObservabilityApplicationModule(),
     createUsageLimitsApplicationModule(),
+    createStaffConsoleApplicationModule(),
     createGoogleLoginApplicationModule(),
   ];
 

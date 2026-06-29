@@ -27,11 +27,13 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY frontend/package.json ./frontend/package.json
 COPY packages/ui/package.json ./packages/ui/package.json
 COPY ee/package.json ./ee/package.json
+COPY ee/packages/operator-console/package.json ./ee/packages/operator-console/package.json
 COPY --from=ee-frontend-build /app/ee/packages/auth-frontend ./ee/packages/auth-frontend
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile \
       --filter radioso-frontend... \
-      --filter @radioso/enterprise-auth-frontend...
+      --filter @radioso/enterprise-auth-frontend... \
+      --filter @radioso/enterprise-operator-console...
 RUN if [ "$RADIOSO_EDITION" = "enterprise" ]; then \
       mkdir -p ./frontend/node_modules/@radioso && \
       ln -s ../../../ee/packages/auth-frontend ./frontend/node_modules/@radioso/enterprise-auth-frontend; \
@@ -52,6 +54,10 @@ COPY scripts/sync-ee-frontend-routes.mjs ./scripts/sync-ee-frontend-routes.mjs
 COPY scripts/enterprise-feature-manifests.mjs ./scripts/enterprise-feature-manifests.mjs
 COPY --from=ee-frontend-build /app/ee/packages/auth-frontend/feature-manifest.mjs ./ee/packages/auth-frontend/feature-manifest.mjs
 COPY --from=ee-frontend-build /app/ee/packages/auth-frontend/package.json ./ee/packages/auth-frontend/package.json
+# operator-console contributes real Next.js pages; next build resolves them
+# through the edition-gated alias in frontend/next.config.mjs that points at
+# this source tree, so the package source must be present in the builder.
+COPY ee/packages/operator-console ./ee/packages/operator-console
 COPY ee/readme.md ./ee/readme.md
 
 RUN if [ "$RADIOSO_EDITION" = "enterprise" ]; then \

@@ -16,6 +16,10 @@ export const accountMembershipParamsSchema = z.object({
   membershipId: z.string().uuid(),
 });
 
+export const accountInvitationParamsSchema = z.object({
+  invitationId: z.string().uuid(),
+});
+
 export const accountSwitchSchema = z.object({
   accountId: z.string().uuid(),
   preferredWorkspaceId: z.string().uuid().optional(),
@@ -139,6 +143,26 @@ export const createAccountUserRoutes = (dependencies: AccountUserRouteDependenci
         });
 
         res.status(201).json(invitation);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.delete(
+    "/invitations/:invitationId",
+    authenticatedSession,
+    requireAccountPermission(dependencies, "account.users.manage"),
+    async (req, res, next) => {
+      try {
+        const { accountId, userId } = res.locals as { accountId: string; userId: string };
+        const { invitationId } = accountInvitationParamsSchema.parse(req.params);
+        await dependencies.accountInvitationService.revokeInvitation({
+          accountId,
+          actorUserId: userId,
+          invitationId,
+        });
+        res.status(204).end();
       } catch (error) {
         next(error);
       }

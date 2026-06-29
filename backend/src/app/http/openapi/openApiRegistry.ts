@@ -24,6 +24,7 @@ export interface OpenApiSchemaCatalog {
   AccessibleAccountsResponseSchema: z.ZodTypeAny;
   AccountInvitationCreateRequestSchema: z.ZodTypeAny;
   AccountInvitationSchema: z.ZodTypeAny;
+  accountInvitationParamsSchema: RouteParameterSchema;
   accountMembershipParamsSchema: RouteParameterSchema;
   AccountMembershipRoleUpdateRequestSchema: z.ZodTypeAny;
   accountSwitchSchema: z.ZodTypeAny;

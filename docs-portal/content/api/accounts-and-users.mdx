@@ -17,6 +17,7 @@ POST   /api/v1/account/invitations
 POST   /api/v1/account/switch
 PATCH  /api/v1/account/users/{membershipId}
 PUT    /api/v1/account/workspaces/{workspaceId}/grants/{userId}
+DELETE /api/v1/account/invitations/{invitationId}
 DELETE /api/v1/account/workspaces/{workspaceId}/grants/{userId}
 DELETE /api/v1/account/users/{membershipId}
 ```
@@ -70,6 +71,16 @@ POST /api/v1/account/invitations
 The request body is defined by the OpenAPI schema. Use the [API Reference](/api-reference) for the exact payload.
 
 The invite request includes a `role` field. Use `member` by default. Use `admin` only for trusted teammates who should manage the organization.
+
+## Revoke an invitation
+
+Cancel a pending invitation that has not been accepted yet. Use the invitation id from the `invitations` array in `GET /api/v1/account/users`.
+
+```text
+DELETE /api/v1/account/invitations/{invitationId}
+```
+
+Owners and admins can revoke. A revoked invitation can no longer be accepted, and its acceptance link stops working. Revoking an invitation that has already been accepted returns `409`; remove that user with `DELETE /api/v1/account/users/{membershipId}` instead.
 
 ## Workspace grants
 

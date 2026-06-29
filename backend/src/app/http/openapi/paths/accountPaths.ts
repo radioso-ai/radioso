@@ -148,6 +148,55 @@ export const registerAccountManagementPaths = (
   });
 
   registry.registerPath({
+    method: "delete",
+    path: "/api/v1/account/invitations/{invitationId}",
+    tags: ["Account"],
+    summary: "Revoke a pending account invitation",
+    operationId: "revokeAccountInvitation",
+    security: [{ [security.sessionCookieScheme.name]: [] }],
+    request: {
+      params: schemas.accountInvitationParamsSchema,
+    },
+    responses: {
+      204: {
+        description: "Invitation revoked",
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      403: {
+        description: "Permission required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Invitation not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      409: {
+        description: "Invitation has already been accepted",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
     method: "patch",
     path: "/api/v1/account/users/{membershipId}",
     tags: ["Account"],

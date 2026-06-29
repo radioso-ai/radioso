@@ -664,6 +664,10 @@ export class InMemoryAccountInvitationRepository implements AccountInvitationRep
     return record;
   }
 
+  async findById(id: string): Promise<AccountInvitationRecord | null> {
+    return this.items.get(id) ?? null;
+  }
+
   async findPendingByAccountAndEmail(accountId: string, email: string): Promise<AccountInvitationRecord | null> {
     return (
       [...this.items.values()].find(
@@ -702,6 +706,21 @@ export class InMemoryAccountInvitationRepository implements AccountInvitationRep
     };
     this.items.set(updated.id, updated);
     return updated;
+  }
+
+  async updateIfStatus(params: {
+    id: string;
+    currentStatus: AccountInvitationStatus;
+    status: AccountInvitationStatus;
+    acceptedAt?: Date | null;
+    acceptedByUserId?: string | null;
+  }): Promise<AccountInvitationRecord | null> {
+    const existing = this.items.get(params.id);
+    if (!existing || existing.status !== params.currentStatus) {
+      return null;
+    }
+
+    return this.update(params);
   }
 }
 

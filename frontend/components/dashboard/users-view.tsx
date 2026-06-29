@@ -41,6 +41,7 @@ export function UsersPanel() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false)
   const [removingMembershipId, setRemovingMembershipId] = useState<string | null>(null)
+  const [revokingInvitationId, setRevokingInvitationId] = useState<string | null>(null)
   const [email, setEmail] = useState('')
   const [emailTouched, setEmailTouched] = useState(false)
   const [inviteRole, setInviteRole] = useState<AssignableAccountRole>('member')
@@ -123,6 +124,19 @@ export function UsersPanel() {
       setError(getApiErrorMessage(nextError, 'Failed to remove user access.'))
     } finally {
       setRemovingMembershipId(null)
+    }
+  }
+
+  const handleRevokeInvitation = async (invitationId: string) => {
+    setRevokingInvitationId(invitationId)
+    setError(null)
+    try {
+      await accountApi.revokeInvitation(invitationId)
+      setInvitations((current) => current.filter((invitation) => invitation.id !== invitationId))
+    } catch (nextError) {
+      setError(getApiErrorMessage(nextError, 'Failed to revoke invitation.'))
+    } finally {
+      setRevokingInvitationId(null)
     }
   }
 
@@ -469,7 +483,19 @@ export function UsersPanel() {
                         </Badge>
                       </DashboardTableCell>
                       <DashboardTableCell>
-                        <span className="sr-only">No actions available</span>
+                        {canManageUsers ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void handleRevokeInvitation(invitation.id)}
+                            disabled={revokingInvitationId === invitation.id}
+                          >
+                            {revokingInvitationId === invitation.id ? 'Revoking...' : 'Revoke'}
+                          </Button>
+                        ) : (
+                          <span className="sr-only">No actions available</span>
+                        )}
                       </DashboardTableCell>
                     </DashboardTableRow>
                   ))}

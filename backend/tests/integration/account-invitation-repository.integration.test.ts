@@ -80,6 +80,13 @@ describeIntegration("AccountInvitationRepository (Postgres)", () => {
     expect(missing).toBeNull();
   });
 
+  it("findById returns the invitation and null when unknown", async () => {
+    const found = await repository.findById(invitationId);
+    expect(found?.id).toBe(invitationId);
+
+    expect(await repository.findById(randomUUID())).toBeNull();
+  });
+
   it("findByTokenHash returns the invitation and null when unknown", async () => {
     const found = await repository.findByTokenHash("invite-hash-1");
     expect(found?.id).toBe(invitationId);

@@ -278,7 +278,7 @@ describe('AssistantMessageContent', () => {
     expect(html).toContain('aria-label="Open source 1: Handbook"')
   })
 
-  it('renders citation markers as non-clickable in link-only mode', async () => {
+  it('renders link-only citation markers as reveal buttons, not document openers', async () => {
     const html = renderToStaticMarkup(
       <AssistantMessageContent
         content="unused"
@@ -289,8 +289,10 @@ describe('AssistantMessageContent', () => {
       />,
     )
 
-    // The grounding marker is still shown, but never offers to open the document.
+    // The marker is clickable, but it reveals the source chip below rather than
+    // offering to open the underlying document.
     expect(html).toContain('data-citation-index="1"')
+    expect(html).toContain('aria-label="Show source 1: Handbook"')
     expect(html).not.toContain('aria-label="Open source 1')
   })
 

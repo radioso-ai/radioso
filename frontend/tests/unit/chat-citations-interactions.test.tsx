@@ -90,6 +90,58 @@ describe('AssistantMessageContent link analytics', () => {
     }))
   })
 
+  it('reveals, expands, and highlights the matching source when a link-only citation is clicked', async () => {
+    const scrollIntoView = vi.fn()
+    const originalScrollIntoView = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = scrollIntoView
+    const onLinkClickAnalytics = vi.fn()
+
+    try {
+      await act(async () => {
+        root.render(
+          <AssistantMessageContent
+            content="Grounded answer."
+            citations={[
+              { documentId: 'document-1', chunkId: 'chunk-1', title: 'First Source' },
+              { documentId: 'document-2', chunkId: 'chunk-2', title: 'Second Source' },
+            ]}
+            answerSegments={[{ text: 'Grounded answer.', citationIndices: [1] }]}
+            documentInteractivity="link-only"
+            onOpenDocument={vi.fn().mockResolvedValue('unavailable')}
+            onLinkClickAnalytics={onLinkClickAnalytics}
+          />,
+        )
+      })
+
+      // Sources panel is collapsed until the marker is clicked.
+      expect(container.querySelector('[data-source-index="2"]')).toBeNull()
+
+      const marker = container.querySelector<HTMLButtonElement>('[data-citation-index="2"]')
+      expect(marker?.tagName).toBe('BUTTON')
+
+      await act(async () => {
+        marker?.click()
+      })
+
+      const sourcesToggle = Array.from(container.querySelectorAll('button'))
+        .find((button) => button.textContent?.includes('Sources'))
+      expect(sourcesToggle?.getAttribute('aria-expanded')).toBe('true')
+
+      const revealedChip = container.querySelector<HTMLElement>('[data-source-index="2"]')
+      expect(revealedChip).not.toBeNull()
+      expect(revealedChip?.className).toContain('ring-primary')
+      expect(scrollIntoView).toHaveBeenCalled()
+      expect(onLinkClickAnalytics).toHaveBeenCalledWith(expect.objectContaining({
+        linkType: 'citation_marker',
+        citationIndex: 1,
+        documentId: 'document-2',
+        chunkId: 'chunk-2',
+      }))
+    } finally {
+      Element.prototype.scrollIntoView = originalScrollIntoView
+    }
+  })
+
   it('renders unsafe citation source URLs as non-clickable text', async () => {
     await act(async () => {
       root.render(

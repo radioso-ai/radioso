@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, type CSSProperties, type ReactNode, useId, useState } from 'react'
+import { Fragment, type CSSProperties, type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { ChevronDown, ExternalLink, FileText } from 'lucide-react'
 
 import { isSafeHref } from '../markdown/markdown-content'
@@ -119,26 +119,39 @@ const CitationMarker = ({
   index,
   interactive,
   onOpenDocument,
+  onRevealSource,
   onLinkClickAnalytics,
 }: {
   citation: Citation
   index: number
   interactive: boolean
   onOpenDocument: (citation: Citation, index: number) => void
+  onRevealSource: (index: number) => void
   onLinkClickAnalytics?: (input: AssistantLinkClickAnalyticsInput) => void
 }) => {
-  // Non-interactive surfaces render a plain superscript that signals grounding
-  // without offering to open the source document. The outbound link, if any, is
-  // surfaced through the source chip below.
+  // Non-interactive (link-only) surfaces cannot open the source document, but the
+  // marker still reveals the matching source: it expands the sources panel,
+  // scrolls it into view, and highlights the corresponding chip.
   if (!interactive) {
     return (
-      <span
-        className={CITATION_MARKER_BASE_CLASS}
-        aria-label={`Source ${index + 1}: ${getCitationLabel(citation, index)}`}
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation()
+          onLinkClickAnalytics?.({
+            linkType: 'citation_marker',
+            citationIndex: index,
+            documentId: citation.documentId,
+            chunkId: citation.chunkId,
+          })
+          onRevealSource(index)
+        }}
+        className={`${CITATION_MARKER_BASE_CLASS} cursor-pointer hover:bg-primary/20 focus-visible:bg-primary/20 focus-visible:outline-none`}
+        aria-label={`Show source ${index + 1}: ${getCitationLabel(citation, index)}`}
         data-citation-index={index + 1}
       >
         {index + 1}
-      </span>
+      </button>
     )
   }
 
@@ -168,12 +181,14 @@ const SourceChip = ({
   citation,
   index,
   interactive,
+  highlighted = false,
   onOpenDocument,
   onLinkClickAnalytics,
 }: {
   citation: Citation
   index: number
   interactive: boolean
+  highlighted?: boolean
   onOpenDocument: (citation: Citation, index: number) => void
   onLinkClickAnalytics?: (input: AssistantLinkClickAnalyticsInput) => void
 }) => {
@@ -182,7 +197,12 @@ const SourceChip = ({
   const safeSourceUrl = sourceUrl && isSafeHref(sourceUrl) ? sourceUrl : null
 
   return (
-    <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-card px-2 py-0.5 text-xs leading-5">
+    <span
+      data-source-index={index + 1}
+      className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs leading-5 transition-colors duration-300 ${
+        highlighted ? 'border-primary bg-primary/10 ring-1 ring-primary/40' : 'border-border bg-card'
+      }`}
+    >
       <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary/10 px-1 text-[10px] font-semibold leading-none text-primary">
         {index + 1}
       </span>
@@ -366,6 +386,11 @@ const getOrderedListItem = (segment: AnswerSegment) => {
   }
 }
 
+// Identifies a citation for dedup purposes. Citations sharing a documentId
+// collapse to a single source chip; chunk-only citations stay distinct.
+const citationKey = (citation: Citation, index: number) =>
+  citation.documentId || `${citation.chunkId}-${index}`
+
 const collectUniqueCitations = (citations: Citation[]) => {
   const seen = new Set<string>()
   const unique: Array<{ citation: Citation; index: number }> = []
@@ -375,7 +400,7 @@ const collectUniqueCitations = (citations: Citation[]) => {
     if (!citation) {
       continue
     }
-    const key = citation.documentId || `${citation.chunkId}-${index}`
+    const key = citationKey(citation, index)
     if (seen.has(key)) {
       continue
     }
@@ -384,6 +409,20 @@ const collectUniqueCitations = (citations: Citation[]) => {
   }
 
   return unique
+}
+
+// Maps a clicked citation index to the index of the source chip that represents
+// it, so revealing a duplicate-document citation highlights the rendered chip.
+const resolveRepresentativeCitationIndex = (citations: Citation[], index: number) => {
+  const target = citations[index]
+  if (!target) {
+    return index
+  }
+  const key = citationKey(target, index)
+  const representative = citations.findIndex(
+    (candidate, candidateIndex) => candidate && citationKey(candidate, candidateIndex) === key,
+  )
+  return representative >= 0 ? representative : index
 }
 
 export function AssistantMessageContent({
@@ -402,6 +441,11 @@ export function AssistantMessageContent({
   const [citationNotice, setCitationNotice] = useState<{ scope: string; message: string } | null>(null)
   const [sourcesExpanded, setSourcesExpanded] = useState(false)
   const [sourcesRendered, setSourcesRendered] = useState(false)
+  // A reveal targets one source chip; the nonce lets repeated clicks on the same
+  // marker re-trigger the scroll + highlight effect.
+  const [reveal, setReveal] = useState<{ index: number; nonce: number } | null>(null)
+  const revealNonceRef = useRef(0)
+  const sourcesPanelRef = useRef<HTMLDivElement | null>(null)
   const sourcesPanelId = useId()
   const effectiveCitations = showCitations ? citations : []
   const effectiveAnswerSegments = showCitations ? answerSegments : undefined
@@ -457,6 +501,7 @@ export function AssistantMessageContent({
             index={citationIndex}
             interactive={citationsInteractive}
             onOpenDocument={handleCitationOpen}
+            onRevealSource={handleRevealSource}
             onLinkClickAnalytics={onLinkClickAnalytics}
           />
         </Fragment>
@@ -472,6 +517,34 @@ export function AssistantMessageContent({
     setSourcesRendered(true)
     setSourcesExpanded(true)
   }
+
+  const handleRevealSource = (index: number) => {
+    const resolvedIndex = resolveRepresentativeCitationIndex(effectiveCitations, index)
+    setSourcesRendered(true)
+    setSourcesExpanded(true)
+    revealNonceRef.current += 1
+    setReveal({ index: resolvedIndex, nonce: revealNonceRef.current })
+  }
+
+  // Once the sources panel is open and a reveal is pending, bring the matching
+  // chip into view and keep it highlighted briefly before clearing.
+  useEffect(() => {
+    if (!reveal || !sourcesExpanded) {
+      return
+    }
+
+    const panel = sourcesPanelRef.current
+    const target = panel?.querySelector<HTMLElement>(`[data-source-index="${reveal.index + 1}"]`)
+    ;(target ?? panel)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+
+    const timeout = window.setTimeout(() => {
+      setReveal((current) => (current?.nonce === reveal.nonce ? null : current))
+    }, 2200)
+
+    return () => {
+      window.clearTimeout(timeout)
+    }
+  }, [reveal, sourcesExpanded])
 
   const contentNodes: ReactNode[] = []
 
@@ -595,6 +668,7 @@ export function AssistantMessageContent({
           {sourcesRendered ? (
             <div
               id={sourcesPanelId}
+              ref={sourcesPanelRef}
               className={`grid transition-[grid-template-rows,opacity,transform] duration-150 ease-out ${
                 sourcesExpanded
                   ? 'mt-2 translate-y-0 grid-rows-[1fr] opacity-100'
@@ -615,6 +689,7 @@ export function AssistantMessageContent({
                     citation={citation}
                     index={index}
                     interactive={citationsInteractive}
+                    highlighted={reveal?.index === index}
                     onOpenDocument={handleCitationOpen}
                     onLinkClickAnalytics={onLinkClickAnalytics}
                   />

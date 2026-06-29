@@ -1549,6 +1549,7 @@ export const buildPasswordResetService = (input: {
   auditService: AuditService;
   env: Env;
   infrastructure: ReturnType<typeof buildInfrastructure>;
+  logger: AppLogger;
   repositories: ReturnType<typeof buildRepositories>;
   workspaceService: WorkspaceService;
 }): PasswordResetService =>
@@ -1562,12 +1563,14 @@ export const buildPasswordResetService = (input: {
     passwordResetTokenRepository: input.repositories.passwordResetTokenRepository,
     mailService: input.infrastructure.mailService,
     auditService: input.auditService,
+    logger: input.logger,
   });
 
 export const buildEmailVerificationService = (input: {
   auditService: AuditService;
   env: Env;
   infrastructure: ReturnType<typeof buildInfrastructure>;
+  logger: AppLogger;
   repositories: ReturnType<typeof buildRepositories>;
 }): EmailVerificationService =>
   new EmailVerificationService({
@@ -1576,6 +1579,7 @@ export const buildEmailVerificationService = (input: {
     emailVerificationTokenRepository: input.repositories.emailVerificationTokenRepository,
     mailService: input.infrastructure.mailService,
     auditService: input.auditService,
+    logger: input.logger,
   });
 
 export const buildLogger = (): AppLogger => createLogger();

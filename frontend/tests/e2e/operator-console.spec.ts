@@ -206,9 +206,10 @@ test("billing staff can create a tier with byte limits in human units", async ({
   await page.getByLabel("Monthly indexed byte limit").fill("2 GB");
   await page.getByRole("button", { name: "Save tier" }).click();
 
-  await expect(page.getByText("Scale")).toBeVisible();
-  await expect(page.getByText("1 GB")).toBeVisible();
-  await expect(page.getByText("2 GB")).toBeVisible();
+  const scaleRow = page.getByRole("row").filter({ hasText: "scale" });
+  await expect(scaleRow).toContainText("Scale");
+  await expect(scaleRow).toContainText("1 GB");
+  await expect(scaleRow).toContainText("2 GB");
 });
 
 test("support_read staff sees read-only tier UI and no staff management", async ({ page }) => {
@@ -233,6 +234,6 @@ test("owner can create staff users", async ({ page }) => {
   await page.getByLabel("Temporary password").fill("password-123");
   await page.getByRole("button", { name: "Create staff" }).click();
 
-  await expect(page.getByText("billing@example.com")).toBeVisible();
-  await expect(page.getByText("Billing")).toBeVisible();
+  const billingRow = page.getByRole("row").filter({ hasText: "billing@example.com" });
+  await expect(billingRow).toContainText("Billing");
 });

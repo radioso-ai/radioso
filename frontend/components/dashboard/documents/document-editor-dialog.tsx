@@ -23,6 +23,7 @@ export function DocumentEditorDialog({
   mode,
   values,
   metadataError,
+  saveError,
   isSaving,
   isLoading,
   onOpenChange,
@@ -34,6 +35,7 @@ export function DocumentEditorDialog({
   mode: EditorMode
   values: DocumentEditorValues
   metadataError: string | null
+  saveError?: string | null
   isSaving: boolean
   isLoading: boolean
   onOpenChange: (open: boolean) => void
@@ -117,6 +119,9 @@ export function DocumentEditorDialog({
                 {metadataError ? <p className="text-sm text-destructive">{metadataError}</p> : null}
               </div>
             </div>
+            {saveError && !isReadOnly ? (
+              <p className="mt-4 flex-shrink-0 text-sm text-destructive">{saveError}</p>
+            ) : null}
             <div className="mt-4 flex flex-shrink-0 justify-end gap-2 border-t pt-4">
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
                 {isReadOnly ? 'Close' : 'Cancel'}

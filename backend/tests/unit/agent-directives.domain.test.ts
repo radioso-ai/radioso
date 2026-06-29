@@ -40,20 +40,12 @@ describe("authored directive domain validation", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects removed precedence fields on authored input", () => {
+  it("rejects the removed criticality precedence field on authored input", () => {
     expect(authoredDirectiveInputSchema.safeParse({
       name: "criticality-dial",
       condition: { kind: "always" },
       action: "Use the configured behavior.",
       criticality: "high",
-      routes: ["retrieval"],
-    }).success).toBe(false);
-
-    expect(authoredDirectiveInputSchema.safeParse({
-      name: "priority-dial",
-      condition: { kind: "always" },
-      action: "Use the configured behavior.",
-      priority: 50,
       routes: ["retrieval"],
     }).success).toBe(false);
   });
@@ -64,6 +56,37 @@ describe("authored directive domain validation", () => {
       condition: { kind: "always" },
       action: "Use the configured behavior.",
       routes: ["marketing"],
+    }).success).toBe(false);
+  });
+
+  it("accepts an explicit priority, defaults to null, and bounds the range", () => {
+    const ranked = authoredDirectiveInputSchema.parse({
+      name: "ranked",
+      condition: { kind: "always" },
+      action: "Outrank the default formatting on conflict.",
+      priority: 95,
+    });
+    expect(ranked.priority).toBe(95);
+
+    const defaulted = authoredDirectiveInputSchema.parse({
+      name: "unranked",
+      condition: { kind: "always" },
+      action: "Use the configured behavior.",
+    });
+    expect(defaulted.priority).toBeNull();
+
+    expect(authoredDirectiveInputSchema.safeParse({
+      name: "too-high",
+      condition: { kind: "always" },
+      action: "Use the configured behavior.",
+      priority: 101,
+    }).success).toBe(false);
+
+    expect(authoredDirectiveInputSchema.safeParse({
+      name: "not-integer",
+      condition: { kind: "always" },
+      action: "Use the configured behavior.",
+      priority: 12.5,
     }).success).toBe(false);
   });
 
@@ -83,6 +106,7 @@ describe("authored directive domain validation", () => {
       name: "scoped-step",
       condition: { kind: "always" },
       action: "Only while this step is active.",
+      priority: null,
       requiredCapabilities: [],
       dependsOn: [],
       excludes: [],

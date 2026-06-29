@@ -2229,6 +2229,12 @@ components:
           type: string
           minLength: 1
           maxLength: 4000
+        priority:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          maximum: 100
         requiredCapabilities:
           type: array
           items:
@@ -2280,6 +2286,12 @@ components:
           type: string
           minLength: 1
           maxLength: 4000
+        priority:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          maximum: 100
         requiredCapabilities:
           type: array
           items:

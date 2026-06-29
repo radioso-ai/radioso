@@ -53,9 +53,27 @@ short-lived guidance as part of its result. Both share one value type,
 `SteeringRule`, so the answer composer reads a single ordered set rather than
 two separate channels.
 
-A `SteeringRule` carries the action, an optional condition, and optional
-priority and criticality used for ordering. The turn assigns its source
-(`directive` or `skill`) and lifespan when it merges the two sources.
+A `SteeringRule` carries the action, an optional condition, and an optional
+priority used for ordering. The turn assigns its source (`directive` or `skill`)
+and lifespan when it merges the two sources.
+
+## Priority and precedence
+
+A directive resolves against the others two ways, one soft and one hard.
+
+- **Priority (soft).** An author may set a priority (0–100; `null` defers to a
+  default). The matched rules are rendered in priority order, and the steering
+  prompt tells the model that when two of them genuinely conflict it should
+  follow the one listed earlier. Nothing is dropped — priority only steers which
+  guidance wins a tussle, and the model makes the judgment, so it is best-effort.
+  Built-in answer directives occupy the mid-range (currently 60–90), so an
+  authored directive can be ranked above them.
+- **Replaces (hard).** `excludes` deterministically removes the named directives
+  from the matched set before rendering. In the agent editor this is surfaced as
+  **Replaces** — "when this directive applies, cancel these and run instead" —
+  and the per-built-in **Override** button is a shortcut that pre-selects that
+  built-in. Use it when a built-in's behavior must be gone for sure, not merely
+  outranked.
 
 ## Relationships
 

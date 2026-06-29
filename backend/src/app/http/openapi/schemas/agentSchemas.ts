@@ -239,6 +239,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     name: z.string().min(1).max(200),
     condition: AuthoredDirectiveConditionSchema,
     action: z.string().min(1).max(4000),
+    priority: z.number().int().min(0).max(100).nullable().optional(),
     requiredCapabilities: z.array(z.string().min(1).max(200)).optional(),
     dependsOn: z.array(z.string().min(1).max(200)).optional(),
     excludes: z.array(z.string().min(1).max(200)).optional(),

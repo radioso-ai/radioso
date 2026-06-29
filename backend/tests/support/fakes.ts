@@ -1036,7 +1036,6 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
       id: randomUUID(),
       agentId,
       ...normalized,
-      priority: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -1060,6 +1059,7 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
       name: input.name ?? existing.name,
       condition: input.condition ?? existing.condition,
       action: input.action ?? existing.action,
+      priority: Object.prototype.hasOwnProperty.call(input, "priority") ? input.priority : existing.priority,
       requiredCapabilities: input.requiredCapabilities ?? existing.requiredCapabilities,
       dependsOn: input.dependsOn ?? existing.dependsOn,
       excludes: input.excludes ?? existing.excludes,
@@ -1072,7 +1072,6 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
     const updated: AuthoredDirective = {
       ...existing,
       ...normalized,
-      priority: existing.priority,
       updatedAt: new Date(),
     };
     this.directives.set(directiveId, updated);

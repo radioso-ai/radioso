@@ -147,6 +147,8 @@
 
 - [ ] T041 Add metrics counters per spec Observability (staff auth failures, role-denied, tier changes, catalog edits, bootstrap) — low-cardinality labels only (action/role/outcome), never org/staff id/email.
 - [ ] T042 Docs: update `ee/readme.md` (new module, staff bootstrap flow, env vars, console API contract) and the operator-console package `readme.md`; confirm `.env.example` complete.
+- [ ] T044 Remove the temporary `NODE_ENV==="test"` `/_test/billing-write` probe route in `staffConsoleRoutes.ts` once Phase 4 `billing_write` endpoints exercise `requireStaffRole` naturally.
+- [ ] T045 Rate-limit `POST /operator-console/auth/login` (staff login is a high-value brute-force target; OSS customer auth has `AUTH_RATE_LIMIT_*` — apply equivalent to the staff issuer).
 - [ ] T043 Run `node scripts/validate-architecture-boundaries.mjs` (OSS has zero refs to console/staff — SC-005), backend `pnpm test` (TDD suites green), frontend lint + Playwright, and `pnpm run ci:local -- origin/main`; record result for the PR body.
 
 ---

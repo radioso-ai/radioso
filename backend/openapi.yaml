@@ -1722,6 +1722,8 @@ components:
           format: uuid
         name:
           type: string
+        internalName:
+          type: string
         createdAt:
           type: string
           format: date-time
@@ -1732,6 +1734,7 @@ components:
         - id
         - workspaceId
         - name
+        - internalName
         - createdAt
         - updatedAt
     ConversationAgentSurfaceSettings:
@@ -2024,6 +2027,9 @@ components:
       type: object
       properties:
         name:
+          type: string
+          maxLength: 200
+        internalName:
           type: string
           maxLength: 200
         customInstruction:

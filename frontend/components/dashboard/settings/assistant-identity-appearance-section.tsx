@@ -47,6 +47,8 @@ function SubsectionHeading({ title, description }: { title: string; description?
 export interface AssistantIdentityAppearanceSectionProps {
   anonSettings: GeneralSettings
   assistantBehaviorSettings: AssistantBehaviorSettings
+  // Operator-only internal label is per-agent; hidden in workspace general settings.
+  showInternalName?: boolean
   onAssistantSettingChange: <K extends keyof GeneralSettings>(key: K, value: GeneralSettings[K]) => void
   onAssistantBehaviorDraft: (updater: (current: AssistantBehaviorSettings) => AssistantBehaviorSettings) => void
   onAssistantLogoUpload: (file: File | null) => void
@@ -58,6 +60,7 @@ export interface AssistantIdentityAppearanceSectionProps {
 export function AssistantIdentityAppearanceSection({
   anonSettings,
   assistantBehaviorSettings,
+  showInternalName = false,
   onAssistantSettingChange,
   onAssistantBehaviorDraft,
   onAssistantLogoUpload,
@@ -163,6 +166,23 @@ export function AssistantIdentityAppearanceSection({
             Shown as the chat title. Falls back to the workspace name when left blank.
           </p>
         </div>
+
+        {showInternalName ? (
+          <div className="space-y-2">
+            <Label htmlFor="agentInternalName" className="text-foreground">Internal name</Label>
+            <Input
+              id="agentInternalName"
+              value={anonSettings.internalName ?? ''}
+              maxLength={200}
+              onChange={(event) => onAssistantSettingChange('internalName', event.target.value)}
+              placeholder="e.g. Claudio (IT)"
+            />
+            <p className="text-xs text-muted-foreground">
+              Only you see this — it labels the agent in your dashboard to tell look-alikes
+              apart. Visitors always see the assistant name above.
+            </p>
+          </div>
+        ) : null}
 
         <div className="h-px bg-border" />
 

@@ -109,4 +109,51 @@ describe('assistant identity appearance section', () => {
     })
     expect(container.querySelector('img[src="/backend/api/v1/public/chat/new-token/assistant-logo"]')).not.toBeNull()
   })
+
+  it('hides the internal name field unless showInternalName is set', () => {
+    act(() => {
+      root.render(
+        <AssistantIdentityAppearanceSection
+          anonSettings={generalSettings(null)}
+          assistantBehaviorSettings={behaviorSettings()}
+          onAssistantSettingChange={() => undefined}
+          onAssistantBehaviorDraft={() => undefined}
+          onAssistantLogoUpload={() => undefined}
+          onAssistantLogoDelete={() => undefined}
+          isAnonSaving={false}
+          isAssistantLogoSaving={false}
+        />,
+      )
+    })
+    expect(container.querySelector('#agentInternalName')).toBeNull()
+  })
+
+  it('edits internalName through onAssistantSettingChange when shown', () => {
+    const changes: Array<[string, unknown]> = []
+    act(() => {
+      root.render(
+        <AssistantIdentityAppearanceSection
+          anonSettings={{ ...generalSettings(null), internalName: 'Claudio (IT)' }}
+          assistantBehaviorSettings={behaviorSettings()}
+          showInternalName
+          onAssistantSettingChange={(key, value) => changes.push([key, value])}
+          onAssistantBehaviorDraft={() => undefined}
+          onAssistantLogoUpload={() => undefined}
+          onAssistantLogoDelete={() => undefined}
+          isAnonSaving={false}
+          isAssistantLogoSaving={false}
+        />,
+      )
+    })
+    const input = container.querySelector<HTMLInputElement>('#agentInternalName')
+    expect(input).not.toBeNull()
+    expect(input?.value).toBe('Claudio (IT)')
+
+    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+    act(() => {
+      nativeSetter?.call(input, 'Claudio (EN)')
+      input?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(changes).toContainEqual(['internalName', 'Claudio (EN)'])
+  })
 })

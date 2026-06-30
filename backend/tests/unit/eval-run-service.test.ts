@@ -59,6 +59,7 @@ const makeSnapshot = (overrides: Partial<EvalSnapshot> = {}): EvalSnapshot => ({
   workspaceId: "ws-1",
   sourceConversationId: "conv-1",
   sourceMessageId: "msg-2",
+  replayTarget: null,
   fidelity: "messages_only",
   messages: [
     { id: "msg-1", role: "user", content: "what is the refund policy?", createdAt: fixedDate },
@@ -992,6 +993,41 @@ describe("EvalRunService.execute (retrieval_only)", () => {
       modelId: "gpt-5-mini",
     });
     expect(run.status).toBe("pass");
+  });
+
+  it("uses the Workbench engine replay path for full-assistant runs with a full agent snapshot", async () => {
+    const agent = configuredAgent();
+    const snapshot = makeSnapshot({
+      sourceAgentId: agent.id,
+      originalAgentConfig: projectInternalAgentConfig(agent),
+    });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const workbench = new StubWorkbenchReplayRunner();
+    const legacyRunner = new StubRunner(
+      [{ chunkId: "legacy", documentId: "legacy-doc", title: "Legacy", rank: 0 }],
+      undefined,
+      "Legacy answer.",
+    );
+    const service = new EvalRunService(repo, legacyRunner, passJudge(), workbench);
+
+    const { run } = await service.execute({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      mode: "full_assistant",
+    });
+
+    expect(workbench.calls).toHaveLength(1);
+    expect(legacyRunner.lastAnswerCall).toBeNull();
+    expect(workbench.calls[0]).toMatchObject({
+      workspaceId: "ws-1",
+      sourceAgentId: agent.id,
+      query: "what is the refund policy?",
+    });
+    expect(run.observedOutput.answer).toBe("Replay answer.");
+    expect(run.observedOutput.turnTrace).toMatchObject({
+      version: 1,
+      spine: { traceId: "engine-trace" },
+    });
   });
 
   it("forwards a routineStartState override to the workbench replay runner for mid-routine resume", async () => {

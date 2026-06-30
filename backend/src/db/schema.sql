@@ -1341,6 +1341,7 @@ CREATE TABLE public.eval_snapshots (
     original_agent_config jsonb,
     source_agent_id uuid,
     original_routine_state jsonb,
+    replay_target jsonb,
     CONSTRAINT eval_snapshots_fidelity_check CHECK ((fidelity = ANY (ARRAY['full'::text, 'messages_only'::text])))
 );
 

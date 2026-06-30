@@ -15,6 +15,7 @@ import type {
   EvalSnapshotFidelity,
   EvalSnapshotMessage,
   EvalSnapshotOriginalRetrievalChunk,
+  EvalSnapshotReplayTarget,
 } from "../domain/types.js";
 
 export interface EvalSnapshotCaptureInput {
@@ -110,6 +111,40 @@ const toSnapshotMessage = (record: MessageRecord): EvalSnapshotMessage => ({
   } : {}),
 });
 
+const resolveReplayTarget = (messages: MessageRecord[], messageId: string | null | undefined): EvalSnapshotReplayTarget | null => {
+  if (messages.length === 0) {
+    return null;
+  }
+  const selectedIndex = messageId
+    ? messages.findIndex((message) => message.id === messageId)
+    : messages.length - 1;
+  if (selectedIndex < 0) {
+    return null;
+  }
+  const selected = messages[selectedIndex];
+  if (!selected) {
+    return null;
+  }
+  if (selected.role === "user") {
+    return {
+      userMessageId: selected.id,
+      assistantMessageId: null,
+    };
+  }
+
+  const userMessage = messages
+    .slice(0, selectedIndex)
+    .reverse()
+    .find((message) => message.role === "user");
+  if (!userMessage) {
+    return null;
+  }
+  return {
+    userMessageId: userMessage.id,
+    assistantMessageId: selected.role === "assistant" ? selected.id : null,
+  };
+};
+
 const extractStringField = (metadata: Record<string, unknown> | undefined, key: string): string | null => {
   if (!metadata) return null;
   const value = metadata[key];
@@ -194,8 +229,10 @@ export class EvalSnapshotService {
       throw notFound("Message not found in conversation");
     }
 
-    const lastMessage = sliced.at(-1);
-    const assistantTurn = lastMessage?.role === "assistant" ? lastMessage : undefined;
+    const replayTarget = resolveReplayTarget(sliced, input.messageId ?? null);
+    const assistantTurn = replayTarget?.assistantMessageId
+      ? sliced.find((message) => message.id === replayTarget.assistantMessageId && message.role === "assistant")
+      : undefined;
 
     const retrieval = assistantTurn ? extractRetrievedChunks(assistantTurn.metadata) : null;
     const instructionBlock = assistantTurn
@@ -239,7 +276,8 @@ export class EvalSnapshotService {
     return this.repository.createSnapshot({
       workspaceId: input.workspaceId,
       sourceConversationId: conversation.id,
-      sourceMessageId: assistantTurn?.id ?? null,
+      sourceMessageId: replayTarget?.assistantMessageId ?? null,
+      replayTarget,
       fidelity,
       messages: sliced.map(toSnapshotMessage),
       originalInstructionBlock: instructionBlock,

@@ -19,6 +19,7 @@ import type {
   EvalSnapshotFidelity,
   EvalSnapshotMessage,
   EvalSnapshotOriginalRetrievalChunk,
+  EvalSnapshotReplayTarget,
 } from "../domain/types.js";
 import type { AgentSnapshot } from "../../agents/public.js";
 import type { InternalAgentConfig } from "../../agents/public.js";
@@ -29,6 +30,7 @@ type SnapshotRow = {
   workspace_id: string;
   source_conversation_id: string;
   source_message_id: string | null;
+  replay_target: unknown;
   fidelity: EvalSnapshotFidelity;
   messages: unknown;
   original_instruction_block: unknown;
@@ -86,6 +88,7 @@ const mapSnapshot = (row: SnapshotRow): EvalSnapshot => ({
   workspaceId: row.workspace_id,
   sourceConversationId: row.source_conversation_id,
   sourceMessageId: row.source_message_id,
+  replayTarget: asObject<EvalSnapshotReplayTarget | null>(row.replay_target, null),
   fidelity: row.fidelity,
   messages: Array.isArray(row.messages) ? (row.messages as EvalSnapshotMessage[]) : [],
   originalInstructionBlock:
@@ -144,6 +147,7 @@ export interface CreateSnapshotInput {
   workspaceId: string;
   sourceConversationId: string;
   sourceMessageId: string | null;
+  replayTarget: EvalSnapshotReplayTarget | null;
   fidelity: EvalSnapshotFidelity;
   messages: EvalSnapshotMessage[];
   originalInstructionBlock: string | null;
@@ -218,6 +222,7 @@ const snapshotColumns = [
   "workspace_id",
   "source_conversation_id",
   "source_message_id",
+  "replay_target",
   "fidelity",
   "messages",
   "original_instruction_block",
@@ -271,6 +276,7 @@ export class EvalRepository implements EvalRepositoryPort {
         workspace_id: input.workspaceId,
         source_conversation_id: input.sourceConversationId,
         source_message_id: input.sourceMessageId,
+        replay_target: input.replayTarget ? toJsonb(input.replayTarget) : null,
         fidelity: input.fidelity,
         messages: toJsonb(input.messages),
         original_instruction_block:

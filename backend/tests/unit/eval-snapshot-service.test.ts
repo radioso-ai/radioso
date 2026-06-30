@@ -337,6 +337,87 @@ class CapturingEvalRepository implements EvalRepositoryPort {
 }
 
 describe("EvalSnapshotService.capture", () => {
+  it("records the replay target for the selected assistant message", async () => {
+    const conversation: ConversationRecord = {
+      id: "conv-target",
+      workspaceId: "ws-1",
+      agentId: null,
+      agentName: null,
+      sourceChannel: null,
+      sourceOrigin: null,
+      channelContext: null,
+      anonymousSessionId: null,
+      verifiedCustomerId: null,
+      createdAt: fixedDate,
+      updatedAt: fixedDate,
+    };
+    const messages: MessageRecord[] = [
+      { id: "u1", conversationId: conversation.id, workspaceId: "ws-1", role: "user", content: "First", createdAt: fixedDate },
+      { id: "a1", conversationId: conversation.id, workspaceId: "ws-1", role: "assistant", content: "First answer", createdAt: fixedDate },
+      { id: "u2", conversationId: conversation.id, workspaceId: "ws-1", role: "user", content: "Second", createdAt: fixedDate },
+      { id: "a2", conversationId: conversation.id, workspaceId: "ws-1", role: "assistant", content: "Second answer", createdAt: fixedDate },
+    ];
+    const service = new EvalSnapshotService(
+      new StubConversationRepository(conversation),
+      new StubMessageRepository(messages),
+      new StubAgentRepository(null),
+      new StubRetrievalDefaultsProvider(),
+      createRetrievalSkillSettingsResolver(),
+      new CapturingEvalRepository(),
+    );
+
+    const snapshot = await service.capture({
+      workspaceId: "ws-1",
+      conversationId: conversation.id,
+      messageId: "a1",
+      capturedBy: "account-1",
+    });
+
+    expect(snapshot.sourceMessageId).toBe("a1");
+    expect(snapshot.replayTarget).toEqual({ userMessageId: "u1", assistantMessageId: "a1" });
+    expect(snapshot.messages.map((message) => message.id)).toEqual(["u1", "a1"]);
+  });
+
+  it("records a user-only replay target when the selected message is the user turn", async () => {
+    const conversation: ConversationRecord = {
+      id: "conv-user-target",
+      workspaceId: "ws-1",
+      agentId: null,
+      agentName: null,
+      sourceChannel: null,
+      sourceOrigin: null,
+      channelContext: null,
+      anonymousSessionId: null,
+      verifiedCustomerId: null,
+      createdAt: fixedDate,
+      updatedAt: fixedDate,
+    };
+    const messages: MessageRecord[] = [
+      { id: "u1", conversationId: conversation.id, workspaceId: "ws-1", role: "user", content: "First", createdAt: fixedDate },
+      { id: "a1", conversationId: conversation.id, workspaceId: "ws-1", role: "assistant", content: "First answer", createdAt: fixedDate },
+      { id: "u2", conversationId: conversation.id, workspaceId: "ws-1", role: "user", content: "Second", createdAt: fixedDate },
+    ];
+    const service = new EvalSnapshotService(
+      new StubConversationRepository(conversation),
+      new StubMessageRepository(messages),
+      new StubAgentRepository(null),
+      new StubRetrievalDefaultsProvider(),
+      createRetrievalSkillSettingsResolver(),
+      new CapturingEvalRepository(),
+    );
+
+    const snapshot = await service.capture({
+      workspaceId: "ws-1",
+      conversationId: conversation.id,
+      messageId: "u2",
+      capturedBy: "account-1",
+    });
+
+    expect(snapshot.sourceMessageId).toBeNull();
+    expect(snapshot.replayTarget).toEqual({ userMessageId: "u2", assistantMessageId: null });
+    expect(snapshot.messages.map((message) => message.id)).toEqual(["u1", "a1", "u2"]);
+  });
+
   it("stores the full internal agent config as the snapshot baseline", async () => {
     const originalAgent = agent();
     const conversation: ConversationRecord = {

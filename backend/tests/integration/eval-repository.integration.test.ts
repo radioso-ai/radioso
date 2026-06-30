@@ -57,6 +57,7 @@ describeIntegration("EvalRepository (Postgres)", () => {
       workspaceId,
       sourceConversationId: conversationId,
       sourceMessageId: null,
+      replayTarget: { userMessageId: "message-user-1", assistantMessageId: null },
       fidelity: "full",
       messages: [
         { role: "user", content: "What is the refund policy?" },
@@ -79,6 +80,7 @@ describeIntegration("EvalRepository (Postgres)", () => {
     expect(snapshot.id).toMatch(/[0-9a-f-]{36}/);
     expect(snapshot.workspaceId).toBe(workspaceId);
     expect(snapshot.sourceConversationId).toBe(conversationId);
+    expect(snapshot.replayTarget).toEqual({ userMessageId: "message-user-1", assistantMessageId: null });
     expect(snapshot.fidelity).toBe("full");
     expect(snapshot.messages).toHaveLength(2);
     // The instruction block is stored as a JSONB string and read back as a JS string.

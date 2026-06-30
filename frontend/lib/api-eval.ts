@@ -24,11 +24,17 @@ export interface EvalSnapshotOriginalRetrievalChunk {
   similarity?: number
 }
 
+export interface EvalSnapshotReplayTarget {
+  userMessageId: string
+  assistantMessageId: string | null
+}
+
 export interface EvalSnapshot {
   id: string
   workspaceId: string
   sourceConversationId: string
   sourceMessageId: string | null
+  replayTarget: EvalSnapshotReplayTarget | null
   fidelity: EvalSnapshotFidelity
   messages: EvalSnapshotMessage[]
   originalInstructionBlock: string | null

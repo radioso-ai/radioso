@@ -96,6 +96,13 @@ const resolveReplayRetrievalSettingsOverride = (
   };
 };
 
+const hasLegacyOnlyFullAssistantOverride = (overrides: EvalRunOverrides): boolean =>
+  Boolean(
+    overrides.modelOverride
+      || overrides.assistantInstructionsOverride
+      || overrides.retrievalSettingsOverride,
+  );
+
 export class EvalRunService {
   constructor(
     private readonly repository: EvalRepositoryPort,
@@ -121,6 +128,17 @@ export class EvalRunService {
       throw badRequest("Case snapshot does not match provided snapshot");
     }
 
+    const overrides = input.overrides ?? {};
+    if (
+      input.mode === "full_assistant"
+      && this.workbenchReplayRunner
+      && snapshot.originalAgentConfig
+      && snapshot.sourceAgentId
+      && !hasLegacyOnlyFullAssistantOverride(overrides)
+    ) {
+      return this.executeWorkbenchReplay(input);
+    }
+
     const replay = buildReplayInputs(snapshot);
     if (!replay) {
       throw badRequest("Snapshot has no user message to replay");
@@ -129,7 +147,6 @@ export class EvalRunService {
     // Generate the run id up front so usage events recorded inside the
     // runner/judge can reference the same id that ends up on eval_runs.
     const runId = randomUUID();
-    const overrides = input.overrides ?? {};
     const resolvedConfig: EvalRunResolvedConfig = {};
     let observed: EvalRunObservedOutput;
 

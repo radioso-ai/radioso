@@ -13,6 +13,7 @@ const snapshot = (workspaceId: string, id = randomUUID()): EvalSnapshot => ({
   workspaceId,
   sourceConversationId: randomUUID(),
   sourceMessageId: null,
+  replayTarget: null,
   fidelity: "full",
   messages: [],
   originalInstructionBlock: null,

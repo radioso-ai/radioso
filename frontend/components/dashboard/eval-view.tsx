@@ -48,9 +48,8 @@ import {
   workbenchOverrideReducer,
   type WorkbenchOverrideState,
   type WorkbenchOverrideValues,
-  type WorkbenchSeedTurn,
 } from './workbench/use-workbench-state'
-import { evalsApi, documentsApi, agentsApi, directivesApi, routinesApi, type AgentSettings, type ChatConversationDetail, type ChatConversationTurn, type Directive } from '@/lib/api'
+import { evalsApi, documentsApi, agentsApi, directivesApi, routinesApi, type AgentSettings, type Directive } from '@/lib/api'
 import type { EvalRunRoutineStartStateInput } from '@/lib/api-eval'
 import type { RoutineDefinition } from '@/lib/api-types'
 import type {
@@ -78,6 +77,7 @@ import type { ConversationTraceStage } from '@/lib/api-types'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { useSkillCatalog } from '@/lib/skill-catalog'
 import { activityTraceToFlowGraph, envelopeToFlowGraph, type TurnFlowNode } from '@/lib/turn-flow'
+import { buildEvalSeedTurn } from '@/lib/eval-workbench-seed'
 import { getPrimaryLeafTrace } from '@/lib/turn-trace'
 import { RETRIEVAL_ANSWER_SKILL_NAME } from '@/lib/retrieval-skill-settings'
 import { TurnFlowGraph } from './turn-flow-graph'
@@ -160,70 +160,6 @@ const toThreadMessages = (
   citations: m.citations,
   answerSegments: m.answerSegments,
 }))
-
-const snapshotMessageToTurn = (
-  snapshot: EvalSnapshot,
-  message: EvalSnapshot['messages'][number],
-): ChatConversationTurn => ({
-  id: message.id,
-  role: message.role,
-  source: message.role === 'assistant' ? 'ai_agent' : message.role === 'user' ? 'customer' : 'system',
-  content: message.content,
-  createdAt: message.createdAt,
-  citations: message.citations,
-  answerSegments: message.answerSegments,
-} as ChatConversationTurn)
-
-const buildSnapshotConversation = (snapshot: EvalSnapshot): ChatConversationDetail => ({
-  conversationId: snapshot.sourceConversationId,
-  workspaceId: snapshot.workspaceId,
-  agentId: snapshot.sourceAgentId,
-  sourceChannel: null,
-  sourceOrigin: null,
-  channelContext: null,
-  createdAt: snapshot.capturedAt,
-  updatedAt: snapshot.capturedAt,
-  messageCount: snapshot.messages.length,
-  userMessageCount: snapshot.messages.filter((message) => message.role === 'user').length,
-  assistantMessageCount: snapshot.messages.filter((message) => message.role === 'assistant').length,
-  messagesTotal: snapshot.messages.length,
-  messageWindowOffset: 0,
-  messageWindowLimit: snapshot.messages.length,
-  hasOlderMessages: false,
-  nextCursor: null,
-  tailCursor: null,
-  messages: snapshot.messages.map((message) => snapshotMessageToTurn(snapshot, message)),
-} as ChatConversationDetail)
-
-const buildEvalSeedTurn = (snapshot: EvalSnapshot): WorkbenchSeedTurn | null => {
-  const conversation = buildSnapshotConversation(snapshot)
-  const messages = conversation.messages
-  if (messages.length === 0) return null
-
-  const selectedIndex = snapshot.sourceMessageId
-    ? messages.findIndex((message) => message.id === snapshot.sourceMessageId)
-    : -1
-  const assistantIndex = selectedIndex >= 0 && messages[selectedIndex]?.role === 'assistant'
-    ? selectedIndex
-    : (() => {
-      for (let index = messages.length - 1; index >= 0; index -= 1) {
-        if (messages[index]?.role === 'assistant') return index
-      }
-      return -1
-    })()
-
-  const assistantTurn = assistantIndex >= 0 ? messages[assistantIndex] : null
-  const userSearchStart = assistantIndex >= 0 ? assistantIndex - 1 : messages.length - 1
-  for (let index = userSearchStart; index >= 0; index -= 1) {
-    const turn = messages[index]
-    if (turn?.role === 'user') {
-      return { conversation, userTurn: turn, assistantTurn }
-    }
-  }
-
-  const firstUser = messages.find((message) => message.role === 'user')
-  return firstUser ? { conversation, userTurn: firstUser, assistantTurn } : null
-}
 
 const emptyReplayBaseline: WorkbenchOverrideValues = {
   chatModelOverride: null,

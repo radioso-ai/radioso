@@ -109,6 +109,33 @@ export const evaluateAssertion = (
         reason: `Document ${assertion.documentId} did not appear in the top ${assertion.k} retrieved chunks. ${tail}`,
       };
     }
+    case "answer_cites_document": {
+      // Citations only exist on a composed answer; an answer is required to assert on them.
+      if (typeof output.answer !== "string") {
+        return {
+          assertion,
+          status: "error",
+          reason: "answer_cites_document requires an answer in the run output. Run the case in full_assistant mode.",
+        };
+      }
+      const citations = output.citations ?? [];
+      const hit = citations.find((citation) => citation.documentId === assertion.documentId);
+      if (hit) {
+        return {
+          assertion,
+          status: "pass",
+          reason: `Answer cited document ${assertion.documentId} ("${hit.title}").`,
+        };
+      }
+      const citedDocuments = new Set(citations.map((citation) => citation.documentId)).size;
+      return {
+        assertion,
+        status: "fail",
+        reason: citations.length === 0
+          ? `Answer cited no documents, so it did not cite ${assertion.documentId}.`
+          : `Answer did not cite document ${assertion.documentId}. It cited ${citations.length} source(s) from ${citedDocuments} other document(s).`,
+      };
+    }
     case "answer_contains":
     case "answer_does_not_contain": {
       const expectsMatch = assertion.type === "answer_contains";

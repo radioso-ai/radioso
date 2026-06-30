@@ -22,6 +22,7 @@ const ASSERTION_KIND_LABELS: Record<EvalAssertionKind, string> = {
   retrieval_includes_document: 'Retrieval should include a document',
   retrieval_excludes_document: 'Retrieval should NOT include a document',
   retrieval_top_k_includes_document: 'Document should appear in top-K results',
+  answer_cites_document: 'Answer should cite a document',
   answer_contains: 'Answer should contain text',
   answer_does_not_contain: 'Answer should NOT contain text',
   llm_judge: 'LLM judge against a reference answer',
@@ -31,6 +32,7 @@ const ASSERTION_KIND_HINTS: Record<EvalAssertionKind, string> = {
   retrieval_includes_document: 'Pass when at least one chunk from the picked document is retrieved.',
   retrieval_excludes_document: 'Pass when no chunk from the picked document is retrieved.',
   retrieval_top_k_includes_document: 'Pass when a chunk from the picked document is among the first K retrieved chunks.',
+  answer_cites_document: 'Pass when the generated answer carries a citation to the picked document. Requires full-assistant run mode.',
   answer_contains: 'Pass when the generated answer contains a substring or matches a regex. Requires full-assistant run mode.',
   answer_does_not_contain: 'Pass when the generated answer does NOT contain a substring/regex. Requires full-assistant run mode.',
   llm_judge: 'An LLM compares the generated answer against your reference and returns pass/fail. Requires full-assistant run mode and incurs an extra LLM call.',
@@ -44,6 +46,8 @@ const createDefaultAssertion = (kind: EvalAssertionKind): EvalAssertion => {
       return { type: 'retrieval_excludes_document', documentId: '' }
     case 'retrieval_top_k_includes_document':
       return { type: 'retrieval_top_k_includes_document', documentId: '', k: 3 }
+    case 'answer_cites_document':
+      return { type: 'answer_cites_document', documentId: '' }
     case 'answer_contains':
       return { type: 'answer_contains', pattern: '', matchMode: 'substring' }
     case 'answer_does_not_contain':
@@ -57,6 +61,7 @@ const isComplete = (a: EvalAssertion): boolean => {
   switch (a.type) {
     case 'retrieval_includes_document':
     case 'retrieval_excludes_document':
+    case 'answer_cites_document':
       return Boolean(a.documentId)
     case 'retrieval_top_k_includes_document':
       return Boolean(a.documentId) && Number.isInteger(a.k) && a.k > 0
@@ -68,12 +73,15 @@ const isComplete = (a: EvalAssertion): boolean => {
   }
 }
 
-const isRetrievalAssertion = (
+// Every assertion that targets a document (retrieval checks + answer_cites_document)
+// renders the same document picker; only top-K adds the extra K field.
+const isDocumentAssertion = (
   a: EvalAssertion,
 ): a is Extract<EvalAssertion, { documentId: string }> =>
   a.type === 'retrieval_includes_document' ||
   a.type === 'retrieval_excludes_document' ||
-  a.type === 'retrieval_top_k_includes_document'
+  a.type === 'retrieval_top_k_includes_document' ||
+  a.type === 'answer_cites_document'
 
 const isAnswerAssertion = (
   a: EvalAssertion,
@@ -227,7 +235,7 @@ interface AssertionFieldsProps {
 }
 
 function AssertionFields({ assertion, disabled, resolveDocumentTitle, onChange }: AssertionFieldsProps) {
-  if (isRetrievalAssertion(assertion)) {
+  if (isDocumentAssertion(assertion)) {
     return (
       <RetrievalAssertionFields
         assertion={assertion}

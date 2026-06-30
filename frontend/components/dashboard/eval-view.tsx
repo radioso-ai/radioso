@@ -122,6 +122,10 @@ const assertionSummary = (a: EvalAssertion, titleFor: (id: string) => string | u
       if (a.type === 'retrieval_excludes_document') return `Retrieval should NOT include ${docLabel}`
       return `${docLabel} should rank in the top ${a.k}`
     }
+    case 'answer_cites_document': {
+      const docLabel = titleFor(a.documentId) ?? `document ${a.documentId.slice(0, 8)}`
+      return `Answer should cite ${docLabel}`
+    }
     case 'answer_contains':
       return `Answer should ${a.matchMode === 'regex' ? 'match regex' : 'contain'} ${JSON.stringify(a.pattern)}`
     case 'answer_does_not_contain':

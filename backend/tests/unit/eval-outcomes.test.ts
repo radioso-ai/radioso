@@ -2,6 +2,60 @@ import { describe, expect, it } from "vitest";
 
 import { aggregateAssertions, evaluateAssertion } from "../../src/modules/eval/domain/outcomes.js";
 
+describe("evaluateAssertion answer_cites_document", () => {
+  it("passes when the answer cites the target document", () => {
+    const verdict = evaluateAssertion(
+      { type: "answer_cites_document", documentId: "doc-1" },
+      {
+        retrievedChunks: [],
+        answer: "Grounded answer.",
+        citations: [
+          { documentId: "doc-other", chunkId: "c1", title: "X" },
+          { documentId: "doc-1", chunkId: "c2", title: "Target" },
+        ],
+      },
+    );
+
+    expect(verdict.status).toBe("pass");
+    expect(verdict.reason).toContain("doc-1");
+    expect(verdict.reason).not.toContain("c2");
+  });
+
+  it("fails when the answer cites no such document", () => {
+    const verdict = evaluateAssertion(
+      { type: "answer_cites_document", documentId: "doc-missing" },
+      {
+        retrievedChunks: [],
+        answer: "Grounded answer.",
+        citations: [{ documentId: "doc-a", chunkId: "c1", title: "A" }],
+      },
+    );
+
+    expect(verdict.status).toBe("fail");
+    expect(verdict.reason).toContain("doc-missing");
+  });
+
+  it("fails when the answer carries no citations at all", () => {
+    const verdict = evaluateAssertion(
+      { type: "answer_cites_document", documentId: "doc-x" },
+      { retrievedChunks: [], answer: "Ungrounded answer.", citations: [] },
+    );
+
+    expect(verdict.status).toBe("fail");
+    expect(verdict.reason).toContain("doc-x");
+  });
+
+  it("errors when no answer was produced (wrong run mode)", () => {
+    const verdict = evaluateAssertion(
+      { type: "answer_cites_document", documentId: "doc-x" },
+      { retrievedChunks: [] },
+    );
+
+    expect(verdict.status).toBe("error");
+    expect(verdict.reason).toContain("full_assistant");
+  });
+});
+
 describe("evaluateAssertion retrieval_includes_document", () => {
   it("passes when the target document appears in retrieved chunks", () => {
     const verdict = evaluateAssertion(

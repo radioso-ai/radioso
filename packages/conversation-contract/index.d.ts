@@ -272,8 +272,23 @@ export interface TurnOutcome {
   subTrace?: CapabilitySubTrace;
 }
 
+/**
+ * A source a renderer grounded an answer on, in a host-neutral shape. The kit produces
+ * these from retrieval skill output it already holds; the host maps them to its own
+ * citation type (resolving/validating a source URL from `metadata`) and sanitizes per
+ * surface. IDs are optional because not every staged context carries them.
+ */
+export interface ConversationCitation {
+  documentId?: string;
+  chunkId?: string;
+  title: string;
+  content?: string;
+  metadata?: Record<string, unknown>;
+}
+
 export interface RenderableTurn {
   answer: string;
+  /** Sources the turn grounded on; carries {@link ConversationCitation}[] when present. */
   citations?: unknown[];
   suggestions?: unknown[];
   metadata?: Record<string, unknown>;

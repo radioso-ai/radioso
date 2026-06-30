@@ -89,6 +89,45 @@ const toCitationEvidence = (session: PreparedSession): CitationEvidence[] =>
     return evidence;
   });
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const optionalText = (value: unknown): string | undefined =>
+  typeof value === "string" && value.trim().length > 0 ? value : undefined;
+
+// Map the engine's host-neutral `ConversationCitation[]` (carried on a routine reply's
+// `RenderableTurn.citations`) into the same `CitationEvidence` shape the grounded path
+// uses, resolving + validating the source URL from the passed-through context metadata.
+// Junk entries are dropped — the field is typed `unknown[]` at the contract boundary.
+const toRoutineCitationEvidence = (citations: readonly unknown[] | undefined): CitationEvidence[] => {
+  if (!Array.isArray(citations)) {
+    return [];
+  }
+  const evidence: CitationEvidence[] = [];
+  for (const candidate of citations) {
+    if (!isRecord(candidate)) {
+      continue;
+    }
+    const title = optionalText(candidate.title);
+    const content = optionalText(candidate.content);
+    if (!title && !content) {
+      continue;
+    }
+    const item: CitationEvidence = {
+      documentId: optionalText(candidate.documentId) ?? "",
+      chunkId: optionalText(candidate.chunkId) ?? "",
+      title: title ?? "Source",
+      content: content ?? "",
+    };
+    const sourceUrl = resolveContextSourceUrl(isRecord(candidate.metadata) ? candidate.metadata : undefined);
+    if (sourceUrl) {
+      item.sourceUrl = sourceUrl;
+    }
+    evidence.push(item);
+  }
+  return evidence;
+};
+
 const toPlanningCitations = (citationEvidence: CitationEvidence[]): ChatCitation[] =>
   citationEvidence.map((citation) => {
     const planning: ChatCitation = {
@@ -139,6 +178,38 @@ export class ChatAnswerPresenter {
     return {
       ...presented,
       planningCitations: [],
+      skillName: skillTurnOutcome.skillName,
+      skillOutcome: skillTurnOutcome.outcome,
+      skillStatus: skillTurnOutcome.status,
+      answerOutcome: ASSISTANT_TURN_OUTCOME.NON_RETRIEVAL_RESPONSE,
+    };
+  }
+
+  /**
+   * Presents a routine step reply, attaching citations when the step grounded its answer
+   * on a `retrieval.context` skill step (the engine carries them on `RenderableTurn.citations`).
+   * With no citations it behaves exactly like {@link presentNonRetrievalAnswer}, so steps that
+   * don't ground stay uncited. Per-agent `citationDisplayEnabled` still gates public exposure
+   * downstream; this only attaches the artifacts.
+   */
+  presentRoutineAnswer(
+    answer: string,
+    citations?: readonly unknown[],
+    skillTurnOutcome: SkillTurnOutcome = SKILL_TURN_OUTCOME.ASSISTANT_CONVERSATIONAL,
+  ): ChatPresentedAnswer {
+    const citationEvidence = toRoutineCitationEvidence(citations);
+    if (citationEvidence.length === 0) {
+      return this.presentNonRetrievalAnswer(answer, skillTurnOutcome);
+    }
+
+    const normalized = this.answerPresentationService.normalize({ answer, citations: citationEvidence });
+    const presented = this.answerPresentationService.present({ answer, citations: citationEvidence });
+    const citationArtifacts = resolveCitationArtifacts(presented, normalized, citationEvidence);
+
+    return {
+      ...presented,
+      ...citationArtifacts,
+      planningCitations: toPlanningCitations(normalized.citationEvidence),
       skillName: skillTurnOutcome.skillName,
       skillOutcome: skillTurnOutcome.outcome,
       skillStatus: skillTurnOutcome.status,

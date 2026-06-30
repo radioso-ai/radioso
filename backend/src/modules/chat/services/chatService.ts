@@ -603,7 +603,7 @@ export class ChatService {
         ? clarification.resolution.loopGuardCandidateIds
         : undefined,
       suppressNewClarification: clarification?.resolution?.suppressNewClarification,
-      presentRoutineReply: (response) => this.chatAnswerPresenter.presentNonRetrievalAnswer(response.answer),
+      presentRoutineReply: (response) => this.chatAnswerPresenter.presentRoutineAnswer(response.answer, response.citations),
     });
     if (!outcome) {
       return null;
@@ -769,7 +769,7 @@ export class ChatService {
     const routineStateTransition: CapturedRoutineTransition = result.nextState
       ? { kind: "save", state: result.nextState }
       : { kind: "clear", sessionId: input.record.sessionId };
-    const presentation = this.chatAnswerPresenter.presentNonRetrievalAnswer(result.response.answer);
+    const presentation = this.chatAnswerPresenter.presentRoutineAnswer(result.response.answer, result.response.citations);
 
     const completed = await this.chatTurnLifecycle.completeAssistantTurn({
       workspaceId: input.record.workspaceId,

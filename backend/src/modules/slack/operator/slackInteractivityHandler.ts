@@ -208,7 +208,11 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     if (!installation) {
       return;
     }
-    await this.options.identityResolver.resolve({ installation, slackUserId });
+    await this.options.identityResolver.resolve({
+      installation,
+      workspaceId: installation.workspaceId,
+      slackUserId,
+    });
   }
 
   private async handleDecisionResolve(payload: SlackInteractivityPayload, action: {
@@ -230,14 +234,15 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
       return;
     }
 
-    const identity = await this.options.identityResolver.resolve({ installation, slackUserId });
+    const decision = await this.options.pendingDecisions?.loadByHandle(action.handle);
+    const workspaceId = decision?.workspaceId ?? installation.workspaceId;
+    const identity = await this.options.identityResolver.resolve({ installation, workspaceId, slackUserId });
     if ("rejected" in identity) {
       this.incrementDecisionCounter("rejected_identity");
       await this.postEphemeral(payload, "You're not a Radioso operator on this workspace.");
       return;
     }
 
-    const decision = await this.options.pendingDecisions?.loadByHandle(action.handle);
     try {
       const result = await this.options.approvalDecisions.resolve({
         agentId: action.agentId,
@@ -246,7 +251,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
         contentHash: action.contentHash,
         caller: {
           accountId: identity.accountId,
-          workspaceId: installation.workspaceId,
+          workspaceId,
           // Required for workspace_role-scoped decisions: resolveWorkspaceRole returns null
           // without a userId, so a role-scoped gate would reject an otherwise-authorized operator.
           ...(identity.userId ? { userId: identity.userId } : {}),
@@ -255,7 +260,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
       this.incrementDecisionCounter("resolved");
       await this.recordDecisionAudit({
         accountId: identity.accountId,
-        workspaceId: installation.workspaceId,
+        workspaceId,
         slackUserId,
         slackDisplayName: identity.displayName,
         handle: action.handle,
@@ -284,7 +289,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
       }
       this.options.logger?.warn({
         event: "slack_decision_resolve_failed",
-        workspaceId: installation.workspaceId,
+        workspaceId,
         handle: action.handle,
         err: error instanceof Error ? error.message : String(error),
       }, "Slack decision resolve failed");
@@ -329,7 +334,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     return false;
   }
 
-  private async resolveOperator(payload: SlackInteractivityPayload): Promise<{
+  private async resolveOperator(payload: SlackInteractivityPayload, workspaceId: string): Promise<{
     installation: SlackInstallationRecord;
     slackUserId: string;
     identity: SlackOperatorIdentity;
@@ -346,7 +351,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     if (!installation) {
       return null;
     }
-    const identity = await this.options.identityResolver.resolve({ installation, slackUserId });
+    const identity = await this.options.identityResolver.resolve({ installation, workspaceId, slackUserId });
     if ("rejected" in identity) {
       return { rejected: true };
     }
@@ -360,7 +365,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     if (!this.options.conversationOwnership) {
       return;
     }
-    const resolved = await this.resolveOperator(payload);
+    const resolved = await this.resolveOperator(payload, input.workspaceId);
     if (!resolved || "rejected" in resolved) {
       await this.postEphemeral(payload, "You're not a Radioso operator on this workspace.");
       return;
@@ -407,7 +412,13 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     if (!this.options.conversationOwnership) {
       return;
     }
-    const resolved = await this.resolveOperator(payload);
+    const ownership = await this.options.conversationOwnership.load(input.conversationId);
+    const workspaceId = ownership?.workspaceId;
+    if (!workspaceId) {
+      await this.postEphemeral(payload, "Conversation ownership changed. Refreshing.");
+      return;
+    }
+    const resolved = await this.resolveOperator(payload, workspaceId);
     if (!resolved || "rejected" in resolved) {
       await this.postEphemeral(payload, "You're not a Radioso operator on this workspace.");
       return;
@@ -420,10 +431,10 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
       await this.postEphemeral(payload, "Conversation ownership changed. Refreshing.");
       return;
     }
-    const workspaceId = result.record.workspaceId;
+    const resultWorkspaceId = result.record.workspaceId;
     await this.recordOwnershipAudit({
       accountId: resolved.identity.accountId,
-      workspaceId,
+      workspaceId: resultWorkspaceId,
       action: "handed_back",
       conversationId: input.conversationId,
       slackUserId: resolved.slackUserId,
@@ -431,7 +442,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     });
     const message = buildOwnershipMessage({
       conversationId: input.conversationId,
-      workspaceId,
+      workspaceId: resultWorkspaceId,
       state: "ai_owned",
       contextText: ownershipContextText(input.conversationId),
       dashboardPath: dashboardPath(input.conversationId),
@@ -451,7 +462,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     if (!this.options.conversationOwnership || !this.options.slackViews) {
       return;
     }
-    const resolved = await this.resolveOperator(payload);
+    const resolved = await this.resolveOperator(payload, input.workspaceId);
     if (!resolved || "rejected" in resolved) {
       await this.postEphemeral(payload, "You're not a Radioso operator on this workspace.");
       return;
@@ -489,7 +500,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     if (!message) {
       return this.replyModalError("Enter a reply.");
     }
-    const resolved = await this.resolveOperator(payload);
+    const resolved = await this.resolveOperator(payload, workspaceId);
     if (!resolved || "rejected" in resolved) {
       return this.replyModalError("Take over the conversation before replying.");
     }

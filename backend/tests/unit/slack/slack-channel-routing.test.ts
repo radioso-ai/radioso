@@ -14,6 +14,7 @@ const installation: SlackInstallationRecord = {
   id: "11111111-1111-1111-1111-111111111111",
   connectionId: "22222222-2222-2222-2222-222222222222",
   workspaceId: "33333333-3333-3333-3333-333333333333",
+  accountId: "99999999-9999-4999-8999-999999999999",
   teamId: "T1",
   teamName: "Acme",
   botUserId: "UBOT",
@@ -23,6 +24,7 @@ const installation: SlackInstallationRecord = {
 
 const AGENT_DEFAULT = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 const AGENT_SALES = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+const WORKSPACE_SIBLING = "44444444-3333-4333-8333-444444444444";
 
 const logger: ConnectorLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
@@ -47,9 +49,11 @@ const seededBindings = async () => {
 
 const makeHandler = (bindings: InMemorySlackBindingRepository) => {
   const answeredWith: string[] = [];
+  const answeredWorkspaces: string[] = [];
   const chat: ConnectorChatPort = {
     answer: vi.fn(async (req) => {
       answeredWith.push(req.agentId);
+      answeredWorkspaces.push(req.workspaceId);
       return { conversationId: "44444444-4444-4444-4444-444444444444", answer: "ok", outcome: "answered" as const };
     }),
   };
@@ -57,6 +61,7 @@ const makeHandler = (bindings: InMemorySlackBindingRepository) => {
     findById: vi.fn(async () => installation),
     findByTeamId: vi.fn(async () => installation),
     findByWorkspaceId: vi.fn(async () => installation),
+    findByAccountId: vi.fn(async () => installation),
     upsert: vi.fn(),
     removeByWorkspaceId: vi.fn(),
   };
@@ -81,7 +86,7 @@ const makeHandler = (bindings: InMemorySlackBindingRepository) => {
     persistence,
     clientFactory: () => ({ postMessage: vi.fn(), addReaction: vi.fn(), removeReaction: vi.fn() }),
   });
-  return { handler, answeredWith };
+  return { handler, answeredWith, answeredWorkspaces, persistence };
 };
 
 const mention = (channel: string) => ({
@@ -111,6 +116,28 @@ describe("Slack channel-scoped answerer routing", () => {
       event: { type: "message", channel_type: "im", channel: "D1", user: "U1", text: "hi" },
     });
     expect(answeredWith).toEqual([AGENT_DEFAULT]);
+  });
+
+  it("uses the binding workspace when a sibling workspace owns the channel answerer", async () => {
+    const bindings = await seededBindings();
+    await bindings.upsert({
+      installationId: installation.id,
+      workspaceId: WORKSPACE_SIBLING,
+      channelId: "CSALES",
+      answeringAgentId: AGENT_SALES,
+    });
+    const { handler, answeredWith, answeredWorkspaces, persistence } = makeHandler(bindings);
+
+    await handler.handleAppMention(mention("CSALES"));
+
+    expect(answeredWith).toEqual([AGENT_SALES]);
+    expect(answeredWorkspaces).toEqual([WORKSPACE_SIBLING]);
+    expect(persistence.findConversationLink).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: WORKSPACE_SIBLING,
+    }));
+    expect(persistence.upsertConversationLink).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: WORKSPACE_SIBLING,
+    }));
   });
 });
 

@@ -165,7 +165,7 @@ export class SlackMessageHandler {
       await this.options.installationService.markNeedsReauthForInstallation(installation, "slack_bot_token_not_found");
       await this.options.persistence.markInboundEventStatus(envelope.eventId, "skipped");
       this.options.logger.warn(
-        { workspaceId: installation.workspaceId, installationId: installation.id, eventId: envelope.eventId },
+        { workspaceId: binding.workspaceId, installationWorkspaceId: installation.workspaceId, installationId: installation.id, eventId: envelope.eventId },
         "Slack reply skipped without bot token",
       );
       return;
@@ -178,16 +178,16 @@ export class SlackMessageHandler {
 
     const slackKey = input.getSlackKey(installation);
     const existingLink = await this.options.persistence.findConversationLink({
-      workspaceId: installation.workspaceId,
+      workspaceId: binding.workspaceId,
       slackKey,
     });
 
     this.options.logger.info(
-      { workspaceId: installation.workspaceId, installationId: installation.id, eventId: envelope.eventId },
+      { workspaceId: binding.workspaceId, installationWorkspaceId: installation.workspaceId, installationId: installation.id, eventId: envelope.eventId },
       "Slack turn dispatch started",
     );
     const response = await this.options.chat.answer({
-      workspaceId: installation.workspaceId,
+      workspaceId: binding.workspaceId,
       agentId: binding.answeringAgentId,
       conversationId: existingLink?.conversationId,
       query,
@@ -195,7 +195,7 @@ export class SlackMessageHandler {
       channelContext: input.getChannelContext(installation),
     });
     await this.options.persistence.upsertConversationLink({
-      workspaceId: installation.workspaceId,
+      workspaceId: binding.workspaceId,
       installationId: installation.id,
       slackKey,
       conversationId: response.conversationId,
@@ -203,6 +203,7 @@ export class SlackMessageHandler {
     await this.enqueueGapEscalationIfNeeded({
       envelope,
       installation,
+      workspaceId: binding.workspaceId,
       escalationChannelId: binding.escalationChannelId,
       gapEscalationEnabled: binding.gapEscalationEnabled,
       query,
@@ -230,7 +231,7 @@ export class SlackMessageHandler {
     await this.settleReaction(client, reactionTarget, SLACK_ANSWERED_REACTION, envelope.eventId);
     await this.options.persistence.markInboundEventStatus(envelope.eventId, "processed");
     this.options.logger.info(
-      { workspaceId: installation.workspaceId, installationId: installation.id, eventId: envelope.eventId },
+      { workspaceId: binding.workspaceId, installationWorkspaceId: installation.workspaceId, installationId: installation.id, eventId: envelope.eventId },
       "Slack reply delivered",
     );
   }
@@ -287,6 +288,7 @@ export class SlackMessageHandler {
   private async enqueueGapEscalationIfNeeded(input: {
     envelope: SlackInboundEventEnvelope;
     installation: SlackInstallationRecord;
+    workspaceId: string;
     escalationChannelId: string | null;
     gapEscalationEnabled: boolean;
     query: string;
@@ -303,13 +305,13 @@ export class SlackMessageHandler {
     }
     const message = buildOwnershipMessage({
       conversationId: input.conversationId,
-      workspaceId: input.installation.workspaceId,
+      workspaceId: input.workspaceId,
       state: "ai_owned",
       contextText: input.query,
       dashboardPath: `/conversations/${input.conversationId}`,
     });
     await enqueueSlackPostAction(this.options.slackPostOutbox, {
-      workspaceId: input.installation.workspaceId,
+      workspaceId: input.workspaceId,
       conversationId: input.conversationId,
       idempotencyKey: slackPostIdempotencyKey({
         kind: "gap_escalation",
@@ -326,7 +328,8 @@ export class SlackMessageHandler {
     });
     this.options.logger.info(
       {
-        workspaceId: input.installation.workspaceId,
+        workspaceId: input.workspaceId,
+        installationWorkspaceId: input.installation.workspaceId,
         installationId: input.installation.id,
         eventId: input.envelope.eventId,
         conversationId: input.conversationId,

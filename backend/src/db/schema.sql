@@ -1777,7 +1777,7 @@ CREATE TABLE public.slack_installations (
     bot_user_id text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    account_id uuid
+    account_id uuid NOT NULL
 );
 
 

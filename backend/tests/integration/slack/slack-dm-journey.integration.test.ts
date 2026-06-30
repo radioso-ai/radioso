@@ -12,6 +12,7 @@ import {
   SlackChannelBindingRepository,
   SlackInstallationRepository,
   SlackInstallationService,
+  PostgresWorkspaceAccountLookup,
 } from "../../../src/modules/slack/install/slackInstallationService.js";
 import { SlackMessageHandler } from "../../../src/modules/connectors/plugins/slack/slackMessageHandler.js";
 import { PostgresSlackPersistence } from "../../../src/modules/connectors/plugins/slack/slackPersistence.js";
@@ -128,6 +129,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       integrationConnections,
       installations,
       bindings,
+      workspaceAccounts: new PostgresWorkspaceAccountLookup(database.kysely),
       encryptionKey,
     });
     const saved = await installationService.saveInstallation({
@@ -243,6 +245,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       integrationConnections,
       installations,
       bindings,
+      workspaceAccounts: new PostgresWorkspaceAccountLookup(database.kysely),
       encryptionKey,
     });
     const saved = await installationService.saveInstallation({
@@ -386,6 +389,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       integrationConnections,
       installations,
       bindings,
+      workspaceAccounts: new PostgresWorkspaceAccountLookup(database.kysely),
       encryptionKey,
     });
     const saved = await installationService.saveInstallation({

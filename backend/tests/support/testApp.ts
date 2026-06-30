@@ -914,6 +914,9 @@ export const createTestDependencies = (overrides: {
     integrationConnections: integrationConnectionRepository,
     installations: slackInstallationRepository,
     bindings: slackBindingRepository,
+    workspaceAccounts: {
+      getAccountId: async (workspaceId) => (await workspaceRepository.findById(workspaceId))?.accountId ?? null,
+    },
     encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
   });
   const slackProvider = buildSlackOauthProviderDefinition({

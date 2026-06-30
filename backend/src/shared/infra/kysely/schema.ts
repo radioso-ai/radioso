@@ -763,7 +763,7 @@ export interface SlackInboundEvents {
 }
 
 export interface SlackInstallations {
-  account_id: string | null;
+  account_id: string;
   bot_user_id: string;
   connection_id: string;
   created_at: Generated<Timestamp>;

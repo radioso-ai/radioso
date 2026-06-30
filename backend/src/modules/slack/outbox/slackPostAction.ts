@@ -6,6 +6,7 @@ import {
   SlackInstallationService,
   SlackWebApiClient,
   postSlackText,
+  PostgresWorkspaceAccountLookup,
   slackAuthErrorCode,
   type SlackInstallationRecord,
   type SlackWebApiClientOptions,
@@ -92,8 +93,8 @@ export class SlackPostActionHandler implements ActionHandler {
     if (!installation) {
       throw new Error("slack_installation_not_found");
     }
-    if (!input.context.workspaceId || installation.workspaceId !== input.context.workspaceId) {
-      throw new Error("slack_installation_workspace_mismatch");
+    if (!input.context.accountId || installation.accountId !== input.context.accountId) {
+      throw new Error("slack_installation_account_mismatch");
     }
     const botToken = await this.options.credentials.resolveBotTokenForInstallation(installation);
     if (!botToken) {
@@ -189,6 +190,7 @@ export class SlackPostActionCredentialResolver implements SlackPostCredentialRes
           return false;
         },
       },
+      workspaceAccounts: new PostgresWorkspaceAccountLookup(input.database.kysely),
       encryptionKey: input.encryptionKey,
     });
   }

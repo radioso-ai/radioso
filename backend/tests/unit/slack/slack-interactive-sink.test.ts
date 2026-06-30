@@ -15,6 +15,7 @@ const installation: SlackInstallationRecord = {
   id: "00000000-0000-4000-8000-000000000001",
   connectionId: "conn_1",
   workspaceId: "ws_1",
+  accountId: "acct_1",
   teamId: "T1",
   teamName: "Team",
   botUserId: "B1",
@@ -92,9 +93,10 @@ const createSink = (overrides: {
   };
   const sink = new SlackOperatorNotificationSink({
     installations: {
-      findByWorkspaceId: vi.fn(async () =>
+      findByAccountId: vi.fn(async () =>
         Object.prototype.hasOwnProperty.call(overrides, "installation") ? overrides.installation! : installation),
     },
+    workspaceAccounts: { getAccountId: vi.fn(async () => "acct_1") },
     bindings: {
       findByInstallationId: vi.fn(async () =>
         Object.prototype.hasOwnProperty.call(overrides, "binding") ? overrides.binding! : binding),

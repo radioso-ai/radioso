@@ -66,6 +66,7 @@ describe("SlackCustomerReplyDeliverer", () => {
     id: "11111111-1111-1111-1111-111111111111",
     connectionId: "connection-1",
     workspaceId: "workspace-1",
+    accountId: "account-1",
     teamId: "T1",
     teamName: "Acme",
     botUserId: "UBOT",

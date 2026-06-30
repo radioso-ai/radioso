@@ -24,6 +24,7 @@ export interface SlackInstallationRecord {
   id: string;
   connectionId: string;
   workspaceId: string;
+  accountId: string;
   teamId: string;
   teamName: string | null;
   botUserId: string;
@@ -47,6 +48,7 @@ export interface SlackChannelBindingRecord {
 export interface UpsertSlackInstallationInput {
   connectionId: string;
   workspaceId: string;
+  accountId: string;
   teamId: string;
   teamName?: string | null;
   botUserId: string;
@@ -66,6 +68,7 @@ export interface SlackInstallationRepositoryPort {
   findById(installationId: string): Promise<SlackInstallationRecord | null>;
   findByTeamId(teamId: string): Promise<SlackInstallationRecord | null>;
   findByWorkspaceId(workspaceId: string): Promise<SlackInstallationRecord | null>;
+  findByAccountId(accountId: string): Promise<SlackInstallationRecord | null>;
   upsert(input: UpsertSlackInstallationInput): Promise<SlackInstallationRecord>;
   removeByWorkspaceId(workspaceId: string): Promise<boolean>;
 }
@@ -90,7 +93,12 @@ export interface SlackInstallationServiceOptions {
   integrationConnections: Pick<IntegrationConnectionRepositoryPort, "create" | "findById" | "update" | "remove">;
   installations: SlackInstallationRepositoryPort;
   bindings: SlackBindingRepositoryPort;
+  workspaceAccounts: WorkspaceAccountLookup;
   encryptionKey?: string;
+}
+
+export interface WorkspaceAccountLookup {
+  getAccountId(workspaceId: string): Promise<string | null>;
 }
 
 export interface SaveSlackInstallationInput {
@@ -142,23 +150,37 @@ export class SlackInstallationService {
 
   async saveInstallation(input: SaveSlackInstallationInput): Promise<SaveSlackInstallationResult> {
     const key = this.requireEncryptionKey();
+    const installingAccountId = await this.requireAccountId(input.workspaceId);
     const existingInstallation = await this.options.installations.findByTeamId(input.teamId);
     const displayName = displayNameForTeam(input.teamName, input.teamId);
-    if (existingInstallation && existingInstallation.workspaceId !== input.workspaceId) {
-      throw conflict("Slack team is already installed in another workspace");
+    if (existingInstallation && existingInstallation.accountId !== installingAccountId) {
+      throw conflict("Slack workspace is already connected to another organization");
     }
 
     const existingConnection = existingInstallation
       ? await this.integrationConnectionForInstallation(existingInstallation)
       : null;
     const previousOauthConnectionId = existingConnection?.oauthConnectionId ?? null;
+    const moveCredentialHome = Boolean(
+      existingConnection && input.oauthConnectionId && existingConnection.workspaceId !== input.workspaceId,
+    );
+    const credentialWorkspaceId = moveCredentialHome ? input.workspaceId : existingConnection?.workspaceId ?? input.workspaceId;
     const oauthConnectionId = existingConnection
       ? input.oauthConnectionId ?? existingConnection.oauthConnectionId
       : input.oauthConnectionId ?? (await this.createOauthConnection(input.workspaceId, displayName, input.teamId)).id;
 
-    const oauthConnection = await this.writeOauthTokens(input, oauthConnectionId, key, displayName);
+    const oauthConnection = await this.writeOauthTokens(input, credentialWorkspaceId, oauthConnectionId, key, displayName);
     const connection = existingConnection
-      ? await this.refreshIntegrationConnection(existingConnection, displayName, oauthConnection.id)
+      ? moveCredentialHome
+        ? await this.options.integrationConnections.create({
+            workspaceId: input.workspaceId,
+            oauthConnectionId: oauthConnection.id,
+            provider: "slack",
+            displayName,
+            status: "authorized",
+            config: {},
+          })
+        : await this.refreshIntegrationConnection(existingConnection, displayName, oauthConnection.id)
       : await this.options.integrationConnections.create({
           workspaceId: input.workspaceId,
           oauthConnectionId: oauthConnection.id,
@@ -168,16 +190,20 @@ export class SlackInstallationService {
           config: {},
         });
     if (previousOauthConnectionId && previousOauthConnectionId !== oauthConnection.id) {
-      await this.options.oauthConnections.remove?.(input.workspaceId, previousOauthConnectionId);
+      await this.options.oauthConnections.remove?.(existingConnection?.workspaceId ?? credentialWorkspaceId, previousOauthConnectionId);
     }
 
     const installation = await this.options.installations.upsert({
       connectionId: connection.id,
-      workspaceId: input.workspaceId,
+      workspaceId: connection.workspaceId,
+      accountId: installingAccountId,
       teamId: input.teamId,
       teamName: input.teamName ?? null,
       botUserId: input.botUserId,
     });
+    if (moveCredentialHome && existingConnection) {
+      await this.options.integrationConnections.remove(existingConnection.workspaceId, existingConnection.id, ["slack"]);
+    }
     const binding = input.answeringAgentId
       ? await this.options.bindings.upsert({
           installationId: installation.id,
@@ -192,15 +218,15 @@ export class SlackInstallationService {
   }
 
   async getStatus(workspaceId: string): Promise<SlackInstallationStatus> {
-    const installation = await this.options.installations.findByWorkspaceId(workspaceId);
+    const installation = await this.findInstallationForWorkspace(workspaceId);
     if (!installation) {
       return { status: "not_configured" };
     }
-    const connection = await this.options.integrationConnections.findById(workspaceId, installation.connectionId, ["slack"]);
+    const connection = await this.options.integrationConnections.findById(installation.workspaceId, installation.connectionId, ["slack"]);
     if (!connection) {
       return { status: "not_configured" };
     }
-    const oauthConnection = await this.options.oauthConnections.findById(workspaceId, connection.oauthConnectionId);
+    const oauthConnection = await this.options.oauthConnections.findById(installation.workspaceId, connection.oauthConnectionId);
     const binding = await this.options.bindings.findByInstallationId(installation.id);
     const status = connection.status === "authorized" && oauthConnection && !hasRequiredSlackBotScopes(oauthConnection.grantedScopes)
       ? "needs_reauth"
@@ -218,7 +244,7 @@ export class SlackInstallationService {
   }
 
   async getBinding(workspaceId: string): Promise<SlackChannelBindingRecord | null> {
-    const installation = await this.options.installations.findByWorkspaceId(workspaceId);
+    const installation = await this.findInstallationForWorkspace(workspaceId);
     return installation ? this.options.bindings.findByInstallationId(installation.id) : null;
   }
 
@@ -229,7 +255,7 @@ export class SlackInstallationService {
     escalationChannelId?: string | null;
     gapEscalationEnabled?: boolean;
   }): Promise<SlackChannelBindingRecord> {
-    const installation = await this.options.installations.findByWorkspaceId(input.workspaceId);
+    const installation = await this.findInstallationForWorkspace(input.workspaceId);
     if (!installation) {
       throw notFound("Slack installation is not configured");
     }
@@ -244,13 +270,13 @@ export class SlackInstallationService {
   }
 
   async disconnect(workspaceId: string): Promise<boolean> {
-    const installation = await this.options.installations.findByWorkspaceId(workspaceId);
+    const installation = await this.findInstallationForWorkspace(workspaceId);
     if (!installation) {
       return false;
     }
     await this.options.bindings.removeByInstallationId(installation.id);
-    await this.options.installations.removeByWorkspaceId(workspaceId);
-    await this.options.integrationConnections.remove(workspaceId, installation.connectionId, ["slack"]);
+    await this.options.installations.removeByWorkspaceId(installation.workspaceId);
+    await this.options.integrationConnections.remove(installation.workspaceId, installation.connectionId, ["slack"]);
     return true;
   }
 
@@ -324,12 +350,13 @@ export class SlackInstallationService {
 
   private async writeOauthTokens(
     input: SaveSlackInstallationInput,
+    workspaceId: string,
     oauthConnectionId: string,
     encryptionKey: string,
     displayName: string,
   ): Promise<OauthConnectionRecord> {
     const updated = await this.options.oauthConnections.setOauthTokens(
-      input.workspaceId,
+      workspaceId,
       oauthConnectionId,
       encryptOauthTokens(toStoredTokens(input), encryptionKey),
       null,
@@ -371,12 +398,26 @@ export class SlackInstallationService {
     }
     return this.options.encryptionKey;
   }
+
+  private async requireAccountId(workspaceId: string): Promise<string> {
+    const accountId = await this.options.workspaceAccounts.getAccountId(workspaceId);
+    if (!accountId) {
+      throw notFound("Workspace was not found");
+    }
+    return accountId;
+  }
+
+  private async findInstallationForWorkspace(workspaceId: string): Promise<SlackInstallationRecord | null> {
+    const accountId = await this.options.workspaceAccounts.getAccountId(workspaceId);
+    return accountId ? this.options.installations.findByAccountId(accountId) : null;
+  }
 }
 
 interface SlackInstallationRow {
   id: string;
   connection_id: string;
   workspace_id: string;
+  account_id: string;
   team_id: string;
   team_name: string | null;
   bot_user_id: string;
@@ -388,6 +429,7 @@ const installationColumns = [
   "id",
   "connection_id",
   "workspace_id",
+  "account_id",
   "team_id",
   "team_name",
   "bot_user_id",
@@ -399,6 +441,7 @@ const mapInstallation = (row: SlackInstallationRow): SlackInstallationRecord => 
   id: row.id,
   connectionId: row.connection_id,
   workspaceId: row.workspace_id,
+  accountId: row.account_id,
   teamId: row.team_id,
   teamName: row.team_name,
   botUserId: row.bot_user_id,
@@ -438,6 +481,18 @@ export class SlackInstallationRepository implements SlackInstallationRepositoryP
     return row ? mapInstallation(row as SlackInstallationRow) : null;
   }
 
+  async findByAccountId(accountId: string): Promise<SlackInstallationRecord | null> {
+    const row = await this.db
+      .selectFrom("slack_installations")
+      .select(installationColumns)
+      .where("account_id", "=", accountId)
+      .orderBy("updated_at", "desc")
+      .orderBy("team_id", "asc")
+      .limit(1)
+      .executeTakeFirst();
+    return row ? mapInstallation(row as SlackInstallationRow) : null;
+  }
+
   async upsert(input: UpsertSlackInstallationInput): Promise<SlackInstallationRecord> {
     const row = await this.db
       .insertInto("slack_installations")
@@ -445,6 +500,7 @@ export class SlackInstallationRepository implements SlackInstallationRepositoryP
         id: randomUUID(),
         connection_id: input.connectionId,
         workspace_id: input.workspaceId,
+        account_id: input.accountId,
         team_id: input.teamId,
         team_name: input.teamName ?? null,
         bot_user_id: input.botUserId,
@@ -453,6 +509,7 @@ export class SlackInstallationRepository implements SlackInstallationRepositoryP
         oc.column("team_id").doUpdateSet({
           connection_id: (eb) => eb.ref("excluded.connection_id"),
           workspace_id: (eb) => eb.ref("excluded.workspace_id"),
+          account_id: (eb) => eb.ref("excluded.account_id"),
           team_name: (eb) => eb.ref("excluded.team_name"),
           bot_user_id: (eb) => eb.ref("excluded.bot_user_id"),
           updated_at: currentTimestamp(),
@@ -470,6 +527,19 @@ export class SlackInstallationRepository implements SlackInstallationRepositoryP
       .returning("id")
       .execute();
     return rows.length > 0;
+  }
+}
+
+export class PostgresWorkspaceAccountLookup implements WorkspaceAccountLookup {
+  constructor(private readonly db: Db) {}
+
+  async getAccountId(workspaceId: string): Promise<string | null> {
+    const row = await this.db
+      .selectFrom("workspaces")
+      .select("account_id")
+      .where("id", "=", workspaceId)
+      .executeTakeFirst();
+    return row?.account_id ?? null;
   }
 }
 

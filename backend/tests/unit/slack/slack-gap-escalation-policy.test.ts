@@ -19,6 +19,7 @@ const installation: SlackInstallationRecord = {
   id: "11111111-1111-1111-1111-111111111111",
   connectionId: "22222222-2222-2222-2222-222222222222",
   workspaceId: "33333333-3333-3333-3333-333333333333",
+  accountId: "99999999-9999-4999-8999-999999999999",
   teamId: "T1",
   teamName: "Acme",
   botUserId: "UBOT",
@@ -59,6 +60,7 @@ const makeHandler = (input: {
     findById: vi.fn(async () => installation),
     findByTeamId: vi.fn(async () => installation),
     findByWorkspaceId: vi.fn(async () => installation),
+    findByAccountId: vi.fn(async () => installation),
     upsert: vi.fn(),
     removeByWorkspaceId: vi.fn(),
   };
@@ -214,6 +216,7 @@ describe("Slack gap escalation policy", () => {
       findById: vi.fn(async () => installation),
       findByTeamId: vi.fn(async () => installation),
       findByWorkspaceId: vi.fn(async () => installation),
+      findByAccountId: vi.fn(async () => installation),
       upsert: vi.fn(),
       removeByWorkspaceId: vi.fn(),
     };

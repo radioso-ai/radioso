@@ -12,6 +12,7 @@ const installation: SlackInstallationRecord = {
   id: "11111111-1111-1111-1111-111111111111",
   connectionId: "22222222-2222-2222-2222-222222222222",
   workspaceId: "33333333-3333-3333-3333-333333333333",
+  accountId: "99999999-9999-4999-8999-999999999999",
   teamId: "T1",
   teamName: "Acme",
   botUserId: "UBOT",
@@ -22,7 +23,7 @@ const installation: SlackInstallationRecord = {
 const context = {
   requestId: "request-1",
   workspaceId: installation.workspaceId,
-  accountId: null,
+  accountId: installation.accountId,
   conversationId: "44444444-4444-4444-4444-444444444444",
   idempotencyKey: "slack:gap_escalation:turn-1",
   attempt: 1,
@@ -154,13 +155,43 @@ describe("SlackPostActionHandler", () => {
     })).rejects.toThrow("rate_limited");
   });
 
-  it("rejects payloads whose installation belongs to another workspace", async () => {
+  it("allows payloads whose installation is homed in a sibling workspace in the same account", async () => {
+    const postMessage = vi.fn(async () => ({ channel: "CSUPPORT", ts: "1.2" }));
+    const siblingContext = {
+      ...context,
+      workspaceId: "55555555-5555-4555-8555-555555555555",
+      accountId: installation.accountId,
+    };
+    const handler = new SlackPostActionHandler({
+      credentials: {
+        findInstallationById: vi.fn(async () => installation),
+        markNeedsReauthForInstallation: vi.fn(async () => true),
+        resolveBotTokenForInstallation: vi.fn(async () => "xoxb-token"),
+      },
+      clientFactory: () => ({ postMessage }),
+    });
+
+    await handler.handle({
+      context: siblingContext,
+      payload: {
+        installationId: installation.id,
+        channelId: "CSUPPORT",
+        text: "Customer question",
+        conversationRef: context.conversationId,
+        kind: "gap_escalation",
+      },
+    });
+
+    expect(postMessage).toHaveBeenCalled();
+  });
+
+  it("rejects payloads whose installation belongs to another account", async () => {
     const postMessage = vi.fn(async () => ({ channel: "CSUPPORT", ts: "1.2" }));
     const handler = new SlackPostActionHandler({
       credentials: {
         findInstallationById: vi.fn(async () => ({
           ...installation,
-          workspaceId: "55555555-5555-4555-8555-555555555555",
+          accountId: "55555555-5555-4555-8555-555555555555",
         })),
         markNeedsReauthForInstallation: vi.fn(async () => true),
         resolveBotTokenForInstallation: vi.fn(async () => "xoxb-token"),
@@ -177,7 +208,7 @@ describe("SlackPostActionHandler", () => {
         conversationRef: context.conversationId,
         kind: "gap_escalation",
       },
-    })).rejects.toThrow("slack_installation_workspace_mismatch");
+    })).rejects.toThrow("slack_installation_account_mismatch");
     expect(postMessage).not.toHaveBeenCalled();
   });
 

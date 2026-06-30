@@ -7,6 +7,7 @@ import type {
   SlackInstallationRepositoryPort,
   UpsertSlackBindingInput,
   UpsertSlackInstallationInput,
+  WorkspaceAccountLookup,
 } from "../../src/modules/slack/install/slackInstallationService.js";
 
 const cloneInstallation = (record: SlackInstallationRecord): SlackInstallationRecord => ({
@@ -39,6 +40,14 @@ export class InMemorySlackInstallationRepository implements SlackInstallationRep
     return record ? cloneInstallation(record) : null;
   }
 
+  async findByAccountId(accountId: string): Promise<SlackInstallationRecord | null> {
+    const record = [...this.rows.values()]
+      .filter((row) => row.accountId === accountId)
+      .sort((left, right) =>
+        right.updatedAt.getTime() - left.updatedAt.getTime() || left.teamId.localeCompare(right.teamId))[0];
+    return record ? cloneInstallation(record) : null;
+  }
+
   async upsert(input: UpsertSlackInstallationInput): Promise<SlackInstallationRecord> {
     const existing = [...this.rows.values()].find((row) => row.teamId === input.teamId);
     const now = new Date();
@@ -46,6 +55,7 @@ export class InMemorySlackInstallationRepository implements SlackInstallationRep
       id: existing?.id ?? randomUUID(),
       connectionId: input.connectionId,
       workspaceId: input.workspaceId,
+      accountId: input.accountId,
       teamId: input.teamId,
       teamName: input.teamName ?? null,
       botUserId: input.botUserId,
@@ -63,6 +73,20 @@ export class InMemorySlackInstallationRepository implements SlackInstallationRep
     }
     this.rows.delete(record.id);
     return true;
+  }
+}
+
+export class InMemoryWorkspaceAccountLookup implements WorkspaceAccountLookup {
+  readonly rows = new Map<string, string>();
+
+  constructor(entries: Array<[workspaceId: string, accountId: string]> = []) {
+    for (const [workspaceId, accountId] of entries) {
+      this.rows.set(workspaceId, accountId);
+    }
+  }
+
+  async getAccountId(workspaceId: string): Promise<string | null> {
+    return this.rows.get(workspaceId) ?? null;
   }
 }
 

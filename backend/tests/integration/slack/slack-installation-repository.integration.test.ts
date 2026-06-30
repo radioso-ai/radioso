@@ -50,6 +50,7 @@ const asPool = (client: PoolClient): pg.Pool =>
 
 describeIfDatabase("slack installation + binding repositories (postgres, kysely)", () => {
   const schema = `test_slack_install_${randomUUID().replace(/-/g, "")}`;
+  const accountId = randomUUID();
   const workspaceId = randomUUID();
   const agentId = randomUUID();
   const oauthConnectionId = randomUUID();
@@ -102,6 +103,7 @@ describeIfDatabase("slack installation + binding repositories (postgres, kysely)
     const created = await installations.upsert({
       connectionId: slackConnectionId,
       workspaceId,
+      accountId,
       teamId: "TEAM1",
       teamName: "Acme",
       botUserId: "UBOT1",
@@ -109,6 +111,7 @@ describeIfDatabase("slack installation + binding repositories (postgres, kysely)
     expect(created).toMatchObject({
       connectionId: slackConnectionId,
       workspaceId,
+      accountId,
       teamId: "TEAM1",
       teamName: "Acme",
       botUserId: "UBOT1",
@@ -118,6 +121,7 @@ describeIfDatabase("slack installation + binding repositories (postgres, kysely)
     const updated = await installations.upsert({
       connectionId: slackConnectionId,
       workspaceId,
+      accountId,
       teamId: "TEAM1",
       teamName: "Acme Renamed",
       botUserId: "UBOT2",

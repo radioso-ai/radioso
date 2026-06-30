@@ -7,7 +7,8 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:crawler && pnpm run build:mcp && pnpm run generate:openapi && pnpm run generate:skills && tsc -p tsconfig.json && node ./scripts/copyNonTsAssets.mjs",
+    "build": "pnpm run build:workspace-deps && pnpm run generate:openapi && pnpm run generate:skills && tsc -p tsconfig.json && node ./scripts/copyNonTsAssets.mjs",
+    "build:workspace-deps": "pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:crawler && pnpm run build:mcp",
     "build:conversation-defaults": "pnpm --dir ../packages/conversation-defaults run build",
     "build:conversation-tools": "pnpm --dir ../packages/conversation-tools run build",
     "build:conversation-engine": "pnpm --dir ../packages/conversation-engine run build",
@@ -40,6 +41,7 @@
     "start:worker-server": "node ./dist/src/documentWorkerServer.js",
     "start:crawler-worker": "node ./dist/src/crawlerWorker.js",
     "start:crawler-worker-server": "node ./dist/src/crawlerWorkerServer.js",
+    "typecheck": "pnpm run build:workspace-deps && tsc -p tsconfig.json --noEmit",
     "test": "pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:mcp && vitest run",
     "test:unit": "pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:mcp && vitest run tests/unit",
     "test:composition": "pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:mcp && vitest run tests/unit/capability-policy.test.ts tests/unit/application-modules.test.ts tests/unit/default-composition.test.ts tests/unit/document-capability-policy.test.ts",

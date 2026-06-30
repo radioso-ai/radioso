@@ -1380,6 +1380,7 @@ CREATE TABLE public.integration_connections (
     config jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    account_id uuid,
     CONSTRAINT integration_connections_last_health_status_check CHECK (((last_health_status IS NULL) OR (last_health_status = ANY (ARRAY['ok'::text, 'failed'::text, 'unknown'::text])))),
     CONSTRAINT integration_connections_status_check CHECK ((status = ANY (ARRAY['authorized'::text, 'disabled'::text, 'needs_reauth'::text, 'error'::text])))
 );
@@ -1775,7 +1776,8 @@ CREATE TABLE public.slack_installations (
     team_name text,
     bot_user_id text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    account_id uuid
 );
 
 
@@ -4154,6 +4156,13 @@ CREATE INDEX idx_eval_snapshots_workspace_captured_at ON public.eval_snapshots U
 
 
 --
+-- Name: idx_integration_connections_account; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_integration_connections_account ON public.integration_connections USING btree (account_id);
+
+
+--
 -- Name: idx_integration_connections_oauth; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4312,6 +4321,13 @@ CREATE INDEX idx_slack_conversation_links_installation ON public.slack_conversat
 --
 
 CREATE INDEX idx_slack_conversation_links_workspace ON public.slack_conversation_links USING btree (workspace_id);
+
+
+--
+-- Name: idx_slack_installations_account; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_slack_installations_account ON public.slack_installations USING btree (account_id);
 
 
 --
@@ -5837,6 +5853,14 @@ ALTER TABLE ONLY public.ingestion_settings
 
 
 --
+-- Name: integration_connections integration_connections_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.integration_connections
+    ADD CONSTRAINT integration_connections_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
 -- Name: integration_connections integration_connections_oauth_connection_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6026,6 +6050,14 @@ ALTER TABLE ONLY public.slack_conversation_links
 
 ALTER TABLE ONLY public.slack_conversation_links
     ADD CONSTRAINT slack_conversation_links_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: slack_installations slack_installations_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.slack_installations
+    ADD CONSTRAINT slack_installations_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
 
 
 --

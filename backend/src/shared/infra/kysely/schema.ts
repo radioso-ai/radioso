@@ -498,6 +498,7 @@ export interface IngestionSettings {
 }
 
 export interface IntegrationConnections {
+  account_id: string | null;
   config: Generated<Json>;
   created_at: Generated<Timestamp>;
   display_name: string;
@@ -762,6 +763,7 @@ export interface SlackInboundEvents {
 }
 
 export interface SlackInstallations {
+  account_id: string | null;
   bot_user_id: string;
   connection_id: string;
   created_at: Generated<Timestamp>;

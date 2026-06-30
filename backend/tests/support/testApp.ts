@@ -817,7 +817,25 @@ export const createTestDependencies = (overrides: {
   };
   const workbenchReplayRunner = overrides.workbenchReplayRunner ?? {
     async run() {
-      throw new Error("Workbench replay runner is not configured in test app.");
+      return {
+        answer: "",
+        citations: [],
+        answerSegments: [],
+        turnTrace: {
+          version: 1,
+          spine: {
+            traceId: "test-workbench-replay",
+            startedAt: new Date(0).toISOString(),
+            stages: [],
+          },
+        },
+        resolvedConfig: {
+          composedInstructions: "",
+          modelProvider: "test",
+          modelId: "test",
+          retrievedChunks: [],
+        },
+      };
     },
   };
   const originalReprocess = documentIngestionService.reprocess.bind(documentIngestionService);

@@ -268,6 +268,7 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   id: defaultAgentId,
   workspaceId,
   name: settings.assistant.assistantName,
+  internalName: "",
   isDefault: true,
   customInstruction: settings.assistant.customInstruction,
   suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,

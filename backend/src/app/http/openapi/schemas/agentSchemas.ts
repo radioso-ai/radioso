@@ -18,6 +18,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       id: z.string().uuid(),
       workspaceId: z.string().uuid(),
       name: z.string(),
+      internalName: z.string(),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
     }),
@@ -135,6 +136,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     "ConversationAgentRequest",
     z.object({
       name: z.string().max(200).optional(),
+      internalName: z.string().max(200).optional(),
       customInstruction: z.string().max(2000).optional(),
       suggestedQuestionsEnabled: z.boolean().optional(),
       assistantLinkUtmEnabled: z.boolean().optional(),

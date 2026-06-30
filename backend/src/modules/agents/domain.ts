@@ -229,6 +229,14 @@ export interface Agent {
   id: string;
   workspaceId: string;
   name: string;
+  /**
+   * Operator-only label used to tell otherwise identically-named agents apart in
+   * the dashboard (e.g. two "Claudio" agents, one EN and one IT). Never shown on
+   * public surfaces — `name` remains the visitor-facing identity. Optional because
+   * most agents carry no internal label and synthetic/config-materialized agents
+   * have none; persisted records always populate it (NOT NULL DEFAULT '').
+   */
+  internalName?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -254,6 +262,7 @@ export type AgentInput = Partial<
   Pick<
     ConversationAgent,
     | "name"
+    | "internalName"
     | keyof AgentBehaviorSettings
     | keyof AgentGreetingSettings
     | "sourceScope"
@@ -766,6 +775,7 @@ export const validateAgentInput = (
 
   return {
     name: normalizeText(input.name ?? "Agent", "name", 200),
+    internalName: normalizeText(input.internalName ?? "", "internalName", 200),
     customInstruction: normalizeLongText(input.customInstruction, "customInstruction", 2000),
     suggestedQuestionsEnabled: input.suggestedQuestionsEnabled ?? DEFAULT_SUGGESTED_QUESTIONS_ENABLED,
     assistantLinkUtmEnabled: input.assistantLinkUtmEnabled ?? DEFAULT_ASSISTANT_LINK_UTM_ENABLED,

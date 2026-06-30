@@ -14756,6 +14756,10 @@ paths:
               schema:
                 type: object
                 properties:
+                  channelId:
+                    type:
+                      - string
+                      - "null"
                   answeringAgentId:
                     type:
                       - string
@@ -14768,6 +14772,7 @@ paths:
                   gapEscalationEnabled:
                     type: boolean
                 required:
+                  - channelId
                   - answeringAgentId
                   - escalationChannelId
                   - gapEscalationEnabled
@@ -14802,6 +14807,10 @@ paths:
             schema:
               type: object
               properties:
+                channelId:
+                  type:
+                    - string
+                    - "null"
                 answeringAgentId:
                   type: string
                   format: uuid
@@ -14821,6 +14830,10 @@ paths:
               schema:
                 type: object
                 properties:
+                  channelId:
+                    type:
+                      - string
+                      - "null"
                   answeringAgentId:
                     type:
                       - string
@@ -14833,6 +14846,7 @@ paths:
                   gapEscalationEnabled:
                     type: boolean
                 required:
+                  - channelId
                   - answeringAgentId
                   - escalationChannelId
                   - gapEscalationEnabled
@@ -14856,6 +14870,105 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Slack installation not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags: *a56
+      summary: Remove a Slack channel answering binding
+      operationId: deleteWorkspaceSlackChannelBinding
+      security: *a57
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: channelId
+          in: query
+      responses:
+        "204":
+          description: Slack channel binding removed
+        "400":
+          description: Missing or invalid channel binding request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Agent manage permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/workspaces/{workspaceId}/slack/bindings:
+    get:
+      tags: *a56
+      summary: List Slack answering bindings
+      operationId: listWorkspaceSlackBindings
+      security: *a57
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+      responses:
+        "200":
+          description: Slack bindings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bindings:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        channelId:
+                          type:
+                            - string
+                            - "null"
+                        answeringAgentId:
+                          type:
+                            - string
+                            - "null"
+                          format: uuid
+                        escalationChannelId:
+                          type:
+                            - string
+                            - "null"
+                        gapEscalationEnabled:
+                          type: boolean
+                      required:
+                        - channelId
+                        - answeringAgentId
+                        - escalationChannelId
+                        - gapEscalationEnabled
+                required:
+                  - bindings
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Agent read permission required
           content:
             application/json:
               schema:

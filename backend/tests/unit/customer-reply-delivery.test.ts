@@ -66,6 +66,7 @@ describe("SlackCustomerReplyDeliverer", () => {
     id: "11111111-1111-1111-1111-111111111111",
     connectionId: "connection-1",
     workspaceId: "workspace-1",
+    accountId: "account-1",
     teamId: "T1",
     teamName: "Acme",
     botUserId: "UBOT",
@@ -96,6 +97,7 @@ describe("SlackCustomerReplyDeliverer", () => {
     expect(outbox.enqueue).toHaveBeenCalledWith(expect.objectContaining({
       type: "slack.post",
       workspaceId: "workspace-1",
+      accountId: installation.accountId,
       conversationId: "conversation-1",
       idempotencyKey: "slack:human_reply:conversation-1:message-1",
       payload: expect.objectContaining({
@@ -133,6 +135,7 @@ describe("SlackCustomerReplyDeliverer", () => {
     });
 
     expect(outbox.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      accountId: installation.accountId,
       payload: expect.objectContaining({
         installationId: installation.id,
         channelId: "CMENTION",
@@ -176,6 +179,7 @@ describe("SlackCustomerReplyDeliverer", () => {
 
     expect(conversationsOpen).toHaveBeenCalledWith({ users: "UUSER", botToken: "xoxb-token" });
     expect(outbox.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      accountId: installation.accountId,
       payload: expect.objectContaining({
         installationId: installation.id,
         channelId: "DOPENED",

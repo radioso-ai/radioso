@@ -6,6 +6,8 @@ import {
   seedDashboardStorage,
   workspaceId,
   workspaceKey,
+  type AgentSkillFixture,
+  type SkillCapabilityFixture,
 } from "./dashboard-fixtures";
 
 test("Slack channel connects, confirms binding, and disconnects", async ({ page }) => {
@@ -15,7 +17,7 @@ test("Slack channel connects, confirms binding, and disconnects", async ({ page 
   await installDashboardApiMocks(page, {
     slackRequests,
     slackStatus: { status: "not_configured" },
-    slackBinding: { answeringAgentId: null, escalationChannelId: null, gapEscalationEnabled: false },
+    slackBinding: { channelId: null, answeringAgentId: null, escalationChannelId: null, gapEscalationEnabled: false },
   });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=slack-channel`);
@@ -30,7 +32,33 @@ test("Slack channel connects, confirms binding, and disconnects", async ({ page 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=slack-channel`);
 
   await expect(page.getByText("Connected to Radioso Test").first()).toBeVisible();
-  await expect(page.getByLabel("Answering agent")).toContainText("Marta");
+  await expect(page.getByLabel("Default agent")).toContainText("Marta");
+  await expect(page.getByText("Answers DMs and channels with no specific agent.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Channels this agent answers" })).toBeVisible();
+  await page.getByLabel("Channel ID").fill("#support");
+  await page.getByRole("button", { name: "Add" }).click();
+  await expect(page.getByText("#support").first()).toBeVisible();
+  await expect.poll(() =>
+    slackRequests.some((request) =>
+      request.method === "PUT" &&
+      request.path === `/workspaces/${workspaceId}/slack/binding` &&
+      JSON.stringify(request.body) === JSON.stringify({
+        channelId: "#support",
+        answeringAgentId: defaultAgentId,
+      }),
+    ),
+  ).toBe(true);
+
+  await page.getByRole("button", { name: "Remove" }).click();
+  await expect(page.getByText("No channel-specific bindings for this agent.")).toBeVisible();
+  await expect.poll(() =>
+    slackRequests.some((request) =>
+      request.method === "DELETE" &&
+      request.path === `/workspaces/${workspaceId}/slack/binding` &&
+      JSON.stringify(request.body) === JSON.stringify({ channelId: "#support" }),
+    ),
+  ).toBe(true);
+
   await expect(page.getByText("Where the agent posts handoffs and escalations.")).toBeVisible();
   await expect(page.getByRole("switch", { name: "Auto-escalate when the agent has no grounded answer" })).not.toBeChecked();
   await page.getByLabel("Escalation channel").fill("#support");
@@ -40,6 +68,7 @@ test("Slack channel connects, confirms binding, and disconnects", async ({ page 
       request.method === "PUT" &&
       request.path === `/workspaces/${workspaceId}/slack/binding` &&
       JSON.stringify(request.body) === JSON.stringify({
+        channelId: null,
         answeringAgentId: defaultAgentId,
         escalationChannelId: "#support",
         gapEscalationEnabled: false,
@@ -53,6 +82,7 @@ test("Slack channel connects, confirms binding, and disconnects", async ({ page 
       request.method === "PUT" &&
       request.path === `/workspaces/${workspaceId}/slack/binding` &&
       JSON.stringify(request.body) === JSON.stringify({
+        channelId: null,
         answeringAgentId: defaultAgentId,
         escalationChannelId: "#support",
         gapEscalationEnabled: true,
@@ -67,7 +97,7 @@ test("Slack channel connects, confirms binding, and disconnects", async ({ page 
     ),
   ).toBe(true);
 
-  await page.getByLabel("Answering agent").click();
+  await page.getByLabel("Default agent").click();
   await page.getByRole("option", { name: "Marta" }).click();
 
   await expect.poll(() =>
@@ -75,6 +105,7 @@ test("Slack channel connects, confirms binding, and disconnects", async ({ page 
       request.method === "PUT" &&
       request.path === `/workspaces/${workspaceId}/slack/binding` &&
       JSON.stringify(request.body) === JSON.stringify({
+        channelId: null,
         answeringAgentId: defaultAgentId,
         escalationChannelId: "#support",
         gapEscalationEnabled: true,
@@ -90,7 +121,7 @@ test("Slack self-host setup shows generated manifest and env checklist before co
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     slackStatus: { status: "not_configured" },
-    slackBinding: { answeringAgentId: null, escalationChannelId: null, gapEscalationEnabled: false },
+    slackBinding: { channelId: null, answeringAgentId: null, escalationChannelId: null, gapEscalationEnabled: false },
   });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=slack-channel`);
@@ -115,7 +146,7 @@ test("Slack install is disabled when backend Slack env is incomplete", async ({ 
         missingEnvVars: ["SLACK_SIGNING_SECRET"],
       },
     },
-    slackBinding: { answeringAgentId: null, escalationChannelId: null, gapEscalationEnabled: false },
+    slackBinding: { channelId: null, answeringAgentId: null, escalationChannelId: null, gapEscalationEnabled: false },
   });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=slack-channel`);
@@ -126,51 +157,84 @@ test("Slack install is disabled when backend Slack env is incomplete", async ({ 
 
 test("Slack routine skill authoring creates and disables a skill", async ({ page }) => {
   const slackRequests: Array<{ method: string; path: string; body?: unknown }> = [];
+  const agentSkillRequests: Array<{ method: string; path: string; body?: unknown }> = [];
+  const agentSkills: AgentSkillFixture[] = [];
+  const slackPostCapabilities: SkillCapabilityFixture[] = [{
+    id: "slack_post",
+    storedKind: "slack",
+    targetKind: "slack_installation",
+    requiresTarget: true,
+    inputSchema: { source: "static", schema: { fields: ["channelId", "text", "threadTs"], required: ["channelId", "text"] } },
+    settingsFields: [],
+    outcomeVocabulary: ["enqueued", "missing_input", "failed"],
+    supportedInvocationModes: ["routine_named", "agent_selectable"],
+    defaultInvocationMode: "routine_named",
+    executorAdapter: "slack",
+    targets: [{ id: "99999999-9999-4999-8999-000000000003", label: "Radioso Test", status: "authorized" }],
+    available: true,
+    unavailableReason: null,
+  }];
 
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     slackRequests,
+    agentSkills,
+    agentSkillRequests,
+    skillCapabilities: slackPostCapabilities,
     slackStatus: {
       status: "connected",
       installationId: "99999999-9999-4999-8999-000000000003",
       teamName: "Radioso Test",
       answeringAgentId: defaultAgentId,
     },
-    slackBinding: { answeringAgentId: defaultAgentId, escalationChannelId: "#support", gapEscalationEnabled: false },
+    slackBinding: { channelId: null, answeringAgentId: defaultAgentId, escalationChannelId: "#support", gapEscalationEnabled: false },
     slackSkills: [],
   });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
 
-  const slackSkills = page.locator("#assistant-slack-skills");
-  await expect(slackSkills.getByRole("heading", { name: "Slack skills" })).toBeVisible();
-  await slackSkills.getByLabel("Skill name").fill("post_update_to_slack");
-  await slackSkills.getByLabel("Fixed channel").fill("#ops");
-  await slackSkills.getByLabel("Message slot").fill("message");
-  await slackSkills.getByRole("button", { name: "Save Slack skill" }).click();
+  await expect(page.getByRole("heading", { name: "Skills", level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: "Add new skill" }).click();
+  await page.getByRole("button", { name: /Slack Post/i }).click();
+  const skillDialog = page.getByRole("dialog", { name: "Configure Slack Post" });
+  await expect(skillDialog).toBeVisible();
+  await skillDialog.getByLabel("Skill name").fill("post_update_to_slack");
+  await skillDialog.getByRole("button", { name: "Advanced" }).click();
+  await skillDialog.getByRole("combobox", { name: "channelId" }).click();
+  await page.getByRole("option", { name: "Use a fixed value" }).click();
+  await skillDialog.locator("input[placeholder='channelId']").fill("#ops");
+  await skillDialog.getByLabel("text slot").fill("message");
+  await skillDialog.getByRole("button", { name: "Create skill" }).click();
 
-  await expect(slackSkills.getByText("post_update_to_slack")).toBeVisible();
-  await expect(slackSkills.getByText("Posts to #ops")).toBeVisible();
+  await expect(page.getByText("@post_update_to_slack")).toBeVisible();
   await expect.poll(() =>
-    slackRequests.some((request) =>
+    Boolean(agentSkillRequests.find((request) =>
       request.method === "POST" &&
-      request.path === `/agents/${defaultAgentId}/slack-skills` &&
-      JSON.stringify(request.body) === JSON.stringify({
-        skillName: "post_update_to_slack",
-        installationId: "99999999-9999-4999-8999-000000000003",
-        boundInputs: { channelId: "#ops" },
-        exposedInputs: { text: { slotBinding: "message", required: true } },
-        enabled: true,
-      }),
-    ),
+      request.path === `/agents/${defaultAgentId}/skills`,
+    )?.body),
   ).toBe(true);
+  const createdSkillBody = agentSkillRequests.find((request) =>
+    request.method === "POST" &&
+    request.path === `/agents/${defaultAgentId}/skills`,
+  )?.body;
+  expect(createdSkillBody).toMatchObject({
+    name: "post_update_to_slack",
+    capability: "slack_post",
+    target: { kind: "slack_installation", id: "99999999-9999-4999-8999-000000000003" },
+    config: {
+      boundInputs: { channelId: "#ops" },
+      exposedInputs: { text: { description: "Text", slotBinding: "message", required: true } },
+    },
+    invocationMode: "routine_named",
+    enabled: true,
+  });
 
-  await slackSkills.getByRole("switch").last().click();
+  await page.getByRole("switch", { name: "Enable post_update_to_slack" }).click();
 
   await expect.poll(() =>
-    slackRequests.some((request) =>
+    agentSkillRequests.some((request) =>
       request.method === "PATCH" &&
-      request.path === `/agents/${defaultAgentId}/slack-skills/77777777-7777-4777-8777-000000000001` &&
+      request.path === `/agents/${defaultAgentId}/skills/66666666-6666-4666-8666-000000000001` &&
       JSON.stringify(request.body) === JSON.stringify({ enabled: false }),
     ),
   ).toBe(true);

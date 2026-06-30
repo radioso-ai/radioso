@@ -33,6 +33,8 @@ const needsReauth = (status: SlackInstallStatusResponse | null) => status?.statu
 export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChannelCardProps) {
   const [status, setStatus] = useState<SlackInstallStatusResponse | null>(null)
   const [binding, setBinding] = useState<SlackBinding | null>(null)
+  const [channelBindings, setChannelBindings] = useState<SlackBinding[]>([])
+  const [channelDraft, setChannelDraft] = useState('')
   const [escalationChannelDraft, setEscalationChannelDraft] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [busyAction, setBusyAction] = useState<'install' | 'binding' | 'disconnect' | null>(null)
@@ -50,7 +52,11 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
   const missingSlackEnv = status?.readiness.missingEnvVars ?? []
   const canStartInstall = canUseSlack && slackReady
   const resolvedAgentName = agentName.trim() || 'This agent'
-  const selectedAgentId = binding?.answeringAgentId ?? (isConnected(status) ? agentId ?? '' : '')
+  const defaultAnsweringAgentId = binding?.answeringAgentId ?? agentId ?? ''
+  const selectedAgentId = binding?.answeringAgentId === agentId ? agentId : ''
+  const agentChannelBindings = channelBindings.filter(
+    (item) => item.channelId !== null && item.answeringAgentId === agentId,
+  )
   const statusLabel = useMemo(() => {
     if (!status) return 'Checking'
     if (status.status === 'connected') return status.teamName ? `Connected to ${status.teamName}` : 'Connected'
@@ -63,6 +69,7 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
     if (!workspaceId || !agentId) {
       setStatus(null)
       setBinding(null)
+      setChannelBindings([])
       setIsLoading(false)
       return
     }
@@ -74,20 +81,27 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
       setStatus(nextStatus)
       if (nextStatus.status === 'connected') {
         const nextBinding = await slackApi.getBinding(workspaceId, agentId)
+        const nextBindings = await slackApi.listBindings(workspaceId, agentId)
         setBinding(nextBinding)
+        setChannelBindings(nextBindings.bindings)
         setEscalationChannelDraft(nextBinding.escalationChannelId ?? '')
-        if (nextBinding.answeringAgentId !== agentId) {
+        if (!nextBinding.answeringAgentId) {
           const updated = await slackApi.updateBinding(workspaceId, agentId, {
+            channelId: null,
             answeringAgentId: agentId,
             escalationChannelId: nextBinding.escalationChannelId,
             gapEscalationEnabled: nextBinding.gapEscalationEnabled,
           })
           setBinding(updated)
+          const refreshedBindings = await slackApi.listBindings(workspaceId, agentId)
+          setChannelBindings(refreshedBindings.bindings)
           setEscalationChannelDraft(updated.escalationChannelId ?? '')
         }
       } else {
         setBinding(null)
+        setChannelBindings([])
         setEscalationChannelDraft('')
+        setChannelDraft('')
       }
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to load Slack channel.'))
@@ -150,11 +164,14 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
     setError(null)
     try {
       const updated = await slackApi.updateBinding(workspaceId, agentId, {
+        channelId: null,
         answeringAgentId: nextAgentId,
         escalationChannelId: binding?.escalationChannelId ?? null,
         gapEscalationEnabled: binding?.gapEscalationEnabled ?? false,
       })
       setBinding(updated)
+      const refreshedBindings = await slackApi.listBindings(workspaceId, agentId)
+      setChannelBindings(refreshedBindings.bindings)
       setEscalationChannelDraft(updated.escalationChannelId ?? '')
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to update Slack binding.'))
@@ -170,11 +187,14 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
     try {
       const trimmedChannel = escalationChannelDraft.trim()
       const updated = await slackApi.updateBinding(workspaceId, agentId, {
-        answeringAgentId: agentId,
+        channelId: null,
+        answeringAgentId: defaultAnsweringAgentId,
         escalationChannelId: trimmedChannel || null,
         gapEscalationEnabled: binding?.gapEscalationEnabled ?? false,
       })
       setBinding(updated)
+      const refreshedBindings = await slackApi.listBindings(workspaceId, agentId)
+      setChannelBindings(refreshedBindings.bindings)
       setEscalationChannelDraft(updated.escalationChannelId ?? '')
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to update Slack escalation channel.'))
@@ -190,11 +210,14 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
     try {
       const trimmedChannel = escalationChannelDraft.trim()
       const updated = await slackApi.updateBinding(workspaceId, agentId, {
-        answeringAgentId: agentId,
+        channelId: null,
+        answeringAgentId: defaultAnsweringAgentId,
         escalationChannelId: trimmedChannel || (binding?.escalationChannelId ?? null),
         gapEscalationEnabled: enabled,
       })
       setBinding(updated)
+      const refreshedBindings = await slackApi.listBindings(workspaceId, agentId)
+      setChannelBindings(refreshedBindings.bindings)
       setEscalationChannelDraft(updated.escalationChannelId ?? '')
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to update Slack escalation policy.'))
@@ -214,9 +237,47 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
         readiness: status?.readiness ?? { configured: false, missingEnvVars: [] },
       })
       setBinding(null)
+      setChannelBindings([])
       setEscalationChannelDraft('')
+      setChannelDraft('')
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to disconnect Slack.'))
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  const addChannelBinding = async () => {
+    if (!workspaceId || !agentId) return
+    const trimmedChannel = channelDraft.trim()
+    if (!trimmedChannel) return
+    setBusyAction('binding')
+    setError(null)
+    try {
+      await slackApi.updateBinding(workspaceId, agentId, {
+        channelId: trimmedChannel,
+        answeringAgentId: agentId,
+      })
+      const refreshedBindings = await slackApi.listBindings(workspaceId, agentId)
+      setChannelBindings(refreshedBindings.bindings)
+      setChannelDraft('')
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to add Slack channel binding.'))
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  const removeChannelBinding = async (channelId: string) => {
+    if (!workspaceId || !agentId) return
+    setBusyAction('binding')
+    setError(null)
+    try {
+      await slackApi.removeChannelBinding(workspaceId, agentId, channelId)
+      const refreshedBindings = await slackApi.listBindings(workspaceId, agentId)
+      setChannelBindings(refreshedBindings.bindings)
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to remove Slack channel binding.'))
     } finally {
       setBusyAction(null)
     }
@@ -318,7 +379,9 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="space-y-1">
                 <p className="text-sm font-medium text-foreground">Connected{status?.teamName ? ` to ${status.teamName}` : ''}</p>
-                <p className="text-xs text-muted-foreground">Slack DMs route to the selected answering agent.</p>
+                <p className="text-xs text-muted-foreground">
+                  The default agent answers DMs and channels with no specific agent.
+                </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Button type="button" variant="ghost" size="sm" onClick={loadSlackState} disabled={Boolean(busyAction)}>
@@ -333,9 +396,9 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
             </div>
 
             <div className="max-w-md space-y-2">
-              <Label htmlFor="slack-answering-agent" className="text-foreground">Answering agent</Label>
+              <Label htmlFor="slack-answering-agent" className="text-foreground">Default agent</Label>
               <Select
-                value={selectedAgentId}
+                value={selectedAgentId || undefined}
                 onValueChange={updateAnsweringAgent}
                 disabled={!agentId || busyAction === 'binding'}
               >
@@ -346,6 +409,64 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
                   {agentId ? <SelectItem value={agentId}>{resolvedAgentName}</SelectItem> : null}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                Answers DMs and channels with no specific agent.
+              </p>
+              {binding?.answeringAgentId && binding.answeringAgentId !== agentId ? (
+                <p className="text-xs text-muted-foreground">Another agent is currently the default.</p>
+              ) : null}
+            </div>
+
+            <div className="max-w-2xl space-y-3">
+              <div className="space-y-1">
+                <h4 className="text-sm font-medium text-foreground">Channels this agent answers</h4>
+                <p className="text-xs text-muted-foreground">
+                  Specific Slack channels can route to this agent instead of the default agent.
+                </p>
+              </div>
+              {agentChannelBindings.length > 0 ? (
+                <div className="space-y-2">
+                  {agentChannelBindings.map((item) => (
+                    <div key={item.channelId} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2">
+                      <span className="text-sm text-foreground">{item.channelId}</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => item.channelId ? void removeChannelBinding(item.channelId) : undefined}
+                        disabled={busyAction === 'binding'}
+                      >
+                        {busyAction === 'binding' ? <Spinner className="mr-2 h-4 w-4" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                        Remove
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No channel-specific bindings for this agent.</p>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="slack-channel-binding" className="text-foreground">Channel ID</Label>
+                <div className="flex flex-wrap gap-2">
+                  <Input
+                    id="slack-channel-binding"
+                    value={channelDraft}
+                    onChange={(event) => setChannelDraft(event.target.value)}
+                    placeholder="C1234567890 or #support"
+                    disabled={busyAction === 'binding'}
+                    className="min-w-0 flex-1"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={addChannelBinding}
+                    disabled={busyAction === 'binding' || !channelDraft.trim()}
+                  >
+                    {busyAction === 'binding' ? <Spinner className="mr-2 h-4 w-4" /> : null}
+                    Add
+                  </Button>
+                </div>
+              </div>
             </div>
 
             <div className="max-w-md space-y-2">

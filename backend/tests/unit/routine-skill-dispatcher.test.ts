@@ -192,6 +192,31 @@ describe("RoutineSkillExecutorDispatcher", () => {
     expect(captured?.collected).toEqual({ email: "a@b.com", duration: 30 });
   });
 
+  it("passes workspace and account context to skill executors", async () => {
+    let captured: SkillInvocation | undefined;
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([skillNamed("post_to_slack")]),
+      registryWith(
+        settledExecutor({ status: "completed" } as unknown as SkillOutcome, (invocation) => {
+          captured = invocation;
+        }),
+      ),
+      { workspaceId: "workspace-1", accountId: "account-1" },
+    );
+
+    await dispatcher.dispatch({
+      skillName: "post_to_slack",
+      state: routineState({}),
+      turn,
+    });
+
+    expect(captured?.context).toMatchObject({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      agentId: "agent-1",
+    });
+  });
+
   it("resolves typed input bindings into executor collected params when provided", async () => {
     let captured: SkillInvocation | undefined;
     const dispatcher = new RoutineSkillExecutorDispatcher(

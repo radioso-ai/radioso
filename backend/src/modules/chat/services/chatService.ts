@@ -223,6 +223,7 @@ export interface ChatRoutineProvider {
     modelGateway: ConversationModelGateway;
     agentId: string;
     workspaceId?: string;
+    accountId?: string;
     pinnedRoutineIds?: string[];
     responseLanguage?: string | Promise<string | undefined>;
     groundedAnswerRenderer?: RoutineGroundedAnswerRenderer;
@@ -582,6 +583,7 @@ export class ChatService {
       modelGateway,
       agentId: session.agent.id,
       workspaceId: session.conversation.workspaceId,
+      accountId,
       pinnedRoutineIds: await this.routineCatalogPinIds(session, activeRoutine),
       responseLanguage,
       groundedAnswerRenderer: createRoutineGroundedAnswerRenderer({
@@ -752,6 +754,7 @@ export class ChatService {
       modelGateway,
       agentId: session.agent.id,
       workspaceId: session.conversation.workspaceId,
+      accountId: input.decidedBy,
       pinnedRoutineIds: [input.record.routineId],
       responseLanguage: session.responseLanguage,
       groundedAnswerRenderer: createRoutineGroundedAnswerRenderer({

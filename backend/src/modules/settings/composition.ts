@@ -1,4 +1,6 @@
 export { IngestionSettingsService } from "./services/ingestionSettingsService.js";
+// App-wiring entrypoint for the MCP converse surface (composed in app/composition).
+export { AgentConverseSessionService } from "./services/agentConverseSessionService.js";
 export { embeddingModelIds } from "./domain/ingestionSettings.js";
 export { PlatformSettingsService } from "./services/platformSettingsService.js";
 export { DefaultWebsiteEmbedIntegrationProvider } from "./domain/websiteEmbedIntegration.js";

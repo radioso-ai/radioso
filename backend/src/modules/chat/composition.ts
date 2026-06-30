@@ -1,4 +1,7 @@
 export { AssistantChatService } from "./services/assistantChatService.js";
+// App-wiring entrypoints for the MCP converse surface (composed in app/composition).
+export { AgentConverseAudit } from "./services/agentConverseAudit.js";
+export { AgentConverseService } from "./services/agentConverseService.js";
 export { AssistantHistoryService } from "./services/assistantHistoryService.js";
 export { ChatBootstrapService } from "./services/chatBootstrapService.js";
 export {

@@ -1,6 +1,6 @@
 'use client'
 
-import type { MouseEvent, ReactNode } from 'react'
+import * as React from 'react'
 
 import {
   Pagination,
@@ -10,7 +10,7 @@ import {
   PaginationPrevious,
 } from './pagination'
 
-const shouldInterceptPaginationClick = (event: MouseEvent<HTMLAnchorElement>) =>
+const shouldInterceptPaginationClick = (event: React.MouseEvent<HTMLAnchorElement>) =>
   event.button === 0 &&
   !event.defaultPrevented &&
   !event.metaKey &&
@@ -29,7 +29,7 @@ export function DashboardPagination({
   canPrevious = currentPage > 1,
   canNext = currentPage < totalPages,
 }: {
-  summary?: ReactNode
+  summary?: React.ReactNode
   currentPage: number
   totalPages: number
   previousHref: string

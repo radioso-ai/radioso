@@ -81,7 +81,9 @@ export function AgentSubNavContainer({
 
   const selectedAgent = resolvePreferredAgent(agents, preferredAgentId)
   const selectedAgentId = selectedAgent?.id ?? null
-  const agentName = selectedAgent?.name?.trim() || 'Agent'
+  // Prefer the operator-only internal label so two same-named agents (e.g. an EN
+  // and an IT "Claudio") are distinguishable in the dashboard. Visitors never see it.
+  const agentName = selectedAgent?.internalName?.trim() || selectedAgent?.name?.trim() || 'Agent'
   const activeSection = agentSectionFromRoute(routeState)
 
   const agentCreationActions = useMemo(
@@ -231,7 +233,7 @@ export function AgentSubNavContainer({
       <div className="relative">
         <AgentSwitcher
           agentName={agentName}
-          agents={agents.map((agent) => ({ id: agent.id, name: agent.name }))}
+          agents={agents.map((agent) => ({ id: agent.id, name: agent.name, internalName: agent.internalName }))}
           open={switcherOpen}
           onOpenChange={setSwitcherOpen}
           hrefForAgent={hrefForAgent}

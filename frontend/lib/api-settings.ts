@@ -130,6 +130,9 @@ export const generalSettingsApi = {
   async updateGeneralSettings(data: {
     anonymousChatEnabled?: boolean
     assistantName?: string
+    // Operator-only per-agent label. Accepted on the shared update shape so the
+    // agent path can forward it; the workspace /settings path ignores it.
+    internalName?: string
     greetingInstruction?: string
     assistantDefaultLocale?: string | null
     proactiveGreetingEnabled?: boolean
@@ -274,6 +277,7 @@ export const agentsApi = {
         },
       },
       name: data.assistantName,
+      internalName: data.internalName,
       greetingInstruction: data.greetingInstruction,
       assistantDefaultLocale: data.assistantDefaultLocale,
       proactiveGreetingEnabled: data.proactiveGreetingEnabled,

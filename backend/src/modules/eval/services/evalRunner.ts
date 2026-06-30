@@ -96,7 +96,12 @@ const toMessageRecord = (
  * conversation only contains the assistant's opening greeting).
  */
 export const buildReplayInputs = (snapshot: EvalSnapshot): ReplayInputs | null => {
-  const lastUserIdx = (() => {
+  const explicitUserIdx = snapshot.replayTarget?.userMessageId
+    ? snapshot.messages.findIndex((message) =>
+        message.id === snapshot.replayTarget?.userMessageId && message.role === "user",
+      )
+    : -1;
+  const lastUserIdx = explicitUserIdx >= 0 ? explicitUserIdx : (() => {
     for (let i = snapshot.messages.length - 1; i >= 0; i--) {
       if (snapshot.messages[i]?.role === "user") return i;
     }

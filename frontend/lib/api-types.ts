@@ -196,7 +196,14 @@ export type AssistantBehaviorSettings = Pick<
 
 export type PlatformSettings = ApiSchemas['PlatformSettingsResponse']
 
-export type GeneralSettings = ApiSchemas['GeneralSettingsResponse']
+// `internalName` is an operator-only agent label, not part of the workspace
+// GeneralSettingsResponse contract. It is carried here as a frontend-only
+// projection field so the identity form can reuse the existing anon-settings
+// plumbing; it is populated from the agent (per-agent mode) and forwarded
+// straight to updateAgent, never to the workspace /settings endpoint.
+export type GeneralSettings = ApiSchemas['GeneralSettingsResponse'] & {
+  internalName?: string
+}
 export type WebsiteEmbedThemeSettings = ApiSchemas['GeneralSettingsResponse']['websiteEmbedTheme']
 export type AgentBrandingSettings = ApiSchemas['ConversationAgent']['branding']
 export type WebsiteEmbedCopyPacks = ApiSchemas['GeneralSettingsResponse']['websiteEmbedCopy']
@@ -672,6 +679,7 @@ export const agentToGeneralSettings = (agent: AgentSettings): GeneralSettings =>
       : null,
   anonymousChatLastUsedAt: null,
   assistantName: agent.name,
+  internalName: agent.internalName ?? '',
   greetingInstruction: agent.greetingInstruction,
   assistantDefaultLocale: agent.assistantDefaultLocale,
   proactiveGreetingEnabled: agent.proactiveGreetingEnabled,

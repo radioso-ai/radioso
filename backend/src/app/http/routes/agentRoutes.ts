@@ -108,6 +108,7 @@ const mcpConverseGrantIssueBodySchema = z.object({
 
 export const agentBodySchema = z.object({
   name: z.string().max(200).optional(),
+  internalName: z.string().max(200).optional(),
   customInstruction: z.string().max(2000).optional(),
   suggestedQuestionsEnabled: z.boolean().optional(),
   assistantLinkUtmEnabled: z.boolean().optional(),

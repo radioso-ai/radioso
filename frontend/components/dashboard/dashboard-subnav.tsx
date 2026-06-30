@@ -117,7 +117,7 @@ export function AgentSwitcher({
   onCreateAgent,
 }: {
   agentName: string
-  agents: { id: string; name: string }[]
+  agents: { id: string; name: string; internalName?: string }[]
   open: boolean
   onOpenChange: (open: boolean) => void
   hrefForAgent: (agentId: string) => string
@@ -139,17 +139,27 @@ export function AgentSwitcher({
       </button>
       {open ? (
         <div className="absolute inset-x-0 top-full z-20 mt-1 max-h-80 overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-md">
-          {agents.map((agent) => (
-            <Link
-              key={agent.id}
-              href={hrefForAgent(agent.id)}
-              onClick={() => onSelectAgent(agent.id)}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted/60"
-            >
-              <Bot className="h-4 w-4 text-muted-foreground" />
-              <span className="min-w-0 flex-1 truncate">{agent.name || 'Agent'}</span>
-            </Link>
-          ))}
+          {agents.map((agent) => {
+            const internalLabel = agent.internalName?.trim()
+            const primaryLabel = internalLabel || agent.name || 'Agent'
+            return (
+              <Link
+                key={agent.id}
+                href={hrefForAgent(agent.id)}
+                onClick={() => onSelectAgent(agent.id)}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted/60"
+              >
+                <Bot className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate">{primaryLabel}</span>
+                  {/* Show the visitor-facing name underneath when an internal label is overriding it. */}
+                  {internalLabel ? (
+                    <span className="truncate text-xs text-muted-foreground">{agent.name || 'Agent'}</span>
+                  ) : null}
+                </span>
+              </Link>
+            )
+          })}
           <button
             type="button"
             onClick={onCreateAgent}

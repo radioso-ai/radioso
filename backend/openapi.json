@@ -2580,6 +2580,9 @@
           "name": {
             "type": "string"
           },
+          "internalName": {
+            "type": "string"
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -2593,6 +2596,7 @@
           "id",
           "workspaceId",
           "name",
+          "internalName",
           "createdAt",
           "updatedAt"
         ]
@@ -3025,6 +3029,10 @@
         "type": "object",
         "properties": {
           "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "internalName": {
             "type": "string",
             "maxLength": 200
           },

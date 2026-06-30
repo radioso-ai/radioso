@@ -34,6 +34,7 @@ interface AgentRow {
   id: string;
   workspace_id: string;
   name: string;
+  internal_name: string;
   retrieval_enabled: boolean;
   source_scope_mode: "all" | "selected";
   source_ids: string[] | null;
@@ -142,6 +143,7 @@ const agentColumns = sql`
   id,
   workspace_id,
   name,
+  internal_name,
   retrieval_enabled,
   source_scope_mode,
   COALESCE(
@@ -471,6 +473,7 @@ const mapAgent = (
   const legacySkillSettings = asRecord(row.skill_settings);
   const normalized = validateAgentInput({
     name: row.name,
+    internalName: row.internal_name,
     customInstruction: readString(behavior, "customInstruction"),
     suggestedQuestionsEnabled: hasDefaultRetrieveSkill
       ? readBoolean(retrieveConfig, "suggestedQuestionsEnabled")
@@ -564,6 +567,7 @@ export class AgentRepository implements AgentRepositoryPort {
           id,
           workspace_id,
           name,
+          internal_name,
           retrieval_enabled,
           source_scope_mode,
           behavior_settings,
@@ -577,6 +581,7 @@ export class AgentRepository implements AgentRepositoryPort {
           ${agentId},
           ${workspaceId},
           ${normalized.name},
+          ${normalized.internalName},
           ${normalized.retrievalEnabled},
           ${normalized.sourceScope.mode},
           ${toJsonb(toBehaviorSettings(normalized))},
@@ -671,6 +676,7 @@ export class AgentRepository implements AgentRepositoryPort {
       const result = await sql<AgentRow>`
         UPDATE agents
         SET name = ${normalized.name},
+            internal_name = ${normalized.internalName},
             retrieval_enabled = ${normalized.retrievalEnabled},
             source_scope_mode = ${normalized.sourceScope.mode},
             behavior_settings = ${toJsonb(toBehaviorSettings(normalized))},

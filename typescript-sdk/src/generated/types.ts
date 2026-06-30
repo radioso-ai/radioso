@@ -3318,6 +3318,7 @@ export interface components {
             /** Format: uuid */
             workspaceId: string;
             name: string;
+            internalName: string;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -3422,6 +3423,7 @@ export interface components {
         };
         ConversationAgentRequest: {
             name?: string;
+            internalName?: string;
             customInstruction?: string;
             suggestedQuestionsEnabled?: boolean;
             assistantLinkUtmEnabled?: boolean;

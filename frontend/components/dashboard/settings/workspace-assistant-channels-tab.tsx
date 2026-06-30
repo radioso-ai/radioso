@@ -589,6 +589,7 @@ export function WorkspaceAssistantChannelsTab({
     anonSettings && savedAnonSettings
       ? (
           anonSettings.assistantName !== savedAnonSettings.assistantName ||
+          (anonSettings.internalName ?? '') !== (savedAnonSettings.internalName ?? '') ||
           anonSettings.assistantDefaultLocale !== savedAnonSettings.assistantDefaultLocale ||
           anonSettings.proactiveGreetingEnabled !== savedAnonSettings.proactiveGreetingEnabled
         )
@@ -699,14 +700,17 @@ export function WorkspaceAssistantChannelsTab({
       try {
         const updated = await updateGeneralSettings({
           assistantName: anonSettings.assistantName,
+          internalName: anonSettings.internalName,
           assistantDefaultLocale: anonSettings.assistantDefaultLocale,
           proactiveGreetingEnabled: anonSettings.proactiveGreetingEnabled,
         })
         if (saveSequenceRef.current !== saveId) return
         const nameChanged = savedAnonSettings.assistantName !== updated.assistantName
+        const internalNameChanged = (savedAnonSettings.internalName ?? '') !== (updated.internalName ?? '')
         setSavedAnonSettings(updated)
         setAssistantSettingsError(null)
-        if (nameChanged) {
+        // Both feed the agent switcher's label; either change should refresh it.
+        if (nameChanged || internalNameChanged) {
           window.dispatchEvent(new CustomEvent('radioso:assistant-name-updated', {
             detail: { assistantName: updated.assistantName },
           }))
@@ -908,6 +912,7 @@ export function WorkspaceAssistantChannelsTab({
                     <AssistantIdentityAppearanceSection
                       anonSettings={anonSettings}
                       assistantBehaviorSettings={assistantBehaviorSettings}
+                      showInternalName={Boolean(agentId)}
                       onAssistantSettingChange={handleAssistantSettingChange}
                       onAssistantBehaviorDraft={updateAssistantBehaviorDraft}
                       onAssistantLogoUpload={(file) => void handleAssistantLogoUpload(file)}

@@ -513,6 +513,7 @@ CREATE TABLE public.agents (
     chat_provider text,
     chat_model text,
     skill_settings jsonb DEFAULT '{}'::jsonb NOT NULL,
+    internal_name text DEFAULT ''::text NOT NULL,
     CONSTRAINT agents_chat_override_pair CHECK ((((chat_provider IS NULL) AND (chat_model IS NULL)) OR ((chat_provider IS NOT NULL) AND (chat_model IS NOT NULL)))),
     CONSTRAINT agents_chat_provider_check CHECK (((chat_provider IS NULL) OR (chat_provider = ANY (ARRAY['openai'::text, 'openai-compatible'::text, 'gemini'::text, 'claude'::text])))),
     CONSTRAINT agents_source_scope_mode_check CHECK ((source_scope_mode = ANY (ARRAY['all'::text, 'selected'::text])))

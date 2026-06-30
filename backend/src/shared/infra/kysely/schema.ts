@@ -135,6 +135,7 @@ export interface Agents {
   created_at: Generated<Timestamp>;
   greeting_settings: Generated<Json>;
   id: Generated<string>;
+  internal_name: Generated<string>;
   name: Generated<string>;
   output_modes: Generated<Json>;
   retrieval_enabled: Generated<boolean>;

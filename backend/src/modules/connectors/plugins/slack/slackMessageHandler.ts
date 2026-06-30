@@ -63,7 +63,7 @@ export interface SlackMessageHandlerOptions {
   logger: ConnectorLogger;
   chat: ConnectorChatPort;
   installations: SlackInstallationRepositoryPort;
-  bindings: SlackBindingRepositoryPort;
+  bindings: Pick<SlackBindingRepositoryPort, "findAnswerer">;
   installationService: Pick<SlackInstallationService, "markNeedsReauthForInstallation" | "resolveBotTokenForInstallation">;
   persistence: SlackPersistencePort;
   slackPostOutbox?: SlackPostOutboxPort;
@@ -88,6 +88,8 @@ export class SlackMessageHandler {
     }
     await this.handleSlackTurn({
       envelope: input as SlackInboundEventEnvelope & { event: SlackMessageImEvent },
+      // DMs have no routable channel; resolve straight to the installation default answerer.
+      routingChannelId: null,
       getSlackKey: (installation) => dmSlackKey(installation.teamId, input.event.user),
       getReplyThreadTs: () => undefined,
       getChannelContext: (installation) => ({
@@ -105,6 +107,8 @@ export class SlackMessageHandler {
   async handleAppMention(input: SlackInboundEventEnvelope & { event: SlackAppMentionEvent }): Promise<void> {
     await this.handleSlackTurn({
       envelope: input,
+      // Channel mentions route by the originating channel; falls back to the default answerer.
+      routingChannelId: input.event.channel,
       getSlackKey: (installation) => {
         const threadTs = input.event.thread_ts ?? input.event.ts;
         return mentionSlackKey(installation.teamId, input.event.channel, threadTs);
@@ -125,6 +129,7 @@ export class SlackMessageHandler {
 
   private async handleSlackTurn(input: {
     envelope: SlackInboundEventEnvelope & { event: SlackMessageImEvent | SlackAppMentionEvent };
+    routingChannelId: string | null;
     getSlackKey: (installation: SlackInstallationRecord) => string;
     getReplyThreadTs: () => string | undefined;
     getChannelContext: (installation: SlackInstallationRecord) => ConversationChannelContext;
@@ -137,7 +142,7 @@ export class SlackMessageHandler {
       return;
     }
 
-    const binding = await this.options.bindings.findByInstallationId(installation.id);
+    const binding = await this.options.bindings.findAnswerer(installation.id, input.routingChannelId);
     if (!binding?.answeringAgentId) {
       await this.options.persistence.markInboundEventStatus(envelope.eventId, "skipped");
       this.options.logger.info(
@@ -160,7 +165,7 @@ export class SlackMessageHandler {
       await this.options.installationService.markNeedsReauthForInstallation(installation, "slack_bot_token_not_found");
       await this.options.persistence.markInboundEventStatus(envelope.eventId, "skipped");
       this.options.logger.warn(
-        { workspaceId: installation.workspaceId, installationId: installation.id, eventId: envelope.eventId },
+        { workspaceId: binding.workspaceId, installationWorkspaceId: installation.workspaceId, installationId: installation.id, eventId: envelope.eventId },
         "Slack reply skipped without bot token",
       );
       return;
@@ -173,16 +178,16 @@ export class SlackMessageHandler {
 
     const slackKey = input.getSlackKey(installation);
     const existingLink = await this.options.persistence.findConversationLink({
-      workspaceId: installation.workspaceId,
+      workspaceId: binding.workspaceId,
       slackKey,
     });
 
     this.options.logger.info(
-      { workspaceId: installation.workspaceId, installationId: installation.id, eventId: envelope.eventId },
+      { workspaceId: binding.workspaceId, installationWorkspaceId: installation.workspaceId, installationId: installation.id, eventId: envelope.eventId },
       "Slack turn dispatch started",
     );
     const response = await this.options.chat.answer({
-      workspaceId: installation.workspaceId,
+      workspaceId: binding.workspaceId,
       agentId: binding.answeringAgentId,
       conversationId: existingLink?.conversationId,
       query,
@@ -190,7 +195,7 @@ export class SlackMessageHandler {
       channelContext: input.getChannelContext(installation),
     });
     await this.options.persistence.upsertConversationLink({
-      workspaceId: installation.workspaceId,
+      workspaceId: binding.workspaceId,
       installationId: installation.id,
       slackKey,
       conversationId: response.conversationId,
@@ -198,6 +203,7 @@ export class SlackMessageHandler {
     await this.enqueueGapEscalationIfNeeded({
       envelope,
       installation,
+      workspaceId: binding.workspaceId,
       escalationChannelId: binding.escalationChannelId,
       gapEscalationEnabled: binding.gapEscalationEnabled,
       query,
@@ -225,7 +231,7 @@ export class SlackMessageHandler {
     await this.settleReaction(client, reactionTarget, SLACK_ANSWERED_REACTION, envelope.eventId);
     await this.options.persistence.markInboundEventStatus(envelope.eventId, "processed");
     this.options.logger.info(
-      { workspaceId: installation.workspaceId, installationId: installation.id, eventId: envelope.eventId },
+      { workspaceId: binding.workspaceId, installationWorkspaceId: installation.workspaceId, installationId: installation.id, eventId: envelope.eventId },
       "Slack reply delivered",
     );
   }
@@ -282,6 +288,7 @@ export class SlackMessageHandler {
   private async enqueueGapEscalationIfNeeded(input: {
     envelope: SlackInboundEventEnvelope;
     installation: SlackInstallationRecord;
+    workspaceId: string;
     escalationChannelId: string | null;
     gapEscalationEnabled: boolean;
     query: string;
@@ -298,13 +305,14 @@ export class SlackMessageHandler {
     }
     const message = buildOwnershipMessage({
       conversationId: input.conversationId,
-      workspaceId: input.installation.workspaceId,
+      workspaceId: input.workspaceId,
       state: "ai_owned",
       contextText: input.query,
       dashboardPath: `/conversations/${input.conversationId}`,
     });
     await enqueueSlackPostAction(this.options.slackPostOutbox, {
-      workspaceId: input.installation.workspaceId,
+      workspaceId: input.workspaceId,
+      accountId: input.installation.accountId,
       conversationId: input.conversationId,
       idempotencyKey: slackPostIdempotencyKey({
         kind: "gap_escalation",
@@ -321,7 +329,8 @@ export class SlackMessageHandler {
     });
     this.options.logger.info(
       {
-        workspaceId: input.installation.workspaceId,
+        workspaceId: input.workspaceId,
+        installationWorkspaceId: input.installation.workspaceId,
         installationId: input.installation.id,
         eventId: input.envelope.eventId,
         conversationId: input.conversationId,

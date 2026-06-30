@@ -15,6 +15,7 @@ const installation: SlackInstallationRecord = {
   id: "00000000-0000-4000-8000-000000000001",
   connectionId: "conn_1",
   workspaceId: "ws_1",
+  accountId: "acct_1",
   teamId: "T1",
   teamName: "Team",
   botUserId: "B1",
@@ -26,6 +27,7 @@ const binding: SlackChannelBindingRecord = {
   id: "bind_1",
   installationId: installation.id,
   workspaceId: "ws_1",
+  channelId: null,
   answeringAgentId: "agent_1",
   escalationChannelId: "COPS",
   gapEscalationEnabled: false,
@@ -91,9 +93,10 @@ const createSink = (overrides: {
   };
   const sink = new SlackOperatorNotificationSink({
     installations: {
-      findByWorkspaceId: vi.fn(async () =>
+      findByAccountId: vi.fn(async () =>
         Object.prototype.hasOwnProperty.call(overrides, "installation") ? overrides.installation! : installation),
     },
+    workspaceAccounts: { getAccountId: vi.fn(async () => "acct_1") },
     bindings: {
       findByInstallationId: vi.fn(async () =>
         Object.prototype.hasOwnProperty.call(overrides, "binding") ? overrides.binding! : binding),
@@ -122,6 +125,7 @@ describe("SlackOperatorNotificationSink", () => {
     expect(enqueued[0]).toMatchObject({
       type: "slack.post",
       workspaceId: "ws_1",
+      accountId: "acct_1",
       conversationId: "conv_1",
       idempotencyKey: "slack:operator_notification:decision:pd_1",
       payload: {
@@ -177,6 +181,7 @@ describe("SlackOperatorNotificationSink", () => {
     expect(enqueued[0]).toMatchObject({
       type: "slack.post",
       workspaceId: "ws_1",
+      accountId: "acct_1",
       conversationId: "conv_1",
       // Scoped to this handoff event (the per-action idempotency key), so a re-escalation after
       // a hand-back posts again instead of being deduped against the conversation.

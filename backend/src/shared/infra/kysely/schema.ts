@@ -500,6 +500,7 @@ export interface IngestionSettings {
 }
 
 export interface IntegrationConnections {
+  account_id: string | null;
   config: Generated<Json>;
   created_at: Generated<Timestamp>;
   display_name: string;
@@ -736,6 +737,7 @@ export interface SkillIntakeStates {
 
 export interface SlackChannelBindings {
   answering_agent_id: string;
+  channel_id: string | null;
   created_at: Generated<Timestamp>;
   escalation_channel_id: string | null;
   gap_escalation_enabled: Generated<boolean>;
@@ -763,6 +765,7 @@ export interface SlackInboundEvents {
 }
 
 export interface SlackInstallations {
+  account_id: string;
   bot_user_id: string;
   connection_id: string;
   created_at: Generated<Timestamp>;

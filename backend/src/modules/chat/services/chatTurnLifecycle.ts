@@ -75,7 +75,38 @@ const attachRetrievalActivityTrace = (
   });
 };
 
-export const getChatTurnRoute = (session: PreparedSession): ChatRoute => {
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isRetrievalSkillName = (value: unknown): boolean =>
+  typeof value === "string" && value.startsWith("retrieval.");
+
+const traceIncludesRetrievalSkillDispatch = (trace?: ConversationTrace): boolean =>
+  trace?.stages.some((stage) => {
+    if (isRetrievalSkillName(stage.outputs?.skillName)) {
+      return true;
+    }
+
+    if (stage.subTrace?.namespace !== "routine" || !isRecord(stage.subTrace.payload)) {
+      return false;
+    }
+
+    const steps = stage.subTrace.payload.steps;
+    return Array.isArray(steps) && steps.some((step) =>
+      isRecord(step)
+      && step.event === "skill_dispatched"
+      && isRetrievalSkillName(step.skillName),
+    );
+  }) ?? false;
+
+export const getChatTurnRoute = (session: PreparedSession, engineTrace?: ConversationTrace): ChatRoute => {
+  if (traceIncludesRetrievalSkillDispatch(engineTrace)) {
+    return {
+      type: "retrieval",
+      reason: "evidence_required",
+    };
+  }
+
   if (session.turnRoute !== CHAT_TURN_ROUTE.RETRIEVAL) {
     return {
       type: "direct",
@@ -212,31 +243,33 @@ export const buildTurnTraceForPresentation = (
 ): TurnTracePresentation => {
   const activitySummaryPresenter = new ActivitySummaryPresenter();
   const activityTracePresenter = new ActivityTracePresenter();
-  const route = getChatTurnRoute(input.session);
+  const route = getChatTurnRoute(input.session, input.engineTrace);
   const skillTurnOutcome = toPresentationSkillTurnOutcome(input.presentation);
+  const retrieval = input.presentation.effectiveRetrieval ?? input.session.retrieval;
+  const execution = {
+    surface: "assistant" as const,
+    path: route.type === "direct" ? "assistant_direct" as const : "assistant_retrieval" as const,
+    retrievalInvoked: route.type === "retrieval",
+  };
   const activitySummary = {
-    ...activitySummaryPresenter.present(input.session.retrieval.diagnostics, {
-      execution: {
-        surface: "assistant",
-        path: route.type === "direct" ? "assistant_direct" : "assistant_retrieval",
-        retrievalInvoked: route.type === "retrieval",
-      },
+    ...activitySummaryPresenter.present(retrieval.diagnostics, {
+      execution,
     }),
     assistant: {
-      route: input.session.turnRoute,
+      route: route.type,
       routeReason: route.reason,
       isIdentityQuestion: input.session.turnFraming?.isIdentityQuestion ?? false,
     },
   };
   const activityTrace = appendDirectiveSteeringStage(
     activityTracePresenter.appendAnswerOutcome({
-      trace: input.session.retrieval.trace,
+      trace: retrieval.trace,
       summary: activitySummary,
       outcome: {
         answer: input.presentation.answer,
         stream: input.stream,
-        hadContexts: input.session.retrieval.contexts.length > 0,
-        retrievalSkipped: input.session.retrieval.diagnostics.retrievalSkipped,
+        hadContexts: retrieval.contexts.length > 0,
+        retrievalSkipped: retrieval.diagnostics.retrievalSkipped,
         durationMs: Date.now() - input.answerStartedAt,
         answerOutcome: input.presentation.answerOutcome,
         skillName: skillTurnOutcome.skillName,
@@ -279,14 +312,14 @@ export const buildTurnTraceForPresentation = (
       // turn to eval, so the snapshot can carry the actual retrieval
       // baseline and composed system prompt this answer was generated
       // from (not just messages_only fidelity).
-      retrievedChunks: input.session.retrieval.contexts.map((ctx, index) => ({
+      retrievedChunks: retrieval.contexts.map((ctx, index) => ({
         chunkId: ctx.chunkId,
         documentId: ctx.documentId,
         title: ctx.title,
         rank: typeof ctx.promptPosition === "number" ? ctx.promptPosition : index,
         similarity: typeof ctx.similarity === "number" ? ctx.similarity : undefined,
       })),
-      composedInstructions: input.session.retrieval.systemPrompt,
+      composedInstructions: retrieval.systemPrompt,
       // Best-effort: agent-level chat model override is what we know at
       // this layer. The workspace default chat model (when no override) is
       // not threaded through, so future snapshots from those turns will
@@ -316,7 +349,10 @@ export const buildTurnTraceForPresentation = (
     answerSegments: input.presentation.answerSegments,
     suggestions: input.presentation.suggestions,
     priorRewriteContinuityState: input.session.priorRewriteContinuityState,
-    diagnostics: input.session.retrieval.diagnostics,
+    diagnostics: {
+      ...retrieval.diagnostics,
+      execution,
+    },
     activityTrace,
     turnTrace,
     route,

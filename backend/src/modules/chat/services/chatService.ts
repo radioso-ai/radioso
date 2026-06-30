@@ -21,6 +21,7 @@ import type {
   RoutineState,
   TurnContext,
 } from "@radioso/conversation-contract";
+import type { RoutineGroundedAnswerRenderer } from "@radioso/conversation-defaults";
 import { CHAT_BEHAVIOR, RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { AuditService } from "../../audit/contracts/index.js";
@@ -82,6 +83,10 @@ import {
 import { BlankChatAnswerError } from "./chatAnswerErrors.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
 import { RoutineChatModelGateway } from "./routines/routineChatModelGateway.js";
+import {
+  createRoutineGroundedAnswerRenderer,
+  presentRoutineRenderableAnswer,
+} from "./routines/routineGroundedAnswerRenderer.js";
 import {
   DeferredRoutineStore,
   type CapturedRoutineTransition,
@@ -220,6 +225,7 @@ export interface ChatRoutineProvider {
     workspaceId?: string;
     pinnedRoutineIds?: string[];
     responseLanguage?: string | Promise<string | undefined>;
+    groundedAnswerRenderer?: RoutineGroundedAnswerRenderer;
   }): Promise<{
     activator: ConversationRoutineActivator;
     runner: ConversationRoutineRunner;
@@ -578,6 +584,12 @@ export class ChatService {
       workspaceId: session.conversation.workspaceId,
       pinnedRoutineIds: await this.routineCatalogPinIds(session, activeRoutine),
       responseLanguage,
+      groundedAnswerRenderer: createRoutineGroundedAnswerRenderer({
+        session,
+        accountId,
+        responseLanguage,
+        turnSkills: this.turnSkills,
+      }),
     });
     if (!routineTurnPorts) {
       return null;
@@ -603,7 +615,7 @@ export class ChatService {
         ? clarification.resolution.loopGuardCandidateIds
         : undefined,
       suppressNewClarification: clarification?.resolution?.suppressNewClarification,
-      presentRoutineReply: (response) => this.chatAnswerPresenter.presentRoutineAnswer(response.answer, response.citations),
+      presentRoutineReply: (response) => presentRoutineRenderableAnswer(this.chatAnswerPresenter, response),
     });
     if (!outcome) {
       return null;
@@ -742,6 +754,12 @@ export class ChatService {
       workspaceId: session.conversation.workspaceId,
       pinnedRoutineIds: [input.record.routineId],
       responseLanguage: session.responseLanguage,
+      groundedAnswerRenderer: createRoutineGroundedAnswerRenderer({
+        session,
+        accountId: input.decidedBy,
+        responseLanguage: session.responseLanguage,
+        turnSkills: this.turnSkills,
+      }),
     });
     if (!routineTurnPorts) {
       throw new Error("approval_resume_routine_ports_missing");
@@ -769,7 +787,7 @@ export class ChatService {
     const routineStateTransition: CapturedRoutineTransition = result.nextState
       ? { kind: "save", state: result.nextState }
       : { kind: "clear", sessionId: input.record.sessionId };
-    const presentation = this.chatAnswerPresenter.presentRoutineAnswer(result.response.answer, result.response.citations);
+    const presentation = presentRoutineRenderableAnswer(this.chatAnswerPresenter, result.response);
 
     const completed = await this.chatTurnLifecycle.completeAssistantTurn({
       workspaceId: input.record.workspaceId,

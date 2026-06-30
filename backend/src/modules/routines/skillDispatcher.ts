@@ -204,6 +204,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
       status: result.outcome.status,
       outputs: result.outcome.outputs,
       answer: result.outcome.answer,
+      ...(result.outcome.metadata ? { metadata: result.outcome.metadata } : {}),
     };
   }
 

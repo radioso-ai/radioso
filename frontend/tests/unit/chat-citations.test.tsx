@@ -169,6 +169,72 @@ describe('AssistantMessageContent', () => {
     expect(html).not.toContain('</ul><button')
   })
 
+  it('keeps citation markers inside cited list-item segments with trailing whitespace', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          {
+            documentId: 'doc-1',
+            chunkId: 'chunk-1',
+            title: 'Source 1',
+          },
+        ]}
+        answerSegments={[
+          {
+            text: '- Realize who you are: you are a divine being, not limited by fear or lack. ',
+            citationIndices: [0],
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toMatch(/lack\.[\s\S]*data-citation-index="1"[\s\S]*<\/button><\/li>\s*<\/ul>/)
+    expect(html).not.toContain('</ul><button')
+  })
+
+  it('renders every marker from routine-retrieval segments split across bullets and links', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' },
+          { documentId: 'doc-2', chunkId: 'chunk-2', title: 'Source 2' },
+          { documentId: 'doc-3', chunkId: 'chunk-3', title: 'Source 3' },
+          { documentId: 'doc-4', chunkId: 'chunk-4', title: 'Source 4' },
+        ]}
+        answerSegments={[
+          { text: 'Life is a journey. ' },
+          { text: 'It is about aligning with truth.\n' },
+          { text: '\nA few inviting ideas to explore:\n', citationIndices: [0] },
+          {
+            text: '- Realize who you are: you are a divine being, not limited by fear or lack. ',
+            citationIndices: [1],
+          },
+          { text: 'This remembrance can change how you respond. ' },
+          { text: 'You can read more in [Discover Who You Are!](' },
+          { text: 'https://corsi.ananda.it/en/blog/discover-who-you-are)\n' },
+          {
+            text: '- Practice inner calm: through simple meditation and breath, you can steady the mind. ',
+            citationIndices: [2],
+          },
+          {
+            text: 'Learn more at [Ananda](https://www.ananda.org)\n',
+            citationIndices: [3],
+          },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html.match(/data-citation-index="/g)).toHaveLength(4)
+    expect(html).toContain('data-citation-index="1"')
+    expect(html).toContain('data-citation-index="2"')
+    expect(html).toContain('data-citation-index="3"')
+    expect(html).toContain('data-citation-index="4"')
+  })
+
   it('reattaches historical citation-only segments to the preceding block segment', async () => {
     const html = renderToStaticMarkup(
       <AssistantMessageContent

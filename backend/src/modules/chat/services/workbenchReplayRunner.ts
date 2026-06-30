@@ -19,6 +19,10 @@ import type { ChatRoutineProvider } from "./chatService.js";
 import { RoutineChatModelGateway } from "./routines/routineChatModelGateway.js";
 import { InMemoryRoutineStore } from "./routines/inMemoryRoutineStore.js";
 import {
+  createRoutineGroundedAnswerRenderer,
+  presentRoutineRenderableAnswer,
+} from "./routines/routineGroundedAnswerRenderer.js";
+import {
   ChatSessionPreparer,
   type PrepareChatSessionInput,
   type PreparedSession,
@@ -337,6 +341,12 @@ export class WorkbenchReplayRunner {
       // not be offered for fresh activation this turn.
       pinnedRoutineIds: activeRoutine?.status === "active" ? [activeRoutine.routineId] : [],
       responseLanguage: Promise.resolve(session.responseLanguage ?? undefined),
+      groundedAnswerRenderer: createRoutineGroundedAnswerRenderer({
+        session,
+        accountId: input.accountId ?? undefined,
+        responseLanguage: Promise.resolve(session.responseLanguage ?? undefined),
+        turnSkills: this.options.turnSkills,
+      }),
     });
     if (!ports) {
       return null;
@@ -353,7 +363,7 @@ export class WorkbenchReplayRunner {
       routineActivator: ports.activator,
       routineSlotCorrection: ports.slotCorrection,
       routineReentryGate: ports.reentryGate,
-      presentRoutineReply: (response) => chatAnswerPresenter.presentRoutineAnswer(response.answer, response.citations),
+      presentRoutineReply: (response) => presentRoutineRenderableAnswer(chatAnswerPresenter, response),
     });
     if (!outcome) {
       return null;

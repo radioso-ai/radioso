@@ -2,13 +2,14 @@ import { describe, expect, it } from "vitest";
 import request from "supertest";
 
 import { createMcpConverseRoutes } from "../../src/app/http/routes/mcpConverseRoutes.js";
+import { buildMcpConverseServices } from "../../src/app/server/dependencyBuilders.js";
 import { createTestApp, issueTestSession, issueTestToken } from "../support/testApp.js";
 
 const createAppWithMcpConverse = () =>
   createTestApp({
     applicationRouteMounts: [{
       path: "/api/v1/mcp/converse",
-      createRouter: (dependencies) => createMcpConverseRoutes(dependencies),
+      createRouter: (dependencies) => createMcpConverseRoutes(dependencies, buildMcpConverseServices(dependencies)),
     }],
   });
 

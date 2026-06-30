@@ -62,17 +62,20 @@ const makeHandler = (input: {
     upsert: vi.fn(),
     removeByWorkspaceId: vi.fn(),
   };
+  const defaultBinding = {
+    id: "55555555-5555-5555-5555-555555555555",
+    installationId: installation.id,
+    workspaceId: installation.workspaceId,
+    channelId: null,
+    answeringAgentId: "66666666-6666-6666-6666-666666666666",
+    escalationChannelId: input.escalationChannelId === undefined ? "CSUPPORT" : input.escalationChannelId,
+    gapEscalationEnabled: input.gapEscalationEnabled ?? false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
   const bindings: SlackBindingRepositoryPort = {
-    findByInstallationId: vi.fn(async () => ({
-      id: "55555555-5555-5555-5555-555555555555",
-      installationId: installation.id,
-      workspaceId: installation.workspaceId,
-      answeringAgentId: "66666666-6666-6666-6666-666666666666",
-      escalationChannelId: input.escalationChannelId === undefined ? "CSUPPORT" : input.escalationChannelId,
-      gapEscalationEnabled: input.gapEscalationEnabled ?? false,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    })),
+    findByInstallationId: vi.fn(async () => defaultBinding),
+    findAnswerer: vi.fn(async () => defaultBinding),
     upsert: vi.fn(),
     removeByInstallationId: vi.fn(),
   };
@@ -214,17 +217,20 @@ describe("Slack gap escalation policy", () => {
       upsert: vi.fn(),
       removeByWorkspaceId: vi.fn(),
     };
+    const defaultBinding = {
+      id: "55555555-5555-5555-5555-555555555555",
+      installationId: installation.id,
+      workspaceId: installation.workspaceId,
+      channelId: null,
+      answeringAgentId: "66666666-6666-6666-6666-666666666666",
+      escalationChannelId: null,
+      gapEscalationEnabled: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
     const bindings: SlackBindingRepositoryPort = {
-      findByInstallationId: vi.fn(async () => ({
-        id: "55555555-5555-5555-5555-555555555555",
-        installationId: installation.id,
-        workspaceId: installation.workspaceId,
-        answeringAgentId: "66666666-6666-6666-6666-666666666666",
-        escalationChannelId: null,
-        gapEscalationEnabled: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })),
+      findByInstallationId: vi.fn(async () => defaultBinding),
+      findAnswerer: vi.fn(async () => defaultBinding),
       upsert: vi.fn(),
       removeByInstallationId: vi.fn(),
     };

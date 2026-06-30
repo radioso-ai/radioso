@@ -22689,6 +22689,12 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "channelId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "answeringAgentId": {
                       "type": [
                         "string",
@@ -22707,6 +22713,7 @@
                     }
                   },
                   "required": [
+                    "channelId",
                     "answeringAgentId",
                     "escalationChannelId",
                     "gapEscalationEnabled"
@@ -22766,6 +22773,12 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "channelId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
                   "answeringAgentId": {
                     "type": "string",
                     "format": "uuid"
@@ -22795,6 +22808,12 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "channelId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "answeringAgentId": {
                       "type": [
                         "string",
@@ -22813,6 +22832,7 @@
                     }
                   },
                   "required": [
+                    "channelId",
                     "answeringAgentId",
                     "escalationChannelId",
                     "gapEscalationEnabled"

@@ -70,17 +70,38 @@ export class InMemorySlackBindingRepository implements SlackBindingRepositoryPor
   readonly rows = new Map<string, SlackChannelBindingRecord>();
 
   async findByInstallationId(installationId: string): Promise<SlackChannelBindingRecord | null> {
-    const record = [...this.rows.values()].find((row) => row.installationId === installationId);
+    const record = [...this.rows.values()].find(
+      (row) => row.installationId === installationId && row.channelId === null,
+    );
     return record ? cloneBinding(record) : null;
   }
 
+  async findAnswerer(
+    installationId: string,
+    channelId: string | null,
+  ): Promise<SlackChannelBindingRecord | null> {
+    if (channelId !== null) {
+      const channelRow = [...this.rows.values()].find(
+        (row) => row.installationId === installationId && row.channelId === channelId,
+      );
+      if (channelRow) {
+        return cloneBinding(channelRow);
+      }
+    }
+    return this.findByInstallationId(installationId);
+  }
+
   async upsert(input: UpsertSlackBindingInput): Promise<SlackChannelBindingRecord> {
-    const existing = [...this.rows.values()].find((row) => row.installationId === input.installationId);
+    const channelId = input.channelId ?? null;
+    const existing = [...this.rows.values()].find(
+      (row) => row.installationId === input.installationId && row.channelId === channelId,
+    );
     const now = new Date();
     const record: SlackChannelBindingRecord = {
       id: existing?.id ?? randomUUID(),
       installationId: input.installationId,
       workspaceId: input.workspaceId,
+      channelId,
       answeringAgentId: input.answeringAgentId,
       escalationChannelId: input.escalationChannelId === undefined
         ? existing?.escalationChannelId ?? null
@@ -93,12 +114,15 @@ export class InMemorySlackBindingRepository implements SlackBindingRepositoryPor
     return cloneBinding(record);
   }
 
+  // Disconnect removes every binding for the installation (default + per-channel).
   async removeByInstallationId(installationId: string): Promise<boolean> {
-    const record = [...this.rows.values()].find((row) => row.installationId === installationId);
-    if (!record) {
+    const records = [...this.rows.values()].filter((row) => row.installationId === installationId);
+    if (records.length === 0) {
       return false;
     }
-    this.rows.delete(record.id);
+    for (const record of records) {
+      this.rows.delete(record.id);
+    }
     return true;
   }
 }

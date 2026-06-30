@@ -12032,6 +12032,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        channelId: string | null;
                         /** Format: uuid */
                         answeringAgentId: string | null;
                         escalationChannelId: string | null;
@@ -12071,6 +12072,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    channelId?: string | null;
                     /** Format: uuid */
                     answeringAgentId: string;
                     escalationChannelId?: string | null;
@@ -12086,6 +12088,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        channelId: string | null;
                         /** Format: uuid */
                         answeringAgentId: string | null;
                         escalationChannelId: string | null;

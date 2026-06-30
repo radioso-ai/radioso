@@ -35,6 +35,8 @@ export interface SlackChannelBindingRecord {
   id: string;
   installationId: string;
   workspaceId: string;
+  // null = the default answerer for the installation (DMs + channels with no explicit binding).
+  channelId: string | null;
   answeringAgentId: string;
   escalationChannelId: string | null;
   gapEscalationEnabled: boolean;
@@ -53,6 +55,8 @@ export interface UpsertSlackInstallationInput {
 export interface UpsertSlackBindingInput {
   installationId: string;
   workspaceId: string;
+  // Omitted/null targets the installation's default answerer; a value binds a specific channel.
+  channelId?: string | null;
   answeringAgentId: string;
   escalationChannelId?: string | null;
   gapEscalationEnabled?: boolean;
@@ -67,7 +71,14 @@ export interface SlackInstallationRepositoryPort {
 }
 
 export interface SlackBindingRepositoryPort {
+  /** The installation's default answerer (channel_id IS NULL). */
   findByInstallationId(installationId: string): Promise<SlackChannelBindingRecord | null>;
+  /**
+   * Resolve the answering binding for an inbound event: the channel-specific binding when one
+   * exists, otherwise the installation default. Pass null for surfaces without a routable channel
+   * (DMs) to resolve straight to the default.
+   */
+  findAnswerer(installationId: string, channelId: string | null): Promise<SlackChannelBindingRecord | null>;
   upsert(input: UpsertSlackBindingInput): Promise<SlackChannelBindingRecord>;
   removeByInstallationId(installationId: string): Promise<boolean>;
 }
@@ -213,6 +224,7 @@ export class SlackInstallationService {
 
   async setBinding(input: {
     workspaceId: string;
+    channelId?: string | null;
     answeringAgentId: string;
     escalationChannelId?: string | null;
     gapEscalationEnabled?: boolean;
@@ -224,6 +236,7 @@ export class SlackInstallationService {
     return this.options.bindings.upsert({
       installationId: installation.id,
       workspaceId: input.workspaceId,
+      channelId: input.channelId ?? null,
       answeringAgentId: input.answeringAgentId,
       escalationChannelId: input.escalationChannelId,
       gapEscalationEnabled: input.gapEscalationEnabled,
@@ -464,6 +477,7 @@ interface SlackChannelBindingRow {
   id: string;
   installation_id: string;
   workspace_id: string;
+  channel_id: string | null;
   answering_agent_id: string;
   escalation_channel_id: string | null;
   gap_escalation_enabled: boolean;
@@ -482,6 +496,7 @@ const bindingColumns = [
   "id",
   "installation_id",
   "workspace_id",
+  "channel_id",
   "answering_agent_id",
   "escalation_channel_id",
   "created_at",
@@ -492,6 +507,7 @@ const mapBinding = (row: SlackChannelBindingRow): SlackChannelBindingRecord => (
   id: row.id,
   installationId: row.installation_id,
   workspaceId: row.workspace_id,
+  channelId: row.channel_id,
   answeringAgentId: row.answering_agent_id,
   escalationChannelId: row.escalation_channel_id,
   gapEscalationEnabled: row.gap_escalation_enabled,
@@ -515,8 +531,31 @@ export class SlackChannelBindingRepository implements SlackBindingRepositoryPort
         eb.ref("gap_escalation_enabled").as("gap_escalation_enabled"),
       ])
       .where("installation_id", "=", installationId)
+      .where("channel_id", "is", null)
       .executeTakeFirst();
     return row ? mapBinding(row as SlackChannelBindingRow) : null;
+  }
+
+  async findAnswerer(
+    installationId: string,
+    channelId: string | null,
+  ): Promise<SlackChannelBindingRecord | null> {
+    if (channelId !== null) {
+      const channelRow = await this.db
+        .selectFrom("slack_channel_bindings")
+        .select((eb) => [
+          ...bindingColumns,
+          eb.ref("gap_escalation_enabled").as("gap_escalation_enabled"),
+        ])
+        .where("installation_id", "=", installationId)
+        .where("channel_id", "=", channelId)
+        .executeTakeFirst();
+      if (channelRow) {
+        return mapBinding(channelRow as SlackChannelBindingRow);
+      }
+    }
+    // Fall back to the installation default answerer.
+    return this.findByInstallationId(installationId);
   }
 
   async upsert(input: UpsertSlackBindingInput): Promise<SlackChannelBindingRecord> {
@@ -524,6 +563,7 @@ export class SlackChannelBindingRepository implements SlackBindingRepositoryPort
       id: randomUUID(),
       installation_id: input.installationId,
       workspace_id: input.workspaceId,
+      channel_id: input.channelId ?? null,
       answering_agent_id: input.answeringAgentId,
       escalation_channel_id: input.escalationChannelId ?? null,
       gap_escalation_enabled: input.gapEscalationEnabled ?? false,
@@ -532,7 +572,7 @@ export class SlackChannelBindingRepository implements SlackBindingRepositoryPort
       .insertInto("slack_channel_bindings")
       .values(bindingValues)
       .onConflict((oc) =>
-        oc.column("installation_id").doUpdateSet((eb) => ({
+        oc.columns(["installation_id", "channel_id"]).doUpdateSet((eb) => ({
           workspace_id: eb.ref("excluded.workspace_id"),
           answering_agent_id: eb.ref("excluded.answering_agent_id"),
           ...(input.escalationChannelId !== undefined

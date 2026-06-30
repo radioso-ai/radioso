@@ -25,12 +25,14 @@ const SlackInstallStatusSchema = z.object({
 });
 
 const SlackBindingSchema = z.object({
+  channelId: z.string().nullable(),
   answeringAgentId: z.string().uuid().nullable(),
   escalationChannelId: z.string().nullable(),
   gapEscalationEnabled: z.boolean(),
 });
 
 const SlackBindingUpdateSchema = z.object({
+  channelId: z.string().nullable().optional(),
   answeringAgentId: z.string().uuid(),
   escalationChannelId: z.string().nullable().optional(),
   gapEscalationEnabled: z.boolean().optional(),

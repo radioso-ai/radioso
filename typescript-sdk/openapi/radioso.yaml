@@ -14708,6 +14708,10 @@ paths:
               schema:
                 type: object
                 properties:
+                  channelId:
+                    type:
+                      - string
+                      - "null"
                   answeringAgentId:
                     type:
                       - string
@@ -14720,6 +14724,7 @@ paths:
                   gapEscalationEnabled:
                     type: boolean
                 required:
+                  - channelId
                   - answeringAgentId
                   - escalationChannelId
                   - gapEscalationEnabled
@@ -14754,6 +14759,10 @@ paths:
             schema:
               type: object
               properties:
+                channelId:
+                  type:
+                    - string
+                    - "null"
                 answeringAgentId:
                   type: string
                   format: uuid
@@ -14773,6 +14782,10 @@ paths:
               schema:
                 type: object
                 properties:
+                  channelId:
+                    type:
+                      - string
+                      - "null"
                   answeringAgentId:
                     type:
                       - string
@@ -14785,6 +14798,7 @@ paths:
                   gapEscalationEnabled:
                     type: boolean
                 required:
+                  - channelId
                   - answeringAgentId
                   - escalationChannelId
                   - gapEscalationEnabled

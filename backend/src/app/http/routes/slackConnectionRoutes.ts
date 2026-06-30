@@ -15,6 +15,8 @@ type SlackConnectionRouteDependencies = Pick<
 
 const uuidSchema = z.string().uuid();
 const bindingUpdateSchema = z.object({
+  // Omitted/null updates the installation default answerer; a value binds a specific Slack channel.
+  channelId: z.string().trim().min(1).nullable().optional(),
   answeringAgentId: z.string().uuid(),
   escalationChannelId: z.string().trim().min(1).nullable().optional(),
   gapEscalationEnabled: z.boolean().optional(),
@@ -29,6 +31,7 @@ const parseUuid = (raw: unknown, field: string): string => {
 };
 
 const presentBinding = (binding: Awaited<ReturnType<AppDependencies["slackInstallationService"]["getBinding"]>>) => ({
+  channelId: binding?.channelId ?? null,
   answeringAgentId: binding?.answeringAgentId ?? null,
   escalationChannelId: binding?.escalationChannelId ?? null,
   gapEscalationEnabled: binding?.gapEscalationEnabled ?? false,
@@ -140,6 +143,7 @@ export const createSlackConnectionRoutes = (dependencies: SlackConnectionRouteDe
         await dependencies.agentService.get(workspaceId, req.body.answeringAgentId);
         const binding = await dependencies.slackInstallationService.setBinding({
           workspaceId,
+          channelId: req.body.channelId,
           answeringAgentId: req.body.answeringAgentId,
           escalationChannelId: req.body.escalationChannelId,
           gapEscalationEnabled: req.body.gapEscalationEnabled,

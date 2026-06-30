@@ -1730,7 +1730,8 @@ CREATE TABLE public.slack_channel_bindings (
     escalation_channel_id text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    gap_escalation_enabled boolean DEFAULT false NOT NULL
+    gap_escalation_enabled boolean DEFAULT false NOT NULL,
+    channel_id text
 );
 
 
@@ -2933,14 +2934,6 @@ ALTER TABLE ONLY public.sessions
 
 ALTER TABLE ONLY public.skill_intake_states
     ADD CONSTRAINT skill_intake_states_pkey PRIMARY KEY (id);
-
-
---
--- Name: slack_channel_bindings slack_channel_bindings_installation_id_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.slack_channel_bindings
-    ADD CONSTRAINT slack_channel_bindings_installation_id_key UNIQUE (installation_id);
 
 
 --
@@ -4536,6 +4529,13 @@ CREATE UNIQUE INDEX skill_intake_states_one_open_flow_idx ON public.skill_intake
 --
 
 CREATE INDEX skill_intake_states_workspace_conversation_idx ON public.skill_intake_states USING btree (workspace_id, conversation_id, updated_at DESC);
+
+
+--
+-- Name: uq_slack_channel_bindings_install_channel; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_slack_channel_bindings_install_channel ON public.slack_channel_bindings USING btree (installation_id, channel_id) NULLS NOT DISTINCT;
 
 
 --

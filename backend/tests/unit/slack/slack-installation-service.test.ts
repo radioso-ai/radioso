@@ -189,17 +189,37 @@ class InMemorySlackBindings implements SlackBindingRepositoryPort {
   readonly rows = new Map<string, Awaited<ReturnType<SlackBindingRepositoryPort["upsert"]>>>();
 
   async findByInstallationId(installationId: string) {
-    return [...this.rows.values()].find((record) => record.installationId === installationId) ?? null;
+    return (
+      [...this.rows.values()].find(
+        (record) => record.installationId === installationId && record.channelId === null,
+      ) ?? null
+    );
+  }
+
+  async findAnswerer(installationId: string, channelId: string | null) {
+    if (channelId !== null) {
+      const channelRow = [...this.rows.values()].find(
+        (record) => record.installationId === installationId && record.channelId === channelId,
+      );
+      if (channelRow) {
+        return channelRow;
+      }
+    }
+    return this.findByInstallationId(installationId);
   }
 
   async upsert(input: Parameters<SlackBindingRepositoryPort["upsert"]>[0]) {
     this.upserts.push(input);
     const now = new Date();
-    const existing = await this.findByInstallationId(input.installationId);
+    const channelId = input.channelId ?? null;
+    const existing = [...this.rows.values()].find(
+      (record) => record.installationId === input.installationId && record.channelId === channelId,
+    ) ?? null;
     const record = {
       id: existing?.id ?? randomUUID(),
       installationId: input.installationId,
       workspaceId: input.workspaceId,
+      channelId,
       answeringAgentId: input.answeringAgentId,
       escalationChannelId: input.escalationChannelId === undefined
         ? existing?.escalationChannelId ?? null
@@ -213,9 +233,11 @@ class InMemorySlackBindings implements SlackBindingRepositoryPort {
   }
 
   async removeByInstallationId(installationId: string): Promise<boolean> {
-    const record = await this.findByInstallationId(installationId);
-    if (!record) return false;
-    this.rows.delete(record.id);
+    const records = [...this.rows.values()].filter((record) => record.installationId === installationId);
+    if (records.length === 0) return false;
+    for (const record of records) {
+      this.rows.delete(record.id);
+    }
     return true;
   }
 }

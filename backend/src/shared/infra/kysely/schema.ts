@@ -734,6 +734,7 @@ export interface SkillIntakeStates {
 
 export interface SlackChannelBindings {
   answering_agent_id: string;
+  channel_id: string | null;
   created_at: Generated<Timestamp>;
   escalation_channel_id: string | null;
   gap_escalation_enabled: Generated<boolean>;

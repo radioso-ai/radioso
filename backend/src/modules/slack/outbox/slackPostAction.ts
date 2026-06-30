@@ -179,6 +179,9 @@ export class SlackPostActionCredentialResolver implements SlackPostCredentialRes
         async findByInstallationId() {
           return null;
         },
+        async findAnswerer() {
+          return null;
+        },
         async upsert() {
           throw new Error("slack_binding_upsert_unavailable");
         },

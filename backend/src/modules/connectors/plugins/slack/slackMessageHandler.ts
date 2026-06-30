@@ -63,7 +63,7 @@ export interface SlackMessageHandlerOptions {
   logger: ConnectorLogger;
   chat: ConnectorChatPort;
   installations: SlackInstallationRepositoryPort;
-  bindings: SlackBindingRepositoryPort;
+  bindings: Pick<SlackBindingRepositoryPort, "findAnswerer">;
   installationService: Pick<SlackInstallationService, "markNeedsReauthForInstallation" | "resolveBotTokenForInstallation">;
   persistence: SlackPersistencePort;
   slackPostOutbox?: SlackPostOutboxPort;
@@ -88,6 +88,8 @@ export class SlackMessageHandler {
     }
     await this.handleSlackTurn({
       envelope: input as SlackInboundEventEnvelope & { event: SlackMessageImEvent },
+      // DMs have no routable channel; resolve straight to the installation default answerer.
+      routingChannelId: null,
       getSlackKey: (installation) => dmSlackKey(installation.teamId, input.event.user),
       getReplyThreadTs: () => undefined,
       getChannelContext: (installation) => ({
@@ -105,6 +107,8 @@ export class SlackMessageHandler {
   async handleAppMention(input: SlackInboundEventEnvelope & { event: SlackAppMentionEvent }): Promise<void> {
     await this.handleSlackTurn({
       envelope: input,
+      // Channel mentions route by the originating channel; falls back to the default answerer.
+      routingChannelId: input.event.channel,
       getSlackKey: (installation) => {
         const threadTs = input.event.thread_ts ?? input.event.ts;
         return mentionSlackKey(installation.teamId, input.event.channel, threadTs);
@@ -125,6 +129,7 @@ export class SlackMessageHandler {
 
   private async handleSlackTurn(input: {
     envelope: SlackInboundEventEnvelope & { event: SlackMessageImEvent | SlackAppMentionEvent };
+    routingChannelId: string | null;
     getSlackKey: (installation: SlackInstallationRecord) => string;
     getReplyThreadTs: () => string | undefined;
     getChannelContext: (installation: SlackInstallationRecord) => ConversationChannelContext;
@@ -137,7 +142,7 @@ export class SlackMessageHandler {
       return;
     }
 
-    const binding = await this.options.bindings.findByInstallationId(installation.id);
+    const binding = await this.options.bindings.findAnswerer(installation.id, input.routingChannelId);
     if (!binding?.answeringAgentId) {
       await this.options.persistence.markInboundEventStatus(envelope.eventId, "skipped");
       this.options.logger.info(

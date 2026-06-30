@@ -26,6 +26,7 @@ const binding: SlackChannelBindingRecord = {
   id: "bind_1",
   installationId: installation.id,
   workspaceId: "ws_1",
+  channelId: null,
   answeringAgentId: "agent_1",
   escalationChannelId: "COPS",
   gapEscalationEnabled: false,

@@ -7,6 +7,7 @@ import type {
   SlackInstallationRepositoryPort,
   UpsertSlackBindingInput,
   UpsertSlackInstallationInput,
+  WorkspaceAccountLookup,
 } from "../../src/modules/slack/install/slackInstallationService.js";
 
 const cloneInstallation = (record: SlackInstallationRecord): SlackInstallationRecord => ({
@@ -39,6 +40,14 @@ export class InMemorySlackInstallationRepository implements SlackInstallationRep
     return record ? cloneInstallation(record) : null;
   }
 
+  async findByAccountId(accountId: string): Promise<SlackInstallationRecord | null> {
+    const record = [...this.rows.values()]
+      .filter((row) => row.accountId === accountId)
+      .sort((left, right) =>
+        right.updatedAt.getTime() - left.updatedAt.getTime() || left.teamId.localeCompare(right.teamId))[0];
+    return record ? cloneInstallation(record) : null;
+  }
+
   async upsert(input: UpsertSlackInstallationInput): Promise<SlackInstallationRecord> {
     const existing = [...this.rows.values()].find((row) => row.teamId === input.teamId);
     const now = new Date();
@@ -46,6 +55,7 @@ export class InMemorySlackInstallationRepository implements SlackInstallationRep
       id: existing?.id ?? randomUUID(),
       connectionId: input.connectionId,
       workspaceId: input.workspaceId,
+      accountId: input.accountId,
       teamId: input.teamId,
       teamName: input.teamName ?? null,
       botUserId: input.botUserId,
@@ -66,21 +76,67 @@ export class InMemorySlackInstallationRepository implements SlackInstallationRep
   }
 }
 
+export class InMemoryWorkspaceAccountLookup implements WorkspaceAccountLookup {
+  readonly rows = new Map<string, string>();
+
+  constructor(entries: Array<[workspaceId: string, accountId: string]> = []) {
+    for (const [workspaceId, accountId] of entries) {
+      this.rows.set(workspaceId, accountId);
+    }
+  }
+
+  async getAccountId(workspaceId: string): Promise<string | null> {
+    return this.rows.get(workspaceId) ?? null;
+  }
+}
+
 export class InMemorySlackBindingRepository implements SlackBindingRepositoryPort {
   readonly rows = new Map<string, SlackChannelBindingRecord>();
 
   async findByInstallationId(installationId: string): Promise<SlackChannelBindingRecord | null> {
-    const record = [...this.rows.values()].find((row) => row.installationId === installationId);
+    const record = [...this.rows.values()].find(
+      (row) => row.installationId === installationId && row.channelId === null,
+    );
     return record ? cloneBinding(record) : null;
   }
 
+  async listByInstallationId(installationId: string): Promise<SlackChannelBindingRecord[]> {
+    return [...this.rows.values()]
+      .filter((row) => row.installationId === installationId)
+      .sort((left, right) => {
+        if (left.channelId === null && right.channelId !== null) return -1;
+        if (left.channelId !== null && right.channelId === null) return 1;
+        return (left.channelId ?? "").localeCompare(right.channelId ?? "");
+      })
+      .map(cloneBinding);
+  }
+
+  async findAnswerer(
+    installationId: string,
+    channelId: string | null,
+  ): Promise<SlackChannelBindingRecord | null> {
+    if (channelId !== null) {
+      const channelRow = [...this.rows.values()].find(
+        (row) => row.installationId === installationId && row.channelId === channelId,
+      );
+      if (channelRow) {
+        return cloneBinding(channelRow);
+      }
+    }
+    return this.findByInstallationId(installationId);
+  }
+
   async upsert(input: UpsertSlackBindingInput): Promise<SlackChannelBindingRecord> {
-    const existing = [...this.rows.values()].find((row) => row.installationId === input.installationId);
+    const channelId = input.channelId ?? null;
+    const existing = [...this.rows.values()].find(
+      (row) => row.installationId === input.installationId && row.channelId === channelId,
+    );
     const now = new Date();
     const record: SlackChannelBindingRecord = {
       id: existing?.id ?? randomUUID(),
       installationId: input.installationId,
       workspaceId: input.workspaceId,
+      channelId,
       answeringAgentId: input.answeringAgentId,
       escalationChannelId: input.escalationChannelId === undefined
         ? existing?.escalationChannelId ?? null
@@ -93,8 +149,22 @@ export class InMemorySlackBindingRepository implements SlackBindingRepositoryPor
     return cloneBinding(record);
   }
 
+  // Disconnect removes every binding for the installation (default + per-channel).
   async removeByInstallationId(installationId: string): Promise<boolean> {
-    const record = [...this.rows.values()].find((row) => row.installationId === installationId);
+    const records = [...this.rows.values()].filter((row) => row.installationId === installationId);
+    if (records.length === 0) {
+      return false;
+    }
+    for (const record of records) {
+      this.rows.delete(record.id);
+    }
+    return true;
+  }
+
+  async removeByInstallationChannel(installationId: string, channelId: string): Promise<boolean> {
+    const record = [...this.rows.values()].find(
+      (row) => row.installationId === installationId && row.channelId === channelId,
+    );
     if (!record) {
       return false;
     }

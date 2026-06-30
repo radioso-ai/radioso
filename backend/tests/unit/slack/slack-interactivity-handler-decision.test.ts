@@ -9,6 +9,7 @@ const installation: SlackInstallationRecord = {
   id: "00000000-0000-4000-8000-000000000001",
   connectionId: "conn_1",
   workspaceId: "ws_1",
+  accountId: "acct_install",
   teamId: "T1",
   teamName: "Team",
   botUserId: "B1",
@@ -21,7 +22,7 @@ const pendingDecision: PendingDecisionRecord = {
   handle: "pd_1",
   conversationId: "conv_1",
   sessionId: "session_1",
-  workspaceId: "ws_1",
+  workspaceId: "ws_conversation",
   agentId: "agent_1",
   routineId: "routine_1",
   stepId: "step_1",
@@ -70,15 +71,16 @@ const createHandler = (overrides: {
   });
   const audit = { record: vi.fn(async () => {}) };
   const metrics = { incrementCounter: vi.fn() };
+  const identityResolver = {
+    resolve: vi.fn(async () => overrides.identity ?? {
+      accountId: "acct_1",
+      userId: "user_1",
+      displayName: "Dana",
+    }),
+  };
   const handler = new SlackInteractivityHandler({
     installations: { findByTeamId: vi.fn(async () => installation) },
-    identityResolver: {
-      resolve: vi.fn(async () => overrides.identity ?? {
-        accountId: "acct_1",
-        userId: "user_1",
-        displayName: "Dana",
-      }),
-    },
+    identityResolver,
     approvalDecisions: { resolve },
     pendingDecisions: { loadByHandle: vi.fn(async () => pendingDecision) },
     responseUrlClient: {
@@ -89,12 +91,12 @@ const createHandler = (overrides: {
     audit,
     metrics,
   });
-  return { handler, resolve, responsePosts, audit, metrics };
+  return { handler, resolve, responsePosts, audit, metrics, identityResolver };
 };
 
 describe("SlackInteractivityHandler decision branch", () => {
   it("resolves the decoded decision and updates the original Slack message", async () => {
-    const { handler, resolve, responsePosts, audit, metrics } = createHandler();
+    const { handler, resolve, responsePosts, audit, metrics, identityResolver } = createHandler();
 
     await handler.handleBlockActions(blockPayload);
 
@@ -105,9 +107,14 @@ describe("SlackInteractivityHandler decision branch", () => {
       contentHash: "hash_1",
       caller: {
         accountId: "acct_1",
-        workspaceId: "ws_1",
+        workspaceId: "ws_conversation",
         userId: "user_1",
       },
+    });
+    expect(identityResolver.resolve).toHaveBeenCalledWith({
+      installation,
+      workspaceId: "ws_conversation",
+      slackUserId: "U1",
     });
     expect(responsePosts).toHaveLength(1);
     expect(responsePosts[0]!.url).toBe("https://hooks.slack.com/actions/1");
@@ -115,7 +122,7 @@ describe("SlackInteractivityHandler decision branch", () => {
     expect(JSON.stringify(responsePosts[0]!.body.blocks)).toContain("Ship it");
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
       accountId: "acct_1",
-      workspaceId: "ws_1",
+      workspaceId: "ws_conversation",
       eventType: "hitl.decision.slack_resolve",
       eventStatus: "success",
     }));

@@ -31,15 +31,18 @@ const routineProviderStub = (): ChatRoutineProvider => ({
   },
 });
 const chatGatewayStub = () => ({ answer: async () => "" });
-const presenterStub = (): ChatAnswerPresenter =>
-  ({
-    presentNonRetrievalAnswer: (answer: string) => ({
-      answer,
-      skillName: "routine",
-      skillOutcome: "completed",
-      skillStatus: "completed",
-    }),
-  }) as unknown as ChatAnswerPresenter;
+const presenterStub = (): ChatAnswerPresenter => {
+  const present = (answer: string) => ({
+    answer,
+    skillName: "routine",
+    skillOutcome: "completed",
+    skillStatus: "completed",
+  });
+  return {
+    presentNonRetrievalAnswer: present,
+    presentRoutineAnswer: (answer: string) => present(answer),
+  } as unknown as ChatAnswerPresenter;
+};
 
 const agent = (): ConversationAgent => ({
   id: "agent-1",

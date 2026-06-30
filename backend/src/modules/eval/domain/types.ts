@@ -79,6 +79,7 @@ export type EvalAssertion =
   | { type: "retrieval_includes_document"; documentId: string }
   | { type: "retrieval_excludes_document"; documentId: string }
   | { type: "retrieval_top_k_includes_document"; documentId: string; k: number }
+  | { type: "answer_cites_document"; documentId: string }
   | {
       type: "answer_contains";
       pattern: string;

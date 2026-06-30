@@ -41,6 +41,10 @@ const assertionSchema = z.discriminatedUnion("type", [
     k: z.number().int().min(1).max(100),
   }),
   z.object({
+    type: z.literal("answer_cites_document"),
+    documentId: z.string().uuid(),
+  }),
+  z.object({
     type: z.literal("answer_contains"),
     ...answerAssertionFields,
   }),

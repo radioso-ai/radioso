@@ -1,5 +1,6 @@
 import type {
   ConversationAgentConfig,
+  ConversationCitation,
   ConversationMessage,
   ConversationModelGateway,
   ConversationRoutineStepRenderer,
@@ -101,6 +102,50 @@ const retrievalContextMessages = (turn: TurnContext): ConversationMessage[] => {
     : [];
 };
 
+/**
+ * Citations the routine step grounded on, drawn from the same staged `retrieval.context`
+ * output the excerpts were rendered from. Host-neutral: IDs/content/metadata are passed
+ * through verbatim so the host maps them to its own citation type, resolves a source URL
+ * from `metadata`, and sanitizes per surface. Empty when no retrieval step fed this step —
+ * which is how "not every routine step is cited" stays true without extra config.
+ */
+const citationsFromStagedContext = (turn: TurnContext): ConversationCitation[] => {
+  const citations: ConversationCitation[] = [];
+  for (const staged of turn.stagedContext) {
+    if (staged.source !== "retrieval.context" || !isRecord(staged.data)) {
+      continue;
+    }
+    const contexts = Array.isArray(staged.data.contexts) ? staged.data.contexts : [];
+    for (const context of contexts) {
+      if (!isRecord(context)) {
+        continue;
+      }
+      const title = textField(context.title);
+      const content = textField(context.content);
+      if (!title && !content) {
+        continue;
+      }
+      const citation: ConversationCitation = { title: title ?? "Source" };
+      const documentId = textField(context.documentId);
+      const chunkId = textField(context.chunkId);
+      if (documentId) {
+        citation.documentId = documentId;
+      }
+      if (chunkId) {
+        citation.chunkId = chunkId;
+      }
+      if (content) {
+        citation.content = content;
+      }
+      if (isRecord(context.metadata)) {
+        citation.metadata = context.metadata;
+      }
+      citations.push(citation);
+    }
+  }
+  return citations;
+};
+
 const fallbackResponseLanguageInstruction = `Always reply in the same language as the user's most recent message, even when your
 scope and instructions above are written in another language. Match the user's
 language, not the language of these instructions.`;
@@ -160,6 +205,7 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
       messages: turnMessages(input.turn),
       systemPrompt,
     });
-    return { answer: text.trim() };
+    const citations = citationsFromStagedContext(input.turn);
+    return { answer: text.trim(), ...(citations.length > 0 ? { citations } : {}) };
   }
 }

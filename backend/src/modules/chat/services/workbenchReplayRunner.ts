@@ -353,7 +353,7 @@ export class WorkbenchReplayRunner {
       routineActivator: ports.activator,
       routineSlotCorrection: ports.slotCorrection,
       routineReentryGate: ports.reentryGate,
-      presentRoutineReply: (response) => chatAnswerPresenter.presentNonRetrievalAnswer(response.answer),
+      presentRoutineReply: (response) => chatAnswerPresenter.presentRoutineAnswer(response.answer, response.citations),
     });
     if (!outcome) {
       return null;

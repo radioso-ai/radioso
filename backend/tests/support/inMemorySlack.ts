@@ -100,6 +100,17 @@ export class InMemorySlackBindingRepository implements SlackBindingRepositoryPor
     return record ? cloneBinding(record) : null;
   }
 
+  async listByInstallationId(installationId: string): Promise<SlackChannelBindingRecord[]> {
+    return [...this.rows.values()]
+      .filter((row) => row.installationId === installationId)
+      .sort((left, right) => {
+        if (left.channelId === null && right.channelId !== null) return -1;
+        if (left.channelId !== null && right.channelId === null) return 1;
+        return (left.channelId ?? "").localeCompare(right.channelId ?? "");
+      })
+      .map(cloneBinding);
+  }
+
   async findAnswerer(
     installationId: string,
     channelId: string | null,
@@ -147,6 +158,17 @@ export class InMemorySlackBindingRepository implements SlackBindingRepositoryPor
     for (const record of records) {
       this.rows.delete(record.id);
     }
+    return true;
+  }
+
+  async removeByInstallationChannel(installationId: string, channelId: string): Promise<boolean> {
+    const record = [...this.rows.values()].find(
+      (row) => row.installationId === installationId && row.channelId === channelId,
+    );
+    if (!record) {
+      return false;
+    }
+    this.rows.delete(record.id);
     return true;
   }
 }

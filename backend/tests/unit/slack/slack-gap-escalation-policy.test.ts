@@ -77,9 +77,11 @@ const makeHandler = (input: {
   };
   const bindings: SlackBindingRepositoryPort = {
     findByInstallationId: vi.fn(async () => defaultBinding),
+    listByInstallationId: vi.fn(async () => [defaultBinding]),
     findAnswerer: vi.fn(async () => defaultBinding),
     upsert: vi.fn(),
     removeByInstallationId: vi.fn(),
+    removeByInstallationChannel: vi.fn(),
   };
   const markNeedsReauthForInstallation = vi.fn(async () => true);
   const installationService: Pick<SlackInstallationService, "markNeedsReauthForInstallation" | "resolveBotTokenForInstallation"> = {
@@ -233,9 +235,11 @@ describe("Slack gap escalation policy", () => {
     };
     const bindings: SlackBindingRepositoryPort = {
       findByInstallationId: vi.fn(async () => defaultBinding),
+      listByInstallationId: vi.fn(async () => [defaultBinding]),
       findAnswerer: vi.fn(async () => defaultBinding),
       upsert: vi.fn(),
       removeByInstallationId: vi.fn(),
+      removeByInstallationChannel: vi.fn(),
     };
     const installationService: Pick<SlackInstallationService, "markNeedsReauthForInstallation" | "resolveBotTokenForInstallation"> = {
       markNeedsReauthForInstallation: vi.fn(async () => true),

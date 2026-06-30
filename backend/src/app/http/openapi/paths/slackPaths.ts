@@ -31,11 +31,19 @@ const SlackBindingSchema = z.object({
   gapEscalationEnabled: z.boolean(),
 });
 
+const SlackBindingsListSchema = z.object({
+  bindings: z.array(SlackBindingSchema),
+});
+
 const SlackBindingUpdateSchema = z.object({
   channelId: z.string().nullable().optional(),
   answeringAgentId: z.string().uuid(),
   escalationChannelId: z.string().nullable().optional(),
   gapEscalationEnabled: z.boolean().optional(),
+});
+
+const SlackBindingDeleteQuerySchema = z.object({
+  channelId: z.string().min(1),
 });
 
 const SlackManifestResponseSchema = z.object({
@@ -145,6 +153,21 @@ export const registerSlackPaths = (
   });
 
   registry.registerPath({
+    method: "get",
+    path: "/api/v1/workspaces/{workspaceId}/slack/bindings",
+    tags: TAGS,
+    summary: "List Slack answering bindings",
+    operationId: "listWorkspaceSlackBindings",
+    security: sec,
+    request: { params: SlackWorkspaceParams },
+    responses: {
+      200: { description: "Slack bindings", content: json(SlackBindingsListSchema) },
+      401: errorResponse("Authentication required"),
+      403: errorResponse("Agent read permission required"),
+    },
+  });
+
+  registry.registerPath({
     method: "put",
     path: "/api/v1/workspaces/{workspaceId}/slack/binding",
     tags: TAGS,
@@ -161,6 +184,25 @@ export const registerSlackPaths = (
       401: errorResponse("Authentication required"),
       403: errorResponse("Agent manage permission required"),
       404: errorResponse("Slack installation not configured"),
+    },
+  });
+
+  registry.registerPath({
+    method: "delete",
+    path: "/api/v1/workspaces/{workspaceId}/slack/binding",
+    tags: TAGS,
+    summary: "Remove a Slack channel answering binding",
+    operationId: "deleteWorkspaceSlackChannelBinding",
+    security: sec,
+    request: {
+      params: SlackWorkspaceParams,
+      query: SlackBindingDeleteQuerySchema,
+    },
+    responses: {
+      204: { description: "Slack channel binding removed" },
+      400: errorResponse("Missing or invalid channel binding request"),
+      401: errorResponse("Authentication required"),
+      403: errorResponse("Agent manage permission required"),
     },
   });
 

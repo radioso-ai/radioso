@@ -180,6 +180,9 @@ export class SlackPostActionCredentialResolver implements SlackPostCredentialRes
         async findByInstallationId() {
           return null;
         },
+        async listByInstallationId() {
+          return [];
+        },
         async findAnswerer() {
           return null;
         },
@@ -187,6 +190,9 @@ export class SlackPostActionCredentialResolver implements SlackPostCredentialRes
           throw new Error("slack_binding_upsert_unavailable");
         },
         async removeByInstallationId() {
+          return false;
+        },
+        async removeByInstallationChannel() {
           return false;
         },
       },

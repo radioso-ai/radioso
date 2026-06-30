@@ -213,6 +213,57 @@ describe("Slack admin REST contract", () => {
       gapEscalationEnabled: false,
     });
 
+    const channelBinding = await request(app)
+      .put(`${base}/binding`)
+      .set(headers)
+      .send({ channelId: "C_SUPPORT", answeringAgentId });
+    expect(channelBinding.status).toBe(200);
+    expect(channelBinding.body).toEqual({
+      channelId: "C_SUPPORT",
+      answeringAgentId,
+      escalationChannelId: null,
+      gapEscalationEnabled: false,
+    });
+
+    const bindings = await request(app).get(`${base}/bindings`).set(headers);
+    expect(bindings.status).toBe(200);
+    expect(bindings.body).toEqual({
+      bindings: [
+        {
+          channelId: null,
+          answeringAgentId,
+          escalationChannelId: "CESCALATE",
+          gapEscalationEnabled: false,
+        },
+        {
+          channelId: "C_SUPPORT",
+          answeringAgentId,
+          escalationChannelId: null,
+          gapEscalationEnabled: false,
+        },
+      ],
+    });
+
+    const missingDeleteChannel = await request(app).delete(`${base}/binding`).set(headers);
+    expect(missingDeleteChannel.status).toBe(400);
+    expect(missingDeleteChannel.body.error.message).toBe("channelId is required");
+
+    const deletedChannel = await request(app).delete(`${base}/binding`).query({ channelId: "C_SUPPORT" }).set(headers);
+    expect(deletedChannel.status).toBe(204);
+
+    const afterChannelDelete = await request(app).get(`${base}/bindings`).set(headers);
+    expect(afterChannelDelete.status).toBe(200);
+    expect(afterChannelDelete.body).toEqual({
+      bindings: [
+        {
+          channelId: null,
+          answeringAgentId,
+          escalationChannelId: "CESCALATE",
+          gapEscalationEnabled: false,
+        },
+      ],
+    });
+
     const connectedWithBinding = await request(app).get(`${base}/install/status`).set(headers);
     expect(connectedWithBinding.status).toBe(200);
     expect(connectedWithBinding.body).toEqual({

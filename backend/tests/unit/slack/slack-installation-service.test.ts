@@ -217,6 +217,16 @@ class InMemorySlackBindings implements SlackBindingRepositoryPort {
     );
   }
 
+  async listByInstallationId(installationId: string) {
+    return [...this.rows.values()]
+      .filter((record) => record.installationId === installationId)
+      .sort((left, right) => {
+        if (left.channelId === null && right.channelId !== null) return -1;
+        if (left.channelId !== null && right.channelId === null) return 1;
+        return (left.channelId ?? "").localeCompare(right.channelId ?? "");
+      });
+  }
+
   async findAnswerer(installationId: string, channelId: string | null) {
     if (channelId !== null) {
       const channelRow = [...this.rows.values()].find(
@@ -259,6 +269,15 @@ class InMemorySlackBindings implements SlackBindingRepositoryPort {
     for (const record of records) {
       this.rows.delete(record.id);
     }
+    return true;
+  }
+
+  async removeByInstallationChannel(installationId: string, channelId: string): Promise<boolean> {
+    const record = [...this.rows.values()].find(
+      (row) => row.installationId === installationId && row.channelId === channelId,
+    );
+    if (!record) return false;
+    this.rows.delete(record.id);
     return true;
   }
 }
@@ -392,6 +411,64 @@ describe("SlackInstallationService", () => {
       escalationChannelId: null,
       gapEscalationEnabled: true,
     });
+  });
+
+  it("lists the default binding first and then channel bindings for the workspace account install", async () => {
+    const { service } = createService();
+    await service.saveInstallation({
+      workspaceId: "workspace-1",
+      teamId: "T123",
+      teamName: "Acme",
+      botUserId: "U_BOT",
+      botAccessToken: "xoxb-token",
+      grantedScopes: [...slackBotScopes],
+      answeringAgentId: "agent-default",
+    });
+    await service.setBinding({
+      workspaceId: "workspace-1",
+      channelId: "C_SUPPORT",
+      answeringAgentId: "agent-support",
+    });
+    await service.setBinding({
+      workspaceId: "workspace-2",
+      channelId: "C_BILLING",
+      answeringAgentId: "agent-billing",
+    });
+
+    await expect(service.listBindings("workspace-2")).resolves.toMatchObject([
+      { channelId: null, answeringAgentId: "agent-default" },
+      { channelId: "C_BILLING", answeringAgentId: "agent-billing" },
+      { channelId: "C_SUPPORT", answeringAgentId: "agent-support" },
+    ]);
+    await expect(service.listBindings("workspace-missing")).resolves.toEqual([]);
+  });
+
+  it("removes a channel binding without removing the default binding", async () => {
+    const { service } = createService();
+    await service.saveInstallation({
+      workspaceId: "workspace-1",
+      teamId: "T123",
+      teamName: "Acme",
+      botUserId: "U_BOT",
+      botAccessToken: "xoxb-token",
+      grantedScopes: [...slackBotScopes],
+      answeringAgentId: "agent-default",
+    });
+    await service.setBinding({
+      workspaceId: "workspace-1",
+      channelId: "C_SUPPORT",
+      answeringAgentId: "agent-support",
+    });
+
+    await expect(service.removeChannelBinding("workspace-2", "C_SUPPORT")).resolves.toBe(true);
+    await expect(service.removeChannelBinding("workspace-2", "C_SUPPORT")).resolves.toBe(false);
+    await expect(service.getBinding("workspace-2")).resolves.toMatchObject({
+      channelId: null,
+      answeringAgentId: "agent-default",
+    });
+    await expect(service.listBindings("workspace-2")).resolves.toMatchObject([
+      { channelId: null, answeringAgentId: "agent-default" },
+    ]);
   });
 
   it("reinstalls from an OAuth callback by moving the installation to the authorized callback connection", async () => {

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Kysely, Transaction } from "kysely";
+import { sql, type Kysely, type Transaction } from "kysely";
 
 import { currentTimestamp } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { DB, Db } from "../../../shared/infra/kysely/types.js";
@@ -76,6 +76,7 @@ export interface SlackInstallationRepositoryPort {
 export interface SlackBindingRepositoryPort {
   /** The installation's default answerer (channel_id IS NULL). */
   findByInstallationId(installationId: string): Promise<SlackChannelBindingRecord | null>;
+  listByInstallationId(installationId: string): Promise<SlackChannelBindingRecord[]>;
   /**
    * Resolve the answering binding for an inbound event: the channel-specific binding when one
    * exists, otherwise the installation default. Pass null for surfaces without a routable channel
@@ -84,6 +85,7 @@ export interface SlackBindingRepositoryPort {
   findAnswerer(installationId: string, channelId: string | null): Promise<SlackChannelBindingRecord | null>;
   upsert(input: UpsertSlackBindingInput): Promise<SlackChannelBindingRecord>;
   removeByInstallationId(installationId: string): Promise<boolean>;
+  removeByInstallationChannel(installationId: string, channelId: string): Promise<boolean>;
 }
 
 export interface SlackInstallationServiceOptions {
@@ -248,6 +250,11 @@ export class SlackInstallationService {
     return installation ? this.options.bindings.findByInstallationId(installation.id) : null;
   }
 
+  async listBindings(workspaceId: string): Promise<SlackChannelBindingRecord[]> {
+    const installation = await this.findInstallationForWorkspace(workspaceId);
+    return installation ? this.options.bindings.listByInstallationId(installation.id) : [];
+  }
+
   async setBinding(input: {
     workspaceId: string;
     channelId?: string | null;
@@ -267,6 +274,11 @@ export class SlackInstallationService {
       escalationChannelId: input.escalationChannelId,
       gapEscalationEnabled: input.gapEscalationEnabled,
     });
+  }
+
+  async removeChannelBinding(workspaceId: string, channelId: string): Promise<boolean> {
+    const installation = await this.findInstallationForWorkspace(workspaceId);
+    return installation ? this.options.bindings.removeByInstallationChannel(installation.id, channelId) : false;
   }
 
   async disconnect(workspaceId: string): Promise<boolean> {
@@ -606,6 +618,20 @@ export class SlackChannelBindingRepository implements SlackBindingRepositoryPort
     return row ? mapBinding(row as SlackChannelBindingRow) : null;
   }
 
+  async listByInstallationId(installationId: string): Promise<SlackChannelBindingRecord[]> {
+    const rows = await this.db
+      .selectFrom("slack_channel_bindings")
+      .select((eb) => [
+        ...bindingColumns,
+        eb.ref("gap_escalation_enabled").as("gap_escalation_enabled"),
+      ])
+      .where("installation_id", "=", installationId)
+      .orderBy(sql`channel_id is not null`, "asc")
+      .orderBy("channel_id", "asc")
+      .execute();
+    return rows.map((row) => mapBinding(row as SlackChannelBindingRow));
+  }
+
   async findAnswerer(
     installationId: string,
     channelId: string | null,
@@ -666,6 +692,16 @@ export class SlackChannelBindingRepository implements SlackBindingRepositoryPort
     const rows = await this.db
       .deleteFrom("slack_channel_bindings")
       .where("installation_id", "=", installationId)
+      .returning("id")
+      .execute();
+    return rows.length > 0;
+  }
+
+  async removeByInstallationChannel(installationId: string, channelId: string): Promise<boolean> {
+    const rows = await this.db
+      .deleteFrom("slack_channel_bindings")
+      .where("installation_id", "=", installationId)
+      .where("channel_id", "=", channelId)
       .returning("id")
       .execute();
     return rows.length > 0;

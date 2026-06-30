@@ -7,6 +7,7 @@ import type {
   SlackBindingRepositoryPort,
   SlackInstallationRepositoryPort,
   SlackPostOutboxPort,
+  WorkspaceAccountLookup,
 } from "../public.js";
 import {
   enqueueSlackPostAction,
@@ -23,14 +24,19 @@ const isPendingApproval = (decision: PendingDecisionRecord, notification: Operat
 
 export class SlackOperatorNotificationSink implements OperatorNotificationSink {
   constructor(private readonly options: {
-    installations: Pick<SlackInstallationRepositoryPort, "findByWorkspaceId">;
+    installations: Pick<SlackInstallationRepositoryPort, "findByAccountId">;
+    workspaceAccounts: WorkspaceAccountLookup;
     bindings: Pick<SlackBindingRepositoryPort, "findByInstallationId">;
     pendingDecisions: Pick<PendingDecisionRepository, "loadByHandle">;
     outbox: SlackPostOutboxPort;
   }) {}
 
   async deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<void> {
-    const installation = await this.options.installations.findByWorkspaceId(notification.workspaceId);
+    const accountId = await this.options.workspaceAccounts.getAccountId(notification.workspaceId);
+    if (!accountId) {
+      return;
+    }
+    const installation = await this.options.installations.findByAccountId(accountId);
     if (!installation) {
       return;
     }
@@ -49,6 +55,7 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
 
       await enqueueSlackPostAction(this.options.outbox, {
         workspaceId: notification.workspaceId,
+        accountId,
         conversationId: notification.conversationId,
         idempotencyKey: slackPostIdempotencyKey({
           kind: "operator_notification",
@@ -85,6 +92,7 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
 
     await enqueueSlackPostAction(this.options.outbox, {
       workspaceId: notification.workspaceId,
+      accountId,
       conversationId: notification.conversationId,
       idempotencyKey: slackPostIdempotencyKey({
         kind: "operator_notification",

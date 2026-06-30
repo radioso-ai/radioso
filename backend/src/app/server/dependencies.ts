@@ -71,6 +71,7 @@ import type { ModelInferencePipeline } from "../../shared/infra/llm/modelInferen
 import { OauthConnectionService, StaticOauthProviderRegistry } from "../../modules/integrationOauth/public.js";
 import {
   PostgresSlackConversationLinkLookup,
+  PostgresWorkspaceAccountLookup,
   SlackInstallationService,
   SlackWebApiClient,
   type SlackOauthMetadata,
@@ -154,6 +155,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     integrationConnections: repositories.integrationConnectionRepository,
     installations: repositories.slackInstallationRepository,
     bindings: repositories.slackChannelBindingRepository,
+    workspaceAccounts: new PostgresWorkspaceAccountLookup(infrastructure.database.kysely),
     encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
   });
   const oauthConnectionService = new OauthConnectionService({

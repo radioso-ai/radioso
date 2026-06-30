@@ -29,6 +29,7 @@ import { OperatorNotificationDispatcher } from "../../../modules/operatorNotific
 import {
   SlackChannelBindingRepository,
   SlackInstallationRepository,
+  PostgresWorkspaceAccountLookup,
   SlackOperatorNotificationSink,
 } from "../../../modules/slack/public.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
@@ -98,6 +99,7 @@ const buildOperatorNotificationDispatcher = (input: {
     ),
     new SlackOperatorNotificationSink({
       installations: new SlackInstallationRepository(input.database.kysely),
+      workspaceAccounts: new PostgresWorkspaceAccountLookup(input.database.kysely),
       bindings: new SlackChannelBindingRepository(input.database.kysely),
       pendingDecisions: new PendingDecisionRepository(input.database.kysely),
       outbox: new ActionRequestRepository(input.database.kysely),

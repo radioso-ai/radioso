@@ -8,6 +8,7 @@ const installation: SlackInstallationRecord = {
   id: "11111111-1111-4111-8111-111111111111",
   connectionId: "22222222-2222-4222-8222-222222222222",
   workspaceId: "33333333-3333-4333-8333-333333333333",
+  accountId: "99999999-9999-4999-8999-999999999999",
   teamId: "T1",
   teamName: "Acme",
   botUserId: "UBOT",
@@ -40,17 +41,17 @@ describe("SlackOperatorIdentityResolver", () => {
   it("matches a workspace member by Slack email and checks the takeover permission", async () => {
     const { resolver, slack, workspaceMembers, permissions } = createResolver();
 
-    await expect(resolver.resolve({ installation, slackUserId: "U123" })).resolves.toEqual({
+    await expect(resolver.resolve({ installation, workspaceId: "workspace-conversation", slackUserId: "U123" })).resolves.toEqual({
       accountId: "account-1",
       userId: "user-1",
       displayName: "Dana Scully",
     });
     expect(slack.usersInfo).toHaveBeenCalledWith("U123", installation);
-    expect(workspaceMembers.findByEmail).toHaveBeenCalledWith(installation.workspaceId, "dana@example.com");
+    expect(workspaceMembers.findByEmail).toHaveBeenCalledWith("workspace-conversation", "dana@example.com");
     expect(permissions.hasPermission).toHaveBeenCalledWith({
       accountId: "account-1",
       userId: "user-1",
-      workspaceId: installation.workspaceId,
+      workspaceId: "workspace-conversation",
       permission: "workspace.conversation.takeover",
     });
   });
@@ -59,7 +60,7 @@ describe("SlackOperatorIdentityResolver", () => {
     const { resolver, slack, workspaceMembers } = createResolver();
     slack.usersInfo.mockResolvedValueOnce({ id: "U123", name: "dana" });
 
-    await expect(resolver.resolve({ installation, slackUserId: "U123" })).resolves.toEqual({ rejected: true });
+    await expect(resolver.resolve({ installation, workspaceId: "workspace-conversation", slackUserId: "U123" })).resolves.toEqual({ rejected: true });
     expect(workspaceMembers.findByEmail).not.toHaveBeenCalled();
   });
 
@@ -67,7 +68,7 @@ describe("SlackOperatorIdentityResolver", () => {
     const { resolver, workspaceMembers, permissions } = createResolver();
     workspaceMembers.findByEmail.mockResolvedValueOnce(null);
 
-    await expect(resolver.resolve({ installation, slackUserId: "U123" })).resolves.toEqual({ rejected: true });
+    await expect(resolver.resolve({ installation, workspaceId: "workspace-conversation", slackUserId: "U123" })).resolves.toEqual({ rejected: true });
     expect(permissions.hasPermission).not.toHaveBeenCalled();
   });
 
@@ -75,6 +76,6 @@ describe("SlackOperatorIdentityResolver", () => {
     const { resolver, permissions } = createResolver();
     permissions.hasPermission.mockResolvedValueOnce(false);
 
-    await expect(resolver.resolve({ installation, slackUserId: "U123" })).resolves.toEqual({ rejected: true });
+    await expect(resolver.resolve({ installation, workspaceId: "workspace-conversation", slackUserId: "U123" })).resolves.toEqual({ rejected: true });
   });
 });

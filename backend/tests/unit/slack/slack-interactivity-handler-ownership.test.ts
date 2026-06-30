@@ -9,6 +9,7 @@ const installation: SlackInstallationRecord = {
   id: "00000000-0000-4000-8000-000000000001",
   connectionId: "conn_1",
   workspaceId: "ws_1",
+  accountId: "acct_install",
   teamId: "T1",
   teamName: "Team",
   botUserId: "B1",
@@ -18,7 +19,7 @@ const installation: SlackInstallationRecord = {
 
 const ownershipRecord = (overrides: Partial<ConversationOwnershipRecord> = {}): ConversationOwnershipRecord => ({
   conversationId: "conv_1",
-  workspaceId: "ws_1",
+  workspaceId: "ws_conversation",
   state: "human_owned",
   ownerAccountId: "acct_1",
   ownerDisplayName: "Dana",
@@ -45,7 +46,7 @@ const viewPayload = (value: string) => ({
   user: { id: "U1" },
   view: {
     callback_id: "ownership_reply",
-    private_metadata: JSON.stringify({ conversationId: "conv_1", workspaceId: "ws_1", version: 3 }),
+    private_metadata: JSON.stringify({ conversationId: "conv_1", workspaceId: "ws_conversation", version: 3 }),
     state: {
       values: {
         ownership_reply_message: {
@@ -83,7 +84,7 @@ const createHandler = (overrides: {
     reply: vi.fn(async (): Promise<MessageRecord> => ({
       id: "msg_1",
       conversationId: "conv_1",
-      workspaceId: "ws_1",
+      workspaceId: "ws_conversation",
       role: "assistant",
       source: "human_agent",
       content: "Hello customer",
@@ -91,15 +92,16 @@ const createHandler = (overrides: {
     })),
   };
   const audit = { record: vi.fn(async () => {}) };
+  const identityResolver = {
+    resolve: vi.fn(async () => overrides.identity ?? {
+      accountId: "acct_1",
+      userId: "user_1",
+      displayName: "Dana",
+    }),
+  };
   const handler = new SlackInteractivityHandler({
     installations: { findByTeamId: vi.fn(async () => installation) },
-    identityResolver: {
-      resolve: vi.fn(async () => overrides.identity ?? {
-        accountId: "acct_1",
-        userId: "user_1",
-        displayName: "Dana",
-      }),
-    },
+    identityResolver,
     conversationOwnership: ownership,
     operatorReplyService: operatorReply,
     slackViews: { open: viewsOpen },
@@ -110,37 +112,42 @@ const createHandler = (overrides: {
     },
     audit,
   });
-  return { handler, ownership, viewsOpen, operatorReply, responsePosts, audit };
+  return { handler, ownership, viewsOpen, operatorReply, responsePosts, audit, identityResolver };
 };
 
 describe("SlackInteractivityHandler ownership branch", () => {
   it("takes over a conversation, audits it, and updates the Slack message with talk and handback", async () => {
-    const { handler, ownership, responsePosts, audit } = createHandler();
+    const { handler, ownership, responsePosts, audit, identityResolver } = createHandler();
 
     await handler.handleBlockActions(blockPayload("ownership_takeover", {
       conversationId: "conv_1",
-      workspaceId: "ws_1",
+      workspaceId: "ws_conversation",
     }));
 
     expect(ownership.takeOver).toHaveBeenCalledWith({
       conversationId: "conv_1",
-      workspaceId: "ws_1",
+      workspaceId: "ws_conversation",
       accountId: "acct_1",
       displayName: "Dana",
     });
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
       accountId: "acct_1",
-      workspaceId: "ws_1",
+      workspaceId: "ws_conversation",
       eventType: "hitl.ownership",
       eventStatus: "success",
       metadata: expect.objectContaining({ action: "taken_over", conversationId: "conv_1" }),
     }));
+    expect(identityResolver.resolve).toHaveBeenCalledWith({
+      installation,
+      workspaceId: "ws_conversation",
+      slackUserId: "U1",
+    });
     expect(responsePosts[0]!.body).toMatchObject({ replace_original: true });
     expect(JSON.stringify(responsePosts[0]!.body.blocks)).toContain("ownership_talk");
     const actions = (responsePosts[0]!.body.blocks as Array<Record<string, unknown>>)
       .find((block) => block.type === "actions") as { elements: Array<Record<string, unknown>> };
     expect(actions.elements.map((element) => JSON.parse(element.value as string))).toEqual([
-      { conversationId: "conv_1", workspaceId: "ws_1", version: 2 },
+      { conversationId: "conv_1", workspaceId: "ws_conversation", version: 2 },
       { conversationId: "conv_1", version: 2 },
     ]);
   });
@@ -150,7 +157,7 @@ describe("SlackInteractivityHandler ownership branch", () => {
 
     await handler.handleBlockActions(blockPayload("ownership_takeover", {
       conversationId: "conv_1",
-      workspaceId: "ws_1",
+      workspaceId: "ws_conversation",
     }));
 
     expect(ownership.takeOver).not.toHaveBeenCalled();
@@ -168,7 +175,7 @@ describe("SlackInteractivityHandler ownership branch", () => {
 
     await handler.handleBlockActions(blockPayload("ownership_takeover", {
       conversationId: "conv_1",
-      workspaceId: "ws_1",
+      workspaceId: "ws_conversation",
     }));
 
     expect(audit.record).not.toHaveBeenCalled();
@@ -213,11 +220,11 @@ describe("SlackInteractivityHandler ownership branch", () => {
   });
 
   it("opens a reply modal only for human-owned conversations", async () => {
-    const { handler, viewsOpen, responsePosts } = createHandler();
+    const { handler, viewsOpen, responsePosts, identityResolver } = createHandler();
 
     await handler.handleBlockActions(blockPayload("ownership_talk", {
       conversationId: "conv_1",
-      workspaceId: "ws_1",
+      workspaceId: "ws_conversation",
       version: 3,
     }));
 
@@ -226,8 +233,13 @@ describe("SlackInteractivityHandler ownership branch", () => {
       triggerId: "trigger_1",
       view: expect.objectContaining({
         callback_id: "ownership_reply",
-        private_metadata: JSON.stringify({ conversationId: "conv_1", workspaceId: "ws_1", version: 3 }),
+        private_metadata: JSON.stringify({ conversationId: "conv_1", workspaceId: "ws_conversation", version: 3 }),
       }),
+    });
+    expect(identityResolver.resolve).toHaveBeenCalledWith({
+      installation,
+      workspaceId: "ws_conversation",
+      slackUserId: "U1",
     });
     expect(responsePosts).toHaveLength(0);
   });
@@ -239,7 +251,7 @@ describe("SlackInteractivityHandler ownership branch", () => {
 
     await handler.handleBlockActions(blockPayload("ownership_talk", {
       conversationId: "conv_1",
-      workspaceId: "ws_1",
+      workspaceId: "ws_conversation",
       version: 3,
     }));
 
@@ -257,7 +269,7 @@ describe("SlackInteractivityHandler ownership branch", () => {
     expect(result).toBeUndefined();
     expect(operatorReply.reply).toHaveBeenCalledWith({
       conversationId: "conv_1",
-      workspaceId: "ws_1",
+      workspaceId: "ws_conversation",
       accountId: "acct_1",
       displayName: "Dana",
       message: "Hello customer",

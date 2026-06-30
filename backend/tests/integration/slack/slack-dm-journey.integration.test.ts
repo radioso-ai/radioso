@@ -12,6 +12,7 @@ import {
   SlackChannelBindingRepository,
   SlackInstallationRepository,
   SlackInstallationService,
+  PostgresWorkspaceAccountLookup,
 } from "../../../src/modules/slack/install/slackInstallationService.js";
 import { SlackMessageHandler } from "../../../src/modules/connectors/plugins/slack/slackMessageHandler.js";
 import { PostgresSlackPersistence } from "../../../src/modules/connectors/plugins/slack/slackPersistence.js";
@@ -75,6 +76,7 @@ const clientBackedDatabase = (client: PoolClient): Database => {
 
 describeIfDatabase("Slack DM journey (postgres)", () => {
   const schema = `test_slack_dm_${randomUUID().replace(/-/g, "")}`;
+  const accountId = randomUUID();
   const workspaceId = randomUUID();
   const agentId = randomUUID();
   const encryptionKey = Buffer.alloc(32, 9).toString("base64");
@@ -89,7 +91,8 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
     database = clientBackedDatabase(client);
     await client.query(`CREATE SCHEMA ${schema}`);
     await client.query(`SET search_path TO ${schema}, public`);
-    await client.query(`CREATE TABLE workspaces (id UUID PRIMARY KEY)`);
+    await client.query(`CREATE TABLE accounts (id UUID PRIMARY KEY)`);
+    await client.query(`CREATE TABLE workspaces (id UUID PRIMARY KEY, account_id UUID NOT NULL)`);
     await client.query(`CREATE TABLE agents (id UUID PRIMARY KEY, workspace_id UUID NOT NULL REFERENCES workspaces(id), name TEXT NOT NULL)`);
     await client.query(`
       CREATE TABLE conversations (
@@ -107,8 +110,12 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
     await client.query(await readFile(path.join(testMigrationsPath, "105_integration_connections.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "107_slack_keystone.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "112_slack_gap_escalation_optin.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "116_slack_channel_scoped_bindings.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "117_integration_connections_account_owner.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "118_slack_installation_account_authoritative.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "072_routine_action_requests.sql"), "utf8"));
-    await client.query(`INSERT INTO workspaces (id) VALUES ($1)`, [workspaceId]);
+    await client.query(`INSERT INTO accounts (id) VALUES ($1)`, [accountId]);
+    await client.query(`INSERT INTO workspaces (id, account_id) VALUES ($1, $2)`, [workspaceId, accountId]);
     await client.query(`INSERT INTO agents (id, workspace_id, name) VALUES ($1, $2, 'Slack Agent')`, [agentId, workspaceId]);
   });
 
@@ -128,6 +135,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       integrationConnections,
       installations,
       bindings,
+      workspaceAccounts: new PostgresWorkspaceAccountLookup(database.kysely),
       encryptionKey,
     });
     const saved = await installationService.saveInstallation({
@@ -243,6 +251,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       integrationConnections,
       installations,
       bindings,
+      workspaceAccounts: new PostgresWorkspaceAccountLookup(database.kysely),
       encryptionKey,
     });
     const saved = await installationService.saveInstallation({
@@ -386,6 +395,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       integrationConnections,
       installations,
       bindings,
+      workspaceAccounts: new PostgresWorkspaceAccountLookup(database.kysely),
       encryptionKey,
     });
     const saved = await installationService.saveInstallation({

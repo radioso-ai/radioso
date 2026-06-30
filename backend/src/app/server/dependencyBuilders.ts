@@ -1166,7 +1166,7 @@ export const buildChatServices = (input: {
     },
   });
   const routineProvider: ChatRoutineProvider = {
-    async forTurn({ modelGateway, agentId, workspaceId, pinnedRoutineIds = [], responseLanguage }) {
+    async forTurn({ modelGateway, agentId, workspaceId, accountId, pinnedRoutineIds = [], responseLanguage }) {
       let publishedRegistrations: RoutineRegistration[];
       try {
         publishedRegistrations = await publishedRoutineSource.load({ agentId });
@@ -1341,6 +1341,7 @@ export const buildChatServices = (input: {
             input.composition.skillExecutorRegistry,
             {
               workspaceId,
+              ...(accountId ? { accountId } : {}),
               capabilityGate: (capability) =>
                 input.composition.capabilityPolicy.can({
                   capability,

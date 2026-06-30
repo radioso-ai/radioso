@@ -51,6 +51,7 @@ export {
 export {
   SlackChannelBindingRepository,
   SlackInstallationRepository,
+  PostgresWorkspaceAccountLookup,
   SlackInstallationService,
   type SaveSlackInstallationInput,
   type SaveSlackInstallationResult,
@@ -58,6 +59,7 @@ export {
   type SlackChannelBindingRecord,
   type SlackInstallationRecord,
   type SlackInstallationRepositoryPort,
+  type WorkspaceAccountLookup,
 } from "./install/slackInstallationService.js";
 export {
   SlackOperatorIdentityResolver,

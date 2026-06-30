@@ -51,8 +51,9 @@ export class SlackEscalationExecutor implements SkillExecutorPort {
   private async dispatchInner(invocation: SkillInvocation): Promise<SkillDispatchResult> {
     const agentId = stringContext(invocation, "agentId");
     const workspaceId = stringContext(invocation, "workspaceId");
+    const accountId = stringContext(invocation, "accountId");
     const conversationId = stringContext(invocation, "conversationId");
-    if (!agentId || !workspaceId) return failure("context_missing");
+    if (!agentId || !workspaceId || !accountId) return failure("context_missing");
 
     const definition = await this.options.skills.findEnabledByName(workspaceId, agentId, invocation.skill.name);
     if (!definition) return failure("skill_not_found");
@@ -73,6 +74,7 @@ export class SlackEscalationExecutor implements SkillExecutorPort {
     const conversationRef = conversationId ?? sourceId;
     await enqueueSlackPostAction(this.options.outbox, {
       workspaceId,
+      accountId,
       conversationId,
       idempotencyKey: slackPostIdempotencyKey({ kind: "routine_post", sourceId }),
       payload: {

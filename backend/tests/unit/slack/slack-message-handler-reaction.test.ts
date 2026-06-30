@@ -40,10 +40,11 @@ const buildHandler = (overrides: {
       removeByWorkspaceId: async () => false,
     } as never,
     bindings: {
-      findByInstallationId: async () => ({
+      findAnswerer: async () => ({
         id: "bind-1",
         connectionId: "conn-1",
         workspaceId: "ws-1",
+        channelId: null,
         answeringAgentId: "agent-1",
         escalationChannelId: null,
         gapEscalationEnabled: false,

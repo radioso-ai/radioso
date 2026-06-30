@@ -6,6 +6,7 @@ import {
   SlackInstallationService,
   type SlackBindingRepositoryPort,
   type SlackInstallationRepositoryPort,
+  type WorkspaceAccountLookup,
 } from "../../../src/modules/slack/install/slackInstallationService.js";
 import type {
   CreateIntegrationConnectionInput,
@@ -159,6 +160,13 @@ class InMemorySlackInstallations implements SlackInstallationRepositoryPort {
     return [...this.rows.values()].find((record) => record.workspaceId === workspaceId) ?? null;
   }
 
+  async findByAccountId(accountId: string) {
+    return [...this.rows.values()]
+      .filter((record) => record.accountId === accountId)
+      .sort((left, right) =>
+        right.updatedAt.getTime() - left.updatedAt.getTime() || left.teamId.localeCompare(right.teamId))[0] ?? null;
+  }
+
   async upsert(input: Parameters<SlackInstallationRepositoryPort["upsert"]>[0]) {
     const existing = await this.findByTeamId(input.teamId);
     const now = new Date();
@@ -166,6 +174,7 @@ class InMemorySlackInstallations implements SlackInstallationRepositoryPort {
       id: existing?.id ?? randomUUID(),
       connectionId: input.connectionId,
       workspaceId: input.workspaceId,
+      accountId: input.accountId,
       teamId: input.teamId,
       teamName: input.teamName ?? null,
       botUserId: input.botUserId,
@@ -184,22 +193,64 @@ class InMemorySlackInstallations implements SlackInstallationRepositoryPort {
   }
 }
 
+class InMemoryWorkspaceAccounts implements WorkspaceAccountLookup {
+  readonly rows = new Map<string, string>([
+    ["workspace-1", "account-1"],
+    ["workspace-2", "account-1"],
+    ["workspace-3", "account-2"],
+  ]);
+
+  async getAccountId(workspaceId: string): Promise<string | null> {
+    return this.rows.get(workspaceId) ?? null;
+  }
+}
+
 class InMemorySlackBindings implements SlackBindingRepositoryPort {
   readonly upserts: Parameters<SlackBindingRepositoryPort["upsert"]>[0][] = [];
   readonly rows = new Map<string, Awaited<ReturnType<SlackBindingRepositoryPort["upsert"]>>>();
 
   async findByInstallationId(installationId: string) {
-    return [...this.rows.values()].find((record) => record.installationId === installationId) ?? null;
+    return (
+      [...this.rows.values()].find(
+        (record) => record.installationId === installationId && record.channelId === null,
+      ) ?? null
+    );
+  }
+
+  async listByInstallationId(installationId: string) {
+    return [...this.rows.values()]
+      .filter((record) => record.installationId === installationId)
+      .sort((left, right) => {
+        if (left.channelId === null && right.channelId !== null) return -1;
+        if (left.channelId !== null && right.channelId === null) return 1;
+        return (left.channelId ?? "").localeCompare(right.channelId ?? "");
+      });
+  }
+
+  async findAnswerer(installationId: string, channelId: string | null) {
+    if (channelId !== null) {
+      const channelRow = [...this.rows.values()].find(
+        (record) => record.installationId === installationId && record.channelId === channelId,
+      );
+      if (channelRow) {
+        return channelRow;
+      }
+    }
+    return this.findByInstallationId(installationId);
   }
 
   async upsert(input: Parameters<SlackBindingRepositoryPort["upsert"]>[0]) {
     this.upserts.push(input);
     const now = new Date();
-    const existing = await this.findByInstallationId(input.installationId);
+    const channelId = input.channelId ?? null;
+    const existing = [...this.rows.values()].find(
+      (record) => record.installationId === input.installationId && record.channelId === channelId,
+    ) ?? null;
     const record = {
       id: existing?.id ?? randomUUID(),
       installationId: input.installationId,
       workspaceId: input.workspaceId,
+      channelId,
       answeringAgentId: input.answeringAgentId,
       escalationChannelId: input.escalationChannelId === undefined
         ? existing?.escalationChannelId ?? null
@@ -213,7 +264,18 @@ class InMemorySlackBindings implements SlackBindingRepositoryPort {
   }
 
   async removeByInstallationId(installationId: string): Promise<boolean> {
-    const record = await this.findByInstallationId(installationId);
+    const records = [...this.rows.values()].filter((record) => record.installationId === installationId);
+    if (records.length === 0) return false;
+    for (const record of records) {
+      this.rows.delete(record.id);
+    }
+    return true;
+  }
+
+  async removeByInstallationChannel(installationId: string, channelId: string): Promise<boolean> {
+    const record = [...this.rows.values()].find(
+      (row) => row.installationId === installationId && row.channelId === channelId,
+    );
     if (!record) return false;
     this.rows.delete(record.id);
     return true;
@@ -225,14 +287,16 @@ const createService = () => {
   const integrationConnections = new InMemoryIntegrationConnections();
   const installations = new InMemorySlackInstallations();
   const bindings = new InMemorySlackBindings();
+  const workspaceAccounts = new InMemoryWorkspaceAccounts();
   const service = new SlackInstallationService({
     oauthConnections,
     integrationConnections,
     installations,
     bindings,
+    workspaceAccounts,
     encryptionKey,
   });
-  return { service, oauthConnections, integrationConnections, installations, bindings };
+  return { service, oauthConnections, integrationConnections, installations, bindings, workspaceAccounts };
 };
 
 describe("SlackInstallationService", () => {
@@ -349,6 +413,64 @@ describe("SlackInstallationService", () => {
     });
   });
 
+  it("lists the default binding first and then channel bindings for the workspace account install", async () => {
+    const { service } = createService();
+    await service.saveInstallation({
+      workspaceId: "workspace-1",
+      teamId: "T123",
+      teamName: "Acme",
+      botUserId: "U_BOT",
+      botAccessToken: "xoxb-token",
+      grantedScopes: [...slackBotScopes],
+      answeringAgentId: "agent-default",
+    });
+    await service.setBinding({
+      workspaceId: "workspace-1",
+      channelId: "C_SUPPORT",
+      answeringAgentId: "agent-support",
+    });
+    await service.setBinding({
+      workspaceId: "workspace-2",
+      channelId: "C_BILLING",
+      answeringAgentId: "agent-billing",
+    });
+
+    await expect(service.listBindings("workspace-2")).resolves.toMatchObject([
+      { channelId: null, answeringAgentId: "agent-default" },
+      { channelId: "C_BILLING", answeringAgentId: "agent-billing" },
+      { channelId: "C_SUPPORT", answeringAgentId: "agent-support" },
+    ]);
+    await expect(service.listBindings("workspace-missing")).resolves.toEqual([]);
+  });
+
+  it("removes a channel binding without removing the default binding", async () => {
+    const { service } = createService();
+    await service.saveInstallation({
+      workspaceId: "workspace-1",
+      teamId: "T123",
+      teamName: "Acme",
+      botUserId: "U_BOT",
+      botAccessToken: "xoxb-token",
+      grantedScopes: [...slackBotScopes],
+      answeringAgentId: "agent-default",
+    });
+    await service.setBinding({
+      workspaceId: "workspace-1",
+      channelId: "C_SUPPORT",
+      answeringAgentId: "agent-support",
+    });
+
+    await expect(service.removeChannelBinding("workspace-2", "C_SUPPORT")).resolves.toBe(true);
+    await expect(service.removeChannelBinding("workspace-2", "C_SUPPORT")).resolves.toBe(false);
+    await expect(service.getBinding("workspace-2")).resolves.toMatchObject({
+      channelId: null,
+      answeringAgentId: "agent-default",
+    });
+    await expect(service.listBindings("workspace-2")).resolves.toMatchObject([
+      { channelId: null, answeringAgentId: "agent-default" },
+    ]);
+  });
+
   it("reinstalls from an OAuth callback by moving the installation to the authorized callback connection", async () => {
     const { service, oauthConnections, integrationConnections } = createService();
     const first = await service.saveInstallation({
@@ -391,7 +513,48 @@ describe("SlackInstallationService", () => {
     expect(oauthConnections.removed).toEqual([{ workspaceId: "workspace-1", id: first.oauthConnection.id }]);
   });
 
-  it("rejects reinstalling the same Slack team into another workspace before mutating credentials", async () => {
+  it("reuses a same-team installation from a sibling workspace in the same account", async () => {
+    const { service, oauthConnections, integrationConnections, installations, bindings } = createService();
+    const first = await service.saveInstallation({
+      workspaceId: "workspace-1",
+      teamId: "T123",
+      teamName: "Acme",
+      botUserId: "U_BOT",
+      botAccessToken: "xoxb-old",
+      grantedScopes: ["chat:write"],
+      answeringAgentId: "agent-1",
+    });
+
+    const second = await service.saveInstallation({
+      workspaceId: "workspace-2",
+      teamId: "T123",
+      teamName: "Acme renamed",
+      botUserId: "U_BOT_2",
+      botAccessToken: "xoxb-new",
+      grantedScopes: ["chat:write", "im:read"],
+      answeringAgentId: "agent-2",
+    });
+
+    expect(second.installation.id).toBe(first.installation.id);
+    expect(second.installation).toMatchObject({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      connectionId: first.connection.id,
+      botUserId: "U_BOT_2",
+    });
+    expect(oauthConnections.created).toHaveLength(1);
+    expect(oauthConnections.tokenWrites).toHaveLength(2);
+    expect(integrationConnections.updates.at(-1)).toMatchObject({ displayName: "Acme renamed" });
+    expect(bindings.upserts.at(-1)).toMatchObject({ workspaceId: "workspace-2", answeringAgentId: "agent-2" });
+    expect(await installations.findByAccountId("account-1")).toMatchObject({ id: first.installation.id });
+    await expect(service.getStatus("workspace-2")).resolves.toMatchObject({
+      status: "needs_reauth",
+      installationId: first.installation.id,
+      answeringAgentId: "agent-2",
+    });
+  });
+
+  it("rejects reinstalling the same Slack team into another account before mutating credentials", async () => {
     const { service, oauthConnections, integrationConnections, installations } = createService();
     const first = await service.saveInstallation({
       workspaceId: "workspace-1",
@@ -404,7 +567,7 @@ describe("SlackInstallationService", () => {
     });
 
     await expect(service.saveInstallation({
-      workspaceId: "workspace-2",
+      workspaceId: "workspace-3",
       teamId: "T123",
       teamName: "Acme",
       botUserId: "U_BOT_2",
@@ -414,6 +577,7 @@ describe("SlackInstallationService", () => {
     })).rejects.toMatchObject({
       statusCode: 409,
       code: "conflict",
+      message: "Slack workspace is already connected to another organization",
     });
 
     expect(oauthConnections.created).toHaveLength(1);
@@ -422,6 +586,7 @@ describe("SlackInstallationService", () => {
     expect(await installations.findByTeamId("T123")).toMatchObject({
       id: first.installation.id,
       workspaceId: "workspace-1",
+      accountId: "account-1",
       connectionId: first.connection.id,
       botUserId: "U_BOT",
     });
@@ -434,6 +599,7 @@ describe("SlackInstallationService", () => {
       integrationConnections,
       installations,
       bindings,
+      workspaceAccounts: new InMemoryWorkspaceAccounts(),
       encryptionKey: undefined,
     });
 

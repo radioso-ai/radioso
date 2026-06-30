@@ -19,6 +19,7 @@ export interface RoutineSkillExecutorDispatcherOptions {
   capabilityGate?: RoutineCapabilityGate;
   metricsRegistry?: MetricsRegistry | null;
   workspaceId?: string;
+  accountId?: string;
 }
 
 const allowAllRoutineCapabilityGate: RoutineCapabilityGate = async () => ({ allowed: true });
@@ -109,6 +110,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
   private readonly capabilityGate: RoutineCapabilityGate;
   private readonly metricsRegistry: MetricsRegistry | null;
   private readonly workspaceId?: string;
+  private readonly accountId?: string;
 
   constructor(
     private readonly resolver: RoutineSkillResolver,
@@ -118,6 +120,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
     this.capabilityGate = options.capabilityGate ?? allowAllRoutineCapabilityGate;
     this.metricsRegistry = options.metricsRegistry ?? null;
     this.workspaceId = options.workspaceId;
+    this.accountId = options.accountId;
   }
 
   async dispatch(
@@ -187,6 +190,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
           routineId: state.routineId,
           ...(stepId ? { stepId } : {}),
           ...(this.workspaceId ? { workspaceId: this.workspaceId } : {}),
+          ...(this.accountId ? { accountId: this.accountId } : {}),
         },
         emit: noopSkillEmitPort,
       });

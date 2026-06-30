@@ -1,14 +1,18 @@
 ---
 title: "Slack Channel"
-description: "Connect a Radioso agent to Slack direct messages, mentions, human escalation posts, and operator callbacks."
-last_updated: 2026-06-25
+description: "Connect a Radioso organization and its agents to Slack direct messages, mentions, human escalation posts, and operator callbacks."
+last_updated: 2026-06-30
 ---
 
 # Slack Channel
 
-The Slack channel lets people talk to a Radioso agent from Slack. The same
-Slack connection can also post an escalation to a human Slack channel when the
-agent has no grounded answer.
+The Slack channel lets people talk to Radioso agents from Slack. One Slack
+workspace maps to one Radioso organization. Inside that organization, the
+default agent answers direct messages and channels that do not have a specific
+agent. Individual Slack channels can be assigned to specific agents.
+
+The same Slack connection can also post an escalation to a human Slack channel
+when the agent has no grounded answer.
 
 Slack is only a channel. It is not a document source. Radioso does not read
 Slack history, does not call Slack search, and does not add Slack messages to
@@ -16,8 +20,10 @@ the knowledge base.
 
 ## What It Does
 
-- Direct messages to the Slack bot are routed to the bound Radioso agent.
+- Direct messages to the Slack bot are routed to the default Radioso agent.
 - `@mention` events in Slack channels are answered in the originating thread.
+  A channel-specific binding wins when one exists. Otherwise, Radioso uses the
+  default agent.
 - While the agent works on a message, Radioso adds an `eyes` reaction to it. Once
   the reply is posted, the `eyes` reaction is replaced with a check mark, or with
   an `x` if the reply could not be delivered.
@@ -30,6 +36,9 @@ the knowledge base.
 - Approval gates, handoffs, and unanswered questions arrive as interactive
   messages. Operators approve, deny, take over, reply to the customer, or hand
   back from Slack.
+- A sibling Radioso workspace in the same organization can share the same Slack
+  installation. It does not create a second bot identity for the same Slack
+  workspace.
 
 Answers still come from the agent's curated Radioso knowledge. If the curated
 knowledge does not cover the question, the agent must decline safely or
@@ -85,15 +94,18 @@ Slack tokens or app secrets.
 1. Open the agent Slack channel settings.
 2. Select **Add to Slack**.
 3. Approve the Slack OAuth install.
-4. Return to Radioso and confirm the answering agent.
-5. Optionally set an escalation channel, such as `#support`.
+4. Return to Radioso and confirm the default agent.
+5. Optionally add channel-specific agent bindings.
+6. Optionally set an escalation channel, such as `#support`.
 
 The setup uses these API surfaces:
 
 - `POST /api/v1/workspaces/{workspaceId}/slack/install/start`
 - `GET /api/v1/workspaces/{workspaceId}/slack/install/status`
 - `GET /api/v1/workspaces/{workspaceId}/slack/binding`
+- `GET /api/v1/workspaces/{workspaceId}/slack/bindings`
 - `PUT /api/v1/workspaces/{workspaceId}/slack/binding`
+- `DELETE /api/v1/workspaces/{workspaceId}/slack/binding?channelId={channelId}`
 
 ## Self-Host Setup
 
@@ -158,17 +170,20 @@ complete.
 ## Data Flow
 
 1. Slack sends OAuth callbacks to Radioso after app install.
-2. Radioso stores the bot token encrypted and keyed by Slack `team_id`.
+2. Radioso stores the bot token encrypted and keyed by Slack `team_id` for the
+   Radioso organization.
 3. Slack sends Events API payloads to `/api/connectors/slack/events`.
 4. Radioso verifies the Slack signature, checks replay age, deduplicates by
    `event_id`, and ignores bot-authored events.
-5. The Slack connector invokes the normal chat path with `sourceChannel:
+5. Radioso resolves the agent from the Slack channel binding. Direct messages
+   and unlisted channels use the default agent.
+6. The Slack connector invokes the normal chat path with `sourceChannel:
    "slack"`.
-6. Radioso posts the completed answer back to Slack through the stored bot
+7. Radioso posts the completed answer back to Slack through the stored bot
    token.
-7. If the typed turn outcome is `no_context`, the Slack connector can enqueue a
+8. If the typed turn outcome is `no_context`, the Slack connector can enqueue a
    `slack.post` escalation to the configured human channel.
-8. Operators act on interactive messages in Slack. Slack sends the button click
+9. Operators act on interactive messages in Slack. Slack sends the button click
    or form submission to `/api/connectors/slack/interactivity`. Radioso verifies
    the signature, identifies the operator by email, and resolves the action
    through the same approval and conversation-ownership services the dashboard

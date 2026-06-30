@@ -50,6 +50,7 @@ const asPool = (client: PoolClient): pg.Pool =>
 
 describeIfDatabase("slack installation + binding repositories (postgres, kysely)", () => {
   const schema = `test_slack_install_${randomUUID().replace(/-/g, "")}`;
+  const accountId = randomUUID();
   const workspaceId = randomUUID();
   const agentId = randomUUID();
   const oauthConnectionId = randomUUID();
@@ -65,7 +66,11 @@ describeIfDatabase("slack installation + binding repositories (postgres, kysely)
     client = await pool.connect();
     await client.query(`CREATE SCHEMA ${schema}`);
     await client.query(`SET search_path TO ${schema}, public`);
-    await client.query(`CREATE TABLE workspaces (id UUID PRIMARY KEY)`);
+    await client.query(`CREATE TABLE accounts (id UUID PRIMARY KEY)`);
+    await client.query(`CREATE TABLE workspaces (id UUID PRIMARY KEY, account_id UUID)`);
+    // FK target for slack_conversation_links (migration 107); kept local so this suite does not
+    // depend on a sibling test having migrated the public schema first.
+    await client.query(`CREATE TABLE conversations (id UUID PRIMARY KEY)`);
     await client.query(
       `CREATE TABLE agents (id UUID PRIMARY KEY, workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE)`,
     );
@@ -73,8 +78,12 @@ describeIfDatabase("slack installation + binding repositories (postgres, kysely)
     await client.query(await readFile(path.join(testMigrationsPath, "105_integration_connections.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "107_slack_keystone.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "112_slack_gap_escalation_optin.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "116_slack_channel_scoped_bindings.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "117_integration_connections_account_owner.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "118_slack_installation_account_authoritative.sql"), "utf8"));
 
-    await client.query(`INSERT INTO workspaces (id) VALUES ($1)`, [workspaceId]);
+    await client.query(`INSERT INTO accounts (id) VALUES ($1)`, [accountId]);
+    await client.query(`INSERT INTO workspaces (id, account_id) VALUES ($1, $2)`, [workspaceId, accountId]);
     await client.query(`INSERT INTO agents (id, workspace_id) VALUES ($1, $2)`, [agentId, workspaceId]);
     await client.query(
       `INSERT INTO integration_oauth_connections (id, workspace_id, provider, display_name, status, granted_scopes)
@@ -102,6 +111,7 @@ describeIfDatabase("slack installation + binding repositories (postgres, kysely)
     const created = await installations.upsert({
       connectionId: slackConnectionId,
       workspaceId,
+      accountId,
       teamId: "TEAM1",
       teamName: "Acme",
       botUserId: "UBOT1",
@@ -109,6 +119,7 @@ describeIfDatabase("slack installation + binding repositories (postgres, kysely)
     expect(created).toMatchObject({
       connectionId: slackConnectionId,
       workspaceId,
+      accountId,
       teamId: "TEAM1",
       teamName: "Acme",
       botUserId: "UBOT1",
@@ -118,6 +129,7 @@ describeIfDatabase("slack installation + binding repositories (postgres, kysely)
     const updated = await installations.upsert({
       connectionId: slackConnectionId,
       workspaceId,
+      accountId,
       teamId: "TEAM1",
       teamName: "Acme Renamed",
       botUserId: "UBOT2",

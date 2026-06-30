@@ -5,9 +5,16 @@
 1. Open the agent Slack channel settings.
 2. Click **Add to Slack**.
 3. Approve the Slack OAuth install.
-4. Confirm the agent binding in Radioso.
-5. Optionally set an escalation channel.
-6. DM the bot in Slack, or invite it to a channel and `@mention` it.
+4. Confirm the default agent in Radioso.
+5. Optionally add channel-specific bindings for channels this agent should
+   answer.
+6. Optionally set an escalation channel.
+7. DM the bot in Slack, or invite it to a channel and `@mention` it.
+
+One Slack workspace maps to one Radioso organization. Sibling Radioso
+workspaces in the same organization share the Slack installation. The default
+agent answers direct messages and channels that do not have a specific agent.
+Per-channel bindings route specific Slack channels to specific Radioso agents.
 
 Mention replies are posted in the originating thread. When the agent has no
 grounded answer and an escalation channel is configured, Radioso posts the
@@ -18,7 +25,9 @@ Relevant endpoints:
 - `POST /api/v1/workspaces/{workspaceId}/slack/install/start`
 - `GET /api/v1/workspaces/{workspaceId}/slack/install/status`
 - `GET /api/v1/workspaces/{workspaceId}/slack/binding`
+- `GET /api/v1/workspaces/{workspaceId}/slack/bindings`
 - `PUT /api/v1/workspaces/{workspaceId}/slack/binding`
+- `DELETE /api/v1/workspaces/{workspaceId}/slack/binding?channelId={channelId}`
 - `POST /api/connectors/slack/events`
 
 ## Self-Host

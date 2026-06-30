@@ -56,9 +56,9 @@ describeIntegration("PostgresSlackPersistence (Postgres)", () => {
       [connectionId, workspaceId, oauthConnectionId],
     );
     await database.query(
-      `INSERT INTO slack_installations (id, connection_id, workspace_id, team_id, bot_user_id)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [installationId, connectionId, workspaceId, teamId, "U-bot"],
+      `INSERT INTO slack_installations (id, connection_id, workspace_id, account_id, team_id, bot_user_id)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [installationId, connectionId, workspaceId, accountId, teamId, "U-bot"],
     );
   });
 

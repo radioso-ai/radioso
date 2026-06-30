@@ -6,6 +6,7 @@ import {
   SlackInstallationService,
   SlackWebApiClient,
   postSlackText,
+  PostgresWorkspaceAccountLookup,
   slackAuthErrorCode,
   type SlackInstallationRecord,
   type SlackWebApiClientOptions,
@@ -52,6 +53,7 @@ export const enqueueSlackPostAction = async (
   outbox: SlackPostOutboxPort,
   input: {
     workspaceId: string;
+    accountId: string;
     conversationId?: string | null;
     idempotencyKey: string;
     payload: SlackPostPayload;
@@ -61,6 +63,7 @@ export const enqueueSlackPostAction = async (
     type: SLACK_POST_ACTION_TYPE,
     payload: input.payload,
     workspaceId: input.workspaceId,
+    accountId: input.accountId,
     conversationId: input.conversationId ?? input.payload.conversationRef ?? null,
     idempotencyKey: input.idempotencyKey,
   });
@@ -92,8 +95,8 @@ export class SlackPostActionHandler implements ActionHandler {
     if (!installation) {
       throw new Error("slack_installation_not_found");
     }
-    if (!input.context.workspaceId || installation.workspaceId !== input.context.workspaceId) {
-      throw new Error("slack_installation_workspace_mismatch");
+    if (!input.context.accountId || installation.accountId !== input.context.accountId) {
+      throw new Error("slack_installation_account_mismatch");
     }
     const botToken = await this.options.credentials.resolveBotTokenForInstallation(installation);
     if (!botToken) {
@@ -179,13 +182,23 @@ export class SlackPostActionCredentialResolver implements SlackPostCredentialRes
         async findByInstallationId() {
           return null;
         },
+        async listByInstallationId() {
+          return [];
+        },
+        async findAnswerer() {
+          return null;
+        },
         async upsert() {
           throw new Error("slack_binding_upsert_unavailable");
         },
         async removeByInstallationId() {
           return false;
         },
+        async removeByInstallationChannel() {
+          return false;
+        },
       },
+      workspaceAccounts: new PostgresWorkspaceAccountLookup(input.database.kysely),
       encryptionKey: input.encryptionKey,
     });
   }

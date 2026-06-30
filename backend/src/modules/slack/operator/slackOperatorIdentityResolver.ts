@@ -46,20 +46,21 @@ export class SlackOperatorIdentityResolver {
 
   async resolve(input: {
     installation: SlackInstallationRecord;
+    workspaceId: string;
     slackUserId: string;
   }): Promise<SlackOperatorIdentityResolution> {
     const slackUser = await this.options.slack.usersInfo(input.slackUserId, input.installation);
     if (!slackUser.email) {
       return { rejected: true };
     }
-    const member = await this.options.workspaceMembers.findByEmail(input.installation.workspaceId, slackUser.email);
+    const member = await this.options.workspaceMembers.findByEmail(input.workspaceId, slackUser.email);
     if (!member) {
       return { rejected: true };
     }
     const authorized = await this.options.permissions.hasPermission({
       accountId: member.accountId,
       userId: member.userId,
-      workspaceId: input.installation.workspaceId,
+      workspaceId: input.workspaceId,
       permission: "workspace.conversation.takeover",
     });
     if (!authorized) {

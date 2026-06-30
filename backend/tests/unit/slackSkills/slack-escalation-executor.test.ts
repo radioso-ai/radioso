@@ -29,6 +29,7 @@ describe("SlackEscalationExecutor", () => {
       collected: { handoffText: "Qualified lead" },
       context: {
         workspaceId: "workspace-1",
+        accountId: "account-1",
         agentId: "agent-1",
         conversationId: "conversation-1",
         sessionId: "session-1",
@@ -41,6 +42,7 @@ describe("SlackEscalationExecutor", () => {
     expect(result).toMatchObject({ disposition: "settled", outcome: { status: "enqueued" } });
     expect(outbox.enqueue).toHaveBeenCalledWith(expect.objectContaining({
       type: "slack.post",
+      accountId: "account-1",
       idempotencyKey: "slack:routine_post:session-1:routine-1:step-1:post_to_support",
       payload: expect.objectContaining({
         kind: "routine_post",

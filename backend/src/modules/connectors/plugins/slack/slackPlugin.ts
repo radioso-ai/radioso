@@ -18,6 +18,7 @@ import {
   FetchSlackResponseUrlClient,
   PostgresSlackOperatorPermission,
   PostgresWorkspaceMemberLookup,
+  PostgresWorkspaceAccountLookup,
   SlackChannelBindingRepository,
   SlackInstallationRepository,
   SlackInstallationService,
@@ -87,6 +88,7 @@ export class SlackPlugin implements ConnectorPlugin {
       integrationConnections,
       installations,
       bindings,
+      workspaceAccounts: new PostgresWorkspaceAccountLookup(db),
       encryptionKey: this.options.encryptionKey,
     });
     const operatorIdentityResolver = new SlackOperatorIdentityResolver({

@@ -53,6 +53,7 @@ export const enqueueSlackPostAction = async (
   outbox: SlackPostOutboxPort,
   input: {
     workspaceId: string;
+    accountId: string;
     conversationId?: string | null;
     idempotencyKey: string;
     payload: SlackPostPayload;
@@ -62,6 +63,7 @@ export const enqueueSlackPostAction = async (
     type: SLACK_POST_ACTION_TYPE,
     payload: input.payload,
     workspaceId: input.workspaceId,
+    accountId: input.accountId,
     conversationId: input.conversationId ?? input.payload.conversationRef ?? null,
     idempotencyKey: input.idempotencyKey,
   });

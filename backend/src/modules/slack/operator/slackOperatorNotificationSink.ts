@@ -55,6 +55,7 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
 
       await enqueueSlackPostAction(this.options.outbox, {
         workspaceId: notification.workspaceId,
+        accountId,
         conversationId: notification.conversationId,
         idempotencyKey: slackPostIdempotencyKey({
           kind: "operator_notification",
@@ -91,6 +92,7 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
 
     await enqueueSlackPostAction(this.options.outbox, {
       workspaceId: notification.workspaceId,
+      accountId,
       conversationId: notification.conversationId,
       idempotencyKey: slackPostIdempotencyKey({
         kind: "operator_notification",

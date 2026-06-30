@@ -143,6 +143,7 @@ describe("Slack gap escalation policy", () => {
     }));
     expect(outbox.enqueue).toHaveBeenCalledWith(expect.objectContaining({
       type: "slack.post",
+      accountId: installation.accountId,
       idempotencyKey: "slack:gap_escalation:EvGap:44444444-4444-4444-4444-444444444444",
       payload: expect.objectContaining({
         kind: "gap_escalation",

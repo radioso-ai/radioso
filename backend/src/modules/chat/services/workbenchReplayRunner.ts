@@ -333,6 +333,7 @@ export class WorkbenchReplayRunner {
       modelGateway,
       agentId: session.agent.id,
       workspaceId: session.conversation.workspaceId,
+      accountId: input.accountId ?? undefined,
       // Pin the seeded routine so its resume-only registration loads even if it would
       // not be offered for fresh activation this turn.
       pinnedRoutineIds: activeRoutine?.status === "active" ? [activeRoutine.routineId] : [],

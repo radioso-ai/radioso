@@ -125,6 +125,7 @@ describe("SlackOperatorNotificationSink", () => {
     expect(enqueued[0]).toMatchObject({
       type: "slack.post",
       workspaceId: "ws_1",
+      accountId: "acct_1",
       conversationId: "conv_1",
       idempotencyKey: "slack:operator_notification:decision:pd_1",
       payload: {
@@ -180,6 +181,7 @@ describe("SlackOperatorNotificationSink", () => {
     expect(enqueued[0]).toMatchObject({
       type: "slack.post",
       workspaceId: "ws_1",
+      accountId: "acct_1",
       conversationId: "conv_1",
       // Scoped to this handoff event (the per-action idempotency key), so a re-escalation after
       // a hand-back posts again instead of being deduped against the conversation.

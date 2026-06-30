@@ -312,6 +312,7 @@ export class SlackMessageHandler {
     });
     await enqueueSlackPostAction(this.options.slackPostOutbox, {
       workspaceId: input.workspaceId,
+      accountId: input.installation.accountId,
       conversationId: input.conversationId,
       idempotencyKey: slackPostIdempotencyKey({
         kind: "gap_escalation",

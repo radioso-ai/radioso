@@ -25,6 +25,7 @@ interface SlackReplyDelivererLogger {
 
 type SlackReplyTarget = {
   installationId: string;
+  accountId: string;
   channelId: string;
   threadTs?: string;
 };
@@ -84,6 +85,7 @@ export class SlackCustomerReplyDeliverer implements CustomerChannelReplyDelivere
 
     await enqueueSlackPostAction(this.dependencies.outbox, {
       workspaceId: input.conversation.workspaceId,
+      accountId: target.accountId,
       conversationId: input.conversation.id,
       idempotencyKey: slackPostIdempotencyKey({
         kind: "human_reply",
@@ -110,6 +112,7 @@ export class SlackCustomerReplyDeliverer implements CustomerChannelReplyDelivere
       }
       return {
         installationId: installation.id,
+        accountId: installation.accountId,
         channelId: channelContext.channel.id,
         ...(channelContext.threadTs ? { threadTs: channelContext.threadTs } : {}),
       };
@@ -129,8 +132,13 @@ export class SlackCustomerReplyDeliverer implements CustomerChannelReplyDelivere
     }
 
     if (legacyTarget.kind === "mention") {
+      const installation = await this.dependencies.installations.findById(link.installationId);
+      if (!installation) {
+        return null;
+      }
       return {
         installationId: link.installationId,
+        accountId: installation.accountId,
         channelId: legacyTarget.channelId,
         threadTs: legacyTarget.threadTs,
       };
@@ -139,9 +147,10 @@ export class SlackCustomerReplyDeliverer implements CustomerChannelReplyDelivere
     // The legacy link records the exact installation that created the conversation; use it
     // directly (not the workspace's latest) so the DM opens with the correct team's bot token.
     const installation = await this.dependencies.installations.findById(link.installationId);
-    const botToken = installation
-      ? await this.dependencies.installationService?.resolveBotTokenForInstallation(installation)
-      : null;
+    if (!installation) {
+      return null;
+    }
+    const botToken = await this.dependencies.installationService?.resolveBotTokenForInstallation(installation);
     if (!botToken || !this.dependencies.slack) {
       return null;
     }
@@ -151,6 +160,7 @@ export class SlackCustomerReplyDeliverer implements CustomerChannelReplyDelivere
     });
     return {
       installationId: link.installationId,
+      accountId: installation.accountId,
       channelId: opened.channelId,
     };
   }

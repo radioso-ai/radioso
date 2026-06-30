@@ -221,6 +221,53 @@ describe("routine defaults", () => {
     expect(call.messages.map((message) => message.content).join("\n")).toContain("Kriya is introduced");
   });
 
+  it("returns citations from staged retrieval context so a grounded routine step can cite", async () => {
+    const gw = gateway("Here is the answer.");
+    const result = await new RoutineStepRenderer(gw).render({
+      step: currentStep,
+      steering: [{ action: "Answer from context.", source: "routine", lifespan: "response" }],
+      turn: {
+        ...turn,
+        stagedContext: [{
+          kind: "skill_result",
+          source: "retrieval.context",
+          data: {
+            has_context: true,
+            contexts: [
+              {
+                documentId: "doc_1",
+                chunkId: "chunk_1",
+                title: "Course Guide",
+                content: "Kriya is introduced in the first module.",
+                metadata: { sourceUrl: "https://example.com/guide" },
+              },
+            ],
+          },
+        }],
+      },
+    });
+
+    expect(result.citations).toEqual([
+      {
+        documentId: "doc_1",
+        chunkId: "chunk_1",
+        title: "Course Guide",
+        content: "Kriya is introduced in the first module.",
+        metadata: { sourceUrl: "https://example.com/guide" },
+      },
+    ]);
+  });
+
+  it("omits citations when the step had no staged retrieval context", async () => {
+    const gw = gateway("ok");
+    const result = await new RoutineStepRenderer(gw).render({
+      step: currentStep,
+      steering: [{ action: "Ask the user for their email address.", source: "routine", lifespan: "response" }],
+      turn,
+    });
+    expect(result.citations).toBeUndefined();
+  });
+
   it("injects the agent scope and an out-of-scope decline rule into the routine reply prompt", async () => {
     const gw = gateway("ok");
     const scopedTurn: TurnContext = {

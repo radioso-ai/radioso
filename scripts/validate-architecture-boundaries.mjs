@@ -73,6 +73,11 @@ const validateMcpServerImport = (record) => {
   if (!filePath.startsWith("packages/radioso-mcp-server/")) {
     return null;
   }
+  // The rule guards the SHIPPED MCP server (src/). Test and smoke harnesses legitimately mount the
+  // backend in-process to exercise the published HTTP surface, so they may import backend code.
+  if (/^packages\/radioso-mcp-server\/(testing|tests|scripts)\//.test(filePath)) {
+    return null;
+  }
 
   const resolved = resolveImportPath(record.filePath, record.specifier);
   if (!resolved) {

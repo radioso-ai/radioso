@@ -80,6 +80,8 @@ import {
   type RoutineRegistration,
   SkillRetrievalTurnDispatch,
   WorkbenchReplayRunner,
+  AgentConverseAudit,
+  AgentConverseService,
 } from "../../modules/chat/composition.js";
 import {
   createDefaultConnectorRegistry,
@@ -103,6 +105,7 @@ import {
   DocumentSearchService,
   DocumentSourceContentService,
   WorkspaceIngestionReprocessService,
+  AgentConverseResourceService,
 } from "../../modules/documents/composition.js";
 import {
   AgenticRetrievalPipelineService,
@@ -119,6 +122,7 @@ import {
   RetrievalAnswerService,
   SenseGroupingService,
   createDefaultRetrievalServices,
+  AgentConverseGroundedAnswerService,
   type RetrievalSensePolicy,
   type RetrievalPipelinePort,
 } from "../../modules/retrieval/composition.js";
@@ -160,6 +164,7 @@ import {
   embeddingModelIds,
   IngestionSettingsService,
   PlatformSettingsService,
+  AgentConverseSessionService,
 } from "../../modules/settings/composition.js";
 import type { EmbeddingModelId } from "../../modules/settings/contracts/ingestion.js";
 import {
@@ -225,6 +230,42 @@ import {
   createDefaultTelemetrySinks,
 } from "../composition/index.js";
 import type { Env } from "../config/env.js";
+import type {
+  McpConverseRouteDependencies,
+  McpConverseRouteServices,
+} from "../http/routes/mcpConverseRoutes.js";
+
+// Builds the MCP converse service graph at app-wiring depth (this module is an approved importer of
+// the chat/documents/retrieval/settings composition entrypoints), so the HTTP route never
+// value-imports module internals. Shared by the route mount and converse route tests.
+export const buildMcpConverseServices = (
+  dependencies: McpConverseRouteDependencies,
+): McpConverseRouteServices => {
+  const audit = new AgentConverseAudit(dependencies.auditService);
+  const sessionService = new AgentConverseSessionService({
+    accessGrantService: dependencies.accessGrantService,
+    agentRepository: dependencies.agentRepository,
+    publicChatSessionSecret: dependencies.env.PUBLIC_CHAT_SESSION_SECRET,
+    audit,
+  });
+  const converseService = new AgentConverseService({
+    assistantChatService: dependencies.assistantChatService,
+    conversationRepository: dependencies.conversationRepository,
+    audit,
+  });
+  const groundedAnswerService = new AgentConverseGroundedAnswerService({
+    agentRepository: dependencies.agentRepository,
+    retrievalAnswerService: dependencies.retrievalAnswerService,
+    audit,
+  });
+  const resourceService = new AgentConverseResourceService({
+    agentRepository: dependencies.agentRepository,
+    documentRepository: dependencies.documentRepository,
+    documentSourceContentService: new DocumentSourceContentService(dependencies.documentStorage),
+    audit,
+  });
+  return { audit, sessionService, converseService, groundedAnswerService, resourceService };
+};
 
 export const buildInfrastructure = (input: {
   env: Env;

@@ -2,12 +2,13 @@ import { Router } from "express";
 
 import type { AppDependencies } from "../../server/types.js";
 import { badRequest } from "../../../shared/domain/errors.js";
-import { AgentConverseAudit } from "../../../modules/chat/services/agentConverseAudit.js";
-import { AgentConverseService } from "../../../modules/chat/services/agentConverseService.js";
-import { DocumentSourceContentService } from "../../../modules/documents/services/documentSourceContentService.js";
-import { AgentConverseResourceService } from "../../../modules/documents/services/agentConverseResourceService.js";
-import { AgentConverseGroundedAnswerService } from "../../../modules/retrieval/services/agentConverseGroundedAnswerService.js";
-import { AgentConverseSessionService } from "../../../modules/settings/services/agentConverseSessionService.js";
+// Type-only imports keep these module-owned services out of the route's runtime dependency graph;
+// the instances are built in app composition (mcpConverseModule) and injected.
+import type { AgentConverseAudit } from "../../../modules/chat/services/agentConverseAudit.js";
+import type { AgentConverseService } from "../../../modules/chat/services/agentConverseService.js";
+import type { AgentConverseResourceService } from "../../../modules/documents/services/agentConverseResourceService.js";
+import type { AgentConverseGroundedAnswerService } from "../../../modules/retrieval/services/agentConverseGroundedAnswerService.js";
+import type { AgentConverseSessionService } from "../../../modules/settings/services/agentConverseSessionService.js";
 import {
   presentMcpConverseGroundedAnswer,
   presentMcpConverseResource,
@@ -24,7 +25,7 @@ import {
   mcpConverseSessionValidateRequestSchema,
 } from "../schemas/mcpConverseSchemas.js";
 
-type McpConverseRouteDependencies = Pick<
+export type McpConverseRouteDependencies = Pick<
   AppDependencies,
   | "accessGrantService"
   | "accountAccessService"
@@ -38,31 +39,20 @@ type McpConverseRouteDependencies = Pick<
   | "retrievalAnswerService"
 >;
 
-export const createMcpConverseRoutes = (dependencies: McpConverseRouteDependencies): Router => {
+export interface McpConverseRouteServices {
+  audit: AgentConverseAudit;
+  sessionService: AgentConverseSessionService;
+  converseService: AgentConverseService;
+  groundedAnswerService: AgentConverseGroundedAnswerService;
+  resourceService: AgentConverseResourceService;
+}
+
+export const createMcpConverseRoutes = (
+  dependencies: McpConverseRouteDependencies,
+  services: McpConverseRouteServices,
+): Router => {
   const router = Router();
-  const audit = new AgentConverseAudit(dependencies.auditService);
-  const sessionService = new AgentConverseSessionService({
-    accessGrantService: dependencies.accessGrantService,
-    agentRepository: dependencies.agentRepository,
-    publicChatSessionSecret: dependencies.env.PUBLIC_CHAT_SESSION_SECRET,
-    audit,
-  });
-  const converseService = new AgentConverseService({
-    assistantChatService: dependencies.assistantChatService,
-    conversationRepository: dependencies.conversationRepository,
-    audit,
-  });
-  const groundedAnswerService = new AgentConverseGroundedAnswerService({
-    agentRepository: dependencies.agentRepository,
-    retrievalAnswerService: dependencies.retrievalAnswerService,
-    audit,
-  });
-  const resourceService = new AgentConverseResourceService({
-    agentRepository: dependencies.agentRepository,
-    documentRepository: dependencies.documentRepository,
-    documentSourceContentService: new DocumentSourceContentService(dependencies.documentStorage),
-    audit,
-  });
+  const { audit, sessionService, converseService, groundedAnswerService, resourceService } = services;
 
   router.post(
     "/session",

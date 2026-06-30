@@ -12,6 +12,7 @@ const backendPackageDir = fileURLToPath(new URL("../../../backend", import.meta.
 type JsonRpcPayload = Record<string, unknown>;
 type TestAppModule = typeof import("../../../backend/tests/support/testApp.js");
 type McpConverseRoutesModule = typeof import("../../../backend/src/app/http/routes/mcpConverseRoutes.js");
+type DependencyBuildersModule = typeof import("../../../backend/src/app/server/dependencyBuilders.js");
 
 export interface SmokeLogger {
   step(message: string): void;
@@ -92,6 +93,17 @@ const loadMcpConverseRoutesModule = async (): Promise<McpConverseRoutesModule> =
   }
 };
 
+const loadDependencyBuildersModule = async (): Promise<DependencyBuildersModule> => {
+  const previousCwd = process.cwd();
+  process.chdir(backendPackageDir);
+
+  try {
+    return await import("../../../backend/src/app/server/dependencyBuilders.js");
+  } finally {
+    process.chdir(previousCwd);
+  }
+};
+
 const mcpRequest = async (baseUrl: string, accessToken: string | null, payload: JsonRpcPayload): Promise<Response> =>
   fetch(`${baseUrl}/mcp`, {
     body: JSON.stringify(payload),
@@ -123,10 +135,12 @@ const getStructuredContent = (payload: any): any =>
 export const startBackendHarness = async (): Promise<BackendHarness> => {
   const { createTestApp, issueTestSession, issueTestToken } = await loadTestAppModule();
   const { createMcpConverseRoutes } = await loadMcpConverseRoutesModule();
+  const { buildMcpConverseServices } = await loadDependencyBuildersModule();
   const { app, dependencies } = createTestApp({
     applicationRouteMounts: [{
       path: "/api/v1/mcp/converse",
-      createRouter: (routeDependencies) => createMcpConverseRoutes(routeDependencies),
+      createRouter: (routeDependencies) =>
+        createMcpConverseRoutes(routeDependencies, buildMcpConverseServices(routeDependencies)),
     }],
   });
   const server = await new Promise<Server>((resolve, reject) => {

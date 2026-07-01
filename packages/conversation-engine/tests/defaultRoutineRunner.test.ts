@@ -151,6 +151,53 @@ describe("DefaultRoutineRunner", () => {
     expect(result.nextState).toMatchObject({ path: ["retrieve_context", "answer"] });
   });
 
+  it("carries non-model skill metadata on staged context metadata", async () => {
+    const toolRoutine: Routine = {
+      id: "contact",
+      rootStepId: "retrieve_context",
+      steps: [
+        { id: "retrieve_context", kind: "skill", skillName: "retrieval.context", action: "Find grounding context." },
+        { id: "answer", kind: "chat", action: "Answer from the retrieved context." },
+      ],
+      transitions: [
+        { from: "retrieve_context", to: "answer", condition: "context gathered", guard: { kind: "default" } },
+      ],
+    };
+    const dispatch: ConversationRoutineSkillDispatcher["dispatch"] = vi.fn(async () => ({
+      status: "context_ready",
+      outputs: { has_context: true, contexts: [{ title: "Guide", content: "Kriya is described here." }] },
+      metadata: { retrievalResultKey: "hidden-result" },
+    }));
+    const renderer: ConversationRoutineStepRenderer = {
+      render: vi.fn(async ({ turn }) => ({
+        answer: JSON.stringify(turn.stagedContext),
+        metadata: {},
+      })),
+    };
+    const runner = new DefaultRoutineRunner(
+      [toolRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "answer" })) },
+      renderer,
+      { dispatch },
+    );
+
+    await runner.resume({ turn, state: state([]) });
+
+    expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({
+      turn: expect.objectContaining({
+        stagedContext: [expect.objectContaining({
+          kind: "skill_result",
+          source: "retrieval.context",
+          metadata: expect.objectContaining({
+            stepId: "retrieve_context",
+            status: "context_ready",
+            skillMetadata: { retrievalResultKey: "hidden-result" },
+          }),
+        })],
+      }),
+    }));
+  });
+
   it("routes root skill steps by their routable outcome status", async () => {
     const toolRoutine: Routine = {
       id: "contact",

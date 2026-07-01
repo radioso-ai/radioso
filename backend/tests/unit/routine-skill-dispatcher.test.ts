@@ -147,6 +147,30 @@ describe("RoutineSkillExecutorDispatcher", () => {
     expect(result.outputs).toEqual({ requested: "2026-06-20T10:00" });
   });
 
+  it("preserves non-model skill metadata for host-side routine renderers", async () => {
+    const outcome = {
+      status: "context_ready",
+      outputs: { has_context: true },
+      metadata: { __retrievalResult: { traceId: "retrieval-trace" } },
+    } as unknown as SkillOutcome;
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([skillNamed("retrieval.context")]),
+      registryWith(settledExecutor(outcome)),
+    );
+
+    const result = await dispatcher.dispatch({
+      skillName: "retrieval.context",
+      state: routineState({}),
+      turn,
+    });
+
+    expect(result).toEqual({
+      status: "context_ready",
+      outputs: { has_context: true },
+      metadata: { __retrievalResult: { traceId: "retrieval-trace" } },
+    });
+  });
+
   it("passes the routine's captured slots as the invocation's collected params", async () => {
     let captured: SkillInvocation | undefined;
     const dispatcher = new RoutineSkillExecutorDispatcher(

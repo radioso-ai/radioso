@@ -22,6 +22,9 @@ export interface ChatPresentedAnswer {
   answerSegments?: AnswerSegment[];
   suggestions?: ChatSuggestion[];
   planningCitations?: ChatCitation[];
+  // Internal handoff for answers rendered from a retrieval result that was
+  // recovered outside the original prepared session, such as routine steps.
+  effectiveRetrieval?: PreparedSession["retrieval"];
   skillName: string;
   skillOutcome: string;
   skillStatus: SkillTurnOutcome["status"];
@@ -240,7 +243,10 @@ export class ChatAnswerPresenter {
     const citationEvidence = toCitationEvidence(session);
 
     if (session.retrieval.contexts.length === 0) {
-      return this.presentNoContextRefusal(answer, citationEvidence);
+      return {
+        ...this.presentNoContextRefusal(answer, citationEvidence),
+        effectiveRetrieval: session.retrieval,
+      };
     }
 
     const normalized = this.answerPresentationService.normalize({
@@ -260,6 +266,7 @@ export class ChatAnswerPresenter {
       ...presented,
       ...citationArtifacts,
       grounding,
+      effectiveRetrieval: session.retrieval,
       planningCitations: toPlanningCitations(normalized.citationEvidence),
       skillName: groundedOutcome.skillName,
       skillOutcome: groundedOutcome.outcome,

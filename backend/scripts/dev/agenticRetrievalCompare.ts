@@ -23,7 +23,7 @@ import { Database } from "../../src/shared/infra/database.js";
 import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
 import { resolveLlmConfig } from "../../src/shared/infra/llm/providerConfig.js";
 import { LlmProviderRegistry } from "../../src/shared/infra/llm/providerRegistry.js";
-import { DefaultAgentRuntime } from "../../src/shared/agent-runtime/index.js";
+import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../src/shared/agent-runtime/index.js";
 import {
   AgenticRetrievalPipelineService,
   AgenticRetrievalRunner,
@@ -31,8 +31,9 @@ import {
   ConversationContextService,
   EmbeddingService,
   GatewayQueryRewritePortAdapter,
+  PostgresChunkCandidateHydrator,
   PgLexicalSearch,
-  PgVectorSearch,
+  PgVectorIndex,
   PromptBuilder,
   PromptContextSelectorService,
   QueryRewriteService,
@@ -305,7 +306,7 @@ const main = async (): Promise<void> => {
     const pipeline = new RetrievalPipelineService(
       settingsService,
       embeddingService,
-      new PgVectorSearch(database),
+      new PgVectorIndex(database),
       new PgLexicalSearch(database),
       new ConversationContextService(),
       new QueryRewriteService(registry.createRewriteGateway(), registry.createTriggerAnalysisGateway()),
@@ -315,6 +316,10 @@ const main = async (): Promise<void> => {
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(telemetryService),
+      undefined,
+      undefined,
+      undefined,
+      new PostgresChunkCandidateHydrator(database.kysely),
     );
     return { pipeline, counter, synthesize: registry.createChatTextClient() };
   };
@@ -322,12 +327,13 @@ const main = async (): Promise<void> => {
   const buildAgentic = (): { pipeline: RetrievalPipelineService; counter: UsageCounter; synthesize: TextGenerationClient } => {
     const { registry, counter } = buildCountingRegistry(llmConfig);
     const embeddingService = new EmbeddingService(registry.createEmbeddingGateway());
-    const vectorSearch = new PgVectorSearch(database);
+    const vectorIndex = new PgVectorIndex(database);
+    const chunkHydrator = new PostgresChunkCandidateHydrator(database.kysely);
     const lexicalSearch = new PgLexicalSearch(database);
     const deterministicInside = new RetrievalPipelineService(
       settingsService,
       embeddingService,
-      vectorSearch,
+      vectorIndex,
       lexicalSearch,
       new ConversationContextService(),
       new QueryRewriteService(registry.createRewriteGateway(), registry.createTriggerAnalysisGateway()),
@@ -337,11 +343,18 @@ const main = async (): Promise<void> => {
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(telemetryService),
+      undefined,
+      undefined,
+      undefined,
+      chunkHydrator,
     );
     const runner = new AgenticRetrievalRunner({
-      runtime: new DefaultAgentRuntime({ gateway: registry.createToolCallingGateway() }),
+      capabilityRunner: new AgenticCapabilityRunner({
+        runtime: new DefaultAgentRuntime({ gateway: registry.createToolCallingGateway() }),
+      }),
       embeddings: embeddingService,
-      vectorSearch,
+      vectorIndex,
+      chunkHydrator,
       lexicalSearch,
       queryRewrite: new GatewayQueryRewritePortAdapter(registry.createRewriteGateway()),
       rerankGateway: registry.createRerankGateway(),

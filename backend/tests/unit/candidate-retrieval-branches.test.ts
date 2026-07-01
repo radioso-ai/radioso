@@ -268,18 +268,22 @@ describe("candidate retrieval branches", () => {
 
   it("uses the active workspace embedding model for semantic query embeddings", async () => {
     const seenModels: Array<string | undefined> = [];
-    const seenVectorModels: Array<string | undefined> = [];
+    const seenVectorInputs: Array<{ model: string; dimensions: number }> = [];
+    const seenHydrationInputs: Array<{ model?: string; candidateIds: string[] }> = [];
     const stage = new CandidateRetrievalStageService(
       new EmbeddingService({
         async embedTexts(texts, options?: { model?: string }) {
           seenModels.push(options?.model);
-          return texts.map(() => [1]);
+          return texts.map(() => [1, 2]);
         },
       }),
       {
         async search(input) {
-          seenVectorModels.push(input.embeddingModel);
-          return [];
+          seenVectorInputs.push({
+            model: input.embeddingModel,
+            dimensions: input.queryEmbeddingDimensions,
+          });
+          return [{ chunkId: "chunk-1", documentId: "doc-1", score: 0.9 }];
         },
       },
       {
@@ -303,9 +307,24 @@ describe("candidate retrieval branches", () => {
           };
         },
       },
+      {
+        async hydrate(input) {
+          seenHydrationInputs.push({
+            model: input.embeddingModel,
+            candidateIds: input.candidates.map((candidate) => candidate.chunkId),
+          });
+          return [{
+            chunkId: "chunk-1",
+            documentId: "doc-1",
+            title: "Account recovery",
+            content: "Recovery content",
+            similarity: input.candidates[0]?.score ?? 0,
+          }];
+        },
+      },
     );
 
-    await stage.execute({
+    const result = await stage.execute({
       request: {
         workspaceId: "w1",
         query: "account recovery",
@@ -383,7 +402,17 @@ describe("candidate retrieval branches", () => {
     });
 
     expect(seenModels).toEqual(["text-embedding-3-small"]);
-    expect(seenVectorModels).toEqual(["text-embedding-3-small"]);
+    expect(seenVectorInputs).toEqual([{ model: "text-embedding-3-small", dimensions: 2 }]);
+    expect(seenHydrationInputs).toEqual([{ model: "text-embedding-3-small", candidateIds: ["chunk-1"] }]);
+    expect(result.rewrittenContexts).toEqual([
+      {
+        chunkId: "chunk-1",
+        documentId: "doc-1",
+        title: "Account recovery",
+        content: "Recovery content",
+        similarity: 0.9,
+      },
+    ]);
   });
 
   it("reuses identical semantic retrieval while still running distinct lexical branches", async () => {

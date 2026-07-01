@@ -9,7 +9,8 @@ import { CandidatePreparationService } from "./services/candidatePreparationServ
 import { ConversationContextService } from "./services/conversationContextService.js";
 import { EmbeddingService } from "./services/embeddingService.js";
 import { PgLexicalSearch } from "./infra/lexicalSearch.js";
-import { PgVectorSearch } from "./infra/vectorSearch.js";
+import { PgVectorIndex, PgVectorSearch } from "./infra/vectorSearch.js";
+import { PostgresChunkCandidateHydrator } from "./infra/chunkCandidateHydrator.js";
 import { PromptBuilder } from "./services/promptBuilder.js";
 import { PromptContextSelectorService } from "./services/promptContextSelectorService.js";
 import { QueryRewriteService } from "./services/queryRewriteService.js";
@@ -38,6 +39,10 @@ export {
 } from "./domain/chunking/structuredSemanticChunkingStrategy.js";
 export { ChonkieChunkingProvider } from "./infra/chonkieChunkingProvider.js";
 export {
+  PostgresChunkCandidateHydrator,
+  type ChunkCandidateHydratorPort,
+} from "./infra/chunkCandidateHydrator.js";
+export {
   PgVectorChunkStorage,
 } from "./infra/chunkVectorStorage.js";
 export {
@@ -46,6 +51,7 @@ export {
 } from "./infra/lexicalSearch.js";
 export {
   PgVectorSearch,
+  PgVectorIndex,
 } from "./infra/vectorSearch.js";
 export { CandidatePreparationService } from "./services/candidatePreparationService.js";
 export { ConversationContextService } from "./services/conversationContextService.js";
@@ -124,7 +130,7 @@ export const createDefaultRetrievalServices = (input: {
   const retrievalPipeline = new RetrievalPipelineService(
     input.retrievalDefaultsProvider,
     input.embeddingService,
-    new PgVectorSearch(input.database),
+    new PgVectorIndex(input.database),
     new PgLexicalSearch(input.database),
     new ConversationContextService(),
     new QueryRewriteService(
@@ -140,6 +146,7 @@ export const createDefaultRetrievalServices = (input: {
     undefined,
     input.ingestionSettingsService,
     input.skillSettingsResolver,
+    new PostgresChunkCandidateHydrator(input.database.kysely),
   );
   const retrievalSearchService = new RetrievalSearchService(retrievalPipeline);
 

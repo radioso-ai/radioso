@@ -3,6 +3,7 @@
 import { useRef, useState, type ComponentType, type JSX } from 'react'
 import { AlertTriangle, BadgeCheck, ChevronDown, CornerUpRight, Flag, Gavel, Plus, Send, Sparkles, Trash2, Workflow, Zap, type LucideIcon } from 'lucide-react'
 import {
+  $createTextNode,
   $getNodeByKey,
   $getRoot,
   DecoratorNode,
@@ -462,24 +463,36 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
 
   const [isConditionBuilderOpen, setIsConditionBuilderOpen] = useState(false)
 
-  // Demote a decided-in-code check to decided-by-AI: keep the comparison as an AI condition
-  // CHIP (carrying the phrase), not bare text — so it stays togglable back to decided-in-code
-  // (issue: "once decided by AI, can't go back"). Compiles to an `llm` guard.
+  // Demote a decided-in-code check to decided-by-AI: replace the structured rule with a bare
+  // AI⇄code selector chip and seed the branch line's free text with the humanized comparison
+  // (e.g. "customer_age is at least 18"), so the author keeps editing words — not a frozen
+  // chip. The selector keeps it togglable back to decided-in-code (issue: "once decided by AI,
+  // can't go back"); the fluid text keeps the phrase editable. Compiles to an `llm` guard.
   const demoteToAi = () => {
     editor.update(() => {
       const node = $getNodeByKey(nodeKey)
       if (!node) return
-      node.replace($createAiConditionChipNode(label))
+      const selector = $createAiConditionChipNode()
+      node.replace(selector)
+      if (label.trim()) selector.insertAfter($createTextNode(label.trim()))
     })
   }
 
   // Promote a decided-by-AI condition to decided-in-code: the structured comparison from the
-  // builder replaces the AI chip, producing a deterministic field guard.
+  // builder replaces the selector chip, producing a deterministic field guard. The old AI
+  // phrase is the branch line's free text; drop it (a branch line's only text is that phrase)
+  // so the structured comparison isn't shadowed by a stale duplicate.
   const promoteToCode = (condition: ConditionDraft) => {
     editor.update(() => {
       const node = $getNodeByKey(nodeKey)
       if (!node) return
+      const parent = node.getParent()
       node.replace($createConditionChipNode(condition.refId, condition.op, condition.label, condition.value, condition.values, condition.unit))
+      if (parent) {
+        for (const child of parent.getChildren()) {
+          if (!$isChipNode(child)) child.remove()
+        }
+      }
     })
   }
 
@@ -669,10 +682,10 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
             <button type="button" contentEditable={false} data-routine-chip={kind} data-guard-mode={isAi ? 'ai' : 'code'} className="mx-0.5 cursor-pointer align-baseline outline-none">
               <ChipBadge
                 kind={kind}
-                label={label}
+                label={isAi ? 'AI decides' : label}
                 type={null}
                 icon={isAi ? Sparkles : BadgeCheck}
-                suffix={isAi ? 'AI decides' : 'rule'}
+                suffix={isAi ? undefined : 'rule'}
                 className={isAi ? 'border-violet-300 bg-violet-100 text-violet-900' : undefined}
               />
             </button>
@@ -1011,10 +1024,12 @@ export function $createConditionChipNode(
   return new ChipNode('condition', refId, label, undefined, op, value, values, unit)
 }
 
-// A decided-by-AI condition chip: no operator, just the comparison phrase (held in `value`
-// and shown as the label). Compiles to an `llm` guard; togglable to a decided-in-code chip.
-export function $createAiConditionChipNode(phrase: string): ChipNode {
-  return new ChipNode('condition', '', phrase, undefined, null, phrase)
+// A decided-by-AI condition chip: a bare AI⇄code selector with no operator and no phrase
+// payload — the comparison phrase lives as ordinary editable text beside it on the branch
+// line. Compiles to an `llm` guard (that adjacent prose is the guard text); togglable to a
+// decided-in-code chip.
+export function $createAiConditionChipNode(): ChipNode {
+  return new ChipNode('condition', '', '', undefined, null, null)
 }
 
 // An outcome guard chip: a condition that branches on the preceding tool step's result

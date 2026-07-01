@@ -4,7 +4,8 @@ import {
   parseWebsiteEmbedCopyOverridesParam,
   parseWebsiteEmbedThemeOverridesParam,
 } from '@/lib/embed-widget'
-import { resolveEmbedLocaleSearchParam } from '@/lib/embed-locale'
+import { headers } from 'next/headers'
+import { resolveEmbedLocaleOverride } from '@/lib/embed-locale'
 import { PublicChatShell } from '@/components/chat/public-chat-shell'
 
 export default async function PublicChatPage({
@@ -20,7 +21,10 @@ export default async function PublicChatPage({
 }) {
   const { token } = await params
   const { locale, copy, theme } = await searchParams
-  const localeOverride = resolveEmbedLocaleSearchParam(locale)
+  const localeOverride = resolveEmbedLocaleOverride({
+    param: locale,
+    acceptLanguage: (await headers()).get('accept-language'),
+  })
   const themeOverrides = parseWebsiteEmbedThemeOverridesParam(theme)
   const resolvedTheme = getWebsiteEmbedTheme(themeOverrides)
 

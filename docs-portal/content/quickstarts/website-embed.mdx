@@ -173,7 +173,7 @@ Open the blocked origin and confirm the launcher cannot establish a valid embedd
 - The launcher appears only on approved origins
 - The embedded chat can establish a session through the frontend bootstrap route
 - The backend accepts the forwarded request only when the origin is allowlisted
-- The widget uses the assistant logo plus the server-side theme, operator locale copy, and expert override settings. Built-in translations are bundled in the launcher script and picked from the visitor's browser language
+- The widget uses the assistant logo plus the server-side theme, operator locale copy, and expert override settings. Built-in translations are bundled in the launcher script and picked from the visitor's browser language. The standalone public chat link and full-page embed do not load the launcher, so they select the same built-in translation from the request's `Accept-Language` header (or an explicit `?locale=` parameter) instead
 - Responses stay aligned with your workspace content and settings
 - Returning users can resume the same anonymous session instead of starting from scratch each time
 

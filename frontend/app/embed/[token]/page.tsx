@@ -6,7 +6,8 @@ import {
   parseWebsiteEmbedCopyOverridesParam,
   parseWebsiteEmbedThemeOverridesParam,
 } from "@/lib/embed-widget";
-import { resolveEmbedLocaleSearchParam } from "@/lib/embed-locale";
+import { headers } from "next/headers";
+import { resolveEmbedLocaleOverride } from "@/lib/embed-locale";
 
 const firstSearchValue = (value?: string | string[]) => (Array.isArray(value) ? value[0] : value);
 
@@ -24,7 +25,10 @@ export default async function EmbeddedChatPage({
 }) {
   const { token } = await params;
   const { locale, displayMode, copy, theme } = await searchParams;
-  const localeOverride = resolveEmbedLocaleSearchParam(locale);
+  const localeOverride = resolveEmbedLocaleOverride({
+    param: locale,
+    acceptLanguage: (await headers()).get("accept-language"),
+  });
   const resolvedDisplayMode = normalizeWebsiteEmbedDisplayMode(firstSearchValue(displayMode));
   const copyOverrides = parseWebsiteEmbedCopyOverridesParam(copy);
   const themeOverrides = parseWebsiteEmbedThemeOverridesParam(theme);

@@ -1,5 +1,6 @@
 import type { GeneralSettings } from '@/lib/api'
 import { normalizeLocaleTag } from '@/lib/locale'
+import { resolveBuiltInEmbedCopy } from '@/lib/embed-locale-packs'
 
 export type WebsiteEmbedLauncherPosition = 'bottom-right' | 'bottom-left'
 export type WebsiteEmbedInitialState = 'open' | 'collapsed'
@@ -128,7 +129,7 @@ export const DEFAULT_WEBSITE_EMBED_THEME: WebsiteEmbedTheme = {
   userBubbleForeground: '#f8fafc',
 }
 
-const COPY_OVERRIDE_KEYS = [
+export const COPY_OVERRIDE_KEYS = [
   'launcherDefaultLabel',
   'embeddedChatTitle',
   'embeddedChatUnavailableTitle',
@@ -362,12 +363,20 @@ export const shouldUseWebsiteEmbedCompactKeyboardLayout = ({
   return visualViewportHeight === null
 }
 
+// Resolve the in-frame copy for a visitor locale. Layers, lowest priority
+// first: the English baseline, the best-matching built-in translation pack for
+// `locale`, then operator/script overrides. `locale` is a single visitor
+// language tag (exact-then-base matched, e.g. `fr-CA` -> `fr`); the public-link
+// pages resolve it from `?locale` or `Accept-Language`. The embedded widget
+// already carries fully-resolved `overrides` from the launcher, so this stays a
+// no-op layer there unless a locale is also supplied.
 export const getWebsiteEmbedCopy = (
-  _value: string | null | undefined,
+  locale: string | null | undefined,
   overrides?: WebsiteEmbedCopyOverrides | null,
 ): WebsiteEmbedCopy => {
   return {
     ...DEFAULT_WEBSITE_EMBED_COPY,
+    ...resolveBuiltInEmbedCopy([locale]),
     ...sanitizeWebsiteEmbedCopyOverrides(overrides),
   }
 }

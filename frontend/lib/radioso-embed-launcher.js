@@ -71,6 +71,8 @@
       publicChatOpenNewTabLabel: 'Abrir en una pestaña nueva',
       publicChatDisclaimerTemplate: '{name} usa IA y puede cometer errores.',
       publicChatRateLimitRetryTemplate: 'Inténtalo de nuevo en {seconds}s.',
+      skillReceiptSubmittedLabel: 'Enviado',
+      skillReceiptFailedLabel: 'No se pudo enviar',
     },
     fr: {
       launcherDefaultLabel: 'Discutez avec nous',
@@ -96,6 +98,8 @@
       publicChatOpenNewTabLabel: 'Ouvrir dans un nouvel onglet',
       publicChatDisclaimerTemplate: "{name} utilise l'IA et peut faire des erreurs.",
       publicChatRateLimitRetryTemplate: 'Réessayez dans {seconds} s.',
+      skillReceiptSubmittedLabel: 'Envoyé',
+      skillReceiptFailedLabel: "Échec de l'envoi",
     },
     de: {
       launcherDefaultLabel: 'Mit uns chatten',
@@ -121,6 +125,8 @@
       publicChatOpenNewTabLabel: 'In neuem Tab öffnen',
       publicChatDisclaimerTemplate: '{name} verwendet KI und kann Fehler machen.',
       publicChatRateLimitRetryTemplate: 'Erneut versuchen in {seconds} s.',
+      skillReceiptSubmittedLabel: 'Gesendet',
+      skillReceiptFailedLabel: 'Senden fehlgeschlagen',
     },
     it: {
       launcherDefaultLabel: 'Chatta con noi',
@@ -146,6 +152,8 @@
       publicChatOpenNewTabLabel: 'Apri in una nuova scheda',
       publicChatDisclaimerTemplate: "{name} utilizza l'IA e può commettere errori.",
       publicChatRateLimitRetryTemplate: 'Riprova tra {seconds} s.',
+      skillReceiptSubmittedLabel: 'Inviato',
+      skillReceiptFailedLabel: 'Invio non riuscito',
     },
     pt: {
       launcherDefaultLabel: 'Fale conosco',
@@ -171,6 +179,8 @@
       publicChatOpenNewTabLabel: 'Abrir em nova aba',
       publicChatDisclaimerTemplate: '{name} usa IA e pode cometer erros.',
       publicChatRateLimitRetryTemplate: 'Tente novamente em {seconds}s.',
+      skillReceiptSubmittedLabel: 'Enviado',
+      skillReceiptFailedLabel: 'Falha ao enviar',
     },
     nl: {
       launcherDefaultLabel: 'Chat met ons',
@@ -196,6 +206,8 @@
       publicChatOpenNewTabLabel: 'Openen in nieuw tabblad',
       publicChatDisclaimerTemplate: '{name} gebruikt AI en kan fouten maken.',
       publicChatRateLimitRetryTemplate: 'Probeer het opnieuw over {seconds}s.',
+      skillReceiptSubmittedLabel: 'Verzonden',
+      skillReceiptFailedLabel: 'Verzenden mislukt',
     },
     pl: {
       launcherDefaultLabel: 'Porozmawiaj z nami',
@@ -221,6 +233,8 @@
       publicChatOpenNewTabLabel: 'Otwórz w nowej karcie',
       publicChatDisclaimerTemplate: '{name} korzysta z AI i może popełniać błędy.',
       publicChatRateLimitRetryTemplate: 'Spróbuj ponownie za {seconds}s.',
+      skillReceiptSubmittedLabel: 'Wysłano',
+      skillReceiptFailedLabel: 'Nie udało się wysłać',
     },
     zh: {
       launcherDefaultLabel: '与我们聊天',
@@ -245,6 +259,8 @@
       publicChatOpenNewTabLabel: '在新标签页中打开',
       publicChatDisclaimerTemplate: '{name} 使用 AI，可能会出错。',
       publicChatRateLimitRetryTemplate: '请在 {seconds} 秒后重试。',
+      skillReceiptSubmittedLabel: '已提交',
+      skillReceiptFailedLabel: '无法提交',
     },
     ja: {
       launcherDefaultLabel: 'チャットでお問い合わせ',
@@ -270,6 +286,8 @@
       publicChatOpenNewTabLabel: '新しいタブで開く',
       publicChatDisclaimerTemplate: '{name} は AI を使用しており、間違える可能性があります。',
       publicChatRateLimitRetryTemplate: '{seconds} 秒後に再試行してください。',
+      skillReceiptSubmittedLabel: '送信しました',
+      skillReceiptFailedLabel: '送信できませんでした',
     },
     ru: {
       launcherDefaultLabel: 'Напишите нам',
@@ -295,6 +313,8 @@
       publicChatOpenNewTabLabel: 'Открыть в новой вкладке',
       publicChatDisclaimerTemplate: '{name} использует ИИ и может ошибаться.',
       publicChatRateLimitRetryTemplate: 'Повторите через {seconds} с.',
+      skillReceiptSubmittedLabel: 'Отправлено',
+      skillReceiptFailedLabel: 'Не удалось отправить',
     },
   }
 
@@ -371,12 +391,16 @@
     'publicChatUnavailableMessage',
     'publicChatLoadOlderMessages',
     'publicChatSendMessageLabel',
+    'publicChatContactHumanLabel',
+    'publicChatContactHumanMessage',
     'publicChatNewChatLabel',
     'publicChatCollapseLabel',
     'publicChatOpenFullScreenLabel',
     'publicChatOpenNewTabLabel',
     'publicChatDisclaimerTemplate',
     'publicChatRateLimitRetryTemplate',
+    'skillReceiptSubmittedLabel',
+    'skillReceiptFailedLabel',
   ]
 
   const themeOverrideKeys = [
@@ -574,6 +598,13 @@
       const resolved = exact || fallback
       if (resolved && typeof resolved === 'object') {
         return resolved
+      }
+      // English is the untranslated baseline. Once a visitor's English
+      // preference outranks any available pack (and no operator English pack
+      // exists), stop so we don't localize an English-preferring visitor into a
+      // lower-priority language they merely tolerate.
+      if (base === 'en') {
+        return null
       }
     }
     return null

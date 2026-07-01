@@ -76,6 +76,45 @@ const presentation = (): ChatPresentedAnswer => ({
   citations: [],
 });
 
+const effectiveRetrieval = (): PreparedSession["retrieval"] =>
+  ({
+    contexts: [{
+      documentId: "doc_1",
+      chunkId: "chunk_1",
+      title: "Source",
+      content: "Grounded source text.",
+      metadata: { sourceUrl: "https://example.com/source" },
+      promptPosition: 0,
+      similarity: 0.91,
+    }],
+    diagnostics: {
+      retrievalSkipped: false,
+      fallbackApplied: false,
+      rewriteRan: false,
+      rewriteStatus: "skipped",
+      rewriteEligible: false,
+      rerankStatus: "skipped",
+      materialDisagreement: false,
+      originalCandidateCount: 1,
+      rewrittenCandidateCount: 0,
+      lexicalCandidateCount: 0,
+      normalizedCandidateCount: 1,
+      finalContextCount: 1,
+    },
+    systemPrompt: "retrieval system prompt",
+    trace: {
+      traceId: "effective-retrieval-trace",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      stages: [{
+        stageId: "diagnostics",
+        kind: "diagnostics",
+        label: "Diagnostics",
+        status: "applied",
+      }],
+      links: [],
+    },
+  } as unknown as PreparedSession["retrieval"]);
+
 class FakeActionCapabilityMap implements ActionCapabilityMap {
   constructor(private readonly capabilitiesByType: Map<string, string[]>) {}
 
@@ -114,6 +153,43 @@ const engineTrace = (): ConversationTrace => ({
       outputs: { skillName: "retrieval.answer" },
     },
     { id: "compose", kind: "compose", status: "applied" },
+  ],
+});
+
+const routineRetrievalTrace = (): ConversationTrace => ({
+  traceId: "conversation-turn-routine",
+  startedAt: "2026-01-01T00:00:00.000Z",
+  completedAt: "2026-01-01T00:00:01.000Z",
+  stages: [
+    { id: "message", kind: "message", status: "applied" },
+    { id: "gather", kind: "gather", status: "applied" },
+    {
+      id: "routine:routine_1",
+      kind: "routine_activate",
+      status: "applied",
+      outputs: { routineId: "routine_1", completed: false, answerLength: 42 },
+      subTrace: {
+        namespace: "routine",
+        version: 1,
+        payload: {
+          routineId: "routine_1",
+          startStepId: "retrieve",
+          landedStepId: "answer",
+          capturedSlotKeys: [],
+          filledSlotKeys: [],
+          steps: [
+            {
+              stepId: "retrieve",
+              kind: "skill",
+              event: "skill_dispatched",
+              skillName: "retrieval.context",
+              skillStatus: "context_ready",
+            },
+            { stepId: "answer", kind: "chat", event: "rendered" },
+          ],
+        },
+      },
+    },
   ],
 });
 
@@ -182,6 +258,116 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     expect(records[0].metadata.turnTrace).toEqual(extracted.turnTrace);
     expect(records[0].metadata.activityTrace).toEqual(extracted.activityTrace);
     vi.useRealTimers();
+  });
+
+  it("reports retrieval as invoked when a direct-classified routine turn dispatches retrieval.context", async () => {
+    const { lifecycle, records } = harness();
+    const prepared = session();
+    const presented: ChatPresentedAnswer = {
+      answer: "Routine grounded answer.",
+      skillName: "assistant.chat",
+      skillOutcome: "conversational",
+      skillStatus: "completed",
+      answerOutcome: "non_retrieval_response",
+      citations: [{ documentId: "doc_1", chunkId: "chunk_1", title: "Source" }],
+      answerSegments: [{ text: "Routine grounded answer.", citationIndices: [0] }],
+    };
+
+    const completed = await lifecycle.completeAssistantTurn({
+      workspaceId: "workspace_1",
+      session: prepared,
+      presentation: presented,
+      answerStartedAt: Date.now(),
+      stream: false,
+      engineTrace: routineRetrievalTrace(),
+    });
+
+    expect(completed.response.route).toEqual({
+      type: "retrieval",
+      reason: "evidence_required",
+    });
+    expect(records[0].metadata.route).toEqual({
+      generator: "assistant",
+      routeType: "retrieval",
+      routeReason: "evidence_required",
+      retrievalInvoked: true,
+    });
+    expect(records[0].metadata.retrieval).toEqual(expect.objectContaining({
+      execution: {
+        surface: "assistant",
+        path: "assistant_retrieval",
+        retrievalInvoked: true,
+      },
+    }));
+  });
+
+  it("uses a routine-grounded presentation's effective retrieval for trace and message metadata", async () => {
+    const { lifecycle, records, messageRepository } = harness();
+    const prepared = session();
+    const retrieval = effectiveRetrieval();
+    const presented: ChatPresentedAnswer = {
+      answer: "Routine grounded answer.",
+      skillName: "retrieval.answer",
+      skillOutcome: "grounded",
+      skillStatus: "completed",
+      answerOutcome: "grounded_success",
+      citations: [{ documentId: "doc_1", chunkId: "chunk_1", title: "Source", sourceUrl: "https://example.com/source" }],
+      answerSegments: [{ text: "Routine grounded answer.", citationIndices: [0] }],
+      effectiveRetrieval: retrieval,
+    };
+
+    await lifecycle.completeAssistantTurn({
+      workspaceId: "workspace_1",
+      session: prepared,
+      presentation: presented,
+      answerStartedAt: Date.now(),
+      stream: false,
+      engineTrace: routineRetrievalTrace(),
+    });
+
+    expect(records[0].metadata.retrieval).toEqual(expect.objectContaining({
+      retrievalSkipped: false,
+      finalContextCount: 1,
+      execution: {
+        surface: "assistant",
+        path: "assistant_retrieval",
+        retrievalInvoked: true,
+      },
+    }));
+    expect(records[0].metadata.activityTrace).toEqual(expect.objectContaining({
+      summary: expect.objectContaining({
+        outcome: "retrieval_completed",
+        retrievalSkipped: false,
+        candidateCounts: expect.objectContaining({ final: 1 }),
+        assistant: expect.objectContaining({
+          route: "retrieval",
+          routeReason: "evidence_required",
+        }),
+      }),
+    }));
+    const activityTrace = records[0].metadata.activityTrace as { stages: unknown[] };
+    expect(activityTrace.stages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: "answer_outcome",
+        outputs: expect.objectContaining({ retrievalSkipped: false }),
+      }),
+    ]));
+    expect(activityTrace.stages).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        reason: "Retrieval was intentionally skipped for a non-retrieval chat turn.",
+      }),
+    ]));
+
+    const create = vi.mocked(messageRepository.create);
+    const assistantMessage = create.mock.calls[0]?.[0];
+    expect(assistantMessage?.metadata?.retrievedChunks).toEqual([{
+      chunkId: "chunk_1",
+      documentId: "doc_1",
+      title: "Source",
+      rank: 0,
+      similarity: 0.91,
+    }]);
+    expect(assistantMessage?.metadata?.composedInstructions).toBe("retrieval system prompt");
   });
 
   it("uses the transaction port for assistant message, action outbox, routine state, touch, and success audit", async () => {

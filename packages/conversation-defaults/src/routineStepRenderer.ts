@@ -21,6 +21,14 @@ export {
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_PROMPT,
 } from "./generated/defaultPrompts.js";
 
+export interface RoutineGroundedAnswerRenderer {
+  render(input: {
+    step: RoutineStep;
+    steering: SteeringRule[];
+    turn: TurnContext;
+  }): Promise<RenderableTurn | null>;
+}
+
 const turnMessages = (turn: TurnContext): ConversationMessage[] => [
   ...turn.history,
   ...retrievalContextMessages(turn),
@@ -179,6 +187,7 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
       promptTemplate?: string;
       terminalHandoffInstruction?: string;
       responseLanguage?: string | Promise<string | undefined>;
+      groundedAnswerRenderer?: RoutineGroundedAnswerRenderer;
     } = {},
   ) {
     this.promptTemplate = options.promptTemplate ?? DEFAULT_ROUTINE_STEP_REPLY_PROMPT;
@@ -191,6 +200,11 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
     steering: SteeringRule[];
     turn: TurnContext;
   }): Promise<RenderableTurn> {
+    const grounded = await this.options.groundedAnswerRenderer?.render(input);
+    if (grounded) {
+      return grounded;
+    }
+
     const responseLanguage = await this.options.responseLanguage;
     const systemPrompt = renderPromptTemplate("chat/routine-step-reply.md", this.promptTemplate, {
       answer_scope_reference: scopeReferenceBlock(input.turn.agent),

@@ -220,9 +220,14 @@ describeIntegration("DocumentRepository (Postgres)", () => {
   });
 
   it("listSummaryPageByWorkspaceId paginates by offset and exposes total/hasMore", async () => {
+    const documents: Array<{ id: string }> = [];
     for (let index = 0; index < 3; index += 1) {
-      await repository.create({ ...baseCreateInput({ title: `Doc ${index}` }), status: "ready" });
+      documents.push(await repository.create({ ...baseCreateInput({ title: `Doc ${index}` }), status: "ready" }));
     }
+    await database.query(
+      "UPDATE documents SET created_at = '2026-01-01T00:00:00.123456Z'::timestamptz WHERE id = ANY($1::uuid[])",
+      [documents.map((document) => document.id)],
+    );
 
     const firstPage = await repository.listSummaryPageByWorkspaceId(workspaceId, { limit: 2 });
     expect(firstPage.total).toBe(3);

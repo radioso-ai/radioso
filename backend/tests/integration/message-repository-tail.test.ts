@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import type { PoolClient, QueryResultRow } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
@@ -9,7 +8,6 @@ import { MessageRepository } from "../../src/db/repositories/messageRepository.j
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../src/shared/domain/cursorPagination.js";
 import { Database } from "../../src/shared/infra/database.js";
-import { createKyselyDatabase } from "../../src/shared/infra/kysely/kyselyDatabase.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
@@ -32,78 +30,15 @@ const canReachIntegrationDatabase = async (databaseUrl?: string): Promise<boolea
 const hasReachableIntegrationDatabase = await canReachIntegrationDatabase(integrationDatabaseUrl);
 const describeIfDatabase = hasReachableIntegrationDatabase ? describe : describe.skip;
 
-const createClientBackedDatabase = (client: PoolClient): Database => {
-  const pool = {
-    async connect() {
-      return new Proxy(client, {
-        get(target, property, receiver) {
-          if (property === "release") {
-            return () => undefined;
-          }
-          const value = Reflect.get(target, property, receiver);
-          return typeof value === "function" ? value.bind(target) : value;
-        },
-      }) as PoolClient;
-    },
-  } as Database["pool"];
-
-  return {
-  pool,
-  // Kysely over the same single client, so migrated repos used for seeding share this
-  // test's dedicated schema/search_path.
-  kysely: createKyselyDatabase(pool),
-  async query<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
-    const result = await client.query<T>(text, params);
-    return result.rows;
-  },
-  async queryOptional<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T | null> {
-    const result = await client.query<T>(text, params);
-    return result.rows[0] ?? null;
-  },
-  async queryOne<T extends QueryResultRow>(text: string, params: unknown[] = []): Promise<T> {
-    const result = await client.query<T>(text, params);
-    const row = result.rows[0];
-    if (!row) {
-      throw new Error("Expected query to return one row");
-    }
-    return row;
-  },
-  async execute(text: string, params: unknown[] = []): Promise<number> {
-    const result = await client.query(text, params);
-    return result.rowCount ?? 0;
-  },
-  async withTransaction<T>(callback: (transactionClient: PoolClient) => Promise<T>): Promise<T> {
-    await client.query("BEGIN");
-    try {
-      const value = await callback(client);
-      await client.query("COMMIT");
-      return value;
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    }
-  },
-  async close(): Promise<void> {},
-  } as Database;
-};
-
 describeIfDatabase("MessageRepository forward tail cursor", () => {
-  let backingDatabase: Database;
   let database: Database;
-  let client: PoolClient;
-  let schema: string;
   let accounts: AccountRepository;
   let workspaces: WorkspaceRepository;
   let conversations: ConversationRepository;
   let messages: MessageRepository;
 
   beforeAll(async () => {
-    backingDatabase = new Database(integrationDatabaseUrl!);
-    client = await backingDatabase.pool.connect();
-    schema = `message_repo_tail_${randomUUID().replaceAll("-", "_")}`;
-    await client.query(`CREATE SCHEMA ${schema}`);
-    await client.query(`SET search_path TO ${schema}, public`);
-    database = createClientBackedDatabase(client);
+    database = new Database(integrationDatabaseUrl!);
     await runAllTestMigrations(database);
     accounts = new AccountRepository(database.kysely);
     workspaces = new WorkspaceRepository(database.kysely);
@@ -116,13 +51,7 @@ describeIfDatabase("MessageRepository forward tail cursor", () => {
   });
 
   afterAll(async () => {
-    if (client) {
-      await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`).catch(() => undefined);
-      client.release();
-    }
-    if (backingDatabase) {
-      await backingDatabase.close();
-    }
+    await database.close();
   });
 
   const seedConversation = async () => {

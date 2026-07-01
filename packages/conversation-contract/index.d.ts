@@ -705,6 +705,8 @@ export interface RoutineSkillResult {
   status: RoutineSkillOutcomeStatus;
   outputs?: Record<string, unknown>;
   answer?: string;
+  /** Host-private dispatch metadata. Not rendered into routine prompts. */
+  metadata?: Record<string, unknown>;
 }
 
 /**

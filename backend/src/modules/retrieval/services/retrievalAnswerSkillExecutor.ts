@@ -95,7 +95,7 @@ const namedRetrieveOutcome = (result: RetrievalPipelineResult): SkillOutcome => 
 });
 
 /** Extracts the RetrievalPipelineResult a retrieval.answer dispatch settled with, if present. */
-export const readRetrievalResult = (outcome: SkillOutcome): RetrievalPipelineResult | null => {
+export const readRetrievalResult = (outcome: { metadata?: Record<string, unknown> }): RetrievalPipelineResult | null => {
   const value = outcome.metadata?.[RETRIEVAL_RESULT_KEY];
   return value ? (value as RetrievalPipelineResult) : null;
 };

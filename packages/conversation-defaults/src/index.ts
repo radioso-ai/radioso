@@ -70,6 +70,7 @@ export {
 export {
   DEFAULT_ROUTINE_STEP_REPLY_PROMPT,
   RoutineStepRenderer,
+  type RoutineGroundedAnswerRenderer,
 } from "./routineStepRenderer.js";
 export { RoutineSlotCorrector } from "./routineSlotCorrector.js";
 export { RoutineReentryGate } from "./routineReentryGate.js";

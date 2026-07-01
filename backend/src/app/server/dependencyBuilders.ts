@@ -1166,7 +1166,15 @@ export const buildChatServices = (input: {
     },
   });
   const routineProvider: ChatRoutineProvider = {
-    async forTurn({ modelGateway, agentId, workspaceId, accountId, pinnedRoutineIds = [], responseLanguage }) {
+    async forTurn({
+      modelGateway,
+      agentId,
+      workspaceId,
+      accountId,
+      pinnedRoutineIds = [],
+      responseLanguage,
+      groundedAnswerRenderer,
+    }) {
       let publishedRegistrations: RoutineRegistration[];
       try {
         publishedRegistrations = await publishedRoutineSource.load({ agentId });
@@ -1323,6 +1331,7 @@ export const buildChatServices = (input: {
             promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
             terminalHandoffInstruction: loadPromptTemplate("chat/routine-step-terminal-handoff.md"),
             responseLanguage,
+            groundedAnswerRenderer,
           }),
           new RoutineSkillExecutorDispatcher(
             new StaticRoutineSkillResolver(

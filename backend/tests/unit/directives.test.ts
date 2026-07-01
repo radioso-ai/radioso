@@ -147,6 +147,10 @@ describe("default answer directives", () => {
     expect(inlineSupportedLinksDirective.action).toContain("If the user asks for a link");
     expect(inlineSupportedLinksDirective.action).toContain("human-readable link text");
     expect(inlineSupportedLinksDirective.action).toContain("Never print a bare/raw URL");
+    expect(inlineSupportedLinksDirective.description).toBe("Use available source URLs as inline links in grounded answers.");
+    expect(inlineSupportedLinksDirective.action).toContain("has a URL in the retrieved findings");
+    expect(inlineSupportedLinksDirective.action).not.toContain("draw a teaching or fact");
+    expect(inlineSupportedLinksDirective.action).not.toContain("rather than only a bare citation marker");
     // Link text must be the resource's own name, not a generic tail phrase, and a
     // supported URL must never be replaced by a citation marker or parenthetical gesture.
     expect(inlineSupportedLinksDirective.action).toContain("The link text must be the resource's own name");

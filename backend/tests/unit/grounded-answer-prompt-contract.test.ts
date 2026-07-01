@@ -20,4 +20,14 @@ describe("grounded answer prompt contract", () => {
     expect(prompt).not.toContain("Embed inline Markdown links directly in the answer");
     expect(prompt).not.toContain("Provide ample links");
   });
+
+  it("limits inline links to named resources with explicit Source URLs", () => {
+    const prompt = loadPromptTemplate("retrieval/answer.md");
+
+    expect(prompt).toContain("has such a Source URL");
+    expect(prompt).toContain("turn that resource's own name into an inline Markdown link to its Source URL");
+    expect(prompt).toContain("Never invent a URL");
+    expect(prompt).not.toContain("source you draw the answer from");
+    expect(prompt).not.toContain("leaving only a bare citation marker");
+  });
 });

@@ -106,6 +106,8 @@ const documentSummarySelectColumns = [
   contentSizeExpression.as("content_size"),
 ] as const;
 
+const documentCursorCreatedAtExpression = sql<Date>`date_trunc('milliseconds', created_at)`;
+
 export class DocumentRepository implements DocumentRepositoryPort {
   constructor(private readonly db: Db) {}
 
@@ -373,15 +375,15 @@ export class DocumentRepository implements DocumentRepositoryPort {
       .$if(Boolean(cursor), (qb) =>
         qb.where((eb) =>
           eb.or([
-            eb("created_at", "<", sql<Date>`${cursor!.keys.createdAt}::timestamptz`),
+            eb(documentCursorCreatedAtExpression, "<", sql<Date>`${cursor!.keys.createdAt}::timestamptz`),
             eb.and([
-              eb("created_at", "=", sql<Date>`${cursor!.keys.createdAt}::timestamptz`),
+              eb(documentCursorCreatedAtExpression, "=", sql<Date>`${cursor!.keys.createdAt}::timestamptz`),
               eb("id", "<", sql<string>`${cursor!.keys.id}::uuid`),
             ]),
           ]),
         ),
       )
-      .orderBy("created_at", "desc")
+      .orderBy(documentCursorCreatedAtExpression, "desc")
       .orderBy("id", "desc")
       .limit(input.limit + 1)
       .$if(!cursor, (qb) => qb.offset(input.offset ?? 0))
@@ -685,15 +687,15 @@ export class DocumentRepository implements DocumentRepositoryPort {
       .$if(Boolean(cursor), (qb) =>
         qb.where((eb) =>
           eb.or([
-            eb("created_at", "<", sql<Date>`${cursor!.keys.createdAt}::timestamptz`),
+            eb(documentCursorCreatedAtExpression, "<", sql<Date>`${cursor!.keys.createdAt}::timestamptz`),
             eb.and([
-              eb("created_at", "=", sql<Date>`${cursor!.keys.createdAt}::timestamptz`),
+              eb(documentCursorCreatedAtExpression, "=", sql<Date>`${cursor!.keys.createdAt}::timestamptz`),
               eb("id", "<", sql<string>`${cursor!.keys.id}::uuid`),
             ]),
           ]),
         ),
       )
-      .orderBy("created_at", "desc")
+      .orderBy(documentCursorCreatedAtExpression, "desc")
       .orderBy("id", "desc")
       .limit(input.limit + 1)
       .$if(!cursor, (qb) => qb.offset(input.offset ?? 0))

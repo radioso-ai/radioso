@@ -4,6 +4,8 @@ type StaffRole = "support_read" | "billing_write" | "owner";
 
 const accountId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 
+test.skip(process.env.RADIOSO_EDITION !== "enterprise", "Operator console routes are generated only for enterprise frontend builds.");
+
 const starterProfile = {
   key: "starter",
   displayName: "Starter",

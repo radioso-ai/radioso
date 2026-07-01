@@ -166,6 +166,11 @@ const replaceBrowserUrl = (href: string) => {
   window.history.replaceState(window.history.state, '', href)
 }
 
+const currentBrowserUrlMatches = (href: string) => {
+  if (typeof window === 'undefined') return false
+  return `${window.location.pathname}${window.location.search}` === href
+}
+
 export function AssistantRoutinesSection({
   accountId,
   agentId,
@@ -699,7 +704,10 @@ function RoutineEditorScreen({
         .concat(response.routine))
       setValidation(response.validation)
       markSaved()
-      router.replace(buildPersistedHref(response.routine.id))
+      const persistedHref = buildPersistedHref(response.routine.id)
+      if (!currentBrowserUrlMatches(persistedHref)) {
+        router.replace(persistedHref)
+      }
     } catch (publishError) {
       if (!isCurrentSave(saveId)) return
       if (publishError instanceof RoutinePublishRejectedError) {
@@ -749,7 +757,10 @@ function RoutineEditorScreen({
       setProseKey((key) => key + 1)
       setValidation(null)
       markSaved()
-      router.replace(buildPersistedHref(response.routine.id))
+      const persistedHref = buildPersistedHref(response.routine.id)
+      if (!currentBrowserUrlMatches(persistedHref)) {
+        router.replace(persistedHref)
+      }
     } catch (reviseError) {
       if (!isCurrentSave(saveId)) return
       const message = getApiErrorMessage(reviseError, 'Failed to create routine revision.')

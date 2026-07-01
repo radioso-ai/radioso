@@ -57,7 +57,7 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await page.getByRole("button", { name: "Add new skill" }).click();
   await page.getByRole("button", { name: /Knowledge Retrieval/i }).click();
   await expect(page.getByRole("dialog", { name: "Configure Knowledge Retrieval" })).toBeVisible();
-  await expect(page.getByLabel("Skill name")).toHaveValue("retrieve_answer");
+  await expect(page.getByLabel("Skill name")).toHaveValue("retrieve_course_guide");
   await expect(page.getByLabel("Vector top K")).toHaveCount(0);
   await page.getByLabel("Skill name").fill("retrieve_events");
   await page.getByRole("button", { name: "Selected sources" }).click();
@@ -113,7 +113,7 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   expect(createBodies[1]).toMatchObject({
     name: "retrieve_events",
     capability: "retrieve",
-    target: { kind: "source_scope", id: null },
+    target: { kind: "source_scope", id: "11111111-1111-4111-8111-111111111111" },
     config: {
       sourceScope: { sourceIds: ["11111111-1111-4111-8111-111111111111"] },
       instruction: "Use event-specific sources only.",

@@ -93,6 +93,15 @@ export type {
 } from "./domain/retrievalCapabilityTypes.js";
 export type { LexicalSearchPort } from "./infra/lexicalSearch.js";
 export type { ChunkVectorStoragePort } from "./infra/chunkVectorStorage.js";
+export type { ChunkCandidateHydratorPort } from "./infra/chunkCandidateHydrator.js";
+export type {
+  VectorIndexCandidate,
+  VectorIndexChunk,
+  VectorIndexFilter,
+  VectorIndexHealth,
+  VectorIndexPort,
+  VectorIndexSearchInput,
+} from "./domain/vectorIndex.js";
 export type {
   RetrievedChunk,
   VectorSearchInput,

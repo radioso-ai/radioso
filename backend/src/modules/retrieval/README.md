@@ -15,6 +15,13 @@ retrieval settings, and the prompt context needed for grounded answers.
 Retrieval should not own assistant persona, chat session lifecycle, HTTP request
 shape, document processing, or user-facing assistant copy.
 
+Vector indexing is a retrieval-owned adapter boundary. PostgreSQL remains the
+canonical chunk store, while `VectorIndexPort` returns ranked chunk references
+and `ChunkCandidateHydratorPort` hydrates those references from canonical
+storage. pgvector is the default vector-index adapter; external vector backends
+should implement the same candidate contract rather than returning hydrated
+document rows directly.
+
 ## Public Surfaces
 
 - `public.ts`: general retrieval-owned contracts and helpers for production code
@@ -34,10 +41,12 @@ imports from `services/` or `infra/`.
 - `services/retrievalAnswerService.ts`: retrieval answer assembly.
 - `domain/vectorSearch.ts`: backend-neutral vector search contract consumed by
   retrieval services.
+- `domain/vectorIndex.ts`: vector-index lifecycle/search contract for adapters
+  that return ranked chunk references.
 - `domain/retrievalSourceFilter.ts`: shared source scoping values used by
   retrieval contracts and filter compilers.
-- `infra/vectorSearch.ts` and `infra/lexicalSearch.ts`: concrete search
-  adapters.
+- `infra/vectorSearch.ts`, `infra/chunkCandidateHydrator.ts`, and
+  `infra/lexicalSearch.ts`: concrete search and hydration adapters.
 
 ## Common Change Paths
 

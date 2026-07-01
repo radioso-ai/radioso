@@ -33,10 +33,14 @@ Step instruction(s):
 
 Write only the message to the user — no preamble, labels, or quotation marks.`;
 
-export const DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_PROMPT = `This handoff has already been selected by the routine.
-Do not ask whether the user wants to be connected, do not ask for their preference,
-and do not present the handoff as optional.
-Tell the user the handoff is happening, following the step instruction.`;
+export const DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT = `Write one short message in {{language}} that preserves this meaning:
+{{message}}
+
+Do not add links, contact details, recommendations, options, or follow-up questions.`;
+
+export const DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT = `Write one short message in {{language}} saying that a person will connect to the chat soon.
+
+Do not add links, contact details, recommendations, options, or follow-up questions.`;
 
 export const DEFAULT_ROUTINE_NEXT_STEP_PROMPT = `You are guiding a user through a structured, multi-step routine. Decide what should
 happen next, based on what the user just said.

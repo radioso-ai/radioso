@@ -1329,7 +1329,8 @@ export const buildChatServices = (input: {
           }),
           new RoutineStepRenderer(modelGateway, {
             promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
-            terminalHandoffInstruction: loadPromptTemplate("chat/routine-step-terminal-handoff.md"),
+            terminalHandoffWithMessagePromptTemplate: loadPromptTemplate("chat/routine-step-terminal-handoff-with-message.md"),
+            terminalHandoffDefaultPromptTemplate: loadPromptTemplate("chat/routine-step-terminal-handoff-default.md"),
             responseLanguage,
             groundedAnswerRenderer,
           }),

@@ -88,12 +88,31 @@ const extractFencedCode = (node?: HastElement): { code: string; language?: strin
 
 const getNodeEndOffset = (node?: HastElement) => node?.position?.end.offset
 
-const nodeEndsAtContentEnd = (node: HastElement | undefined, contentEndOffset: number) =>
-  typeof getNodeEndOffset(node) === 'number' && getNodeEndOffset(node) === contentEndOffset
+const nodeEndsAtContentEnd = (
+  node: HastElement | undefined,
+  content: string,
+  contentEndOffset: number,
+) => {
+  const nodeEndOffset = getNodeEndOffset(node)
+  if (typeof nodeEndOffset !== 'number') {
+    return false
+  }
+  if (nodeEndOffset === contentEndOffset) {
+    return true
+  }
+  if (nodeEndOffset > contentEndOffset && nodeEndOffset <= content.length) {
+    return content.slice(contentEndOffset, nodeEndOffset).trim().length === 0
+  }
+  return false
+}
 
-const hasChildEndingAtContentEnd = (node: HastElement | undefined, contentEndOffset: number) =>
+const hasChildEndingAtContentEnd = (
+  node: HastElement | undefined,
+  content: string,
+  contentEndOffset: number,
+) =>
   node?.children.some((child) =>
-    child.type === 'element' && nodeEndsAtContentEnd(child, contentEndOffset),
+    child.type === 'element' && nodeEndsAtContentEnd(child, content, contentEndOffset),
   ) ?? false
 
 // Per-render inputs the overrides need. They flow through context rather than
@@ -103,6 +122,7 @@ const hasChildEndingAtContentEnd = (node: HastElement | undefined, contentEndOff
 // components below; because their function identities are module-stable,
 // react-markdown reconciles their DOM in place instead of remounting it.
 type MarkdownDynamics = {
+  content: string
   trailingInlineContent: ReactNode
   contentEndOffset: number
   onLinkClick?: (href: string) => void
@@ -110,6 +130,7 @@ type MarkdownDynamics = {
 }
 
 const MarkdownDynamicsContext = createContext<MarkdownDynamics>({
+  content: '',
   trailingInlineContent: null,
   contentEndOffset: 0,
 })
@@ -123,14 +144,14 @@ const TrailingInlineContent = ({
   node?: HastElement
   suppressIfChildEndsAtContentEnd?: boolean
 }) => {
-  const { trailingInlineContent, contentEndOffset } = useContext(MarkdownDynamicsContext)
+  const { content, trailingInlineContent, contentEndOffset } = useContext(MarkdownDynamicsContext)
   if (!trailingInlineContent) {
     return null
   }
-  if (suppressIfChildEndsAtContentEnd && hasChildEndingAtContentEnd(node, contentEndOffset)) {
+  if (suppressIfChildEndsAtContentEnd && hasChildEndingAtContentEnd(node, content, contentEndOffset)) {
     return null
   }
-  return nodeEndsAtContentEnd(node, contentEndOffset) ? <>{trailingInlineContent}</> : null
+  return nodeEndsAtContentEnd(node, content, contentEndOffset) ? <>{trailingInlineContent}</> : null
 }
 
 const MarkdownLink = ({
@@ -407,6 +428,7 @@ export function MarkdownContent({
   const components = useMemo(() => createComponents(variant, inline), [variant, inline])
   const dynamics = useMemo<MarkdownDynamics>(
     () => ({
+      content,
       trailingInlineContent,
       contentEndOffset: content.trimEnd().length,
       onLinkClick,

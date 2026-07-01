@@ -209,6 +209,7 @@ const stagedContextForSkillResult = (
     metadata: {
       stepId: step.id,
       status: result.status,
+      ...(result.metadata ? { skillMetadata: result.metadata } : {}),
     },
   };
 };

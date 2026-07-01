@@ -156,6 +156,55 @@ describe("routine defaults", () => {
     expect(vi.mocked(gw.complete).mock.calls[0]?.[0].systemPrompt).toContain("Ask the user for their email address.");
   });
 
+  it("delegates retrieval-grounded routine replies to the host renderer when available", async () => {
+    const gw = gateway("generic reply");
+    const groundedAnswerRenderer = {
+      render: vi.fn(async () => ({ answer: "Grounded reply.", metadata: { renderedBy: "grounded" } })),
+    };
+    const stagedTurn: TurnContext = {
+      ...turn,
+      stagedContext: [{
+        kind: "skill_result",
+        source: "retrieval.context",
+        data: {
+          has_context: true,
+          contexts: [{ title: "Course Guide", content: "Kriya is introduced in the first module." }],
+        },
+      }],
+    };
+
+    const result = await new RoutineStepRenderer(gw, { groundedAnswerRenderer }).render({
+      step: currentStep,
+      steering: [{ action: "Answer from context, then say Hop.", source: "routine", lifespan: "response" }],
+      turn: stagedTurn,
+    });
+
+    expect(result).toEqual({ answer: "Grounded reply.", metadata: { renderedBy: "grounded" } });
+    expect(groundedAnswerRenderer.render).toHaveBeenCalledWith({
+      step: currentStep,
+      steering: [{ action: "Answer from context, then say Hop.", source: "routine", lifespan: "response" }],
+      turn: stagedTurn,
+    });
+    expect(gw.complete).not.toHaveBeenCalled();
+  });
+
+  it("falls back to generic routine reply generation when the host grounded renderer declines", async () => {
+    const gw = gateway("generic reply");
+    const groundedAnswerRenderer = {
+      render: vi.fn(async () => null),
+    };
+
+    const result = await new RoutineStepRenderer(gw, { groundedAnswerRenderer }).render({
+      step: currentStep,
+      steering: [{ action: "Ask the user for their email address.", source: "routine", lifespan: "response" }],
+      turn,
+    });
+
+    expect(result.answer).toBe("generic reply");
+    expect(groundedAnswerRenderer.render).toHaveBeenCalledOnce();
+    expect(gw.complete).toHaveBeenCalledOnce();
+  });
+
   it("tells handoff terminal replies not to ask whether handoff should happen", async () => {
     const gw = gateway("I’m bringing in a teammate.");
     await new RoutineStepRenderer(gw).render({

@@ -410,6 +410,23 @@ describe("staff console routes and guards", () => {
       .expect(204);
   });
 
+  it("falls back to the documented staff cookie name when the env var is absent", async () => {
+    const repositories = await createMemoryRepositories("owner");
+    const dependencies = createDependencies({
+      users: repositories.users,
+      sessions: repositories.staffSessions,
+    });
+    delete dependencies.env.STAFF_SESSION_COOKIE_NAME;
+    const app = createApp(dependencies, { users: repositories.users, sessions: repositories.staffSessions });
+
+    const login = await request(app)
+      .post("/api/v1/ee/operator-console/auth/login")
+      .send({ email: "owner@example.com", password: "password-123" })
+      .expect(200);
+
+    expect(login.headers["set-cookie"][0]).toContain("radioso_staff_session=");
+  });
+
   const runRoleGuard = (role: StaffRole) => {
     const res = {
       locals: { staff: { id: "s", role, email: "s@example.com", name: "S" } satisfies StaffPrincipal },

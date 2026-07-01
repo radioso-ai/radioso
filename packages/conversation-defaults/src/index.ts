@@ -69,6 +69,8 @@ export {
 } from "./routineNextStepSelector.js";
 export {
   DEFAULT_ROUTINE_STEP_REPLY_PROMPT,
+  DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT,
+  DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT,
   RoutineStepRenderer,
   type RoutineGroundedAnswerRenderer,
 } from "./routineStepRenderer.js";

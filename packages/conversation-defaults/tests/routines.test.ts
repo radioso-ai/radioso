@@ -16,6 +16,8 @@ import type {
 import {
   DEFAULT_DIRECTIVE_MATCH_SYSTEM_PROMPT,
   DEFAULT_ROUTINE_NEXT_STEP_PROMPT,
+  DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT,
+  DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT,
   DEFAULT_ROUTINE_STEP_REPLY_PROMPT,
   InMemoryConversationRoutineStore,
   RoutineNextStepSelector,
@@ -55,6 +57,10 @@ describe("routine defaults", () => {
     expect(DEFAULT_DIRECTIVE_MATCH_SYSTEM_PROMPT).toBe(backendPrompt("chat/directive-match.md"));
     expect(DEFAULT_ROUTINE_NEXT_STEP_PROMPT).toBe(backendPrompt("chat/routine-next-step.md"));
     expect(DEFAULT_ROUTINE_STEP_REPLY_PROMPT).toBe(backendPrompt("chat/routine-step-reply.md"));
+    expect(DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT)
+      .toBe(backendPrompt("chat/routine-step-terminal-handoff-with-message.md"));
+    expect(DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT)
+      .toBe(backendPrompt("chat/routine-step-terminal-handoff-default.md"));
   });
 
   it("keeps generated fallback prompt artifacts current", () => {
@@ -205,9 +211,12 @@ describe("routine defaults", () => {
     expect(gw.complete).toHaveBeenCalledOnce();
   });
 
-  it("tells handoff terminal replies not to ask whether handoff should happen", async () => {
+  it("renders handoff terminals with an authored message through the terminal-only prompt", async () => {
     const gw = gateway("I’m bringing in a teammate.");
-    await new RoutineStepRenderer(gw).render({
+    const groundedAnswerRenderer = {
+      render: vi.fn(async () => ({ answer: "Grounded reply." })),
+    };
+    await new RoutineStepRenderer(gw, { groundedAnswerRenderer, responseLanguage: "English" }).render({
       step: {
         id: "handoff",
         kind: "terminal",
@@ -215,13 +224,95 @@ describe("routine defaults", () => {
         metadata: { terminalKind: "handoff" },
       },
       steering: [{ action: "Bringing in a teammate.", source: "routine", lifespan: "response" }],
+      turn: {
+        ...turn,
+        stagedContext: [{
+          kind: "skill_result",
+          source: "retrieval.context",
+          data: { contexts: [{ title: "Contact", content: "Call reception." }] },
+        }],
+      },
+    });
+
+    const call = vi.mocked(gw.complete).mock.calls[0]![0];
+    expect(call.systemPrompt).toContain("Write one short message in English");
+    expect(call.systemPrompt).toContain("Bringing in a teammate.");
+    expect(call.systemPrompt).toContain("Do not add links, contact details");
+    expect(call.systemPrompt).not.toContain("What is your email?");
+    expect(call.systemPrompt).not.toContain("Call reception.");
+    expect(call.systemPrompt).not.toContain("Step instruction(s)");
+    expect(call.messages).toEqual([{ role: "user", content: "Write the handoff message." }]);
+    expect(groundedAnswerRenderer.render).not.toHaveBeenCalled();
+  });
+
+  it("renders handoff terminals without an authored message through the default terminal prompt", async () => {
+    const gw = gateway("A person will connect soon.");
+    await new RoutineStepRenderer(gw, { responseLanguage: "Italian" }).render({
+      step: {
+        id: "handoff",
+        kind: "terminal",
+        action: "",
+        metadata: { terminalKind: "handoff" },
+      },
+      steering: [],
       turn,
     });
 
-    const systemPrompt = vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt;
-    expect(systemPrompt).toContain("This handoff has already been selected");
-    expect(systemPrompt).toContain("Do not ask whether the user wants to be connected");
-    expect(systemPrompt).toContain("do not present the handoff as optional");
+    const call = vi.mocked(gw.complete).mock.calls[0]![0];
+    expect(call.systemPrompt).toContain("Write one short message in Italian");
+    expect(call.systemPrompt).toContain("saying that a person will connect to the chat soon");
+    expect(call.systemPrompt).toContain("Do not add links, contact details");
+    expect(call.systemPrompt).not.toContain("What is your email?");
+    expect(call.messages).toEqual([{ role: "user", content: "Write the handoff message." }]);
+  });
+
+  it("does not treat directive steering as authored handoff terminal copy", async () => {
+    const gw = gateway("A person will connect soon.");
+    await new RoutineStepRenderer(gw, { responseLanguage: "English" }).render({
+      step: {
+        id: "handoff",
+        kind: "terminal",
+        metadata: { terminalKind: "handoff" },
+      },
+      steering: [{ action: "Ask for the user's email.", source: "directive", lifespan: "response" }],
+      turn,
+    });
+
+    const call = vi.mocked(gw.complete).mock.calls[0]![0];
+    expect(call.systemPrompt).toContain("saying that a person will connect to the chat soon");
+    expect(call.systemPrompt).not.toContain("Ask for the user's email.");
+  });
+
+  it("passes only the latest user message as a language hint when no response language is available", async () => {
+    const gw = gateway("Una persona si collegherà presto.");
+    await new RoutineStepRenderer(gw).render({
+      step: {
+        id: "handoff",
+        kind: "terminal",
+        action: "",
+        metadata: { terminalKind: "handoff" },
+      },
+      steering: [],
+      turn: {
+        ...turn,
+        inputEvent: { id: "i2", kind: "message", content: "sì" },
+        history: [{ role: "user", content: "I want to visit a car festival" }],
+        stagedContext: [{
+          kind: "skill_result",
+          source: "retrieval.context",
+          data: { contexts: [{ title: "Festival", content: "Festival details and contact info." }] },
+        }],
+      },
+    });
+
+    const call = vi.mocked(gw.complete).mock.calls[0]![0];
+    expect(call.systemPrompt).toContain("Write one short message in the user's language");
+    expect(call.messages).toEqual([{
+      role: "user",
+      content: "Latest user message for language detection only:\nsì\n\nWrite the handoff message.",
+    }]);
+    expect(call.messages.map((message) => message.content).join("\n")).not.toContain("car festival");
+    expect(call.messages.map((message) => message.content).join("\n")).not.toContain("Festival details");
   });
 
   it("does not add handoff terminal rules to ordinary routine replies", async () => {

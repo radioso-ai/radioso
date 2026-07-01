@@ -205,9 +205,13 @@
     content: 'Rule';
     @apply border-indigo-300 bg-indigo-100 text-indigo-800 dark:border-indigo-400/40 dark:bg-indigo-400/15 dark:text-indigo-200;
   }
-  .routine-prose-surface [data-routine-branch='ai'] {
+  .routine-prose-surface [data-routine-branch='ai'],
+  .routine-prose-surface [data-routine-branch='ai-chip'] {
     @apply rounded bg-violet-50/70 dark:bg-violet-400/10;
   }
+  /* Only the bare-text AI branch gets the line badge. When the interactive AI⇄code selector
+     chip is present ('ai-chip') the chip already shows "AI decides", so no ::before badge —
+     otherwise the line would carry two identical badges. */
   .routine-prose-surface [data-routine-branch='ai']::before {
     content: '✦ AI decides';
     @apply border-violet-300 bg-violet-100 text-violet-800 dark:border-violet-400/40 dark:bg-violet-400/15 dark:text-violet-200;

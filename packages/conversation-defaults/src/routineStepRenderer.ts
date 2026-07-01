@@ -12,13 +12,15 @@ import type {
 
 import {
   DEFAULT_ROUTINE_STEP_REPLY_PROMPT,
-  DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_PROMPT,
+  DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT,
+  DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT,
 } from "./generated/defaultPrompts.js";
 import { renderPromptTemplate } from "./promptTemplate.js";
 
 export {
   DEFAULT_ROUTINE_STEP_REPLY_PROMPT,
-  DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_PROMPT,
+  DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT,
+  DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT,
 } from "./generated/defaultPrompts.js";
 
 export interface RoutineGroundedAnswerRenderer {
@@ -161,13 +163,36 @@ language, not the language of these instructions.`;
 const responseLanguageInstruction = (responseLanguage?: string): string =>
   responseLanguage ? `Respond in ${responseLanguage}.` : fallbackResponseLanguageInstruction;
 
-// The handoff copy itself lives in `chat/routine-step-terminal-handoff.md` (overridable
-// like every other prompt); only the gating condition stays in code.
-const terminalBehaviorInstruction = (step: RoutineStep, instruction: string): string => {
-  if (step.kind !== "terminal" || step.metadata?.terminalKind !== "handoff") {
-    return "";
+const isHandoffTerminal = (step: RoutineStep): boolean =>
+  step.kind === "terminal" && step.metadata?.terminalKind === "handoff";
+
+const terminalMessage = (step: RoutineStep, steering: SteeringRule[]): string | null => {
+  const actions = steering
+    .filter((rule) => rule.source === "routine")
+    .map((rule) => rule.action.trim())
+    .filter((action) => action.length > 0);
+  if (actions.length > 0) {
+    return actions.join("\n");
   }
-  return instruction;
+  const action = step.action?.trim();
+  return action ? action : null;
+};
+
+const terminalPromptLanguage = (responseLanguage?: string): string =>
+  responseLanguage?.trim() || "the user's language";
+
+const handoffTerminalMessages = (turn: TurnContext, responseLanguage?: string): ConversationMessage[] => {
+  if (responseLanguage?.trim()) {
+    return [{ role: "user", content: "Write the handoff message." }];
+  }
+  const latestUserMessage = turn.inputEvent.content.trim();
+  if (!latestUserMessage) {
+    return [{ role: "user", content: "Write the handoff message." }];
+  }
+  return [{
+    role: "user",
+    content: `Latest user message for language detection only:\n${latestUserMessage}\n\nWrite the handoff message.`,
+  }];
 };
 
 /**
@@ -179,20 +204,24 @@ const terminalBehaviorInstruction = (step: RoutineStep, instruction: string): st
  */
 export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
   private readonly promptTemplate: string;
-  private readonly terminalHandoffInstruction: string;
+  private readonly terminalHandoffWithMessagePromptTemplate: string;
+  private readonly terminalHandoffDefaultPromptTemplate: string;
 
   constructor(
     private readonly modelGateway: ConversationModelGateway,
     private readonly options: {
       promptTemplate?: string;
-      terminalHandoffInstruction?: string;
+      terminalHandoffWithMessagePromptTemplate?: string;
+      terminalHandoffDefaultPromptTemplate?: string;
       responseLanguage?: string | Promise<string | undefined>;
       groundedAnswerRenderer?: RoutineGroundedAnswerRenderer;
     } = {},
   ) {
     this.promptTemplate = options.promptTemplate ?? DEFAULT_ROUTINE_STEP_REPLY_PROMPT;
-    this.terminalHandoffInstruction =
-      options.terminalHandoffInstruction ?? DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_PROMPT;
+    this.terminalHandoffWithMessagePromptTemplate =
+      options.terminalHandoffWithMessagePromptTemplate ?? DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT;
+    this.terminalHandoffDefaultPromptTemplate =
+      options.terminalHandoffDefaultPromptTemplate ?? DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT;
   }
 
   async render(input: {
@@ -200,18 +229,32 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
     steering: SteeringRule[];
     turn: TurnContext;
   }): Promise<RenderableTurn> {
+    const responseLanguage = await this.options.responseLanguage;
+    if (isHandoffTerminal(input.step)) {
+      const message = terminalMessage(input.step, input.steering);
+      const systemPrompt = renderPromptTemplate(
+        message ? "chat/routine-step-terminal-handoff-with-message.md" : "chat/routine-step-terminal-handoff-default.md",
+        message ? this.terminalHandoffWithMessagePromptTemplate : this.terminalHandoffDefaultPromptTemplate,
+        {
+          language: terminalPromptLanguage(responseLanguage),
+          ...(message ? { message } : {}),
+        },
+      );
+      const { text } = await this.modelGateway.complete({
+        messages: handoffTerminalMessages(input.turn, responseLanguage),
+        systemPrompt,
+      });
+      return { answer: text.trim() };
+    }
+
     const grounded = await this.options.groundedAnswerRenderer?.render(input);
     if (grounded) {
       return grounded;
     }
 
-    const responseLanguage = await this.options.responseLanguage;
     const systemPrompt = renderPromptTemplate("chat/routine-step-reply.md", this.promptTemplate, {
       answer_scope_reference: scopeReferenceBlock(input.turn.agent),
-      terminal_behavior_instruction: terminalBehaviorInstruction(
-        input.step,
-        this.terminalHandoffInstruction,
-      ),
+      terminal_behavior_instruction: "",
       response_language_instruction: responseLanguageInstruction(responseLanguage),
       instructions: instructionsBlock(input.step, input.steering),
     });

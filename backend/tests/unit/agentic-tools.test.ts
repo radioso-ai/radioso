@@ -13,7 +13,11 @@ import {
   type FinalizedSelection,
 } from "../../src/modules/retrieval/services/agenticTools/index.js";
 import { mergeMetadataFilters } from "../../src/modules/retrieval/services/agenticTools/semanticSearchTool.js";
-import type { RetrievedChunk, VectorSearchPort } from "../../src/modules/retrieval/public.js";
+import type {
+  ChunkCandidateHydratorPort,
+  RetrievedChunk,
+  VectorIndexPort,
+} from "../../src/modules/retrieval/public.js";
 import type { LexicalSearchPort } from "../../src/modules/retrieval/infra/lexicalSearch.js";
 import type { EmbeddingGateway } from "../../src/modules/retrieval/services/embeddingService.js";
 import type { QueryRewritePort } from "../../src/modules/retrieval/domain/queryRewritePort.js";
@@ -96,37 +100,61 @@ describe("mergeMetadataFilters", () => {
 });
 
 describe("semantic_search tool", () => {
-  it("embeds the query, searches, registers the chunks, and returns snippets", async () => {
+  it("embeds the query, searches vector candidates, hydrates chunks, and returns snippets", async () => {
     const embeddingCalls: string[][] = [];
-    const searchCalls: Array<Parameters<VectorSearchPort["search"]>[0]> = [];
+    const indexCalls: Array<Parameters<VectorIndexPort["search"]>[0]> = [];
+    const hydrateCalls: Array<Parameters<ChunkCandidateHydratorPort["hydrate"]>[0]> = [];
     const embeddings: EmbeddingGateway = {
       async embedTexts(texts) {
         embeddingCalls.push(texts);
         return [Array(4).fill(0.1)];
       },
     };
-    const vectorSearch: VectorSearchPort = {
+    const vectorIndex: VectorIndexPort = {
       async search(input) {
-        searchCalls.push(input);
-        return [chunk({ chunkId: "s1" }), chunk({ chunkId: "s2", similarity: 0.7 })];
+        indexCalls.push(input);
+        return [
+          { chunkId: "s1", documentId: "doc-1", score: 0.82 },
+          { chunkId: "s2", documentId: "doc-2", score: 0.7 },
+          { chunkId: "stale", documentId: "doc-stale", score: 0.5 },
+        ];
+      },
+    };
+    const chunkHydrator: ChunkCandidateHydratorPort = {
+      async hydrate(input) {
+        hydrateCalls.push(input);
+        return [chunk({ chunkId: "s1" }), chunk({ chunkId: "s2", documentId: "doc-2", similarity: 0.7 })];
       },
     };
     const registry = new InMemoryChunkRegistry();
     const tool = createSemanticSearchTool({
       workspaceId: "ws-1",
       embeddings,
-      vectorSearch,
+      vectorIndex,
+      chunkHydrator,
       registry,
     });
 
     const result = await tool.invoke({ query: "who was gandhi" }, toolCtx);
 
     expect(embeddingCalls).toEqual([["who was gandhi"]]);
-    expect(searchCalls[0]).toMatchObject({ workspaceId: "ws-1", topK: 5 });
+    expect(indexCalls[0]).toMatchObject({
+      workspaceId: "ws-1",
+      queryEmbeddingDimensions: 4,
+      topK: 5,
+      embeddingModel: "text-embedding-3-small",
+      filter: {},
+    });
+    expect(hydrateCalls[0]).toMatchObject({
+      workspaceId: "ws-1",
+      embeddingModel: "text-embedding-3-small",
+    });
+    expect(hydrateCalls[0].candidates.map((candidate) => candidate.chunkId)).toEqual(["s1", "s2", "stale"]);
     expect(result.results.map((r) => r.chunkId)).toEqual(["s1", "s2"]);
     expect(result.results[0].snippet.length).toBeGreaterThan(0);
     expect(registry.has("s1")).toBe(true);
     expect(registry.has("s2")).toBe(true);
+    expect(registry.has("stale")).toBe(false);
   });
 
   it("scopes embedding usage idempotency to the tool call", async () => {
@@ -137,11 +165,13 @@ describe("semantic_search tool", () => {
         return [[0.1]];
       },
     };
-    const vectorSearch: VectorSearchPort = { async search() { return []; } };
+    const vectorIndex: VectorIndexPort = { async search() { return []; } };
+    const chunkHydrator: ChunkCandidateHydratorPort = { async hydrate() { return []; } };
     const tool = createSemanticSearchTool({
       workspaceId: "ws-1",
       embeddings,
-      vectorSearch,
+      vectorIndex,
+      chunkHydrator,
       registry: new InMemoryChunkRegistry(),
       usageContext,
     });
@@ -156,11 +186,13 @@ describe("semantic_search tool", () => {
 
   it("returns no results when the embedding gateway returns nothing", async () => {
     const embeddings: EmbeddingGateway = { async embedTexts() { return []; } };
-    const vectorSearch: VectorSearchPort = { async search() { throw new Error("should not be called"); } };
+    const vectorIndex: VectorIndexPort = { async search() { throw new Error("should not be called"); } };
+    const chunkHydrator: ChunkCandidateHydratorPort = { async hydrate() { throw new Error("should not be called"); } };
     const tool = createSemanticSearchTool({
       workspaceId: "ws-1",
       embeddings,
-      vectorSearch,
+      vectorIndex,
+      chunkHydrator,
       registry: new InMemoryChunkRegistry(),
     });
     const result = await tool.invoke({ query: "anything" }, toolCtx);
@@ -168,33 +200,49 @@ describe("semantic_search tool", () => {
   });
 
   it("applies the caller-supplied metadataFilter even when the model omits its own", async () => {
-    const searchCalls: Array<Parameters<VectorSearchPort["search"]>[0]> = [];
+    const indexCalls: Array<Parameters<VectorIndexPort["search"]>[0]> = [];
+    const hydrateCalls: Array<Parameters<ChunkCandidateHydratorPort["hydrate"]>[0]> = [];
     const embeddings: EmbeddingGateway = { async embedTexts() { return [[0.1]]; } };
-    const vectorSearch: VectorSearchPort = {
+    const vectorIndex: VectorIndexPort = {
       async search(input) {
-        searchCalls.push(input);
+        indexCalls.push(input);
+        return [];
+      },
+    };
+    const chunkHydrator: ChunkCandidateHydratorPort = {
+      async hydrate(input) {
+        hydrateCalls.push(input);
         return [];
       },
     };
     const tool = createSemanticSearchTool({
       workspaceId: "ws-1",
       embeddings,
-      vectorSearch,
+      vectorIndex,
+      chunkHydrator,
       registry: new InMemoryChunkRegistry(),
       callerMetadataFilter: { tenant: "acme" },
     });
     await tool.invoke({ query: "anything" }, toolCtx);
-    expect(searchCalls[0].metadataFilter).toEqual({ tenant: "acme" });
+    expect(indexCalls[0].filter.metadataContains).toEqual({ tenant: "acme" });
+    expect(hydrateCalls[0].metadataFilter).toEqual({ tenant: "acme" });
   });
 
   it("caller's metadataFilter wins on key conflict with the model's filter", async () => {
-    const searchCalls: Array<Parameters<VectorSearchPort["search"]>[0]> = [];
+    const indexCalls: Array<Parameters<VectorIndexPort["search"]>[0]> = [];
+    const hydrateCalls: Array<Parameters<ChunkCandidateHydratorPort["hydrate"]>[0]> = [];
     const tool = createSemanticSearchTool({
       workspaceId: "ws-1",
       embeddings: { async embedTexts() { return [[0.1]]; } },
-      vectorSearch: {
+      vectorIndex: {
         async search(input) {
-          searchCalls.push(input);
+          indexCalls.push(input);
+          return [];
+        },
+      },
+      chunkHydrator: {
+        async hydrate(input) {
+          hydrateCalls.push(input);
           return [];
         },
       },
@@ -202,14 +250,16 @@ describe("semantic_search tool", () => {
       callerMetadataFilter: { tenant: "acme" },
     });
     await tool.invoke({ query: "q", metadataFilter: { tenant: "other", year: "2025" } }, toolCtx);
-    expect(searchCalls[0].metadataFilter).toEqual({ tenant: "acme", year: "2025" });
+    expect(indexCalls[0].filter.metadataContains).toEqual({ tenant: "acme", year: "2025" });
+    expect(hydrateCalls[0].metadataFilter).toEqual({ tenant: "acme", year: "2025" });
   });
 
   it("respects topK from the agent and caps via Zod at 20", () => {
     const tool = createSemanticSearchTool({
       workspaceId: "ws-1",
       embeddings: { async embedTexts() { return [[0]]; } },
-      vectorSearch: { async search() { return []; } },
+      vectorIndex: { async search() { return []; } },
+      chunkHydrator: { async hydrate() { return []; } },
       registry: new InMemoryChunkRegistry(),
     });
     expect(tool.inputSchema.safeParse({ query: "q", topK: 0 }).success).toBe(false);

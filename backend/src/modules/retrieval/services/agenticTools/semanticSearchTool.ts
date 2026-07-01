@@ -2,8 +2,10 @@ import { z } from "zod";
 
 import type { ModelCallUsageContext } from "../../../../shared/domain/modelCallUsageContext.js";
 import type { AgentTool } from "../../../../shared/agent-runtime/index.js";
+import { EMBEDDING_MODEL_DEFAULT } from "../../../settings/contracts/ingestion.js";
+import type { VectorIndexPort } from "../../domain/vectorIndex.js";
 import type { RetrievalSourceFilter } from "../../domain/retrievalSourceFilter.js";
-import type { VectorSearchPort } from "../../domain/vectorSearch.js";
+import type { ChunkCandidateHydratorPort } from "../../infra/chunkCandidateHydrator.js";
 import type { EmbeddingGateway } from "../embeddingService.js";
 import { fromRetrievedChunk, type ChunkRegistry } from "./chunkRegistry.js";
 
@@ -14,7 +16,8 @@ const DEFAULT_SIMILARITY_THRESHOLD = 0.2;
 export interface SemanticSearchToolDeps {
   readonly workspaceId: string;
   readonly embeddings: EmbeddingGateway;
-  readonly vectorSearch: VectorSearchPort;
+  readonly vectorIndex: VectorIndexPort;
+  readonly chunkHydrator: ChunkCandidateHydratorPort;
   readonly registry: ChunkRegistry;
   readonly sourceFilter?: RetrievalSourceFilter;
   readonly embeddingModel?: string;
@@ -92,14 +95,26 @@ export const createSemanticSearchTool = (
     if (!queryEmbedding) {
       return { results: [] };
     }
-    const chunks = await deps.vectorSearch.search({
+    const metadataFilter = mergeMetadataFilters(input.metadataFilter, deps.callerMetadataFilter);
+    const embeddingModel = deps.embeddingModel ?? EMBEDDING_MODEL_DEFAULT;
+    const candidates = await deps.vectorIndex.search({
       workspaceId: deps.workspaceId,
       queryEmbedding,
+      queryEmbeddingDimensions: queryEmbedding.length,
       topK,
       similarityThreshold: deps.similarityThreshold ?? DEFAULT_SIMILARITY_THRESHOLD,
-      embeddingModel: deps.embeddingModel,
-      metadataFilter: mergeMetadataFilters(input.metadataFilter, deps.callerMetadataFilter),
+      embeddingModel,
+      filter: {
+        metadataContains: metadataFilter,
+        source: deps.sourceFilter,
+      },
+    });
+    const chunks = await deps.chunkHydrator.hydrate({
+      workspaceId: deps.workspaceId,
+      candidates,
+      metadataFilter,
       sourceFilter: deps.sourceFilter,
+      embeddingModel,
     });
     const registered = chunks.map((chunk) => fromRetrievedChunk(chunk, deps.snippetChars));
     deps.registry.record(registered);

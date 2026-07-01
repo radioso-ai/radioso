@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import {
   defaultAgentId,
@@ -55,6 +55,15 @@ const baseRoutine: Omit<RoutineFixture, "id" | "status" | "version"> = {
   updatedAt: nowIso,
 };
 
+const routinesListUrl = new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=behavior&anchor=assistant-routines$`);
+
+const clickBackToRoutines = async (page: Page) => {
+  await Promise.all([
+    page.waitForURL(routinesListUrl),
+    page.getByRole("button", { name: "Back to routines" }).click(),
+  ]);
+};
+
 test("agent routines settings create, validate, publish, and persist", async ({ page }) => {
   const routineUpdates: RoutineMutationFixture[] = [];
 
@@ -66,10 +75,13 @@ test("agent routines settings create, validate, publish, and persist", async ({ 
   await expect(page.getByRole("heading", { name: "Routines", level: 1 })).toBeVisible();
   await expect(page.getByText("No routines yet.")).toBeVisible();
 
-  await page.getByRole("button", { name: "New routine" }).click();
-  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/new$`));
+  await Promise.all([
+    page.waitForURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/new$`)),
+    page.getByRole("button", { name: "New routine" }).click(),
+  ]);
   await expect(page.getByRole("button", { name: "Back to routines" })).toBeVisible();
   await page.getByRole("tab", { name: "Form" }).click();
+  await expect(page.getByLabel("Name")).toBeVisible();
   await page.getByLabel("Name").fill("Collect pricing intake");
   await page.getByLabel("Priority").fill("20");
   await page.getByLabel("Activation trigger").fill("Visitor asks about pricing or wants a quote.");
@@ -147,8 +159,7 @@ test("agent routines settings create, validate, publish, and persist", async ({ 
     },
   });
 
-  await page.getByRole("button", { name: "Back to routines" }).click();
-  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=behavior&anchor=assistant-routines$`));
+  await clickBackToRoutines(page);
   await expect(page.getByText("Collect pricing intake")).toBeVisible();
 });
 
@@ -177,7 +188,7 @@ test("an existing routine opens in prose (outline retired) and toggles to form",
   await expect(page.getByLabel("Step 1 instruction")).toHaveValue("Ask for {{slot.email}} so the team can follow up.");
 });
 
-test("a routine with custom completion copy opens in Form, not Prose", async ({ page }) => {
+test("a routine with custom completion copy opens in Prose with terminal copy preserved", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     routineUpdates: [],
@@ -195,10 +206,8 @@ test("a routine with custom completion copy opens in Form, not Prose", async ({ 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
   await page.getByRole("button", { name: "Edit draft Collect pricing intake" }).click();
 
-  // It opens in Form, and the Prose tab explains why and points back to Form.
-  await expect(page.getByRole("tab", { name: "Form" })).toHaveAttribute("data-state", "active");
-  await page.getByRole("tab", { name: "Prose" }).click();
-  await expect(page.getByText(/advanced steps the prose editor can.t show/i)).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Prose" })).toHaveAttribute("data-state", "active");
+  await expect(page.getByLabel("Completion message")).toHaveValue("Thanks, we will be in touch.");
 });
 
 test("agent routines revise and publish a new version without duplicating the lineage row", async ({ page }) => {
@@ -216,16 +225,15 @@ test("agent routines revise and publish a new version without duplicating the li
   });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await expect(page.getByText("Collect pricing intake")).toHaveCount(1);
-  await expect(page.getByText("published")).toBeVisible();
-  await expect(page.getByText("v1")).toBeVisible();
+  const routineRow = page.getByRole("button", { name: /Collect pricing intake published v1/ });
+  await expect(routineRow).toBeVisible();
 
   await page.getByRole("button", { name: "Edit Collect pricing intake" }).click();
   await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/55555555-5555-4555-8555-000000000001$`));
   await expect(page.getByText("draft v2", { exact: true })).toBeVisible();
   await expect.poll(() => routineUpdates.some((update) => update.method === "REVISE")).toBe(true);
 
-  await page.getByRole("button", { name: "Back to routines" }).click();
+  await clickBackToRoutines(page);
   await expect(page.getByText("Collect pricing intake")).toHaveCount(1);
   await expect(page.getByText("draft revision")).toBeVisible();
 
@@ -234,12 +242,12 @@ test("agent routines revise and publish a new version without duplicating the li
   await page.getByRole("button", { name: "Publish", exact: true }).click();
 
   await expect(page.getByText("published v2 (read-only)", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /v1/ })).toContainText("superseded");
-  await expect(page.getByRole("button", { name: /v2/ })).toContainText("published");
+  const versionHistory = page.getByText("Version history").locator("..");
+  await expect(versionHistory.getByRole("button", { name: /v1/ })).toContainText("superseded");
+  await expect(versionHistory.getByRole("button", { name: /v2/ })).toContainText("published");
   await expect.poll(() => routineUpdates.some((update) => update.method === "PUBLISH")).toBe(true);
 
-  await page.getByRole("button", { name: "Back to routines" }).click();
-  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}\\?tab=behavior&anchor=assistant-routines$`));
+  await clickBackToRoutines(page);
   await expect(page.getByText("Collect pricing intake")).toHaveCount(1);
   await expect(page.getByText("draft revision")).toHaveCount(0);
   await expect(page.getByText("v2", { exact: true })).toBeVisible();
@@ -266,7 +274,7 @@ test("agent routines archive and restore from the collapsed archived section", a
   await expect(page.getByText("archived v2 (read-only)", { exact: true })).toBeVisible();
   await expect.poll(() => routineUpdates.some((update) => update.method === "ARCHIVE")).toBe(true);
 
-  await page.getByRole("button", { name: "Back to routines" }).click();
+  await clickBackToRoutines(page);
   await expect(page.getByText("Collect pricing intake")).toBeHidden();
   await page.getByRole("button", { name: "Archived routines (1)" }).click();
   await expect(page.getByText("Collect pricing intake")).toBeVisible();

@@ -1,7 +1,9 @@
 import type { EmbeddingService } from "./embeddingService.js";
-import type { IngestionSettingsRecord } from "../../settings/contracts/ingestion.js";
+import { EMBEDDING_MODEL_DEFAULT, type IngestionSettingsRecord } from "../../settings/contracts/ingestion.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
+import type { ChunkCandidateHydratorPort } from "../infra/chunkCandidateHydrator.js";
+import type { VectorIndexPort } from "../domain/vectorIndex.js";
 import type { RetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
 import type { RetrievedChunk, VectorSearchPort } from "../domain/vectorSearch.js";
 import type { CandidateRetrievalStage as CandidateRetrievalStageContract, QueryInterpretationStageResult } from "./retrievalPipelineStages.js";
@@ -12,10 +14,24 @@ export interface IngestionSettingsReaderPort {
 
 export class CandidateRetrievalStageService implements CandidateRetrievalStageContract {
   constructor(
+    embeddingService: EmbeddingService,
+    vectorSearch: VectorSearchPort,
+    lexicalSearch: LexicalSearchPort,
+    ingestionSettingsService?: IngestionSettingsReaderPort,
+  );
+  constructor(
+    embeddingService: EmbeddingService,
+    vectorSearch: VectorIndexPort,
+    lexicalSearch: LexicalSearchPort,
+    ingestionSettingsService: IngestionSettingsReaderPort | undefined,
+    chunkHydrator: ChunkCandidateHydratorPort,
+  );
+  constructor(
     private readonly embeddingService: EmbeddingService,
-    private readonly vectorSearch: VectorSearchPort,
+    private readonly vectorSearch: VectorSearchPort | VectorIndexPort,
     private readonly lexicalSearch: LexicalSearchPort,
     private readonly ingestionSettingsService?: IngestionSettingsReaderPort,
+    private readonly chunkHydrator?: ChunkCandidateHydratorPort,
   ) {}
 
   async execute(input: QueryInterpretationStageResult) {
@@ -52,6 +68,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
         this.searchWithFallback({
           workspaceId: input.request.workspaceId,
           queryEmbedding: embeddingBySemanticQuery.get(query) ?? [],
+          queryEmbeddingDimensions: (embeddingBySemanticQuery.get(query) ?? []).length,
           topK: input.settings.vectorTopK,
           similarityThreshold: input.settings.similarityThreshold,
           embeddingModel,
@@ -120,13 +137,42 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
   private async searchWithFallback(input: {
     workspaceId: string;
     queryEmbedding: number[];
+    queryEmbeddingDimensions: number;
     topK: number;
     similarityThreshold: number;
     embeddingModel?: string;
     metadataFilter?: Record<string, unknown>;
     sourceFilter?: RetrievalSourceFilter;
   }): Promise<{ contexts: RetrievedChunk[]; fallbackApplied: boolean }> {
-    const rows = await this.vectorSearch.search(input);
+    if (!this.chunkHydrator) {
+      const rows = await (this.vectorSearch as VectorSearchPort).search(input);
+
+      return {
+        contexts: rows,
+        fallbackApplied: false,
+      };
+    }
+
+    const embeddingModel = input.embeddingModel ?? EMBEDDING_MODEL_DEFAULT;
+    const candidates = await (this.vectorSearch as VectorIndexPort).search({
+      workspaceId: input.workspaceId,
+      queryEmbedding: input.queryEmbedding,
+      queryEmbeddingDimensions: input.queryEmbeddingDimensions,
+      topK: input.topK,
+      similarityThreshold: input.similarityThreshold,
+      embeddingModel,
+      filter: {
+        metadataContains: input.metadataFilter,
+        source: input.sourceFilter,
+      },
+    });
+    const rows = await this.chunkHydrator.hydrate({
+      workspaceId: input.workspaceId,
+      candidates,
+      metadataFilter: input.metadataFilter,
+      sourceFilter: input.sourceFilter,
+      embeddingModel,
+    });
 
     return {
       contexts: rows,

@@ -206,7 +206,7 @@ test("Slack routine skill authoring creates and disables a skill", async ({ page
   await skillDialog.getByLabel("text slot").fill("message");
   await skillDialog.getByRole("button", { name: "Create skill" }).click();
 
-  await expect(page.getByText("@post_update_to_slack")).toBeVisible();
+  await expect(page.getByText("@post_update_to_slack", { exact: true })).toBeVisible();
   await expect.poll(() =>
     Boolean(agentSkillRequests.find((request) =>
       request.method === "POST" &&

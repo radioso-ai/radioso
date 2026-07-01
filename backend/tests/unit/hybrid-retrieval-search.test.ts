@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { deriveLexicalQueryPlan } from "../../src/modules/retrieval/domain/lexicalQueryPlan.js";
 import { PgLexicalSearch } from "../../src/modules/retrieval/infra/lexicalSearch.js";
-import { PgVectorSearch } from "../../src/modules/retrieval/infra/vectorSearch.js";
+import { PgVectorIndex, PgVectorSearch } from "../../src/modules/retrieval/infra/vectorSearch.js";
 import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
 import { renderSearchText } from "../../src/modules/retrieval/services/searchTextRenderer.js";
 
@@ -255,6 +255,56 @@ describe("hybrid retrieval search", () => {
     expect(statements[0]).toBe("SET LOCAL hnsw.iterative_scan = strict_order");
     expect(transactionalQueryCount).toBe(1);
     expect(results).toEqual([]);
+  });
+
+  it("returns ranked chunk candidates from pgvector without hydrating chunk rows", async () => {
+    const index = new PgVectorIndex({
+      async query() {
+        return [];
+      },
+      async withTransaction(callback: (client: { query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }> }) => Promise<unknown>) {
+        const client = {
+          async query(sql: string, params?: unknown[]) {
+            if (sql.startsWith("SET LOCAL")) {
+              return { rows: [] };
+            }
+
+            expect(params).toEqual(["workspace-1", "[0.1,0.2]", 2, 0.8, "text-embedding-3-small", 2]);
+            expect(sql).toContain("SELECT chunk_id");
+            expect(sql).toContain("document_id");
+            expect(sql).toContain("1 - distance AS score");
+            expect(sql).not.toContain("content");
+            return {
+              rows: [
+                {
+                  chunk_id: "chunk-1",
+                  document_id: "doc-1",
+                  score: 0.91,
+                },
+              ],
+            };
+          },
+        };
+
+        return callback(client);
+      },
+    } as never);
+
+    await expect(index.search({
+      workspaceId: "workspace-1",
+      queryEmbedding: [0.1, 0.2],
+      queryEmbeddingDimensions: 2,
+      topK: 2,
+      similarityThreshold: 0.2,
+      embeddingModel: "text-embedding-3-small",
+      filter: {},
+    })).resolves.toEqual([
+      {
+        chunkId: "chunk-1",
+        documentId: "doc-1",
+        score: 0.91,
+      },
+    ]);
   });
 
   it("falls back to the plain filtered query when iterative scan settings are unavailable", async () => {

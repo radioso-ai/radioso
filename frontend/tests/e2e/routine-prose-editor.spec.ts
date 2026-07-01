@@ -33,8 +33,9 @@ test("author a routine with variable and skill chips, set a type, and save", asy
   await editor.pressSequentially("Ask for the order id and the reason. Collect ");
   // Underscore in the name must keep the menu open (regression: it cancelled the popover).
   await editor.pressSequentially("@order_id");
-  await expect(page.getByRole("option", { name: /Create variable/ })).toBeVisible();
-  await page.keyboard.press("Enter");
+  const createVariableOption = page.getByRole("option", { name: /Create variable/ });
+  await expect(createVariableOption).toBeVisible();
+  await createVariableOption.click();
 
   const variableChip = page.locator('[data-routine-chip="variable"]');
   await expect(variableChip).toBeVisible();

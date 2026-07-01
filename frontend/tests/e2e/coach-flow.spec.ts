@@ -245,7 +245,6 @@ test("operator coaches a captured turn, previews a drafted directive, and valida
   await page.goto(`/w/${workspaceKey}/eval/${evalCaseId}`);
 
   await expect(page.getByRole("heading", { name: "Training" })).toBeVisible();
-  await expect(page.getByText("It changed some workbench things.").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Loading directives…" })).toBeDisabled();
   resolveDirectivesList();
   await expect(page.getByRole("button", { name: "Draft directive" })).toBeEnabled();

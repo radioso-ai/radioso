@@ -15,8 +15,10 @@ import { RetrievalExecutionTelemetryService } from "./retrievalExecutionTelemetr
 import type { RetrievalExecutionDiagnostics } from "../domain/retrievalPipelineTypes.js";
 import { resolveRetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
 import type { RetrievalDefaultsProvider } from "../domain/retrievalDefaultsProvider.js";
+import type { VectorIndexPort } from "../domain/vectorIndex.js";
 import type { VectorSearchPort } from "../domain/vectorSearch.js";
 import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
+import type { ChunkCandidateHydratorPort } from "../infra/chunkCandidateHydrator.js";
 import { PromptBuilder } from "./promptBuilder.js";
 import { CandidateRetrievalStageService } from "./candidateRetrievalStage.js";
 import { CandidatePreparationStageService } from "./candidatePreparationStage.js";
@@ -130,6 +132,42 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
     _semanticQueryConstraintService?: unknown,
     ingestionSettingsService?: IngestionSettingsService,
     skillSettingsResolver?: SkillSettingsResolver,
+  );
+  constructor(
+    retrievalDefaultsProvider: RetrievalDefaultsProvider,
+    embeddingService: EmbeddingService,
+    vectorSearch: VectorIndexPort,
+    lexicalSearch: LexicalSearchPort,
+    conversationContextService: ConversationContextService,
+    queryRewriteService: QueryRewriteService,
+    candidatePreparationService: CandidatePreparationService,
+    _attributeMatchScoringService: unknown,
+    rerankService: RerankService,
+    promptContextSelectorService: PromptContextSelectorService,
+    promptBuilder: PromptBuilder,
+    retrievalExecutionTelemetryService: RetrievalExecutionTelemetryService,
+    _semanticQueryConstraintService: unknown,
+    ingestionSettingsService: IngestionSettingsService | undefined,
+    skillSettingsResolver: SkillSettingsResolver | undefined,
+    chunkHydrator: ChunkCandidateHydratorPort,
+  );
+  constructor(
+    retrievalDefaultsProvider: RetrievalDefaultsProvider,
+    embeddingService: EmbeddingService,
+    vectorSearch: VectorIndexPort | VectorSearchPort,
+    lexicalSearch: LexicalSearchPort,
+    conversationContextService: ConversationContextService,
+    queryRewriteService: QueryRewriteService,
+    candidatePreparationService: CandidatePreparationService,
+    _attributeMatchScoringService: unknown,
+    rerankService: RerankService,
+    promptContextSelectorService: PromptContextSelectorService,
+    promptBuilder: PromptBuilder,
+    retrievalExecutionTelemetryService: RetrievalExecutionTelemetryService,
+    _semanticQueryConstraintService?: unknown,
+    ingestionSettingsService?: IngestionSettingsService,
+    skillSettingsResolver?: SkillSettingsResolver,
+    chunkHydrator?: ChunkCandidateHydratorPort,
   ) {
     this.retrievalContextStage = new RetrievalContextStageService(
       retrievalDefaultsProvider,
@@ -137,12 +175,20 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
       skillSettingsResolver,
     );
     this.queryInterpretationStage = new QueryInterpretationStageService(queryRewriteService);
-    this.candidateRetrievalStage = new CandidateRetrievalStageService(
-      embeddingService,
-      vectorSearch,
-      lexicalSearch,
-      ingestionSettingsService,
-    );
+    this.candidateRetrievalStage = chunkHydrator
+      ? new CandidateRetrievalStageService(
+          embeddingService,
+          vectorSearch as VectorIndexPort,
+          lexicalSearch,
+          ingestionSettingsService,
+          chunkHydrator,
+        )
+      : new CandidateRetrievalStageService(
+          embeddingService,
+          vectorSearch as VectorSearchPort,
+          lexicalSearch,
+          ingestionSettingsService,
+        );
     this.candidatePreparationStage = new CandidatePreparationStageService(
       candidatePreparationService,
       new MetadataRuleScoringService(),

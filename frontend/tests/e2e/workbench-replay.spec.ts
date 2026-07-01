@@ -361,7 +361,7 @@ test("quality turn creates and opens an eval case", async ({ page }) => {
   await installQualityMocks(page);
 
   await page.goto(`/w/${workspaceKey}/quality`);
-  await page.getByRole("button", { name: /open .* turn in eval/i }).click();
+  await page.getByRole("button", { name: "Open turn in Eval" }).click();
 
   await expect(page).toHaveURL(`/w/${workspaceKey}/eval/${evalCaseId}`);
   await expect(page.getByRole("heading", { name: "Workbench replay regression" })).toBeVisible();

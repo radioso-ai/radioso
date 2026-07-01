@@ -17,7 +17,9 @@ session behavior, or frontend presentation rules.
 
 Chunk persistence belongs to Documents because chunks are canonical document
 records. Vector-specific write details are delegated through the retrieval-owned
-chunk vector storage adapter so Documents does not own vector index behavior.
+chunk vector storage/vector-index adapter so Documents does not own vector index
+behavior. Search-time hydration of ranked vector candidates also goes back
+through canonical chunk storage before chunks are used by retrieval.
 
 ## Public Surfaces
 

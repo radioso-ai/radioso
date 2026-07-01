@@ -123,10 +123,7 @@ const requireAdminToken = (): RequestHandler => (req, res, next) => {
 
 const resolveStaffCookieName = (dependencies: RouteDependencies): string => {
   const value = dependencies.env.STAFF_SESSION_COOKIE_NAME?.trim() || process.env.STAFF_SESSION_COOKIE_NAME?.trim();
-  if (!value) {
-    throw new Error("STAFF_SESSION_COOKIE_NAME is required for the operator console");
-  }
-  return value;
+  return value || "radioso_staff_session";
 };
 
 const resolveStaffTtlHours = (dependencies: RouteDependencies): number => {

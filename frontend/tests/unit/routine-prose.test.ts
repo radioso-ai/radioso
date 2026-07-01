@@ -141,30 +141,63 @@ describe('routine prose helpers', () => {
     expect(draft.terminals.map((terminal) => terminal.kind).sort()).toEqual(['complete', 'handoff'])
   })
 
-  // A decided-by-AI condition is a chip (no operator, phrase in `value`) so it stays togglable
-  // both ways. It compiles to an `llm` guard, and an `llm` guard reverse-renders back to that
-  // chip — so the AI ↔ code switch survives a reload (issue: "once decided by AI, can't go back").
-  it('round-trips an AI-mode condition chip ↔ llm guard', () => {
+  // A decided-by-AI guard reverse-renders as a bare AI⇄code selector chip (op-less, no phrase
+  // payload) followed by the phrase as ordinary text — so the phrase stays fully editable
+  // (issue: "the AI phrase freezes into a chip after validate/publish") while the selector keeps
+  // it togglable back to decided-in-code (issue: "once decided by AI, can't go back").
+  it('reverse-renders an llm guard as a bare selector chip + fluid text', () => {
     const draft = draftFromChipDoc({
       name: 'Refund',
       trigger: 'wants a refund',
       blocks: [
         { text: 'Review the case.', chips: [] },
+        // Legacy authored shape (phrase carried on the chip's value) still compiles to an llm guard.
         { text: '', chips: [{ kind: 'condition', refId: '', op: null, value: 'the customer seems upset' }, { kind: 'handoff', refId: 'handoff' }] },
       ],
       variables: [],
     })
-    // The op-less condition chip compiled to an AI-decided (llm) guard carrying its phrase.
     expect(draft.transitions).toContainEqual(
       expect.objectContaining({ toRef: 'handoff', guardKind: 'llm', guardText: 'the customer seems upset' }),
     )
-    // Reverse: that llm guard comes back as an AI condition chip (op-less, phrase in value) —
-    // not bare text — so the editor can render its toggle.
     const doc = routineToChipDoc(draft)
     expect(doc).not.toBeNull()
     const segments = doc!.paragraphs.flatMap((paragraph) => paragraph.segments)
-    expect(segments).toContainEqual(expect.objectContaining({ kind: 'chip', chipKind: 'condition', value: 'the customer seems upset' }))
-    expect(segments).not.toContainEqual(expect.objectContaining({ kind: 'text', text: 'the customer seems upset' }))
+    // The selector chip is a bare marker: op-less, empty ref, no phrase baked in.
+    expect(segments).toContainEqual(expect.objectContaining({ kind: 'chip', chipKind: 'condition', refId: '', label: '' }))
+    // The phrase is fluid text, not baked into the chip's value.
+    expect(segments).toContainEqual({ kind: 'text', text: 'the customer seems upset' })
+    expect(segments).not.toContainEqual(expect.objectContaining({ kind: 'chip', value: 'the customer seems upset' }))
+  })
+
+  // The whole point of the split: editing the branch line's prose changes the guard the AI
+  // judges. An llm guard loaded as selector-plus-text must recompile from the edited text.
+  it('flows an edit of the AI guard prose back into the llm guard', () => {
+    const draft = draftFromChipDoc({
+      name: 'Refund',
+      trigger: 'wants a refund',
+      blocks: [
+        { text: 'Review the case.', chips: [] },
+        // The fluid-text shape the editor now produces: bare selector chip + phrase as prose.
+        { text: 'the customer seems upset', chips: [{ kind: 'condition', refId: '', op: null }, { kind: 'handoff', refId: 'handoff' }] },
+      ],
+      variables: [],
+    })
+    expect(draft.transitions).toContainEqual(
+      expect.objectContaining({ toRef: 'handoff', guardKind: 'llm', guardText: 'the customer seems upset' }),
+    )
+    const doc = routineToChipDoc(draft)!
+    // Edit the fluid text segment, as the author would type in the editor.
+    const paragraphs = doc.paragraphs.map((paragraph) => ({
+      ...paragraph,
+      segments: paragraph.segments.map((segment) =>
+        segment.kind === 'text' && segment.text === 'the customer seems upset'
+          ? { kind: 'text' as const, text: 'the customer is at risk of churning' }
+          : segment),
+    }))
+    const edited = draftFromChipDoc({ name: 'Refund', trigger: 'wants a refund', blocks: paragraphsToBlocks(paragraphs), variables: doc.variables })
+    expect(edited.transitions).toContainEqual(
+      expect.objectContaining({ toRef: 'handoff', guardKind: 'llm', guardText: 'the customer is at risk of churning' }),
+    )
   })
 
   it('compiles a condition chip into a decided-in-code (field) branch', () => {

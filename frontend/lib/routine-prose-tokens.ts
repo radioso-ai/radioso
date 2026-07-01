@@ -124,6 +124,9 @@ const formatConditionToken = (chip: ChipTokenInput): string => {
   // An outcome guard is a condition chip with the sentinel ref; its status rides in `value`.
   if (chip.refId === OUTCOME_GUARD_REF) return `[outcome ${formatLiteral(chip.value ?? '')}]`
   const op = chip.op
+  // A bare AI⇄code selector (empty ref, no operator) is a marker only; the decided-by-AI phrase
+  // rides in the adjacent prose text, so the chip itself contributes no token.
+  if (!chip.refId && !op) return ''
   if (!op) return `[if ${chip.refId}]`
   const token = OP_TOKENS[op]
   if (!opNeedsValue(op)) return `[if ${chip.refId} ${token}]`

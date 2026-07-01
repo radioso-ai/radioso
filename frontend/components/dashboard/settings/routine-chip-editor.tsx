@@ -845,8 +845,9 @@ function $proseParagraphToNode(paragraph: ProseParagraph): LexicalNode {
     } else if (segment.chipKind === 'condition' && segment.op) {
       node.append($createConditionChipNode(segment.refId, segment.op, segment.label, segment.value ?? null, segment.values ?? null, segment.unit ?? null))
     } else if (segment.chipKind === 'condition') {
-      // A decided-by-AI condition (no operator): carries its phrase in `value`/label.
-      node.append($createAiConditionChipNode(typeof segment.value === 'string' ? segment.value : segment.label))
+      // A decided-by-AI selector (no operator): a bare marker; the phrase rides in the adjacent
+      // text segment, so the chip carries no payload.
+      node.append($createAiConditionChipNode())
     } else if (segment.chipKind === 'step') {
       node.append($createStepChipNode(segment.refId, segment.label, segment.counterLimit ?? null))
     } else if (segment.chipKind === 'approval') {
@@ -1047,9 +1048,12 @@ function ClipboardRoundTripPlugin({
 
 // How a branch line is decided, derived structurally from its chips — never from the
 // words (Radioso is multilingual). A line with no target chip isn't a branch. A branch
-// with a condition chip, or a counter-bounded jump, is decided in code ('rule'); any other
-// branch is decided by the AI from its prose ('ai').
-function $branchDecisionKind(block: LexicalNode): 'rule' | 'ai' | null {
+// with a structured comparison / counter-bounded jump / outcome guard is decided in code
+// ('rule'); any other branch is decided by the AI from its prose. AI branches split by whether
+// they carry the interactive AI⇄code selector chip: 'ai-chip' (the chip is the visible "AI
+// decides" badge, so the line adds no duplicate ::before badge) vs 'ai' (bare-text branch, which
+// relies on the line badge). Both are AI-decided; the distinction only governs the badge.
+function $branchDecisionKind(block: LexicalNode): 'rule' | 'ai' | 'ai-chip' | null {
   if ($isHeadingNode(block) || !$isElementNode(block)) return null
   const chips = block.getChildren().filter($isChipNode)
   const hasTarget = chips.some((chip) => {
@@ -1057,10 +1061,20 @@ function $branchDecisionKind(block: LexicalNode): 'rule' | 'ai' | null {
     return kind === 'end' || kind === 'handoff' || kind === 'step'
   })
   if (!hasTarget) return null
-  const deterministic = chips.some(
-    (chip) => chip.getChipKind() === 'condition' || (chip.getChipKind() === 'step' && chip.getChipCounterLimit() != null),
+  const deterministic = chips.some((chip) => {
+    if (chip.getChipKind() === 'step') return chip.getChipCounterLimit() != null
+    if (chip.getChipKind() !== 'condition') return false
+    // A condition chip is decided in code only when it's a structured comparison (an operator)
+    // or an outcome guard; a bare AI selector (no operator) is decided by the AI from its prose.
+    return chip.getChipOp() != null || chip.getRefId() === OUTCOME_GUARD_REF
+  })
+  if (deterministic) return 'rule'
+  // A bare AI⇄code selector chip (condition, no operator, not an outcome guard) already shows
+  // the "AI decides" badge, so its line skips the ::before badge to avoid a duplicate.
+  const hasSelectorChip = chips.some(
+    (chip) => chip.getChipKind() === 'condition' && chip.getChipOp() == null && chip.getRefId() !== OUTCOME_GUARD_REF,
   )
-  return deterministic ? 'rule' : 'ai'
+  return hasSelectorChip ? 'ai-chip' : 'ai'
 }
 
 // Tag each branch line with its decision kind so the surface can badge "Rule" vs "AI

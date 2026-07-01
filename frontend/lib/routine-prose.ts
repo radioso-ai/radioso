@@ -382,15 +382,17 @@ export function draftFromChipDoc(input: {
         fieldUnit: condition.unit ?? null,
         ordinal: ordinal++,
       })
-    } else if (condition && typeof condition.value === 'string' && condition.value.trim()) {
-      // A decided-by-AI condition chip: no operator, just the comparison in prose. It carries
-      // its phrase in `value` so it stays a togglable chip (vs bare prose) and compiles to an
-      // `llm` guard — the AI judges the phrase at runtime.
+    } else if (condition) {
+      // A decided-by-AI condition chip: no operator. The chip is a bare AI⇄code selector; the
+      // comparison phrase lives as fluid prose (block.text) so the author edits it as ordinary
+      // text, not a frozen chip. Older documents stored the phrase on the chip's `value`, so
+      // fall back to that. Compiles to an `llm` guard — the AI judges the phrase at runtime.
+      const phrase = block.text.trim() || (typeof condition.value === 'string' ? condition.value.trim() : '')
       transitions.push({
         fromStep,
         toRef,
         guardKind: 'llm',
-        guardText: condition.value.trim(),
+        guardText: phrase,
         outcomeStatus: null,
         counterLimit: null,
         ordinal: ordinal++,
@@ -710,10 +712,15 @@ function branchGuardSegments(edge: RoutineTransition, nameByRef: Map<string, str
     }]
   }
   if (edge.guardKind === 'llm' && edge.guardText) {
-    // A decided-by-AI guard renders as an AI-mode condition chip (no operator), carrying its
-    // phrase in `value`. Keeping it a chip — not bare text — means it stays togglable back to
-    // decided-in-code after a reload (issue: "once decided by AI, can't go back").
-    return [{ kind: 'chip', chipKind: 'condition', refId: '', label: edge.guardText, value: edge.guardText }]
+    // A decided-by-AI guard renders as a bare AI⇄code selector chip (no operator, no phrase
+    // payload) followed by the phrase as ordinary editable text. The chip keeps the guard
+    // togglable back to decided-in-code after a reload (issue: "once decided by AI, can't go
+    // back"); splitting the phrase out as text keeps it fully fluid (issue: "the AI phrase
+    // freezes into a chip once the routine is validated/published").
+    return [
+      { kind: 'chip', chipKind: 'condition', refId: '', label: '' },
+      { kind: 'text', text: edge.guardText },
+    ]
   }
   // An outcome guard's status is in `outcomeStatus`, or (legacy/Form-equivalent) in `guardText`
   // — the compiler reads `outcomeStatus ?? guardText`, so accept either.

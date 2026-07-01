@@ -475,6 +475,64 @@ test("a condition chip compiles a decided-in-code (field) branch", async ({ page
   expect(fieldBranch).toMatchObject({ guardKind: "field", fieldRef: "status", fieldOp: "in", fieldValues: ["final_sale", "void"] });
 });
 
+test("toggling a rule to AI drops the comparison into the line as editable fluid text", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Eligibility");
+  await page.getByLabel("Trigger", { exact: true }).fill("When a customer asks about eligibility");
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+  await editor.pressSequentially("Check the age ");
+  await editor.pressSequentially("@customer_age");
+  await expect(page.getByRole("option", { name: /Create variable/ })).toBeVisible();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter"); // new branch line
+
+  // Add an end target on the branch line.
+  await page.getByRole("button", { name: "End", exact: true }).click();
+  await expect(page.locator('[data-routine-chip="end"]')).toBeVisible();
+
+  // Build a decided-in-code rule: "customer_age is at least 18".
+  await page.getByRole("button", { name: "Condition" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Variable").selectOption({ label: "customer_age" });
+  await dialog.getByLabel("Type").selectOption("number");
+  await dialog.getByLabel("Check").selectOption("gte");
+  await dialog.getByLabel("Value").fill("18");
+  await dialog.getByRole("button", { name: "Add check" }).click();
+  await expect(page.locator('[data-routine-chip="condition"][data-guard-mode="code"]')).toBeVisible();
+
+  // Toggle the rule to decided-by-AI: the comparison is freed into the branch line as
+  // ordinary editable text, and the chip stays a bare AI⇄code selector (not a frozen phrase).
+  await page.locator('[data-routine-chip="condition"][data-guard-mode="code"]').click();
+  await page.getByRole("menuitem", { name: "Switch to decided by AI" }).click();
+  await expect(page.locator('[data-routine-chip="condition"][data-guard-mode="ai"]')).toBeVisible();
+  await expect(editor).toContainText("customer_age is at least 18");
+
+  // The selector chip IS the "AI decides" badge, so the branch line must not also paint the
+  // ::before badge — otherwise the line shows two identical badges (the reported duplicate).
+  const branchLine = page.locator('[data-routine-branch="ai-chip"]');
+  await expect(branchLine).toHaveCount(1);
+  const beforeBadge = await branchLine.evaluate((element) => getComputedStyle(element, "::before").content);
+  expect(beforeBadge === "none" || beforeBadge === "" || beforeBadge === "normal").toBe(true);
+
+  await page.getByRole("button", { name: "Save routine" }).click();
+
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  const created = routineUpdates.find((update) => update.method === "POST");
+  const branch = (created?.body?.transitions ?? []).find(
+    (transition: { guardKind: string; toRef: string }) => transition.toRef === "done" && transition.guardKind === "llm",
+  );
+  // The freed comparison is now the AI guard's phrase — decided by AI from fluid prose.
+  expect(branch).toMatchObject({ guardKind: "llm", guardText: "customer_age is at least 18" });
+});
+
 test("an 'older than 6 months' check compiles a relative-date field guard", async ({ page }) => {
   const routineUpdates: RoutineMutationFixture[] = [];
 

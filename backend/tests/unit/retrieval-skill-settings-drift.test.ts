@@ -9,6 +9,11 @@ import {
 } from "../../src/modules/retrieval/domain/retrievalSkillSettings.js";
 
 const PER_AGENT_RETRIEVAL_MANIFEST_FIELD_DELTA = ["similarityThreshold"] as const;
+const TEMPORAL_RETRIEVAL_SETTING_FIELDS = [
+  "temporalStructuredLookupEnabled",
+  "temporalBoostUpcomingEnabled",
+  "temporalDeterministicSortEnabled",
+] as const;
 
 const sorted = (values: Iterable<string>) => [...values].sort((a, b) => a.localeCompare(b));
 
@@ -53,6 +58,8 @@ describe("retrieval skill settings override schema", () => {
 
     expect(sorted(delta)).toEqual(["similarityThreshold"]);
     expect(manifestFields).toEqual(expect.arrayContaining([...PER_AGENT_RETRIEVAL_MANIFEST_FIELD_DELTA]));
+    expect(manifestFields).toEqual(expect.arrayContaining([...TEMPORAL_RETRIEVAL_SETTING_FIELDS]));
+    expect(perAgentFields).toEqual(expect.arrayContaining([...TEMPORAL_RETRIEVAL_SETTING_FIELDS]));
     expect(sorted(perAgentFields)).toEqual(sorted(manifestFields.filter((field) => !delta.has(field))));
 
     const manifestRule = manifest.schemas.RetrievalSettingsOverride.properties.metadataRules.items;

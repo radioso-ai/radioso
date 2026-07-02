@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { parseStructuredRewrite } from "../../src/modules/retrieval/services/queryRewriteParser.js";
 import { GatewayQueryRewritePortAdapter } from "../../src/modules/retrieval/services/gatewayQueryRewritePortAdapter.js";
 import type {
   QueryRewriteGateway,
@@ -114,5 +115,56 @@ describe("GatewayQueryRewritePortAdapter", () => {
     const result = await adapter.rewrite({ query: "original" });
 
     expect(result).toEqual({ semantic: "original", lexical: "original" });
+  });
+});
+
+describe("parseStructuredRewrite temporal query mode", () => {
+  it("preserves model-returned temporal listing mode for event date lookups", () => {
+    const result = parseStructuredRewrite(JSON.stringify({
+      rewrittenQuery: "upcoming events",
+      queryShape: "event_date_lookup",
+      temporalQueryMode: "listing",
+      turnKind: "fresh_subject",
+      relatedEntities: [],
+      unresolved: false,
+      confidence: 0.91,
+    }));
+
+    expect(result.temporalQueryMode).toBe("listing");
+  });
+
+  it("preserves model-returned topic refinement mode for named temporal questions", () => {
+    const result = parseStructuredRewrite(JSON.stringify({
+      rewrittenQuery: "summer workshop date",
+      queryShape: "event_date_lookup",
+      temporalQueryMode: "topic_refinement",
+      turnKind: "fresh_subject",
+      relatedEntities: ["summer workshop"],
+      unresolved: false,
+      confidence: 0.87,
+    }));
+
+    expect(result.temporalQueryMode).toBe("topic_refinement");
+  });
+
+  it("defaults to none when the model omits or returns an unsupported mode", () => {
+    expect(parseStructuredRewrite(JSON.stringify({
+      rewrittenQuery: "events",
+      queryShape: "event_date_lookup",
+      temporalQueryMode: "upcoming",
+      turnKind: "fresh_subject",
+      relatedEntities: [],
+      unresolved: false,
+      confidence: 0.5,
+    })).temporalQueryMode).toBe("none");
+
+    expect(parseStructuredRewrite(JSON.stringify({
+      rewrittenQuery: "events",
+      queryShape: "event_date_lookup",
+      turnKind: "fresh_subject",
+      relatedEntities: [],
+      unresolved: false,
+      confidence: 0.5,
+    })).temporalQueryMode).toBe("none");
   });
 });

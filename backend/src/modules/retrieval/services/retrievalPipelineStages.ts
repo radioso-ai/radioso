@@ -10,6 +10,7 @@ import type {
   RewrittenRetrievalQuery,
   RetrievalAnswerShapeSelection,
   RetrievalExecutionMetadata,
+  TemporalQueryMode,
   TriggerAnalysisResult,
   TriggerBackoffDecision,
 } from "../domain/retrievalPipelineTypes.js";
@@ -82,6 +83,9 @@ export interface CandidateRetrievalStageResult extends QueryInterpretationStageR
   originalContexts: RetrievedChunk[];
   rewrittenContexts: RetrievedChunk[];
   lexicalContexts: RetrievedChunk[];
+  temporalContexts?: RetrievedChunk[];
+  temporalQueryMode?: TemporalQueryMode;
+  temporalStructuredLookupEnabled?: boolean;
   retrievalBranches: RetrievalBranchResult[];
   vectorFallbackApplied: boolean;
 }
@@ -186,6 +190,9 @@ type TraceCandidateRetrievalInput = TraceQueryInterpretationInput & {
   originalContexts?: Array<unknown>;
   rewrittenContexts?: Array<unknown>;
   lexicalContexts?: Array<unknown>;
+  temporalContexts?: Array<unknown>;
+  temporalQueryMode?: TemporalQueryMode;
+  temporalStructuredLookupEnabled?: boolean;
   retrievalBranches?: Array<unknown>;
   activeRetrievalSubqueries?: Array<unknown>;
   vectorFallbackApplied?: unknown;
@@ -282,6 +289,9 @@ export const buildCandidateRetrievalTraceAttributes = (result: TraceCandidateRet
     "retrieval.candidates.semantic_original.count": boundedTraceCount(result.originalContexts?.length),
     "retrieval.candidates.semantic_rewritten.count": boundedTraceCount(result.rewrittenContexts?.length),
     "retrieval.candidates.lexical.count": boundedTraceCount(result.lexicalContexts?.length),
+    "retrieval.candidates.temporal.count": boundedTraceCount(result.temporalContexts?.length),
+    "retrieval.temporal.mode": result.temporalQueryMode,
+    "retrieval.temporal.structured_lookup.enabled": result.temporalStructuredLookupEnabled,
     "retrieval.branch.count": boundedTraceCount(result.retrievalBranches?.length),
     "retrieval.subquery.count": boundedTraceCount(result.activeRetrievalSubqueries?.length),
     "retrieval.vector_fallback.applied": result.vectorFallbackApplied,

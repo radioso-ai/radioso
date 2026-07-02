@@ -55,12 +55,15 @@ export type RetrievalQueryShape =
   | RetrievalAnswerShapeName
   | "general_grounding";
 
+export type TemporalQueryMode = "none" | "listing" | "topic_refinement";
+
 export interface StructuredRewriteResult {
   rewrittenQuery: string;
   semanticQuery?: string;
   lexicalQuery?: string;
   responseLanguagePolicy?: ResponseLanguagePolicy;
   queryShape?: RetrievalQueryShape;
+  temporalQueryMode?: TemporalQueryMode;
   retrievalSubqueries?: RetrievalSubquery[];
   turnKind: RewriteTurnKind;
   proposedActiveSubject?: string;
@@ -142,7 +145,7 @@ export interface RewrittenRetrievalQuery {
   rejectionReason?: string;
 }
 
-export type RetrievalSource = "semantic_original" | "semantic_rewritten" | "lexical";
+export type RetrievalSource = "semantic_original" | "semantic_rewritten" | "lexical" | "temporal";
 
 export interface RetrievedCandidate extends RetrievedChunk {
   retrievalSources: RetrievalSource[];
@@ -232,6 +235,7 @@ export interface ActivitySummary {
   candidateCounts?: {
     semantic: number;
     lexical: number;
+    temporal?: number;
     merged: number;
     final: number;
   };
@@ -292,6 +296,9 @@ export interface RetrievalExecutionDiagnostics {
   originalCandidateCount: number;
   rewrittenCandidateCount: number;
   lexicalCandidateCount?: number;
+  temporalCandidateCount?: number;
+  temporalQueryMode?: TemporalQueryMode;
+  temporalStructuredLookupEnabled?: boolean;
   normalizedCandidateCount: number;
   finalContextCount: number;
   queryEmbeddingDurationMs?: number;

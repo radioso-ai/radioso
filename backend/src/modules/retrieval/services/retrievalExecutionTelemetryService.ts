@@ -8,6 +8,7 @@ import type {
   TriggerBackoffDecision,
   RewriteStatus,
   RerankStatus,
+  TemporalQueryMode,
 } from "../domain/retrievalPipelineTypes.js";
 import type { AppliedConstraint, ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
 import type { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
@@ -44,6 +45,9 @@ export class RetrievalExecutionTelemetryService {
     originalCandidateCount: number;
     rewrittenCandidateCount: number;
     lexicalCandidateCount?: number;
+    temporalCandidateCount?: number;
+    temporalQueryMode?: TemporalQueryMode;
+    temporalStructuredLookupEnabled?: boolean;
     normalizedCandidateCount: number;
     finalContextCount: number;
     queryEmbeddingDurationMs?: number;
@@ -68,6 +72,7 @@ export class RetrievalExecutionTelemetryService {
     const candidateCounts = {
       semantic: input.originalCandidateCount + input.rewrittenCandidateCount,
       lexical: input.lexicalCandidateCount ?? 0,
+      temporal: input.temporalCandidateCount ?? 0,
       merged: input.normalizedCandidateCount,
       final: input.finalContextCount,
     };
@@ -98,6 +103,7 @@ export class RetrievalExecutionTelemetryService {
           originalCandidateCount: input.originalCandidateCount,
           rewrittenCandidateCount: input.rewrittenCandidateCount,
           lexicalCandidateCount: input.lexicalCandidateCount ?? 0,
+          temporalCandidateCount: input.temporalCandidateCount ?? 0,
           normalizedCandidateCount: input.normalizedCandidateCount,
           finalContextCount: input.finalContextCount,
           queryEmbeddingDurationMs: input.queryEmbeddingDurationMs ?? 0,
@@ -112,6 +118,8 @@ export class RetrievalExecutionTelemetryService {
           fallbackReason: input.fallbackReason,
           triggerMatchCount: input.triggerAnalysis?.matchCount ?? 0,
           triggerBackoffApplied: input.triggerBackoff?.applied ?? false,
+          temporalQueryMode: input.temporalQueryMode,
+          temporalStructuredLookupEnabled: input.temporalStructuredLookupEnabled ?? false,
           executionSurface: input.execution?.surface,
           executionPath: input.execution?.path,
           retrievalInvoked: input.execution?.retrievalInvoked ?? input.retrievalSkipped !== true,
@@ -157,6 +165,9 @@ const buildRetrievalTelemetryTraceAttributes = (
   "retrieval.candidates.semantic_original.count": boundedTraceCount(input.originalCandidateCount),
   "retrieval.candidates.semantic_rewritten.count": boundedTraceCount(input.rewrittenCandidateCount),
   "retrieval.candidates.lexical.count": boundedTraceCount(input.lexicalCandidateCount),
+  "retrieval.candidates.temporal.count": boundedTraceCount(input.temporalCandidateCount),
+  "retrieval.temporal.mode": input.temporalQueryMode,
+  "retrieval.temporal.structured_lookup.enabled": input.temporalStructuredLookupEnabled,
   "retrieval.candidates.normalized.count": boundedTraceCount(input.normalizedCandidateCount),
   "retrieval.context.final.count": boundedTraceCount(input.finalContextCount),
   "retrieval.constraint.count": boundedTraceCount(input.appliedConstraints?.length),

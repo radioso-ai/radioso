@@ -13,6 +13,9 @@ describe('retrieval skill settings adapter', () => {
       [RETRIEVAL_ANSWER_SKILL_NAME]: {
         customInstruction: 'Prefer product docs.',
         queryRewriteEnabled: false,
+        temporalStructuredLookupEnabled: false,
+        temporalBoostUpcomingEnabled: true,
+        temporalDeterministicSortEnabled: false,
         metadataRules: [
           {
             id: 'rule-1',
@@ -33,6 +36,9 @@ describe('retrieval skill settings adapter', () => {
       'human_contact.request': { enabled: true },
     })).toEqual({
       queryRewriteEnabled: false,
+      temporalStructuredLookupEnabled: false,
+      temporalBoostUpcomingEnabled: true,
+      temporalDeterministicSortEnabled: false,
       metadataRules: [
         {
           id: 'rule-1',
@@ -56,9 +62,13 @@ describe('retrieval skill settings adapter', () => {
       'human_contact.request': { enabled: true },
     }, {
       vectorTopK: 12,
+      temporalStructuredLookupEnabled: false,
     })).toEqual({
       'human_contact.request': { enabled: true },
-      [RETRIEVAL_ANSWER_SKILL_NAME]: { vectorTopK: 12 },
+      [RETRIEVAL_ANSWER_SKILL_NAME]: {
+        vectorTopK: 12,
+        temporalStructuredLookupEnabled: false,
+      },
     })
   })
 
@@ -98,6 +108,7 @@ describe('retrieval skill settings adapter', () => {
     expect(writeRetrievalSkillSettingsOverride({
       [RETRIEVAL_ANSWER_SKILL_NAME]: {
         metadataRules,
+        temporalBoostUpcomingEnabled: false,
         someFutureField: { enabled: true },
         customInstruction: 'Prefer release notes.',
       },
@@ -117,11 +128,13 @@ describe('retrieval skill settings adapter', () => {
       },
     }, {
       vectorTopK: 12,
+      temporalDeterministicSortEnabled: false,
     })).toEqual({
       [RETRIEVAL_ANSWER_SKILL_NAME]: {
         someFutureField: { enabled: true },
         customInstruction: 'Prefer release notes.',
         vectorTopK: 12,
+        temporalDeterministicSortEnabled: false,
       },
     })
   })

@@ -924,6 +924,15 @@
           "queryRewriteEnabled": {
             "type": "boolean"
           },
+          "temporalStructuredLookupEnabled": {
+            "type": "boolean"
+          },
+          "temporalBoostUpcomingEnabled": {
+            "type": "boolean"
+          },
+          "temporalDeterministicSortEnabled": {
+            "type": "boolean"
+          },
           "semanticRewriteInstructions": {
             "type": "string"
           },
@@ -1108,6 +1117,9 @@
         },
         "required": [
           "queryRewriteEnabled",
+          "temporalStructuredLookupEnabled",
+          "temporalBoostUpcomingEnabled",
+          "temporalDeterministicSortEnabled",
           "semanticRewriteInstructions",
           "lexicalRewriteInstructions",
           "suggestedQuestionsEnabled",
@@ -1124,6 +1136,15 @@
         "type": "object",
         "properties": {
           "queryRewriteEnabled": {
+            "type": "boolean"
+          },
+          "temporalStructuredLookupEnabled": {
+            "type": "boolean"
+          },
+          "temporalBoostUpcomingEnabled": {
+            "type": "boolean"
+          },
+          "temporalDeterministicSortEnabled": {
             "type": "boolean"
           },
           "semanticRewriteInstructions": {

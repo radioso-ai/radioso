@@ -6,6 +6,8 @@ import type { ChunkCandidateHydratorPort } from "../infra/chunkCandidateHydrator
 import type { VectorIndexPort } from "../domain/vectorIndex.js";
 import type { RetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
 import type { RetrievedChunk, VectorSearchPort } from "../domain/vectorSearch.js";
+import type { TemporalCandidateRetrievalPort } from "../domain/temporal/temporalCandidateRetrieval.js";
+import type { TemporalQueryMode } from "../domain/retrievalPipelineTypes.js";
 import type { CandidateRetrievalStage as CandidateRetrievalStageContract, QueryInterpretationStageResult } from "./retrievalPipelineStages.js";
 
 export interface IngestionSettingsReaderPort {
@@ -18,6 +20,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     vectorSearch: VectorSearchPort,
     lexicalSearch: LexicalSearchPort,
     ingestionSettingsService?: IngestionSettingsReaderPort,
+    temporalCandidateRetrieval?: TemporalCandidateRetrievalPort,
   );
   constructor(
     embeddingService: EmbeddingService,
@@ -25,14 +28,26 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     lexicalSearch: LexicalSearchPort,
     ingestionSettingsService: IngestionSettingsReaderPort | undefined,
     chunkHydrator: ChunkCandidateHydratorPort,
+    temporalCandidateRetrieval?: TemporalCandidateRetrievalPort,
   );
   constructor(
     private readonly embeddingService: EmbeddingService,
     private readonly vectorSearch: VectorSearchPort | VectorIndexPort,
     private readonly lexicalSearch: LexicalSearchPort,
     private readonly ingestionSettingsService?: IngestionSettingsReaderPort,
-    private readonly chunkHydrator?: ChunkCandidateHydratorPort,
-  ) {}
+    chunkHydratorOrTemporal?: ChunkCandidateHydratorPort | TemporalCandidateRetrievalPort,
+    temporalCandidateRetrieval?: TemporalCandidateRetrievalPort,
+  ) {
+    if (chunkHydratorOrTemporal && "hydrate" in chunkHydratorOrTemporal) {
+      this.chunkHydrator = chunkHydratorOrTemporal;
+      this.temporalCandidateRetrieval = temporalCandidateRetrieval;
+    } else {
+      this.temporalCandidateRetrieval = chunkHydratorOrTemporal ?? temporalCandidateRetrieval;
+    }
+  }
+
+  private readonly chunkHydrator?: ChunkCandidateHydratorPort;
+  private readonly temporalCandidateRetrieval?: TemporalCandidateRetrievalPort;
 
   async execute(input: QueryInterpretationStageResult) {
     const embeddingStartedAt = Date.now();
@@ -121,6 +136,17 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
       ? retrievalBranches.flatMap((branch) => branch.semanticContexts)
       : [];
     const lexicalContexts = retrievalBranches.flatMap((branch) => branch.lexicalContexts);
+    const temporalQueryMode = resolveTemporalQueryMode(input);
+    const temporalStructuredLookupEnabled = input.settings.temporalStructuredLookupEnabled ?? true;
+    const temporalContexts = temporalStructuredLookupEnabled && temporalQueryMode === "listing" && this.temporalCandidateRetrieval
+      ? await this.temporalCandidateRetrieval.findUpcoming({
+          workspaceId: input.request.workspaceId,
+          today: utcToday(),
+          topK: input.settings.vectorTopK,
+          metadataFilter: input.request.metadataFilter,
+          sourceFilter,
+        })
+      : [];
 
     return {
       ...input,
@@ -129,6 +155,9 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
       originalContexts,
       rewrittenContexts,
       lexicalContexts,
+      temporalContexts,
+      temporalQueryMode,
+      temporalStructuredLookupEnabled,
       retrievalBranches: retrievalBranches.map(({ fallbackApplied: _fallbackApplied, ...branch }) => branch),
       vectorFallbackApplied: retrievalBranches.some((branch) => branch.fallbackApplied),
     };
@@ -180,3 +209,13 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     };
   }
 }
+
+const resolveTemporalQueryMode = (input: QueryInterpretationStageResult): TemporalQueryMode => {
+  const structured = input.rewrittenQuery.structuredResult;
+  if (structured?.queryShape !== "event_date_lookup") {
+    return "none";
+  }
+  return structured.temporalQueryMode ?? "none";
+};
+
+const utcToday = (): string => new Date().toISOString().slice(0, 10);

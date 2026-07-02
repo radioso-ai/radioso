@@ -64,6 +64,9 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
     "RetrievalDefaultsResponse",
     z.object({
       queryRewriteEnabled: z.boolean(),
+      temporalStructuredLookupEnabled: z.boolean(),
+      temporalBoostUpcomingEnabled: z.boolean(),
+      temporalDeterministicSortEnabled: z.boolean(),
       semanticRewriteInstructions: z.string(),
       lexicalRewriteInstructions: z.string(),
       suggestedQuestionsEnabled: z.boolean(),

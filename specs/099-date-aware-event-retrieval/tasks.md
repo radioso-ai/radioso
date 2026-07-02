@@ -169,34 +169,46 @@ limited to linting the touched files in this run.
 
 ### Tests for User Story 3
 
-- [ ] T076 [P] [US3] Write query rewrite parser tests for `temporalQueryMode` in `backend/tests/unit/query-rewrite-port.test.ts`
-- [ ] T077 [P] [US3] Write temporal candidate repository tests with fixed today in `backend/tests/integration/retrieval-temporal-candidates.integration.test.ts`
-- [ ] T078 [P] [US3] Write candidate merge/dedupe tests for temporal candidates in `backend/tests/unit/temporal-candidate-merge.test.ts`
-- [ ] T079 [P] [US3] Write retrieval settings drift tests for temporal fields in `backend/tests/unit/retrieval-skill-settings-drift.test.ts`
-- [ ] T080 [P] [US3] Write retrieval pipeline tests for next-events listing mode in `backend/tests/unit/retrieval-pipeline-stages.test.ts`
+- [X] T076 [P] [US3] Write query rewrite parser tests for `temporalQueryMode` in `backend/tests/unit/query-rewrite-port.test.ts`
+- [X] T077 [P] [US3] Write temporal candidate repository tests with fixed today in `backend/tests/integration/retrieval-temporal-candidates.integration.test.ts`
+- [X] T078 [P] [US3] Write candidate merge/dedupe tests for temporal candidates in `backend/tests/unit/temporal-candidate-merge.test.ts`
+- [X] T079 [P] [US3] Write retrieval settings drift tests for temporal fields in `backend/tests/unit/retrieval-skill-settings-drift.test.ts`
+- [X] T080 [P] [US3] Write retrieval pipeline tests for next-events listing mode in `backend/tests/unit/retrieval-pipeline-stages.test.ts`
 - [ ] T081 [P] [US3] Write Playwright coverage for three temporal toggles in `frontend/tests/e2e/assistant-retrieval-settings.spec.ts`
-- [ ] T082 [P] [US3] Write frontend retrieval skill settings unit tests for temporal fields in `frontend/tests/unit/retrieval-skill-settings.test.ts`
+- [X] T082 [P] [US3] Write frontend retrieval skill settings unit tests for temporal fields in `frontend/tests/unit/retrieval-skill-settings.test.ts`
+
+**Run-scope deviation**: T077 is authored but not run because this run is
+constrained to unit tests only and no Postgres-backed integration tests. T081
+remains unchecked because frontend verification for this run is constrained to
+targeted unit tests and touched-file lint; the switches are exposed through the
+existing generic skill settings form via `retrieveCapability.settingsFields`.
 
 ### Implementation for User Story 3
 
-- [ ] T083 [US3] Extend structured rewrite types with temporal query mode in `backend/src/modules/retrieval/domain/retrievalPipelineTypes.ts`
-- [ ] T084 [US3] Update query rewrite parser for `temporalQueryMode` in `backend/src/modules/retrieval/services/queryRewriteParser.ts`
-- [ ] T085 [US3] Update query rewrite prompt blueprint without English keyword rules in `backend/prompts/retrieval/query-rewrite.md`
-- [ ] T086 [US3] Add temporal candidate retrieval port in `backend/src/modules/retrieval/domain/temporal/temporalCandidateRetrieval.ts`
-- [ ] T087 [US3] Implement Postgres temporal candidate adapter in `backend/src/modules/retrieval/infra/temporalCandidateRepository.ts`
-- [ ] T088 [US3] Wire temporal candidate adapter in `backend/src/modules/retrieval/composition.ts`
-- [ ] T089 [US3] Extend candidate retrieval stage to request temporal candidates in listing mode in `backend/src/modules/retrieval/services/candidateRetrievalStage.ts`
-- [ ] T090 [US3] Extend candidate source typing for temporal candidates in `backend/src/modules/retrieval/domain/retrievalPipelineTypes.ts`
-- [ ] T091 [US3] Merge and dedupe temporal candidates with semantic/lexical candidates in `backend/src/modules/retrieval/services/temporal/temporalCandidateMergeService.ts`
-- [ ] T092 [US3] Implement upcoming boost as retrieval-owned scoring helper in `backend/src/modules/retrieval/services/temporal/upcomingBoostService.ts`
-- [ ] T093 [US3] Apply upcoming boost behind setting in `backend/src/modules/retrieval/services/candidatePreparationStage.ts`
-- [ ] T094 [US3] Add temporal settings defaults in `backend/src/modules/settings/domain/retrievalSettings.ts`
-- [ ] T095 [US3] Add temporal settings override schema support in `backend/src/modules/retrieval/domain/retrievalSkillSettings.ts`
-- [ ] T096 [US3] Update retrieval skill manifest contract fields in `backend/src/modules/skills/definitions/retrieval.answer/generated.contract.json`
-- [ ] T097 [US3] Update frontend retrieval skill settings serialization in `frontend/lib/retrieval-skill-settings.ts`
-- [ ] T098 [US3] Add temporal switches to retrieval settings UI in `frontend/components/dashboard/settings/workspace-assistant-channels-tab.tsx`
-- [ ] T099 [US3] Add temporal retrieval trace fields in `backend/src/modules/retrieval/services/retrievalActivityTraceAssembler.ts`
-- [ ] T100 [US3] Surface temporal candidate counts in activity trace presenter in `frontend/components/dashboard/activity-trace-detail.tsx`
+- [X] T083 [US3] Extend structured rewrite types with temporal query mode in `backend/src/modules/retrieval/domain/retrievalPipelineTypes.ts`
+- [X] T084 [US3] Update query rewrite parser for `temporalQueryMode` in `backend/src/modules/retrieval/services/queryRewriteParser.ts`
+- [X] T085 [US3] Update query rewrite prompt blueprint without English keyword rules in `backend/prompts/retrieval/query-rewrite.md`
+- [X] T086 [US3] Add temporal candidate retrieval port in `backend/src/modules/retrieval/domain/temporal/temporalCandidateRetrieval.ts`
+- [X] T087 [US3] Implement Postgres temporal candidate adapter in `backend/src/modules/retrieval/infra/temporalCandidateRepository.ts`
+- [X] T088 [US3] Wire temporal candidate adapter in `backend/src/modules/retrieval/composition.ts`
+- [X] T089 [US3] Extend candidate retrieval stage to request temporal candidates in listing mode in `backend/src/modules/retrieval/services/candidateRetrievalStage.ts`
+- [X] T090 [US3] Extend candidate source typing for temporal candidates in `backend/src/modules/retrieval/domain/retrievalPipelineTypes.ts`
+- [X] T091 [US3] Merge and dedupe temporal candidates with semantic/lexical candidates in `backend/src/modules/retrieval/services/temporal/temporalCandidateMergeService.ts`
+- [X] T092 [US3] Implement upcoming boost as retrieval-owned scoring helper in `backend/src/modules/retrieval/services/temporal/upcomingBoostService.ts`
+- [X] T093 [US3] Apply upcoming boost behind setting in `backend/src/modules/retrieval/services/candidatePreparationStage.ts`
+- [X] T094 [US3] Add temporal settings defaults in `backend/src/modules/settings/domain/retrievalSettings.ts`
+- [X] T095 [US3] Add temporal settings override schema support in `backend/src/modules/retrieval/domain/retrievalSkillSettings.ts`
+- [X] T096 [US3] Update retrieval skill manifest contract fields in `backend/src/modules/skills/definitions/retrieval.answer/generated.contract.json`
+- [X] T097 [US3] Update frontend retrieval skill settings serialization in `frontend/lib/retrieval-skill-settings.ts`
+- [X] T098 [US3] Add temporal switches to retrieval settings UI in `frontend/components/dashboard/settings/workspace-assistant-channels-tab.tsx`
+- [X] T099 [US3] Add temporal retrieval trace fields in `backend/src/modules/retrieval/services/retrievalActivityTraceAssembler.ts`
+- [X] T100 [US3] Surface temporal candidate counts in activity trace presenter in `frontend/components/dashboard/activity-trace-detail.tsx`
+
+**Code-reality deviation**: T098 is implemented through
+`backend/src/modules/skills/capabilities/retrieve.ts`, which owns the
+`retrieval.answer` capability settings rendered by the existing generic skill
+settings UI under `workspace-assistant-channels-tab.tsx`; no bespoke retrieval
+settings panel edit was needed beyond fallback defaults.
 
 **Checkpoint**: User Story 3 works with enriched metadata and per-agent toggles.
 

@@ -12,6 +12,7 @@ import type { PromptBuilder } from "../../src/modules/retrieval/services/promptB
 import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
 import { CandidatePreparationStageService } from "../../src/modules/retrieval/services/candidatePreparationStage.js";
 import { MetadataRuleScoringService } from "../../src/modules/retrieval/services/metadataRuleScoringService.js";
+import type { TemporalCandidateRetrievalPort } from "../../src/modules/retrieval/domain/temporal/temporalCandidateRetrieval.js";
 import {
   buildCandidatePreparationTraceAttributes,
   buildCandidateRetrievalTraceAttributes,
@@ -30,8 +31,11 @@ const baseCandidateRetrievalInput = (documentScope?: string[]) => ({
   },
   settings: {
     workspaceId: "workspace-1",
-    queryRewriteEnabled: false,
-    semanticRewriteInstructions: "",
+        queryRewriteEnabled: false,
+        temporalStructuredLookupEnabled: true,
+        temporalBoostUpcomingEnabled: true,
+        temporalDeterministicSortEnabled: true,
+        semanticRewriteInstructions: "",
     lexicalRewriteInstructions: "",
     suggestedQuestionsEnabled: true,
     suggestedQuestionsCount: 3,
@@ -63,7 +67,14 @@ const baseCandidateRetrievalInput = (documentScope?: string[]) => ({
   activeQuery: "tell me about yoga",
   activeParsedQuery: { semanticQuery: "yoga", lexicalQuery: "yoga", constraints: [] },
   activeSemanticQuery: "yoga",
-  activeRetrievalSubqueries: [],
+  activeRetrievalSubqueries: [
+    {
+      id: "primary",
+      label: "primary",
+      semanticQuery: "yoga",
+      lexicalQuery: "yoga",
+    },
+  ],
   triggerAnalysis: {
     status: "skipped_not_configured" as const,
     consideredRules: [],
@@ -165,6 +176,111 @@ describe("retrieval pipeline stages", () => {
     expect(result.normalizedCandidates.map((candidate) => candidate.documentId)).toEqual(["doc-raja", "doc-raja"]);
     expect(result.mergedCandidates.map((candidate) => candidate.documentId)).toEqual(["doc-raja", "doc-raja"]);
     expect(result.scoredCandidates.map((candidate) => candidate.documentId)).toEqual(["doc-raja", "doc-raja"]);
+  });
+
+  it("requests temporal candidates for event listing rewrites when structured lookup is enabled", async () => {
+    const temporalCalls: Parameters<TemporalCandidateRetrievalPort["findUpcoming"]>[0][] = [];
+    const temporalCandidate = {
+      chunkId: "future-retreat",
+      documentId: "doc-future-retreat",
+      title: "Future Retreat",
+      content: "Future retreat happens tomorrow.",
+      searchText: "Future Retreat Future retreat happens tomorrow.",
+      similarity: 0.001,
+      chunkIndex: 0,
+      startOffset: 0,
+      endOffset: 32,
+      metadata: { dateFrom: "2026-07-03", dateTo: "2026-07-03" },
+    };
+    const stage = new CandidateRetrievalStageService(
+      { async embedChunks() { return [[0.1, 0.2]]; } } as never,
+      { async search() { return []; } } as never,
+      { async search() { return []; } } as never,
+      undefined,
+      {
+        async findUpcoming(input) {
+          temporalCalls.push(input);
+          return [temporalCandidate];
+        },
+      },
+    );
+
+    const result = await stage.execute({
+      ...baseCandidateRetrievalInput(),
+      rewrittenQuery: {
+        ...baseCandidateRetrievalInput().rewrittenQuery,
+        structuredResult: {
+          rewrittenQuery: "upcoming events",
+          semanticQuery: "upcoming events",
+          lexicalQuery: "events",
+          queryShape: "event_date_lookup",
+          temporalQueryMode: "listing",
+          turnKind: "fresh_subject",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.9,
+        },
+      },
+    });
+
+    expect(temporalCalls).toEqual([
+      expect.objectContaining({
+        workspaceId: "workspace-1",
+        today: "2026-07-02",
+        metadataFilter: undefined,
+        sourceFilter: undefined,
+      }),
+    ]);
+    expect(result.temporalContexts).toEqual([temporalCandidate]);
+    expect(buildCandidateRetrievalTraceAttributes(result)).toMatchObject({
+      "retrieval.temporal.mode": "listing",
+      "retrieval.temporal.structured_lookup.enabled": true,
+      "retrieval.candidates.temporal.count": 1,
+    });
+  });
+
+  it("does not request temporal candidates when structured lookup is disabled", async () => {
+    let temporalCalls = 0;
+    const stage = new CandidateRetrievalStageService(
+      { async embedChunks() { return [[0.1, 0.2]]; } } as never,
+      { async search() { return []; } } as never,
+      { async search() { return []; } } as never,
+      undefined,
+      {
+        async findUpcoming() {
+          temporalCalls += 1;
+          return [];
+        },
+      },
+    );
+
+    const result = await stage.execute({
+      ...baseCandidateRetrievalInput(),
+      settings: {
+        ...baseCandidateRetrievalInput().settings,
+        temporalStructuredLookupEnabled: false,
+      },
+      rewrittenQuery: {
+        ...baseCandidateRetrievalInput().rewrittenQuery,
+        structuredResult: {
+          rewrittenQuery: "upcoming events",
+          queryShape: "event_date_lookup",
+          temporalQueryMode: "listing",
+          turnKind: "fresh_subject",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.9,
+        },
+      },
+    });
+
+    expect(temporalCalls).toBe(0);
+    expect(result.temporalContexts).toEqual([]);
+    expect(buildCandidateRetrievalTraceAttributes(result)).toMatchObject({
+      "retrieval.temporal.mode": "listing",
+      "retrieval.temporal.structured_lookup.enabled": false,
+      "retrieval.candidates.temporal.count": 0,
+    });
   });
 
   it("keeps absent documentScope behavior identical", async () => {

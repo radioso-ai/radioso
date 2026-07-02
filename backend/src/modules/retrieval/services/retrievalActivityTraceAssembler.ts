@@ -128,6 +128,24 @@ export class ActivityTraceAssembler {
       responseLanguagePolicy: branch.responseLanguagePolicy,
       contexts: branch.lexicalContexts,
     }));
+    const temporalContexts = prompt.temporalContexts ?? [];
+    const temporalQueryMode = prompt.temporalQueryMode ?? "none";
+    const temporalStructuredLookupEnabled = prompt.temporalStructuredLookupEnabled ?? true;
+    const temporalStage = temporalQueryMode !== "none" || temporalContexts.length > 0
+      ? buildStage("temporal", "temporal_retrieval", "Temporal retrieval", temporalStructuredLookupEnabled ? "applied" : "skipped", timings.semanticRetrieval, {
+          settings: {
+            temporalStructuredLookupEnabled,
+            temporalQueryMode,
+          },
+          outputs: {
+            candidateCount: temporalContexts.length,
+            chunks: toChunkRefs(temporalContexts),
+          },
+          metrics: {
+            candidateCount: temporalContexts.length,
+          },
+        })
+      : undefined;
     const semanticTiming = {
       startedAt: timings.semanticRetrieval.startedAt,
       durationMs: Math.max(0, Math.round(timings.semanticRetrieval.durationMs / Math.max(semanticBranches.length, 1))),
@@ -148,6 +166,9 @@ export class ActivityTraceAssembler {
           rerankEnabled: prompt.settings.rerankEnabled,
           rerankTopK: prompt.settings.rerankTopK,
           queryRewriteEnabled: prompt.settings.queryRewriteEnabled,
+          temporalStructuredLookupEnabled: prompt.settings.temporalStructuredLookupEnabled ?? true,
+          temporalBoostUpcomingEnabled: prompt.settings.temporalBoostUpcomingEnabled ?? true,
+          temporalDeterministicSortEnabled: prompt.settings.temporalDeterministicSortEnabled ?? true,
         },
         inputs: {
           query: prompt.request.query,
@@ -191,6 +212,7 @@ export class ActivityTraceAssembler {
           promptHistoryCount: prompt.promptHistory.length,
           promptHistoryReset: prompt.promptHistoryReset,
           turnKind: prompt.rewrittenQuery.structuredResult?.turnKind ?? null,
+          temporalQueryMode,
           rewriteEligible: prompt.rewrittenQuery.retrievalEligible,
           rewriteRan: diagnostics.rewriteRan ?? false,
           parsedConstraints: prompt.activeParsedQuery.constraints.map((constraint) => constraint.summary),
@@ -289,6 +311,7 @@ export class ActivityTraceAssembler {
           reason: branch.reason,
         }),
       ),
+      ...(temporalStage ? [temporalStage] : []),
       buildStage("preparation", "candidate_preparation", "Candidate preparation", diagnostics.fallbackApplied ? "fallback" : "applied", timings.candidatePreparation, {
         outputs: {
           appliedConstraintSummaries: prompt.appliedConstraints.map((constraint) => constraint.summary),
@@ -298,6 +321,7 @@ export class ActivityTraceAssembler {
           normalizedCount: prompt.normalizedCandidates.length,
           mergedCount: prompt.mergedCandidates.length,
           scoredCount: prompt.scoredCandidates.length,
+          temporalCandidateCount: temporalContexts.length,
         },
         reason: prompt.candidateFallbackApplied ? "Candidate fallback relaxed the prepared candidate pool." : undefined,
       }),
@@ -348,6 +372,7 @@ export class ActivityTraceAssembler {
         metrics: {
           semanticCandidateCount: diagnostics.originalCandidateCount + diagnostics.rewrittenCandidateCount,
           lexicalCandidateCount: diagnostics.lexicalCandidateCount ?? 0,
+          temporalCandidateCount: diagnostics.temporalCandidateCount ?? 0,
           mergedCandidateCount: diagnostics.normalizedCandidateCount,
           finalContextCount: diagnostics.finalContextCount,
           queryEmbeddingDurationMs: diagnostics.queryEmbeddingDurationMs ?? 0,
@@ -371,8 +396,16 @@ export class ActivityTraceAssembler {
         toStageId: branch.stageId,
         kind: "branch" as const,
       })),
+      ...(temporalStage
+        ? [{
+            fromStageId: diagnostics.shapeSelection ? "shape_selection" : "trigger_analysis",
+            toStageId: "temporal",
+            kind: "branch" as const,
+          }]
+        : []),
       ...semanticBranches.map((branch) => ({ fromStageId: branch.stageId, toStageId: "preparation", kind: "converge" as const })),
       ...lexicalBranches.map((branch) => ({ fromStageId: branch.stageId, toStageId: "preparation", kind: "converge" as const })),
+      ...(temporalStage ? [{ fromStageId: "temporal", toStageId: "preparation", kind: "converge" as const }] : []),
       { fromStageId: "preparation", toStageId: "selection", kind: "sequence" },
       { fromStageId: "selection", toStageId: "prompt", kind: "sequence" },
       { fromStageId: "prompt", toStageId: "diagnostics", kind: "sequence" },
@@ -407,6 +440,7 @@ export class ActivityTraceAssembler {
         candidateCounts: {
           semantic: diagnostics.originalCandidateCount + diagnostics.rewrittenCandidateCount,
           lexical: diagnostics.lexicalCandidateCount ?? 0,
+          temporal: diagnostics.temporalCandidateCount ?? 0,
           merged: diagnostics.normalizedCandidateCount,
           final: diagnostics.finalContextCount,
         },

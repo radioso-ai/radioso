@@ -2951,6 +2951,9 @@ export interface components {
         };
         RetrievalDefaultsResponse: {
             queryRewriteEnabled: boolean;
+            temporalStructuredLookupEnabled: boolean;
+            temporalBoostUpcomingEnabled: boolean;
+            temporalDeterministicSortEnabled: boolean;
             semanticRewriteInstructions: string;
             lexicalRewriteInstructions: string;
             suggestedQuestionsEnabled: boolean;
@@ -3000,6 +3003,9 @@ export interface components {
         };
         RetrievalSettingsOverride: {
             queryRewriteEnabled?: boolean;
+            temporalStructuredLookupEnabled?: boolean;
+            temporalBoostUpcomingEnabled?: boolean;
+            temporalDeterministicSortEnabled?: boolean;
             semanticRewriteInstructions?: string;
             lexicalRewriteInstructions?: string;
             suggestedQuestionsEnabled?: boolean;

@@ -2,6 +2,8 @@ import { RETRIEVAL_ANSWER_ADAPTER, retrieveSkillConfigSchema } from "../../retri
 import { defaultRetrievalSettings } from "../../settings/contracts/retrieval.js";
 import type { SkillCapabilityDescriptor } from "../capabilityRegistry.js";
 
+// Only the per-field defaults are read from this record; the workspaceId it
+// embeds never leaves this module, so a placeholder is safe here.
 const retrieveSettingsDefaults = defaultRetrievalSettings("__retrieve_capability_descriptor__");
 
 export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve"> = {

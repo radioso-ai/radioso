@@ -15,7 +15,11 @@ import {
 import type { IngestionSettingsRecord } from "../../settings/contracts/ingestion.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { traceOperation } from "../../../shared/observability/tracing/operations.js";
-import { parseDocumentEnrichmentOverride, resolveDocumentEnrichmentEnablement } from "../domain/enrichment/enrichmentEnablement.js";
+import {
+  parseDocumentEnrichmentOverride,
+  parseDocumentSourceEnrichmentOverride,
+  resolveDocumentEnrichmentEnablement,
+} from "../domain/enrichment/enrichmentEnablement.js";
 import type {
   ChunkRecord,
   ChunkRepositoryPort,
@@ -26,6 +30,7 @@ import type {
   DocumentEnrichmentStageResult,
 } from "./documentEnrichmentService.js";
 import type { MaterializedDocumentContent } from "./documentSourceContentService.js";
+import type { DocumentSourceRepositoryPort } from "../../../db/repositories/documentSourceRepository.js";
 
 export interface IngestionSettingsReaderPort {
   getForWorkspace(workspaceId: string): Promise<IngestionSettingsRecord>;
@@ -86,6 +91,22 @@ const compactTraceAttributes = (attributes: TraceAttributes): TraceAttributes =>
     Object.entries(attributes).filter(([, value]) => value !== undefined && value !== null),
   ) as TraceAttributes;
 
+export const stripStaleEnrichmentMetadata = (
+  metadata: Record<string, unknown>,
+): Record<string, unknown> => {
+  if (!metadata.enrichment || typeof metadata.enrichment !== "object") {
+    return metadata;
+  }
+
+  const {
+    enrichment: _enrichment,
+    dateFrom: _dateFrom,
+    dateTo: _dateTo,
+    ...rest
+  } = metadata;
+  return rest;
+};
+
 export const buildDocumentProcessingTraceAttributes = (
   job: Pick<DocumentProcessingJobRecord, "id" | "workspaceId" | "documentId" | "documentRevision" | "attemptCount" | "status">,
   input: {
@@ -125,6 +146,7 @@ export class DocumentProcessingService {
     private readonly documentSourceContentService: DocumentSourceContentServicePort = inlineDocumentSourceContentService,
     private readonly logger?: AppLogger,
     private readonly documentEnrichmentStage?: DocumentEnrichmentStagePort,
+    private readonly documentSourceRepository?: Pick<DocumentSourceRepositoryPort, "findByIdAndWorkspaceId">,
   ) {}
 
   async process(job: DocumentProcessingJobRecord): Promise<DocumentProcessingOutcome> {
@@ -199,9 +221,10 @@ export class DocumentProcessingService {
         chunkCount: result.length,
       }));
       const chunkingDurationMs = Math.max(0, Date.now() - chunkingStartedAt);
+      const baseDocumentMetadata = stripStaleEnrichmentMetadata(documentWithContent.metadata ?? {});
       const chunkRecordsWithoutSearchText = chunks.map((chunk) => ({
         ...chunk,
-        metadata: documentWithContent.metadata ?? {},
+        metadata: baseDocumentMetadata,
       }));
       const enrichmentResult = await this.runEnrichmentStage({
         job,
@@ -209,7 +232,18 @@ export class DocumentProcessingService {
         settings,
         chunks: chunkRecordsWithoutSearchText,
       });
-      const finalDocumentMetadata = enrichmentResult?.documentMetadata ?? (documentWithContent.metadata ?? {});
+      const finalDocumentMetadata = enrichmentResult?.documentMetadata ?? baseDocumentMetadata;
+      if (!enrichmentResult && finalDocumentMetadata !== (documentWithContent.metadata ?? {})) {
+        const updatedDocument = await this.documentRepository.updateMetadataForRevision({
+          documentId: documentWithContent.id,
+          workspaceId: job.workspaceId,
+          revision: job.documentRevision,
+          metadata: finalDocumentMetadata,
+        });
+        if (!updatedDocument) {
+          return "stale";
+        }
+      }
       const finalChunks = enrichmentResult?.chunks ?? chunkRecordsWithoutSearchText;
       const enrichedChunks = finalChunks.map((chunk) => {
         const metadataSearchText = renderMetadataSearchText(chunk.metadata ?? finalDocumentMetadata);
@@ -360,6 +394,7 @@ export class DocumentProcessingService {
       title: string;
       markdownContent: string;
       metadata: Record<string, unknown>;
+      sourceId?: string | null;
       createdAt: Date;
     };
     settings: IngestionSettingsRecord;
@@ -371,9 +406,12 @@ export class DocumentProcessingService {
       metadata: Record<string, unknown>;
     }>;
   }): Promise<DocumentEnrichmentStageResult<typeof input.chunks[number]> | null> {
+    const source = input.document.sourceId && this.documentSourceRepository
+      ? await this.documentSourceRepository.findByIdAndWorkspaceId(input.document.sourceId, input.document.workspaceId)
+      : null;
     const enablement = resolveDocumentEnrichmentEnablement({
       workspaceDefaultEnabled: input.settings.documentEnrichmentEnabled ?? false,
-      sourceOverride: "inherit",
+      sourceOverride: parseDocumentSourceEnrichmentOverride(source?.config.documentEnrichmentOverride),
       jobOverride: parseDocumentEnrichmentOverride(input.job.options?.documentEnrichmentOverride),
     });
     if (!enablement.enabled || !this.documentEnrichmentStage) {

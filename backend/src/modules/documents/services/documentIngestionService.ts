@@ -189,8 +189,17 @@ export interface DocumentRepositoryPort {
   updateDerivedContentForRevision(input: DocumentDerivedContentUpdateInput): Promise<DocumentRecord | null>;
   updateMetadataForRevision(input: DocumentEnrichmentMetadataUpdateInput): Promise<DocumentRecord | null>;
   requeue(documentId: string, workspaceId: string): Promise<DocumentRecord>;
-  requeueAndQueue(documentId: string, workspaceId: string): Promise<DocumentRecord>;
-  requeueAllEligibleAndQueue(workspaceId: string): Promise<{
+  requeueAndQueue(documentId: string, workspaceId: string, options?: DocumentProcessingJobOptions | null): Promise<DocumentRecord>;
+  requeueAllEligibleAndQueue(workspaceId: string, options?: DocumentProcessingJobOptions | null): Promise<{
+    queuedDocumentCount: number;
+    skippedDocumentCount: number;
+    queuedDocuments: Array<{ documentId: string; revision: number }>;
+  }>;
+  requeueSourceEligibleAndQueue(input: {
+    workspaceId: string;
+    sourceId: string;
+    options?: DocumentProcessingJobOptions | null;
+  }): Promise<{
     queuedDocumentCount: number;
     skippedDocumentCount: number;
     queuedDocuments: Array<{ documentId: string; revision: number }>;
@@ -633,7 +642,11 @@ export class DocumentIngestionService {
     };
   }
 
-  async reprocess(input: { workspaceId: string; documentId: string }): Promise<{ documentId: string; status: string }> {
+  async reprocess(input: {
+    workspaceId: string;
+    documentId: string;
+    documentEnrichmentOverride?: DocumentProcessingJobOptions["documentEnrichmentOverride"];
+  }): Promise<{ documentId: string; status: string }> {
     await this.getDocument(input.workspaceId, input.documentId);
 
     let document:
@@ -645,7 +658,11 @@ export class DocumentIngestionService {
       | undefined;
 
     try {
-      document = await this.documentRepository.requeueAndQueue(input.documentId, input.workspaceId);
+      document = await this.documentRepository.requeueAndQueue(
+        input.documentId,
+        input.workspaceId,
+        buildDocumentProcessingOptions(input),
+      );
     } catch (error) {
       await this.auditService.record({
         workspaceId: input.workspaceId,
@@ -667,6 +684,7 @@ export class DocumentIngestionService {
         documentId: document.id,
         revision: document.revision,
         status: document.status,
+        documentEnrichmentOverride: input.documentEnrichmentOverride ?? null,
         ...(await this.queueSnapshotMetadata()),
       },
     });
@@ -975,3 +993,10 @@ const deriveWebsiteSourceName = (url: string): string => {
   const path = parsed.pathname.replace(/^\/+/, "");
   return path ? `${parsed.hostname}/${path}` : parsed.hostname;
 };
+
+export const buildDocumentProcessingOptions = (input: {
+  documentEnrichmentOverride?: DocumentProcessingJobOptions["documentEnrichmentOverride"];
+}): DocumentProcessingJobOptions | null =>
+  input.documentEnrichmentOverride
+    ? { documentEnrichmentOverride: input.documentEnrichmentOverride }
+    : null;

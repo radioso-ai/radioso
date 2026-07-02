@@ -100,6 +100,7 @@ import type {
 import type {
   DocumentProcessingJobRecord,
   DocumentProcessingQueueSnapshot,
+  DocumentProcessingJobOptions,
   DocumentProcessingJobRepositoryPort,
 } from "../../src/db/repositories/documentProcessingJobRepository.js";
 import type {
@@ -2588,7 +2589,11 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return record;
   }
 
-  async requeueAndQueue(documentId: string, workspaceId: string): Promise<DocumentRecord> {
+  async requeueAndQueue(
+    documentId: string,
+    workspaceId: string,
+    options?: DocumentProcessingJobOptions | null,
+  ): Promise<DocumentRecord> {
     const existing = this.items.get(documentId);
     if (!existing || existing.workspaceId !== workspaceId) {
       throw notFound("Document not found");
@@ -2607,6 +2612,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       documentId: record.id,
       workspaceId: record.workspaceId,
       documentRevision: record.revision,
+      options,
     });
     this.items.set(record.id, record);
     return record;
@@ -2649,7 +2655,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return record;
   }
 
-  async requeueAllEligibleAndQueue(workspaceId: string): Promise<{
+  async requeueAllEligibleAndQueue(workspaceId: string, options?: DocumentProcessingJobOptions | null): Promise<{
     queuedDocumentCount: number;
     skippedDocumentCount: number;
     queuedDocuments: Array<{ documentId: string; revision: number }>;
@@ -2678,6 +2684,59 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
         documentId: record.id,
         workspaceId: record.workspaceId,
         documentRevision: record.revision,
+        options,
+      });
+      this.items.set(record.id, record);
+      queuedDocumentCount += 1;
+      queuedDocuments.push({
+        documentId: record.id,
+        revision: record.revision,
+      });
+    }
+
+    return {
+      queuedDocumentCount,
+      skippedDocumentCount,
+      queuedDocuments,
+    };
+  }
+
+  async requeueSourceEligibleAndQueue(input: {
+    workspaceId: string;
+    sourceId: string;
+    options?: DocumentProcessingJobOptions | null;
+  }): Promise<{
+    queuedDocumentCount: number;
+    skippedDocumentCount: number;
+    queuedDocuments: Array<{ documentId: string; revision: number }>;
+  }> {
+    const documents = [...this.items.values()].filter(
+      (item) => item.workspaceId === input.workspaceId && item.sourceId === input.sourceId,
+    );
+    let queuedDocumentCount = 0;
+    let skippedDocumentCount = 0;
+    const queuedDocuments: Array<{ documentId: string; revision: number }> = [];
+
+    for (const document of documents) {
+      if (document.status !== "ready" && document.status !== "failed") {
+        skippedDocumentCount += 1;
+        continue;
+      }
+
+      const record: DocumentRecord = {
+        ...document,
+        status: "queued",
+        metadata: document.metadata ?? {},
+        revision: document.revision + 1,
+        failureReason: null,
+        updatedAt: new Date(),
+      };
+
+      await this.jobRepository?.enqueue({
+        documentId: record.id,
+        workspaceId: record.workspaceId,
+        documentRevision: record.revision,
+        options: input.options,
       });
       this.items.set(record.id, record);
       queuedDocumentCount += 1;

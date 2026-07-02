@@ -1,41 +1,64 @@
+import type { DocumentSourceRepositoryPort } from "../../../db/repositories/documentSourceRepository.js";
+import type {
+  DocumentProcessingJobOptions,
+  DocumentProcessingJobRepositoryPort,
+} from "../../../db/repositories/documentProcessingJobRepository.js";
 import type { AuditService } from "../../audit/contracts/index.js";
-import type { DocumentProcessingJobOptions, DocumentProcessingJobRepositoryPort } from "../../../db/repositories/documentProcessingJobRepository.js";
+import { notFound } from "../../../shared/domain/errors.js";
 import type { DocumentRepositoryPort } from "./documentIngestionService.js";
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
+import { buildDocumentProcessingOptions } from "./documentIngestionService.js";
 
-export interface WorkspaceIngestionReprocessResult {
+export interface DocumentSourceReprocessResult {
   workspaceId: string;
+  sourceId: string;
   queuedDocumentCount: number;
   skippedDocumentCount: number;
   status: "queued" | "noop";
 }
 
-export class WorkspaceIngestionReprocessService {
+export class DocumentSourceReprocessService {
   constructor(
-    private readonly documentRepository: DocumentRepositoryPort,
+    private readonly documentRepository: Pick<DocumentRepositoryPort, "requeueSourceEligibleAndQueue">,
+    private readonly sourceRepository: Pick<DocumentSourceRepositoryPort, "findByIdAndWorkspaceId">,
     private readonly auditService: AuditService,
     private readonly jobRepository?: Pick<DocumentProcessingJobRepositoryPort, "findByDocumentRevision">,
     private readonly jobDispatcher: DocumentJobDispatcherPort = new NoopDocumentJobDispatcher(),
   ) {}
 
-  async reprocessWorkspace(
-    workspaceId: string,
-    options?: DocumentProcessingJobOptions | null,
-  ): Promise<WorkspaceIngestionReprocessResult> {
-    const result = await this.documentRepository.requeueAllEligibleAndQueue(workspaceId, options);
-    await this.dispatchQueuedJobs(workspaceId, result.queuedDocuments);
+  async reprocessSource(input: {
+    workspaceId: string;
+    sourceId: string;
+    documentEnrichmentOverride?: DocumentProcessingJobOptions["documentEnrichmentOverride"];
+  }): Promise<DocumentSourceReprocessResult> {
+    const source = await this.sourceRepository.findByIdAndWorkspaceId(input.sourceId, input.workspaceId);
+    if (!source) {
+      throw notFound("Source not found");
+    }
+
+    const options = buildDocumentProcessingOptions(input);
+    const result = await this.documentRepository.requeueSourceEligibleAndQueue({
+      workspaceId: input.workspaceId,
+      sourceId: input.sourceId,
+      options,
+    });
+
+    await this.dispatchQueuedJobs(input.workspaceId, result.queuedDocuments);
     await this.auditService.record({
-      workspaceId,
-      eventType: "document.reprocess_workspace",
+      workspaceId: input.workspaceId,
+      eventType: "document.reprocess_source",
       eventStatus: "success",
       metadata: {
-        ...result,
-        documentEnrichmentOverride: options?.documentEnrichmentOverride ?? null,
+        sourceId: input.sourceId,
+        queuedDocumentCount: result.queuedDocumentCount,
+        skippedDocumentCount: result.skippedDocumentCount,
+        documentEnrichmentOverride: input.documentEnrichmentOverride ?? null,
       },
     });
 
     return {
-      workspaceId,
+      workspaceId: input.workspaceId,
+      sourceId: input.sourceId,
       queuedDocumentCount: result.queuedDocumentCount,
       skippedDocumentCount: result.skippedDocumentCount,
       status: result.queuedDocumentCount > 0 ? "queued" : "noop",

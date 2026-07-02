@@ -15,6 +15,8 @@ export type ConversationAgentRequest = components["schemas"]["ConversationAgentR
 export type AgentSettingsRequest = ConversationAgentRequest;
 export type WorkspaceSummaryResponse = components["schemas"]["WorkspaceSummaryResponse"];
 export type WorkspaceIngestionReprocessResponse = components["schemas"]["WorkspaceIngestionReprocessResponse"];
+export type DocumentReprocessRequest = components["schemas"]["DocumentReprocessRequest"];
+export type SourceReprocessResponse = components["schemas"]["SourceReprocessResponse"];
 export type SkillCatalogEntry = components["schemas"]["SkillCatalogEntry"];
 export type SkillCatalogResponse = components["schemas"]["SkillCatalogResponse"];
 export type DocumentCreateRequest = components["schemas"]["DocumentCreateRequest"];
@@ -90,10 +92,11 @@ export class GeneratedRadiosoClient {
     });
   }
 
-  reprocessWorkspaceIngestion(): Promise<WorkspaceIngestionReprocessResponse> {
+  reprocessWorkspaceIngestion(body?: DocumentReprocessRequest): Promise<WorkspaceIngestionReprocessResponse> {
     return requestJson(this.config, {
       method: "POST",
       path: "/api/v1/settings/ingestion/reprocess",
+      body,
     });
   }
 
@@ -231,10 +234,19 @@ export class GeneratedRadiosoClient {
     });
   }
 
-  reprocessDocument(documentId: string): Promise<DocumentOperationResponse> {
+  reprocessDocument(documentId: string, body?: DocumentReprocessRequest): Promise<DocumentOperationResponse> {
     return requestJson(this.config, {
       method: "POST",
       path: `/api/v1/document/${documentId}/reprocess`,
+      body,
+    });
+  }
+
+  reprocessDocumentSource(sourceId: string, body?: DocumentReprocessRequest): Promise<SourceReprocessResponse> {
+    return requestJson(this.config, {
+      method: "POST",
+      path: `/api/v1/document/sources/${sourceId}/reprocess`,
+      body,
     });
   }
 

@@ -37,3 +37,10 @@ export const parseDocumentEnrichmentOverride = (value: unknown): DocumentEnrichm
   }
   return null;
 };
+
+export const parseDocumentSourceEnrichmentOverride = (value: unknown): DocumentSourceEnrichmentOverride => {
+  if (value === "on" || value === "off" || value === "inherit") {
+    return value;
+  }
+  return "inherit";
+};

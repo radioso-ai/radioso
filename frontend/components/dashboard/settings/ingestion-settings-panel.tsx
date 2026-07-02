@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
+import { Switch } from '@/components/ui/switch'
 import { type IngestionSettings, settingsApi } from '@/lib/api'
 import { useWorkspace } from '@/lib/workspace-context'
 
@@ -374,6 +375,21 @@ export function IngestionSettingsPanel({
                     </div>
                   </>
                 )}
+              </div>
+              <div className="space-y-3 border-t border-border/70 pt-4">
+                <div className="flex items-center justify-between gap-4">
+                  <SettingFieldHeader
+                    htmlFor="documentEnrichmentEnabled"
+                    label="AI document enrichment"
+                    description="Classify document shape and extract temporal facts with one model call per document."
+                    className="pr-4"
+                  />
+                  <Switch
+                    id="documentEnrichmentEnabled"
+                    checked={settings.documentEnrichmentEnabled}
+                    onCheckedChange={(checked) => updateSetting('documentEnrichmentEnabled', checked)}
+                  />
+                </div>
               </div>
               <div id="existing-documents" className="space-y-4 border-t border-border/70 pt-4">
                 <div className="space-y-1">

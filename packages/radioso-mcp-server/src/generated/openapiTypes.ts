@@ -2033,6 +2033,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/document/sources/{sourceId}/reprocess": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue eligible source documents for reprocessing */
+        post: operations["reprocessDocumentSource"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/document/{documentId}/reprocess": {
         parameters: {
             query?: never;
@@ -3035,6 +3052,7 @@ export interface components {
             fixedWindowChunkOverlap: number;
             structuredMinChunkSize: number;
             structuredMaxChunkSize: number;
+            documentEnrichmentEnabled: boolean;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -3049,6 +3067,11 @@ export interface components {
             structuredMaxChunkSize: number;
             /** @enum {string} */
             embeddingModel?: "text-embedding-3-small" | "text-embedding-3-large" | "text-embedding-ada-002" | "gemini-embedding-001";
+            documentEnrichmentEnabled?: boolean;
+        };
+        ReprocessIngestionRequest: {
+            /** @enum {string} */
+            documentEnrichmentOverride?: "on" | "off";
         };
         RetrievalMetadataRule: {
             id: string;
@@ -4229,6 +4252,8 @@ export interface components {
             /** Format: date-time */
             lastSyncedAt: string | null;
             documentCount: number;
+            /** @enum {string} */
+            documentEnrichmentOverride: "inherit" | "on" | "off";
             crawlSettings?: components["schemas"]["DocumentSourceCrawlSettings"];
             /** Format: date-time */
             createdAt: string;
@@ -4236,12 +4261,28 @@ export interface components {
             updatedAt: string;
         };
         DocumentSourceUpdateRequest: {
+            /** @enum {string} */
+            documentEnrichmentOverride?: "inherit" | "on" | "off";
             crawlSettings?: {
                 limit?: number;
                 includeUrlPatterns?: string[];
                 excludeUrlPatterns?: string[];
                 preserveContentLinks?: boolean;
             };
+        };
+        DocumentReprocessRequest: {
+            /** @enum {string} */
+            documentEnrichmentOverride?: "on" | "off";
+        };
+        SourceReprocessResponse: {
+            /** Format: uuid */
+            sourceId: string;
+            /** Format: uuid */
+            workspaceId: string;
+            queuedDocumentCount: number;
+            skippedDocumentCount: number;
+            /** @enum {string} */
+            status: "queued" | "noop";
         };
         DocumentSourceListResponse: {
             sources: components["schemas"]["DocumentSourceListItem"][];
@@ -4261,6 +4302,21 @@ export interface components {
             documentId: string;
             status: components["schemas"]["DocumentStatus"];
         };
+        DocumentEnrichment: {
+            /** @enum {string} */
+            status: "applied" | "skipped" | "failed";
+            /** @enum {string} */
+            shape?: "event" | "article" | "profile" | "reference" | "generic";
+            model?: string | null;
+            /** Format: date-time */
+            enrichedAt?: string | null;
+            anchorDate?: string | null;
+            /** @enum {string|null} */
+            anchorSource?: "source_last_sync" | "document_created_at" | null;
+            factCount?: number;
+            appliedChunkCount?: number;
+            failureReason?: string | null;
+        };
         RagStatus: string;
         DocumentSummary: {
             /** Format: uuid */
@@ -4277,6 +4333,7 @@ export interface components {
             metadata: {
                 [key: string]: string | number | boolean | null;
             };
+            enrichment?: components["schemas"]["DocumentEnrichment"] & (Record<string, never> | null);
             /** Format: uuid */
             sourceId?: string | null;
             source?: components["schemas"]["DocumentSourceSummary"] & (Record<string, never> | null);
@@ -7383,7 +7440,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ReprocessIngestionRequest"];
+            };
+        };
         responses: {
             /** @description Workspace documents accepted for reprocessing */
             202: {
@@ -14566,7 +14627,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DocumentReprocessRequest"];
+            };
+        };
         responses: {
             /** @description Document returned */
             200: {
@@ -14694,6 +14759,59 @@ export interface operations {
                 };
             };
             /** @description Document not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reprocessDocumentSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DocumentReprocessRequest"];
+            };
+        };
+        responses: {
+            /** @description Source documents accepted for reprocessing */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceReprocessResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Source not found */
             404: {
                 headers: {
                     [name: string]: unknown;

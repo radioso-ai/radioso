@@ -26,6 +26,13 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import {
   DashboardTable,
@@ -82,6 +89,10 @@ const formatDate = (value: string | null) => {
 // rendering "Never" for them reads like an error.
 const SYNCING_SOURCE_KINDS = new Set<DocumentSourceListItem['kind']>(['website', 'connector'])
 const sourceHasSyncConcept = (kind: DocumentSourceListItem['kind']) => SYNCING_SOURCE_KINDS.has(kind)
+type DocumentEnrichmentOverride = 'inherit' | 'on' | 'off'
+type EnrichmentSourceListItem = DocumentSourceListItem & {
+  documentEnrichmentOverride?: DocumentEnrichmentOverride
+}
 
 const connectorIdFromExternalId = (externalId: string | null): string | null => {
   if (!externalId) return null
@@ -210,6 +221,7 @@ function SourceExpandedPanel({
   onOpenCrawlLog,
   onOpenConnectorSettings,
   onSettingsSaved,
+  onSourceUpdated,
 }: {
   source: DocumentSourceListItem
   crawlStatusVersion: number
@@ -218,9 +230,14 @@ function SourceExpandedPanel({
   onOpenCrawlLog: () => void
   onOpenConnectorSettings: () => void
   onSettingsSaved: (settings: DocumentSourceCrawlSettings) => void
+  onSourceUpdated: (source: DocumentSourceListItem) => void
 }) {
   const [crawlJob, setCrawlJob] = useState<WebsiteCrawlJobSummary | null>(null)
   const [isLoading, setIsLoading] = useState(source.kind === 'website')
+  const [isSavingEnrichmentOverride, setIsSavingEnrichmentOverride] = useState(false)
+  const [isReprocessingSource, setIsReprocessingSource] = useState(false)
+  const [sourceActionMessage, setSourceActionMessage] = useState<string | null>(null)
+  const [sourceActionError, setSourceActionError] = useState<string | null>(null)
 
   useEffect(() => {
     if (source.kind !== 'website') {
@@ -254,6 +271,37 @@ function SourceExpandedPanel({
   const crawlFailed = crawlJob?.status === 'failed'
   const pageIssueSummaries = getCrawlPageIssueSummaries(crawlJob)
   const hasCrawlLog = source.kind === 'website' && Boolean(crawlJob)
+  const enrichmentOverride = ((source as EnrichmentSourceListItem).documentEnrichmentOverride ?? 'inherit')
+
+  const handleEnrichmentOverrideChange = async (value: DocumentEnrichmentOverride) => {
+    setIsSavingEnrichmentOverride(true)
+    setSourceActionError(null)
+    setSourceActionMessage(null)
+    try {
+      const updated = await documentsApi.updateSourceEnrichmentOverride(source.id, value)
+      onSourceUpdated(updated)
+    } catch (error) {
+      setSourceActionError(getApiErrorMessage(error, 'Failed to save enrichment override.'))
+    } finally {
+      setIsSavingEnrichmentOverride(false)
+    }
+  }
+
+  const handleReprocessSource = async () => {
+    setIsReprocessingSource(true)
+    setSourceActionError(null)
+    setSourceActionMessage(null)
+    try {
+      const response = await documentsApi.reprocessSource(source.id)
+      setSourceActionMessage(
+        `Queued ${response.queuedDocumentCount} document${response.queuedDocumentCount === 1 ? '' : 's'} for reprocessing. Skipped ${response.skippedDocumentCount}.`,
+      )
+    } catch (error) {
+      setSourceActionError(getApiErrorMessage(error, 'Failed to reprocess source.'))
+    } finally {
+      setIsReprocessingSource(false)
+    }
+  }
 
   return (
     <div className="space-y-3 px-4 py-3">
@@ -322,6 +370,36 @@ function SourceExpandedPanel({
           </CollapsibleContent>
         ) : null}
       </Collapsible>
+      <div className="space-y-3 rounded-md border border-border bg-background/40 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium text-foreground">AI document enrichment</p>
+            <p className="mt-1 text-xs text-muted-foreground">Override the workspace ingestion default for this source.</p>
+          </div>
+          <Select
+            value={enrichmentOverride}
+            onValueChange={(value) => void handleEnrichmentOverrideChange(value as DocumentEnrichmentOverride)}
+            disabled={isSavingEnrichmentOverride}
+          >
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="inherit">Inherit</SelectItem>
+              <SelectItem value="on">On</SelectItem>
+              <SelectItem value="off">Off</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="button" variant="outline" size="sm" disabled={isReprocessingSource} onClick={() => void handleReprocessSource()}>
+            {isReprocessingSource ? <Spinner className="mr-2 h-3.5 w-3.5" /> : <RefreshCw className="mr-2 h-3.5 w-3.5" />}
+            Reprocess source
+          </Button>
+          {sourceActionMessage ? <p className="text-xs text-muted-foreground">{sourceActionMessage}</p> : null}
+          {sourceActionError ? <p className="text-xs text-destructive">{sourceActionError}</p> : null}
+        </div>
+      </div>
     </div>
   )
 }
@@ -754,6 +832,11 @@ export function DocumentSourcesView({ onViewDocumentsForSource, onAddSource }: D
                         onViewDocuments={() => onViewDocumentsForSource(source.id)}
                         onOpenCrawlLog={() => setCrawlLogSource(source)}
                         onOpenConnectorSettings={() => setConnectorSetupSource(source)}
+                        onSourceUpdated={(updated) => {
+                          setSources((current) =>
+                            current.map((entry) => (entry.id === updated.id ? updated : entry)),
+                          )
+                        }}
                         onSettingsSaved={(settings) => {
                           setSources((current) =>
                             current.map((entry) =>

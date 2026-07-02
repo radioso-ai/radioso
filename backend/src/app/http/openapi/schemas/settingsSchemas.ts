@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  reprocessIngestionBodySchema,
   updateGeneralSettingsSchema,
   updateIngestionSettingsSchema,
   updatePlatformSettingsSchema,
@@ -96,6 +97,7 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
       fixedWindowChunkOverlap: z.number().int(),
       structuredMinChunkSize: z.number().int(),
       structuredMaxChunkSize: z.number().int(),
+      documentEnrichmentEnabled: z.boolean(),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
     }),
@@ -104,6 +106,11 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
   const UpdateIngestionSettingsRequestSchema = registry.register(
     "UpdateIngestionSettingsRequest",
     updateIngestionSettingsSchema,
+  );
+
+  const ReprocessIngestionRequestSchema = registry.register(
+    "ReprocessIngestionRequest",
+    reprocessIngestionBodySchema,
   );
 
   const RetrievalMetadataRuleSchema = registry.register(
@@ -356,6 +363,7 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
     RetrievalDefaultsResponseSchema,
     IngestionSettingsSchema,
     UpdateIngestionSettingsRequestSchema,
+    ReprocessIngestionRequestSchema,
     RetrievalMetadataRuleSchema,
     TriggerAnalysisRuleSchema,
     TriggerAnalysisSchema,

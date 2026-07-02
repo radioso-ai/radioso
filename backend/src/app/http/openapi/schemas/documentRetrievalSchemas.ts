@@ -2,8 +2,11 @@ import { z } from "zod";
 import {
   documentParamsSchema,
   documentSchema,
+  reprocessDocumentBodySchema,
   documentSearchHistoryParamsSchema,
   documentSearchSchema,
+  sourceParamsSchema,
+  sourceUpdateSchema,
 } from "../../routes/documentRouteSchemas.js";
 import { crawlBodySchema } from "../../../../modules/websiteCrawler/routes.js";
 import {
@@ -49,6 +52,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       lastSyncStatus: z.string().nullable(),
       lastSyncedAt: z.string().datetime().nullable(),
       documentCount: z.number().int().min(0),
+      documentEnrichmentOverride: z.enum(["inherit", "on", "off"]),
       crawlSettings: DocumentSourceCrawlSettingsSchema.optional(),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
@@ -57,15 +61,22 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
 
   const DocumentSourceUpdateRequestSchema = registry.register(
     "DocumentSourceUpdateRequest",
+    sourceUpdateSchema,
+  );
+
+  const DocumentReprocessRequestSchema = registry.register(
+    "DocumentReprocessRequest",
+    reprocessDocumentBodySchema,
+  );
+
+  const SourceReprocessResponseSchema = registry.register(
+    "SourceReprocessResponse",
     z.object({
-      crawlSettings: z
-        .object({
-          limit: z.number().int().min(1).optional(),
-          includeUrlPatterns: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
-          excludeUrlPatterns: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
-          preserveContentLinks: z.boolean().optional(),
-        })
-        .optional(),
+      sourceId: z.string().uuid(),
+      workspaceId: z.string().uuid(),
+      queuedDocumentCount: z.number().int().min(0),
+      skippedDocumentCount: z.number().int().min(0),
+      status: z.enum(["queued", "noop"]),
     }),
   );
 
@@ -552,6 +563,8 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     DocumentSourceCrawlSettingsSchema,
     DocumentSourceListItemSchema,
     DocumentSourceUpdateRequestSchema,
+    DocumentReprocessRequestSchema,
+    SourceReprocessResponseSchema,
     DocumentSourceListResponseSchema,
     DocumentImportRequestSchema,
     DocumentOperationResponseSchema,

@@ -26,6 +26,18 @@ import { cn } from '@/lib/utils'
 // other sources; documents in crawl/upload/connector sources stay locked.
 export const MANUALLY_ADDED_SOURCE_ID = '00000000-0000-0000-0000-000000000001'
 
+const formatDateTime = (value: string | null | undefined) => {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
 export type DocumentEditorValues = {
   title: string
   content: string
@@ -119,6 +131,19 @@ export function DocumentEditorPage({
   const sourceName = document.source?.name ?? null
   const sourceUrlRaw = document.metadata?.sourceUrl
   const sourceUrl = typeof sourceUrlRaw === 'string' && sourceUrlRaw.trim().length > 0 ? sourceUrlRaw : null
+  const enrichment = document.enrichment ?? null
+  const enrichmentRows = enrichment
+    ? [
+        ['Status', enrichment.status],
+        ['Shape', enrichment.shape ?? null],
+        ['Model', enrichment.model ?? null],
+        ['Enriched', formatDateTime(enrichment.enrichedAt)],
+        ['Anchor date', enrichment.anchorDate ?? null],
+        ['Anchor source', enrichment.anchorSource ?? null],
+        ['Facts', enrichment.factCount === undefined ? null : String(enrichment.factCount)],
+        ['Applied chunks', enrichment.appliedChunkCount === undefined ? null : String(enrichment.appliedChunkCount)],
+      ].filter(([, value]) => value)
+    : []
   const readOnlyExplanation = document.sourceKind === 'uploaded_file'
     ? 'Imported documents stay read-only here. Re-import the source file to replace its contents.'
     : isInlineText && !sourceIsManual
@@ -339,6 +364,24 @@ export function DocumentEditorPage({
                     </p>
                   ) : null}
                 </div>
+                {enrichment ? (
+                  <div className="space-y-2 border-t border-border/70 pt-4">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      AI enrichment
+                    </p>
+                    <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1 text-sm">
+                      {enrichmentRows.map(([label, value]) => (
+                        <div key={label} className="contents">
+                          <dt className="text-muted-foreground">{label}</dt>
+                          <dd className="text-foreground [overflow-wrap:anywhere]">{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    {enrichment.failureReason ? (
+                      <p className="text-sm text-destructive [overflow-wrap:anywhere]">{enrichment.failureReason}</p>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div className="space-y-1">
                   <label htmlFor="document-metadata" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Metadata

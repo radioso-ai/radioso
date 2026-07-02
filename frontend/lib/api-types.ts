@@ -228,6 +228,15 @@ export type AgentSourceScope = ApiSchemas['AgentSourceScope']
 export type DocumentSourceListItem = ApiSchemas['DocumentSourceListItem']
 export type DocumentSourceListResponse = ApiSchemas['DocumentSourceListResponse']
 export type DocumentSourceCrawlSettings = ApiSchemas['DocumentSourceCrawlSettings']
+export type SourceReprocessResponse = 'SourceReprocessResponse' extends keyof ApiSchemas
+  ? ApiSchemas['SourceReprocessResponse']
+  : {
+      sourceId: string
+      workspaceId: string
+      queuedDocumentCount: number
+      skippedDocumentCount: number
+      status: 'queued' | 'noop'
+    }
 export type DocumentSummary = ApiSchemas['DocumentSummary']
 export type DocumentDetails = ApiSchemas['DocumentDetails']
 export type DocumentListResponse = ApiSchemas['DocumentListResponse']

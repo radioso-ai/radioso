@@ -665,6 +665,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentSearchService: retrieval.documentSearchService,
     documentSearchHistoryService: documents.documentSearchHistoryService,
     workspaceIngestionReprocessService: documents.workspaceIngestionReprocessService,
+    documentSourceReprocessService: documents.documentSourceReprocessService,
     documentProcessingWorker: documents.documentProcessingWorker,
     documentJobConsumer: documents.documentJobConsumer,
     websiteCrawlerProvider: documents.websiteCrawlerProvider,

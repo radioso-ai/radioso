@@ -16,6 +16,7 @@ import type {
   DocumentProcessingWorker,
   DocumentSearchHistoryService,
   DocumentSearchService,
+  DocumentSourceReprocessService,
   WorkspaceIngestionReprocessService,
 } from "../../modules/documents/composition.js";
 import type { RetrievalMetadataFieldSourcePort } from "../../modules/settings/contracts/services.js";
@@ -140,6 +141,7 @@ export interface AppDependencies {
   documentSearchService: DocumentSearchService;
   documentSearchHistoryService: DocumentSearchHistoryService;
   workspaceIngestionReprocessService: WorkspaceIngestionReprocessService;
+  documentSourceReprocessService: DocumentSourceReprocessService;
   documentProcessingWorker: DocumentProcessingWorker;
   documentJobConsumer?: JobConsumerPort;
   websiteCrawlerProvider?: WebsiteCrawlerProvider;

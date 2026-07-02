@@ -105,6 +105,7 @@ import {
   DocumentProcessingWorker,
   DocumentSearchHistoryService,
   DocumentSearchService,
+  DocumentSourceReprocessService,
   DocumentSourceContentService,
   WorkspaceIngestionReprocessService,
   AgentConverseResourceService,
@@ -635,6 +636,7 @@ export const buildDocumentServices = (input: {
     documentSourceContentService,
     logger,
     documentEnrichmentService,
+    documentSourceRepository,
   );
   const documentIngestionService = new DocumentIngestionService(
     repositories.documentRepository,
@@ -702,6 +704,13 @@ export const buildDocumentServices = (input: {
       documentJobDispatcher,
       repositories,
     });
+  const documentSourceReprocessService = new DocumentSourceReprocessService(
+    repositories.documentRepository,
+    documentSourceRepository,
+    auditService,
+    repositories.documentProcessingJobRepository,
+    documentJobDispatcher,
+  );
   const documentSearchHistoryService = new DocumentSearchHistoryService(
     input.auditEventRepository,
     repositories.documentRepository,
@@ -714,6 +723,7 @@ export const buildDocumentServices = (input: {
     documentJobConsumer,
     documentProcessingWorker,
     documentSearchHistoryService,
+    documentSourceReprocessService,
     documentStorage,
     websiteCrawlJobConsumer,
     websiteCrawlJobService,

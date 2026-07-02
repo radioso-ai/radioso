@@ -15,6 +15,7 @@ import {
   InMemoryDocumentStorage,
   InMemoryDocumentProcessingJobRepository,
   InMemoryDocumentRepository,
+  InMemoryDocumentSourceRepository,
 } from "../support/fakes.js";
 import { notFound } from "../../src/shared/domain/errors.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
@@ -189,6 +190,58 @@ describe("document ingestion", () => {
         eventStatus: "failure",
       }),
     );
+  });
+
+  it("stores a one-run enrichment override on the reprocess job without leaking it to later jobs", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(
+      documentRepository,
+      auditService,
+      () => jobRepository.getQueueSnapshot(),
+      jobRepository,
+    );
+    const created = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Ready",
+      sourceContent: "Ready content",
+      markdownContent: "Ready content",
+      status: "ready",
+      sourceKind: "inline_text",
+      sourceFilename: null,
+      sourceMimeType: "text/plain",
+      sourceStorageBucket: null,
+      sourceStorageObject: null,
+      sourceStorageGeneration: null,
+      sourceSizeBytes: null,
+    });
+
+    await service.reprocess({
+      workspaceId: "workspace-1",
+      documentId: created.id,
+      documentEnrichmentOverride: "off",
+    });
+
+    const overrideJob = await jobRepository.findByDocumentRevision({
+      documentId: created.id,
+      workspaceId: "workspace-1",
+      documentRevision: 2,
+    });
+    expect(overrideJob?.options).toEqual({ documentEnrichmentOverride: "off" });
+
+    await service.reprocess({
+      workspaceId: "workspace-1",
+      documentId: created.id,
+    });
+
+    const laterJob = await jobRepository.findByDocumentRevision({
+      documentId: created.id,
+      workspaceId: "workspace-1",
+      documentRevision: 3,
+    });
+    expect(laterJob?.options).toBeNull();
   });
 
   it("recovers timed-out claims when the same job is retried by id", async () => {
@@ -757,6 +810,106 @@ describe("document ingestion", () => {
     expect(chunks).toBeDefined();
     expect(chunks).toHaveLength(1);
     expect(chunks![0]!.metadata).toEqual({ sourceUrl: "https://example.com" });
+  });
+
+  it("uses source enrichment override during processing and clears stale enrichment metadata when disabled", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const sourceRepository = new InMemoryDocumentSourceRepository();
+    const chunkRepository = new InMemoryChunkRepository(documentRepository);
+    const auditService = createAuditService();
+    const source = await sourceRepository.upsertByExternalId({
+      workspaceId: "workspace-1",
+      kind: "website",
+      name: "Events",
+      externalId: "https://events.example",
+      config: {
+        url: "https://events.example",
+        documentEnrichmentOverride: "on",
+      },
+    });
+    const document = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Event",
+      sourceContent: "Event content",
+      markdownContent: "Event content",
+      status: "queued",
+      metadata: {
+        enrichment: { status: "applied" },
+        dateFrom: "2026-07-17",
+        dateTo: "2026-07-17",
+        sourceUrl: "https://events.example/event",
+      },
+      sourceId: source.id,
+      sourceKind: "inline_text",
+      sourceFilename: null,
+      sourceMimeType: "text/plain",
+      sourceStorageBucket: null,
+      sourceStorageObject: null,
+      sourceStorageGeneration: null,
+      sourceSizeBytes: null,
+    });
+    const stage = {
+      enrich: vi.fn().mockResolvedValue({
+        status: "applied",
+        documentMetadata: {
+          sourceUrl: "https://events.example/event",
+          enrichment: { status: "applied", shape: "event", factCount: 1, appliedChunkCount: 1 },
+        },
+        chunks: [{
+          chunkIndex: 0,
+          content: "Event content",
+          startOffset: 0,
+          endOffset: "Event content".length,
+          metadata: { sourceUrl: "https://events.example/event", dateFrom: "2026-08-01", dateTo: "2026-08-01" },
+        }],
+        factCount: 1,
+        appliedChunkCount: 1,
+      }),
+    };
+    const service = new DocumentProcessingService(
+      documentRepository,
+      chunkRepository,
+      new EmbeddingService({
+        async embedTexts(texts: string[]): Promise<number[][]> {
+          return texts.map(() => [1, 2, 3]);
+        },
+      }),
+      auditService,
+      {
+        async getForWorkspace(workspaceId: string) {
+          return { ...defaultIngestionSettings(workspaceId), documentEnrichmentEnabled: false };
+        },
+      },
+      new ChunkingStrategyRegistry([fixedWindowStrategy]),
+      undefined,
+      undefined,
+      stage,
+      sourceRepository,
+    );
+
+    const firstJob = await jobRepository.enqueue({
+      documentId: document.id,
+      workspaceId: "workspace-1",
+      documentRevision: document.revision,
+    });
+    expect(await service.process(firstJob)).toBe("completed");
+    expect(stage.enrich).toHaveBeenCalledOnce();
+
+    await documentRepository.requeueAndQueue(document.id, "workspace-1", { documentEnrichmentOverride: "off" });
+    const offJob = await jobRepository.findByDocumentRevision({
+      documentId: document.id,
+      workspaceId: "workspace-1",
+      documentRevision: 2,
+    });
+    stage.enrich.mockClear();
+
+    expect(await service.process(offJob!)).toBe("completed");
+    expect(stage.enrich).not.toHaveBeenCalled();
+    const current = await documentRepository.findByIdAndWorkspaceId(document.id, "workspace-1");
+    expect(current?.metadata).toEqual({ sourceUrl: "https://events.example/event" });
+    expect(chunkRepository.items.get(document.id)?.[0]?.metadata).toEqual({ sourceUrl: "https://events.example/event" });
   });
 
   it("returns not_found when update loses a delete race", async () => {

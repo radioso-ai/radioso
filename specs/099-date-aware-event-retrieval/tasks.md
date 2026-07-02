@@ -112,43 +112,50 @@ and catalog registration, not a separate `paths/documentsPaths.ts` edit.
 
 ### Tests for User Story 2
 
-- [ ] T042 [P] [US2] Write ingestion settings default/update tests for `documentEnrichmentEnabled` in `backend/tests/unit/ingestion-settings.test.ts`
+- [X] T042 [P] [US2] Write ingestion settings default/update tests for `documentEnrichmentEnabled` in `backend/tests/unit/ingestion-settings.test.ts`
 - [ ] T043 [P] [US2] Write ingestion settings repository tests for enrichment default persistence in `backend/tests/integration/document-settings.integration.test.ts`
 - [ ] T044 [P] [US2] Write document source override repository tests in `backend/tests/integration/document-source-repository.integration.test.ts`
-- [ ] T045 [P] [US2] Write single-document reprocess override tests in `backend/tests/unit/document-ingestion.test.ts`
-- [ ] T046 [P] [US2] Write per-source reprocess service tests in `backend/tests/unit/document-source-reprocess-service.test.ts`
+- [X] T045 [P] [US2] Write single-document reprocess override tests in `backend/tests/unit/document-ingestion.test.ts`
+- [X] T046 [P] [US2] Write per-source reprocess service tests in `backend/tests/unit/document-source-reprocess-service.test.ts`
 - [ ] T047 [P] [US2] Write per-source reprocess integration tests in `backend/tests/integration/document-repository.integration.test.ts`
 - [ ] T048 [P] [US2] Write document/settings contract tests for new fields/endpoints in `backend/tests/contract/document.contract.test.ts`
 - [ ] T049 [P] [US2] Write settings contract tests for ingestion enrichment field and workspace override body in `backend/tests/contract/settings.contract.test.ts`
 - [ ] T050 [P] [US2] Write Playwright coverage for ingestion toggle and source reprocess controls in `frontend/tests/e2e/source-detail.spec.ts`
 - [ ] T051 [P] [US2] Write frontend API adapter unit tests for reprocess overrides in `frontend/tests/unit/document-enrichment-api.test.ts`
-- [ ] T052 [P] [US2] Write MCP reprocess override tests in `packages/radioso-mcp-server/tests/writeTools.test.ts`
+- [X] T052 [P] [US2] Write MCP reprocess override tests in `packages/radioso-mcp-server/tests/writeTools.test.ts`
+
+**Run-scope deviation**: T043, T044, and T047 remain unchecked because this run
+was constrained to unit tests only and no Postgres-backed integration tests.
+T048 and T049 remain unchecked because contract tests were not run in this
+unit-test-only slice; the code-first OpenAPI registry and generated artifacts
+were updated. T050 and T051 remain unchecked because frontend verification was
+limited to linting the touched files in this run.
 
 ### Implementation for User Story 2
 
-- [ ] T053 [US2] Add `documentEnrichmentEnabled` to ingestion settings domain defaults and validation in `backend/src/modules/settings/domain/ingestionSettings.ts`
-- [ ] T054 [US2] Persist `documentEnrichmentEnabled` in `backend/src/db/repositories/ingestionSettingsRepository.ts`
-- [ ] T055 [US2] Expose ingestion enrichment field in settings service contracts in `backend/src/modules/settings/contracts/ingestion.ts`
-- [ ] T056 [US2] Add ingestion settings route validation for enrichment field in `backend/src/app/http/routes/settingsRouteSchemas.ts`
-- [ ] T057 [US2] Add source enrichment override parsing and presenter support in `backend/src/app/http/presenters/documentSourcePresenter.ts`
-- [ ] T058 [US2] Extend source update schema for enrichment override in `backend/src/app/http/routes/documentRouteSchemas.ts`
-- [ ] T059 [US2] Persist source enrichment override through source config updates in `backend/src/db/repositories/documentSourceRepository.ts`
-- [ ] T060 [US2] Add optional reprocess override body to single-document route in `backend/src/app/http/routes/documentRoutes.ts`
-- [ ] T061 [US2] Add workspace reprocess override body to settings route in `backend/src/app/http/routes/settingsRoutes.ts`
-- [ ] T062 [US2] Add per-source reprocess service in `backend/src/modules/documents/services/documentSourceReprocessService.ts`
-- [ ] T063 [US2] Add source-scoped requeue repository method in `backend/src/db/repositories/documentRepository.ts`
-- [ ] T064 [US2] Wire source reprocess service into route dependencies in `backend/src/app/server/types.ts`
-- [ ] T065 [US2] Add `POST /document/sources/{sourceId}/reprocess` route in `backend/src/app/http/routes/documentRoutes.ts`
-- [ ] T066 [US2] Update OpenAPI documents paths for source reprocess and reprocess override bodies in `backend/src/app/http/openapi/paths/documentsPaths.ts`
-- [ ] T067 [US2] Update OpenAPI settings schemas/paths for ingestion enrichment and workspace reprocess body in `backend/src/app/http/openapi/schemas/settingsSchemas.ts`
-- [ ] T068 [US2] Update frontend API types through generated contract use in `frontend/lib/api-types.ts`
-- [ ] T069 [US2] Add frontend ingestion enrichment toggle in `frontend/components/dashboard/settings/ingestion-settings-panel.tsx`
-- [ ] T070 [US2] Add source override and reprocess source controls in `frontend/components/dashboard/document-sources-view.tsx`
-- [ ] T071 [US2] Show document enrichment provenance/failure state in `frontend/components/dashboard/documents/document-editor-page.tsx`
-- [ ] T072 [US2] Add API adapter methods for reprocess overrides in `frontend/lib/api-documents.ts`
-- [ ] T073 [US2] Add SDK convenience methods for source/document reprocess overrides in `typescript-sdk/src/index.ts`
-- [ ] T074 [US2] Add MCP `reprocess_document` enrichment override support in `packages/radioso-mcp-server/src/tools/writeTools.ts`
-- [ ] T075 [US2] Update MCP API adapter request body support in `packages/radioso-mcp-server/src/radiosoApiAdapter.ts`
+- [X] T053 [US2] Add `documentEnrichmentEnabled` to ingestion settings domain defaults and validation in `backend/src/modules/settings/domain/ingestionSettings.ts`
+- [X] T054 [US2] Persist `documentEnrichmentEnabled` in `backend/src/db/repositories/ingestionSettingsRepository.ts`
+- [X] T055 [US2] Expose ingestion enrichment field in settings service contracts in `backend/src/modules/settings/contracts/ingestion.ts`
+- [X] T056 [US2] Add ingestion settings route validation for enrichment field in `backend/src/app/http/routes/settingsRouteSchemas.ts`
+- [X] T057 [US2] Add source enrichment override parsing and presenter support in `backend/src/app/http/presenters/documentSourcePresenter.ts`
+- [X] T058 [US2] Extend source update schema for enrichment override in `backend/src/app/http/routes/documentRouteSchemas.ts`
+- [X] T059 [US2] Persist source enrichment override through source config updates in `backend/src/db/repositories/documentSourceRepository.ts`
+- [X] T060 [US2] Add optional reprocess override body to single-document route in `backend/src/app/http/routes/documentRoutes.ts`
+- [X] T061 [US2] Add workspace reprocess override body to settings route in `backend/src/app/http/routes/settingsRoutes.ts`
+- [X] T062 [US2] Add per-source reprocess service in `backend/src/modules/documents/services/documentSourceReprocessService.ts`
+- [X] T063 [US2] Add source-scoped requeue repository method in `backend/src/db/repositories/documentRepository.ts`
+- [X] T064 [US2] Wire source reprocess service into route dependencies in `backend/src/app/server/types.ts`
+- [X] T065 [US2] Add `POST /document/sources/{sourceId}/reprocess` route in `backend/src/app/http/routes/documentRoutes.ts`
+- [X] T066 [US2] Update OpenAPI documents paths for source reprocess and reprocess override bodies in `backend/src/app/http/openapi/paths/documentsPaths.ts`
+- [X] T067 [US2] Update OpenAPI settings schemas/paths for ingestion enrichment and workspace reprocess body in `backend/src/app/http/openapi/schemas/settingsSchemas.ts`
+- [X] T068 [US2] Update frontend API types through generated contract use in `frontend/lib/api-types.ts`
+- [X] T069 [US2] Add frontend ingestion enrichment toggle in `frontend/components/dashboard/settings/ingestion-settings-panel.tsx`
+- [X] T070 [US2] Add source override and reprocess source controls in `frontend/components/dashboard/document-sources-view.tsx`
+- [X] T071 [US2] Show document enrichment provenance/failure state in `frontend/components/dashboard/documents/document-editor-page.tsx`
+- [X] T072 [US2] Add API adapter methods for reprocess overrides in `frontend/lib/api-documents.ts`
+- [X] T073 [US2] Add SDK convenience methods for source/document reprocess overrides in `typescript-sdk/src/index.ts`
+- [X] T074 [US2] Add MCP `reprocess_document` enrichment override support in `packages/radioso-mcp-server/src/tools/writeTools.ts`
+- [X] T075 [US2] Update MCP API adapter request body support in `packages/radioso-mcp-server/src/radiosoApiAdapter.ts`
 
 **Checkpoint**: User Stories 1 and 2 work independently.
 
@@ -247,11 +254,11 @@ and catalog registration, not a separate `paths/documentsPaths.ts` edit.
 
 **Purpose**: Generated contracts, documentation parity, and validation planning.
 
-- [ ] T117 Regenerate backend OpenAPI outputs from code-first registry in `backend/openapi.yaml`
-- [ ] T118 Regenerate backend OpenAPI JSON from code-first registry in `backend/openapi.json`
-- [ ] T119 Sync TypeScript SDK OpenAPI snapshots and generated client in `typescript-sdk/src/generated/client.ts`
-- [ ] T120 Sync TypeScript SDK generated types in `typescript-sdk/src/generated/types.ts`
-- [ ] T121 Sync MCP generated OpenAPI types in `packages/radioso-mcp-server/src/generated/openapiTypes.ts`
+- [X] T117 Regenerate backend OpenAPI outputs from code-first registry in `backend/openapi.yaml`
+- [X] T118 Regenerate backend OpenAPI JSON from code-first registry in `backend/openapi.json`
+- [X] T119 Sync TypeScript SDK OpenAPI snapshots and generated client in `typescript-sdk/src/generated/client.ts`
+- [X] T120 Sync TypeScript SDK generated types in `typescript-sdk/src/generated/types.ts`
+- [X] T121 Sync MCP generated OpenAPI types in `packages/radioso-mcp-server/src/generated/openapiTypes.ts`
 - [ ] T122 [P] Update ingestion settings docs in `docs/settings-docs/ingestion/reprocess-existing-documents.md`
 - [ ] T123 [P] Add mirrored frontend ingestion enrichment setting docs in `frontend/docs/settings-docs/ingestion/document-enrichment.md`
 - [ ] T124 [P] Add retrieval temporal setting docs in `docs/settings-docs/retrieval/temporal-structured-lookup.md`

@@ -104,4 +104,9 @@ export const updateIngestionSettingsSchema = z.object({
     .min(RETRIEVAL_BEHAVIOR.chunking.structuredMaxChunkSizeMin)
     .max(RETRIEVAL_BEHAVIOR.chunking.structuredMaxChunkSizeMax),
   embeddingModel: z.enum(embeddingModelIds).optional(),
+  documentEnrichmentEnabled: z.boolean().optional(),
 });
+
+export const reprocessIngestionBodySchema = z.object({
+  documentEnrichmentOverride: z.enum(["on", "off"]).optional(),
+}).strict();

@@ -13,6 +13,7 @@ import {
   createAssistantLogoUploadHandler,
 } from "../shared/assistantIdentity.js";
 import {
+  reprocessIngestionBodySchema,
   updateGeneralSettingsSchema,
   updateIngestionSettingsSchema,
   updatePlatformSettingsSchema,
@@ -114,10 +115,14 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
     }
   });
 
-  router.post("/ingestion/reprocess", workspaceSession, requireWorkspacePermission(dependencies, "workspace.documents.manage"), async (_req, res, next) => {
+  router.post("/ingestion/reprocess", workspaceSession, requireWorkspacePermission(dependencies, "workspace.documents.manage"), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const result = await dependencies.workspaceIngestionReprocessService.reprocessWorkspace(workspaceId);
+      const body = reprocessIngestionBodySchema.parse(req.body ?? {});
+      const result = await dependencies.workspaceIngestionReprocessService.reprocessWorkspace(
+        workspaceId,
+        body.documentEnrichmentOverride ? { documentEnrichmentOverride: body.documentEnrichmentOverride } : null,
+      );
       res.status(202).json(result);
     } catch (error) {
       next(error);

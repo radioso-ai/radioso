@@ -422,6 +422,7 @@ export function AgentView({
           assistantLinkUtmEnabled={selectedAgent?.assistantLinkUtmEnabled}
           onOpenDocument={onOpenDocument}
           onboarding={onboarding}
+          adoptConversationId={routeState.agentChatConversationId}
         />
         {wizard}
       </>

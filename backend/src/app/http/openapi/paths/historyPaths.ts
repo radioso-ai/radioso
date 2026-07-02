@@ -19,6 +19,10 @@ export const registerHistoryPaths = (
       query: z.object({
         limit: z.number().int().min(1).max(100).optional(),
         offset: z.number().int().min(0).optional(),
+        sourceScope: z.enum(["end_user", "operator_test", "all"]).optional().openapi({
+          description:
+            "Which conversation sources to include. Defaults to end_user, which excludes operator-driven dashboard test chat and workbench replay conversations.",
+        }),
       }),
     },
     responses: {
@@ -53,6 +57,10 @@ export const registerHistoryPaths = (
         limit: z.number().int().min(1).max(100).optional(),
         offset: z.number().int().min(0).optional(),
         cursor: z.string().min(1).optional(),
+        sourceScope: z.enum(["end_user", "operator_test", "all"]).optional().openapi({
+          description:
+            "Which conversation sources to include. Defaults to end_user, which excludes operator-driven dashboard test chat and workbench replay conversations.",
+        }),
       }),
     },
     responses: {

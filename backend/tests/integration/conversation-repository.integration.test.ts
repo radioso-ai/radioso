@@ -102,6 +102,35 @@ describeIntegration("ConversationRepository (Postgres)", () => {
     expect(page2.nextCursor).toBeNull();
   });
 
+  it("excludes operator-test conversations by default and returns only them under operator_test scope", async () => {
+    // Four conversations: two real (embed + NULL source) and two operator-test.
+    const embed = await repository.create(workspaceId, null, "website_embed");
+    const nullSource = await repository.create(workspaceId);
+    const testChat = await repository.create(workspaceId, null, "authenticated_chat");
+    const replay = await repository.create(workspaceId, null, "workbench_replay");
+
+    const idsOf = (result: Awaited<ReturnType<typeof repository.listPageByWorkspaceId>>) =>
+      new Set(result.conversations.map((c) => c.id));
+
+    // Default (end_user): keep real + NULL, drop operator-test; total reflects the exclusion.
+    const defaultPage = await repository.listPageByWorkspaceId(workspaceId, { limit: 50 });
+    expect(idsOf(defaultPage)).toEqual(new Set([embed.id, nullSource.id]));
+    expect(defaultPage.total).toBe(2);
+
+    // operator_test: only the dashboard test chat + workbench replay.
+    const operatorPage = await repository.listPageByWorkspaceId(workspaceId, {
+      limit: 50,
+      sourceScope: "operator_test",
+    });
+    expect(idsOf(operatorPage)).toEqual(new Set([testChat.id, replay.id]));
+    expect(operatorPage.total).toBe(2);
+
+    // all: every conversation.
+    const allPage = await repository.listPageByWorkspaceId(workspaceId, { limit: 50, sourceScope: "all" });
+    expect(idsOf(allPage)).toEqual(new Set([embed.id, nullSource.id, testChat.id, replay.id]));
+    expect(allPage.total).toBe(4);
+  });
+
   it("touch bumps updated_at to the front of the page", async () => {
     const ids = await seedOrdered();
     await repository.touch(ids[0], workspaceId); // oldest becomes newest

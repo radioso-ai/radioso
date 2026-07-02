@@ -1,5 +1,6 @@
 import { notFound } from "../../../shared/domain/errors.js";
 import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js";
+import type { ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
 import type { AuditEventRecord, AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
 import type {
   ConversationRepositoryPort,
@@ -713,11 +714,11 @@ export class ChatHistoryService {
 
   async listConversations(
     workspaceId: string,
-    input: { limit: number; offset?: number; cursor?: string } = { limit: 50, offset: 0 },
+    input: { limit: number; offset?: number; cursor?: string; sourceScope?: ConversationSourceScope } = { limit: 50, offset: 0 },
   ): Promise<ChatConversationPage> {
     const { conversations, total, nextCursor, hasMore } = await this.conversationRepository.listPageByWorkspaceId(
       workspaceId,
-      input,
+      { ...input, sourceScope: input.sourceScope ?? "end_user" },
     );
     const conversationIds = conversations.map((conversation) => conversation.id);
     const [messageSummaries, ownershipByConversationId] = await Promise.all([
@@ -743,12 +744,13 @@ export class ChatHistoryService {
 
   async listItems(
     workspaceId: string,
-    input: { limit: number; offset?: number } = { limit: 50, offset: 0 },
+    input: { limit: number; offset?: number; sourceScope?: ConversationSourceScope } = { limit: 50, offset: 0 },
   ): Promise<HistoryItemsPage> {
     const offset = input.offset ?? 0;
     const sourceLimit = offset + input.limit;
+    const sourceScope = input.sourceScope ?? "end_user";
     const [basePage, contactPage] = await Promise.all([
-      this.historyItemsRepository.listPageByWorkspaceId(workspaceId, { limit: sourceLimit, offset: 0 }),
+      this.historyItemsRepository.listPageByWorkspaceId(workspaceId, { limit: sourceLimit, offset: 0, sourceScope }),
       this.contactHistoryProvider.listPageByWorkspaceId(workspaceId, { limit: sourceLimit, offset: 0 }),
     ]);
     const baseItems = basePage.items;

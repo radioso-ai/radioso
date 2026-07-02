@@ -679,6 +679,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workbenchReplayRunner: chat.workbenchReplayRunner,
     chatBootstrapService: chat.chatBootstrapService,
     chatHistoryService: chat.chatHistoryService,
+    conversationForkService: chat.conversationForkService,
     assistantChatService: chat.assistantChatService,
     assistantHistoryService: chat.assistantHistoryService,
     retrievalSearchService: retrieval.retrievalSearchService,

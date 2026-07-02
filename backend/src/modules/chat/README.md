@@ -56,9 +56,23 @@ imports from `services/`.
 - Suggestions and public chat actions: `publicChatActionAdvertiser.ts`,
   `chat-action` tests.
 - History: `assistantHistoryService.ts`, `chatHistoryService.ts`,
-  `historyItemPresenter.ts`.
+  `historyItemPresenter.ts`. History list reads take a `sourceScope`
+  (`end_user` default | `operator_test` | `all`); the default excludes
+  operator-driven test traffic (`shared/domain/conversationSource.ts` —
+  `OPERATOR_TEST_SOURCE_CHANNELS` = dashboard test chat + workbench replay) so an
+  operator's own testing never pollutes Activity, Quality, or Needs-Attention.
+  The same NULL-safe exclusion lives in `historyItemsRepository`,
+  `conversationRepository`, `quality/service.ts`, and `pendingDecisionRepository`.
 - Bootstrap and public chat: `chatBootstrapService.ts`,
   public chat routes and presenters.
+- Fork a conversation into a test session: `services/conversationForkService.ts`
+  (`forkForTest` copies the user+assistant thread AND the active routine state into a
+  new `authenticated_chat` conversation, same agent; skips system turns; original
+  untouched). Routine state is keyed by `session_id` = conversation id, so it re-keys
+  `loadActive(source)` → `save({...state, sessionId: fork})` — the fork resumes
+  mid-routine (unlike eval *replay*, which must NOT seed it). Route:
+  `POST /api/v1/conversations/:id/fork` in `conversationOwnershipRoutes.ts`
+  (workspace-session auth). Powers the workbench's "Continue in test chat".
 - Reusable turn engine: `conversationContractMappers.ts`,
   `conversationProcessTurnInput.ts`, `conversationEngineChatTurn.ts`, and
   application composition in `src/app/server/dependencyBuilders.ts`.

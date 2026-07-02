@@ -3,6 +3,10 @@ import type { ConversationChannelContext } from "@radioso/conversation-contract"
 import type { MessageRecord } from "./messageRepository.js";
 
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
+import {
+  OPERATOR_TEST_SOURCE_CHANNELS,
+  type ConversationSourceScope,
+} from "../../shared/domain/conversationSource.js";
 import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
@@ -42,7 +46,7 @@ export interface ConversationRepositoryPort {
   }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }>;
   listPageByWorkspaceId(
     workspaceId: string,
-    input: { limit: number; offset?: number; cursor?: string },
+    input: { limit: number; offset?: number; cursor?: string; sourceScope?: ConversationSourceScope },
   ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
   countByWorkspaceId(workspaceId: string): Promise<number>;
   listPageByAnonymousSession(
@@ -120,6 +124,11 @@ const initialAssistantMessageColumns = [
   "content",
   "created_at",
 ] as const;
+
+// Kysely `$if` predicates for the source-scope filter. The count query is unaliased
+// (`source_channel`); the list query aliases the table as `c` (`c.source_channel`).
+// `end_user` is NULL-safe (real conversations often have a NULL source_channel).
+const operatorTestChannels = [...OPERATOR_TEST_SOURCE_CHANNELS];
 
 const mapConversation = (row: ConversationRow): ConversationRecord => ({
   id: row.id,
@@ -220,15 +229,25 @@ export class ConversationRepository implements ConversationRepositoryPort {
 
   async listPageByWorkspaceId(
     workspaceId: string,
-    input: { limit: number; offset?: number; cursor?: string },
+    input: { limit: number; offset?: number; cursor?: string; sourceScope?: ConversationSourceScope },
   ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
     const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["updatedAt", "createdAt", "id"]) : null;
+    const scope: ConversationSourceScope = input.sourceScope ?? "end_user";
     const total = cursor?.totalSnapshot !== undefined
       ? Number(cursor.totalSnapshot)
       : Number((await this.db
           .selectFrom("conversations")
           .select((eb) => eb.fn.countAll<string>().as("count"))
           .where("workspace_id", "=", workspaceId)
+          .$if(scope === "end_user", (qb) =>
+            qb.where((eb) =>
+              eb.or([
+                eb("source_channel", "is", null),
+                eb("source_channel", "not in", operatorTestChannels),
+              ]),
+            ),
+          )
+          .$if(scope === "operator_test", (qb) => qb.where("source_channel", "in", operatorTestChannels))
           .executeTakeFirst())?.count ?? "0");
     const query = this.db
       .selectFrom("conversations as c")
@@ -237,6 +256,15 @@ export class ConversationRepository implements ConversationRepositoryPort {
       )
       .select(conversationSelectColumns)
       .where("c.workspace_id", "=", workspaceId)
+      .$if(scope === "end_user", (qb) =>
+        qb.where((eb) =>
+          eb.or([
+            eb("c.source_channel", "is", null),
+            eb("c.source_channel", "not in", operatorTestChannels),
+          ]),
+        ),
+      )
+      .$if(scope === "operator_test", (qb) => qb.where("c.source_channel", "in", operatorTestChannels))
       .$if(Boolean(cursor), (qb) =>
         qb.where((eb) =>
           eb.or([

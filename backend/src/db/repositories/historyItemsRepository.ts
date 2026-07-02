@@ -1,9 +1,34 @@
-import { sql } from "kysely";
+import { sql, type RawBuilder } from "kysely";
 
 import type { AuditEventRecord } from "./auditEventRepository.js";
 import type { ConversationRecord } from "./conversationRepository.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
+import {
+  OPERATOR_TEST_SOURCE_CHANNELS,
+  type ConversationSourceScope,
+} from "../../shared/domain/conversationSource.js";
+
+// A parameterized `AND` fragment that filters conversation rows by source scope. `column` is the
+// (correctly aliased) `source_channel` reference to use — the CTE reads `c.source_channel`, the
+// count subquery reads the unaliased `conversations.source_channel`. `end_user` must be NULL-safe:
+// `NOT IN` yields NULL (not TRUE) for NULL rows, so real (NULL-source) conversations need the
+// explicit `IS NULL` branch to survive the filter.
+const buildSourceScopeFilter = (
+  scope: ConversationSourceScope,
+  column: RawBuilder<unknown>,
+): RawBuilder<unknown> => {
+  const channels = sql.join(OPERATOR_TEST_SOURCE_CHANNELS.map((channel) => sql.val(channel)));
+  switch (scope) {
+    case "operator_test":
+      return sql`AND ${column} IN (${channels})`;
+    case "all":
+      return sql``;
+    case "end_user":
+    default:
+      return sql`AND (${column} IS NULL OR ${column} NOT IN (${channels}))`;
+  }
+};
 
 export type HistoryItemsSourceRecord =
   | {
@@ -22,7 +47,7 @@ export type HistoryItemsSourceRecord =
 export interface HistoryItemsRepositoryPort {
   listPageByWorkspaceId(
     workspaceId: string,
-    input: { limit: number; offset?: number },
+    input: { limit: number; offset?: number; sourceScope?: ConversationSourceScope },
   ): Promise<{ items: HistoryItemsSourceRecord[]; total: number; hasMore: boolean }>;
 }
 
@@ -56,10 +81,15 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
 
   async listPageByWorkspaceId(
     workspaceId: string,
-    input: { limit: number; offset?: number },
+    input: { limit: number; offset?: number; sourceScope?: ConversationSourceScope },
   ): Promise<{ items: HistoryItemsSourceRecord[]; total: number; hasMore: boolean }> {
     const offset = input.offset ?? 0;
     const sourceLimit = offset + input.limit;
+    const scope: ConversationSourceScope = input.sourceScope ?? "end_user";
+    // Same filter applied to the row-producing CTE (aliased `c`) and the COUNT subquery
+    // (unaliased `conversations`) so page rows and `total` stay consistent.
+    const rowScopeFilter = buildSourceScopeFilter(scope, sql`c.source_channel`);
+    const countScopeFilter = buildSourceScopeFilter(scope, sql`conversations.source_channel`);
     // A multi-CTE UNION ALL analytical query: expressed with the Kysely `sql` tag (which
     // parameterizes the interpolated values) rather than the builder, which cannot model the
     // NULL-padded union of two heterogeneous sources without more noise than the SQL itself.
@@ -92,6 +122,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
          FROM conversations c
          LEFT JOIN agents ag ON ag.id = c.agent_id AND ag.workspace_id = c.workspace_id
          WHERE c.workspace_id = ${workspaceId}
+           ${rowScopeFilter}
          ORDER BY c.updated_at DESC, c.created_at DESC, c.id DESC
          LIMIT ${sourceLimit}
        ),
@@ -133,7 +164,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
        ),
        counted AS (
          SELECT (
-           (SELECT COUNT(*) FROM conversations WHERE workspace_id = ${workspaceId}) +
+           (SELECT COUNT(*) FROM conversations WHERE workspace_id = ${workspaceId} ${countScopeFilter}) +
            (SELECT COUNT(*) FROM audit_events WHERE workspace_id = ${workspaceId} AND event_type = 'document.search')
          )::text AS total_count
        ),

@@ -41,8 +41,8 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
     const temporalOrdering = orderTemporalPromptContexts({
       contexts: reranked.contexts,
       enabled: input.settings.temporalDeterministicSortEnabled ?? true,
-      queryShape: input.rewrittenQuery.structuredResult?.queryShape ?? input.shapeSelection?.queryShape,
-      temporalQueryMode: input.temporalQueryMode ?? input.rewrittenQuery.structuredResult?.temporalQueryMode,
+      queryShape: input.rewrittenQuery?.structuredResult?.queryShape ?? input.shapeSelection?.queryShape,
+      temporalQueryMode: input.temporalQueryMode ?? input.rewrittenQuery?.structuredResult?.temporalQueryMode,
       today: formatIsoDateUtc(this.clock()),
     });
     const contexts = this.promptContextSelectorService.select({

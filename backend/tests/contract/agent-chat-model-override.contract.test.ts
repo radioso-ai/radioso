@@ -77,7 +77,7 @@ describe("agent chat model override contract", () => {
     await request(app)
       .put(`/api/v1/agents/${agentId}`)
       .set(adminSessionHeaders(session))
-      .send({ chatModelOverride: { provider: "gemini", model: "gemini-2.5-flash" } });
+      .send({ chatModelOverride: { provider: "gemini", model: "gemini-3.5-flash" } });
 
     const cleared = await request(app)
       .put(`/api/v1/agents/${agentId}`)

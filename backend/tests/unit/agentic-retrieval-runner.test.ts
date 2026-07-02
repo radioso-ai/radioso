@@ -13,7 +13,11 @@ import type { EmbeddingGateway } from "../../src/modules/retrieval/services/embe
 import type { LexicalSearchPort } from "../../src/modules/retrieval/infra/lexicalSearch.js";
 import type { QueryRewritePort } from "../../src/modules/retrieval/domain/queryRewritePort.js";
 import type { RerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
-import type { RetrievedChunk, VectorSearchPort } from "../../src/modules/retrieval/public.js";
+import type {
+  ChunkCandidateHydratorPort,
+  RetrievedChunk,
+  VectorIndexPort,
+} from "../../src/modules/retrieval/public.js";
 
 type ScriptedTurn = { say: string; tools?: ModelToolCall[] };
 
@@ -59,9 +63,23 @@ const buildDeps = (overrides: {
       return texts.map(() => [0.1, 0.2, 0.3, 0.4]);
     },
   };
-  const vectorSearch: VectorSearchPort = {
+  const vectorIndex: VectorIndexPort = {
     async search() {
-      return overrides.vectorResults ?? [];
+      return (overrides.vectorResults ?? []).map((result) => ({
+        chunkId: result.chunkId,
+        documentId: result.documentId,
+        score: result.similarity,
+      }));
+    },
+  };
+  const chunkHydrator: ChunkCandidateHydratorPort = {
+    async hydrate(input) {
+      const chunks = overrides.vectorResults ?? [];
+      const chunkById = new Map(chunks.map((result) => [result.chunkId, result]));
+      return input.candidates.flatMap((candidate) => {
+        const result = chunkById.get(candidate.chunkId);
+        return result ? [{ ...result, similarity: candidate.score }] : [];
+      });
     },
   };
   const lexicalSearch: LexicalSearchPort = {
@@ -81,7 +99,7 @@ const buildDeps = (overrides: {
   };
   const runtime = new DefaultAgentRuntime({ gateway: overrides.gateway ?? makeGateway([{ say: "done" }]) });
   const capabilityRunner = new AgenticCapabilityRunner({ runtime });
-  return { capabilityRunner, embeddings, vectorSearch, lexicalSearch, queryRewrite, rerankGateway };
+  return { capabilityRunner, embeddings, vectorIndex, chunkHydrator, lexicalSearch, queryRewrite, rerankGateway };
 };
 
 const buildRunner = (overrides: Parameters<typeof buildDeps>[0] = {}) => new AgenticRetrievalRunner(buildDeps(overrides));
@@ -331,13 +349,21 @@ describe("AgenticRetrievalRunner", () => {
   it("supports a multi-hop run: first search yields nothing, agent rewrites and searches again", async () => {
     const calls: Array<{ query: string }> = [];
     const dynamicEmbedDeps = buildDeps();
-    const vectorSearch: VectorSearchPort = {
+    const vectorIndex: VectorIndexPort = {
       async search(input) {
         calls.push({ query: JSON.stringify(input.queryEmbedding.slice(0, 1)) });
         if (calls.length === 1) {
           return [];
         }
-        return [chunk({ chunkId: "second-hop" })];
+        return [{ chunkId: "second-hop", documentId: "doc-1", score: 0.7 }];
+      },
+    };
+    const chunkHydrator: ChunkCandidateHydratorPort = {
+      async hydrate(input) {
+        return input.candidates.map((candidate) => chunk({
+          chunkId: candidate.chunkId,
+          similarity: candidate.score,
+        }));
       },
     };
     const gateway = makeGateway([
@@ -350,7 +376,8 @@ describe("AgenticRetrievalRunner", () => {
     const runner = new AgenticRetrievalRunner({
       ...dynamicEmbedDeps,
       capabilityRunner: new AgenticCapabilityRunner({ runtime: new DefaultAgentRuntime({ gateway }) }),
-      vectorSearch,
+      vectorIndex,
+      chunkHydrator,
     });
 
     const result = await runner.run({ workspaceId: "ws-1", query: "ambiguous", systemPrompt: "sys" });

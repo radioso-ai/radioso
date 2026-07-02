@@ -11,7 +11,8 @@ import type { QueryRewritePort } from "../domain/queryRewritePort.js";
 import type { ActivityTrace } from "../domain/retrievalPipelineTypes.js";
 import type { RetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
 import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
-import type { VectorSearchPort } from "../domain/vectorSearch.js";
+import type { VectorIndexPort } from "../domain/vectorIndex.js";
+import type { ChunkCandidateHydratorPort } from "../infra/chunkCandidateHydrator.js";
 import type { EmbeddingGateway } from "./embeddingService.js";
 import type { RerankGateway } from "./rerankService.js";
 import { buildAgenticActivityTrace } from "./agenticActivityTraceBuilder.js";
@@ -32,7 +33,8 @@ const DEFAULT_FALLBACK_CHUNK_LIMIT = 8;
 export interface AgenticRetrievalRunnerDeps {
   readonly capabilityRunner: AgenticCapabilityRunner;
   readonly embeddings: EmbeddingGateway;
-  readonly vectorSearch: VectorSearchPort;
+  readonly vectorIndex: VectorIndexPort;
+  readonly chunkHydrator: ChunkCandidateHydratorPort;
   readonly lexicalSearch: LexicalSearchPort;
   readonly queryRewrite: QueryRewritePort;
   readonly rerankGateway: RerankGateway;
@@ -91,7 +93,8 @@ export class AgenticRetrievalRunner {
       createSemanticSearchTool({
         workspaceId: input.workspaceId,
         embeddings: this.deps.embeddings,
-        vectorSearch: this.deps.vectorSearch,
+        vectorIndex: this.deps.vectorIndex,
+        chunkHydrator: this.deps.chunkHydrator,
         registry,
         sourceFilter: input.sourceFilter,
         embeddingModel: input.embeddingModel,

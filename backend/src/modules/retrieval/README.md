@@ -39,10 +39,10 @@ imports from `services/` or `infra/`.
 - `services/retrievalPipelineStages.ts`: stage construction and ordering.
 - `services/retrievalSearchService.ts`: candidate search coordination.
 - `services/retrievalAnswerService.ts`: retrieval answer assembly.
-- `domain/vectorSearch.ts`: backend-neutral vector search contract consumed by
-  retrieval services.
 - `domain/vectorIndex.ts`: vector-index lifecycle/search contract for adapters
   that return ranked chunk references.
+- `domain/vectorSearch.ts`: compatibility-only hydrated vector search contract
+  for older callers.
 - `domain/retrievalSourceFilter.ts`: shared source scoping values used by
   retrieval contracts and filter compilers.
 - `infra/vectorSearch.ts`, `infra/chunkCandidateHydrator.ts`, and

@@ -2,7 +2,7 @@
 
 **Feature Branch**: `date-aware-event-retrieval` (Speckit feature number 099)
 **Created**: 2026-07-02
-**Status**: Draft
+**Status**: Approved (owner pre-approved flow; Codex review passed 2026-07-02)
 **Input**: User description: "People often ask about date-bound events. Dates are plain prose in the text and may not be in the same chunk as the event introduction. Improve retrieval of time-bound materials so that 'What are the next events?' and 'Can you sort events by actuality?' get good results. Ingested docs are not only event-shaped (personal profiles, blog articles, etc.); the ingestion LLM must understand the doc shape and route it to a known strategy. Enrichment must be switchable per source and during document reprocessing. One LLM call per document. All retrieval-side temporal behavior must be selectable in the retrieval skill settings."
 
 ## Owner Decisions (binding)

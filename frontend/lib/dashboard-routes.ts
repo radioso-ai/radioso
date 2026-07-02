@@ -291,6 +291,14 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     if (state.agentTab && state.agentTab !== DEFAULT_AGENT_TAB) {
       normalized.agentTab = state.agentTab
     }
+    if (
+      state.agentId &&
+      !state.agentRoutineId &&
+      (state.agentTab ?? DEFAULT_AGENT_TAB) === 'chat' &&
+      state.agentChatConversationId
+    ) {
+      normalized.agentChatConversationId = state.agentChatConversationId
+    }
     if (state.anchor) {
       normalized.anchor = state.anchor
     }

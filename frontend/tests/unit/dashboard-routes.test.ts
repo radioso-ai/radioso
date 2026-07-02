@@ -234,6 +234,26 @@ describe('dashboard route state', () => {
     expect(parseDashboardRoute(['agents', agentId, 'routines', 'abc'], new URLSearchParams())).toBeNull()
   })
 
+  it('preserves the agent chat conversation adoption parameter', () => {
+    const agentId = '67acb0c8-caad-4a1b-9fef-70cbca3f7d12'
+    const conversationId = '11111111-1111-4111-8111-111111111111'
+
+    expect(buildDashboardHref('account-1', {
+      section: 'agents',
+      workspacePublicRouteKey: 'support-abc123',
+      agentId,
+      agentChatConversationId: conversationId,
+    })).toBe(`/w/support-abc123/agents/${agentId}?chatConversation=${conversationId}`)
+
+    expect(parseDashboardRoute(['agents', agentId], new URLSearchParams({
+      chatConversation: conversationId,
+    }))).toEqual({
+      section: 'agents',
+      agentId,
+      agentChatConversationId: conversationId,
+    })
+  })
+
   it('parses only UUID agent path segments', () => {
     const agentId = '67acb0c8-caad-4a1b-9fef-70cbca3f7d12'
 

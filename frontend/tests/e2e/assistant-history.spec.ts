@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 
 import {
+  basePlatformSettings,
+  defaultAgentId,
   installDashboardApiMocks,
   nowIso,
   seedDashboardStorage,
@@ -240,6 +242,80 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
 
   await page.getByRole("button", { name: "Close turn flow" }).click();
   await expect(page.getByText("Turn flow", { exact: true })).toHaveCount(0);
+});
+
+test("activity drawer continues a conversation in test chat", async ({ page }) => {
+  const conversationId = "conversation-continue-1";
+  const forkConversationId = "11111111-1111-4111-8111-111111111111";
+  const historyList = {
+    conversations: [
+      {
+        id: conversationId,
+        sourceChannel: null,
+        sourceOrigin: null,
+        anonymousSessionId: null,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        messageCount: 2,
+        userMessageCount: 1,
+        assistantMessageCount: 1,
+        preview: "I want to continue this as a test",
+      },
+    ],
+    total: 1,
+    nextCursor: null,
+    hasMore: false,
+  };
+  const conversationDetail = {
+    conversationId,
+    workspaceId,
+    agentId: defaultAgentId,
+    sourceChannel: null,
+    sourceOrigin: null,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    messageCount: 2,
+    userMessageCount: 1,
+    assistantMessageCount: 1,
+    messagesTotal: 2,
+    messageWindowOffset: 0,
+    messageWindowLimit: 50,
+    hasOlderMessages: false,
+    nextCursor: null,
+    messages: [
+      {
+        id: "user-message-continue-1",
+        role: "user",
+        content: "I want to continue this as a test",
+        createdAt: nowIso,
+      },
+      {
+        id: "assistant-message-continue-1",
+        role: "assistant",
+        content: "Original answer.",
+        createdAt: nowIso,
+        citations: [],
+        answerSegments: [{ text: "Original answer." }],
+      },
+    ],
+  };
+
+  await seedDashboardStorage(page);
+  const platformSettings = basePlatformSettings();
+  platformSettings.assistant.assistantBootstrapActive = false;
+  await installDashboardApiMocks(page, {
+    platformSettings,
+    historyList,
+    conversationDetail,
+    forkConversationResponse: { conversationId: forkConversationId },
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity?tab=all`);
+  await page.getByRole("button", { name: /I want to continue this as a test/ }).click();
+  await page.getByRole("button", { name: "Continue in test chat" }).click();
+
+  await expect(page).toHaveURL(`/w/${workspaceKey}/agents/${defaultAgentId}?chatConversation=${forkConversationId}`);
+  await expect(page.getByRole("heading", { name: "Chat", exact: true })).toBeVisible();
 });
 
 test("turn flow shows offered clarification decisions and candidates", async ({ page }) => {

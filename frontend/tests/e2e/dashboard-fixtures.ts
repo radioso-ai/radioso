@@ -702,6 +702,7 @@ export const installDashboardApiMocks = async (
     documentSources?: unknown;
     conversationDetail?: unknown;
     conversationDetails?: Record<string, unknown>;
+    forkConversationResponse?: { conversationId: string };
     pendingDecisions?: ApiSchemas["PendingApprovalDecision"][];
     conversationTailResponses?: ApiSchemas["ChatConversationTail"][];
     takeOverConversationResponse?: ApiSchemas["ConversationOwnershipResponse"];
@@ -1058,6 +1059,13 @@ export const installDashboardApiMocks = async (
 
     if (request.method() === "GET" && path.startsWith("/history/chat/") && conversationDetail) {
       await json(route, conversationDetail);
+      return;
+    }
+
+    if (request.method() === "POST" && path.startsWith("/conversations/") && path.endsWith("/fork")) {
+      await json(route, options.forkConversationResponse ?? {
+        conversationId: "11111111-1111-4111-8111-111111111111",
+      }, 201);
       return;
     }
 

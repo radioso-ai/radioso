@@ -71,7 +71,23 @@ If an agent has `retrievalEnabled: true`, assistant chat may use retrieval and r
 - `invocationMode`
 - `enabled`
 
-Create skills with `POST /api/v1/agents/{agentId}/skills`. In the dashboard, **Add new skill** first opens a capability picker; enabled tiles then open the configuration form for that capability. The form shows only the skill name, required target or tool fields, and essential capability settings by default. Invocation mode, input binding, outcomes, enabled state, advanced JSON, and tuning settings live under **Advanced** and have working defaults. The form and API use the same model for `retrieve`, `mcp_tool`, `email`, `slack_post`, `webhook_call`, and `notify`.
+Create skills with `POST /api/v1/agents/{agentId}/skills`. In the dashboard, **Add new skill** first opens a capability picker; enabled tiles then open the configuration form for that capability. The form shows only the skill name, enabled state, required target or tool fields, and essential capability settings by default. Invocation mode and advanced retrieval tuning live under **Advanced**. Input binding, outcomes, and advanced JSON live under **Routine integration** because they only matter when a routine or the agent selects the skill. The form and API use the same model for `retrieve`, `mcp_tool`, `email`, `slack_post`, `webhook_call`, and `notify`.
+
+## Retrieval skill settings
+
+The `retrieve` capability descriptor includes field help, inherited defaults, and dependency hints. In the dashboard, an unset field shows the effective system default inline. Saving still stores only overrides. Clearing a field removes that key from the skill config so the agent inherits the system default again.
+
+The main tuning fields are:
+
+- `retrievalStrategy`: `fixed` runs one search pass, `reasoning` lets the model plan and run multiple searches, and `auto` lets Radioso choose per query.
+- `vectorTopK`: how many chunks are fetched from the vector index before filtering and reranking.
+- `rerankEnabled`: whether the fetched chunks are re-scored with the reranker model.
+- `rerankTopK`: how many chunks survive reranking and are passed to the answer. It is relevant when reranking is enabled.
+- `queryRewriteEnabled`: whether the user message is rewritten into search queries before retrieval.
+- `semanticRewriteInstructions`: extra guidance for the semantic vector search rewrite. It is relevant when query rewrite is enabled.
+- `lexicalRewriteInstructions`: extra guidance for the lexical keyword search rewrite. It is relevant when query rewrite is enabled.
+- `suggestedQuestionsEnabled`: whether the assistant offers follow-up question suggestions after each answer.
+- `suggestedQuestionsCount`: how many follow-up questions to suggest. It is relevant when suggested questions are enabled.
 
 ## Context variables
 

@@ -1,3 +1,4 @@
+import type { ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
 import type { ChatHistoryService } from "./chatHistoryService.js";
 
 export class AssistantHistoryService {
@@ -5,14 +6,14 @@ export class AssistantHistoryService {
 
   listConversations(
     workspaceId: string,
-    input: { limit: number; offset?: number; cursor?: string },
+    input: { limit: number; offset?: number; cursor?: string; sourceScope?: ConversationSourceScope },
   ) {
     return this.chatHistoryService.listConversations(workspaceId, input);
   }
 
   listItems(
     workspaceId: string,
-    input: { limit: number; offset?: number },
+    input: { limit: number; offset?: number; sourceScope?: ConversationSourceScope },
   ) {
     return this.chatHistoryService.listItems(workspaceId, input);
   }

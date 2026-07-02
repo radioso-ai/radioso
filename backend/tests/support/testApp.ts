@@ -38,6 +38,7 @@ import {
   type FallbackReplyComposer,
 } from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import { ChatHistoryService } from "../../src/modules/chat/services/chatHistoryService.js";
+import { ConversationForkService } from "../../src/modules/chat/services/conversationForkService.js";
 import { DocumentDeletionService } from "../../src/modules/documents/services/documentDeletionService.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
 import { DocumentImportService } from "../../src/modules/documents/services/documentImportService.js";
@@ -1264,6 +1265,12 @@ export const createTestDependencies = (overrides: {
     overrides.answerFeedbackHistoryProvider,
     conversationOwnershipRepository,
   );
+  const routineStateStore = new InMemoryRoutineStateStore();
+  const conversationForkService = new ConversationForkService(
+    conversationRepository,
+    messageRepository,
+    routineStateStore,
+  );
   const publicChatActionAdvertisers = [
     ...(overrides.publicChatActionAdvertiser ? [overrides.publicChatActionAdvertiser] : []),
   ];
@@ -1356,7 +1363,6 @@ export const createTestDependencies = (overrides: {
       };
     },
   };
-  const routineStateStore = new InMemoryRoutineStateStore();
   const chatService = new ChatService({
     conversationRepository,
     messageRepository,
@@ -1556,6 +1562,7 @@ export const createTestDependencies = (overrides: {
     actionDispatchWorker,
     chatBootstrapService,
     chatHistoryService,
+    conversationForkService,
     assistantChatService,
     assistantHistoryService,
     retrievalSearchService,

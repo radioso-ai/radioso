@@ -1,5 +1,6 @@
 import { CompiledQuery } from "kysely";
 
+import { OPERATOR_TEST_SOURCE_CHANNELS } from "../../shared/domain/conversationSource.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type {
   ListLowQualityTurnsInput,
@@ -164,6 +165,17 @@ export class QualityTurnsService implements QualityTurnsServicePort {
       params.push(input.to);
       filters.push(`m.created_at <= $${params.length}::timestamptz`);
     }
+
+    // Operator-driven test traffic (dashboard test chat, workbench replay) never counts as a
+    // real quality signal, so it is excluded unconditionally. NULL-safe: `NOT IN` yields NULL
+    // (not TRUE) for NULL source rows, which would wrongly drop real conversations.
+    const operatorTestPlaceholders = OPERATOR_TEST_SOURCE_CHANNELS.map((channel) => {
+      params.push(channel);
+      return `$${params.length}`;
+    });
+    filters.push(
+      `(c.source_channel IS NULL OR c.source_channel NOT IN (${operatorTestPlaceholders.join(", ")}))`,
+    );
 
     const needsLatency = input.minTotalLatencyMs !== undefined || input.maxTotalLatencyMs !== undefined;
 

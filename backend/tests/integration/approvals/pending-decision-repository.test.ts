@@ -121,11 +121,21 @@ describeIfDatabase("PendingDecisionRepository Postgres integration", () => {
     await client.query(`SET search_path TO ${schema}, public`);
     database = createClientBackedDatabase(client);
     await applyTestMigration(database, "104_pending_decisions.sql");
+    // listPending LEFT JOINs conversations to exclude operator-test sources; this per-test
+    // schema doesn't run the full init migration, so create the minimal shape it reads.
+    await database.execute(
+      `CREATE TABLE IF NOT EXISTS conversations (
+         id UUID PRIMARY KEY,
+         workspace_id UUID NOT NULL,
+         source_channel TEXT
+       )`,
+    );
     repository = new PendingDecisionRepository(database.kysely);
   });
 
   beforeEach(async () => {
     await database.execute("TRUNCATE pending_decisions");
+    await database.execute("TRUNCATE conversations");
   });
 
   afterAll(async () => {
@@ -254,5 +264,35 @@ describeIfDatabase("PendingDecisionRepository Postgres integration", () => {
       { id: newer.id, handle: newer.handle, status: "pending" },
       { id: older.id, handle: older.handle, status: "pending" },
     ]);
+  });
+
+  it("excludes pending decisions from operator-test conversations", async () => {
+    const workspaceId = randomUUID();
+    const realConversationId = randomUUID();
+    const nullSourceConversationId = randomUUID();
+    const testChatConversationId = randomUUID();
+    const replayConversationId = randomUUID();
+    // A pending decision whose conversation row is missing entirely (LEFT JOIN keeps it).
+    const orphanConversationId = randomUUID();
+
+    await database.execute(
+      `INSERT INTO conversations (id, workspace_id, source_channel) VALUES
+         ($1, $5, 'website_embed'),
+         ($2, $5, NULL),
+         ($3, $5, 'authenticated_chat'),
+         ($4, $5, 'workbench_replay')`,
+      [realConversationId, nullSourceConversationId, testChatConversationId, replayConversationId, workspaceId],
+    );
+
+    const real = await repository.create(decisionInput({ workspaceId, conversationId: realConversationId, handle: "real_pending" }));
+    const nullSource = await repository.create(decisionInput({ workspaceId, conversationId: nullSourceConversationId, handle: "null_source_pending" }));
+    const orphan = await repository.create(decisionInput({ workspaceId, conversationId: orphanConversationId, handle: "orphan_pending" }));
+    await repository.create(decisionInput({ workspaceId, conversationId: testChatConversationId, handle: "test_chat_pending" }));
+    await repository.create(decisionInput({ workspaceId, conversationId: replayConversationId, handle: "replay_pending" }));
+
+    const pending = await repository.listPending({ workspaceId });
+    const ids = new Set(pending.map((record) => record.id));
+
+    expect(ids).toEqual(new Set([real.id, nullSource.id, orphan.id]));
   });
 });

@@ -56,6 +56,7 @@ import {
   ChatActionSuggestionService,
   ChatBootstrapService,
   ChatHistoryService,
+  ConversationForkService,
   ChatService,
   type ChatRoutineProvider,
   type PublicConversationEventBus,
@@ -1500,6 +1501,11 @@ export const buildChatServices = (input: {
     answerFeedbackHistoryProvider,
     input.conversationOwnershipRepository,
   );
+  const conversationForkService = new ConversationForkService(
+    input.conversationRepository,
+    input.messageRepository,
+    routineStateRepository,
+  );
   const retrievalAnswerService = new RetrievalAnswerService({
     retrievalPipeline: input.retrievalPipeline,
     chatGateway,
@@ -1544,6 +1550,7 @@ export const buildChatServices = (input: {
     chatBootstrapService,
     chatGateway,
     chatHistoryService,
+    conversationForkService,
     chatService,
     workbenchReplayRunner,
     contactHistoryProvider,

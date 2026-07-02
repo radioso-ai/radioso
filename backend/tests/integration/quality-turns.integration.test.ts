@@ -126,6 +126,87 @@ describeIfDatabase("quality turns integration", () => {
     ]);
   });
 
+  it("excludes operator-test conversations (dashboard test chat + workbench replay)", async () => {
+    const accountId = randomUUID();
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+
+    await database.query(
+      `INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)`,
+      [accountId, "Op Test Account", `optest-${accountId}@example.com`, "hash"],
+    );
+    await database.query(
+      `INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)`,
+      [workspaceId, accountId, "Op Test WS", `ot-${workspaceId.slice(0, 8)}`],
+    );
+    await database.query(
+      `INSERT INTO agents (id, workspace_id, name) VALUES ($1, $2, $3)`,
+      [agentId, workspaceId, "Op Test Bot"],
+    );
+
+    const embedConversationId = randomUUID();
+    const nullSourceConversationId = randomUUID();
+    const testChatConversationId = randomUUID();
+    const replayConversationId = randomUUID();
+
+    await database.query(
+      `INSERT INTO conversations (id, workspace_id, agent_id, source_channel)
+       VALUES
+         ($1, $5, $6, 'embed'),
+         ($2, $5, $6, NULL),
+         ($3, $5, $6, 'authenticated_chat'),
+         ($4, $5, $6, 'workbench_replay')`,
+      [
+        embedConversationId,
+        nullSourceConversationId,
+        testChatConversationId,
+        replayConversationId,
+        workspaceId,
+        agentId,
+      ],
+    );
+
+    const embedMessageId = randomUUID();
+    const nullSourceMessageId = randomUUID();
+    const testChatMessageId = randomUUID();
+    const replayMessageId = randomUUID();
+
+    await database.query(
+      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, skill_name, skill_outcome, skill_status, created_at)
+       VALUES
+         ($1, $5, $9, 'assistant', 'Embed refusal',     'retrieval.answer', 'no_context', 'completed', $10),
+         ($2, $6, $9, 'assistant', 'Null-source refusal','retrieval.answer', 'no_context', 'completed', $11),
+         ($3, $7, $9, 'assistant', 'Test-chat refusal', 'retrieval.answer', 'no_context', 'completed', $12),
+         ($4, $8, $9, 'assistant', 'Replay refusal',    'retrieval.answer', 'no_context', 'completed', $13)`,
+      [
+        embedMessageId,
+        nullSourceMessageId,
+        testChatMessageId,
+        replayMessageId,
+        embedConversationId,
+        nullSourceConversationId,
+        testChatConversationId,
+        replayConversationId,
+        workspaceId,
+        "2026-05-24T09:00:00.000Z",
+        "2026-05-24T09:00:01.000Z",
+        "2026-05-24T09:00:02.000Z",
+        "2026-05-24T09:00:03.000Z",
+      ],
+    );
+
+    const service = new QualityTurnsService(database.kysely);
+    const page = await service.listLowQualityTurns(workspaceId, { limit: 25 });
+
+    const ids = page.items.map((item) => item.assistantMessageId);
+    expect(ids).toContain(embedMessageId);
+    expect(ids).toContain(nullSourceMessageId);
+    expect(ids).not.toContain(testChatMessageId);
+    expect(ids).not.toContain(replayMessageId);
+    // Only the two non-operator-test turns count toward the total.
+    expect(page.total).toBe(2);
+  });
+
   it("filters by action tuple and scopes to workspace", async () => {
     const accountId = randomUUID();
     const workspaceA = randomUUID();

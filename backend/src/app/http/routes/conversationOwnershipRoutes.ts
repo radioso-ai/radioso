@@ -12,6 +12,7 @@ type ConversationOwnershipRouteDependencies = WorkspaceSessionDependencies & Pic
   AppDependencies,
   | "accountRepository"
   | "auditService"
+  | "conversationForkService"
   | "conversationOwnershipRepository"
   | "conversationRepository"
   | "operatorReplyService"
@@ -234,6 +235,24 @@ export const createConversationOwnershipRoutes = (
       });
 
       res.status(200).json({ ownership: result.record });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Forking a conversation into a test session is a general conversation operation, not a HITL
+  // ownership action, so it is gated by workspaceSession only (no takeover permission). It is
+  // co-located here to reuse the shared workspace-scoped conversation existence guard.
+  router.post("/:conversationId/fork", workspaceSession, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const sourceConversationId = parseConversationId(req.params);
+      await requireConversationInWorkspace(dependencies, workspaceId, sourceConversationId);
+      const { conversationId } = await dependencies.conversationForkService.forkForTest(
+        workspaceId,
+        sourceConversationId,
+      );
+      res.status(200).json({ conversationId });
     } catch (error) {
       next(error);
     }

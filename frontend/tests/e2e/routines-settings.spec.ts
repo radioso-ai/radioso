@@ -18,6 +18,7 @@ const baseRoutine: Omit<RoutineFixture, "id" | "status" | "version"> = {
     triggerDescription: "Visitor asks about pricing or wants a quote.",
     gateRef: null,
     priority: 20,
+    reentryMode: "once_per_conversation",
   },
   slots: [{
     stableSlotId: "email",
@@ -270,7 +271,7 @@ test("agent routines archive and restore from the collapsed archived section", a
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/55555555-5555-4555-9555-000000000201`);
   await expect(page.getByText("published v2 (read-only)", { exact: true })).toBeVisible();
 
-  await page.getByRole("button", { name: "Archive" }).click();
+  await page.getByRole("button", { name: "Archive", exact: true }).click();
   await expect(page.getByText("archived v2 (read-only)", { exact: true })).toBeVisible();
   await expect.poll(() => routineUpdates.some((update) => update.method === "ARCHIVE")).toBe(true);
 
@@ -283,4 +284,60 @@ test("agent routines archive and restore from the collapsed archived section", a
   await expect.poll(() => routineUpdates.some((update) => update.method === "RESTORE")).toBe(true);
   await expect(page.getByText("Collect pricing intake")).toBeVisible();
   await expect(page.getByText("published")).toBeVisible();
+});
+
+test("agent routines archive directly from the list without opening the editor", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineUpdates,
+    routines: [{
+      ...baseRoutine,
+      id: "55555555-5555-4555-9555-000000000401",
+      status: "published",
+      version: 1,
+    }],
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await expect(page.getByRole("button", { name: /Collect pricing intake published v1/ })).toBeVisible();
+
+  await page.getByRole("button", { name: "Archive Collect pricing intake" }).click();
+  await expect.poll(() => routineUpdates.some((update) => update.method === "ARCHIVE")).toBe(true);
+
+  await expect(page.getByRole("button", { name: /Collect pricing intake published/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "Archived routines (1)" }).click();
+  await expect(page.getByText("Collect pricing intake")).toBeVisible();
+});
+
+test("agent routines archive from a revision draft without publishing first", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineUpdates,
+    routines: [{
+      ...baseRoutine,
+      id: "55555555-5555-4555-9555-000000000501",
+      status: "published",
+      version: 1,
+    }],
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Edit Collect pricing intake" }).click();
+  await expect(page.getByText("draft v2", { exact: true })).toBeVisible();
+  await expect.poll(() => routineUpdates.some((update) => update.method === "REVISE")).toBe(true);
+
+  await Promise.all([
+    page.waitForURL(routinesListUrl),
+    page.getByRole("button", { name: "Archive routine" }).click(),
+  ]);
+  await expect.poll(() => routineUpdates.some((update) => update.method === "ARCHIVE")).toBe(true);
+
+  await expect(page.getByText("draft revision")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Collect pricing intake published/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "Archived routines (1)" }).click();
+  await expect(page.getByText("Collect pricing intake")).toBeVisible();
 });

@@ -145,6 +145,16 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
     if (!existing || existing.status !== "published") {
       return false;
     }
+    // Archiving retires the routine: discard any in-progress revision draft in the lineage.
+    for (const definition of [...this.items.values()]) {
+      if (
+        definition.agentId === inputAgentId &&
+        definition.lineageId === existing.lineageId &&
+        definition.status === "draft"
+      ) {
+        this.items.delete(definition.id);
+      }
+    }
     this.items.set(id, { ...existing, status: "archived", updatedAt: new Date() });
     return true;
   }
@@ -1024,6 +1034,27 @@ describe("RoutineDefinitionService", () => {
 
     await expect(service.restore(workspaceId, agentId, archived.id))
       .rejects.toThrow("Archived routine definition cannot be restored while another version is published");
+  });
+
+  it("discards a pending revision draft when archiving the published routine", async () => {
+    const { repository, service } = createService();
+    const draft = await service.createDraft(workspaceId, agentId, validDraft());
+    const publish = await service.publish(workspaceId, agentId, draft.routine.id);
+    if ("rejected" in publish) {
+      throw new Error("expected publish success");
+    }
+    const revision = await service.revise(workspaceId, agentId, publish.routine.id);
+    expect(revision.status).toBe("draft");
+    expect(repository.items.get(revision.id)).toBeDefined();
+
+    const archived = await service.archive(workspaceId, agentId, publish.routine.id);
+
+    expect(archived.status).toBe("archived");
+    expect(repository.items.get(revision.id)).toBeUndefined();
+    const lineageStatuses = [...repository.items.values()]
+      .filter((item) => item.lineageId === publish.routine.lineageId)
+      .map((item) => item.status);
+    expect(lineageStatuses).not.toContain("draft");
   });
 
   it("turns a missing completion export destination during restore into a bad request", async () => {

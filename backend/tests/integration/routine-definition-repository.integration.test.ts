@@ -184,13 +184,18 @@ describeIntegration("RoutineDefinitionRepository (Postgres)", () => {
     expect(await repository.restore(agentId, first.id)).toBe(true);
     expect((await repository.findById(agentId, first.id))?.status).toBe("published");
 
-    // Revise off the published row first, then archive `first` and publish the revision so
-    // the lineage has a live published row; restore must now refuse (NOT EXISTS guard) to
-    // avoid two published per lineage. (createRevisionDraft requires a published source, so
-    // it must run before the archive.)
+    // Archiving retires the routine and discards any pending revision draft.
     const revision = await repository.createRevisionDraft(agentId, first.id);
     expect(await repository.archive(agentId, first.id)).toBe(true);
-    await repository.publish(agentId, revision!.id);
+    expect(await repository.findById(agentId, revision!.id)).toBeNull();
+    expect(await repository.restore(agentId, first.id)).toBe(true);
+
+    // Force an archived older row beside a live published row to exercise the restore
+    // NOT EXISTS guard directly without depending on a draft surviving archive.
+    const nextRevision = await repository.createRevisionDraft(agentId, first.id);
+    expect(nextRevision).not.toBeNull();
+    await repository.publish(agentId, nextRevision!.id);
+    await database.query(`UPDATE routine_definition SET status = 'archived' WHERE id = $1`, [first.id]);
 
     expect(await repository.restore(agentId, first.id)).toBe(false);
     expect((await repository.findById(agentId, first.id))?.status).toBe("archived");

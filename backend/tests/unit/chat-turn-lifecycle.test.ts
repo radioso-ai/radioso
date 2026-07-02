@@ -366,6 +366,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       title: "Source",
       rank: 0,
       similarity: 0.91,
+      metadata: { sourceUrl: "https://example.com/source" },
     }]);
     expect(assistantMessage?.metadata?.composedInstructions).toBe("retrieval system prompt");
   });

@@ -296,6 +296,24 @@ function RoutineListScreen({
     }
   }
 
+  const archiveRoutine = async (lineage: RoutineLineageGroup) => {
+    const published = lineage.activeRoutine
+    if (!published || published.status !== 'published') return
+    setError(null)
+    try {
+      const response = await routinesApi.archiveRoutine(agentId, published.id)
+      // Archiving retires the routine and discards any pending revision draft server-side;
+      // drop that draft from the list too so the lineage collapses to its archived version.
+      const pendingDraftId = lineage.pendingDraft?.id
+      setRoutines((current) => [
+        ...current.filter((item) => item.id !== response.routine.id && item.id !== pendingDraftId),
+        response.routine,
+      ])
+    } catch (archiveError) {
+      setError(getApiErrorMessage(archiveError, 'Failed to archive routine.'))
+    }
+  }
+
   const renderLineageRow = (lineage: RoutineLineageGroup) => {
     const routine = lineage.displayRoutine
     const activeVersion = lineage.activeRoutine?.version ?? routine.version
@@ -328,9 +346,14 @@ function RoutineListScreen({
             </>
           ) : null}
           {routine.status === 'published' ? (
-            <Button type="button" variant="ghost" size="sm" onClick={() => void reviseRoutine(routine)} aria-label={`Edit ${routine.name}`}>
-              <Pencil className="h-4 w-4" />
-            </Button>
+            <>
+              <Button type="button" variant="ghost" size="sm" onClick={() => void reviseRoutine(routine)} aria-label={`Edit ${routine.name}`}>
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => void archiveRoutine(lineage)} aria-label={`Archive ${routine.name}`}>
+                <Archive className="h-4 w-4" />
+              </Button>
+            </>
           ) : null}
           {routine.status === 'archived' ? (
             <Button type="button" variant="ghost" size="sm" onClick={() => void restoreRoutine(routine)} aria-label={`Restore ${routine.name}`}>
@@ -488,6 +511,10 @@ function RoutineEditorScreen({
   const versionHistory = useMemo(
     () => getRoutineLineageVersions(allRoutines, editingRoutine?.lineageId),
     [allRoutines, editingRoutine?.lineageId],
+  )
+  const publishedSibling = useMemo(
+    () => versionHistory.find((version) => version.status === 'published') ?? null,
+    [versionHistory],
   )
 
   useEffect(() => {
@@ -780,7 +807,13 @@ function RoutineEditorScreen({
       currentRoutineIdRef.current = response.routine.id
       setEditingRoutine(response.routine)
       setEditingRoutineId(response.routine.id)
-      mergeLoadedRoutine(response.routine)
+      setAllRoutines((current) => [
+        ...current.filter((item) =>
+          item.id !== response.routine.id &&
+          !(item.lineageId === response.routine.lineageId && item.status === 'draft')
+        ),
+        response.routine,
+      ])
       setDraftHeader(headerFromDraft(response.routine))
       setForm(routineToForm(response.routine))
       setProseSource(response.routine)
@@ -789,6 +822,21 @@ function RoutineEditorScreen({
     } catch (archiveError) {
       setError(getApiErrorMessage(archiveError, 'Failed to archive routine.'))
     } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const archiveFromDraft = async () => {
+    if (!publishedSibling) return
+    setIsSaving(true)
+    setError(null)
+    try {
+      // Retire the whole routine from a revision draft without forcing a publish first;
+      // the archive discards this pending draft server-side, so return to the list.
+      await routinesApi.archiveRoutine(agentId, publishedSibling.id)
+      router.push(listHref)
+    } catch (archiveError) {
+      setError(getApiErrorMessage(archiveError, 'Failed to archive routine.'))
       setIsSaving(false)
     }
   }
@@ -987,10 +1035,18 @@ function RoutineEditorScreen({
 
           <div className="flex flex-wrap justify-end gap-2">
             {editingRoutine?.status === 'draft' ? (
-              <Button type="button" variant="ghost" onClick={() => void deleteDraft()} disabled={isSaving} aria-label={`Delete draft ${editingRoutine.name}`}>
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete draft
-              </Button>
+              <>
+                {publishedSibling ? (
+                  <Button type="button" variant="outline" onClick={() => void archiveFromDraft()} disabled={isSaving}>
+                    <Archive className="mr-2 h-4 w-4" />
+                    Archive routine
+                  </Button>
+                ) : null}
+                <Button type="button" variant="ghost" onClick={() => void deleteDraft()} disabled={isSaving} aria-label={`Delete draft ${editingRoutine.name}`}>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete draft
+                </Button>
+              </>
             ) : null}
             {editingRoutine?.status === 'published' ? (
               <>

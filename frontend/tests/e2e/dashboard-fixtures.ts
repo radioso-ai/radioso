@@ -157,6 +157,8 @@ export type SkillCapabilityFixture = {
     label: string;
     type: "boolean" | "number" | "text" | "textarea" | "select" | "string_list" | "source_scope";
     help?: string;
+    defaultValue?: boolean | number | string;
+    dependsOnKey?: string;
     options?: Array<{ value: string; label: string }>;
     min?: number;
     max?: number;
@@ -532,17 +534,19 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
           { value: "reasoning", label: "Reasoning" },
           { value: "auto", label: "Auto" },
         ],
+        help: "Fixed runs one search pass. Reasoning lets the model plan and run multiple searches. Auto picks per query.",
+        defaultValue: "fixed",
         group: "Retrieval tuning",
         advanced: true,
       },
-      { key: "vectorTopK", label: "Vector top K", type: "number", min: 1, max: 300, group: "Retrieval tuning", advanced: true },
-      { key: "rerankEnabled", label: "Rerank results", type: "boolean", group: "Retrieval tuning", advanced: true },
-      { key: "rerankTopK", label: "Rerank top K", type: "number", min: 1, max: 100, group: "Retrieval tuning", advanced: true },
-      { key: "queryRewriteEnabled", label: "Query rewrite", type: "boolean", group: "Query rewrite", advanced: true },
-      { key: "semanticRewriteInstructions", label: "Semantic rewrite instructions", type: "textarea", group: "Query rewrite", advanced: true },
-      { key: "lexicalRewriteInstructions", label: "Lexical rewrite instructions", type: "textarea", group: "Query rewrite", advanced: true },
-      { key: "suggestedQuestionsEnabled", label: "Suggested questions", type: "boolean", group: "Suggested questions" },
-      { key: "suggestedQuestionsCount", label: "Suggested questions count", type: "number", min: 1, max: 4, group: "Suggested questions", advanced: true },
+      { key: "vectorTopK", label: "Vector top K", type: "number", help: "How many chunks are fetched from the vector index before filtering and reranking.", defaultValue: 15, min: 1, max: 300, group: "Retrieval tuning", advanced: true },
+      { key: "rerankEnabled", label: "Rerank results", type: "boolean", help: "Re-score the fetched chunks with a reranker model to improve ordering.", defaultValue: true, group: "Retrieval tuning", advanced: true },
+      { key: "rerankTopK", label: "Rerank top K", type: "number", help: "How many chunks survive reranking and are passed to the answer.", defaultValue: 5, dependsOnKey: "rerankEnabled", min: 1, max: 100, group: "Retrieval tuning", advanced: true },
+      { key: "queryRewriteEnabled", label: "Query rewrite", type: "boolean", help: "Rewrite the user message into search queries before retrieval.", defaultValue: true, group: "Query rewrite", advanced: true },
+      { key: "semanticRewriteInstructions", label: "Semantic rewrite instructions", type: "textarea", help: "Extra guidance for rewriting the semantic (vector) search query.", dependsOnKey: "queryRewriteEnabled", group: "Query rewrite", advanced: true },
+      { key: "lexicalRewriteInstructions", label: "Lexical rewrite instructions", type: "textarea", help: "Extra guidance for rewriting the lexical (keyword) search query.", dependsOnKey: "queryRewriteEnabled", group: "Query rewrite", advanced: true },
+      { key: "suggestedQuestionsEnabled", label: "Suggested questions", type: "boolean", help: "Offer follow-up question suggestions after each answer.", defaultValue: true, group: "Suggested questions" },
+      { key: "suggestedQuestionsCount", label: "Suggested questions count", type: "number", help: "How many follow-up questions to suggest.", defaultValue: 3, dependsOnKey: "suggestedQuestionsEnabled", min: 1, max: 4, group: "Suggested questions" },
     ],
     outcomeVocabulary: ["found", "empty"],
     supportedInvocationModes: ["default_answer", "routine_named", "agent_selectable"],

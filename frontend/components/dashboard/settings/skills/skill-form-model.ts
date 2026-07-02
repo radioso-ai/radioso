@@ -426,7 +426,7 @@ const readSettingDraftValue = (
     return typeof value === 'number' ? value : undefined
   }
   if (field.type === 'select') {
-    return typeof value === 'string' ? value : field.options?.[0]?.value
+    return typeof value === 'string' ? value : undefined
   }
   return typeof value === 'string' ? value : ''
 }

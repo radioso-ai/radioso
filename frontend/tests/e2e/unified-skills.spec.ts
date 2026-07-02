@@ -44,6 +44,7 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await page.getByRole("button", { name: "Advanced" }).click();
   await page.getByLabel("When to use").click();
   await page.getByRole("option", { name: "Agent decides when to use it" }).click();
+  await page.getByRole("button", { name: /Routine integration/ }).click();
   await page.getByRole("combobox", { name: "subject" }).click();
   await page.getByRole("option", { name: "Use a fixed value" }).click();
   await page.locator("input[placeholder='subject']").fill("Follow up");
@@ -70,12 +71,9 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await page.locator("#skill-setting-retrievalStrategy").click();
   await page.getByRole("option", { name: "Reasoning" }).click();
   await page.getByLabel("Vector top K").fill("12");
-  await page.getByLabel("Rerank results").click();
   await page.getByLabel("Rerank top K").fill("6");
-  await page.getByLabel("Query rewrite").click();
   await page.getByLabel("Semantic rewrite instructions").fill("Prefer event names and dates.");
   await page.getByLabel("Lexical rewrite instructions").fill("Include exact venue terms.");
-  await page.getByRole("switch", { name: "Suggested questions", exact: true }).click();
   await page.getByLabel("Suggested questions count").fill("3");
   await page.getByRole("button", { name: "Create skill" }).click();
 
@@ -119,12 +117,9 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
       instruction: "Use event-specific sources only.",
       retrievalStrategy: "reasoning",
       vectorTopK: 12,
-      rerankEnabled: true,
       rerankTopK: 6,
-      queryRewriteEnabled: true,
       semanticRewriteInstructions: "Prefer event names and dates.",
       lexicalRewriteInstructions: "Include exact venue terms.",
-      suggestedQuestionsEnabled: true,
       suggestedQuestionsCount: 3,
       exposedInputs: { query: true },
     },

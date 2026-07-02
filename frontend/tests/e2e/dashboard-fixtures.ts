@@ -761,7 +761,15 @@ export const installDashboardApiMocks = async (
   const knownModelsByProvider = {
     openai: ["gpt-5.2", "gpt-5-mini"],
     "openai-compatible": [],
-    gemini: ["gemini-2.5-flash", "gemini-2.5-pro"],
+    gemini: [
+      "gemini-3.5-flash",
+      "gemini-3.1-flash-lite",
+      "gemini-3-flash-preview",
+      "gemini-flash-latest",
+      "gemini-2.5-flash",
+      "gemini-2.5-pro",
+      "gemini-2.5-flash-lite",
+    ],
     claude: ["claude-opus-4-7", "claude-sonnet-4-6", "claude-sonnet-4-5"],
   };
   let llmModels: {

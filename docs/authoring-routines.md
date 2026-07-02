@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "How to create and edit routines in the dashboard using the prose and form editors, bind skill inputs/outputs, copy a routine to text, and manage lifecycle."
-last_updated: 2026-06-25
+last_updated: 2026-07-02
 ---
 
 # Authoring Routines
@@ -510,10 +510,16 @@ The routine list shows the lineage once. It shows the current state, the active
 version number, and a **draft revision** badge when a published routine has a
 pending draft. Older versions are available in the editor's version history.
 
-Use **Archive** to retire the active published version. Archived routines move to
-the collapsed archived section and do not start in new conversations. Use
-**Restore** to make an archived routine active again when no other version in the
-lineage is published.
+Use **Archive** to retire the active published version. You do not need to publish
+a new version first. Archive is available directly on the routine's row in the
+list, and from an open revision draft. Archiving a routine that has a pending
+draft revision also discards that draft, since the routine is being retired.
+Archived routines move to the collapsed archived section and do not start in new
+conversations. Use **Restore** to make an archived routine active again when no
+other version in the lineage is published.
+
+A draft that was never published cannot be archived. Use **Delete draft** to
+remove it.
 
 Conversations already running keep the version they started on. If a routine is
 superseded or archived while a visitor is mid-flow, that visitor continues on the

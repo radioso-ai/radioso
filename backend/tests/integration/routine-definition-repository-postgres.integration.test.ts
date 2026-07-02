@@ -336,6 +336,15 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
 
     expect(await repository.archive(agentId, publishedV1.id)).toBe(false);
     expect(await repository.archive(agentId, publishedV2.id)).toBe(true);
+
+    const draftsAfterArchive = await database.queryOne<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM routine_definition
+       WHERE lineage_id = $1 AND status = 'draft'`,
+      [publishedV2.lineageId],
+    );
+    expect(draftsAfterArchive.count).toBe("0");
+
     expect(await repository.restore(agentId, publishedV1.id)).toBe(false);
     expect(await repository.restore(agentId, publishedV2.id)).toBe(true);
   });

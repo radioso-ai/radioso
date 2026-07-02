@@ -475,15 +475,28 @@ export class RoutineDefinitionRepository {
   }
 
   async archive(agentId: string, id: string): Promise<boolean> {
-    const row = await this.db
-      .updateTable("routine_definition")
-      .set({ status: "archived", updated_at: currentTimestamp() })
-      .where("agent_id", "=", agentId)
-      .where("id", "=", id)
-      .where("status", "=", "published")
-      .returning("id")
-      .executeTakeFirst();
-    return Boolean(row);
+    return this.db.transaction().execute(async (trx) => {
+      const row = await trx
+        .updateTable("routine_definition")
+        .set({ status: "archived", updated_at: currentTimestamp() })
+        .where("agent_id", "=", agentId)
+        .where("id", "=", id)
+        .where("status", "=", "published")
+        .returning(["id", "lineage_id"])
+        .executeTakeFirst();
+      if (!row) {
+        return false;
+      }
+      // Archiving retires the routine, so discard any in-progress revision draft in the
+      // same lineage instead of leaving it orphaned once nothing is published.
+      await trx
+        .deleteFrom("routine_definition")
+        .where("agent_id", "=", agentId)
+        .where("lineage_id", "=", row.lineage_id)
+        .where("status", "=", "draft")
+        .execute();
+      return true;
+    });
   }
 
   async restore(agentId: string, id: string): Promise<boolean> {

@@ -1835,7 +1835,10 @@ export const installDashboardApiMocks = async (
           return;
         }
         const archived: RoutineFixture = { ...existing, status: "archived", updatedAt: nowIso };
-        routines = routines.map((routine) => routine.id === routineId ? archived : routine);
+        // Archiving retires the routine and discards any in-progress revision draft in the lineage.
+        routines = routines
+          .filter((routine) => !(routine.lineageId === existing.lineageId && routine.status === "draft"))
+          .map((routine) => routine.id === routineId ? archived : routine);
         await json(route, { routine: archived });
         return;
       }

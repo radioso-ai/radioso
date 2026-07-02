@@ -14,12 +14,12 @@ P1 stories 1 and 2 first, then stories 3, 4, and 5.
 
 **Purpose**: Establish the shared implementation scaffolding and contract anchors.
 
-- [ ] T001 Confirm next migration number and record it for feature 099 in `backend/src/db/migrations/`
-- [ ] T002 [P] Create enrichment prompt directory target `backend/prompts/ingestion/`
-- [ ] T003 [P] Create document enrichment domain directory target `backend/src/modules/documents/domain/enrichment/`
-- [ ] T004 [P] Create retrieval temporal domain directory target `backend/src/modules/retrieval/domain/temporal/`
-- [ ] T005 [P] Create retrieval temporal service directory target `backend/src/modules/retrieval/services/temporal/`
-- [ ] T006 [P] Create temporal eval fixture target directory `backend/tests/fixtures/event-retrieval/`
+- [X] T001 Confirm next migration number and record it for feature 099 in `backend/src/db/migrations/`
+- [X] T002 [P] Create enrichment prompt directory target `backend/prompts/ingestion/`
+- [X] T003 [P] Create document enrichment domain directory target `backend/src/modules/documents/domain/enrichment/`
+- [X] T004 [P] Create retrieval temporal domain directory target `backend/src/modules/retrieval/domain/temporal/`
+- [X] T005 [P] Create retrieval temporal service directory target `backend/src/modules/retrieval/services/temporal/`
+- [X] T006 [P] Create temporal eval fixture target directory `backend/tests/fixtures/event-retrieval/`
 
 ---
 
@@ -32,16 +32,22 @@ P1 stories 1 and 2 first, then stories 3, 4, and 5.
 - [ ] T007 [P] Write migration test expectations for enrichment columns and generated chunk date columns in `backend/tests/integration/document-repository.integration.test.ts`
 - [ ] T008 [P] Write processing job options repository tests in `backend/tests/integration/document-processing-job-repository.integration.test.ts`
 - [ ] T009 [P] Write chunk temporal generated-column repository tests in `backend/tests/integration/document-chunking.integration.test.ts`
-- [ ] T010 Add migration for ingestion setting, document enrichment provenance, source config support, job options, and chunk date generated columns in `backend/src/db/migrations/119_date_aware_event_retrieval.sql`
-- [ ] T011 Update generated schema type expectations for new columns in `backend/src/shared/infra/kysely/schema.ts`
-- [ ] T012 Update schema snapshot for new tables/columns/indexes in `backend/src/db/schema.sql`
-- [ ] T013 Update document row mapping types for enrichment provenance in `backend/src/db/repositories/documentRowMapper.ts`
-- [ ] T014 Update document contracts for enrichment provenance and chunk metadata/date fields in `backend/src/modules/documents/contracts/index.ts`
-- [ ] T015 Update `DocumentProcessingJobRecord` and repository column mapping for nullable options in `backend/src/db/repositories/documentProcessingJobRepository.ts`
-- [ ] T016 Update chunk persistence and detail projection for generated temporal columns in `backend/src/modules/documents/infra/chunkRepository.ts`
-- [ ] T017 Update vector chunk storage insert path to preserve final chunk metadata in `backend/src/modules/retrieval/infra/chunkVectorStorage.ts`
-- [ ] T018 Update OpenAPI schema catalog for document provenance and reprocess option shared schemas in `backend/src/app/http/openapi/openApiRegistry.ts`
-- [ ] T019 Re-check queue message compatibility and keep `documentJobQueueMessageSchema` unchanged in `backend/src/modules/documents/services/documentJobMessage.ts`
+- [X] T010 Add migration for ingestion setting, document enrichment provenance, source config support, job options, and chunk date generated columns in `backend/src/db/migrations/119_date_aware_event_retrieval.sql`
+- [X] T011 Update generated schema type expectations for new columns in `backend/src/shared/infra/kysely/schema.ts`
+- [X] T012 Update schema snapshot for new tables/columns/indexes in `backend/src/db/schema.sql`
+- [X] T013 Update document row mapping types for enrichment provenance in `backend/src/db/repositories/documentRowMapper.ts`
+- [X] T014 Update document contracts for enrichment provenance and chunk metadata/date fields in `backend/src/modules/documents/contracts/index.ts`
+- [X] T015 Update `DocumentProcessingJobRecord` and repository column mapping for nullable options in `backend/src/db/repositories/documentProcessingJobRepository.ts`
+- [X] T016 Update chunk persistence and detail projection for generated temporal columns in `backend/src/modules/documents/infra/chunkRepository.ts`
+- [X] T017 Update vector chunk storage insert path to preserve final chunk metadata in `backend/src/modules/retrieval/infra/chunkVectorStorage.ts`
+- [X] T018 Update OpenAPI schema catalog for document provenance and reprocess option shared schemas in `backend/src/app/http/openapi/openApiRegistry.ts`
+- [X] T019 Re-check queue message compatibility and keep `documentJobQueueMessageSchema` unchanged in `backend/src/modules/documents/services/documentJobMessage.ts`
+
+**Run-scope deviation**: T007-T009 remain unchecked because this run explicitly
+disallows Postgres-backed integration tests. Equivalent foundational coverage in
+this slice is unit-level: enrichment schema/strategy/service tests plus AMQP
+queue compatibility, with migration/schema changes implemented for later
+integration verification.
 
 **Checkpoint**: Schema, job options, per-chunk metadata, and contract anchors are ready for user stories.
 
@@ -55,31 +61,44 @@ P1 stories 1 and 2 first, then stories 3, 4, and 5.
 
 ### Tests for User Story 1
 
-- [ ] T020 [P] [US1] Write document enrichment contract validation tests in `backend/tests/unit/document-enrichment-contract.test.ts`
-- [ ] T021 [P] [US1] Write enrichment enablement resolver tests for workspace/source/job precedence in `backend/tests/unit/document-enrichment-enablement.test.ts`
-- [ ] T022 [P] [US1] Write event strategy chunk-overlap metadata tests in `backend/tests/unit/document-enrichment-strategies.test.ts`
-- [ ] T023 [P] [US1] Write article/profile/generic strategy tests in `backend/tests/unit/document-enrichment-strategies.test.ts`
-- [ ] T024 [P] [US1] Write single-call enrichment service tests with mocked LLM output in `backend/tests/unit/document-enrichment-service.test.ts`
+- [X] T020 [P] [US1] Write document enrichment contract validation tests in `backend/tests/unit/document-enrichment-contract.test.ts`
+- [X] T021 [P] [US1] Write enrichment enablement resolver tests for workspace/source/job precedence in `backend/tests/unit/document-enrichment-enablement.test.ts`
+- [X] T022 [P] [US1] Write event strategy chunk-overlap metadata tests in `backend/tests/unit/document-enrichment-strategies.test.ts`
+- [X] T023 [P] [US1] Write article/profile/generic strategy tests in `backend/tests/unit/document-enrichment-strategies.test.ts`
+- [X] T024 [P] [US1] Write single-call enrichment service tests with mocked LLM output in `backend/tests/unit/document-enrichment-service.test.ts`
 - [ ] T025 [P] [US1] Write document processing enrichment integration tests in `backend/tests/integration/document-chunking.integration.test.ts`
 - [ ] T026 [P] [US1] Write enrichment failure processing tests in `backend/tests/unit/document-processing-worker-error-reporting.test.ts`
 - [ ] T027 [P] [US1] Write grounded chat date-answer fixture test in `backend/tests/integration/retrieval-answer.integration.test.ts`
 
+**Run-scope deviation**: T025 and T027 remain unchecked because this run
+explicitly disallows Postgres-backed integration tests. T026 remains unchecked
+because the existing processor unit test import path is blocked in this sandbox
+by unresolved local workspace packages (`@radioso/conversation-defaults`), which
+also blocks collecting `document-subject-search-text.test.ts`; the enrichment
+service fail-open path is unit-tested in `document-enrichment-service.test.ts`.
+
 ### Implementation for User Story 1
 
-- [ ] T028 [P] [US1] Define `DocumentShape` and enrichment Zod output schemas in `backend/src/modules/documents/domain/enrichment/documentEnrichmentContract.ts`
-- [ ] T029 [P] [US1] Implement enrichment enablement resolver in `backend/src/modules/documents/domain/enrichment/enrichmentEnablement.ts`
-- [ ] T030 [P] [US1] Implement character-range overlap and metadata patch helpers in `backend/src/modules/documents/domain/enrichment/chunkMetadataPatches.ts`
-- [ ] T031 [P] [US1] Implement event/article/profile/reference/generic strategy port and registry in `backend/src/modules/documents/domain/enrichment/enrichmentStrategies.ts`
-- [ ] T032 [US1] Add runtime enrichment prompt in `backend/prompts/ingestion/document-enrichment.md`
-- [ ] T033 [US1] Implement bounded document representation and single-call gateway orchestration in `backend/src/modules/documents/services/documentEnrichmentService.ts`
-- [ ] T034 [US1] Export enrichment service and strategy registry from `backend/src/modules/documents/composition.ts`
-- [ ] T035 [US1] Wire enrichment service and default strategy registry in `backend/src/app/server/dependencyBuilders.ts`
-- [ ] T036 [US1] Add enrichment stage call and per-chunk final metadata/search-text rendering in `backend/src/modules/documents/services/documentProcessingService.ts`
-- [ ] T037 [US1] Persist enrichment provenance without changing document failure fields in `backend/src/db/repositories/documentRepository.ts`
-- [ ] T038 [US1] Record enrichment audit events without raw document content in `backend/src/modules/documents/services/documentProcessingService.ts`
-- [ ] T039 [US1] Add enrichment span/log attributes with safe fields in `backend/src/modules/documents/services/documentProcessingService.ts`
-- [ ] T040 [US1] Present document enrichment provenance in `backend/src/app/http/routes/documentRoutes.ts`
-- [ ] T041 [US1] Register document detail enrichment schema in `backend/src/app/http/openapi/paths/documentsPaths.ts`
+- [X] T028 [P] [US1] Define `DocumentShape` and enrichment Zod output schemas in `backend/src/modules/documents/domain/enrichment/documentEnrichmentContract.ts`
+- [X] T029 [P] [US1] Implement enrichment enablement resolver in `backend/src/modules/documents/domain/enrichment/enrichmentEnablement.ts`
+- [X] T030 [P] [US1] Implement character-range overlap and metadata patch helpers in `backend/src/modules/documents/domain/enrichment/chunkMetadataPatches.ts`
+- [X] T031 [P] [US1] Implement event/article/profile/reference/generic strategy port and registry in `backend/src/modules/documents/domain/enrichment/enrichmentStrategies.ts`
+- [X] T032 [US1] Add runtime enrichment prompt in `backend/prompts/ingestion/document-enrichment.md`
+- [X] T033 [US1] Implement bounded document representation and single-call gateway orchestration in `backend/src/modules/documents/services/documentEnrichmentService.ts`
+- [X] T034 [US1] Export enrichment service and strategy registry from `backend/src/modules/documents/composition.ts`
+- [X] T035 [US1] Wire enrichment service and default strategy registry in `backend/src/app/server/dependencyBuilders.ts`
+- [X] T036 [US1] Add enrichment stage call and per-chunk final metadata/search-text rendering in `backend/src/modules/documents/services/documentProcessingService.ts`
+- [X] T037 [US1] Persist enrichment provenance without changing document failure fields in `backend/src/db/repositories/documentRepository.ts`
+- [X] T038 [US1] Record enrichment audit events without raw document content in `backend/src/modules/documents/services/documentProcessingService.ts`
+- [X] T039 [US1] Add enrichment span/log attributes with safe fields in `backend/src/modules/documents/services/documentProcessingService.ts`
+- [X] T040 [US1] Present document enrichment provenance in `backend/src/app/http/routes/documentRoutes.ts`
+- [X] T041 [US1] Register document detail enrichment schema in `backend/src/app/http/openapi/paths/documentsPaths.ts`
+
+**Code-reality deviation**: T040 is satisfied through the existing document
+detail route returning `DocumentIngestionService.getDocument()`, after adding
+`enrichment` to document summaries/details. T041 is satisfied in the current
+code-first owner `backend/src/app/http/openapi/schemas/documentRetrievalSchemas.ts`
+and catalog registration, not a separate `paths/documentsPaths.ts` edit.
 
 **Checkpoint**: User Story 1 is independently functional and testable.
 

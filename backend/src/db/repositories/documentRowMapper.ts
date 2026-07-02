@@ -1,4 +1,10 @@
 import type {
+  DocumentEnrichmentProvenance,
+  DocumentShape,
+  EnrichmentAnchorSource,
+  EnrichmentStatus,
+} from "../../modules/documents/domain/enrichment/documentEnrichmentContract.js";
+import type {
   DocumentRecord,
   DocumentSummaryRecord,
 } from "../../modules/documents/contracts/index.js";
@@ -127,6 +133,7 @@ export const mapDocument = (row: DocumentRow): DocumentRecord => ({
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
   metadata: row.metadata ?? {},
+  enrichment: mapDocumentEnrichment(row.metadata),
   sourceKind: row.source_kind,
   sourceFilename: row.source_filename,
   sourceMimeType: row.source_mime_type,
@@ -147,6 +154,7 @@ export const mapDocumentSummary = (row: DocumentRow): DocumentSummaryRecord => (
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
   metadata: row.metadata ?? {},
+  enrichment: mapDocumentEnrichment(row.metadata),
   sourceId: row.source_id,
   source: mapDocumentSourceSummary(row.source),
   externalDocumentId: row.external_document_id,
@@ -160,6 +168,43 @@ export const mapDocumentSummary = (row: DocumentRow): DocumentSummaryRecord => (
   contentSizeBytes: coerceByteCount(row.content_size_bytes),
   contentSize: coerceByteCount(row.content_size ?? row.content_size_bytes ?? row.source_size_bytes),
 });
+
+const documentShapeValues = new Set<DocumentShape>(["event", "article", "profile", "reference", "generic"]);
+const enrichmentStatusValues = new Set<EnrichmentStatus>(["applied", "skipped", "failed"]);
+const anchorSourceValues = new Set<EnrichmentAnchorSource>(["source_last_sync", "document_created_at"]);
+
+const mapDocumentEnrichment = (
+  metadata: Record<string, unknown> | null | undefined,
+): DocumentEnrichmentProvenance | null => {
+  const value = metadata?.enrichment;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const status = record.status;
+  if (typeof status !== "string" || !enrichmentStatusValues.has(status as EnrichmentStatus)) {
+    return null;
+  }
+  const shape = typeof record.shape === "string" && documentShapeValues.has(record.shape as DocumentShape)
+    ? record.shape as DocumentShape
+    : undefined;
+  const anchorSource =
+    typeof record.anchorSource === "string" && anchorSourceValues.has(record.anchorSource as EnrichmentAnchorSource)
+      ? record.anchorSource as EnrichmentAnchorSource
+      : null;
+
+  return {
+    status: status as EnrichmentStatus,
+    shape,
+    model: typeof record.model === "string" ? record.model : null,
+    enrichedAt: typeof record.enrichedAt === "string" ? record.enrichedAt : null,
+    anchorDate: typeof record.anchorDate === "string" ? record.anchorDate : null,
+    anchorSource,
+    factCount: typeof record.factCount === "number" ? record.factCount : 0,
+    appliedChunkCount: typeof record.appliedChunkCount === "number" ? record.appliedChunkCount : 0,
+    failureReason: typeof record.failureReason === "string" ? record.failureReason : null,
+  };
+};
 
 const mapDocumentSourceSummary = (value: DocumentSourceSummary | null): DocumentSourceSummary | null => {
   if (!value || typeof value !== "object") {

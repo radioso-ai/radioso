@@ -610,7 +610,18 @@ CREATE TABLE public.chunks (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
-    embedding_unbounded public.vector
+    embedding_unbounded public.vector,
+    date_from date GENERATED ALWAYS AS (
+CASE
+    WHEN ((metadata ->> 'dateFrom'::text) ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'::text) THEN ((metadata ->> 'dateFrom'::text))::date
+    ELSE NULL::date
+END) STORED,
+    date_to date GENERATED ALWAYS AS (
+CASE
+    WHEN ((metadata ->> 'dateTo'::text) ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'::text) THEN ((metadata ->> 'dateTo'::text))::date
+    WHEN ((metadata ->> 'dateFrom'::text) ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'::text) THEN ((metadata ->> 'dateFrom'::text))::date
+    ELSE NULL::date
+END) STORED
 )
 PARTITION BY HASH (workspace_id);
 
@@ -1167,7 +1178,8 @@ CREATE TABLE public.document_processing_jobs (
     completed_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    workspace_id uuid NOT NULL
+    workspace_id uuid NOT NULL,
+    options jsonb
 );
 
 
@@ -1361,7 +1373,8 @@ CREATE TABLE public.ingestion_settings (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
-    pending_embedding_model text
+    pending_embedding_model text,
+    document_enrichment_enabled boolean DEFAULT false NOT NULL
 );
 
 

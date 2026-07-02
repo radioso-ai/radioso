@@ -97,8 +97,10 @@ import {
   ChunkRepository,
   type DocumentJobDispatcherPort,
   DocumentDeletionService,
+  DocumentEnrichmentService,
   DocumentImportService,
   DocumentIngestionService,
+  ModelDocumentEnrichmentGateway,
   DocumentProcessingService,
   DocumentProcessingWorker,
   DocumentSearchHistoryService,
@@ -620,6 +622,9 @@ export const buildDocumentServices = (input: {
     embeddingService,
     composition.chunkingProvider,
   );
+  const documentEnrichmentService = new DocumentEnrichmentService({
+    gateway: new ModelDocumentEnrichmentGateway(llmRegistry.createChatInferencePipeline(usageEventRecorder)),
+  });
   const documentProcessingService = new DocumentProcessingService(
     repositories.documentRepository,
     repositories.chunkRepository,
@@ -629,6 +634,7 @@ export const buildDocumentServices = (input: {
     chunkingStrategyRegistry,
     documentSourceContentService,
     logger,
+    documentEnrichmentService,
   );
   const documentIngestionService = new DocumentIngestionService(
     repositories.documentRepository,

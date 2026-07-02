@@ -97,6 +97,20 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       status: DocumentStatusSchema,
     }),
   );
+  const DocumentEnrichmentSchema = registry.register(
+    "DocumentEnrichment",
+    z.object({
+      status: z.enum(["applied", "skipped", "failed"]),
+      shape: z.enum(["event", "article", "profile", "reference", "generic"]).optional(),
+      model: z.string().nullable().optional(),
+      enrichedAt: z.string().datetime().nullable().optional(),
+      anchorDate: z.string().nullable().optional(),
+      anchorSource: z.enum(["source_last_sync", "document_created_at"]).nullable().optional(),
+      factCount: z.number().int().min(0).optional(),
+      appliedChunkCount: z.number().int().min(0).optional(),
+      failureReason: z.string().nullable().optional(),
+    }),
+  );
 
   const DocumentSummarySchema = registry.register(
     "DocumentSummary",
@@ -109,6 +123,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
       metadata: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).default({}),
+      enrichment: DocumentEnrichmentSchema.nullable().optional(),
       sourceId: z.string().uuid().nullable().optional(),
       source: DocumentSourceSummarySchema.nullable().optional(),
       externalDocumentId: z.string().nullable().optional(),
@@ -540,6 +555,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     DocumentSourceListResponseSchema,
     DocumentImportRequestSchema,
     DocumentOperationResponseSchema,
+    DocumentEnrichmentSchema,
     DocumentSummarySchema,
     DocumentDetailsSchema,
     DocumentListResponseSchema,

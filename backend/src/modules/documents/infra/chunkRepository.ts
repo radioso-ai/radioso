@@ -117,6 +117,8 @@ export class ChunkRepository implements ChunkRepositoryPort {
       metadata: Record<string, unknown> | null;
       created_at: Date;
       embedding_dimensions: number | null;
+      date_from: string | null;
+      date_to: string | null;
     }>(
       `SELECT id,
               document_id,
@@ -128,7 +130,9 @@ export class ChunkRepository implements ChunkRepositoryPort {
               end_offset,
               metadata,
               created_at,
-              COALESCE(vector_dims(embedding_unbounded), vector_dims(embedding)) AS embedding_dimensions
+              COALESCE(vector_dims(embedding_unbounded), vector_dims(embedding)) AS embedding_dimensions,
+              date_from,
+              date_to
        FROM chunks
        WHERE id = $1 AND document_id = $2 AND workspace_id = $3`,
       [input.chunkId, input.documentId, input.workspaceId],
@@ -149,6 +153,8 @@ export class ChunkRepository implements ChunkRepositoryPort {
       startOffset: Number(row.start_offset),
       endOffset: Number(row.end_offset),
       metadata: (row.metadata ?? {}) as Record<string, unknown>,
+      dateFrom: row.date_from,
+      dateTo: row.date_to,
       createdAt: row.created_at,
       embeddingDimensions: row.embedding_dimensions === null ? null : Number(row.embedding_dimensions),
     };

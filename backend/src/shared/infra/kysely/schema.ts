@@ -210,6 +210,8 @@ export interface Chunks {
   chunk_index: number;
   content: string;
   created_at: Generated<Timestamp>;
+  date_from: Generated<ColumnType<Date | null, never, never>>;
+  date_to: Generated<ColumnType<Date | null, never, never>>;
   document_id: string;
   embedding: string | null;
   embedding_model: Generated<string>;
@@ -355,6 +357,7 @@ export interface DocumentProcessingJobs {
   document_revision: number;
   id: string;
   last_error: string | null;
+  options: Json | null;
   status: string;
   updated_at: Generated<Timestamp>;
   workspace_id: string;
@@ -489,6 +492,7 @@ export interface EvalSnapshots {
 export interface IngestionSettings {
   chunking_strategy: Generated<string>;
   created_at: Generated<Timestamp>;
+  document_enrichment_enabled: Generated<boolean>;
   embedding_model: Generated<string>;
   fixed_window_chunk_overlap: Generated<number>;
   fixed_window_chunk_size: Generated<number>;

@@ -15,11 +15,16 @@ import {
 import type { IngestionSettingsRecord } from "../../settings/contracts/ingestion.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { traceOperation } from "../../../shared/observability/tracing/operations.js";
+import { parseDocumentEnrichmentOverride, resolveDocumentEnrichmentEnablement } from "../domain/enrichment/enrichmentEnablement.js";
 import type {
   ChunkRecord,
   ChunkRepositoryPort,
   DocumentRepositoryPort,
 } from "./documentIngestionService.js";
+import type {
+  DocumentEnrichmentStagePort,
+  DocumentEnrichmentStageResult,
+} from "./documentEnrichmentService.js";
 import type { MaterializedDocumentContent } from "./documentSourceContentService.js";
 
 export interface IngestionSettingsReaderPort {
@@ -84,9 +89,13 @@ const compactTraceAttributes = (attributes: TraceAttributes): TraceAttributes =>
 export const buildDocumentProcessingTraceAttributes = (
   job: Pick<DocumentProcessingJobRecord, "id" | "workspaceId" | "documentId" | "documentRevision" | "attemptCount" | "status">,
   input: {
-    stage?: "claim" | "materialize" | "chunking" | "embedding" | "storage" | "audit" | "complete";
+    stage?: "claim" | "materialize" | "chunking" | "enrichment" | "embedding" | "storage" | "audit" | "complete";
     outcome?: DocumentProcessingOutcome | "completed" | "published";
     chunkCount?: number;
+    enrichmentStatus?: string;
+    enrichmentShape?: string;
+    enrichmentFactCount?: number;
+    enrichmentAppliedChunkCount?: number;
   } = {},
 ): TraceAttributes => compactTraceAttributes({
   "radioso.workspace_id": job.workspaceId,
@@ -99,6 +108,10 @@ export const buildDocumentProcessingTraceAttributes = (
   "document.processing.stage": input.stage,
   "document.processing.outcome": input.outcome,
   "document.processing.item.count": input.chunkCount === undefined ? undefined : boundedTraceCount(input.chunkCount),
+  "document.enrichment.status": input.enrichmentStatus,
+  "document.enrichment.shape": input.enrichmentShape,
+  "document.enrichment.fact_count": input.enrichmentFactCount,
+  "document.enrichment.applied_chunk_count": input.enrichmentAppliedChunkCount,
 });
 
 export class DocumentProcessingService {
@@ -111,6 +124,7 @@ export class DocumentProcessingService {
     private readonly chunkingStrategyRegistry: ChunkingStrategyRegistryPort,
     private readonly documentSourceContentService: DocumentSourceContentServicePort = inlineDocumentSourceContentService,
     private readonly logger?: AppLogger,
+    private readonly documentEnrichmentStage?: DocumentEnrichmentStagePort,
   ) {}
 
   async process(job: DocumentProcessingJobRecord): Promise<DocumentProcessingOutcome> {
@@ -185,17 +199,31 @@ export class DocumentProcessingService {
         chunkCount: result.length,
       }));
       const chunkingDurationMs = Math.max(0, Date.now() - chunkingStartedAt);
-      const metadataSearchText = renderMetadataSearchText(documentWithContent.metadata ?? {});
-      const enrichedChunks = chunks.map((chunk) => ({
+      const chunkRecordsWithoutSearchText = chunks.map((chunk) => ({
         ...chunk,
-        searchText: renderSearchText({
-          title: documentWithContent.title,
-          subjectLabel: documentSubject,
-          sectionPath: deriveChunkSection(chunk.content),
-          attributeText: metadataSearchText,
-          content: chunk.content,
-        }),
+        metadata: documentWithContent.metadata ?? {},
       }));
+      const enrichmentResult = await this.runEnrichmentStage({
+        job,
+        document: documentWithContent,
+        settings,
+        chunks: chunkRecordsWithoutSearchText,
+      });
+      const finalDocumentMetadata = enrichmentResult?.documentMetadata ?? (documentWithContent.metadata ?? {});
+      const finalChunks = enrichmentResult?.chunks ?? chunkRecordsWithoutSearchText;
+      const enrichedChunks = finalChunks.map((chunk) => {
+        const metadataSearchText = renderMetadataSearchText(chunk.metadata ?? finalDocumentMetadata);
+        return {
+          ...chunk,
+          searchText: renderSearchText({
+            title: documentWithContent.title,
+            subjectLabel: documentSubject,
+            sectionPath: deriveChunkSection(chunk.content),
+            attributeText: metadataSearchText,
+            content: chunk.content,
+          }),
+        };
+      });
       const embeddingUsage = this.buildEmbeddingUsage(job, enrichedChunks);
       const embeddingStartedAt = Date.now();
       let embeddings: number[][];
@@ -253,7 +281,7 @@ export class DocumentProcessingService {
         embeddingModel,
         startOffset: chunk.startOffset,
         endOffset: chunk.endOffset,
-        metadata: documentWithContent.metadata ?? {},
+        metadata: chunk.metadata ?? finalDocumentMetadata,
         createdAt: new Date(),
       }));
 
@@ -286,6 +314,7 @@ export class DocumentProcessingService {
         metadata: {
           documentId: documentWithContent.id,
           revision: job.documentRevision,
+          enrichmentStatus: enrichmentResult?.status ?? "skipped",
         },
       }));
       await this.ingestionSettingsService.promotePendingEmbeddingModelIfReady?.(job.workspaceId);
@@ -322,6 +351,98 @@ export class DocumentProcessingService {
       chunks: chunkDetails,
     };
   }
+
+  private async runEnrichmentStage(input: {
+    job: DocumentProcessingJobRecord;
+    document: {
+      id: string;
+      workspaceId: string;
+      title: string;
+      markdownContent: string;
+      metadata: Record<string, unknown>;
+      createdAt: Date;
+    };
+    settings: IngestionSettingsRecord;
+    chunks: Array<{
+      chunkIndex: number;
+      content: string;
+      startOffset: number;
+      endOffset: number;
+      metadata: Record<string, unknown>;
+    }>;
+  }): Promise<DocumentEnrichmentStageResult<typeof input.chunks[number]> | null> {
+    const enablement = resolveDocumentEnrichmentEnablement({
+      workspaceDefaultEnabled: input.settings.documentEnrichmentEnabled ?? false,
+      sourceOverride: "inherit",
+      jobOverride: parseDocumentEnrichmentOverride(input.job.options?.documentEnrichmentOverride),
+    });
+    if (!enablement.enabled || !this.documentEnrichmentStage) {
+      return null;
+    }
+
+    const startedAt = Date.now();
+    const anchorDate = toIsoDate(input.document.createdAt);
+    const result = await traceActiveSpan(
+      "document.processing.enrichment",
+      buildDocumentProcessingTraceAttributes(input.job, {
+        stage: "enrichment",
+      }),
+      () => this.documentEnrichmentStage!.enrich({
+        document: input.document,
+        chunks: input.chunks,
+        anchor: {
+          source: "document_created_at",
+          date: anchorDate,
+        },
+      }),
+      (enrichment) => buildDocumentProcessingTraceAttributes(input.job, {
+        stage: "enrichment",
+        enrichmentStatus: enrichment.status,
+        enrichmentFactCount: enrichment.factCount,
+        enrichmentAppliedChunkCount: enrichment.appliedChunkCount,
+      }),
+    );
+
+    const updatedDocument = await this.documentRepository.updateMetadataForRevision({
+      documentId: input.document.id,
+      workspaceId: input.job.workspaceId,
+      revision: input.job.documentRevision,
+      metadata: result.documentMetadata,
+    });
+    if (!updatedDocument) {
+      return null;
+    }
+
+    this.logger?.info(
+      {
+        role: "worker",
+        workspaceId: input.job.workspaceId,
+        documentId: input.document.id,
+        revision: input.job.documentRevision,
+        enrichmentStatus: result.status,
+        factCount: result.factCount,
+        appliedChunkCount: result.appliedChunkCount,
+        enrichmentDurationMs: Math.max(0, Date.now() - startedAt),
+      },
+      "Document enrichment completed",
+    );
+    await this.auditService.record({
+      workspaceId: input.job.workspaceId,
+      eventType: "document.enrichment",
+      eventStatus: result.status === "applied" ? "success" : "failure",
+      metadata: {
+        documentId: input.document.id,
+        revision: input.job.documentRevision,
+        status: result.status,
+        factCount: result.factCount,
+        appliedChunkCount: result.appliedChunkCount,
+      },
+    });
+
+    return result;
+  }
 }
 
 const estimateTokensFromBytes = (bytes: number): number => Math.max(1, Math.ceil(bytes / 4));
+
+const toIsoDate = (date: Date): string => date.toISOString().slice(0, 10);

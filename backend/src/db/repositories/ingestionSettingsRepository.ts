@@ -15,6 +15,7 @@ interface IngestionSettingsRow {
   structured_max_chunk_size: number;
   embedding_model: IngestionSettingsRecord["embeddingModel"];
   pending_embedding_model: IngestionSettingsRecord["pendingEmbeddingModel"];
+  document_enrichment_enabled: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -28,6 +29,7 @@ const mapSettings = (row: IngestionSettingsRow): IngestionSettingsRecord => ({
   structuredMaxChunkSize: row.structured_max_chunk_size,
   embeddingModel: row.embedding_model,
   pendingEmbeddingModel: row.pending_embedding_model,
+  documentEnrichmentEnabled: row.document_enrichment_enabled,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
 });
@@ -41,6 +43,7 @@ const ingestionSettingsColumns = [
   "structured_max_chunk_size",
   "embedding_model",
   "pending_embedding_model",
+  "document_enrichment_enabled",
   "created_at",
   "updated_at",
 ] as const;
@@ -70,6 +73,7 @@ export class IngestionSettingsRepository implements IngestionSettingsRepositoryP
         structured_max_chunk_size: input.structuredMaxChunkSize,
         embedding_model: input.embeddingModel,
         pending_embedding_model: input.pendingEmbeddingModel,
+        document_enrichment_enabled: input.documentEnrichmentEnabled,
       })
       .onConflict((oc) =>
         oc.column("workspace_id").doUpdateSet((eb) => ({
@@ -80,6 +84,7 @@ export class IngestionSettingsRepository implements IngestionSettingsRepositoryP
           structured_max_chunk_size: eb.ref("excluded.structured_max_chunk_size"),
           embedding_model: eb.ref("excluded.embedding_model"),
           pending_embedding_model: eb.ref("excluded.pending_embedding_model"),
+          document_enrichment_enabled: eb.ref("excluded.document_enrichment_enabled"),
           updated_at: currentTimestamp(),
         })),
       )

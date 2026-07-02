@@ -1693,6 +1693,7 @@ export class InMemoryIngestionSettingsRepository implements IngestionSettingsRep
       chunkingStrategy: input.chunkingStrategy,
       embeddingModel: input.embeddingModel,
       pendingEmbeddingModel: input.pendingEmbeddingModel,
+      documentEnrichmentEnabled: input.documentEnrichmentEnabled ?? false,
       fixedWindowChunkSize: input.fixedWindowChunkSize,
       fixedWindowChunkOverlap: input.fixedWindowChunkOverlap,
       structuredMinChunkSize: input.structuredMinChunkSize,
@@ -2372,6 +2373,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
         metadata: item.metadata,
+        enrichment: item.enrichment ?? null,
         sourceId: item.sourceId ?? null,
         source: item.source ?? null,
         externalDocumentId: item.externalDocumentId ?? null,
@@ -2620,6 +2622,27 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       ...existing,
       sourceContent: input.sourceContent,
       markdownContent: input.markdownContent,
+      updatedAt: new Date(),
+    };
+    this.items.set(record.id, record);
+    return record;
+  }
+
+  async updateMetadataForRevision(input: {
+    documentId: string;
+    workspaceId: string;
+    revision: number;
+    metadata: Record<string, unknown>;
+  }): Promise<DocumentRecord | null> {
+    const existing = this.items.get(input.documentId);
+    if (!existing || existing.workspaceId !== input.workspaceId || existing.revision !== input.revision) {
+      return null;
+    }
+
+    const record: DocumentRecord = {
+      ...existing,
+      metadata: input.metadata,
+      enrichment: input.metadata.enrichment as DocumentRecord["enrichment"],
       updatedAt: new Date(),
     };
     this.items.set(record.id, record);
@@ -2925,7 +2948,7 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     this.documentRepository = documentRepository;
   }
 
-  async enqueue(input: { documentId: string; workspaceId: string; documentRevision: number }): Promise<DocumentProcessingJobRecord> {
+  async enqueue(input: { documentId: string; workspaceId: string; documentRevision: number; options?: DocumentProcessingJobRecord["options"] | null }): Promise<DocumentProcessingJobRecord> {
     const record: DocumentProcessingJobRecord = {
       id: randomUUID(),
       documentId: input.documentId,
@@ -2939,6 +2962,7 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
       completedAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),
+      options: input.options ?? null,
     };
     this.items.set(record.id, record);
     return record;

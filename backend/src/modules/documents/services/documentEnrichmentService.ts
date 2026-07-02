@@ -1,0 +1,204 @@
+import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
+import {
+  documentEnrichmentOutputSchema,
+  normalizeDocumentShape,
+  type DocumentEnrichmentOutput,
+  type DocumentEnrichmentProvenance,
+  type EnrichmentAnchorSource,
+} from "../domain/enrichment/documentEnrichmentContract.js";
+import {
+  createDefaultDocumentEnrichmentStrategyRegistry,
+  type DocumentEnrichmentStrategyRegistry,
+} from "../domain/enrichment/enrichmentStrategies.js";
+import type { EnrichableChunk } from "../domain/enrichment/chunkMetadataPatches.js";
+
+export interface DocumentEnrichmentGateway {
+  generate(input: {
+    workspaceId: string;
+    documentId: string;
+    prompt: string;
+    documentRepresentation: string;
+  }): Promise<{ model: string; output: unknown }>;
+}
+
+export interface DocumentEnrichmentStageInput<TChunk extends EnrichableChunk = EnrichableChunk> {
+  document: {
+    id: string;
+    workspaceId: string;
+    title: string;
+    markdownContent: string;
+    metadata: Record<string, unknown>;
+    createdAt: Date;
+  };
+  chunks: TChunk[];
+  anchor: {
+    source: EnrichmentAnchorSource;
+    date: string;
+  };
+}
+
+export interface DocumentEnrichmentStageResult<TChunk extends EnrichableChunk = EnrichableChunk> {
+  status: "applied" | "failed";
+  documentMetadata: Record<string, unknown>;
+  chunks: TChunk[];
+  factCount: number;
+  appliedChunkCount: number;
+}
+
+export interface DocumentEnrichmentStagePort {
+  enrich<TChunk extends EnrichableChunk>(
+    input: DocumentEnrichmentStageInput<TChunk>,
+  ): Promise<DocumentEnrichmentStageResult<TChunk>>;
+}
+
+export class ModelDocumentEnrichmentGateway implements DocumentEnrichmentGateway {
+  constructor(private readonly pipeline: ModelInferencePipeline) {}
+
+  async generate(input: {
+    workspaceId: string;
+    documentId: string;
+    prompt: string;
+    documentRepresentation: string;
+  }): Promise<{ model: string; output: unknown }> {
+    const result = await this.pipeline.complete({
+      prompt: input.documentRepresentation,
+      systemPrompt: input.prompt,
+      temperature: 0,
+      reasoningEffort: "low",
+      maxOutputTokens: 2_000,
+      operation: {
+        workspaceId: input.workspaceId,
+        requestId: input.documentId,
+        surface: "documents",
+        operation: "document_enrichment",
+        attemptKey: `document-enrichment:${input.documentId}`,
+      },
+    });
+
+    return {
+      model: this.pipeline.metadata.model,
+      output: JSON.parse(result.text) as unknown,
+    };
+  }
+}
+
+export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
+  private readonly prompt: string;
+  private readonly strategyRegistry: DocumentEnrichmentStrategyRegistry;
+  private readonly now: () => Date;
+
+  constructor(private readonly deps: {
+    gateway: DocumentEnrichmentGateway;
+    strategyRegistry?: DocumentEnrichmentStrategyRegistry;
+    prompt?: string;
+    now?: () => Date;
+  }) {
+    this.prompt = deps.prompt ?? loadPromptTemplate("ingestion/document-enrichment.md");
+    this.strategyRegistry = deps.strategyRegistry ?? createDefaultDocumentEnrichmentStrategyRegistry();
+    this.now = deps.now ?? (() => new Date());
+  }
+
+  async enrich<TChunk extends EnrichableChunk>(
+    input: DocumentEnrichmentStageInput<TChunk>,
+  ): Promise<DocumentEnrichmentStageResult<TChunk>> {
+    try {
+      const gatewayResult = await this.deps.gateway.generate({
+        workspaceId: input.document.workspaceId,
+        documentId: input.document.id,
+        prompt: this.prompt,
+        documentRepresentation: buildBoundedDocumentRepresentation(input.document),
+      });
+      const parsed = validateOutputForDocument(
+        documentEnrichmentOutputSchema.parse(gatewayResult.output),
+        input.document.markdownContent.length,
+      );
+      const shape = normalizeDocumentShape(parsed.shape, parsed.confidence);
+      const strategyResult = this.strategyRegistry.get(shape).apply({
+        documentMetadata: input.document.metadata,
+        chunks: input.chunks,
+        facts: parsed.facts,
+      });
+      const provenance = buildProvenance({
+        status: "applied",
+        shape,
+        model: gatewayResult.model,
+        enrichedAt: this.now().toISOString(),
+        anchorDate: input.anchor.date,
+        anchorSource: input.anchor.source,
+        factCount: parsed.facts.length,
+        appliedChunkCount: strategyResult.appliedChunkCount,
+      });
+
+      return {
+        status: "applied",
+        documentMetadata: {
+          ...strategyResult.documentMetadata,
+          enrichment: provenance,
+        },
+        chunks: strategyResult.chunks,
+        factCount: parsed.facts.length,
+        appliedChunkCount: strategyResult.appliedChunkCount,
+      };
+    } catch {
+      return {
+        status: "failed",
+        documentMetadata: {
+          ...input.document.metadata,
+          enrichment: buildProvenance({
+            status: "failed",
+            enrichedAt: this.now().toISOString(),
+            anchorDate: input.anchor.date,
+            anchorSource: input.anchor.source,
+            factCount: 0,
+            appliedChunkCount: 0,
+            failureReason: "invalid_output",
+          }),
+        },
+        chunks: input.chunks,
+        factCount: 0,
+        appliedChunkCount: 0,
+      };
+    }
+  }
+}
+
+const MAX_DOCUMENT_REPRESENTATION_CHARS = 48_000;
+
+const buildBoundedDocumentRepresentation = (document: {
+  title: string;
+  markdownContent: string;
+  createdAt: Date;
+}): string => {
+  const body = document.markdownContent.slice(0, MAX_DOCUMENT_REPRESENTATION_CHARS);
+  return [
+    `Title: ${document.title}`,
+    `Created at: ${document.createdAt.toISOString()}`,
+    "",
+    body,
+  ].join("\n");
+};
+
+const validateOutputForDocument = (
+  output: DocumentEnrichmentOutput,
+  documentLength: number,
+): DocumentEnrichmentOutput => {
+  for (const fact of output.facts) {
+    if (fact.sourceRange.end > documentLength) {
+      throw new Error("enrichment_fact_range_out_of_bounds");
+    }
+  }
+  return output;
+};
+
+const buildProvenance = (input: DocumentEnrichmentProvenance): DocumentEnrichmentProvenance => ({
+  status: input.status,
+  shape: input.shape,
+  model: input.model ?? null,
+  enrichedAt: input.enrichedAt ?? null,
+  anchorDate: input.anchorDate ?? null,
+  anchorSource: input.anchorSource ?? null,
+  factCount: input.factCount ?? 0,
+  appliedChunkCount: input.appliedChunkCount ?? 0,
+  failureReason: input.failureReason ?? null,
+});

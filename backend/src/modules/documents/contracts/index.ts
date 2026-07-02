@@ -7,6 +7,7 @@ export type {
   ChunkSummary,
   DocumentCreateInput,
   DocumentDerivedContentUpdateInput,
+  DocumentEnrichmentMetadataUpdateInput,
   DocumentDetails,
   DocumentListPage,
   DocumentQueueUpdateInput,

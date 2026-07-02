@@ -5,7 +5,9 @@ import type {
   DocumentProcessingJobRecord,
   DocumentProcessingJobRepositoryPort,
   DocumentProcessingQueueSnapshot,
+  DocumentProcessingJobOptions,
 } from "../../../db/repositories/documentProcessingJobRepository.js";
+import type { DocumentEnrichmentProvenance } from "../domain/enrichment/documentEnrichmentContract.js";
 import { normalizeMarkdown, renderMetadataSearchText } from "../../retrieval/public.js";
 import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
 import {
@@ -85,6 +87,7 @@ export interface DocumentRecord extends DocumentSourceRecord {
   createdAt: Date;
   updatedAt: Date;
   metadata: Record<string, unknown>;
+  enrichment?: DocumentEnrichmentProvenance | null;
 }
 
 export interface DocumentCreateInput extends DocumentSourceInput {
@@ -146,6 +149,13 @@ export interface ChunkRecord {
   createdAt: Date;
 }
 
+export interface DocumentEnrichmentMetadataUpdateInput {
+  documentId: string;
+  workspaceId: string;
+  revision: number;
+  metadata: Record<string, unknown>;
+}
+
 export interface DocumentRepositoryPort {
   createAndQueue(input: DocumentCreateInput): Promise<DocumentRecord>;
   create(input: DocumentCreateInput & { status: string }): Promise<DocumentRecord>;
@@ -177,6 +187,7 @@ export interface DocumentRepositoryPort {
   update(input: DocumentUpdateInput): Promise<DocumentRecord>;
   updateAndQueue(input: DocumentQueueUpdateInput): Promise<DocumentRecord>;
   updateDerivedContentForRevision(input: DocumentDerivedContentUpdateInput): Promise<DocumentRecord | null>;
+  updateMetadataForRevision(input: DocumentEnrichmentMetadataUpdateInput): Promise<DocumentRecord | null>;
   requeue(documentId: string, workspaceId: string): Promise<DocumentRecord>;
   requeueAndQueue(documentId: string, workspaceId: string): Promise<DocumentRecord>;
   requeueAllEligibleAndQueue(workspaceId: string): Promise<{
@@ -238,6 +249,8 @@ export interface ChunkDetail {
   startOffset: number;
   endOffset: number;
   metadata: Record<string, unknown>;
+  dateFrom?: string | null;
+  dateTo?: string | null;
   createdAt: Date;
   embeddingDimensions: number | null;
 }
@@ -275,6 +288,7 @@ export interface DocumentSummary {
   sourceMimeType?: string | null;
   contentSize?: number | null;
   contentSizeBytes?: number | null;
+  enrichment?: DocumentEnrichmentProvenance | null;
 }
 
 export interface DocumentListPage {
@@ -302,6 +316,7 @@ export interface DocumentSummaryRecord extends DocumentSourceRecord {
   externalDocumentId?: string | null;
   contentSize?: number | null;
   contentSizeBytes?: number | null;
+  enrichment?: DocumentEnrichmentProvenance | null;
 }
 
 export class DocumentIngestionService {
@@ -755,6 +770,7 @@ export class DocumentIngestionService {
       sourceMimeType: document.sourceMimeType ?? null,
       contentSize: document.contentSize ?? document.contentSizeBytes ?? null,
       contentSizeBytes: document.contentSizeBytes ?? null,
+      enrichment: document.enrichment ?? null,
     };
   }
 
@@ -945,7 +961,7 @@ const describeIndexedContent = (
   // content-only so storage quota accounting is unaffected.
   const metadataSearchText = renderMetadataSearchText(metadata ?? {});
   const fingerprint = metadataSearchText
-    ? `${normalizedMarkdown} ${metadataSearchText}`
+    ? `${normalizedMarkdown}${metadataSearchText}`
     : normalizedMarkdown;
   return {
     markdownContent: normalizedMarkdown,

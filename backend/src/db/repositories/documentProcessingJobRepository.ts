@@ -1,9 +1,14 @@
 import { randomUUID } from "node:crypto";
 
-import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
+import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 export type DocumentProcessingJobStatus = "queued" | "processing" | "completed" | "failed" | "skipped";
+export type DocumentProcessingJobEnrichmentOverride = "on" | "off";
+
+export interface DocumentProcessingJobOptions {
+  documentEnrichmentOverride?: DocumentProcessingJobEnrichmentOverride;
+}
 
 export interface DocumentProcessingJobRecord {
   id: string;
@@ -18,6 +23,7 @@ export interface DocumentProcessingJobRecord {
   completedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  options?: DocumentProcessingJobOptions | null;
 }
 
 export interface DocumentProcessingQueueSnapshot {
@@ -27,7 +33,7 @@ export interface DocumentProcessingQueueSnapshot {
 }
 
 export interface DocumentProcessingJobRepositoryPort {
-  enqueue(input: { documentId: string; workspaceId: string; documentRevision: number }): Promise<DocumentProcessingJobRecord>;
+  enqueue(input: { documentId: string; workspaceId: string; documentRevision: number; options?: DocumentProcessingJobOptions | null }): Promise<DocumentProcessingJobRecord>;
   findById(jobId: string): Promise<DocumentProcessingJobRecord | null>;
   findByDocumentRevision(input: { documentId: string; workspaceId: string; documentRevision: number }): Promise<DocumentProcessingJobRecord | null>;
   claimNext(now?: Date): Promise<DocumentProcessingJobRecord | null>;
@@ -62,6 +68,7 @@ interface DocumentProcessingJobRow {
   completed_at: Date | null;
   created_at: Date;
   updated_at: Date;
+  options: Record<string, unknown> | null;
 }
 
 const mapJob = (row: DocumentProcessingJobRow): DocumentProcessingJobRecord => ({
@@ -77,7 +84,19 @@ const mapJob = (row: DocumentProcessingJobRow): DocumentProcessingJobRecord => (
   completedAt: row.completed_at ? new Date(row.completed_at) : null,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
+  options: mapJobOptions(row.options),
 });
+
+const mapJobOptions = (value: Record<string, unknown> | null): DocumentProcessingJobOptions | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const override = value.documentEnrichmentOverride;
+  if (override !== "on" && override !== "off") {
+    return null;
+  }
+  return { documentEnrichmentOverride: override };
+};
 
 const documentProcessingJobColumns = [
   "id",
@@ -92,12 +111,13 @@ const documentProcessingJobColumns = [
   "completed_at",
   "created_at",
   "updated_at",
+  "options",
 ] as const;
 
 export class DocumentProcessingJobRepository implements DocumentProcessingJobRepositoryPort {
   constructor(private readonly db: Db) {}
 
-  async enqueue(input: { documentId: string; workspaceId: string; documentRevision: number }): Promise<DocumentProcessingJobRecord> {
+  async enqueue(input: { documentId: string; workspaceId: string; documentRevision: number; options?: DocumentProcessingJobOptions | null }): Promise<DocumentProcessingJobRecord> {
     const row = await this.db
       .insertInto("document_processing_jobs")
       .values({
@@ -106,6 +126,7 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
         workspace_id: input.workspaceId,
         document_revision: input.documentRevision,
         status: "queued",
+        options: input.options ? toJsonb(input.options) : null,
       })
       .returning(documentProcessingJobColumns)
       .executeTakeFirstOrThrow();

@@ -5,6 +5,7 @@ import { sql } from "kysely";
 import type {
   DocumentCreateInput,
   DocumentDerivedContentUpdateInput,
+  DocumentEnrichmentMetadataUpdateInput,
   DocumentQueueUpdateInput,
   DocumentRecord,
   DocumentRepositoryPort,
@@ -493,6 +494,22 @@ export class DocumentRepository implements DocumentRepositoryPort {
       .set({
         source_content: input.sourceContent,
         markdown_content: input.markdownContent,
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", input.documentId)
+      .where("workspace_id", "=", input.workspaceId)
+      .where("revision", "=", input.revision)
+      .returning(documentSelectColumns)
+      .executeTakeFirst()) as DocumentRow | undefined;
+
+    return row ? mapDocument(row) : null;
+  }
+
+  async updateMetadataForRevision(input: DocumentEnrichmentMetadataUpdateInput): Promise<DocumentRecord | null> {
+    const row = (await this.db
+      .updateTable("documents")
+      .set({
+        metadata: toJsonb(input.metadata),
         updated_at: currentTimestamp(),
       })
       .where("id", "=", input.documentId)

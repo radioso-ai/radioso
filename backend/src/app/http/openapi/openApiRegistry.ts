@@ -130,6 +130,7 @@ export interface OpenApiSchemaCatalog {
   CreateAccountInvitationResponseSchema: z.ZodTypeAny;
   DocumentCreateRequestSchema: z.ZodTypeAny;
   DocumentDetailsSchema: z.ZodTypeAny;
+  DocumentEnrichmentSchema: z.ZodTypeAny;
   DocumentImportRequestSchema: z.ZodTypeAny;
   DocumentListResponseSchema: z.ZodTypeAny;
   DocumentOperationResponseSchema: z.ZodTypeAny;

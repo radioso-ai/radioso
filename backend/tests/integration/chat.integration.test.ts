@@ -1453,6 +1453,7 @@ describe("chat integration", () => {
     expect(response.body.debug.activitySummary.candidateCounts).toEqual({
       semantic: 0,
       lexical: 0,
+      temporal: 0,
       merged: 0,
       final: 0,
     });

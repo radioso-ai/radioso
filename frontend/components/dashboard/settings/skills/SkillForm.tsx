@@ -188,20 +188,25 @@ function SkillSettingControl({
 
   if (field.type === 'select') {
     const selectedDefaultLabel = optionLabel(field, field.defaultValue)
+    const selectValue = typeof value === 'string' ? value : DEFAULT_SELECT_VALUE
     return (
       <div className="space-y-2">
         <Label htmlFor={fieldId}>{field.label}</Label>
         <Select
-          value={typeof value === 'string' ? value : undefined}
+          value={selectValue}
           onValueChange={(nextValue) => onChange(nextValue === DEFAULT_SELECT_VALUE ? undefined : nextValue)}
         >
           <SelectTrigger id={fieldId}>
-            <SelectValue placeholder={selectedDefaultLabel ? `Default (${selectedDefaultLabel})` : 'Choose option'} />
+            <SelectValue placeholder={selectedDefaultLabel ? `Default (${selectedDefaultLabel})` : 'Choose option'}>
+              {selectValue === DEFAULT_SELECT_VALUE
+                ? selectedDefaultLabel ? `Default (${selectedDefaultLabel})` : 'Choose option'
+                : undefined}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
-            {selectedDefaultLabel ? (
-              <SelectItem value={DEFAULT_SELECT_VALUE}>Use default ({selectedDefaultLabel})</SelectItem>
-            ) : null}
+            <SelectItem value={DEFAULT_SELECT_VALUE}>
+              {selectedDefaultLabel ? `Use default (${selectedDefaultLabel})` : 'Choose option'}
+            </SelectItem>
             {(field.options ?? []).map((option) => (
               <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
             ))}

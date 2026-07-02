@@ -64,7 +64,7 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await page.getByRole("button", { name: "Selected sources" }).click();
   await page.getByLabel(/Course guide/).check();
   await page.getByRole("textbox", { name: "Instruction", exact: true }).fill("Use event-specific sources only.");
-  await expect(page.getByLabel("Suggested questions")).toBeVisible();
+  await expect(page.getByRole("switch", { name: "Suggested questions", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Advanced" }).click();
   await page.getByLabel("When to use").click();
   await page.getByRole("option", { name: "Only when a routine calls it (@name)" }).click();

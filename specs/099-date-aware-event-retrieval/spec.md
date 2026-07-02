@@ -33,9 +33,13 @@ workshop take place?" gets a grounded answer with the correct date, even though 
 date appeared three paragraphs below the workshop description.
 
 **Why this priority**: Nothing downstream can be time-aware while dates exist only
-as prose. Extraction activates already-existing retrieval machinery (date-aware
-search text, recency-aware reranking, date-comparison rules) with no further
-changes, so this story alone delivers user-visible improvement.
+as prose. Once dates reach chunk metadata, existing retrieval machinery (date-aware
+search-text rendering, recency-aware reranking, date-comparison rules) consumes
+them, so this story alone delivers user-visible improvement. Note: today the
+pipeline renders one metadata search text from document-level metadata and copies
+document metadata onto every chunk; per-chunk metadata (and per-chunk search-text
+rendering from each chunk's final metadata) is new plumbing this story must add
+explicitly.
 
 **Independent Test**: Ingest a fixture document whose event date is stated in a
 different paragraph than the event name, with enrichment enabled. Verify the
@@ -57,8 +61,9 @@ date question about the event is answered correctly in chat.
 4. **Given** a blog article with a publication date, **When** it is processed with
    enrichment enabled, **Then** the publication date is attached at document level.
 5. **Given** a document whose text states a relative date ("next Friday"), **When**
-   it is processed, **Then** the date is resolved against the document's sync or
-   creation time and the resolution anchor is recorded.
+   it is processed, **Then** the date is resolved against the anchor
+   (source last-sync time if present, else document creation time) and the
+   resolution anchor is recorded.
 6. **Given** the enrichment step fails (provider error, malformed output), **When**
    the document is processed, **Then** the document still completes processing
    unenriched, the failure is recorded for the operator, and no user-facing flow
@@ -187,8 +192,9 @@ corpus; pass/fail status reflects whether answers respect dates and ordering.
 - Date stated only once for multiple events, or several conflicting dates for one
   event: extraction must attach dates only where the text supports it; when
   ambiguous, prefer omission over fabrication.
-- Relative dates without a resolvable anchor (no sync time, no publish date):
-  record the fact unresolved rather than guessing.
+- Relative-date anchor precedence is exact: source last-sync time, else document
+  creation time (always present). A relative phrase the model cannot confidently
+  resolve even with an anchor is stored unresolved rather than guessed.
 - Events spanning ranges ("June 5–8"), open-ended ranges ("from June 5"), and
   recurring phrasing ("every Tuesday"): ranges are supported; recurring events may
   be represented by their next concrete occurrence or omitted, never fabricated.
@@ -226,7 +232,8 @@ corpus; pass/fail status reflects whether answers respect dates and ordering.
   for non-visual logic.
 - Secrets in `.env` only; update `.env.example` if new configuration appears.
 - HTTP contract changes MUST go through the code-first OpenAPI registry
-  (`backend/src/app/http/openapi/document.ts`) with regenerated
+  (`backend/src/app/http/openapi/openApiDocument.ts` and the relevant
+  `backend/src/app/http/openapi/paths/*.ts` modules) with regenerated
   `openapi.yaml`/`openapi.json`; contract tests aligned.
 - Message-queue impact review REQUIRED: reprocess options ride on the processing
   job record, NOT on the AMQP message; the queue message contract is expected to
@@ -258,10 +265,18 @@ corpus; pass/fail status reflects whether answers respect dates and ordering.
     wired in `backend/src/app/composition/`.
   - Enrichment-enablement resolution helper (job override ?? source override ??
     workspace default) as a pure, tested function.
-  - Reprocess job options seam: nullable options on the processing job record.
-  - Per-agent temporal settings group in the retrieval skill settings schema.
+  - Per-chunk metadata path: chunk metadata that can differ from document
+    metadata, per-chunk search-text rendering, chunk-level persistence.
+  - Reprocess job options seam: nullable options on the processing job record
+    (AMQP message untouched).
+  - Language-neutral temporal query mode field in the query-interpretation
+    structured output (listing vs topic refinement).
+  - Temporal candidate retrieval port (indexed date-range query, merge/dedupe
+    with semantic and lexical candidates).
+  - Per-agent temporal settings as flat fields in the retrieval skill settings
+    schema, kept in sync with the retrieval skill manifest and its drift checks.
   - Generated/indexed date columns on chunks for range queries (JSONB containment
-    cannot express date ranges).
+    cannot express date ranges), with backfill migration.
 - **Anti-Goals**:
   - Do not add per-shape extraction branches inside the processing service or the
     chunker; shapes live behind the registry.
@@ -288,6 +303,11 @@ corpus; pass/fail status reflects whether answers respect dates and ordering.
 - **FR-003**: For `event` documents, the system MUST attach each extracted date
   range to every stored chunk whose text overlaps the fact's source range, so a
   date stated far from the event introduction still lands on the event's chunks.
+  This requires per-chunk metadata: chunks MUST be able to carry metadata that
+  differs from the document's metadata, MUST have their search text rendered from
+  each chunk's final (document + enrichment) metadata, and MUST persist that
+  chunk-level metadata. Reprocessing rebuilds chunks from scratch, clearing prior
+  enrichment.
 - **FR-004**: For `article` documents, the system MUST attach the publication (and
   where present, update) date at document level so all chunks inherit it.
 - **FR-005**: For `profile`, `reference`, and `generic` shapes, the system MUST
@@ -298,9 +318,13 @@ corpus; pass/fail status reflects whether answers respect dates and ordering.
 - **FR-007**: Temporal metadata attached to chunks MUST use the existing
   `dateFrom`/`dateTo` metadata contract so current search-text rendering,
   reranking guidance, and date-comparison rules activate without modification.
-- **FR-008**: Enrichment failure or invalid extraction output MUST NOT fail
-  document processing; the document completes unenriched and the failure is
-  observable (log + audit).
+- **FR-008**: Enrichment failure or invalid extraction output (schema mismatch,
+  impossible dates, out-of-bounds character ranges) MUST NOT fail document
+  processing; the document completes unenriched with status `ready`. The failure
+  surface is: a structured log, an audit event, and a failure state recorded in
+  the document's enrichment provenance (visible on the document detail view).
+  Enrichment failure MUST NOT touch the processing job's error fields or the
+  document's failure fields.
 - **FR-009**: Enrichment MUST be controlled by a workspace-level ingestion setting
   that defaults to disabled, exposed in the ingestion settings API and UI.
 - **FR-010**: Each document source MUST support an enrichment override (on/off/
@@ -308,39 +332,79 @@ corpus; pass/fail status reflects whether answers respect dates and ordering.
 - **FR-011**: Single-document and workspace reprocess requests MUST accept an
   optional enrichment override; effective enablement resolves as: reprocess
   override, else source override, else workspace default.
-- **FR-012**: Reprocess overrides MUST be carried on the processing job record;
-  the queue message contract MUST remain unchanged.
+- **FR-012**: Reprocess overrides MUST be carried on the processing job record as
+  a new nullable options field (migration with null default; all existing job
+  insertion paths remain valid with no options). Options MUST survive retries and
+  rescheduling of the same job and MUST NOT leak into subsequent jobs for the
+  same document. The AMQP queue message contract MUST remain unchanged (the
+  worker loads the job row by id); the message-queue impact review MUST confirm
+  dispatch, retry semantics, and queue docs/tests.
 - **FR-013**: The system MUST provide a per-source reprocess action that requeues
-  that source's eligible documents and reports queued/skipped counts, with an
-  optional enrichment override, exposed via API and the sources UI.
+  that source's eligible documents (ready or failed; documents already queued or
+  processing are skipped and counted) and reports queued/skipped counts, with an
+  optional enrichment override applied to each created job. Documents without a
+  source are out of scope for this action. The action requires the same
+  authorization as workspace reprocess, emits an audit event, and is exposed via
+  API and the sources UI.
 - **FR-014**: Reprocessing with enrichment disabled MUST leave no stale temporal
   enrichment on the rebuilt document or chunks.
 - **FR-015**: Document enrichment provenance (shape, model, enrichment time,
   anchor date) MUST be stored on the document and visible to operators.
-- **FR-016**: When a turn is classified as a date-shaped event lookup without a
-  topical anchor, retrieval MUST include a metadata-first candidate set: chunks
-  with event dates from today onward, ordered soonest-first, blended with (not
-  replacing) similarity results when a topical anchor exists.
-- **FR-017**: A built-in upcoming-events boost (event date on/after today) MUST
+- **FR-016**: The query-interpretation structured output MUST expose a
+  language-neutral signal distinguishing an anchorless event *listing* query from
+  a topic-anchored temporal question (e.g. an enum field such as
+  `temporalQueryMode: "listing" | "topic_refinement"`), returned by the LLM —
+  never inferred from query wording in code.
+- **FR-017**: When a turn is a date-shaped event lookup in listing mode, retrieval
+  MUST add a temporal candidate source — chunks whose event date range is ongoing
+  or upcoming (date-from on/after today, or date-to on/after today for in-progress
+  ranges), ordered soonest-first — behind a dedicated retrieval port, scoped to
+  the same workspace/agent document visibility as semantic retrieval, and
+  merged/deduplicated with semantic and lexical candidates (temporal order governs
+  the temporal set; existing ranking governs the rest). In topic-refinement mode
+  temporal handling refines similarity results rather than replacing them.
+  "Today" is evaluated as a UTC calendar date, consistent with the existing
+  dynamic date token.
+- **FR-018**: A built-in upcoming-events boost (event date on/after today) MUST
   activate automatically on date-shaped event lookups without operator-authored
   rules.
-- **FR-018**: When enabled, answer composition for date-shaped event lookups MUST
-  present events in deterministic date order relative to today.
-- **FR-019**: The three temporal retrieval behaviors (structured lookup, upcoming
+- **FR-019**: When enabled, staged context for date-shaped event lookups MUST be
+  deterministically ordered before answer composition: dated entries first,
+  ascending by start date (ties by end date, then by retrieval rank); undated
+  entries follow in their existing rank order. Disabling the setting restores
+  today's similarity/rerank-driven ordering.
+- **FR-020**: The three temporal retrieval behaviors (structured lookup, upcoming
   boost, deterministic sort) MUST each be independently selectable per agent in
-  the retrieval skill settings, following the existing agent-override-over-system-
-  default pattern, with system defaults on; all three MUST be inert on corpora
-  without temporal metadata.
-- **FR-020**: Chunk-level event dates MUST be queryable and orderable by range at
-  the database level (indexed), not by scanning JSON payloads.
-- **FR-021**: Workbench eval cases MUST cover: a date question about a named event
+  the retrieval skill settings as flat fields consistent with the existing
+  settings shape (e.g. `temporalStructuredLookupEnabled`,
+  `temporalBoostUpcomingEnabled`, `temporalDeterministicSortEnabled`), following
+  the existing agent-override-over-system-default pattern with system defaults
+  on. The retrieval skill manifest, generated contracts, and the existing
+  settings drift checks MUST be updated together. All three behaviors MUST be
+  inert on corpora without temporal metadata.
+- **FR-021**: Chunk-level event dates MUST be queryable and orderable by range at
+  the database level via indexed generated date columns derived from chunk
+  metadata (JSON containment cannot express range comparisons), with a migration
+  that backfills existing rows.
+- **FR-022**: Workbench eval cases MUST cover: a date question about a named event
   whose date is in a different paragraph, an anchorless "next events" listing, and
   a sort-by-actuality request — each against a deterministic enriched fixture
   corpus with past and future events.
-- **FR-022**: The enrichment stage MUST emit observability signals (span, log
+- **FR-023**: The enrichment stage MUST emit observability signals (span, log
   fields: shape, confidence bucket, fact count, applied-chunk count, latency, skip
   reason) without document content; the structured retrieval path MUST be visible
   in the turn's retrieval trace.
+
+### Testing Strategy (determinism boundary)
+
+LLM calls and the clock are controlled in automated tests: enrichment and
+query-interpretation outputs are mocked as structured fixtures, and "today" is a
+fixed injected date. Deterministic assertions cover: chunk metadata and per-chunk
+search text after enrichment; enablement resolution (job > source > workspace);
+temporal candidate selection, merge order, and staged-context ordering; settings
+resolution and contract drift. Live-LLM behavior is covered by the workbench eval
+cases (FR-022), which assert on retrieved evidence and presented event order
+against the fixture corpus rather than on free-form phrasing.
 
 ### UI Tasks
 
@@ -376,13 +440,15 @@ corpus; pass/fail status reflects whether answers respect dates and ordering.
 ### Measurable Outcomes
 
 - **SC-001**: On the eval fixture corpus, a date question about an event whose
-  date appears in a different paragraph than the event name is answered with the
-  correct date in 100% of eval runs (was: unreliable/failing today).
-- **SC-002**: "What are the next events?" against the fixture corpus lists all
-  future events and only future events, soonest-first, in 100% of eval runs with
-  temporal settings on.
-- **SC-003**: "Sort events by actuality" yields identical, date-correct ordering
-  across 5 consecutive runs with deterministic sort on.
+  date appears in a different paragraph than the event name retrieves the event's
+  dated evidence and the answer states the correct date in 100% of eval runs
+  (was: unreliable/failing today); the evidence assertion is deterministic.
+- **SC-002**: "What are the next events?" against the fixture corpus stages all
+  future events and only future events as evidence, soonest-first, in 100% of
+  runs with temporal settings on (deterministic assertion on retrieved/staged
+  evidence and its order).
+- **SC-003**: "Sort events by actuality" yields identical, date-correct staged
+  ordering across 5 consecutive runs with deterministic sort on.
 - **SC-004**: Enrichment uses exactly one model call per processed document, and
   documents of shapes without temporal meaning add no extraction cost beyond that
   single call.

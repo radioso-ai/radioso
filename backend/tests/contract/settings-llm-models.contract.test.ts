@@ -17,7 +17,13 @@ describe("settings llm-models contract", () => {
     expect(response.body.knownModelsByProvider).toMatchObject({
       openai: expect.arrayContaining(["gpt-5-mini"]),
       claude: expect.arrayContaining(["claude-opus-4-7", "claude-sonnet-4-6"]),
-      gemini: expect.arrayContaining(["gemini-2.5-flash"]),
+      gemini: expect.arrayContaining([
+        "gemini-3.5-flash",
+        "gemini-3.1-flash-lite",
+        "gemini-3-flash-preview",
+        "gemini-flash-latest",
+        "gemini-2.5-flash",
+      ]),
       "openai-compatible": [],
     });
   });
@@ -93,7 +99,7 @@ describe("settings llm-models contract", () => {
     await request(app)
       .put("/api/v1/settings/llm-models")
       .set(adminSessionHeaders(session))
-      .send({ rewrite: { provider: "gemini", model: "gemini-2.5-flash" } });
+      .send({ rewrite: { provider: "gemini", model: "gemini-3.5-flash" } });
 
     const get = await request(app)
       .get("/api/v1/settings/llm-models")
@@ -101,7 +107,7 @@ describe("settings llm-models contract", () => {
 
     expect(get.body).toMatchObject({
       chat: { provider: "claude", model: "claude-sonnet-4-5" },
-      rewrite: { provider: "gemini", model: "gemini-2.5-flash" },
+      rewrite: { provider: "gemini", model: "gemini-3.5-flash" },
       rerank: null,
     });
   });

@@ -33,8 +33,9 @@ import { Database } from "../../src/shared/infra/database.js";
 import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
 import { resolveLlmConfig } from "../../src/shared/infra/llm/providerConfig.js";
 import { LlmProviderRegistry } from "../../src/shared/infra/llm/providerRegistry.js";
-import { DefaultAgentRuntime } from "../../src/shared/agent-runtime/index.js";
-import { PgVectorSearch } from "../../src/modules/retrieval/infra/vectorSearch.js";
+import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../src/shared/agent-runtime/index.js";
+import { PgVectorIndex } from "../../src/modules/retrieval/infra/vectorSearch.js";
+import { PostgresChunkCandidateHydrator } from "../../src/modules/retrieval/infra/chunkCandidateHydrator.js";
 import { PgLexicalSearch } from "../../src/modules/retrieval/infra/lexicalSearch.js";
 import { EmbeddingService } from "../../src/modules/retrieval/services/embeddingService.js";
 import { GatewayQueryRewritePortAdapter } from "../../src/modules/retrieval/services/gatewayQueryRewritePortAdapter.js";
@@ -103,7 +104,8 @@ const main = async (): Promise<void> => {
   const database = new Database(databaseUrl, { applicationName: "agentic-retrieval-smoke" });
   const registry = new LlmProviderRegistry(llmConfig);
   const embeddingService = new EmbeddingService(registry.createEmbeddingGateway());
-  const vectorSearch = new PgVectorSearch(database);
+  const vectorIndex = new PgVectorIndex(database);
+  const chunkHydrator = new PostgresChunkCandidateHydrator(database.kysely);
   const lexicalSearch = new PgLexicalSearch(database);
   const queryRewritePort = new GatewayQueryRewritePortAdapter(registry.createRewriteGateway());
   const rerankGateway = registry.createRerankGateway();
@@ -112,9 +114,10 @@ const main = async (): Promise<void> => {
   const systemPrompt = loadPromptTemplate("agentic-retrieval/system.md");
 
   const runner = new AgenticRetrievalRunner({
-    runtime,
+    capabilityRunner: new AgenticCapabilityRunner({ runtime }),
     embeddings: embeddingService,
-    vectorSearch,
+    vectorIndex,
+    chunkHydrator,
     lexicalSearch,
     queryRewrite: queryRewritePort,
     rerankGateway,

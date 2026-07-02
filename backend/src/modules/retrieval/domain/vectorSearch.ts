@@ -23,6 +23,12 @@ export interface VectorSearchInput {
   sourceFilter?: RetrievalSourceFilter;
 }
 
+/**
+ * Compatibility surface for older callers that expect hydrated vector search
+ * rows. New retrieval paths should use VectorIndexPort plus
+ * ChunkCandidateHydratorPort so vector indexes return ranked references and
+ * Postgres remains the canonical chunk hydration gate.
+ */
 export interface VectorSearchPort {
   search(input: VectorSearchInput): Promise<RetrievedChunk[]>;
 }

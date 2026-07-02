@@ -116,14 +116,33 @@ export const chatApi = {
     return normalizeHistoryItemsResponse(response)
   },
 
-  async listChatHistory(input?: { limit?: number; offset?: number; cursor?: string }): Promise<ChatHistoryListResponse> {
+  async listChatHistory(input?: {
+    limit?: number
+    offset?: number
+    cursor?: string
+    // `end_user` (server default) hides the operator's own test chats; `operator_test`
+    // returns only them (the workbench's recent test sessions); `all` returns both.
+    sourceScope?: 'end_user' | 'operator_test' | 'all'
+  }): Promise<ChatHistoryListResponse> {
     return request<ChatHistoryListResponse>(withQuery('/history/chat', {
       limit: input?.limit,
       offset: input?.offset,
       cursor: input?.cursor,
+      sourceScope: input?.sourceScope,
     }), {
       method: 'GET',
     }, { withApiToken: true })
+  },
+
+  // Copies a real conversation's thread into a new test-session conversation
+  // (source_channel = authenticated_chat) so an operator can continue it in the
+  // workbench without touching the original. Returns the new conversation id.
+  async forkConversation(sourceConversationId: string): Promise<{ conversationId: string }> {
+    return request<{ conversationId: string }>(
+      `/conversations/${encodeURIComponent(sourceConversationId)}/fork`,
+      { method: 'POST' },
+      { withApiToken: true },
+    )
   },
 
   async listSearchHistory(input?: { limit?: number; offset?: number; cursor?: string }): Promise<DocumentSearchHistoryListResponse> {

@@ -195,6 +195,38 @@ describe("AgentSkillsService", () => {
     });
   });
 
+  it("replaces skill config when a full form save clears prior overrides", async () => {
+    const { service } = makeService();
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+
+    const created = await service.create(workspaceId, agentId, {
+      name: "answer",
+      capability: "retrieve",
+      target: { kind: "source_scope", id: null },
+      config: {
+        sourceScope: "all",
+        exposedInputs: { query: true },
+        rerankEnabled: false,
+        vectorTopK: 12,
+      },
+      invocationMode: "default_answer",
+      enabled: true,
+    });
+
+    const updated = await service.update(workspaceId, agentId, created.id, {
+      replaceConfig: {
+        sourceScope: "all",
+        exposedInputs: { query: true },
+      },
+    });
+
+    expect(updated.config).toEqual({
+      sourceScope: "all",
+      exposedInputs: { query: true },
+    });
+  });
+
   describe("persistence-error translation", () => {
     const makeServiceThatThrowsOnCreate = (error: unknown) => {
       const repository = {

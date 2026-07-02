@@ -98,6 +98,7 @@ export type AgentSkillCreateInput = {
 export type AgentSkillUpdateInput = {
   target?: AgentSkillTarget
   config?: Record<string, unknown>
+  replaceConfig?: Record<string, unknown>
   invocationMode?: AgentSkillInvocationMode
   enabled?: boolean
 }

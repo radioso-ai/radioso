@@ -105,7 +105,9 @@ export class InMemoryAgentSkillRepository implements AgentSkillRepositoryPort {
       ...existing,
       targetType: "targetType" in input ? input.targetType ?? null : existing.targetType,
       targetId: "targetId" in input ? input.targetId ?? null : existing.targetId,
-      config: { ...cloneConfig(existing.config), ...cloneConfig(input.config) },
+      config: input.replaceConfig !== undefined
+        ? cloneConfig(input.replaceConfig)
+        : { ...cloneConfig(existing.config), ...cloneConfig(input.config) },
       invocationMode: input.invocationMode ?? existing.invocationMode,
       enabled: "enabled" in input ? input.enabled ?? existing.enabled : existing.enabled,
       updatedAt: new Date(),

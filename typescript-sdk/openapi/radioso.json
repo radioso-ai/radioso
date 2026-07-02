@@ -25772,6 +25772,10 @@
                     "type": "object",
                     "additionalProperties": {}
                   },
+                  "replaceConfig": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  },
                   "invocationMode": {
                     "type": "string",
                     "enum": [

@@ -13666,6 +13666,9 @@ export interface operations {
                     config?: {
                         [key: string]: unknown;
                     };
+                    replaceConfig?: {
+                        [key: string]: unknown;
+                    };
                     /** @enum {string} */
                     invocationMode?: "default_answer" | "routine_named" | "agent_selectable";
                     enabled?: boolean;

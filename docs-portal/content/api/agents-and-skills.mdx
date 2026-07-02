@@ -73,6 +73,8 @@ If an agent has `retrievalEnabled: true`, assistant chat may use retrieval and r
 
 Create skills with `POST /api/v1/agents/{agentId}/skills`. In the dashboard, **Add new skill** first opens a capability picker; enabled tiles then open the configuration form for that capability. The form shows only the skill name, enabled state, required target or tool fields, and essential capability settings by default. Invocation mode and advanced retrieval tuning live under **Advanced**. Input binding, outcomes, and advanced JSON live under **Routine integration** because they only matter when a routine or the agent selects the skill. The form and API use the same model for `retrieve`, `mcp_tool`, `email`, `slack_post`, `webhook_call`, and `notify`.
 
+Update skills with `PATCH /api/v1/agents/{agentId}/skills/{skillId}`. Use `config` for a shallow merge into the existing skill config. Use `replaceConfig` when sending the complete config from an editor and omitted keys should be removed, such as clearing a retrieval override so the skill inherits the default again. Do not send both fields in the same request.
+
 ## Retrieval skill settings
 
 The `retrieve` capability descriptor includes field help, inherited defaults, and dependency hints. In the dashboard, an unset field shows the effective system default inline. Saving still stores only overrides. Clearing a field removes that key from the skill config so the agent inherits the system default again.

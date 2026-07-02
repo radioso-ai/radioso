@@ -25,6 +25,7 @@ const AgentSkillCreateSchema = z.object({
 const AgentSkillUpdateSchema = z.object({
   target: AgentSkillTargetSchema.optional(),
   config: z.record(z.unknown()).optional(),
+  replaceConfig: z.record(z.unknown()).optional(),
   invocationMode: InvocationModeSchema.optional(),
   enabled: z.boolean().optional(),
 });
